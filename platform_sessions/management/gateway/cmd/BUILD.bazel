@@ -54,12 +54,14 @@ oci_image(
     env = {
         "PLATFORM_SESSIONS_MANAGEMENT_OPENAPI": "/usr/local/share/platform-sessions/management_openapi.swagger.json",
         "PLATFORM_SESSIONS_FRONTEND_DIR": "/usr/local/share/platform-sessions/platform-sessions-frontend",
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
     },
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":gateway_binary_layer",
         ":frontend_layer",
         ":management_openapi_layer",
+        "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],

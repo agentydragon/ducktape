@@ -111,9 +111,11 @@ oci_image(
     entrypoint = py_image_entrypoint("rotate_bin"),
     env = py_image_env(binary_name = "rotate_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    # sops_layer provides sops, kubectl_layer provides kubectl, and layers provides
-    # the Python app. No git binary: rotate.py goes through pygit2.
+    # cacerts the CA bundle that libgit2 is pointed at (set_ssl_cert_locations in
+    # rotate.py); sops_layer the sops binary; kubectl_layer the kubectl binary; layers
+    # the Python app + interpreter. No git binary: rotate.py goes through pygit2.
     tars = [
+        "//third_party/debian_slim:cacerts",
         ":sops_layer",
         ":kubectl_layer",
         "//devinfra:node_bin_layer",

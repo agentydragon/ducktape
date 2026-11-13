@@ -94,13 +94,11 @@ oci_image(
     name = "service_image",
     base = "@distroless_static_debian13_linux_amd64",
     entrypoint = ["/usr/local/bin/central-sampler"],
-    env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":binary_layer",
         ":code_mode_host_layer",
         ":tmp_layer",
-        "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
     visibility = ["//visibility:public"],
