@@ -55,6 +55,11 @@ messages for additions or to advance the conversation. For messages far back in 
 it should post a new correction with enough context. This is conversational guidance, with no
 enforced recency cutoff.
 
+For longer tasks, the prompt also suggests an optional pattern: post a starting message, edit that
+recent message with meaningful progress roughly every 2-3 minutes, and edit in the final result.
+Separate progress or final messages remain valid, especially after the conversation moves on.
+The cadence is guidance, not a timer enforced by the loop; updates require a model/tool opportunity.
+
 Edits are new information. Earlier tool results, model context and trace entries remain unchanged;
 editing never undoes or replays commands. An agent edit counts as a publication. An edit-only notice
 may be acknowledged by yielding without publishing; it does not erase an unanswered new post.
