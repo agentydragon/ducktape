@@ -226,7 +226,7 @@ impl std::fmt::Display for AdmissionExplanation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::facts::{SynchronousCalls, analyze_chunk};
+    use crate::facts::analyze_chunk;
     use crate::purity::{Purity, PurityReason, PurityRule};
     use crate::reports::schema::PurityCompletionDisagreement;
     use crate::{AnalysisInputs, execution_evidence::SourceLocator};
@@ -269,10 +269,9 @@ mod tests {
             let fact = &mut facts.facts[1];
             assert_eq!(fact.ordinal, SourceUnitOrdinal(1));
             assert_eq!(fact.source_location, Some(location.clone()));
-            fact.synchronous_calls = Some(SynchronousCalls {
-                purity_disagreement: Some(disagreement.clone()),
-                ..SynchronousCalls::default()
-            });
+            fact.synchronous_calls
+                .get_or_insert_default()
+                .purity_disagreement = Some(disagreement.clone());
         }
 
         let diagnostics = Diagnostics::default();
