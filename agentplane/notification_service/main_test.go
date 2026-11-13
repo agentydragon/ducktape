@@ -22,8 +22,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -32,6 +33,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -41,6 +43,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -53,25 +56,32 @@ const (
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 
-	sandboxName = "test-sandbox"
-	otherName   = "test-other"
-	testSession = "test-session"
-	webhookKey  = "test-webhook-secret-of-sixteen-or-more"
+	sandboxName        = "test-sandbox"
+	otherName          = "test-other"
+	testSession        = "test-session"
+	webhookKey         = "test-webhook-secret-of-sixteen-or-more"
+	identityToken      = "test-sandbox-identity"
+	otherIdentityToken = "test-other-identity"
 )
+
+type acceptanceWorkloadSet struct {
+	sandbox *workloadauthtesting.IdentityWorkload
+	other   *workloadauthtesting.IdentityWorkload
+}
+
+var acceptanceWorkloads *acceptanceWorkloadSet
 
 type testActionService struct {
 	actionpb.UnimplementedActionServiceServer
 }
 
 func (testActionService) GetActionRequest(ctx context.Context, _ *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
-	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName})
-	if err != nil {
-		return nil, err
+	if acceptanceWorkloads == nil {
+		return nil, status.Error(codes.NotFound, "test Identity workload is not configured")
 	}
-	uid := string(account.UID)
+	identity := acceptanceWorkloads.sandbox.Identity
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		CallerUid: &uid,
-		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
+		CallerIdentity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)},
 	}}, nil
 }
 
@@ -93,10 +103,80 @@ type running struct {
 	wait, stop func() error
 }
 
+type notificationCallerContextKey struct{}
+
+type routedNotificationsConn struct {
+	sandbox, other, unauthenticated grpc.ClientConnInterface
+}
+
+func (c routedNotificationsConn) connection(ctx context.Context) (grpc.ClientConnInterface, context.Context) {
+	caller, _ := ctx.Value(notificationCallerContextKey{}).(string)
+	connection := c.sandbox
+	switch caller {
+	case otherName:
+		connection = c.other
+	case "unauthenticated":
+		connection = c.unauthenticated
+	}
+	if caller != "" && caller != "unauthenticated" {
+		if md, ok := metadata.FromOutgoingContext(ctx); ok {
+			md = md.Copy()
+			md.Delete("authorization")
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+	}
+	return connection, ctx
+}
+
+func (c routedNotificationsConn) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
+	connection, ctx := c.connection(ctx)
+	return connection.Invoke(ctx, method, args, reply, opts...)
+}
+
+func (c routedNotificationsConn) NewStream(ctx context.Context, description *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	connection, ctx := c.connection(ctx)
+	return connection.NewStream(ctx, description, method, opts...)
+}
+
 func testDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
 	return db
+}
+
+func acceptanceIdentityWorkloads(t *testing.T) *acceptanceWorkloadSet {
+	t.Helper()
+	if acceptanceWorkloads != nil {
+		return acceptanceWorkloads
+	}
+	create := func(name string) *workloadauthtesting.IdentityWorkload {
+		ctx := context.Background()
+		existing := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: name}}
+		if err := client.IgnoreNotFound(apiClient.Delete(ctx, existing)); err != nil {
+			t.Fatal(err)
+		}
+		result := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, name, testNamespace)
+		identity := result.Identity
+		sandbox := result.Sandbox.DeepCopy()
+		sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: identity.Name}
+		if err := result.Objects.Update(t.Context(), sandbox); err != nil {
+			t.Fatal(err)
+		}
+		result.Sandbox = sandbox
+		t.Cleanup(func() {
+			cleanup := context.Background()
+			for _, object := range []client.Object{result.Record, result.Sandbox, result.Identity} {
+				if err := client.IgnoreNotFound(result.Objects.Delete(cleanup, object)); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+		return &result
+	}
+	acceptanceWorkloads = &acceptanceWorkloadSet{sandbox: create(sandboxName), other: create(otherName)}
+	sandboxUID = string(acceptanceWorkloads.sandbox.Sandbox.UID)
+	t.Cleanup(func() { acceptanceWorkloads = nil })
+	return acceptanceWorkloads
 }
 
 // start serves over a database emptied of earlier tests' inboxes, with settings for it and fake peers; tune
@@ -143,9 +223,29 @@ func restart(t *testing.T, tune func(*config)) running {
 	if tune != nil {
 		tune(&c)
 	}
+	var identityCredentials, otherIdentityCredentials grpc.DialOption
+	if c.RPC.TLS == nil {
+		workloads := acceptanceIdentityWorkloads(t)
+		ca := environmentruntimetransporttesting.NewCA(t)
+		serving := ca.IssueWithUsage(t, environment_runtime_transport.NotificationsURI, x509.ExtKeyUsageServerAuth)
+		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
+		c.RPC.Auth = []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}}
+		mainCredentials, err := ca.Issue(t, workloads.sandbox.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherCredentials, err := ca.Issue(t, workloads.other.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		identityCredentials = grpc.WithTransportCredentials(mainCredentials)
+		otherIdentityCredentials = grpc.WithTransportCredentials(otherCredentials)
+	}
 	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
 	}
 	sandboxes, err := client.New(apiConfig, client.Options{Scheme: scheme})
 	if err != nil {
@@ -191,13 +291,36 @@ func restart(t *testing.T, tune func(*config)) running {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection, err := grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(security))
-	if err != nil {
-		t.Fatal(err)
+	var connection *grpc.ClientConn
+	var unauthenticatedConnection *grpc.ClientConn
+	var otherConnection *grpc.ClientConn
+	var notificationsClient notificationspb.NotificationsClient
+	if identityCredentials != nil {
+		connection, err = grpc.NewClient(grpcListener.Addr().String(), identityCredentials)
+		if err != nil {
+			t.Fatal(err)
+		}
+		otherConnection, err = grpc.NewClient(grpcListener.Addr().String(), otherIdentityCredentials)
+		if err != nil {
+			t.Fatal(err)
+		}
+		unauthenticatedConnection, err = grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(security))
+		if err != nil {
+			t.Fatal(err)
+		}
+		router := routedNotificationsConn{sandbox: connection, other: otherConnection, unauthenticated: unauthenticatedConnection}
+		notificationsClient = notificationspb.NewNotificationsClient(router)
+		t.Cleanup(func() { _ = connection.Close(); _ = otherConnection.Close(); _ = unauthenticatedConnection.Close() })
+	} else {
+		connection, err = grpc.NewClient(grpcListener.Addr().String(), grpc.WithTransportCredentials(security))
+		if err != nil {
+			t.Fatal(err)
+		}
+		notificationsClient = notificationspb.NewNotificationsClient(connection)
+		t.Cleanup(func() { _ = connection.Close() })
 	}
-	t.Cleanup(func() { connection.Close() })
 	return running{
-		notifications: notificationspb.NewNotificationsClient(connection), health: healthpb.NewHealthClient(connection),
+		notifications: notificationsClient, health: healthpb.NewHealthClient(connection),
 		url: "http://" + httpListener.Addr().String(), rpcAddress: grpcListener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
 	}
 }
@@ -206,7 +329,16 @@ func bearing(t *testing.T, token string) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	switch token {
+	case identityToken:
+		return context.WithValue(ctx, notificationCallerContextKey{}, sandboxName)
+	case otherIdentityToken:
+		return context.WithValue(ctx, notificationCallerContextKey{}, otherName)
+	case "test-token-unknown":
+		return context.WithValue(ctx, notificationCallerContextKey{}, "unauthenticated")
+	default:
+		return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	}
 }
 
 func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (healthpb.HealthCheckResponse_ServingStatus, error) {
@@ -230,8 +362,8 @@ func TestTheServiceAnswersHealthChecksAndCallsAndStopsWhenTold(t *testing.T) {
 	if _, err := checkHealth(t, service.health, "test-unknown-service"); status.Code(err) != codes.NotFound {
 		t.Errorf("health of an unknown service: %v", err)
 	}
-	// A call is admitted by its bearer and served from the database.
-	if _, err := service.notifications.ListSubscriptions(bearing(t, sandboxToken), &notificationspb.ListSubscriptionsRequest{}); err != nil {
+	// A call is admitted by its workload Identity and served from the database.
+	if _, err := service.notifications.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{}); err != nil {
 		t.Errorf("list subscriptions: %v", err)
 	}
 	_, err := service.notifications.ListSubscriptions(bearing(t, "test-token-unknown"), &notificationspb.ListSubscriptionsRequest{})
@@ -248,7 +380,7 @@ func TestTheServiceAnswersHealthChecksAndCallsAndStopsWhenTold(t *testing.T) {
 
 func TestAWorkerThatStopsEndsTheServiceWithoutSayingWhy(t *testing.T) {
 	service := start(t, nil)
-	_, err := service.notifications.CreateSubscription(bearing(t, sandboxToken), &notificationspb.CreateSubscriptionRequest{
+	_, err := service.notifications.CreateSubscription(bearing(t, identityToken), &notificationspb.CreateSubscriptionRequest{
 		SessionId: testSession, IdempotencyKey: "test-key",
 		Source: &notificationspb.Source{Provider: &notificationspb.Source_Actions{
 			Actions: &notificationspb.ActionsSource{RequestId: uuid.NewString()},

@@ -19,8 +19,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
+	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
@@ -44,9 +46,6 @@ type fixtureHistory struct {
 
 func (h *fixtureHistory) Push(stream grpc.BidiStreamingServer[ingresspb.PushFrame, ingresspb.Acknowledgement]) error {
 	md, _ := metadata.FromIncomingContext(stream.Context())
-	if values := md.Get("authorization"); len(values) != 1 || values[0] != "Bearer test-history-token" {
-		return status.Error(codes.Unauthenticated, "fixture bearer refused")
-	}
 	first, err := stream.Recv()
 	if err != nil {
 		return err
@@ -54,6 +53,29 @@ func (h *fixtureHistory) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 	announcement := first.GetSamplerAnnounce()
 	if announcement == nil {
 		return status.Error(codes.InvalidArgument, "missing announcement")
+	}
+	identity := announcement.GetSession().GetExecutionIdentity()
+	authorization := md.Get("authorization")
+	delegations := md.Get(workloadauth.DelegationMetadataKey)
+	if identity == nil {
+		if len(authorization) != 1 || authorization[0] != "Bearer test-history-token" || len(delegations) != 0 {
+			return status.Error(codes.Unauthenticated, "fixture direct service bearer refused")
+		}
+	} else {
+		if len(authorization) != 1 || authorization[0] != workloadauth.DelegatedScheme+" test-history-token" || len(delegations) != 1 {
+			return status.Error(codes.Unauthenticated, "fixture delegated service bearer refused")
+		}
+		envelope := new(delegationpb.Delegation)
+		if err := proto.Unmarshal([]byte(delegations[0]), envelope); err != nil || !proto.Equal(envelope.GetIdentity(), identity) {
+			return status.Error(codes.Unauthenticated, "fixture delegated Identity mismatch")
+		}
+		if _, err := workloadauth.MarshalDelegation(envelope); err != nil {
+			return status.Error(codes.Unauthenticated, "fixture invalid delegation envelope")
+		}
+		provenance, ok := envelope.GetProvenance().(*delegationpb.Delegation_Session)
+		if !ok || provenance.Session.GetSessionId() != announcement.GetSession().GetSessionId() {
+			return status.Error(codes.Unauthenticated, "fixture delegated Session provenance mismatch")
+		}
 	}
 	h.mu.Lock()
 	cursor := h.cursor
@@ -144,6 +166,28 @@ func exportFixtureSession(t *testing.T, store *Store) *Session {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return session
+}
+
+// exportLegacyFixtureSession constructs a new row with today's required Identity, then rewrites only
+// its retained request into the pre-Identity shape so the exporter exercises the direct component path
+// for historical rows that have no provable execution Identity.
+func exportLegacyFixtureSession(t *testing.T, store *Store) *Session {
+	t.Helper()
+	session := exportFixtureSession(t, store)
+	request := new(samplerpb.CreateSessionRequest)
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
+		t.Fatal(err)
+	}
+	request.ExecutionIdentity = nil
+	configuration, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", session.ID, configuration); err != nil {
+		t.Fatal(err)
+	}
+	session.Configuration = configuration
 	return session
 }
 
@@ -285,7 +329,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 
 func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	store, databaseURL := newTestStoreWithDSN(t)
-	session := exportFixtureSession(t, store)
+	session := exportLegacyFixtureSession(t, store)
 	// Leave a full quantum for the replacement exporter to drain after the direct first turn.
 	const eventsBeyondTwoQuanta = 2*16*16 + 1
 	for i := 0; i < eventsBeyondTwoQuanta; i++ {
@@ -304,6 +348,11 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
+	history.mu.Lock()
+	if len(history.snapshots) == 0 || history.snapshots[0].GetExecutionIdentity() != nil {
+		t.Errorf("legacy export announcement identity=%v, want none", history.snapshots)
+	}
+	history.mu.Unlock()
 	// The first quantum makes durable remote progress without finishing the
 	// announced snapshot. A replacement process must still find this Session.
 	checkpoint, err := store.Checkpoint(ctx, session.ID, target)

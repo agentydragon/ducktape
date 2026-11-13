@@ -68,6 +68,7 @@ py_library(
         ":driver",
         ":failure_journal",
         ":gateway",
+        ":history_tunnel",
         ":launches",
         ":process",
         "//agentplane/env:config",
@@ -75,8 +76,10 @@ py_library(
         "//agentplane/native/claude/testing:messages",
         "//agentplane/native/codex/testing:responses",
         "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:claude_model",
         "//agentplane/testing:codex_model",
+        "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -108,6 +111,7 @@ py_library(
     deps = [
         ":config",
         ":gateway",
+        ":history_tunnel",
         ":process",
         "//agentplane/env:config",
         "//agentplane/env/runtime/control:environment_runtime_pb2",
@@ -135,6 +139,9 @@ py_library(
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/proto:environment_runtime_state_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:tls",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -145,6 +152,7 @@ py_library(
     srcs = ["process_fixtures.py"],
     deps = [
         ":gateway",
+        ":history_tunnel",
         ":launches",
         ":model_config",
         "//agentplane/env:config",
@@ -182,4 +190,9 @@ py_library(
         "@pypi//grpcio",  # keep: mypy follows the generated Runner control stub
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
+)
+
+py_library(
+    name = "history_tunnel",
+    srcs = ["history_tunnel.py"],
 )

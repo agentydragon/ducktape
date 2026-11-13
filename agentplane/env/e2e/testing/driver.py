@@ -11,15 +11,16 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import grpc
 import pytest
 
-from agentplane.env.config import Endpoint
+from agentplane.env.config import Endpoint, SVIDEndpoint
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
+from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, wait_for_history_session
+from agentplane.history_service.testing.go_service import GoHistoryService, wait_for_history_session
 from agentplane.history_service.testing.unstored_ranges import unstored_ranges
 from agentplane.proto import environment_runtime_state_pb2, event_log_pb2, session_pb2
 
@@ -257,7 +258,9 @@ class RunnerDriver:
             )
             return self._follow(attached, after_cursor)
         runner = await self.gateway.control.runner()
-        create = environment_runtime_pb2.CreateSessionRequest(session_id=session_id, spec=spec)
+        create = environment_runtime_pb2.CreateSessionRequest(
+            session_id=session_id, spec=spec, execution_identity=self.gateway.execution_identity
+        )
         if setup_script is not None:
             create.setup_script = setup_script
         attached = (await runner.CreateSession(create)).attached
@@ -310,6 +313,10 @@ async def running(
     config: RunnerTestConfig, gateway: Gateway, history_service: GoHistoryService
 ) -> AsyncIterator[RunningRunner]:
     """Start the Go executable against a scriptable control peer and real History ingress."""
-    ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
-    async with RunningRunner(config, gateway, history=history_service.reader, ingress_endpoint=ingress) as runner:
-        yield runner
+    async with history_tunnel(history_service.ingress_target) as proxy:
+        ingress = Endpoint(
+            target=history_service.ingress_target,
+            svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
+        )
+        async with RunningRunner(config, gateway, history=history_service.reader, ingress_endpoint=ingress) as runner:
+            yield runner

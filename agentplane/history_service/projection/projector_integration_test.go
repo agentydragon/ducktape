@@ -88,7 +88,7 @@ func newProjectorFixture(t *testing.T) projectorFixture {
 func (f projectorFixture) retained(t *testing.T, history *storage.Store, entries ...*eventlogpb.EventEntry) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := history.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+	if _, err := history.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec("INSERT INTO thread_history_summary (thread_id) VALUES ($1)", sessionID); err != nil {
@@ -244,7 +244,7 @@ func TestProjectBatchRecoversBlockedFailureAfterConfirmedInputFromFailedCheckpoi
 	f.projector.PageSize = 4
 	const commandID = "test-input"
 	sessionID := uuid.New()
-	if _, err := f.history.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+	if _, err := f.history.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec("INSERT INTO thread_history_summary (thread_id) VALUES ($1)", sessionID); err != nil {

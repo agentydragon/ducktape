@@ -255,17 +255,11 @@ func serveSVIDIngress(t *testing.T, service *Service, namespace string) func(uri
 	}
 }
 
-func announceExecuting(sessionID uuid.UUID, identity *policyapi.Identity, principal *auth.Principal) *session_ingresspb.PushFrame {
+func announceExecuting(sessionID uuid.UUID, identity *policyapi.Identity) *session_ingresspb.PushFrame {
 	frame := announce(sessionID, 0, "")
 	attached := frame.GetAnnounce()
 	if identity != nil {
 		attached.ExecutionIdentity = &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}
-	}
-	if principal != nil {
-		attached.ExecutionPrincipal = &identitypb.ServiceAccountIdentity{
-			Account: &identitypb.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name},
-			Uid:     principal.ServiceAccountUID,
-		}
 	}
 	return frame
 }
@@ -287,22 +281,13 @@ func TestAnIdentityRunnerWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
 	sibling := workloadauthtesting.RunAs(t, workloadauthtesting.NewWorkload(t, kube, namespace, "test-sibling-sandbox"), first.Identity)
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "test-other-sandbox", testPolicyNamespace)
 	account := workloadauthtesting.NewWorkload(t, kube, namespace, "test-account-sandbox")
-	// The Sandbox Controller owns the ServiceAccount a Sandbox runs as; envtest runs no controller.
-	serviceAccount, err := kube.Clientset.CoreV1().ServiceAccounts(namespace).Get(t.Context(), first.Sandbox.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	serviceAccount.OwnerReferences = []metav1.OwnerReference{*metav1.NewControllerRef(first.Sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind))}
-	if _, err := kube.Clientset.CoreV1().ServiceAccounts(namespace).Update(t.Context(), serviceAccount, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
 	service, _ := newService(t, testTiming)
 	service.SandboxUIDs = NewServiceAccountSandboxUIDResolver(kube.Clientset)
 	connect := serveSVIDIngress(t, service, namespace)
 
 	session := uuid.New()
 	pushed := connect(first.URI).open(t, "")
-	pushed.send(append([]*session_ingresspb.PushFrame{announceExecuting(session, first.Identity, &first.Principal)}, entries(1)...)...)
+	pushed.send(append([]*session_ingresspb.PushFrame{announceExecuting(session, first.Identity)}, entries(1)...)...)
 	pushed.acknowledged(1, false)
 	if !readsAs(t, service.History, first.Identity, session) || readsAs(t, service.History, other.Identity, session) {
 		t.Fatal("an Identity-run Session reads by exactly its execution Identity")
@@ -318,14 +303,17 @@ func TestAnIdentityRunnerWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
 			t.Fatalf("%s pushed the Session: %v", name, code)
 		}
 	}
-	for name, frame := range map[string]*session_ingresspb.PushFrame{
-		"another execution Identity":                announceExecuting(uuid.New(), other.Identity, nil),
-		"a ServiceAccount its Sandbox does not own": announceExecuting(uuid.New(), nil, &account.Principal),
+	for name, test := range map[string]struct {
+		frame *session_ingresspb.PushFrame
+		code  codes.Code
+	}{
+		"another execution Identity":       {announceExecuting(uuid.New(), other.Identity), codes.PermissionDenied},
+		"an incomplete execution Identity": {announceExecuting(uuid.New(), &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: first.Identity.Name}}), codes.InvalidArgument},
 	} {
 		refused := connect(first.URI).open(t, "")
-		refused.send(frame)
-		if code := refused.refused(); code != codes.PermissionDenied {
-			t.Fatalf("an Identity runner announced %s: %v", name, code)
+		refused.send(test.frame)
+		if code := refused.refused(); code != test.code {
+			t.Fatalf("an Identity runner announced %s: %v, want %v", name, code, test.code)
 		}
 	}
 

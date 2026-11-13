@@ -11,7 +11,7 @@ import (
 
 // The exporter pushes a Session the Dispatcher recorded as executing as an Identity as a delegating
 // actor for it, so History retains that Identity verified live rather than relayed, and a Session
-// with no Identity as the sampler itself. An Identity incarnation that no longer exists is refused.
+// retained from before the cutover with no Identity as the sampler itself. An Identity incarnation that no longer exists is refused.
 func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	fixture := newSamplerExportFixture(t, newSamplerExportPlan(0, 0, false), newSamplerExportPlan(0, 0, false), newSamplerExportPlan(0, 0, false))
 	identity := &identitypb.Identity{Name: fixture.identity.Identity.Name, Uid: string(fixture.identity.Identity.UID)}
@@ -34,7 +34,7 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 		t.Fatalf("History binding writer=%s identity=%s/%s, want the sampler acting for %v", writerName, identityName, identityUID, identity)
 	}
 
-	direct := fixture.openSession(t)
+	direct := fixture.openLegacySession(t)
 	updateSamplerModel(t, fixture.sampler, direct, 1, "test-model-direct")
 	if err := samplerExportResult(t, startSamplerExport(ctx, fixture, direct.ID)); err != nil {
 		t.Fatalf("export as the sampler itself: %v", err)

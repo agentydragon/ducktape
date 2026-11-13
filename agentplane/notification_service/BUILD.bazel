@@ -140,6 +140,7 @@ go_library(
         "//agentplane/notification_service/webhook",
         "//agentplane/notification_service/worker",
         "//agentplane/observability",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/probes",

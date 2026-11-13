@@ -17,12 +17,19 @@ from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core import testcontainers_config
 
-from agentplane.env.config import Codex, Configuration, Endpoint, EnvironmentVariables, PodEnvironment
+from agentplane.env.config import (
+    Codex,
+    Configuration,
+    Endpoint,
+    EnvironmentRuntimeControl,
+    EnvironmentVariables,
+    PodEnvironment,
+)
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.environment_runtime_transport.config import Insecure
+from agentplane.environment_runtime_transport.config import MTLS
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.proto import session_pb2
 from devinfra.oci.oci import load_oci_image
@@ -68,6 +75,20 @@ def _host_native_pid(container: LoggedContainer) -> int:
 def _clear_generation(directory: Path) -> None:
     for path in directory.iterdir():
         path.unlink()
+
+
+def _container_control(gateway: Gateway, mount_root: Path) -> EnvironmentRuntimeControl:
+    """Map the Gateway's Runtime server TLS files into the container's /proof mount."""
+    control = gateway.endpoint
+    assert isinstance(control.security, MTLS)
+    tls = control.security.tls
+    path_fields = ("cert_file", "key_file", "ca_file", "client_ca_file")
+    mounted_paths = {
+        field: str(Path("/proof") / Path(value).relative_to(mount_root))
+        for field in path_fields
+        if (value := getattr(tls, field)) is not None
+    }
+    return control.model_copy(update={"security": MTLS(tls=tls.model_copy(update=mounted_paths))})
 
 
 @pytest.fixture
@@ -158,8 +179,8 @@ async def test_production_runner_selects_pid1(
     fixture = (
         runfiles_root / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
-    host_control = gateway.endpoint
-    assert isinstance(host_control.security, Insecure)
+    host_control = _container_control(gateway, tmp_path)
+    sandbox = gateway.sandbox.identity
     config = Configuration(
         version=2,
         state_dir="/proof/state",
@@ -174,7 +195,7 @@ async def test_production_runner_selects_pid1(
     (tmp_path / "launch.json").write_text(
         json.dumps(
             {
-                "sandbox": {"namespace": "proof", "name": "pid1-proof", "uid": "pid1-proof-uid"},
+                "sandbox": sandbox.model_dump(),
                 "bootstrap": "exec /pid1-proof --pid1-proof-native crash" if abrupt else "printf ready > /proof/ready",
             }
         )
@@ -193,7 +214,7 @@ async def test_production_runner_selects_pid1(
     # The COSI database excludes a competing store while Runtime is alive.
     with container:
         wrapped = container.get_wrapped_container()
-        await gateway.control.connect(host_control, "pid1-proof-uid")
+        await gateway.control.connect(host_control, sandbox.uid)
         if abrupt:
             await asyncio.to_thread(_wait_for_markers, tmp_path, "native.pid", "group.pid", "escaped.pid")
             descendants = await asyncio.to_thread(_descendant_pids, container)
@@ -223,8 +244,8 @@ async def test_production_pid1_embedded_host_reaps_setup(
     fixture = (
         runfiles_root / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
-    control = gateway.endpoint
-    assert isinstance(control.security, Insecure)
+    control = _container_control(gateway, tmp_path)
+    sandbox = gateway.sandbox.identity
     state = tmp_path / "state"
     state.mkdir()
     (state / "workspaces").mkdir()
@@ -243,9 +264,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         environment=PodEnvironment(supervision="pid1"),
     )
     (tmp_path / "environment-runtime.json").write_text(config.model_dump_json(exclude_none=True))
-    (tmp_path / "launch.json").write_text(
-        json.dumps({"sandbox": {"namespace": "proof", "name": "pid1-host", "uid": "pid1-host-uid"}})
-    )
+    (tmp_path / "launch.json").write_text(json.dumps({"sandbox": sandbox.model_dump()}))
     container = (
         LoggedContainer(debian_image, test_name="production-pid1-embedded-host")
         .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=128, mem_limit="256m")
@@ -258,15 +277,16 @@ async def test_production_pid1_embedded_host_reaps_setup(
     )
     with container:
         wrapped = container.get_wrapped_container()
-        await gateway.control.connect(control, "pid1-host-uid")
+        await gateway.control.connect(control, sandbox.uid)
         stub = await gateway.control.runner()
         await stub.CreateSession(
             environment_runtime_pb2.CreateSessionRequest(
                 session_id=str(uuid.uuid4()),
+                execution_identity=gateway.execution_identity,
                 spec=session_pb2.SessionSpec(
                     placement=session_pb2.SessionPlacement(
                         environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                            environment=session_pb2.ExactEnvironment(name="pid1-host", uid="pid1-host-uid"),
+                            environment=session_pb2.ExactEnvironment(name=sandbox.name, uid=sandbox.uid),
                             harness=session_pb2.HARNESS_CODEX,
                         )
                     ),

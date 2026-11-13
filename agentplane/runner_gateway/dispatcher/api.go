@@ -31,11 +31,9 @@ type SandboxReader interface {
 	GetSandbox(context.Context, string) (SandboxSnapshot, bool, error)
 }
 
-// ExecutionAccountReader resolves the current controller-owned ServiceAccount for a Sandbox, and the
-// Identity its `spec.identity` names (nil, found when it names none). The UIDs are live
-// delivery/write authority; retained reads use the UIDs recorded in session.
-type ExecutionAccountReader interface {
-	GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error)
+// ExecutionIdentityReader resolves the exact Identity the live Sandbox names. Its UID is live
+// delivery/write authority; retained reads use the UID recorded in the Session.
+type ExecutionIdentityReader interface {
 	GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error)
 }
 
@@ -59,8 +57,8 @@ type RunnerCommands interface {
 type Service struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	Store *Store
-	// DispatcherCallers retain the existing explicit Pod-bound backend path. An account-only
-	// bearer for one of these names remains an ordinary execution-principal caller.
+	// DispatcherCallers retain the explicit Pod-bound platform-component path. A ServiceAccount
+	// remains an authenticated actor, but never owns a Session by account identity.
 	DispatcherCallers sets.Set[auth.Account]
 	Sandboxes         SandboxReader
 	Hub               *WatchHub
@@ -175,7 +173,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 func terminalVisibleTo(event TerminalEvent, caller Caller) bool {
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
-		return c.Privileged || event.Owner != nil && c.ServiceAccountIdentity != nil && sameServiceAccountIdentity(event.Owner, c.ServiceAccountIdentity)
+		return c.Privileged
 	case IdentityCaller:
 		return event.OwnerIdentity != nil && sameIdentity(event.OwnerIdentity, c.Identity)
 	default:
@@ -320,31 +318,29 @@ func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCalle
 	}, nil
 }
 
-func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
-	reader, ok := s.Sandboxes.(ExecutionAccountReader)
-	if !ok {
-		return nil, false, errors.New("Sandbox execution account reader unavailable")
-	}
-	return reader.GetExecutionAccount(ctx, sandbox)
-}
-
 func (s *Service) executionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	reader, ok := s.Sandboxes.(ExecutionAccountReader)
+	reader, ok := s.Sandboxes.(ExecutionIdentityReader)
 	if !ok {
-		return nil, false, errors.New("Sandbox execution account reader unavailable")
+		return nil, false, errors.New("Sandbox execution Identity reader unavailable")
 	}
 	return reader.GetExecutionIdentity(ctx, sandbox)
 }
 
-// requireLiveExecution checks the recorded target before applying scoped backend trust or
-// proving that a normal caller still matches its current and retained execution account.
+// requireLiveExecution checks the recorded target before applying scoped backend trust or proving
+// that an Identity caller still matches its current and retained execution Identity.
 func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller Caller) error {
 	if session == nil || session.SandboxName != sandbox.Name || session.SandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "Session target does not match")
 	}
+	if !hasExecutionIdentity(session) {
+		return status.Error(codes.FailedPrecondition, "Session has no execution Identity")
+	}
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
-		return s.requireLiveAccount(ctx, session, sandbox, c)
+		if c.Privileged {
+			return nil
+		}
+		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	case IdentityCaller:
 		return s.requireLiveIdentity(ctx, session, sandbox, c)
 	default:
@@ -364,29 +360,6 @@ func (s *Service) requireLiveIdentity(ctx context.Context, session *Session, san
 	}
 	if !found || !sameIdentity(identity, session.ExecutionIdentity) {
 		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
-	}
-	return nil
-}
-
-func (s *Service) requireLiveAccount(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller ServiceAccountCaller) error {
-	if caller.Privileged {
-		return nil
-	}
-	if session.ExecutionPrincipal == nil || session.ExecutionPrincipal.GetUid() == "" {
-		return status.Error(codes.PermissionDenied, "caller does not own the Session")
-	}
-	account, found, err := s.executionAccount(ctx, sandbox)
-	if err != nil {
-		return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
-	}
-	if !found || account == nil || account.GetUid() != session.ExecutionPrincipal.GetUid() {
-		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
-	}
-	if caller.ServiceAccountIdentity == nil || !sameServiceAccount(account.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
-		account.GetUid() != caller.ServiceAccountIdentity.GetUid() ||
-		!sameServiceAccount(session.ExecutionPrincipal.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
-		session.ExecutionPrincipal.GetUid() != caller.ServiceAccountIdentity.GetUid() {
-		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	return nil
 }
@@ -581,33 +554,25 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 	if err := ValidateRuntime(placement, request.SetupScript, s.CentralTarget); err != nil {
 		return nil, err
 	}
-	// The Dispatcher is the authority for the Identity a Session executes as: the one its Sandbox
-	// names now, read live with its UID, recorded once beside the ServiceAccount. A Sandbox naming an
-	// Identity whose managed ServiceAccount is absent runs as that Identity alone: its Session
-	// records no ServiceAccount.
+	// The Dispatcher is the authority for the Identity a Session executes as: the exact Identity its
+	// Sandbox names now, recorded once with its UID. ServiceAccounts authenticate platform actors;
+	// they are never Session execution principals.
 	identity, identityFound, err := s.executionIdentity(ctx, current)
 	if err != nil {
 		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 	}
-	account, accountFound, err := s.executionAccount(ctx, current)
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, "sandbox execution identity unavailable")
-	}
 	execution := SessionExecution{Identity: identity}
-	if accountFound {
-		execution.Principal = account
-	} else if identity == nil {
-		// Only a privileged open reaches the store without the account; delivery binds its UID.
-		execution.Principal = &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
-	}
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
-		if !c.Privileged && (!accountFound || account == nil || !sameServiceAccountIdentity(account, c.ServiceAccountIdentity)) {
+		if !c.Privileged {
 			return nil, status.Error(codes.PermissionDenied, "caller does not own the Session")
 		}
 	}
 	if !identityFound {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity unavailable")
+	}
+	if identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
+		return nil, status.Error(codes.FailedPrecondition, "sandbox execution identity is incomplete")
 	}
 	row, err = s.Store.CreateSessionWithPlacementForCallerAndCheck(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller, func(ctx context.Context) error {
@@ -622,15 +587,8 @@ func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.Creat
 			if err != nil {
 				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 			}
-			if !found || !sameIdentity(identityNow, execution.Identity) {
+			if !found || identityNow == nil || identityNow.GetName() == "" || identityNow.GetUid() == "" || !sameIdentity(identityNow, execution.Identity) {
 				return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
-			}
-			accountNow, accountFoundNow, err := s.executionAccount(ctx, latest)
-			if err != nil {
-				return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
-			}
-			if accountFoundNow != accountFound || accountFound && !sameServiceAccountIdentity(accountNow, account) {
-				return status.Error(codes.FailedPrecondition, "sandbox execution account changed")
 			}
 			return nil
 		})

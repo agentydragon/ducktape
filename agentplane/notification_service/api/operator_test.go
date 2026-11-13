@@ -14,11 +14,13 @@ func TestOperatorInspectionDoesNotGrantInboxMutation(t *testing.T) {
 	subscription := server.subscribe(t, "operator-has-none")
 	server.record(t, subscription, 1)
 	inboxes, err := server.client.ListInboxes(bearing(t, operatorToken), &pb.ListInboxesRequest{})
-	if err != nil || len(inboxes.GetInboxes()) != 0 {
+	requireCode(t, err, codes.NotFound)
+	if err == nil && len(inboxes.GetInboxes()) != 0 {
 		t.Errorf("listed %v, %v", inboxes, err)
 	}
 	subscriptions, err := server.client.ListSubscriptions(bearing(t, operatorToken), &pb.ListSubscriptionsRequest{})
-	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
+	requireCode(t, err, codes.NotFound)
+	if err == nil && len(subscriptions.GetSubscriptions()) != 0 {
 		t.Errorf("listed %v, %v", subscriptions, err)
 	}
 	page, err := server.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
@@ -63,7 +65,7 @@ func TestSessionInboxReadsAreAuthorizedAndDoNotAcknowledge(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "session-status")
 	s.record(t, sub, 1)
-	for _, token := range []string{operatorToken, sandboxToken} {
+	for _, token := range []string{operatorToken, identityToken} {
 		got, err := s.client.GetInbox(bearing(t, token), &pb.GetInboxRequest{SessionId: testSession})
 		if err != nil || got.GetInbox().GetId() != sub.GetInboxId() || got.GetInbox().GetAcknowledged() != 0 || got.GetInbox().GetDelivery().GetPendingAcknowledgementCount() != 1 {
 			t.Fatalf("GetInbox for %s = %v, %v", token, got, err)

@@ -15,25 +15,24 @@ const AutosuspendSetup = "Setup"
 // journal checkpoint, lifecycle phase and native process observation. It is not a
 // transaction across those independently owned authorities.
 type Observation struct {
-	id                 string
-	spec               *sessionpb.SessionSpec
-	cursor             uint64
-	activeTurn         string
-	nativeActiveTurn   bool
-	setup              sessionpb.SetupState
-	launch             sessionpb.LaunchOutcome
-	incarnation        *string
-	nativeSession      *string
-	failure            *uint64
-	processID          string
-	processState       sessionpb.ProcessState
-	executionPrincipal *identitypb.ServiceAccountIdentity
-	executionIdentity  *identitypb.Identity
-	pid                *int64
-	shared             bool
-	ready              bool
-	preparing          bool
-	pending            bool
+	id                string
+	spec              *sessionpb.SessionSpec
+	cursor            uint64
+	activeTurn        string
+	nativeActiveTurn  bool
+	setup             sessionpb.SetupState
+	launch            sessionpb.LaunchOutcome
+	incarnation       *string
+	nativeSession     *string
+	failure           *uint64
+	processID         string
+	processState      sessionpb.ProcessState
+	executionIdentity *identitypb.Identity
+	pid               *int64
+	shared            bool
+	ready             bool
+	preparing         bool
+	pending           bool
 }
 
 func copied[T any](value *T) *T {
@@ -57,10 +56,6 @@ func (s *Session) Observe() Observation {
 		processID: s.processID, processState: s.processState, shared: s.codexAppServer != nil,
 		ready:     !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && live,
 		preparing: current.Phase == Preparing, pending: len(s.pending) > 0,
-		executionPrincipal: nil,
-	}
-	if s.record.ExecutionPrincipal != nil {
-		result.executionPrincipal = proto.Clone(s.record.ExecutionPrincipal).(*identitypb.ServiceAccountIdentity)
 	}
 	if s.record.ExecutionIdentity != nil {
 		result.executionIdentity = proto.Clone(s.record.ExecutionIdentity).(*identitypb.Identity)
@@ -80,7 +75,7 @@ func (o Observation) Attached() *sessionpb.Attached {
 	if o.pid != nil {
 		harness = sessionpb.HarnessState_HARNESS_STATE_RUNNING
 	}
-	return &sessionpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*sessionpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionPrincipal: o.executionPrincipal, ExecutionIdentity: o.executionIdentity}
+	return &sessionpb.Attached{SessionId: o.id, Spec: proto.Clone(o.spec).(*sessionpb.SessionSpec), LastCursor: o.cursor, HarnessState: harness, ActiveTurnId: o.activeTurn, SetupState: o.setup, LaunchOutcome: o.launch, IncarnationUid: copied(o.incarnation), ExecutionIdentity: o.executionIdentity}
 }
 
 func (o Observation) AutosuspendBlockers() []*environmentlifecyclepb.AutosuspendBlocker {

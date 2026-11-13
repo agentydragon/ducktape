@@ -117,6 +117,7 @@ def settings(
     gateway_tls: ClientTLS | None = None,
     history_target: str | None = None,
     history_token_file: Path | None = None,
+    history_tls: ClientTLS | None = None,
 ) -> Settings:
     return Settings(
         database_url=database_url,
@@ -152,6 +153,7 @@ def settings(
         logs=logs,
         history_target=history_target,
         history_token_file=history_token_file,
+        history_tls=history_tls,
         gateway_target=gateway_target,
         gateway_tls=gateway_tls,
         gateway_token_file=gateway_token_file,
@@ -180,6 +182,7 @@ def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
             owner=identity_pb2.ServiceAccount(namespace="test", name="executor"),
             target=identity_pb2.EnvironmentTarget(namespace="test", name="test-sandbox", uid="test-sandbox-uid"),
         ),
+        execution_identity=identity_pb2.Identity(name="test-identity", uid="test-identity-uid"),
         expected_incarnation_uid="test-pod-uid",
     )
 

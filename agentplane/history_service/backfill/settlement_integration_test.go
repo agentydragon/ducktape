@@ -41,7 +41,7 @@ func retained(t *testing.T, span *spans.Span) fixture {
 	f := fixture{db: db, history: storage.NewStore(db, storage.Options{}), id: uuid.New(), span: span}
 	if _, err := f.history.BindWriter(t.Context(), f.id, storage.ServiceAccountWriter{
 		Namespace: "test-namespace", Name: "test-runner", UID: "test-uid",
-	}, "", nil); err != nil {
+	}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.history.Append(t.Context(), f.id, span.Entries); err != nil {
@@ -148,7 +148,7 @@ func TestHistoricalSettlementReadsAndPrunesPackedHistory(t *testing.T) {
 	db := testpostgres.Open(t, database.URL)
 	history := storage.NewStore(db, storage.Options{CompactDeltas: true})
 	id := uuid.New()
-	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "test-namespace", Name: "test-runner", UID: "test-uid"}, "", nil); err != nil {
+	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "test-namespace", Name: "test-runner", UID: "test-uid"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	chunks := make([]string, 80)

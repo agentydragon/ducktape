@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -39,26 +37,32 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ownedActions is an Action Service whose requests were each submitted by the ServiceAccount that owners names,
+// ownedActions is an Action Service whose requests were each submitted by the Identity that owners names,
 // and whose log holds a pending decision and then a denial.
 type ownedActions struct {
 	actionpb.UnimplementedActionServiceServer
 	owners map[string]string
 }
 
-func (a ownedActions) GetActionRequest(ctx context.Context, request *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+func (a ownedActions) GetActionRequest(_ context.Context, request *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
 	owner, known := a.owners[request.GetRequestId()]
 	if !known {
 		return nil, status.Error(codes.NotFound, "test-action-not-found")
 	}
-	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: owner})
-	if err != nil {
-		return nil, err
+	if acceptanceWorkloads == nil {
+		return nil, status.Error(codes.NotFound, "test Identity workload is not configured")
 	}
-	uid := string(account.UID)
+	var identity *policyapi.Identity
+	switch owner {
+	case sandboxName:
+		identity = acceptanceWorkloads.sandbox.Identity
+	case otherName:
+		identity = acceptanceWorkloads.other.Identity
+	default:
+		return nil, status.Error(codes.NotFound, "test Identity workload is not configured")
+	}
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		CallerUid: &uid,
-		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: owner},
+		CallerIdentity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)},
 	}}, nil
 }
 
@@ -120,13 +124,12 @@ func (openingDispatcher) GetSession(ctx context.Context, request *dispatcherpb.G
 	if request.GetSessionId() != testSession {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName})
-	if err != nil {
-		return nil, err
-	}
 	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
-		ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, Uid: string(account.UID)},
-		SessionId:         testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
+		SessionId: testSession,
+		Identity: &identitypb.Identity{
+			Name: acceptanceWorkloads.sandbox.Identity.Name, Uid: string(acceptanceWorkloads.sandbox.Identity.UID),
+		},
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
 	}}, nil
 }
 
@@ -184,7 +187,7 @@ func (j *journal) add(entries ...*eventlogpb.EventEntry) {
 	j.entries = append(j.entries, entries...)
 }
 
-// agentGRPC calls a workload RPC as the given ServiceAccount and returns the protobuf JSON view used by the CLI.
+// agentGRPC calls a workload RPC as the given Identity and returns the protobuf JSON view used by the CLI.
 func agentGRPC(t *testing.T, token string, call func(context.Context) (proto.Message, error)) (codes.Code, map[string]any) {
 	t.Helper()
 	response, err := call(bearing(t, token))
@@ -285,17 +288,17 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 		}
 	}
 	// The Sandbox is the owner's alone, and so is the Action request, though the service can read every request.
-	if code, _ := agentGRPC(t, otherToken, func(ctx context.Context) (proto.Message, error) {
+	if code, _ := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.CreateSubscription(ctx, subscribeTo(mine))
 	}); code != codes.NotFound {
 		t.Errorf("another account subscribing to the Sandbox = %s, want NOT_FOUND", code)
 	}
-	if code, _ := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	if code, _ := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.CreateSubscription(ctx, subscribeTo(theirs))
 	}); code != codes.PermissionDenied {
 		t.Errorf("subscribing to another account's Action request = %s, want PERMISSION_DENIED", code)
 	}
-	code, created := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	code, created := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.CreateSubscription(ctx, subscribeTo(mine))
 	})
 	if code != codes.OK {
@@ -310,7 +313,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	if github, present := subscription["github"]; !present || github != nil {
 		t.Errorf("github = %v, present %v; want null", github, present)
 	}
-	_, replayed := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	_, replayed := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.CreateSubscription(ctx, subscribeTo(mine))
 	})
 	if at(t, replayed, "subscription", "id") != subscription["id"] || at(t, replayed, "subscription", "inboxId") != subscription["inboxId"] {
@@ -361,7 +364,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	}
 	eventually(t, "the notice to be confirmed", func() bool {
 		wake(t, service)
-		code, read := readInbox(0, sandboxToken)
+		code, read := readInbox(0, identityToken)
 		if code != codes.OK {
 			t.Fatalf("read inbox = %s %v", code, read)
 		}
@@ -384,7 +387,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	if !reflect.DeepEqual(states, []any{"decision_pending", "denied"}) {
 		t.Errorf("entry states = %v, want the Action's two states", states)
 	}
-	if code, _ := readInbox(0, otherToken); code != codes.NotFound {
+	if code, _ := readInbox(0, otherIdentityToken); code != codes.NotFound {
 		t.Errorf("another account reading the inbox = %s, want NOT_FOUND", code)
 	}
 
@@ -394,7 +397,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 		if err != nil {
 			t.Fatal(err)
 		}
-		code, acknowledged := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		code, acknowledged := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: cursor})
 		})
 		if code != codes.OK {
@@ -410,7 +413,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, remaining := readInbox(after, sandboxToken)
+	_, remaining := readInbox(after, identityToken)
 	if got := at(t, remaining, "entries"); len(got.([]any)) != 1 || at(t, got, 0, "cursor") != second {
 		t.Errorf("entries after %v = %v, want only %v", first, got, second)
 	}
@@ -419,21 +422,21 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 	}
 }
 
-// grantSend binds a set allowing the account to send to the test Sandbox, and waits for the service to report
+// grantSend binds a set allowing the Identity to send to the named Sandbox, and waits for the service to report
 // the binding ready. The test deletes the binding when it ends, or earlier through the returned object.
-func grantSend(t *testing.T, account string) *policyapi.PolicyBinding {
+func grantSend(t *testing.T, identityName, targetSandbox string) *policyapi.PolicyBinding {
 	t.Helper()
 	set := &policyapi.PolicySet{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account + "-send"},
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: identityName + "-send"},
 		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
 			Type: "session_inbox_access", Operations: []string{"send_message"},
-			Targets: &policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{Name: sandboxName}}},
+			Targets: &policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{Name: targetSandbox}}},
 		}}},
 	}
 	binding := &policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account},
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: identityName},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.Subject{Namespace: testNamespace, Name: account},
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identityName}},
 			PolicySets: []string{set.Name},
 		},
 	}
@@ -474,13 +477,16 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 			FromSession: proto.String("test-from-session"),
 		}
 	}
-	binding := grantSend(t, otherName)
-	if code, refused := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	// Warm the watched policy view with a grant for this Session's Identity to a different Sandbox. The sender below
+	// has no grant for this destination, and the watch is healthy enough to distinguish denial from unavailability.
+	grantSend(t, sandboxName, otherName)
+	if code, refused := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.SendMessage(ctx, message("ungranted"))
 	}); code != codes.PermissionDenied {
 		t.Fatalf("a send without binding grants = %s %v, want PERMISSION_DENIED", code, refused)
 	}
-	code, sent := agentGRPC(t, otherToken, func(ctx context.Context) (proto.Message, error) {
+	binding := grantSend(t, otherName, sandboxName)
+	code, sent := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.SendMessage(ctx, message("review"))
 	})
 	if code != codes.OK {
@@ -497,7 +503,7 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		wake(t, service)
 		return len(dispatcher.commands()) >= 2
 	})
-	_, inboxes := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	_, inboxes := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.ListInboxes(ctx, &notificationspb.ListInboxesRequest{})
 	})
 	inboxID := at(t, inboxes, "inboxes", 0, "id").(string)
@@ -507,7 +513,7 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		}
 	}
 	receipt := func(id string) map[string]any {
-		code, followed := agentGRPC(t, otherToken, func(ctx context.Context) (proto.Message, error) {
+		code, followed := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.GetMessage(ctx, &notificationspb.GetMessageRequest{MessageId: id})
 		})
 		if code != codes.OK {
@@ -524,7 +530,7 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 			t.Fatal(err)
 		}
 		limit := int32(128)
-		_, page := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		_, page := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, AfterCursor: after, Limit: &limit})
 		})
 		return at(t, page, "entries", 0).(map[string]any)
@@ -545,23 +551,23 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Errorf("entry = %v", entry)
 	}
 	// The inbox is the recipient's alone: the sender can neither read nor acknowledge it.
-	if code, _ := agentGRPC(t, otherToken, func(ctx context.Context) (proto.Message, error) {
+	if code, _ := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 		limit := int32(128)
 		return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, Limit: &limit})
 	}); code != codes.NotFound {
 		t.Errorf("the sender reading the recipient's inbox = %s, want NOT_FOUND", code)
 	}
-	if code := acknowledge(otherToken, entry["cursor"]); code != codes.NotFound {
+	if code := acknowledge(otherIdentityToken, entry["cursor"]); code != codes.NotFound {
 		t.Errorf("the sender acknowledging the recipient's inbox = %s, want NOT_FOUND", code)
 	}
-	if code := acknowledge(sandboxToken, entry["cursor"]); code != codes.OK {
+	if code := acknowledge(identityToken, entry["cursor"]); code != codes.OK {
 		t.Fatalf("acknowledge = %s", code)
 	}
 	if got := receipt(id); got["acknowledged"] != true {
 		t.Errorf("once acknowledged: %v", got)
 	}
 
-	code, sent = agentGRPC(t, otherToken, func(ctx context.Context) (proto.Message, error) {
+	code, sent = agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.SendMessage(ctx, message("follow-up"))
 	})
 	if code != codes.OK {
@@ -572,14 +578,14 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Fatal(err)
 	}
 	eventually(t, "sends to be refused", func() bool {
-		code, _ := agentGRPC(t, otherToken, func(ctx context.Context) (proto.Message, error) {
+		code, _ := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.SendMessage(ctx, message("after-revocation"))
 		})
 		return code == codes.PermissionDenied
 	})
 	if unread := entries(entry["cursor"].(string)); at(t, unread, "event", "message", "messageId") != followUp {
 		t.Fatalf("after the revocation the inbox holds %v, want the unread follow-up", unread)
-	} else if code := acknowledge(sandboxToken, unread["cursor"]); code != codes.OK {
+	} else if code := acknowledge(identityToken, unread["cursor"]); code != codes.OK {
 		t.Fatalf("acknowledge the follow-up = %d", code)
 	}
 	if got := receipt(followUp); got["acknowledged"] != true {

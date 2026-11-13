@@ -179,7 +179,6 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	announce := first.GetAnnounce()
 	sampler := first.GetSamplerAnnounce()
 	var sandboxUID string
-	var executionPrincipal *storage.ExecutionPrincipal
 	var executionIdentity *storage.Identity
 	if sampler != nil {
 		account, ok := samplerWriter(caller)
@@ -219,22 +218,6 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 			}
 		case identityPusher:
 			sandboxUID = caller.sandbox.UID
-		}
-	}
-	if identity := announce.GetExecutionPrincipal(); identity != nil {
-		if identity.GetAccount().GetNamespace() == "" || identity.GetAccount().GetName() == "" || identity.GetUid() == "" {
-			return status.Error(codes.InvalidArgument, "execution principal is incomplete")
-		}
-		executionPrincipal = &storage.ExecutionPrincipal{
-			Namespace: identity.GetAccount().GetNamespace(), Name: identity.GetAccount().GetName(), UID: identity.GetUid(),
-		}
-		if sampler != nil {
-			owner := sampler.GetExecutor().GetOwner()
-			if owner == nil || identity.GetAccount().GetNamespace() != owner.GetNamespace() || identity.GetAccount().GetName() != owner.GetName() {
-				return status.Error(codes.PermissionDenied, "session execution principal does not match its executor")
-			}
-		} else if err := c.checkRunnerPrincipal(ctx, caller, *executionPrincipal); err != nil {
-			return err
 		}
 	}
 	// The Dispatcher records the Identity a Session executes as; only a writer that can vouch for it
@@ -288,17 +271,17 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 			executor := sampler.GetExecutor()
 			checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.ServiceAccountWriter, storage.Sandbox{
 				Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
-			}, executionPrincipal, executionIdentity)
+			}, executionIdentity)
 		} else {
-			checkpoint, err = c.history.BindWriter(ctx, sessionID, caller.ServiceAccountWriter, sandboxUID, executionPrincipal)
+			checkpoint, err = c.history.BindWriter(ctx, sessionID, caller.ServiceAccountWriter, sandboxUID)
 		}
 	case identityPusher:
-		checkpoint, err = c.history.BindIdentityWriter(ctx, sessionID, caller.writer, caller.sandbox, executionPrincipal, executionIdentity)
+		checkpoint, err = c.history.BindIdentityWriter(ctx, sessionID, caller.writer, caller.sandbox, executionIdentity)
 	case delegatingSamplerPusher:
 		executor := sampler.GetExecutor()
 		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.actor, storage.Sandbox{
 			Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
-		}, executionPrincipal, executionIdentity)
+		}, executionIdentity)
 	}
 	if err != nil {
 		return err
@@ -323,29 +306,6 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		return err
 	}
 	return c.receive(ctx, j)
-}
-
-// checkRunnerPrincipal admits a runner's announced execution ServiceAccount: a ServiceAccount runner's
-// own, or the ServiceAccount the Identity runner's Sandbox controls.
-func (c *pushCall) checkRunnerPrincipal(ctx context.Context, caller pusher, principal storage.ExecutionPrincipal) error {
-	switch caller := caller.(type) {
-	case accountPusher:
-		if principal != storage.ExecutionPrincipal(caller.ServiceAccountWriter) {
-			return status.Error(codes.PermissionDenied, "session execution principal does not match the runner account")
-		}
-	case identityPusher:
-		if c.service.SandboxUIDs == nil {
-			return status.Error(codes.PermissionDenied, "session execution principal cannot be verified")
-		}
-		controller, err := c.service.SandboxUIDs.Resolve(ctx, storage.ServiceAccountWriter(principal))
-		if err != nil {
-			return err
-		}
-		if controller != caller.sandbox.UID {
-			return status.Error(codes.PermissionDenied, "session execution principal is not the runner Sandbox's account")
-		}
-	}
-	return nil
 }
 
 func (c *pushCall) receive(ctx context.Context, j *journal) error {
@@ -430,7 +390,7 @@ func (c *pushCall) failure(err error) error {
 	case errors.Is(err, storage.ErrSandboxMismatch):
 		c.log.Warn("push refused: the Session belongs to another Sandbox", "error", err)
 		return status.Error(codes.PermissionDenied, "the Session belongs to another Sandbox")
-	case errors.Is(err, storage.ErrExecutionPrincipalMismatch):
+	case errors.Is(err, storage.ErrExecutionIdentityMismatch):
 		c.log.Warn("push refused: the Session execution principal differs from retained identity", "error", err)
 		return status.Error(codes.PermissionDenied, "the Session execution principal differs from retained identity")
 	case errors.Is(err, storage.ErrConflict):

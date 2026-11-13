@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,6 +14,7 @@ import (
 // Sandboxes reads the Sandbox a destination names by name.
 type Sandboxes interface {
 	Get(ctx context.Context, name string) (sandboxreader.View, error)
+	ExecutionIdentity(ctx context.Context, sandbox *sandboxreader.Identity) (*identitypb.Identity, bool, error)
 }
 
 var (
@@ -76,8 +77,16 @@ func (w *Worker) checkDestination(ctx context.Context, claim store.Claim) error 
 	case view.Identity.Uid != destination.UID:
 		return &staleDestinationError{staleUIDChanged}
 	}
-	// A Sandbox runs as the ServiceAccount of its own name.
-	if (model.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name}) != claim.Owner {
+	owner, ok := claim.Holder().(store.IdentityOwner)
+	if !ok || claim.OwnerIdentity == nil {
+		return errOwnerMismatch
+	}
+	identity, found, err := w.Sandboxes.ExecutionIdentity(ctx, view.Identity)
+	if err != nil {
+		return unavailable(err)
+	}
+	if !found || identity == nil || identity.GetName() == "" || identity.GetUid() == "" ||
+		identity.GetName() != owner.Identity.Name || identity.GetUid() != owner.Identity.UID {
 		return errOwnerMismatch
 	}
 	return nil

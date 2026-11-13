@@ -84,24 +84,8 @@ func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (Sand
 	return view, err == nil, err
 }
 
-// GetExecutionAccount returns only the ServiceAccount controlled by the exact live Sandbox UID.
-// The uncached object client is deliberate: writes and queued delivery must not authorize from an
-// old informer snapshot after the managed account has been replaced.
-func (k *KubernetesSandboxes) GetExecutionAccount(ctx context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
-	account, found, err := k.reader.ExecutionAccount(ctx, &sandboxreader.Identity{
-		Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID,
-	})
-	if err != nil || !found {
-		return nil, found, err
-	}
-	if account == nil || account.GetAccount() == nil || account.GetAccount().GetNamespace() == "" || account.GetAccount().GetName() == "" || account.GetUid() == "" {
-		return nil, false, errors.New("Sandbox execution ServiceAccount identity is incomplete")
-	}
-	return account, true, nil
-}
-
-// GetExecutionIdentity returns the Identity the exact live Sandbox UID names, read uncached for the
-// reason GetExecutionAccount is.
+// GetExecutionIdentity returns the Identity the exact live Sandbox UID names, read uncached so
+// delivery never authorizes from a stale informer snapshot.
 func (k *KubernetesSandboxes) GetExecutionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
 	return k.reader.ExecutionIdentity(ctx, &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID})
 }

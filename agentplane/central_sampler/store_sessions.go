@@ -33,12 +33,6 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 		placement.GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() {
 		return nil, protocol.ErrInvalid
 	}
-	if principal := request.GetExecutionPrincipal(); principal != nil &&
-		(principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "" ||
-			principal.GetAccount().GetNamespace() != request.GetExecutor().GetOwner().GetNamespace() ||
-			principal.GetAccount().GetName() != request.GetExecutor().GetOwner().GetName()) {
-		return nil, protocol.ErrInvalid
-	}
 	if identity := request.GetExecutionIdentity(); identity != nil && (identity.GetName() == "" || identity.GetUid() == "") {
 		return nil, protocol.ErrInvalid
 	}
@@ -65,29 +59,21 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(existing.Configuration, previous); err != nil {
 				return err
 			}
-			incoming := request
-			if previous.GetExecutionPrincipal() == nil && request.GetExecutionPrincipal() != nil {
-				// A retry cannot assign an owner to a legacy unassociated Session.
-				return ErrConflict
-			}
-			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() != nil &&
-				!proto.Equal(previous.GetExecutionPrincipal(), request.GetExecutionPrincipal()) {
-				return ErrConflict
+			// Compare the same known-field projection on both sides. Retried requests from
+			// pre-cutover Dispatchers can still carry the now-reserved execution_principal
+			// field as unknown wire data; ignore it for idempotency without rewriting the
+			// retained configuration bytes.
+			incoming := &samplerpb.CreateSessionRequest{}
+			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(wire, incoming); err != nil {
+				return err
 			}
 			if previous.GetExecutionIdentity() == nil && request.GetExecutionIdentity() != nil {
 				return ErrConflict
 			}
-			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() == nil ||
-				previous.GetExecutionIdentity() != nil && request.GetExecutionIdentity() == nil {
-				// Older retrying Dispatchers may omit the additive fields. Compare as if they were present,
+			if previous.GetExecutionIdentity() != nil && request.GetExecutionIdentity() == nil {
+				// Older retrying Dispatchers may omit the additive Identity field. Compare as if it were present,
 				// while leaving the already retained configuration untouched.
-				incoming = proto.Clone(request).(*samplerpb.CreateSessionRequest)
-				if request.GetExecutionPrincipal() == nil {
-					incoming.ExecutionPrincipal = cloneExecutionPrincipal(previous.GetExecutionPrincipal())
-				}
-				if request.GetExecutionIdentity() == nil {
-					incoming.ExecutionIdentity = cloneExecutionIdentity(previous.GetExecutionIdentity())
-				}
+				incoming.ExecutionIdentity = cloneExecutionIdentity(previous.GetExecutionIdentity())
 			}
 			if !proto.Equal(previous, incoming) {
 				return ErrConflict
@@ -104,6 +90,9 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		if identity := request.GetExecutionIdentity(); identity == nil || identity.GetName() == "" || identity.GetUid() == "" {
+			return protocol.ErrInvalid
 		}
 		conversationID := uuid.NewString()
 		// Freeze the effective prompt at first admission. Session.Configuration below keeps the raw
@@ -249,8 +238,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	attached := &sessionpb.Attached{
 		SessionId: session.ID, Spec: spec, LastCursor: session.Cursor,
 		HarnessState: state, SetupState: session.SetupState, LaunchOutcome: outcome,
-		ExecutionPrincipal: cloneExecutionPrincipal(request.GetExecutionPrincipal()),
-		ExecutionIdentity:  cloneExecutionIdentity(request.GetExecutionIdentity()),
+		ExecutionIdentity: cloneExecutionIdentity(request.GetExecutionIdentity()),
 	}
 	if session.ActiveTurn != nil {
 		attached.ActiveTurnId = *session.ActiveTurn
@@ -269,13 +257,6 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 		ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), Blocked: session.Blocked,
 		BlockedReason: blockedReason,
 	}, nil
-}
-
-func cloneExecutionPrincipal(identity *identitypb.ServiceAccountIdentity) *identitypb.ServiceAccountIdentity {
-	if identity == nil {
-		return nil
-	}
-	return proto.Clone(identity).(*identitypb.ServiceAccountIdentity)
 }
 
 func cloneExecutionIdentity(identity *identitypb.Identity) *identitypb.Identity {

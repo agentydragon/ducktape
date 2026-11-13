@@ -1,11 +1,10 @@
 # History Service
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
-public Session ID. A projected ServiceAccount token (TokenReview) reads Sessions whose retained
-execution principal has the same ServiceAccount namespace, name and UID. A Sandbox Workload SVID
-naming an Identity reads Sessions retained under that exact Identity name and UID. Neither read scope
-depends on the original Sandbox remaining. Configured backend readers retain their explicit Pod-bound, service-wide
-read path; a ServiceAccount token alone does not grant it. A Session UUID by itself grants nothing.
+public Session ID. An Identity reads Sessions retained under that exact Identity name and UID,
+independently of the original Sandbox remaining. Configured backend readers retain their explicit
+Pod-bound, service-wide read path. Other ServiceAccount calls have no ownership scope, including
+when a retained execution-account tuple matches the caller. A Session UUID by itself grants nothing.
 Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test database.
 Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
 messages for semantic reads.
@@ -13,9 +12,9 @@ messages for semantic reads.
 An optional, separate `delegation` setting names the Actions actor, caller namespaces, whether it may
 assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
 method names that admit delegated reads. The shared workload-auth middleware rechecks the asserted
-caller's current ServiceAccount or Identity UID; a delegated Identity reads only the Sessions recorded
-with that incarnation, as its own workload does. Delegated Actions calls retain ordinary execution-principal
-read scope even if the actor is also a configured backend reader; actor Pod proof does not widen the read.
+caller's current UID; a delegated Identity reads only the Sessions recorded with that incarnation,
+as its own workload does. A delegated ServiceAccount has no ownership scope. The actor's configured
+backend reader role never widens a delegated call's read scope.
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.
 
@@ -76,8 +75,8 @@ incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity o
 same Identity running another Sandbox, or a ServiceAccount writer is refused, and an Identity writer
 cannot take a ServiceAccount-bound Session. The read API admits a Sandbox SVID naming an Identity
 and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
-be its own Identity, and its `execution_principal`, when present, the ServiceAccount its Sandbox
-controls. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
+be its own Identity. ServiceAccount authentication records the component that wrote history, not
+Session ownership. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
 replica predating Identity writers cannot bind a ServiceAccount over one. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
@@ -164,7 +163,7 @@ Pod-bound proof for the backend-wide policy. Errors carry a gRPC status and fixe
 
 | Status              | Cause                                                                             |
 | ------------------- | --------------------------------------------------------------------------------- |
-| `NOT_FOUND`         | The Session is missing or outside the caller's execution-principal scope.         |
+| `NOT_FOUND`         | The Session is missing or outside the caller's retained Identity scope.           |
 | `OUT_OF_RANGE`      | `after_cursor` exceeds the committed tail.                                        |
 | `INVALID_ARGUMENT`  | Invalid Session UUID, absent start, zero back count, or unspecified/unknown kind. |
 | `PERMISSION_DENIED` | The RPC method is not admitted by this service's method policy.                   |
@@ -183,7 +182,19 @@ controller owner remain without a UID.
 
 An Identity writer's Sandbox is the controller owner of its WorkloadCredential.
 
-A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. A nullable retained execution Identity (`Attached.execution_identity`, the Identity incarnation the Dispatcher recorded) is retained from an Identity runner running as it or a configured central sampler relaying it, never from a ServiceAccount runner, which cannot vouch for it; it is immutable like the execution principal, and a read scoped to an Identity incarnation lists exactly the Sessions retained as executing as it, whether or not their Sandbox still exists. The read API admits an Identity SVID (with `policy_namespace` set) and scopes it to that Identity incarnation. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+A Session stays with one Sandbox, and its history outlives that Sandbox. Its retained execution
+Identity (`Attached.execution_identity`) is the exact incarnation recorded by Dispatcher and
+relayed by an Identity runner or configured central sampler. Writer and creator ServiceAccounts
+remain provenance, separately from that execution owner.
+
+The first trusted Identity association is immutable. Conflicting owners fail; an absent legacy
+owner is never inferred from a Sandbox name, ServiceAccount, or a later same-named Identity.
+Announcements omitting the Identity cannot erase a pinned owner, and snapshots cannot assign one
+to an unassociated row. Legacy history, entries and execution-account columns remain intact for
+configured platform readers and rollback; those account columns no longer participate in owner
+reads or new writer bindings. No schema migration or data backfill is needed for this contraction.
+Replacing a Pod or VM keeps the Sandbox and its Sessions; a teardown seal ends an incarnation,
+not the Session.
 
 ## Incremental storage compaction
 
@@ -357,8 +368,8 @@ The listener accepts TCP addresses or inherited descriptors as documented by
 
 `ingress.sampler_accounts` explicitly admits central sampler accounts (empty by default). Their
 `sampler_announce` authenticates the producer separately from the executor Sandbox and keeps both
-identities fixed. A central execution principal is retained only from the Dispatcher-provided
-identity on the admitted sampler path; the executor account name is not used to guess its UID.
+identities fixed. A central execution Identity is retained only from the Dispatcher-provided
+Identity on the admitted sampler path; an executor account name cannot establish it.
 Native announcements cannot claim central metadata. The same cursor, exact-replay,
 writer fencing and commit-before-ack rules apply.
 

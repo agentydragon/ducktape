@@ -29,9 +29,9 @@ message CreateSessionRequest {
   string expected_incarnation_uid = 4;
   // Runs once in the bound executor's working directory before sampling starts.
   optional string setup_script = 5;
-  // Supplied by the Dispatcher and retained separately from the authenticated sampler writer.
-  agentplane.proto.ServiceAccountIdentity execution_principal = 6;
-  // Supplied by the Dispatcher beside execution_principal when the executor's Sandbox names an Identity.
+  reserved 6;
+  reserved "execution_principal";
+  // Supplied by the Dispatcher when the executor's Sandbox names an Identity.
   agentplane.proto.Identity execution_identity = 7;
 }
 message CreateSessionResponse { agentplane.proto.Attached attached = 1; }

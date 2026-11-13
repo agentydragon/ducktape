@@ -50,11 +50,6 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*wo
 			return nil, store.ErrNotFound
 		}
 		switch owner := caller.owner.(type) {
-		case store.AccountOwner:
-			uid, err := sessionidentity.AccountUID(response.GetSession(), sessionID, caller.sandbox, owner.Account)
-			if err != nil || uid != owner.AccountUID {
-				return nil, store.ErrNotFound
-			}
 		case store.IdentityOwner:
 			if identity, ok := sessionidentity.Identity(response.GetSession(), sessionID, caller.sandbox); !ok || identity != owner.Identity {
 				return nil, store.ErrNotFound

@@ -37,11 +37,9 @@ EXECUTION_BINARY = (
 )
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
-SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")
-SANDBOX_LAUNCH = SandboxLaunch(sandbox=SANDBOX, bootstrap=None, platform_instructions=PLATFORM_INSTRUCTIONS)
 
 
-def spec(harness: session_pb2.Harness, cwd: Path) -> session_pb2.SessionSpec:
+def spec(harness: session_pb2.Harness, cwd: Path, sandbox: SandboxIdentity) -> session_pb2.SessionSpec:
     if harness == session_pb2.HARNESS_CLAUDE:
         model = claude_model.MODEL
     elif harness == session_pb2.HARNESS_CODEX:
@@ -51,7 +49,7 @@ def spec(harness: session_pb2.Harness, cwd: Path) -> session_pb2.SessionSpec:
     return session_pb2.SessionSpec(
         placement=session_pb2.SessionPlacement(
             environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=SANDBOX.name, uid=SANDBOX.uid), harness=harness
+                environment=session_pb2.ExactEnvironment(name=sandbox.name, uid=sandbox.uid), harness=harness
             )
         ),
         cwd=str(cwd),
@@ -75,6 +73,7 @@ def config(
     harness: session_pb2.Harness,
     endpoint: str,
     *,
+    sandbox: SandboxIdentity,
     state_dir: Path,
     home: Path,
     codex_executor_url: str | None = None,
@@ -82,7 +81,7 @@ def config(
 ) -> RunnerTestConfig:
     return RunnerTestConfig(
         state_dir=state_dir,
-        launch=SANDBOX_LAUNCH,
+        launch=SandboxLaunch(sandbox=sandbox, bootstrap=None, platform_instructions=PLATFORM_INSTRUCTIONS),
         harness_environment=environment(home),
         claude=claude_launch(endpoint) if harness == session_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None,
@@ -103,6 +102,7 @@ def runner_command(
     harness: session_pb2.Harness,
     endpoint: str,
     *,
+    sandbox: SandboxIdentity,
     state_dir: Path,
     control: EnvironmentRuntimeControl,
     ingress: Endpoint,
@@ -120,7 +120,7 @@ def runner_command(
     if harness not in (session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX):
         raise ValueError(f"unsupported {harness=}")
     launch_file = state_dir.parent / "launch.json"
-    launch_file.write_text(json.dumps({"sandbox": SANDBOX.model_dump(), "bootstrap": bootstrap}))
+    launch_file.write_text(json.dumps({"sandbox": sandbox.model_dump(), "bootstrap": bootstrap}))
     inherited: list[str] = ["HOME", "PATH", "NO_PROXY"]
     values: dict[str, str] = {}
     for entry in harness_env:

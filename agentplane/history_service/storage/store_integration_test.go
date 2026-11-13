@@ -57,7 +57,7 @@ func entries(first, last uint64) []*eventlogpb.EventEntry {
 func opened(t *testing.T, store *Store) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	return sessionID
@@ -171,7 +171,7 @@ func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
 	resumed := entryFrom("source", 2, true)
@@ -259,13 +259,13 @@ func TestASessionBindsToItsFirstWriter(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
 	for range 2 {
-		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
 	recreated := testWriter
 	recreated.UID = "test-recreated-uid"
-	_, err := store.BindWriter(t.Context(), sessionID, recreated, "", nil)
+	_, err := store.BindWriter(t.Context(), sessionID, recreated, "")
 	assertError(t, err, ErrWriterMismatch)
 }
 
@@ -273,13 +273,13 @@ func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, Options{})
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
 		t.Fatalf("same Sandbox reconnect: %v", err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement", nil); !errors.Is(err, ErrSandboxMismatch) {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
 		t.Fatalf("same-name replacement: %v, want ErrSandboxMismatch", err)
 	}
 	var got string
@@ -294,13 +294,13 @@ func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
 func TestAReconnectedWriterFillsAnUnknownSandboxUIDOnce(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
 		t.Fatalf("fill unknown UID: %v", err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement", nil); !errors.Is(err, ErrSandboxMismatch) {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
 		t.Fatalf("replacement after fill: %v, want ErrSandboxMismatch", err)
 	}
 }
@@ -375,12 +375,12 @@ func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 		want    map[string]int
 	}{
 		{"binding a new Session", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{ChannelHistory: 1, ChannelSessions: 1}},
 		{"binding it again", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{}},
@@ -727,24 +727,24 @@ func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
 	for range 2 {
-		if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+		if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 	successor := testIdentityWriter
 	successor.UID = "test-successor-uid"
-	_, err := store.BindIdentityWriter(t.Context(), sessionID, successor, testIdentitySandbox, nil, nil)
+	_, err := store.BindIdentityWriter(t.Context(), sessionID, successor, testIdentitySandbox, nil)
 	assertError(t, err, ErrWriterMismatch)
 	// One Identity may run several Sandboxes; a Session stays with the one it began in.
 	otherSandbox := testIdentitySandbox
 	otherSandbox.Name, otherSandbox.UID = "test-other-sandbox", "test-other-sandbox-uid"
-	_, err = store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, otherSandbox, nil, nil)
+	_, err = store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, otherSandbox, nil)
 	assertError(t, err, ErrSandboxMismatch)
-	_, err = store.BindWriter(t.Context(), sessionID, testWriter, "", nil)
+	_, err = store.BindWriter(t.Context(), sessionID, testWriter, "")
 	assertError(t, err, ErrWriterMismatch)
 
 	accountSession := opened(t, store)
-	_, err = store.BindIdentityWriter(t.Context(), accountSession, testIdentityWriter, testIdentitySandbox, nil, nil)
+	_, err = store.BindIdentityWriter(t.Context(), accountSession, testIdentityWriter, testIdentitySandbox, nil)
 	assertError(t, err, ErrWriterMismatch)
 }
 
@@ -753,7 +753,7 @@ func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
 func TestAnIdentityBoundRowRefusesAnOlderReplicasServiceAccountBind(t *testing.T) {
 	db := testDB(t)
 	sessionID := uuid.New()
-	if _, err := NewStore(db, Options{}).BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+	if _, err := NewStore(db, Options{}).BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, err := db.ExecContext(t.Context(), `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4
@@ -768,7 +768,7 @@ func TestAnIdentityRunSessionReadsByItsExecutionIdentityIncarnation(t *testing.T
 	store := testStore(t)
 	sessionID := uuid.New()
 	identity := testIdentityWriter.Identity
-	if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, &identity); err != nil {
+	if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, &identity); err != nil {
 		t.Fatal(err)
 	}
 	listed := func(scope ReadScope) bool {
@@ -784,11 +784,11 @@ func TestAnIdentityRunSessionReadsByItsExecutionIdentityIncarnation(t *testing.T
 		listed(OwnedByIdentity(Identity{Name: "test-other-agent", UID: identity.UID})) {
 		t.Fatal("an Identity-run Session is read by exactly its execution Identity incarnation")
 	}
-	if listed(OwnedBy(ExecutionPrincipal(testWriter))) {
-		t.Fatal("a ServiceAccount read an Identity-run Session it was not recorded as executing as")
+	if listed(ReadScope{}) {
+		t.Fatal("an empty scope read an Identity-run Session")
 	}
-	_, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, &successor)
-	assertError(t, err, ErrExecutionPrincipalMismatch)
+	_, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, &successor)
+	assertError(t, err, ErrExecutionIdentityMismatch)
 
 	// The execution Identity is fixed by the first push; a snapshot may omit it but not change it.
 	if _, err := store.Append(t.Context(), sessionID, entries(1, 1)); err != nil {
@@ -800,5 +800,41 @@ func TestAnIdentityRunSessionReadsByItsExecutionIdentityIncarnation(t *testing.T
 	}
 	attached.ExecutionIdentity = &identitypb.Identity{Name: successor.Name, Uid: successor.UID}
 	err = store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{Attached: attached})
-	assertError(t, err, ErrExecutionPrincipalMismatch)
+	assertError(t, err, ErrExecutionIdentityMismatch)
+}
+
+func TestLegacyHistoryCannotAcquireAnIdentityFromALaterWriter(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db, Options{})
+	sessionID := opened(t, store)
+	appendEntries(t, store, sessionID, entries(1, 1)...)
+	if _, err := db.ExecContext(t.Context(), `UPDATE session_history SET execution_principal_namespace=$2,
+		execution_principal_name=$3, execution_principal_uid=$4 WHERE id=$1`,
+		sessionID, testWriter.Namespace, testWriter.Name, testWriter.UID); err != nil {
+		t.Fatal(err)
+	}
+	identity := Identity{Name: testWriter.Name, UID: "new-identity-uid"}
+	_, err := store.BindSamplerWriter(t.Context(), sessionID, testWriter, testIdentitySandbox, &identity)
+	assertError(t, err, ErrExecutionIdentityMismatch)
+	err = store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{Attached: &sessionpb.Attached{
+		SessionId: sessionID.String(), LastCursor: 1,
+		ExecutionIdentity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID},
+	}})
+	assertError(t, err, ErrExecutionIdentityMismatch)
+	if page := readPage(t, store.WithReadScope(AllSessions()), sessionID, 0, 10); len(page.GetEntries()) != 1 {
+		t.Fatalf("retained legacy entries = %v", page)
+	}
+	if _, err := store.WithReadScope(OwnedByIdentity(identity)).ReadPage(t.Context(), sessionID, 0, 10); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a same-named Identity read legacy history: %v", err)
+	}
+	var namespace, name, uid string
+	var identityName, identityUID sql.NullString
+	if err := db.QueryRowContext(t.Context(), `SELECT execution_principal_namespace, execution_principal_name,
+		execution_principal_uid, execution_identity_name, execution_identity_uid FROM session_history WHERE id=$1`, sessionID).
+		Scan(&namespace, &name, &uid, &identityName, &identityUID); err != nil {
+		t.Fatal(err)
+	}
+	if namespace != testWriter.Namespace || name != testWriter.Name || uid != testWriter.UID || identityName.Valid || identityUID.Valid {
+		t.Fatalf("retained legacy ownership was rewritten: %s/%s/%s, %v/%v", namespace, name, uid, identityName, identityUID)
+	}
 }

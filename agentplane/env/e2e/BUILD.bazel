@@ -387,6 +387,7 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:scripted_model",
         "//devinfra/oci",
         "//third_party/containers:debian_slim",

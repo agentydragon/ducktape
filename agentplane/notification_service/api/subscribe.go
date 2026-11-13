@@ -18,9 +18,9 @@ import (
 // subscribe creates the owner's subscription once the Session and the source are known to be the owner's to
 // follow. The source is authorized before anything is persisted, even when replay starts after the last event.
 //
-// A ServiceAccount owns the Sessions the Session authority recorded as executing as its incarnation in the
-// Sandbox of its own name. An Identity owns, conservatively, only Sessions the Session authority recorded as
-// executing as its incarnation alone (an Identity-run Sandbox's) in the Sandbox controlling its credential.
+// An Identity owns only Sessions the Session authority recorded as executing as that exact Identity
+// incarnation in the Sandbox controlling its credential. ServiceAccounts remain authenticated actors and
+// message senders, but Session ownership is Identity-only.
 func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.Subscribe) (store.Subscription, error) {
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: body.SessionID})
 	if status.Code(err) == codes.NotFound {
@@ -37,17 +37,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 	var owner store.Owner
 	switch caller := caller.(type) {
 	case accountActor:
-		ownerUID, err := sessionidentity.AccountUID(session.GetSession(), body.SessionID, body.DestinationRef, caller.account)
-		if err != nil {
-			return store.Subscription{}, err
-		}
-		if caller.uid != ownerUID {
-			return store.Subscription{}, store.ErrNotFound
-		}
-		if err := s.store.EstablishInboxOwner(ctx, caller.account, body.DestinationRef, body.SessionID, ownerUID); err != nil {
-			return store.Subscription{}, err
-		}
-		owner = store.AccountOwner{Account: caller.account, AccountUID: ownerUID, SandboxUID: body.DestinationRef.UID}
+		return store.Subscription{}, store.ErrNotFound
 	case identityActor:
 		recorded, ok := sessionidentity.IdentityRun(session.GetSession(), body.SessionID, body.DestinationRef)
 		if !ok || recorded != caller.identity || caller.sandbox != body.DestinationRef {
@@ -89,45 +79,47 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 	default:
 		return store.Subscription{}, errors.New("a validated source is an Action request or a GitHub subject")
 	}
-	var subscription store.Subscription
-	switch owner := owner.(type) {
-	case store.AccountOwner:
-		subscription, err = s.store.Subscribe(ctx, owner.Account, body, access, owner.AccountUID)
-	case store.IdentityOwner:
-		subscription, err = s.store.SubscribeAsIdentity(ctx, owner.Identity, body, access)
+	identityOwner, ok := owner.(store.IdentityOwner)
+	if !ok {
+		return store.Subscription{}, store.ErrNotFound
 	}
+	subscription, err := s.store.SubscribeAsIdentity(ctx, identityOwner.Identity, body, access)
 	if err != nil {
 		return store.Subscription{}, err
 	}
-	return subscription, s.establishIdentity(ctx, session.GetSession(), body.DestinationRef, body.SessionID)
+	return subscription, nil
 }
 
-// destination resolves the Sandbox the reference names to the exact incarnation, which must run as the owner:
-// for an AccountOwner, the Sandbox of the account's name; for an IdentityOwner, a Sandbox whose `spec.identity`
-// names the Identity, whose incarnation the caller's credential or the Session authority has already fenced. A
+// destination resolves the Sandbox the reference names to the exact incarnation, which must name the Identity
+// owner in `spec.identity`, whose incarnation the caller's credential or the Session authority fenced. A
 // Sandbox outside the service's namespace, a missing or replaced one, and another owner's are all not found.
 func (s *Notifications) destination(ctx context.Context, owner store.Owner, ref model.DestinationRef) (*sandboxreader.Identity, error) {
 	view, err := s.sandbox(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	if !runsAs(view, owner) {
+	runsAs, err := s.sandboxRunsAs(ctx, view, owner)
+	if err != nil {
+		return nil, err
+	}
+	if !runsAs {
 		return nil, errSandboxMissing
 	}
 	return view.Identity, nil
 }
 
-// runsAs reports whether the Sandbox as read runs as owner: an AccountOwner's Sandbox is the one of the
-// account's name; an IdentityOwner's names the Identity in `spec.identity`.
-func runsAs(view sandboxreader.View, owner store.Owner) bool {
+// sandboxRunsAs reads the live execution Identity for the exact Sandbox incarnation and compares
+// both UID and name. A reused Identity name cannot make a retained Session appear owned by its successor.
+func (s *Notifications) sandboxRunsAs(ctx context.Context, view sandboxreader.View, owner store.Owner) (bool, error) {
 	switch owner := owner.(type) {
-	case store.AccountOwner:
-		return model.ServiceAccount{Namespace: view.Identity.Namespace, Name: view.Identity.Name} == owner.Account
 	case store.IdentityOwner:
-		named := view.Resource.Spec.Identity
-		return named != nil && named.Name == owner.Identity.Name
+		identity, found, err := s.sandboxes.ExecutionIdentity(ctx, view.Identity)
+		if err != nil {
+			return false, unavailable("sandbox execution Identity", err)
+		}
+		return found && identity != nil && identity.Name == owner.Identity.Name && identity.Uid == owner.Identity.UID, nil
 	default:
-		panic(fmt.Sprintf("unknown inbox owner %T", owner))
+		return false, nil
 	}
 }
 

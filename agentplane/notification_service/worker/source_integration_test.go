@@ -279,7 +279,7 @@ func (h *harness) insertGitHubSubscription(t *testing.T, inboxID uuid.UUID) uuid
 		Source: model.GitHubSource{Repository: repository, Subject: model.PullRequestSubject{Number: 1}}, LifetimeDays: 7,
 	}
 	access := &store.GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: repositoryID}
-	subscription, err := h.store.Subscribe(t.Context(), testOwner, creation, access, "test-account-uid")
+	subscription, err := h.store.SubscribeAsIdentity(t.Context(), testOwner, creation, access)
 	if err != nil {
 		t.Fatal(err)
 	}

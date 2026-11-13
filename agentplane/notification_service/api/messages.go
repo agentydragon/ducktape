@@ -97,23 +97,17 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 	}
 	sandbox := view.Identity
 	message.DestinationRef.UID = sandbox.Uid
-	// The recipient is what the Session authority recorded the Session as executing as: the ServiceAccount
-	// of the destination Sandbox's name, or an Identity alone, which the destination Sandbox must still name.
+	// The recipient is the exact Identity the Session authority recorded, which the destination Sandbox must name.
 	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, message.DestinationRef); ok {
 		message.Recipient = store.IdentityOwner{Identity: identity, SandboxUID: sandbox.Uid}
 	} else {
-		// A Sandbox runs as the ServiceAccount of its own name.
-		recipient := model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
-		recipientUID, err := sessionidentity.AccountUID(session.GetSession(), message.SessionID, message.DestinationRef, recipient)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.store.EstablishInboxOwner(ctx, recipient, message.DestinationRef, message.SessionID, recipientUID); err != nil {
-			return nil, err
-		}
-		message.Recipient = store.AccountOwner{Account: recipient, AccountUID: recipientUID, SandboxUID: sandbox.Uid}
+		return nil, store.ErrNotFound
 	}
-	if !runsAs(view, message.Recipient) {
+	runsAs, err := s.sandboxRunsAs(ctx, view, message.Recipient)
+	if err != nil {
+		return nil, err
+	}
+	if !runsAs {
 		return nil, errSandboxMissing
 	}
 	sent, err := s.store.Send(ctx, message)
@@ -127,9 +121,6 @@ func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *
 		sent, err = s.store.Send(ctx, message)
 	}
 	if err != nil {
-		return nil, err
-	}
-	if err := s.establishIdentity(ctx, session.GetSession(), message.DestinationRef, message.SessionID); err != nil {
 		return nil, err
 	}
 	return &notificationspb.SendMessageResponse{Message: sentMessageView(sent)}, nil

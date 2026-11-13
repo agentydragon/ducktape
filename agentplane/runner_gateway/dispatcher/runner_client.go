@@ -54,7 +54,7 @@ func (r *ProxyRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{
 			SessionId: sessionID, Spec: spec, SetupScript: setupScript,
-			ExecutionPrincipal: execution.Principal, ExecutionIdentity: execution.Identity,
+			ExecutionIdentity: execution.Identity,
 		})
 		return err
 	})

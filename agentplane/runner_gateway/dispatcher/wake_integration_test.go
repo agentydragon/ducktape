@@ -51,7 +51,7 @@ type executionAccountCatalog struct {
 }
 
 func (*executionAccountCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
-	return nil, true, nil
+	return testExecutionIdentity(), true, nil
 }
 
 func (c *executionAccountCatalog) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -76,7 +76,7 @@ func openWakeableSession(
 	attribution := wakeAttribution(actor, effective)
 	effectiveAccount := accountOfIdentity(effective)
 	if _, err := store.CreateSessionForCaller(context.Background(), sessionID, sandboxName, sandboxUID,
-		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution}); err != nil {
+		&sessionpb.SessionSpec{}, nil, &effectiveAccount, testExecutionIdentity(), ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: effective, Attribution: attribution}); err != nil {
 		t.Fatal("open wakeable Session:", err)
 	}
 	return attribution
@@ -146,7 +146,7 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		var ready bool
 		var prepareErr error
 		if kind == "dispatch" {
-			caller := ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution}
+			caller := ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: effective, Attribution: attribution}
 			effectiveAccount := accountOfIdentity(effective)
 			row, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID,
 				input("uid-wake-command", "hello"), &effectiveAccount, caller)
@@ -266,12 +266,12 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			write := func(wakeCaller *Account) error {
 				if kind == "opening" {
 					_, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox", sandboxUID,
-						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution})
+						&sessionpb.SessionSpec{}, nil, wakeCaller, testExecutionIdentity(), ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: effective, Attribution: attribution})
 					return err
 				}
 				_, err := store.EnqueueForCaller(ctx, sessionID, "sandbox", sandboxUID,
 					input(commandID, "hello"), wakeCaller,
-					ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution})
+					ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: effective, Attribution: attribution})
 				return err
 			}
 			actorAccount := accountOfIdentity(actor)
