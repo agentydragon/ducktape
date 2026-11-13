@@ -67,7 +67,7 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   and was withdrawn. The retry-budget case now uses a separate 45-second
   reconnect deadline; ordinary production and the other recovery cases retain the
   120-second default. This trades default-duration exposure for a shorter real
-  exhaustion test, without dropping unknown-effect, no-replay, retained-session or
+  exhaustion test, without dropping unknown-effect, no-replay, session-recovery or
   next-input assertions. A five-second trial failed real post-roll recovery and
   remains recorded as a failed experiment, not a passing retry. The 45-second
   candidate passed the unchanged real recovery scenario and rendering checks.
