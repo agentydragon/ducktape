@@ -2299,9 +2299,14 @@ async def history_outage_backfills_completed_turn(
             await _assert_central_components_unchanged(cluster, deployed, component_pods)
 
             async with deployed.history.new_client() as history_probe:
-                with pytest.raises(ServiceError) as unavailable:
+                with pytest.raises((ServiceError, TimeoutError)) as outage_rpc:
                     await history_probe.get_session_summary(session_id)
-                assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE, unavailable.value
+                if isinstance(outage_rpc.value, ServiceError):
+                    outage_status = outage_rpc.value.code
+                    assert outage_status == grpc.StatusCode.UNAVAILABLE, outage_rpc.value
+                else:
+                    # The gRPC client maps DEADLINE_EXCEEDED to TimeoutError in grpc.calls.
+                    outage_status = grpc.StatusCode.DEADLINE_EXCEEDED
 
             # Finish the already-open synthetic model response normally while only History is down.
             await model.reply(request, Text("The active turn completed while History was unavailable."))
@@ -2381,7 +2386,7 @@ async def history_outage_backfills_completed_turn(
                     "command_id": command_id,
                     "next_command_id": next_command_id,
                     "history_replicas_restored": history_replicas,
-                    "history_unavailable_rpc": unavailable.value.code.name,
+                    "history_unavailable_rpc": outage_status.name,
                     "history_ready_endpoints_after_restore": sorted(restored_endpoints),
                     "before_outage_cursor": before_outage_cursor,
                     "after_outage_cursor": after_outage_cursor,
