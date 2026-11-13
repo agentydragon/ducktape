@@ -12,7 +12,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"

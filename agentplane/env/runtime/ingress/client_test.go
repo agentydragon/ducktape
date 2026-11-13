@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

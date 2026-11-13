@@ -1,11 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
@@ -75,11 +71,11 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service",
     deps = [
-        ":session_ingress_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service/api",
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/history_service/backfill",
         "//agentplane/history_service/ingress",
         "//agentplane/history_service/internal/reads",
@@ -166,10 +162,10 @@ go_test(
     embed = [":main_lib"],
     tags = ["requires_docker"],
     deps = [
-        ":session_ingress_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
@@ -195,45 +191,5 @@ go_test(
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
-    ],
-)
-
-proto_library(
-    name = "session_ingress_proto",
-    srcs = ["session_ingress.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:identity_proto",
-        "//agentplane/proto:session_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "session_ingress_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":session_ingress_proto"],
-)
-
-py_grpc_service_library(
-    name = "session_ingress_pb2_grpc",
-    proto = ":session_ingress_proto",
-    py_proto = ":session_ingress_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
-go_proto_library(
-    name = "session_ingress_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb",
-    proto = ":session_ingress_proto",
-    visibility = ["//visibility:public"],
-    deps = [
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:session_go_proto",
     ],
 )

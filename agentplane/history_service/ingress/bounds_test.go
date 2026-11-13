@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/google/uuid"

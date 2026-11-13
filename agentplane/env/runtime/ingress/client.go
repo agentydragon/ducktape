@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/stream"
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -19,8 +19,8 @@ load("//devinfra/python:defs.bzl", "py_library")
 # gazelle:resolve py agentplane.proto.environment_lifecycle_pb2 //agentplane/proto:environment_lifecycle_pb2
 # gazelle:resolve py agentplane.proto.identity_pb2 //agentplane/proto:identity_pb2
 # gazelle:resolve py agentplane.proto.session_pb2 //agentplane/proto:session_pb2
-# gazelle:resolve py agentplane.history_service.session_ingress_pb2 //agentplane/history_service:session_ingress_pb2
-# gazelle:resolve py agentplane.history_service.session_ingress_pb2_grpc //agentplane/history_service:session_ingress_pb2_grpc
+# gazelle:resolve py agentplane.history_service.api.ingress.session_ingress_pb2 //agentplane/history_service/api/ingress:session_ingress_pb2
+# gazelle:resolve py agentplane.history_service.api.ingress.session_ingress_pb2_grpc //agentplane/history_service/api/ingress:session_ingress_pb2_grpc
 # gazelle:resolve py agentplane.env.runtime.control.environment_runtime_pb2 //agentplane/env/runtime/control:environment_runtime_pb2
 # gazelle:resolve py agentplane.env.runtime.control.environment_runtime_pb2_grpc //agentplane/env/runtime/control:environment_runtime_pb2_grpc
 # gazelle:resolve py agentplane.runner_gateway.dispatcher.session_dispatcher_pb2 //agentplane/runner_gateway/dispatcher:session_dispatcher_pb2

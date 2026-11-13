@@ -14,7 +14,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"

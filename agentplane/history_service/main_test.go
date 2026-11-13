@@ -18,8 +18,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
