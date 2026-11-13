@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
@@ -57,7 +58,7 @@ func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([
 		return nil, err
 	}
 	// Upstream prepares images when the truncated output enters history.
-	return prepareOutputImages(output)
+	return promptimage.PrepareOutputImages(output)
 }
 
 type preparedCall struct {

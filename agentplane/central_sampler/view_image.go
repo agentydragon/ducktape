@@ -113,7 +113,7 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*v
 		return nil, err
 	}
 	// Reject non-images before their bytes reach the cell; valid bytes pass through unchanged.
-	// image_preparation.go registers upstream's decoder set.
+	// internal/promptimage registers upstream's decoder set.
 	if _, _, err := image.Decode(bytes.NewReader(data)); err != nil {
 		return nil, &toolError{viewImageInvalidMessage}
 	}
