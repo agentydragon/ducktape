@@ -3456,7 +3456,10 @@ spec:
     matchLabels:
       cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
   strategy:
-    type: Recreate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       labels:
