@@ -8,7 +8,7 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
-# Batch the first three independent Actions cases in two slots; keep OAuth linkage serial.
+# Each OAuth harness owns its linkage; all five cases share two bounded slots.
 k3s_suite(
     name = "test_actions",
     srcs = ["test_actions.py"],
@@ -20,11 +20,13 @@ k3s_suite(
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:case_batch",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scenario",
@@ -32,7 +34,6 @@ k3s_suite(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:mcp",
         "//util:net",
-        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",

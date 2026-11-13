@@ -1,0 +1,176 @@
+{
+  "source": "4415ac2544aef190cce5596d5ee2e73ba627b56f plus candidate changes only",
+  "same_junit_case_sets": true,
+  "case_count": 5,
+  "arms": [
+    {
+      "arm": "control",
+      "invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+      "action_digest": {
+        "hash": "f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c",
+        "sizeBytes": "1218"
+      },
+      "physical_id": "/uploads/b7c2e324-a821-4a8a-abe3-81ee7fb4413d/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+      "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+      "process_seconds": 254.179348,
+      "setup_seconds": 81.836416,
+      "case_envelope_seconds": 112.542236,
+      "cpu_seconds": 717.397033,
+      "baseline": "warm",
+      "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+      "cleanup": "complete",
+      "namespace_uid": "348556a0-e9b2-421e-a223-65938d2d58fb",
+      "postgres_pod_uid": "a89e29ca-43b3-4cc5-994d-a012bfbe1f78",
+      "root_secret_uid": "732b7f8d-68a8-4413-9baa-404fa7bb2201",
+      "cases": [
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+          "seconds": 30.15888
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+          "seconds": 30.705471
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+          "seconds": 57.090836
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+          "seconds": 13.137827
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+          "seconds": 12.13428
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "invocation": "e49415a4-192f-467f-93f8-bb5aa5d52248",
+      "action_digest": {
+        "hash": "abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179",
+        "sizeBytes": "1218"
+      },
+      "physical_id": "/uploads/0b930296-cbff-4787-bec1-ede928eeb88f/blobs/abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179/1218",
+      "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+      "process_seconds": 233.667821,
+      "setup_seconds": 88.424464,
+      "case_envelope_seconds": 90.74402,
+      "cpu_seconds": 692.380163,
+      "baseline": "warm",
+      "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+      "cleanup": "complete",
+      "namespace_uid": "38802823-d5df-4a36-bac4-fb6cfc183b14",
+      "postgres_pod_uid": "17b69be8-2541-4c5d-aa77-11e3af7f16cf",
+      "root_secret_uid": "d458eac0-211b-4e70-8d13-427302fe1b29",
+      "cases": [
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+          "seconds": 31.240532
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+          "seconds": 31.730274
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+          "seconds": 16.620598
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+          "seconds": 14.171006
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+          "seconds": 59.497634
+        }
+      ]
+    },
+    {
+      "arm": "candidate",
+      "invocation": "dbc71c1c-dbbb-40d4-b499-15a4071bcd76",
+      "action_digest": {
+        "hash": "abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179",
+        "sizeBytes": "1218"
+      },
+      "physical_id": "/uploads/f086b4be-690e-45af-b583-8fad34f2fe5c/blobs/abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179/1218",
+      "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+      "process_seconds": 298.063804,
+      "setup_seconds": 133.813902,
+      "case_envelope_seconds": 102.922975,
+      "cpu_seconds": 819.373955,
+      "baseline": "warm",
+      "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+      "cleanup": "complete",
+      "namespace_uid": "875ed429-accc-49dc-bf44-a866edc89aab",
+      "postgres_pod_uid": "112c7314-3968-4706-8246-7c7d7378cfcd",
+      "root_secret_uid": "2dbfe99a-8e89-429c-b93c-ff928de3081a",
+      "cases": [
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+          "seconds": 38.989638
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+          "seconds": 41.367371
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+          "seconds": 17.031208
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+          "seconds": 13.393173
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+          "seconds": 63.933081
+        }
+      ]
+    },
+    {
+      "arm": "control",
+      "invocation": "c9eecce1-a550-458f-bed6-51ed96fc39fc",
+      "action_digest": {
+        "hash": "f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c",
+        "sizeBytes": "1218"
+      },
+      "physical_id": "/uploads/a88dfb82-dc36-429c-a04e-8a714b3c0373/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+      "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+      "process_seconds": 254.517213,
+      "setup_seconds": 89.098438,
+      "case_envelope_seconds": 112.130207,
+      "cpu_seconds": 730.147934,
+      "baseline": "cold",
+      "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+      "cleanup": "complete",
+      "namespace_uid": "631b4f0c-6178-41fd-8d80-993c4e06a7b3",
+      "postgres_pod_uid": "fecb9f17-fe47-45f8-9252-c4d45d7813ea",
+      "root_secret_uid": "7c10520d-56e9-44ae-91f8-ca0462ae8cc4",
+      "cases": [
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+          "seconds": 31.17942
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+          "seconds": 32.735584
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+          "seconds": 55.804928
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+          "seconds": 13.047778
+        },
+        {
+          "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+          "seconds": 12.086693
+        }
+      ]
+    }
+  ],
+  "excluded_newer_source_invocation": "3b6a56ab-9e98-4428-964c-4e9ef30b2ed3"
+}

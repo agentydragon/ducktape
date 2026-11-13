@@ -60,13 +60,16 @@ def objects(
         env.actions,
         connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
         mcp_servers={
-            mcp_servers.OAUTH: mcp_fixture_servers.oauth_fixture_server(
-                mcp_servers.OAUTH, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
+            server_id: mcp_fixture_servers.oauth_fixture_server(
+                server_id, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
             )
+            for server_id in mcp_servers.OAUTH_SERVERS
         },
         action_groups={
             mcp_servers.EVERYTHING_GROUP: mcp_fixture_servers.everything_group(),
-            mcp_servers.OAUTH: mcp_fixture_servers.oauth_fixture_group(mcp_servers.OAUTH),
+            **{
+                server_id: mcp_fixture_servers.oauth_fixture_group(server_id) for server_id in mcp_servers.OAUTH_SERVERS
+            },
             "sandbox": env.actions.action_groups["sandbox"],
         },
         oauth_secret_items=("client-secret",),

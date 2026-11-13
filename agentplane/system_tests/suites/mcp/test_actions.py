@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 
-import httpx
 import pytest
 import pytest_asyncio
 import pytest_bazel
@@ -17,12 +16,14 @@ import pytest_bazel
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver import scenario
 from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch, Result
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes
+from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -47,18 +48,18 @@ class ActionResources:
     tmp_path_factory: pytest.TempPathFactory
 
     @asynccontextmanager
-    async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient]]:
+    async def open_case(self, name: str) -> AsyncIterator[tuple[Client, SessionDispatcherClient, Sandboxes]]:
         async with (
             self.scripted.case_scope(),
             scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as (
                 client,
-                _,
+                sandboxes,
             ),
             native_client(
                 self.cluster, self.tmp_path_factory.mktemp(f"mcp-actions-{name}") / "dispatcher-token"
             ) as dispatcher,
         ):
-            yield client, dispatcher
+            yield client, dispatcher, sandboxes
 
 
 @asynccontextmanager
@@ -76,7 +77,10 @@ async def _policy_objects(cluster: Cluster) -> AsyncIterator[mcp.PolicyObjects]:
 
 
 async def _executes_action(resources: ActionResources) -> None:
-    async with resources.open_case("executes") as (client, dispatcher), _policy_objects(resources.cluster) as policies:
+    async with (
+        resources.open_case("executes") as (client, dispatcher, _),
+        _policy_objects(resources.cluster) as policies,
+    ):
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
             client,
@@ -95,7 +99,7 @@ async def _executes_action(resources: ActionResources) -> None:
 
 async def _bff_decision(resources: ActionResources, credentials: OperatorCredentials) -> None:
     async with (
-        resources.open_case("bff") as (client, dispatcher),
+        resources.open_case("bff") as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
     ):
         await run_harness_pair_in_own_sandboxes(
@@ -117,7 +121,7 @@ async def _bff_decision(resources: ActionResources, credentials: OperatorCredent
 
 async def _launcher_ownership(resources: ActionResources, credentials: OperatorCredentials) -> None:
     async with (
-        resources.open_case("launcher") as (client, dispatcher),
+        resources.open_case("launcher") as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
         _policy_objects(resources.cluster) as policies,
     ):
@@ -139,6 +143,33 @@ async def _launcher_ownership(resources: ActionResources, credentials: OperatorC
         )
 
 
+async def _oauth_linkage(
+    resources: ActionResources, credentials: OperatorCredentials, harness: session_pb2.Harness
+) -> None:
+    server_id = {
+        session_pb2.HARNESS_CLAUDE: mcp_servers.OAUTH_CLAUDE,
+        session_pb2.HARNESS_CODEX: mcp_servers.OAUTH_CODEX,
+    }[harness]
+    async with (
+        resources.open_case(server_id) as (client, dispatcher, sandboxes),
+        operator_bff_client(resources.base_url, credentials) as operator_bff,
+        _policy_objects(resources.cluster) as policies,
+    ):
+        models = await models_offered_for(client, [harness])
+        await mcp.operator_links_oauth_mcp_server(
+            operator_bff,
+            credentials,
+            client,
+            dispatcher,
+            sandboxes,
+            harness,
+            models[harness],
+            resources.scripted,
+            policies,
+            server_id=server_id,
+        )
+
+
 def _case_runner(
     name: str, resources: ActionResources, credentials: OperatorCredentials | None
 ) -> Callable[[], Awaitable[None]]:
@@ -153,6 +184,11 @@ def _case_runner(
             if credentials is None:
                 raise RuntimeError("the launcher case requires operator credentials")
             return partial(_launcher_ownership, resources, credentials)
+        case "test_operator_links_oauth_mcp_server[claude]" | "test_operator_links_oauth_mcp_server[codex]":
+            if credentials is None:
+                raise RuntimeError("the OAuth linkage case requires operator credentials")
+            harness = session_pb2.HARNESS_CLAUDE if name.endswith("[claude]") else session_pb2.HARNESS_CODEX
+            return partial(_oauth_linkage, resources, credentials, harness)
         case _:
             raise ValueError(f"unsupported MCP Actions case: {name}")
 
@@ -161,8 +197,10 @@ _BATCHED_CASES = {
     "test_agent_executes_mcp_action",
     "test_agent_mcp_bff_decision",
     "test_launcher_drives_only_the_sandbox_it_launched",
+    "test_operator_links_oauth_mcp_server[claude]",
+    "test_operator_links_oauth_mcp_server[codex]",
 }
-_OPERATOR_CASES = {"test_agent_mcp_bff_decision", "test_launcher_drives_only_the_sandbox_it_launched"}
+_OPERATOR_CASES = _BATCHED_CASES - {"test_agent_executes_mcp_action"}
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -257,30 +295,16 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
     await _report_case("test_launcher_drives_only_the_sandbox_it_launched", action_cases, request)
 
 
-# Both harnesses change the same operator/server OAuth linkage, so keep these cases sequential.
+# Each harness owns its server linkage and Sandbox. The same two case slots bound
+# all five cases. A launcher with three Sandboxes and a BFF case with two
+# can fill the fixture's five-Sandbox cap; keep the two-slot bound.
 @pytest.mark.scripted_model
+@pytest.mark.case_batch
+@pytest.mark.asyncio(loop_scope="module")
 async def test_operator_links_oauth_mcp_server(
-    operator_bff: httpx.AsyncClient,
-    operator_credentials: OperatorCredentials,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    sandbox: Sandboxes,
-    harness: session_pb2.Harness,
-    offered_model: str,
-    scripted: ScriptedUpstream,
-    policy_objects: mcp.PolicyObjects,
+    action_cases: CaseBatch, request: pytest.FixtureRequest, harness: session_pb2.Harness
 ) -> None:
-    await mcp.operator_links_oauth_mcp_server(
-        operator_bff,
-        operator_credentials,
-        client,
-        dispatcher,
-        sandbox,
-        harness,
-        offered_model,
-        scripted,
-        policy_objects,
-    )
+    await _report_case(request.node.name, action_cases, request)
 
 
 if __name__ == "__main__":
