@@ -10,12 +10,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -42,7 +42,7 @@ type config struct {
 	// ReaderAccounts read every account's requests and change none, written `namespace/name` or as a mapping.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
-	OperatorOIDC api.OperatorOIDCSettings `mapstructure:"operator_oidc"`
+	OperatorOIDC operator.Settings `mapstructure:"operator_oidc"`
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
 	// those bindings.
 	PolicyNamespace string `mapstructure:"policy_namespace"`
@@ -76,7 +76,7 @@ type peer struct {
 
 func defaultConfig() config {
 	return config{
-		OperatorOIDC: api.DefaultOperatorOIDCSettings(), ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
+		OperatorOIDC: operator.DefaultSettings(), ActionGroups: &catalog.Catalog{}, DirectWaitSeconds: 30,
 	}
 }
 
@@ -129,7 +129,7 @@ func loadConfig() (config, error) {
 }
 
 // operatorsEnabled is whether any operator OIDC setting differs from its default.
-func (c *config) operatorsEnabled() bool { return c.OperatorOIDC != api.DefaultOperatorOIDCSettings() }
+func (c *config) operatorsEnabled() bool { return c.OperatorOIDC != operator.DefaultSettings() }
 
 func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {

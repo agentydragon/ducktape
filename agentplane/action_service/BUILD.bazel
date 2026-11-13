@@ -66,16 +66,6 @@ py_library(
 )
 
 py_library(
-    name = "operator_oidc_settings",
-    srcs = ["operator_oidc_settings.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "push_settings",
     srcs = ["push_settings.py"],
     deps = ["@pypi//pydantic"],
@@ -91,12 +81,12 @@ py_library(
     deps = [
         ":catalog",
         ":mcp_settings",
-        ":operator_oidc_settings",
         ":push_settings",
         "//agentplane:subjects",
         "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/action_service/session_delegation:binding",
         "//agentplane/identity/auth:listener",
+        "//agentplane/identity/operator:settings",
         "//agentplane/net/peertls:config",
         "@pypi//pydantic",
     ],
@@ -163,6 +153,7 @@ go_library(
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
         "//agentplane/identity/credentials/resolver",
+        "//agentplane/identity/operator",
         "//agentplane/kubeclient",
         "//agentplane/net/peertls",
         "//agentplane/observability",

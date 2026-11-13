@@ -11,7 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -32,13 +32,13 @@ type config struct {
 	Host             string `yaml:"host"`
 	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
 	// OAuth and the metrics.
-	Port              int                      `yaml:"port"`
-	HTTPPort          int                      `yaml:"http_port"`
-	OperatorOIDC      api.OperatorOIDCSettings `yaml:"operator_oidc"`
-	OAuthFile         string                   `yaml:"oauth_file,omitempty"`
-	OAuth             *oauthSettings           `yaml:"oauth,omitempty"`
-	MaxWaitSeconds    float64                  `yaml:"max_wait_seconds"`
-	DirectWaitSeconds float64                  `yaml:"direct_wait_seconds"`
+	Port              int               `yaml:"port"`
+	HTTPPort          int               `yaml:"http_port"`
+	OperatorOIDC      operator.Settings `yaml:"operator_oidc"`
+	OAuthFile         string            `yaml:"oauth_file,omitempty"`
+	OAuth             *oauthSettings    `yaml:"oauth,omitempty"`
+	MaxWaitSeconds    float64           `yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64           `yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
@@ -57,7 +57,7 @@ type oauthSettings struct {
 func loadConfig() (config, error) {
 	c := config{
 		Host: "0.0.0.0", Port: 8080, HTTPPort: 8081, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
-		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
+		OperatorOIDC: operator.DefaultSettings(),
 	}
 	path := os.Getenv(settingPrefix + "CONFIG_FILE")
 	if path == "" {

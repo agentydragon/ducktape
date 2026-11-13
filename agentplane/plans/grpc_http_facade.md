@@ -51,7 +51,7 @@ only the proxy hop and the credential change. A service takes it only once these
   The cost is the one federation names: the token is readable by script for its lifetime, where the
   `__Host-` cookie never is, and revocation is lifetime-bounded rather than immediate.
 - **Operator admission in each service.** Each service validates issuer, audience and signature
-  beside its ServiceAccount TokenReview, as `action_service/api/operator_oidc.go` does. Each target
+  beside its ServiceAccount TokenReview, using `identity/operator/verifier.go`. Each target
   needs its own Authentik provider, application and policy under `tf/gitops/sso-providers`, or all
   share one operator audience, which makes one bearer acceptable everywhere. Choose between them when
   the first service goes direct.

@@ -27,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -341,7 +342,7 @@ func serveWithPolicy(
 	if err != nil {
 		t.Fatal(err)
 	}
-	operators, err := NewOperatorVerifier(s.issuer.settings(ProfileAuthentik))
+	operators, err := operatoroidc.NewVerifier(s.issuer.settings(operatoroidc.ProfileAuthentik))
 	if err != nil {
 		t.Fatal(err)
 	}

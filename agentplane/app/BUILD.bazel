@@ -535,7 +535,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
-        "//agentplane/action_service:operator_oidc_settings",
+        "//agentplane/identity/operator:settings",
         "//util:urls",
         "@pypi//pydantic",
     ],

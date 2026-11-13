@@ -1,4 +1,4 @@
-package api
+package operator
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
@@ -27,9 +26,9 @@ const (
 	ProfileDex TokenProfile = "dex"
 )
 
-// OperatorOIDCSettings pins whose tokens prove an operator: the keys of the Python service's `operator_oidc`
-// (operator_oidc_settings.py), which are reviewed configuration, never read from a presented token.
-type OperatorOIDCSettings struct {
+// Settings pin whose tokens an operator OIDC verifier accepts. They are reviewed configuration, never read from
+// a presented token.
+type Settings struct {
 	// Issuer is compared with a token's `iss` exactly, unnormalized (RFC 7519 section 4.1.1).
 	Issuer       string       `mapstructure:"issuer" yaml:"issuer"`
 	Audience     string       `mapstructure:"audience" yaml:"audience"`
@@ -37,12 +36,12 @@ type OperatorOIDCSettings struct {
 	TokenProfile TokenProfile `mapstructure:"token_profile" yaml:"token_profile"`
 }
 
-func DefaultOperatorOIDCSettings() OperatorOIDCSettings {
-	return OperatorOIDCSettings{TokenProfile: ProfileAuthentik}
+func DefaultSettings() Settings {
+	return Settings{TokenProfile: ProfileAuthentik}
 }
 
 // Validate refuses settings that cannot verify a token. Its errors name the key, never the value.
-func (s OperatorOIDCSettings) Validate() error {
+func (s Settings) Validate() error {
 	if !endpoint(s.Issuer) {
 		return errors.New("operator_oidc.issuer must be an https URL, or http on a loopback host, without credentials or fragment")
 	}
@@ -86,15 +85,21 @@ const (
 	keysTimeout = 10 * time.Second
 )
 
-// OperatorVerifier verifies the single-audience RS256 access tokens an operator's issuer signs. go-oidc checks the
+// Subject is the issuer and subject from a verified operator token. It carries no workload or delegated authority.
+type Subject struct {
+	Issuer  string
+	Subject string
+}
+
+// Verifier verifies the single-audience RS256 access tokens an operator's issuer signs. go-oidc checks the
 // signature, issuer, audience and expiry; the verifier adds the rules of the Python service's
 // `finance/plaid/spend/oidc_principal.py` the library leaves out: one audience, a subject, and the profile's `azp`.
-type OperatorVerifier struct {
-	settings OperatorOIDCSettings
+type Verifier struct {
+	settings Settings
 	verifier *oidc.IDTokenVerifier
 }
 
-func NewOperatorVerifier(settings OperatorOIDCSettings) (*OperatorVerifier, error) {
+func NewVerifier(settings Settings) (*Verifier, error) {
 	if err := settings.Validate(); err != nil {
 		return nil, err
 	}
@@ -105,7 +110,7 @@ func NewOperatorVerifier(settings OperatorOIDCSettings) (*OperatorVerifier, erro
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	keys := &expiringKeys{ctx: oidc.ClientContext(context.Background(), client), url: settings.JWKSURI}
-	return &OperatorVerifier{settings: settings, verifier: oidc.NewVerifier(settings.Issuer, keys, &oidc.Config{
+	return &Verifier{settings: settings, verifier: oidc.NewVerifier(settings.Issuer, keys, &oidc.Config{
 		ClientID:             settings.Audience,
 		SupportedSigningAlgs: []string{oidc.RS256},
 		// The library allows no skew on `exp`, so its clock runs behind by it.
@@ -113,36 +118,37 @@ func NewOperatorVerifier(settings OperatorOIDCSettings) (*OperatorVerifier, erro
 	})}, nil
 }
 
-// issued is whether the token's unverified `iss` claim names this verifier's issuer.
-func (v *OperatorVerifier) issued(token string) bool {
+// MatchesUnverifiedIssuer reports whether the token's unverified `iss` claim names this verifier's issuer.
+// It may select which verifier tries a token, but it never authenticates the token or grants authority.
+func (v *Verifier) MatchesUnverifiedIssuer(token string) bool {
 	parsed, err := jwt.ParseSigned(token, []jose.SignatureAlgorithm{jose.RS256})
 	var claims jwt.Claims
 	return err == nil && parsed.UnsafeClaimsWithoutVerification(&claims) == nil && claims.Issuer == v.settings.Issuer
 }
 
-// Verify returns the operator a token proves.
-func (v *OperatorVerifier) Verify(ctx context.Context, token string) (store.OperatorPrincipal, error) {
+// Verify returns the issuer and subject a token proves.
+func (v *Verifier) Verify(ctx context.Context, token string) (Subject, error) {
 	verified, err := v.verifier.Verify(ctx, token)
 	if err != nil {
-		return store.OperatorPrincipal{}, err
+		return Subject{}, err
 	}
 	var claims struct {
 		AuthorizedParty *string `json:"azp"`
 	}
 	if err := verified.Claims(&claims); err != nil {
-		return store.OperatorPrincipal{}, err
+		return Subject{}, err
 	}
 	switch {
 	case len(verified.Audience) != 1:
-		return store.OperatorPrincipal{}, errors.New("operator token names more than its one audience")
+		return Subject{}, errors.New("operator token names more than its one audience")
 	case strings.TrimSpace(verified.Subject) == "":
-		return store.OperatorPrincipal{}, errors.New("operator token has no subject")
+		return Subject{}, errors.New("operator token has no subject")
 	case claims.AuthorizedParty != nil && *claims.AuthorizedParty != v.settings.Audience:
-		return store.OperatorPrincipal{}, errors.New("operator token was authorized for another party")
+		return Subject{}, errors.New("operator token was authorized for another party")
 	case claims.AuthorizedParty == nil && v.settings.TokenProfile == ProfileAuthentik:
-		return store.OperatorPrincipal{}, errors.New("operator token names no authorized party")
+		return Subject{}, errors.New("operator token names no authorized party")
 	}
-	return store.OperatorPrincipal{Issuer: v.settings.Issuer, Subject: verified.Subject}, nil
+	return Subject{Issuer: v.settings.Issuer, Subject: verified.Subject}, nil
 }
 
 // expiringKeys is the issuer's signing keys, fetched again once they are keysLifetime old. go-oidc's

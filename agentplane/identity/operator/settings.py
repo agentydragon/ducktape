@@ -1,4 +1,4 @@
-"""Pinned issuer and audience for Action Service operator tokens."""
+"""Shared OIDC settings for operator tokens."""
 
 from enum import StrEnum
 

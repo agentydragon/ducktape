@@ -16,10 +16,10 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import Settings
 from agentplane.central_sampler import settings
 from agentplane.env.config import GuestResources
+from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog

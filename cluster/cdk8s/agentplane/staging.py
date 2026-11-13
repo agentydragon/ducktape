@@ -25,7 +25,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
@@ -42,6 +41,7 @@ from agentplane.central_sampler.settings import (
     ResponsesConfig,
 )
 from agentplane.env.config import GuestResources, ResourceLimits
+from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.net.peertls.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings

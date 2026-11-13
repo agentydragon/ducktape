@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -140,9 +140,9 @@ operator_oidc:
 		t.Fatal(err)
 	}
 	wantReaders := []auth.Account{{Namespace: "test-agentplane", Name: "test-notifications"}, {Namespace: "test-agentplane", Name: "test-other-reader"}}
-	wantOperators := api.OperatorOIDCSettings{
+	wantOperators := operator.Settings{
 		Issuer: "https://issuer.test.example/", Audience: "test-actions-audience", JWKSURI: "https://issuer.test.example/jwks/",
-		TokenProfile: api.ProfileAuthentik,
+		TokenProfile: operator.ProfileAuthentik,
 	}
 	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.OperatorOIDC != wantOperators || !c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)

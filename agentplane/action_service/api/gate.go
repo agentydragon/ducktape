@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -48,7 +49,7 @@ type GateOptions struct {
 	// ReaderAccounts read every account's requests, labeled or not, and change none.
 	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
-	Operators *OperatorVerifier
+	Operators *operatoroidc.Verifier
 	// ConnectionDelegation carries method-scoped authority for the MCP edge. Only the Action
 	// methods listed in this map may receive Connection provenance.
 	ConnectionDelegation auth.Methods
@@ -63,7 +64,7 @@ type Gate struct {
 	svid                 *auth.SVIDResolver
 	callers              Callers
 	readers              sets.Set[auth.Account]
-	operators            *OperatorVerifier
+	operators            *operatoroidc.Verifier
 	connectionDelegation auth.Methods
 	methods              map[string]func(context.Context) (admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
@@ -165,7 +166,7 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if err != nil {
 		return admission{}, err
 	}
-	if g.operators != nil && g.operators.issued(token) {
+	if g.operators != nil && g.operators.MatchesUnverifiedIssuer(token) {
 		return g.operator(ctx, token)
 	}
 	workload, err := g.workloads.ResolveServiceAccountToken(ctx, token)
@@ -295,7 +296,7 @@ func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
 	if err != nil {
 		return admission{}, err
 	}
-	if g.operators == nil || !g.operators.issued(token) {
+	if g.operators == nil || !g.operators.MatchesUnverifiedIssuer(token) {
 		return admission{}, unauthenticated
 	}
 	return g.operator(ctx, token)
@@ -324,11 +325,11 @@ func rejectMixedCredentials(ctx context.Context) error {
 }
 
 func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
-	operator, err := g.operators.Verify(ctx, token)
+	verified, err := g.operators.Verify(ctx, token)
 	if err != nil {
 		return admission{}, unauthenticated
 	}
-	return admission{principal: operator}, nil
+	return admission{principal: store.OperatorPrincipal{Issuer: verified.Issuer, Subject: verified.Subject}}, nil
 }
 
 // authenticator resolves the method's bearer policy and reports whether the method is admitted at all.

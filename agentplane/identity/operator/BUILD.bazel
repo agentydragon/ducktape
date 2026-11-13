@@ -1,0 +1,39 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+go_library(
+    name = "operator",
+    srcs = ["verifier.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/identity/operator",
+    deps = [
+        "//agentplane/observability",
+        "@com_github_coreos_go_oidc_v3//oidc",
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+    ],
+)
+
+go_test(
+    name = "operator_test",
+    srcs = [
+        "issuer_test.go",
+        "verifier_test.go",
+    ],
+    embed = [":operator"],
+    deps = [
+        "@com_github_go_jose_go_jose_v4//:go-jose",
+        "@com_github_go_jose_go_jose_v4//jwt",
+    ],
+)

@@ -335,7 +335,7 @@ func TestASubscriptionWatchSendsTheOperatorsSubscriptionsThenEachChange(t *testi
 func TestASubscriptionWatchEndsUnauthenticatedOnceItsBearerExpires(t *testing.T) {
 	p := servePush(t, serve(t), true)
 	// Past its expiry, but within the clock skew for a few seconds more.
-	lapsing := p.issuer.token(t, map[string]any{"exp": time.Now().Add(-clockSkew + 5*time.Second).Unix()})
+	lapsing := p.issuer.token(t, map[string]any{"exp": time.Now().Add(-operatorClockSkew + 5*time.Second).Unix()})
 	stream := p.watch(t, lapsing)
 	if frame := nextPushFrame(t, stream); frame.GetSnapshotComplete() == nil {
 		t.Fatalf("frame %v, want snapshot_complete", frame)
