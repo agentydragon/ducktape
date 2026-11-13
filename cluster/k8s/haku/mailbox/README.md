@@ -146,5 +146,6 @@ schema drifts.
 - **Outbound (haku → operator only)**: enable a submission listener +
   server-side recipient allowlist, update SPF (currently `-all`) and OVH
   rDNS. Tracked in `haku/PLAN.md`.
-- **Backups**: CNPG cluster; wire into the standard pg_dump/backup strategy
-  if mailbox contents become worth keeping.
+- **Off-site backups**: `CnpgBackup` configures daily base backups and continuous WAL
+  archiving to private SeaweedFS with 30-day retention. These backups share the OVH failure
+  domain; off-site copying remains tracked in <../../../docs/plan.md> § CNPG Backup Strategy.

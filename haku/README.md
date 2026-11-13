@@ -8,8 +8,8 @@ questions: `PLAN.md`.
 
 **Status:** v0 is live end-to-end — the Claude Code web home runs the loop scheduled, the
 data plane (scoped k8s identity, the sandbox, read-only source mirrors, `haku-state`, the
-mailbox — `haku@allegedly.works` on a self-hosted Stalwart, delivery DMARC-gated to
-whitelisted senders in operator-owned config, read over JMAP with a dedicated Authentik
+mailbox — `haku@allegedly.works` on a self-hosted Stalwart, delivery gated by SPF and an
+operator-owned sender whitelist, read over JMAP with a dedicated Authentik
 identity; `cluster/k8s/haku/mailbox/`) is landed, and Haku owns its UI service and method.
 Current work is iterating that method until what it surfaces is genuinely good.
 
