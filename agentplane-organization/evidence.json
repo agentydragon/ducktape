@@ -12658,6 +12658,20 @@
       "home-mobile-light-organization-card",
       "home-mobile-dark-organization-card"
     ],
-    "visual_review": "Readable side-by-side desktop trees and stacked mobile trees, working pane scrolling, no page-width overflow, readable theme contrast and updated organization navigation."
+    "visual_review": "Readable side-by-side desktop trees and stacked mobile trees, working pane scrolling, no page-width overflow, readable theme contrast and updated organization navigation.",
+    "post_rebase_home_validation": {
+      "state": "PASS",
+      "command": "bbr test //x/agentplane_plan_preview:visual_test --test_arg=-k --test_arg=home --test_output=errors",
+      "invocation": "https://app.buildbuddy.io/invocation/a0640083-a1bd-4842-be3a-82659fd5be8d",
+      "browser_cases": 4,
+      "reason": "The rebase incorporated unrelated report summaries in the shared home page; the organization report and its inventory were unchanged.",
+      "screenshots_reviewed": [
+        "home-desktop-light-organization-card",
+        "home-desktop-dark-organization-card",
+        "home-mobile-light-organization-card",
+        "home-mobile-dark-organization-card"
+      ],
+      "visual_review": "Updated organization counts and source pin remain readable in both themes on desktop and mobile, with no page-width overflow."
+    }
   }
 }
