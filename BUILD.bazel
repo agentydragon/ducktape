@@ -258,7 +258,7 @@ platform(
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
-# Git hooks wheel — ducktape-* console scripts, precommit runners, cluster validation.
+# Git hooks wheel — ducktape-* console scripts.
 # Installed in devtools so the ducktape-* git hooks are available alongside
 # the Rust claude-hook binary.
 py_package(

@@ -250,7 +250,7 @@ let
 
   ducktape-git-hooks = mkWheel {
     pname = "ducktape-git-hooks";
-    description = "Git hooks: ducktape-precommit, ducktape-prepare-commit-msg, cluster validation";
+    description = "Git hooks: ducktape-precommit, ducktape-prepare-commit-msg";
     mainProgram = "ducktape-precommit";
     importsCheck = [ "devinfra.precommit.git_hook" ];
     # SYNC: This list must match `requires` in //:ducktape_git_hooks_wheel (BUILD.bazel).
