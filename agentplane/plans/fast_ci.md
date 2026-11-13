@@ -2,6 +2,7 @@
 
 Tracker: [#16099](https://github.com/agentydragon/ducktape/issues/16099).
 Experiment branch: `agent/test-architecture-pivot`.
+All implementation milestones stay on [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
 
 Reduce the physical work and dependency graph needed to establish each guarantee.
 Keep the current required gate while the replacement graph is proved. Desired routine
@@ -50,8 +51,14 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   Iteration 3 moves the unchanged backend composition to
   `testing/native_service_fixtures.py`, with explicit pytest imports. The healthy
   recovery passes and discarded-journal control rejects the missing retained
-  Session. The pilot remains manual; active-work, History-gap and fencing
-  composition contracts still need implementation and seeded-defect evidence.
+  Session. Iteration 4 adds direct Runtime admission/deduplication across restart,
+  active Runtime SIGKILL with interrupted-turn recovery and next input, and History
+  process unavailability with retained-cursor replay. All four manual contracts
+  passed in 25 fresh actions (100 case exposures, 25 per contract); these are not
+  100 independent trials or low-flake-rate proof. Discarding the journal and
+  disabling its collision guard both fail the intended assertions. Actual Dispatcher
+  loss of a Runtime admission reply, History crash recovery and the remaining
+  security/ownership matrix still need composed evidence before gate promotion.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -63,6 +70,15 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   Deployments. Real packaged services, Kubernetes faults and Pod-bound client
   credentials remain. Other MCP/OAuth and app/browser targets keep their profiles.
   Broader per-contract ownership of the common service image graph remains open.
+  Iteration 4 splits the unchanged seven services cases into manual 3-case MCP and
+  4-case central-services targets. The latter retains the real app, Actions, PKI,
+  controllers and backend, with no MCP edge or external OAuth fixture images. Its
+  configured closure has no path to the MCP edge image. The current required
+  seven-case target stays intact. Compare both slices together with unchanged Pod
+  and VM suites; a quicker isolated slice alone cannot establish quicker PR feedback.
+  A separate manual VM boot candidate exercises the real guest, issued SVID and
+  authenticated app/Gateway/Runtime status. It does not replace the existing VM
+  harness, systemd, cgroup, egress, notification or post-operation credential checks.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
@@ -96,7 +112,8 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   architecture trees and merge provenance, counterbalance order, preserve all
   failures/cancellations/retries, source/CAS identities, CPU and cleanup. Replay
   measures graph behavior; live PR shadows establish GitHub feedback clocks.
-- **P6, adoption:** change one gate boundary per PR after the evidence below.
+- **P6, adoption:** make reviewable milestone commits on the existing branch/PR.
+  Change a gate boundary only after the evidence below supports that boundary.
   Revert that selection change on an escaped contract or reliability regression.
 
 P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
@@ -105,6 +122,15 @@ Iteration evidence and the remaining coverage boundaries are recorded in
 [`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
 The next implementation screen and its coverage/measurement limits are in
 [`system_tests/debug/test_architecture_iteration3.md`](../system_tests/debug/test_architecture_iteration3.md).
+Native recovery controls, MCP/VM image ownership and actual selection artifacts are in
+[`system_tests/debug/test_architecture_iteration4.md`](../system_tests/debug/test_architecture_iteration4.md).
+
+Four minutes is an intermediate budget, not a floor. After each measured change,
+rank the next probes by likely complete-feedback or reliability benefit against
+implementation, review, maintenance and developer disruption. Pursue candidates
+with a credible payback within roughly one quarter. Stop dedicated optimization
+when no such candidate remains and the two best remaining probes fail; preserve
+their negative evidence and follow-up triggers rather than manufacturing more work.
 
 ## Admission evidence for a smaller gate
 
