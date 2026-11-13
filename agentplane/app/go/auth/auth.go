@@ -125,14 +125,20 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		traceAuth(r, "admitted")
 		requestSession, cookie, row, initial, err := a.loadSession(r)
 		if err != nil {
+			traceAuth(r, "load_session_failed")
 			http.Error(w, "authentication session unavailable", http.StatusInternalServerError)
 			return
 		}
+		traceAuth(r, "session_loaded")
 		r = r.WithContext(context.WithValue(r.Context(), sessionContextKey{}, requestSession))
 		wrapped := &sessionResponseWriter{ResponseWriter: w, commit: func() error {
-			return a.commitSession(r, w, requestSession, cookie, row, initial)
+			traceAuth(r, "commit_started")
+			err := a.commitSession(r, w, requestSession, cookie, row, initial)
+			traceAuth(r, "commit_finished")
+			return err
 		}}
 		next.ServeHTTP(wrapped, r)
 		if !wrapped.committed {
@@ -144,7 +150,22 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 				writeCommitError(w, err)
 			}
 		}
+		traceAuth(r, "handler_finished")
 	})
+}
+
+// traceAuth records only explicitly traced fixture logins, without query strings or credentials.
+func traceAuth(r *http.Request, phase string) {
+	id := r.Header.Get("X-Agentplane-Auth-Trace")
+	if len(id) != 32 {
+		return
+	}
+	for _, digit := range id {
+		if !strings.ContainsRune("0123456789abcdef", digit) {
+			return
+		}
+	}
+	slog.InfoContext(r.Context(), "auth login phase", "trace_id", id, "path", r.URL.Path, "phase", phase)
 }
 
 // RequireCaller protects a route with an operator cookie, an operator's OIDC ID token, or a reviewed
@@ -387,12 +408,15 @@ func (a *Auth) forgetCookie(w http.ResponseWriter) {
 }
 
 func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
+	traceAuth(r, "login_started")
 	session, ok := SessionFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "session middleware is required")
 		return
 	}
+	traceAuth(r, "discovery_started")
 	provider, err := a.openIDClient(r.Context())
+	traceAuth(r, "discovery_finished")
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "identity provider unavailable")
 		return
@@ -417,6 +441,7 @@ func (a *Auth) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
+	traceAuth(r, "callback_started")
 	if r.URL.Query().Get("error") != "" {
 		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
@@ -447,7 +472,9 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	if a.cfg.HTTPClient != nil {
 		ctx = oidc.ClientContext(ctx, a.cfg.HTTPClient)
 	}
+	traceAuth(r, "exchange_started")
 	token, err := provider.oauth.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", data.CodeVerifier))
+	traceAuth(r, "exchange_finished")
 	if err != nil {
 		writeError(w, http.StatusUnauthorized, "OIDC authentication failed")
 		return
