@@ -257,10 +257,8 @@ its state, error and timing but no result.
 MCP submission, receipt and result tools take one shared `wait` object (`wait_seconds`, 0 through the
 MCP edge's `max_wait_seconds` setting, default 0; the setting defaults to 30 seconds;
 `wait_until`, `decision` or `terminal` default terminal) rather than two flat parameters each.
-Set the edge's `max_wait_seconds` in its settings file or with
-`AGENTPLANE_MCP_EDGE_MAX_WAIT_SECONDS`. Direct tool calls initially wait for the edge's
-`direct_wait_seconds` (30 seconds by default), capped by `max_wait_seconds`; configure it in the
-edge settings file or with `AGENTPLANE_MCP_EDGE_DIRECT_WAIT_SECONDS`.
+Set the edge's `max_wait_seconds` and `direct_wait_seconds` in its typed settings file. The edge
+does not accept environment overrides for static settings.
 Waits use commit notifications rather than periodic queries. A deadline returns a receipt, not a
 cancellation. On an ambiguous response, reuse the original request/key; transport or notification
 failure must not prompt a new Action. Workload authorization is revalidated after a bounded wait,

@@ -225,7 +225,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_MCP_EDGE_DATABASE_URL", migrations.Up); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLEnv, migrations.Up); handled {
 		if err != nil {
 			slog.Error("MCP edge migration failed", "error", err)
 			os.Exit(1)

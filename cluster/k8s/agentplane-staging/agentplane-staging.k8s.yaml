@@ -8141,20 +8141,23 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    host: 0.0.0.0
-    port: 8080
-    http_port: 8081
-    actions_target: actions.agentplane-staging.svc.cluster.local:8080
     actions_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/actions
+    actions_target: actions.agentplane-staging.svc.cluster.local:8080
+    policy_namespace: agentplane-staging
+    actions_token_file: /var/run/secrets/agentplane-mcp/actions
+    oauth_file: /etc/agentplane-mcp/oauth
+    host: 0.0.0.0
+    port: 8080
+    http_port: 8081
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
       audience: agentplane-staging-actions
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
       token_profile: authentik
-    policy_namespace: agentplane-staging
-    actions_token_file: /var/run/secrets/agentplane-mcp/actions
+    max_wait_seconds: 30
+    direct_wait_seconds: 30
 immutable: false
 ---
 apiVersion: v1
@@ -8205,11 +8208,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-mcp-edge
-            - name: AGENTPLANE_MCP_EDGE_OAUTH
-              valueFrom:
-                secretKeyRef:
-                  key: oauth
-                  name: agentplane-mcp-oauth
             - name: OTEL_SERVICE_NAME
               value: mcp-edge
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -8307,6 +8305,8 @@ spec:
             items:
               - key: client-secret
                 path: client-secret
+              - key: oauth
+                path: oauth
             secretName: agentplane-mcp-oauth
         - configMap:
             name: mcp-edge-settings

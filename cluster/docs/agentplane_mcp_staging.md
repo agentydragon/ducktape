@@ -13,17 +13,20 @@ the declared staging deployment contract.
 
 - `tf/gitops/sso-providers/provider_agentplane_mcp.tf` owns the separate Authentik OAuth client,
   Rai-only access binding, managed-user UUID mapping, persistent token-signing and OAuth-storage
-  encryption keys, and the reflected `agentplane-mcp-oauth` Secret. App login and Action operator
-  federation keep their existing clients and credentials. The provider callback is exactly
+  encryption keys, provider-derived OAuth settings, and the reflected `agentplane-mcp-oauth` Secret.
+  Its client secret and provider settings are mounted by the edge; staging carries only the path to
+  the provider settings file, so Terraform remains the authority for managed-user UUID/UID bindings.
+  App login and Action operator federation keep their existing clients and credentials. The provider callback is exactly
   `https://agentplane-actions-staging.allegedly.works/auth/callback`, not the app login callback or
   an external client's DCR redirect URI.
 - The edge OAuth adapter checks the upstream issuer and UUID subject, then maps that identity to
   the same UUID under the existing Action operator issuer. It does not authorize by username,
   browser-supplied identity, or arbitrary upstream login.
 - Terraform creates the Secret in `authentik`; Reflector copies it only to `agentplane-staging`.
-  The MCP edge consumes its OAuth configuration and mounts the client secret read-only. The
-  Action Service has no external OAuth configuration or credential mount. Reloader restarts the
-  edge when the Secret changes.
+  The MCP edge reads its complete static settings from its typed ConfigMap and reads the
+  provider-owned OAuth settings file plus client secret from the reflected Secret read-only. It
+  validates the settings file once during startup. The Action Service has no external OAuth
+  configuration or credential mount. Reloader restarts the edge when the Secret changes.
 - The MCP edge database owns Connection, grant, enrollment, and external OAuth state. The edge
   stores local opaque token values only as hashes; recoverable upstream refresh tokens remain
   plaintext in PostgreSQL, which the operator accepts for this rollout. Legacy Action Service

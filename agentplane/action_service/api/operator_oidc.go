@@ -31,10 +31,10 @@ const (
 // (operator_oidc_settings.py), which are reviewed configuration, never read from a presented token.
 type OperatorOIDCSettings struct {
 	// Issuer is compared with a token's `iss` exactly, unnormalized (RFC 7519 section 4.1.1).
-	Issuer       string       `mapstructure:"issuer"`
-	Audience     string       `mapstructure:"audience"`
-	JWKSURI      string       `mapstructure:"jwks_uri"`
-	TokenProfile TokenProfile `mapstructure:"token_profile"`
+	Issuer       string       `mapstructure:"issuer" yaml:"issuer"`
+	Audience     string       `mapstructure:"audience" yaml:"audience"`
+	JWKSURI      string       `mapstructure:"jwks_uri" yaml:"jwks_uri"`
+	TokenProfile TokenProfile `mapstructure:"token_profile" yaml:"token_profile"`
 }
 
 func DefaultOperatorOIDCSettings() OperatorOIDCSettings {
