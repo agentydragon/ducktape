@@ -79,7 +79,7 @@ filegroup(
         "//:node_modules/zod",
         "//agentplane/action_service:action_service_pb",
         "//agentplane/action_service:operator_action_service_pb",
-        "//agentplane/action_service:web_push_service_pb",
+        "//agentplane/action_service/api/web_push:web_push_service_pb",
         "//agentplane/app:app_service_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
@@ -808,7 +808,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/action_service:web_push_service_pb",
+        "//agentplane/action_service/api/web_push:web_push_service_pb",
     ],
 )
 

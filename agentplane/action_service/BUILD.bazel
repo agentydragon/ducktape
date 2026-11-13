@@ -236,16 +236,6 @@ ts_proto_library(
 )
 
 proto_library(
-    name = "web_push_service_proto",
-    srcs = ["web_push_service.proto"],
-    deps = [
-        "@googleapis//google/api:annotations_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-proto_library(
     name = "linkage_service_proto",
     srcs = ["linkage_service.proto"],
     deps = [":operator_action_service_proto"],
@@ -262,18 +252,6 @@ go_proto_library(
     deps = [":operator_action_service_go_proto"],
 )
 
-go_proto_library(
-    name = "web_push_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb",
-    proto = ":web_push_service_proto",
-    deps = ["@org_golang_google_genproto_googleapis_api//annotations"],
-)
-
 go_library(
     name = "main_lib",
     srcs = [
@@ -285,8 +263,8 @@ go_library(
         ":action_service_go_proto",
         ":linkage_service_go_proto",
         ":operator_action_service_go_proto",
-        ":web_push_service_go_proto",
         "//agentplane/action_service/api",
+        "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/informer",
         "//agentplane/action_service/internal/store",
@@ -412,7 +390,7 @@ go_test(
         ":action_service_go_proto",
         ":linkage_service_go_proto",
         ":operator_action_service_go_proto",
-        ":web_push_service_go_proto",
+        "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/action_service/callers",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/internal/store",
@@ -457,12 +435,4 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/structpb",
     ],
-)
-
-ts_proto_library(
-    name = "web_push_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":web_push_service_proto",
-    deps = ["//google/api:annotations_pb"],
 )

@@ -27,7 +27,7 @@ go_library(
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:linkage_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
-        "//agentplane/action_service:web_push_service_go_proto",
+        "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/go/auth",
         "//agentplane/app/go/bridge",
@@ -127,7 +127,7 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service:operator_action_service_go_proto",
-        "//agentplane/action_service:web_push_service_go_proto",
+        "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/app/go/proxy",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/facade",
