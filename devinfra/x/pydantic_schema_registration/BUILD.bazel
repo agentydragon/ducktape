@@ -1,0 +1,74 @@
+load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
+load("//devinfra/js:json_schema_js_library.bzl", "json_schema_js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//visibility:private"],
+)
+
+py_library(
+    name = "schema_models",
+    srcs = ["schema_models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    deps = [
+        ":schema_models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    testonly = True,
+    main_module = "devinfra.x.pydantic_schema_registration.export_schema",
+    deps = [":export_schema"],
+)
+
+genrule(
+    name = "multi_root_schema",
+    testonly = True,
+    outs = ["multi_root.schema.json"],
+    cmd = "$(location :export_schema_bin) > $@",
+    tools = [":export_schema_bin"],
+)
+
+json_schema_js_library(
+    name = "generated_types",
+    schema = ":multi_root_schema",
+)
+
+ts_config(
+    name = "tsconfig",
+    src = "tsconfig.json",
+)
+
+ts_library(
+    name = "consumer",
+    srcs = ["consumer.ts"],
+    tsconfig = ":tsconfig",
+    deps = [":generated_types"],
+)
+
+py_test(
+    name = "registration_test",
+    srcs = ["test_registration.py"],
+    main = "test_registration.py",
+    deps = [
+        ":export_schema",
+        ":schema_models",
+        "//airlock:models",
+        "//study_casino:state",
+        "@pypi//fastapi",
+        "@pypi//jsonschema",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//referencing",
+    ],
+)
