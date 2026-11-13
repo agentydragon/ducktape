@@ -17,7 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
 )

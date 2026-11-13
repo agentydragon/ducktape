@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 )
 
 // refreshFailed records a failed refresh on its shared row and returns the deferral that ends the reconcile until
