@@ -43,6 +43,10 @@ module it bundles. Every other chunk is `inline_in_entry`.
   - `main`: `packages/excalidraw/history` contains the complete original
     `History`, `HistoryEntry` and `HistoryChangedEvent` classes, including
     recording, inverse entries, undo/redo stacks and change notifications.
+  - `editor`: `packages/excalidraw/scene/Scene` restores the complete `Scene`
+    class, including element maps, selection caching, frame filtering,
+    insertion and update notifications. Its two static-map writes and four
+    source helpers remain in the entry at their original initialization positions.
   - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
     source path and names for element classification, arrow/text bindings,
     frame variants and roundness rules.
@@ -73,6 +77,8 @@ or file-system chunk. It also imports `textWrapping` through its original source
 path and exercises word wrapping, Unicode normalization, joined emojis and CJK
 detection. Separate browser probes exercise element predicates, UTF-8 data URL
 round trips, binary blob reads, image MIME normalization and library loading.
+The Scene probe checks static lookup by object/id, deleted-element filtering,
+selection, update subscription and cleanup.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the

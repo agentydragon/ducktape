@@ -258,5 +258,54 @@ async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str)
         }
 
 
+async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Scene } = await import('./editor/packages/excalidraw/scene/Scene.js');
+                const scene = new Scene();
+                let updates = 0;
+                const detach = scene.onUpdate(() => updates++);
+                const visible = {id: 'scene-visible', type: 'rectangle', index: 'a0',
+                                 isDeleted: false, groupIds: [], boundElements: null, frameId: null};
+                const deleted = {...visible, id: 'scene-deleted', index: 'a1', isDeleted: true};
+                scene.replaceAllElements([visible, deleted]);
+                const beforeDestroy = {
+                    all: scene.getElementsIncludingDeleted().map(element => element.id),
+                    visible: scene.getNonDeletedElements().map(element => element.id),
+                    selected: scene.getSelectedElements({selectedElementIds: {'scene-visible': true}})
+                                   .map(element => element.id),
+                    lookup: [Scene.getScene(visible) === scene, Scene.getScene(visible.id) === scene,
+                             scene.getElement(deleted.id) === deleted,
+                             scene.getNonDeletedElement(deleted.id)],
+                    unchanged: scene.mapElements(element => element),
+                    updates,
+                };
+                detach();
+                scene.triggerUpdate();
+                scene.destroy();
+                return {beforeDestroy, updates, afterDestroy: [Scene.getScene(visible.id),
+                                                               scene.getElementsIncludingDeleted().length]};
+            }"""
+        )
+        assert result == {
+            "beforeDestroy": {
+                "all": ["scene-visible", "scene-deleted"],
+                "visible": ["scene-visible"],
+                "selected": ["scene-visible"],
+                "lookup": [True, True, True, None],
+                "unchanged": False,
+                "updates": 1,
+            },
+            "updates": 1,
+            "afterDestroy": [None, 0],
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

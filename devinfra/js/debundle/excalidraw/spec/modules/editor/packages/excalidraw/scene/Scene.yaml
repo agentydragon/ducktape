@@ -1,0 +1,38 @@
+# Original home: packages/excalidraw/scene/Scene.ts
+source_matches:
+  - match: |
+      var selected = class sceneImplementation {
+        ANYTHING;
+        static mapElementToScene(elementKey, scene) {
+          isIdKey(elementKey)
+            ? this.sceneMapById.set(elementKey, scene)
+            : (this.sceneMapByElement.set(elementKey, scene),
+              this.sceneMapById.set(elementKey.id, scene));
+        }
+        static getScene(elementKey) {
+          return isIdKey(elementKey)
+            ? this.sceneMapById.get(elementKey) || null
+            : this.sceneMapByElement.get(elementKey) || null;
+        }
+        getSceneNonce() {
+          STMT_LIST;
+        }
+        getNonDeletedElementsMap() {
+          STMT_LIST;
+        }
+        ANYTHING;
+        getSelectedElements(ANYTHING) {
+          STMT_LIST;
+        }
+        ANYTHING;
+        replaceAllElements(ANYTHING) {
+          STMT_LIST;
+        }
+        triggerUpdate() {
+          STMT_LIST;
+        }
+        ANYTHING;
+      };
+    bindings:
+      - local: selected
+        name: Scene

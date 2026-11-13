@@ -38,6 +38,7 @@ fn claimed_modules_export_their_entry_points() {
             "editor/packages/excalidraw/element/textWrapping.js",
             &["containsCJK", "wrapText"],
         ),
+        ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
             "main/packages/excalidraw/history.js",
@@ -67,6 +68,15 @@ fn claimed_modules_export_their_entry_points() {
         &app,
         "main/packages/excalidraw/history.js",
         &["var HistoryEntry ="],
+        &[],
+    );
+    assert_module_source(
+        &app,
+        "editor/entry.js",
+        &[
+            "Scene, \"sceneMapByElement\", new WeakMap",
+            "Scene, \"sceneMapById\", new Map",
+        ],
         &[],
     );
 }
