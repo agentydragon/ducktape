@@ -163,7 +163,10 @@ func newWatchFixture(t *testing.T) watchFixture {
 	}
 	sandbox := sandboxObject("")
 	sandbox.Namespace = namespace
-	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "watch-identity"}}
+	identity := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "watch-identity"},
+		Spec:       policyapi.IdentitySpec{Description: "Environment watch test identity"},
+	}
 	if err := objects.Create(ctx, identity); err != nil {
 		t.Fatal(err)
 	}
@@ -406,7 +409,10 @@ func TestWatchEnvironmentEndsWhenTargetOrIdentityBindingIsNoLongerAccessible(t *
 					t.Fatal(err)
 				}
 				if change == "replace Identity" {
-					replacement := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: f.target.Namespace, Name: f.identityName}}
+					replacement := &policyapi.Identity{
+						ObjectMeta: metav1.ObjectMeta{Namespace: f.target.Namespace, Name: f.identityName},
+						Spec:       policyapi.IdentitySpec{Description: "Replacement watch test identity"},
+					}
 					if err := f.objects.Create(f.ctx, replacement); err != nil {
 						t.Fatal(err)
 					}
@@ -418,8 +424,12 @@ func TestWatchEnvironmentEndsWhenTargetOrIdentityBindingIsNoLongerAccessible(t *
 					t.Fatal(err)
 				}
 			}
-			if _, err := stream.Recv(); status.Code(err) != codes.NotFound {
-				t.Fatalf("watch after %s = %v, want NotFound", change, err)
+			wantCode := codes.NotFound
+			if change == "replace Identity" || change == "delete Identity" {
+				wantCode = codes.PermissionDenied
+			}
+			if _, err := stream.Recv(); status.Code(err) != wantCode {
+				t.Fatalf("watch after %s = %v, want %v", change, err, wantCode)
 			}
 		})
 	}
@@ -649,7 +659,10 @@ func TestCollectionIdentityWatchRevalidatesIdleReplacementAndDeletion(t *testing
 				t.Fatal(err)
 			}
 			if change == "replace Identity" {
-				replacement := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: f.target.Namespace, Name: f.identityName}}
+				replacement := &policyapi.Identity{
+					ObjectMeta: metav1.ObjectMeta{Namespace: f.target.Namespace, Name: f.identityName},
+					Spec:       policyapi.IdentitySpec{Description: "Replacement watch test identity"},
+				}
 				if err := f.objects.Create(f.ctx, replacement); err != nil {
 					t.Fatal(err)
 				}
@@ -658,8 +671,8 @@ func TestCollectionIdentityWatchRevalidatesIdleReplacementAndDeletion(t *testing
 				}
 			}
 			frame, err := stream.Recv()
-			if err != nil || frame.GetRemoved() == nil || frame.GetRemoved().GetUid() != f.target.Uid {
-				t.Fatalf("idle collection after %s = %v, %v; want removal of old target", change, frame, err)
+			if status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("idle collection after %s = %v, %v; want PermissionDenied after effective Identity UID changed", change, frame, err)
 			}
 		})
 	}

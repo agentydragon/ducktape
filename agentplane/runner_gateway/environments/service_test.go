@@ -180,6 +180,46 @@ func serveDiscoveryWithOptions(
 	return environmentpb.NewEnvironmentServiceClient(connection)
 }
 
+func serveDiscoveryWithComponentReader(
+	t *testing.T,
+	objects client.WithWatch,
+	catalog runtimeconfig.Catalog,
+	wakeCallers []auth.Account,
+) environmentpb.EnvironmentServiceClient {
+	t.Helper()
+	reader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
+	var account corev1.ServiceAccount
+	key := types.NamespacedName{Namespace: reader.Namespace, Name: reader.Name}
+	if err := objects.Get(t.Context(), key, &account); apierrors.IsNotFound(err) {
+		account = corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: reader.Namespace, Name: reader.Name, UID: "actions-uid"}}
+		if err := objects.Create(t.Context(), &account); err != nil {
+			t.Fatal(err)
+		}
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := lifecycle.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects, WakeBudget: unusedWakeBudget{}, WakeCallers: wakeCallers,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(discoveryNamespace, objects, catalog, manager, sets.New(reader), ManagementOptions{
+		Managers: sets.New(reader), Launchers: sets.New(auth.Account{Namespace: discoveryNamespace, Name: "launcher"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	})
+	return environmentpb.NewEnvironmentServiceClient(connection)
+}
+
 func configureDelegatedIdentity(t *testing.T, objects client.WithWatch, sandboxName, identityName, identityUID string) auth.Identity {
 	t.Helper()
 	var sandbox sandboxapi.Sandbox
@@ -344,14 +384,14 @@ func TestIdentityRecordIsOnlyTheCurrentSandboxOwnedCredential(t *testing.T) {
 			if test.record != nil {
 				objects = append(objects, test.record)
 			}
-			rpc := serveDiscovery(t, readerWithObjects(t, objects...), runtimeconfig.Catalog{})
-			got, err := rpc.GetEnvironmentIdentityRecord(bearing(t, matchingToken), request)
+			rpc := serveDiscoveryWithComponentReader(t, readerWithObjects(t, objects...), runtimeconfig.Catalog{}, nil)
+			got, err := rpc.GetEnvironmentIdentityRecord(bearing(t, actionsToken), request)
 			if err != nil || got.GetIdentity().GetName() != test.expected {
 				t.Fatalf("identity record = %v, %v; want %q", got, err, test.expected)
 			}
 			stale := proto.Clone(request).(*environmentpb.GetEnvironmentRequest)
 			stale.Target.Uid = "old-sandbox-uid"
-			if _, err := rpc.GetEnvironmentIdentityRecord(bearing(t, matchingToken), stale); status.Code(err) != codes.NotFound {
+			if _, err := rpc.GetEnvironmentIdentityRecord(bearing(t, actionsToken), stale); status.Code(err) != codes.NotFound {
 				t.Fatalf("stale target = %v", err)
 			}
 		})
@@ -591,10 +631,10 @@ func TestManagementTemplatesNeedManagerGrant(t *testing.T) {
 	}
 }
 
-func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
+func TestDirectComponentReaderListAndGetReturnTheExecutionAccountIdentity(t *testing.T) {
 	objects := baseReader(t)
-	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
-	listed, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	rpc := serveDiscoveryWithComponentReader(t, objects, runtimeconfig.Catalog{}, nil)
+	listed, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,21 +648,20 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	if item.ExecutionAccount.GetAccount().GetNamespace() != discoveryNamespace || item.ExecutionAccount.GetAccount().GetName() != sandboxName || item.ExecutionAccount.GetUid() != executionUID {
 		t.Fatalf("execution account = %+v", item.ExecutionAccount)
 	}
-	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: item.Target})
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{Target: item.Target})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.GetTarget().GetUid() != sandboxUID || got.GetExecutionAccount().GetUid() != executionUID {
 		t.Fatalf("GetEnvironment returned target/account %+v / %+v", got.GetTarget(), got.GetExecutionAccount())
 	}
-	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
-		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
-		t.Fatalf("explicit resume eligibility = %+v", got.GetActions().GetResumeEligibility())
+	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT ||
+		got.GetActions().GetResumeToken() != "" {
+		t.Fatalf("component reader inherited workload resume eligibility = %+v", got.GetActions().GetResumeEligibility())
 	}
-	if got.GetActions().GetWakeGeneration() != 0 || got.GetActions().GetResumeToken() != lifecycle.NewResumeToken(&lifecycle.Target{
-		Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID,
-	}, 0) {
-		t.Fatalf("generation-bound resume precondition = generation %d, token %q", got.GetActions().GetWakeGeneration(), got.GetActions().GetResumeToken())
+	if got.GetActions().GetWakeGeneration() != 0 {
+		t.Fatalf("read-only component discovery changed wake generation: %d", got.GetActions().GetWakeGeneration())
 	}
 	var unchanged sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &unchanged); err != nil {
@@ -667,7 +706,7 @@ func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	}
 }
 
-func TestDiscoverResumeAndReadThroughOneService(t *testing.T) {
+func TestComponentReadAndRetiredServiceAccountResumeThroughOneService(t *testing.T) {
 	sandbox := sandboxObject(sandboxUID)
 	sandbox.Spec.WakeGeneration = 7
 	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
@@ -676,22 +715,25 @@ func TestDiscoverResumeAndReadThroughOneService(t *testing.T) {
 	sandbox.Status.SuspendedBy = &by
 	sandbox.Status.SuspendedAtWakeGeneration = proto.Int64(7)
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
-	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
-	ctx := bearing(t, matchingToken)
+	rpc := serveDiscoveryWithComponentReader(t, objects, runtimeconfig.Catalog{}, nil)
+	ctx := bearing(t, actionsToken)
 	listed, err := rpc.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 1})
 	if err != nil || len(listed.GetItems()) != 1 {
 		t.Fatalf("ListEnvironments = %+v, %v", listed, err)
 	}
 	descriptor := listed.Items[0]
-	resumed, err := rpc.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
-		Target: descriptor.Target, ResumeToken: descriptor.Actions.ResumeToken,
+	_, err = rpc.ResumeEnvironment(bearing(t, matchingToken), &environmentpb.ResumeEnvironmentRequest{
+		Target: descriptor.Target,
+		ResumeToken: lifecycle.NewResumeToken(&lifecycle.Target{
+			Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID,
+		}, 7),
 	})
-	if err != nil || resumed.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || resumed.GetWakeGeneration() != 8 {
-		t.Fatalf("ResumeEnvironment = %+v, %v", resumed, err)
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("same-name ServiceAccount ResumeEnvironment = %v, want PermissionDenied", err)
 	}
 	current, err := rpc.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: descriptor.Target})
-	if err != nil || current.GetActions().GetWakeGeneration() != 8 || current.GetActions().GetResumeToken() == descriptor.GetActions().GetResumeToken() {
-		t.Fatalf("GetEnvironment after resume = %+v, %v", current, err)
+	if err != nil || current.GetActions().GetWakeGeneration() != 7 || current.GetActions().GetResumeToken() != "" {
+		t.Fatalf("GetEnvironment after refused resume = %+v, %v", current, err)
 	}
 	if current.GetObservedState().GetReadiness().GetState() != environmentpb.ReadinessState_READINESS_STATE_NOT_READY {
 		t.Fatalf("resume acceptance invented readiness: %+v", current.GetObservedState().GetReadiness())
@@ -702,9 +744,9 @@ func TestDiscoveryReportsResumeDenialAndReadinessFactsWithoutEffects(t *testing.
 	sandbox := sandboxObject(sandboxUID)
 	sandbox.Spec.ResumePolicy = &sandboxapi.ResumePolicy{AllowOwnServiceAccount: false}
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
-	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	rpc := serveDiscoveryWithComponentReader(t, objects, runtimeconfig.Catalog{}, nil)
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
-	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 		Target: target,
 	})
 	if err != nil {
@@ -715,7 +757,7 @@ func TestDiscoveryReportsResumeDenialAndReadinessFactsWithoutEffects(t *testing.
 		t.Fatalf("current readiness descriptor = %+v", got.GetObservedState().GetReadiness())
 	}
 	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
-		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED || got.GetActions().GetResumeToken() != "" {
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT || got.GetActions().GetResumeToken() != "" {
 		t.Fatalf("denied resume facts = eligibility %+v token=%q", got.GetActions().GetResumeEligibility(), got.GetActions().GetResumeToken())
 	}
 	var unchanged sandboxapi.Sandbox
@@ -727,27 +769,27 @@ func TestDiscoveryReportsResumeDenialAndReadinessFactsWithoutEffects(t *testing.
 	}
 }
 
-func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *testing.T) {
+func TestComponentReaderDoesNotInheritWorkloadWakeAuthority(t *testing.T) {
 	sandbox := sandboxObject(sandboxUID)
 	sandbox.Spec.WakeOnSend = true
 	sandbox.Spec.ResumePolicy = &sandboxapi.ResumePolicy{AllowOwnServiceAccount: false}
 	sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	sandbox.Status.StopStage = sandboxapi.StopStageStopped
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
-	rpc := serveDiscoveryWithOptions(t, objects, runtimeconfig.Catalog{}, nil, []auth.Account{{
+	rpc := serveDiscoveryWithComponentReader(t, objects, runtimeconfig.Catalog{}, []auth.Account{{
 		Namespace: discoveryNamespace, Name: sandboxName,
-	}}, nil)
-	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+	}})
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetActions().GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_AVAILABLE {
-		t.Fatalf("automatic wake projection = %s, want broker-enabled availability", got.GetActions().GetAutomaticWake())
+	if got.GetActions().GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE {
+		t.Fatalf("component reader inherited workload automatic wake = %s", got.GetActions().GetAutomaticWake())
 	}
 	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
-		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
+		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT ||
 		got.GetActions().GetResumeToken() != "" {
 		t.Fatalf("explicit resume projection = %+v token=%q, want policy denial and no token", got.GetActions().GetResumeEligibility(), got.GetActions().GetResumeToken())
 	}
@@ -794,9 +836,9 @@ func TestGetReturnsTheCanonicalSandboxAndCurrentPodProjection(t *testing.T) {
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.42"},
 	}
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
-	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	rpc := serveDiscoveryWithComponentReader(t, objects, runtimeconfig.Catalog{}, nil)
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
-	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: target})
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -830,8 +872,8 @@ func TestGetDoesNotProjectAReplacedPodWithTheSameName(t *testing.T) {
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-replacement",
 	}}
-	rpc := serveDiscovery(t, readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod), runtimeconfig.Catalog{})
-	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+	rpc := serveDiscoveryWithComponentReader(t, readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod), runtimeconfig.Catalog{}, nil)
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if err != nil {
@@ -1031,20 +1073,25 @@ func TestGetRejectsStaleAndDeletingSandboxIncarnations(t *testing.T) {
 		sandbox    *sandboxapi.Sandbox
 		requested  string
 		wantListed int
+		wantGet    bool
 	}{
 		{name: "stale UID", sandbox: sandboxObject(sandboxUID), requested: "old-sandbox-uid", wantListed: 1},
-		{name: "deleting Sandbox", sandbox: deletingSandbox(), requested: sandboxUID},
+		{name: "deleting Sandbox", sandbox: deletingSandbox(), requested: sandboxUID, wantListed: 1, wantGet: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			reader := readerWithObjects(t, test.sandbox, executionAccountObject(test.sandbox.UID))
-			rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
-			_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+			rpc := serveDiscoveryWithComponentReader(t, reader, runtimeconfig.Catalog{}, nil)
+			_, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: test.requested},
 			})
-			if status.Code(err) != codes.NotFound {
+			if test.wantGet {
+				if err != nil {
+					t.Fatalf("GetEnvironment error = %v, want broad-reader visibility during deletion", err)
+				}
+			} else if status.Code(err) != codes.NotFound {
 				t.Fatalf("GetEnvironment error = %v, want NotFound", err)
 			}
-			listed, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+			listed, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1063,7 +1110,7 @@ func deletingSandbox() *sandboxapi.Sandbox {
 	return sandbox
 }
 
-func TestDiscoveryRequiresControllerOwnershipProof(t *testing.T) {
+func TestInventoryDoesNotProjectUnownedExecutionAccounts(t *testing.T) {
 	for _, test := range []struct {
 		name    string
 		account *corev1.ServiceAccount
@@ -1079,19 +1126,22 @@ func TestDiscoveryRequiresControllerOwnershipProof(t *testing.T) {
 			if test.account != nil {
 				objects = append(objects, test.account)
 			}
-			rpc := serveDiscovery(t, readerWithObjects(t, objects...), runtimeconfig.Catalog{})
-			_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+			rpc := serveDiscoveryWithComponentReader(t, readerWithObjects(t, objects...), runtimeconfig.Catalog{}, nil)
+			got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 			})
-			if status.Code(err) != codes.NotFound {
-				t.Fatalf("GetEnvironment error = %v, want NotFound", err)
+			if err != nil {
+				t.Fatalf("GetEnvironment error = %v", err)
 			}
-			listed, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+			if got.GetExecutionAccount() != nil {
+				t.Fatalf("GetEnvironment projected unowned execution account: %+v", got.GetExecutionAccount())
+			}
+			listed, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(listed.Items) != 0 {
-				t.Fatalf("ListEnvironments returned Sandbox without ownership proof: %+v", listed.Items)
+			if len(listed.Items) != 1 || listed.Items[0].GetExecutionAccount() != nil {
+				t.Fatalf("ListEnvironments account projection without ownership proof: %+v", listed.Items)
 			}
 		})
 	}
@@ -1141,7 +1191,7 @@ func (r *failingReader) Get(ctx context.Context, key types.NamespacedName, objec
 			return apierrors.NewInternalError(errors.New("injected Sandbox API failure"))
 		}
 	case *corev1.ServiceAccount:
-		if r.failAccountRead {
+		if r.failAccountRead && key.Name == sandboxName {
 			return apierrors.NewInternalError(errors.New("injected ServiceAccount API failure"))
 		}
 	}
@@ -1169,15 +1219,15 @@ func TestKubernetesReadFailuresReturnUnavailable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for _, operation := range []string{"GetEnvironment", "ListEnvironments"} {
 				t.Run(operation, func(t *testing.T) {
-					rpc := serveDiscovery(t, test.reader(t), runtimeconfig.Catalog{})
+					rpc := serveDiscoveryWithComponentReader(t, test.reader(t), runtimeconfig.Catalog{}, nil)
 					var err error
 					switch operation {
 					case "GetEnvironment":
-						_, err = rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+						_, err = rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 							Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 						})
 					case "ListEnvironments":
-						_, err = rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+						_, err = rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
 					}
 					if status.Code(err) != codes.Unavailable {
 						t.Fatalf("%s error = %v, want Unavailable", operation, err)
@@ -1211,8 +1261,9 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 		t.Run(method.Name, func(t *testing.T) {
 			want := codes.InvalidArgument
 			switch method.Name {
-			case environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:
-				want = codes.OK
+			case environmentpb.EnvironmentService_WatchEnvironments_FullMethodName,
+				environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:
+				want = codes.NotFound
 			case environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName,
 				environmentpb.EnvironmentService_CreateEnvironment_FullMethodName,
 				environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName,
@@ -1259,8 +1310,8 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(server, service) })
 	rpc := environmentpb.NewEnvironmentServiceClient(connection)
 	own, err := rpc.ListEnvironments(bearing(t, matchingToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
-	if err != nil || len(own.GetItems()) != 1 || own.GetItems()[0].GetTarget().GetName() != sandboxName {
-		t.Fatalf("own list = %v, %v", own, err)
+	if err != nil || len(own.GetItems()) != 0 {
+		t.Fatalf("retired ServiceAccount self-list = %v, %v; want empty", own, err)
 	}
 	all, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil || len(all.GetItems()) != 3 {
@@ -1320,14 +1371,19 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 
 func TestCollectionSnapshotSurvivesDeletionDuringEligibilityRead(t *testing.T) {
 	reader := &missingDuringEligibility{WithWatch: baseReader(t)}
-	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
-	stream, err := rpc.WatchEnvironments(bearing(t, matchingToken), &emptypb.Empty{})
+	rpc := serveDiscoveryWithComponentReader(t, reader, runtimeconfig.Catalog{}, nil)
+	stream, err := rpc.WatchEnvironments(bearing(t, actionsToken), &emptypb.Empty{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	frame, err := stream.Recv()
-	if err != nil || frame.GetSnapshotComplete() == nil {
-		t.Fatalf("snapshot completion during deletion = %v, %v", frame, err)
+	for {
+		frame, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("collection snapshot during deletion = %v, %v", frame, err)
+		}
+		if frame.GetSnapshotComplete() != nil {
+			break
+		}
 	}
 	if reader.sandboxGets != 4 {
 		t.Fatalf("Sandbox reads = %d, want the eligibility race to be exercised", reader.sandboxGets)
@@ -1340,19 +1396,26 @@ func TestGetFencesSandboxReplacementDuringCallerAuthorization(t *testing.T) {
 		WithWatch:   baseReader(t),
 		replacement: replacement,
 	}
-	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
-	_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+	rpc := serveDiscoveryWithComponentReader(t, reader, runtimeconfig.Catalog{}, nil)
+	_, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("GetEnvironment during same-name replacement = %v, want NotFound", err)
 	}
-	if reader.sandboxGets != 2 {
-		t.Fatalf("Sandbox reads during authorization = %d, want initial read and exact-UID recheck", reader.sandboxGets)
+	if !reader.replaced {
+		t.Fatal("test did not install the same-name Sandbox replacement during authorization")
+	}
+	var current sandboxapi.Sandbox
+	if err := reader.WithWatch.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.UID != replacement.UID {
+		t.Fatalf("current Sandbox UID = %q, want replacement UID %q", current.UID, replacement.UID)
 	}
 }
 
-func TestGetRechecksExecutionAccountAfterPodProjection(t *testing.T) {
+func TestGetRechecksExecutionAccountProjectionAfterPodProjection(t *testing.T) {
 	sandbox := sandboxObject(sandboxUID)
 	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-current"}
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
@@ -1360,21 +1423,24 @@ func TestGetRechecksExecutionAccountAfterPodProjection(t *testing.T) {
 	}}
 	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
 	reader := &removeOwnerAfterPodRead{WithWatch: base}
-	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
-	_, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+	rpc := serveDiscoveryWithComponentReader(t, reader, runtimeconfig.Catalog{}, nil)
+	got, err := rpc.GetEnvironment(bearing(t, actionsToken), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
-	if status.Code(err) != codes.NotFound {
-		t.Fatalf("GetEnvironment after owner changed during Pod projection = %v, want NotFound", err)
+	if err != nil {
+		t.Fatalf("GetEnvironment after owner changed during Pod projection = %v", err)
 	}
 	if !reader.removed {
 		t.Fatal("test did not remove the execution account owner during projection")
+	}
+	if got.GetExecutionAccount() != nil {
+		t.Fatalf("GetEnvironment projected stale execution account after recheck: %+v", got.GetExecutionAccount())
 	}
 }
 
 func TestGetUsesRevalidatedIdentityAfterPodProjection(t *testing.T) {
 	sandbox := sandboxObject(sandboxUID)
-	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "before-pod-read"}
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: delegatedIdentityName}
 	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-current"}
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
@@ -1384,15 +1450,17 @@ func TestGetUsesRevalidatedIdentityAfterPodProjection(t *testing.T) {
 		WithWatch: base,
 		identity:  &sandboxapi.IdentityRef{Name: "after-pod-read"},
 	}
-	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
-	descriptor, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+	rpc := serveDiscoveryWithDelegation(t, reader, runtimeconfig.Catalog{}, []string{
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
+	})
+	_, err := rpc.GetEnvironment(delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
-	if err != nil {
-		t.Fatal(err)
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("GetEnvironment after Identity binding changed during Pod projection = %v, want NotFound", err)
 	}
-	if !reader.changed || descriptor.GetIdentityName() != "after-pod-read" {
-		t.Fatalf("GetEnvironment identity_name = %q, changed=%t; want after-pod-read from revalidation", descriptor.GetIdentityName(), reader.changed)
+	if !reader.changed {
+		t.Fatal("test did not change Sandbox Identity during Pod projection")
 	}
 }
 
@@ -1400,6 +1468,7 @@ type replaceSandboxOnAuthorizationRead struct {
 	client.WithWatch
 	replacement *sandboxapi.Sandbox
 	sandboxGets int
+	replaced    bool
 }
 
 // Simulate a deletion between the collection's initial read and the lifecycle manager's
@@ -1423,6 +1492,17 @@ func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.N
 	if sandbox, ok := object.(*sandboxapi.Sandbox); ok {
 		r.sandboxGets++
 		if r.sandboxGets == 2 {
+			var current sandboxapi.Sandbox
+			if err := r.WithWatch.Get(ctx, key, &current); err != nil {
+				return err
+			}
+			if err := r.WithWatch.Delete(ctx, &current); err != nil {
+				return err
+			}
+			if err := r.WithWatch.Create(ctx, r.replacement); err != nil {
+				return err
+			}
+			r.replaced = true
 			r.replacement.DeepCopyInto(sandbox)
 			return nil
 		}
