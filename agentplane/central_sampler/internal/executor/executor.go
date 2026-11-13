@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -60,8 +61,8 @@ type Executor struct {
 	closing              bool
 }
 
-// NewExecutor restores local executor state without contacting the execution environment.
-func NewExecutor(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owner, session *sessionstore.Session, settings samplersettings.Settings) (*Executor, func() error, error) {
+// New restores local executor state without contacting the execution environment.
+func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owner, session *sessionstore.Session, settings samplersettings.Settings) (*Executor, func() error, error) {
 	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
@@ -153,7 +154,7 @@ func (e *Executor) prepareWorkspace(ctx context.Context) error {
 		return err
 	}
 	if observation.exitCode == nil || *observation.exitCode != 0 {
-		return &toolError{fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, tooloutput.LossyUTF8(observation.output.WithOmissionMarker()))}
+		return &toolcontract.Rejection{Message: fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, tooloutput.LossyUTF8(observation.output.WithOmissionMarker()))}
 	}
 	if err := e.store.PreparedWorkspace(ctx, e.owner, e.scopeSnapshot().GetSessionId()); err != nil {
 		return err
@@ -229,7 +230,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		}
 		evidence := failure
 		evidence.phase = ""
-		return &toolOutcomeError{toolError: &toolError{message}, evidence: evidence.intentEvidence()}
+		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: evidence.intentEvidence()}
 	}
 	var failureSource executionFailureSource
 	if errors.As(err, &failureSource) {
@@ -241,7 +242,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		if encodeErr != nil {
 			return fmt.Errorf("encode structured execution failure: %w", encodeErr)
 		}
-		return &toolOutcomeError{toolError: &toolError{message}, evidence: failure.toolEvidence()}
+		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: failure.toolEvidence()}
 	}
 	var transport *executorTransportError
 	if errors.As(err, &transport) {
@@ -254,7 +255,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		if encodeErr != nil {
 			return fmt.Errorf("encode observed process failure: %w", encodeErr)
 		}
-		return &toolOutcomeError{toolError: &toolError{message}, evidence: transport.evidence(transport.retainedSession)}
+		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: transport.evidence(transport.retainedSession)}
 	}
 	var rejected *executorRejectedError
 	if errors.As(err, &rejected) {
@@ -267,7 +268,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				return fmt.Errorf("inspect process %s after rejected process/read: %w", rejected.processID, processErr)
 			}
 			if process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
-				return &toolError{rejected.Error()}
+				return &toolcontract.Rejection{Message: rejected.Error()}
 			}
 			if process.Status != protocol.ProcessAbandoned {
 				afterSequence := rejected.afterSequence
@@ -279,8 +280,8 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				}
 			}
 			message := rejected.Error() + "; the process handle was abandoned with unknown outcome and was not replayed"
-			return &toolOutcomeError{
-				toolError: &toolError{message},
+			return &ToolOutcomeError{
+				rejection: &toolcontract.Rejection{Message: message},
 				evidence: rejectedProcessReadEvidence{
 					Error: message, ExecutorIntentID: rejected.intentID,
 					ProcessID: rejected.processID, ExecutionSessionID: rejected.executionSessionID,
@@ -288,7 +289,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				},
 			}
 		}
-		return &toolError{rejected.Error()}
+		return &toolcontract.Rejection{Message: rejected.Error()}
 	}
 	return err
 }
@@ -373,7 +374,7 @@ type applyPatchResult struct {
 func (e *Executor) applyPatch(ctx context.Context, arguments json.RawMessage) (*applyPatchResult, error) {
 	var patch string
 	if err := json.Unmarshal(arguments, &patch); err != nil || bytes.Equal(bytes.TrimSpace(arguments), []byte("null")) {
-		return nil, &toolError{"apply_patch takes a patch string"}
+		return nil, &toolcontract.Rejection{Message: "apply_patch takes a patch string"}
 	}
 	if err := e.prepareWorkspace(ctx); err != nil {
 		return nil, err

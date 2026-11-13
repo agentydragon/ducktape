@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -299,7 +300,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	}
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
-	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})
 	if err != nil {
 		t.Fatal(err)
 	}

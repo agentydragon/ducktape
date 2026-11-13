@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 )
 
 func startRuntimeForTest(t *testing.T, runtime *Runtime) (context.CancelFunc, <-chan error) {
@@ -238,7 +240,7 @@ func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
 }
 
 // drainFixture is a runtime serving one Session whose turn is mid-way through a model `exec`
-// call: the fake Code Mode host answers the cell, the fake executor holds the cell's nested
+// call: the fake Code Mode host answers the cell, a loopback Executor server holds the nested
 // exec_command on startGate, and the fake provider answers its one sampling request with a wait
 // on the live cell once providerRespond closes.
 type drainFixture struct {
@@ -251,6 +253,50 @@ type drainFixture struct {
 	providerRespond chan struct{}
 	// released carries the live work the lease release observed under the owner fence.
 	released chan sessionstore.LiveWork
+}
+
+type drainExecutorServer struct {
+	executorpb.UnimplementedExecutorServer
+	startGate <-chan struct{}
+}
+
+func (s *drainExecutorServer) OpenSession(_ *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	if err := stream.Send(&executorpb.OpenSessionResponse{
+		Status:             &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
+		ExecutionSessionId: "drain-executor-session",
+		Shell:              &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
+	}); err != nil {
+		return err
+	}
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func (s *drainExecutorServer) StartProcess(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	select {
+	case <-s.startGate:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return &executorpb.StartProcessResponse{
+		Status:    &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
+		ProcessId: request.GetProcessId(),
+	}, nil
+}
+
+func (*drainExecutorServer) ReadProcess(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	code := int32(0)
+	return &executorpb.ReadProcessResponse{
+		Status:   &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED},
+		Exited:   true,
+		Closed:   true,
+		ExitCode: &code,
+		NextSeq:  1,
+	}, nil
+}
+
+func (*drainExecutorServer) TerminateProcess(context.Context, *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error) {
+	return &executorpb.TerminateProcessResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}}, nil
 }
 
 func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
@@ -312,20 +358,20 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	}))
 	t.Cleanup(server.Close)
 
-	client := &fakeExecutionClient{}
-	client.start = func(ctx context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
-		select {
-		case <-f.startGate:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0), NextSeq: 1}, nil
-	}
+	executorServer := grpc.NewServer()
+	executorpb.RegisterExecutorServer(executorServer, &drainExecutorServer{startGate: f.startGate})
+	go func() { _ = executorServer.Serve(listener) }()
+	t.Cleanup(func() {
+		executorServer.Stop()
+		_ = listener.Close()
+	})
 	settings := samplersettings.Settings{
 		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, ShutdownDrainSeconds: &drainSeconds,
+		DirectExecutorTarget: listener.Addr().String(), DirectExecutorInsecureLocaltest: true,
 		Connections: map[string]samplersettings.ConnectionConfig{"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}}},
 		Models: map[string]samplersettings.ModelConfig{"fixture-model": {
 			Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectStandard},
@@ -336,11 +382,6 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	manager.store = store
 	f.runtime = NewRuntime(store, settings, manager)
 	f.peers = peers
-	f.runtime.newExecutor = func(_ context.Context, store *sessionstore.Store, owner sessionstore.Owner, _ *sessionstore.Session, _ samplersettings.Settings) (*Executor, func() error, error) {
-		executor := newFakeExecutor(t, store, owner, client)
-		executor.environment = map[string]string{}
-		return executor, func() error { return nil }, nil
-	}
 	f.runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
 		work, err := store.LiveWork(ctx, owner)
 		if err != nil {

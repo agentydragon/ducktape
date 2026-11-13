@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc"
@@ -40,7 +41,7 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			executor := &Executor{shell: &execShell{Name: "bash", Path: "/bin/bash"}}
 			_, err := executor.Invoke(context.Background(), tc.tool, json.RawMessage(tc.args))
-			if !errors.As(err, new(*toolError)) {
+			if !errors.As(err, new(*toolcontract.Rejection)) {
 				t.Fatalf("malformed input error=%v, want a tool error", err)
 			}
 		})
@@ -181,7 +182,7 @@ func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) 
 	e.environment = map[string]string{}
 
 	result, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo must not run"}`))
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if result != nil || !errors.As(err, &outcome) {
 		t.Fatalf("exec_command result=%v error=%v, want a catchable tool outcome", result, err)
 	}
@@ -223,7 +224,7 @@ func TestTypedStartEnvironmentFailureIsNotReplayed(t *testing.T) {
 	e.environment = map[string]string{}
 
 	_, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run"}`))
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("exec_command error=%v, want catchable environment refusal", err)
 	}
@@ -260,15 +261,15 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 	e := newFakeExecutor(t, store, owner, client)
 
 	_, err := e.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":1400}`))
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("write_stdin error=%v, want catchable environment refusal", err)
 	}
-	outerEvidence, ok := outcome.evidence.(executionFailureEvidence)
+	outerEvidence, ok := outcome.Evidence().(executionFailureEvidence)
 	if !ok || outerEvidence.RemoteOutcome != sessionstore.NestedUnknown || outerEvidence.RequestOutcome == nil || *outerEvidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		outerEvidence.AfterSeq == nil || *outerEvidence.AfterSeq != 8 || outerEvidence.BufferedOutputBase64 == nil ||
 		!bytes.Equal(*outerEvidence.BufferedOutputBase64, []byte("output before suspension\n")) {
-		t.Fatalf("outer tool failure lost typed unknown-process evidence: %+v", outcome.evidence)
+		t.Fatalf("outer tool failure lost typed unknown-process evidence: %+v", outcome.Evidence())
 	}
 	var message struct {
 		EnvironmentState   string                `json:"environment_state"`
@@ -330,16 +331,16 @@ func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
 		method: executorMethodProcessStart, processID: "not-dispatched-start", retainedSession: "retained-executor",
 		afterSequence: &zero, output: output, cause: errors.New("executor session unavailable"),
 	})
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("not-dispatched start error=%v, want a catchable tool outcome", err)
 	}
-	evidence, ok := outcome.evidence.(executionFailureEvidence)
+	evidence, ok := outcome.Evidence().(executionFailureEvidence)
 	if !ok || evidence.RemoteOutcome != sessionstore.NestedNotDispatched || evidence.RequestOutcome == nil || *evidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		evidence.AfterSeq == nil || *evidence.AfterSeq != 0 || evidence.BufferedOutput == nil || *evidence.BufferedOutput != "" ||
 		evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil || len(*evidence.BufferedOutputBase64) != 0 ||
 		evidence.TransportError != "executor session unavailable" {
-		t.Fatalf("not-dispatched start lost typed zero/empty evidence: %+v", outcome.evidence)
+		t.Fatalf("not-dispatched start lost typed zero/empty evidence: %+v", outcome.Evidence())
 	}
 	process, err := store.Process(t.Context(), owner, "not-dispatched-start")
 	if err != nil {
@@ -425,7 +426,7 @@ func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
 	e := newFakeExecutor(t, store, owner, client)
 
 	_, err := e.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":1401,"chars":"must not be sent"}`))
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("write_stdin error=%v, want catchable environment refusal", err)
 	}
@@ -456,10 +457,10 @@ func TestApplyPatchStartRejectionIsReturnedAsNestedToolFailure(t *testing.T) {
 	e := newFakeExecutor(t, store, owner, client)
 
 	_, err := e.Invoke(t.Context(), "apply_patch", json.RawMessage(`"*** Begin Patch\n*** End Patch"`))
-	if !errors.As(err, new(*toolError)) {
+	if !errors.As(err, new(*toolcontract.Rejection)) {
 		t.Fatalf("apply_patch error=%v, want a rejected nested tool promise", err)
 	}
-	if errors.As(err, new(*toolOutcomeError)) {
+	if errors.As(err, new(*ToolOutcomeError)) {
 		t.Fatalf("known pre-launch rejection reported an uncertain effect: %v", err)
 	}
 	state, err := store.ExecutionState(t.Context(), owner)
@@ -502,14 +503,14 @@ func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
 	e := newFakeExecutor(t, store, owner, client)
 
 	_, err := e.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":1200}`))
-	if !errors.As(err, new(*toolError)) {
+	if !errors.As(err, new(*toolcontract.Rejection)) {
 		t.Fatalf("write_stdin error=%v, want a rejected nested tool promise", err)
 	}
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
 		t.Fatalf("missing process rejection evidence: %v", err)
 	}
-	evidence, ok := outcome.evidence.(rejectedProcessReadEvidence)
+	evidence, ok := outcome.Evidence().(rejectedProcessReadEvidence)
 	if !ok || evidence.RemoteOutcome != sessionstore.NestedUnknown || evidence.AutomaticReplay {
 		t.Fatalf("missing process rejection evidence=%+v", outcome)
 	}
@@ -628,7 +629,7 @@ func assertRejectedSettlementFailedOperationally(t *testing.T, err error) {
 	if err == nil {
 		t.Fatal("expected settlement failure")
 	}
-	if errors.As(err, new(*toolError)) || errors.As(err, new(*executorRejectedError)) {
+	if errors.As(err, new(*toolcontract.Rejection)) || errors.As(err, new(*executorRejectedError)) {
 		t.Fatalf("failed rejection settlement was exposed as a recoverable tool rejection: %v", err)
 	}
 }
@@ -785,7 +786,7 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 	}
 	executor := newFakeExecutor(t, store, newOwner, client)
 	result, err := executor.writeStdin(t.Context(), json.RawMessage(`{"session_id":77,"chars":"must not be sent"}`))
-	if result != nil || !errors.As(err, new(*toolError)) || !strings.Contains(err.Error(), "no input was sent") {
+	if result != nil || !errors.As(err, new(*toolcontract.Rejection)) || !strings.Contains(err.Error(), "no input was sent") {
 		t.Fatalf("write_stdin result=%v error=%v, want a tool error disclosing no input was sent", result, err)
 	}
 	if sends != 0 {
@@ -803,13 +804,13 @@ func TestNotDispatchedJournalEvidenceKeepsLegacyProjection(t *testing.T) {
 	handled := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
 		method: executorMethodInitialize, cause: errors.New("connection refused"),
 	})
-	var outcome *toolOutcomeError
+	var outcome *ToolOutcomeError
 	if !errors.As(handled, &outcome) {
 		t.Fatalf("not-dispatched error=%v, want structured tool error", handled)
 	}
-	evidence, ok := outcome.evidence.(executionFailureEvidence)
+	evidence, ok := outcome.Evidence().(executionFailureEvidence)
 	if !ok {
-		t.Fatalf("not-dispatched evidence has type %T, want executionFailureEvidence", outcome.evidence)
+		t.Fatalf("not-dispatched evidence has type %T, want executionFailureEvidence", outcome.Evidence())
 	}
 	if evidence.Method != executorMethodInitialize || evidence.RemoteOutcome != sessionstore.NestedNotDispatched ||
 		evidence.RequestOutcome == nil || *evidence.RequestOutcome != sessionstore.NestedNotDispatched ||
@@ -852,7 +853,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	}
 	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
 	err := executor.outcomeToolError(t.Context(), transport)
-	var rejected *toolOutcomeError
+	var rejected *ToolOutcomeError
 	if !errors.As(err, &rejected) {
 		t.Fatalf("observed read failure=%v, want nested promise rejection", err)
 	}
@@ -874,10 +875,10 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 		string(process.BufferedOutput) != "stdout before failure\n" {
 		t.Fatalf("observed output/cursor were not retained: %+v", process)
 	}
-	evidence, ok := rejected.evidence.(executionFailureEvidence)
+	evidence, ok := rejected.Evidence().(executionFailureEvidence)
 	if !ok || evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil ||
 		!bytes.Equal(*evidence.BufferedOutputBase64, output.RetainedBytes()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 0 {
-		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.evidence)
+		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.Evidence())
 	}
 }
 
@@ -1201,7 +1202,7 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 	done := make(chan struct{})
 	go e.watchSession(streamCtx, stream, "notification", "retained-executor", 1, cancel, done)
 	defer func() { cancel(); <-done }()
-	changed := e.processChanges()
+	changed := e.ProcessChanges()
 	late.Store(true)
 	stream.responses <- &executorpb.OpenSessionResponse{ExecutionSessionId: "retained-executor", NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: []byte(`{"method":"process/output","params":{"processId":"exited-open","seq":2}}`)}}}
 	select {

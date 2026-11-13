@@ -359,7 +359,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 					return activeCommand, err
 				}
 			}
-			changes := live.executor.processChanges()
+			changes := live.executor.ProcessChanges()
 			if changes != reconciled {
 				progressed, err := live.executor.ReconcileProcesses(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 				if err != nil {

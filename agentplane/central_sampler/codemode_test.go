@@ -16,10 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -133,7 +135,7 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 	output, err := runtime.Execute(t.Context(), protocol.ToolInvocation{
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", Input: `{"cell_id":"fixture:cell"}`,
 	})
-	if err == nil || output != nil || errors.As(err, new(*toolError)) {
+	if err == nil || output != nil || errors.As(err, new(*toolcontract.Rejection)) {
 		t.Fatalf("store failure became model output: output=%+v error=%v", output, err)
 	}
 }
@@ -407,7 +409,7 @@ func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 
 func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *CodeMode {
 	t.Helper()
-	code, err := manager.OpenSession(context.Background(), conversation, sessionstore.Owner{ConversationID: conversation}, &Executor{})
+	code, err := manager.OpenSession(context.Background(), conversation, sessionstore.Owner{ConversationID: conversation}, &executor.Executor{})
 	if err != nil {
 		t.Fatalf("open logical session %q: %v", conversation, err)
 	}
@@ -423,7 +425,7 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	}
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
-	first, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+	first, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +452,7 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := manager.OpenSession(t.Context(), session.ConversationID, newOwner, &Executor{})
+	second, err := manager.OpenSession(t.Context(), session.ConversationID, newOwner, &executor.Executor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -928,7 +930,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 	}
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
-	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+	code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -965,7 +967,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 		RPCTimeoutSeconds: 2,
 	}
 	runtime := NewRuntime(store, settings, manager)
-	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
+	return store, owner, runtime, &liveHost{code: code, executor: &executor.Executor{}}, code, peers()[0]
 }
 
 func appendModelToolCall(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, call protocol.ToolInvocation) {
@@ -1305,7 +1307,7 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 			}
 			manager, peers := newFakeCodeModeManagerWithBudgets(t, 2*time.Second, 20*time.Millisecond)
 			manager.store = store
-			code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+			code, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &executor.Executor{})
 			if err != nil {
 				t.Fatal(err)
 			}

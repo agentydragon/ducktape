@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -413,7 +414,7 @@ func (e *Executor) ensureSessionLocked(ctx context.Context, method executionMeth
 		currentScope := e.scopeSnapshot()
 		if expectedUID != currentScope.GetExpectedIncarnationUid() {
 			if currentScope.GetExpectedIncarnationUid() == "" || currentScope.GetDestination().GetTarget().GetUid() == "" {
-				return &toolError{"cannot fence execution because the retained scope has no incarnation or Sandbox UID"}
+				return &toolcontract.Rejection{Message: "cannot fence execution because the retained scope has no incarnation or Sandbox UID"}
 			}
 			candidateScope := proto.Clone(currentScope).(*executorpb.ExecutionScope)
 			candidateScope.ExpectedIncarnationUid = expectedUID

@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"bytes"

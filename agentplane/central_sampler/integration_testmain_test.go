@@ -175,6 +175,31 @@ func openSessionForStore(t *testing.T, store *sessionstore.Store, setup string) 
 	return session
 }
 
+func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
+	t.Helper()
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
+		t.Fatal(err)
+	}
+	return store, owner
+}
+
+func assertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
+	t.Helper()
+	var count int
+	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("unresolved nested intents=%d", count)
+	}
+}
+
 func admitInput(t *testing.T, store *sessionstore.Store, sessionID, commandID, text string) {
 	t.Helper()
 	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}}, "fixture-account", nil); err != nil {

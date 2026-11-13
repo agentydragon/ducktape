@@ -1,4 +1,4 @@
-package centralsampler
+package executor
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 )
 
@@ -32,19 +33,19 @@ var unifiedExecEnvironment = map[string]string{
 	"COLORTERM": "", "PAGER": "cat", "GIT_PAGER": "cat", "GH_PAGER": "cat", "CODEX_CI": "1",
 }
 
-// toolError is a caller-visible tool failure. Nested calls reject their JavaScript promise;
-// model input errors become failed tool output. toolOutcomeError also rejects nested calls
-// when a remote effect may have happened, retaining explicit unknown-outcome evidence.
-type toolError struct{ message string }
-
-func (e *toolError) Error() string { return e.message }
-
-type toolOutcomeError struct {
-	*toolError
-	evidence any
+// ToolOutcomeError preserves the caller-visible tool rejection when a remote effect may have
+// happened, retaining explicit unknown-outcome evidence.
+type ToolOutcomeError struct {
+	rejection *toolcontract.Rejection
+	evidence  any
 }
 
-func (e *toolOutcomeError) Unwrap() error { return e.toolError }
+func (e *ToolOutcomeError) Error() string { return e.rejection.Error() }
+
+func (e *ToolOutcomeError) Unwrap() error { return e.rejection }
+
+// Evidence returns the durable executor evidence associated with the rejection.
+func (e *ToolOutcomeError) Evidence() any { return e.evidence }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec.rs ExecCommandArgs and
 // ExecCommandEnvironmentArgs. Unknown fields are ignored and null means omitted, as with serde.
@@ -77,16 +78,16 @@ func decodeFunctionArguments(tool string, input json.RawMessage, value any) erro
 		trimmed = []byte("{}")
 	}
 	if trimmed[0] != '{' {
-		return &toolError{fmt.Sprintf("tool `%s` expects a JSON object for arguments", tool)}
+		return &toolcontract.Rejection{Message: fmt.Sprintf("tool `%s` expects a JSON object for arguments", tool)}
 	}
 	if err := json.Unmarshal(trimmed, value); err != nil {
-		return &toolError{"failed to parse function arguments: " + err.Error()}
+		return &toolcontract.Rejection{Message: "failed to parse function arguments: " + err.Error()}
 	}
 	return nil
 }
 
 func missingField(name string) error {
-	return &toolError{fmt.Sprintf("failed to parse function arguments: missing field `%s`", name)}
+	return &toolcontract.Rejection{Message: fmt.Sprintf("failed to parse function arguments: missing field `%s`", name)}
 }
 
 // execShell is the shell an executor reports at initialization.
@@ -137,7 +138,7 @@ func parseExecCommand(input json.RawMessage) (execCommandArgs, error) {
 	if args.ExpectedIncarnationUID != nil {
 		uid := *args.ExpectedIncarnationUID
 		if uid == "" || strings.TrimSpace(uid) != uid || len(uid) > 256 {
-			return args, &toolError{"failed to parse function arguments: `expected_incarnation_uid` must be a non-empty, unpadded UID of at most 256 bytes"}
+			return args, &toolcontract.Rejection{Message: "failed to parse function arguments: `expected_incarnation_uid` must be a non-empty, unpadded UID of at most 256 bytes"}
 		}
 	}
 	return args, nil
@@ -166,10 +167,10 @@ func (args execCommandArgs) plan(cwd string, shell *execShell) (*execCommandPlan
 	// launches the reported shell.
 	if args.Shell != nil {
 		if shell == nil {
-			return nil, &toolError{fmt.Sprintf("environment `%s` does not report a shell", remoteEnvironmentID)}
+			return nil, &toolcontract.Rejection{Message: fmt.Sprintf("environment `%s` does not report a shell", remoteEnvironmentID)}
 		}
 		if detectShellType(*args.Shell) != detectShellType(shell.Name) {
-			return nil, &toolError{fmt.Sprintf("environment `%s` only supports `%s`", remoteEnvironmentID, shell.Name)}
+			return nil, &toolcontract.Rejection{Message: fmt.Sprintf("environment `%s` only supports `%s`", remoteEnvironmentID, shell.Name)}
 		}
 	}
 	launch := fallbackExecShell
@@ -186,7 +187,7 @@ func (args execCommandArgs) plan(cwd string, shell *execShell) (*execCommandPlan
 		}
 		argv = []string{launch.Path, flag, *args.Cmd}
 	default:
-		return nil, &toolError{fmt.Sprintf("environment `%s` reports unsupported shell `%s`", remoteEnvironmentID, launch.Name)}
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("environment `%s` reports unsupported shell `%s`", remoteEnvironmentID, launch.Name)}
 	}
 	yieldMS := uint64(defaultExecCommandYieldMS)
 	if args.YieldTimeMS != nil {
