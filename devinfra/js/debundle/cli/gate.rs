@@ -931,7 +931,9 @@ fn render_list_text(report: &GateListReport, out: &mut String) {
 
 /// Text label for a stored rejection kind; empty for reports that predate it.
 fn rejection_label(rejection: Option<BlockingRejection>) -> &'static str {
-    rejection.map_or("", Into::into)
+    rejection.map_or("", |kind| {
+        strum::EnumMessage::get_message(&kind).unwrap_or_default()
+    })
 }
 
 fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEntry> {

@@ -74,7 +74,7 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
     );
     assert_eq!(
         report["host_builtin_leaves"]["examples"][0]["builtin"],
-        "fs/promises"
+        "fs_promises"
     );
     assert_eq!(
         report["host_builtin_leaves"]["examples"][0]["request_count"],

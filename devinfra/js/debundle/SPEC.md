@@ -4230,7 +4230,7 @@ with no arguments. Reassigned bindings and dynamic scopes remain opaque.
 ### Deferred browser-global publication
 
 `chunk_analysis_options.<chunk>.deferred_global_publications` names audited
-browser-global data slots, for example `{globalThis: [inspectState]}` or
+browser-global data slots, for example `{global_this: [inspectState]}` or
 `{window: [inspectState]}`. A listed slot must be an ordinary inert own data
 property, or an absent slot whose creation cannot invoke an inherited setter,
 at the write. The object must permit the write. No host, importer, or source
@@ -4268,7 +4268,7 @@ roots (`globalThis` or `window`) to literal string keys. For example:
 
 ```yaml
 non_reentrant_global_membership:
-  globalThis: [featureEnabled]
+  global_this: [featureEnabled]
 ```
 
 This separately certifies the host's `[[HasProperty]]` protocol at every admitted

@@ -868,7 +868,7 @@ pub fn tier0_report_indexed(
                     return;
                 };
                 if pairs_out.is_some() {
-                    unproven.push_str(&format!("{low}\t{high}\t{}\n", class.to_string()));
+                    unproven.push_str(&format!("{low}\t{high}\t{class}\n"));
                 }
                 let seen = example_counts.entry(class.to_string()).or_default();
                 if with_examples && *seen < EXAMPLE_LIMIT {

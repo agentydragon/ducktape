@@ -526,7 +526,7 @@ export function legacy() { return import.meta.require("constants"); }
         .filter(|request| request["source_chunk"] == "static/sidecar")
         .map(|request| request["target"]["builtin"].as_str().unwrap())
         .collect();
-    assert_eq!(targets, ["bun:ffi", "constants", "undici"]);
+    assert_eq!(targets, ["bun_ffi", "constants", "undici"]);
     let host_keys = report["loader"]["host_keys"].as_array().unwrap();
     assert!(host_keys.contains(&json!({ "reentry_free_bun_module": "bun_ffi" })));
     assert!(host_keys.contains(&json!({ "reentry_free_builtin_module": "constants" })));

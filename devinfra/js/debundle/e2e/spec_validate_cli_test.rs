@@ -97,7 +97,13 @@ fn enum_names_use_snake_case_and_reject_legacy_spellings() {
                 ),
         );
         let result = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
-        assert_eq!(result.status.success(), accepted, "{result:?}");
+        assert_eq!(
+            result.status.success(),
+            accepted,
+            "stdout: {}\nstderr: {}",
+            result.stdout,
+            result.stderr
+        );
     }
 }
 
