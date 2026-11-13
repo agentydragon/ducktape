@@ -84,5 +84,6 @@ go_test(
         "@buildbuddy_protos//:google_longrunning_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_protobuf//types/known/anypb",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

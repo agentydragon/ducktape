@@ -186,6 +186,12 @@ it never submits or cancels work and does not retry the stream automatically.
 A successful action does not establish the whole Bazel invocation or CI verdict.
 Use `bb execution get` for retained response-cache recovery after completion;
 the provider's operation stream and cached response have different retention.
+Each update also includes `observed_at` from the local observer. When the
+provider supplies execution progress, `progress_state` and `progress_at`
+preserve its state and executor timestamp. Reattachment may replay an older
+update, executor and observer clocks may differ, and progress messages do not
+identify a physical attempt. Do not treat `progress_at` as a worker-start time
+or infer a retry merely from repeated progress.
 
 `invocation list --group` scopes the search to that group; without `--repo`, it
 does not auto-detect or add a repository filter. `--all` follows every result
