@@ -1,0 +1,13 @@
+# Original home: packages/excalidraw/actions/manager.tsx
+source_matches:
+  - match: |
+      var actionManagerImplementation = class {
+        ANYTHING;
+        registerAction(action) { this.actions[action.name] = action; }
+        registerAll(actions) { actions.forEach((action) => this.registerAction(action)); }
+        handleKeyDown(ANYTHING) { STMT_LIST; }
+        ANYTHING;
+      };
+    bindings:
+      - local: actionManagerImplementation
+        name: ActionManager

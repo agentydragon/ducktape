@@ -58,6 +58,10 @@ fn claimed_modules_export_their_entry_points() {
         ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
+            "main/packages/excalidraw/actions/manager.js",
+            &["ActionManager"],
+        ),
+        (
             "main/packages/excalidraw/history.js",
             &["History", "HistoryChangedEvent"],
         ),
