@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "execution_stream_fault",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/devinfra/buildbuddy/diagnostics/execution_stream_fault",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@buildbuddy_protos//:remote_execution_go_proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
