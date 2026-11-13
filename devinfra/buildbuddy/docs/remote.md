@@ -28,8 +28,9 @@ Bazel on the hosted runner. A config present only in the caller's home rc
 therefore has no effect there.
 
 Direct local `bb build` / `bb test` instead expand both `.bbrc` and Bazel rc
-files locally. The current parser forwards startup directives and adds
-`--ignore_all_rc_files` to prevent Bazel loading those files a second time.
+files locally. In the 5.0.466 parser checked below, startup directives were
+forwarded and `--ignore_all_rc_files` was added to prevent Bazel loading those
+files a second time.
 The older startup-option loss is historical; see <bazelrc_startup.md>.
 
 **bb remote flags**: `bb help remote` lists the current set. Two matter for

@@ -9,8 +9,9 @@ not been repeated on that release. The earlier observation that local
 Checked 2026-10-30 against bb 5.0.466 and upstream
 [`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11),
 particularly `cli/parser/parser.go` (`ParseConfig`, `consumeAndParseRCFiles`,
-`expandBazelRC`). The current parser expands rc files, including startup
-options, then adds `--ignore_all_rc_files` so Bazel does not load them twice.
+`expandBazelRC`). In that source version, the parser expanded rc files,
+including startup options, then added `--ignore_all_rc_files` so Bazel would
+not load them twice.
 Do not infer that the startup options were lost from this flag alone.
 
 ## Verification
@@ -22,7 +23,7 @@ and this `.bazelrc`:
 startup --host_jvm_args=-XX:CliDocAuditInvalidOption
 ```
 
-Running the pinned binary with `--nosystem_rc --nohome_rc`, an isolated
+Running bb 5.0.466 with `--nosystem_rc --nohome_rc`, an isolated
 `--output_user_root`, and `version` produced this JVM error in `server/jvm.out`:
 
 ```text
