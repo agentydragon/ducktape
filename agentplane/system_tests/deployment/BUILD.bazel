@@ -125,6 +125,7 @@ py_test(
     srcs = ["test_render.py"],
     data = [
         ":rendered/local-model.json",
+        ":rendered/local-model-central.json",
         ":rendered/local-model-firecracker.json",
         ":rendered/local-model-mcp-fixtures.json",
         ":rendered/local-model-pod.json",
@@ -133,6 +134,7 @@ py_test(
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "K3S_CENTRAL_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central.json)",
         "K3S_DEFAULT_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model.json)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
         "K3S_FIRECRACKER_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-firecracker.json)",
@@ -377,13 +379,25 @@ py_binary(
     deps = [":render_mcp_fixture"],
 )
 
-# Each output has a separate action. Ordinary and VM renderers use the common chart; only the MCP
-# output depends on its fixture servers and Dex additions. Runtime values stay placeholders.
+# Each output has a separate action. Ordinary, central and VM renderers use the common chart; only
+# the MCP output depends on its fixture servers and Dex additions. Runtime values stay placeholders.
 genrule(
     name = "render_local_model",
     testonly = True,
     outs = ["rendered/local-model.json"],
     cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+genrule(
+    name = "render_local_model_central",
+    testonly = True,
+    outs = ["rendered/local-model-central.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-central K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
     tools = [
         ":render_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",

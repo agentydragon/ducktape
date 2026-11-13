@@ -692,8 +692,11 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     }
 
 
-def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(runfiles: Runfiles) -> None:
-    fixture = _filled_fixture(runfiles)
+@pytest.mark.parametrize("location", ["K3S_FIXTURE_RLOCATION", "K3S_CENTRAL_FIXTURE_RLOCATION"])
+def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
+    runfiles: Runfiles, location: str
+) -> None:
+    fixture = _filled_fixture(runfiles, location)
     assert fixture.central_sampler
     assert not fixture.vm_sandboxes
     docs = fixture.objects
@@ -724,6 +727,7 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     settings = CentralSamplerSettings.model_validate_json(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
+    assert settings.executor_reconnect_timeout_seconds is None
     ingress_connection = settings.connections["llm-ingress"]
     assert ingress_connection.base_url == (
         f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
@@ -805,6 +809,30 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     )
     history_database_env = history_env["AGENTPLANE_HISTORY_SERVICE_DATABASE_URL"]
     assert history_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-sandbox-service"
+
+
+def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(runfiles: Runfiles) -> None:
+    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
+    mcp = _filled_fixture(runfiles)
+    assert central.mcp_fixtures is None
+    assert central.operator_tokens is not None
+    central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
+    mcp_deployments = {doc["metadata"]["name"] for doc in mcp.objects if doc["kind"] == "Deployment"}
+    assert central_deployments == mcp_deployments - {"dex", "mcp-everything", "oauth-fixture"}
+
+    # This preset takes the existing test-operator issuer path. The full MCP fixture gets its
+    # operator token from Dex instead, while the recovery services retain identical config.
+    central_app = yaml.safe_load(_resource(central.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
+    mcp_app = yaml.safe_load(_resource(mcp.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert central_app["oidc"]["issuer"] == central.operator_tokens.issuer
+    assert central_app["oidc"]["static_ed25519_keys"] == ["test-operator-public-key"]
+    assert mcp_app["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
+    assert "static_ed25519_keys" not in mcp_app["oidc"]
+    for component in ("central-sampler", "runner-gateway", "history-service"):
+        for kind in ("Deployment", "Service"):
+            assert _resource(central.objects, kind, component) == _resource(mcp.objects, kind, component)
+    for config in ("central-sampler-settings", "runner-gateway-settings", "history-service-config"):
+        assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:

@@ -94,6 +94,10 @@ generates (`oidc.static_ed25519_keys`); the test process signs the token, so no 
 fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
 grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
 
+The central-recovery suites use the plain operator-token fixture with the central sampler enabled.
+They retain the common services and MCP edge, while omitting the separate Dex, `mcp-everything` and
+OAuth fixture workloads; suites that exercise those OAuth and MCP servers keep the full MCP fixture.
+
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The

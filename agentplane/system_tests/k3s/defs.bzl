@@ -73,6 +73,7 @@ K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
 _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
+_CENTRAL_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
@@ -100,8 +101,10 @@ _COMMON_SERVICE_IMAGES = {
 _HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
 }
-_MCP_IMAGES = {
+_CENTRAL_IMAGES = {
     "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
+}
+_MCP_FIXTURE_IMAGES = {
     "@dex_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-dex:unset",
     "@mcp_everything_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset",
     "//agentplane/action_service/testing:oauth_mcp_server_image": "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset",
@@ -166,7 +169,8 @@ _STACKS = {
     "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
     "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
+    "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
     "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
     "real_model": struct(service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
