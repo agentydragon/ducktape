@@ -692,7 +692,9 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     }
 
 
-@pytest.mark.parametrize("location", ["K3S_FIXTURE_RLOCATION", "K3S_CENTRAL_FIXTURE_RLOCATION"])
+@pytest.mark.parametrize(
+    "location", ["K3S_FIXTURE_RLOCATION", "K3S_CENTRAL_FIXTURE_RLOCATION", "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION"]
+)
 def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     runfiles: Runfiles, location: str
 ) -> None:
@@ -833,6 +835,20 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
             assert _resource(central.objects, kind, component) == _resource(mcp.objects, kind, component)
     for config in ("central-sampler-settings", "runner-gateway-settings", "history-service-config"):
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
+
+
+def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(runfiles: Runfiles) -> None:
+    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
+    budget = _filled_fixture(runfiles, "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION")
+    central_config = _resource(central.objects, "ConfigMap", "central-sampler-settings")
+    budget_config = _resource(budget.objects, "ConfigMap", "central-sampler-settings")
+    central_settings = json.loads(central_config["data"]["settings.json"])
+    budget_settings = json.loads(budget_config["data"]["settings.json"])
+    assert "executor_reconnect_timeout_seconds" not in central_settings
+    assert CentralSamplerSettings.model_validate(budget_settings).executor_reconnect_timeout_seconds == 45
+    assert budget_settings == central_settings | {"executor_reconnect_timeout_seconds": 45}
+    budget_config["data"] = central_config["data"]
+    assert budget == central
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
