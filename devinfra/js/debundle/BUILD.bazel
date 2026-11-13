@@ -1563,6 +1563,12 @@ rust_test(
     deps = [":report_fixtures"],
 )
 
+rust_test(
+    name = "command_output_test",
+    crate = ":command_output",
+    edition = "2024",
+)
+
 # Shared selector-program IR: the data boundary between selector lowering and
 # the constraint-solver backends.
 rust_library(
@@ -2027,5 +2033,6 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:thiserror",
     ],
 )

@@ -5,7 +5,7 @@ use analysis::DependencyGraphInput;
 use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
-use command_output::{print_ndjson_list, print_report};
+use command_output::{write_ndjson_list, write_report};
 use peel::plan::{LimitReport, apply_limit_with_metadata};
 use peel::{
     CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
@@ -148,7 +148,7 @@ fn resolve_one_binding_source_unit<'a>(
     }
 }
 
-pub fn run_scc(args: SccArgs) -> Result<()> {
+pub fn run_scc(args: SccArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
     // If a binding was supplied, find its source unit -> destination module
@@ -203,10 +203,14 @@ pub fn run_scc(args: SccArgs) -> Result<()> {
     }
     let report = SccReport { sccs: entries };
     let format = OutputFormat::resolve(args.format);
-    if print_ndjson_list(&report.sccs, format)? {
+    if write_ndjson_list(&report.sccs, format, output)? {
         return Ok(());
     }
-    print_report(&report, format, render_scc_text).context("writing scc output")
+    write_report(&report, format, output, |report, out| {
+        render_scc_text(report, out);
+        Ok(())
+    })
+    .context("writing scc output")
 }
 
 fn render_scc_text(report: &SccReport, out: &mut String) {
@@ -226,7 +230,7 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
     }
 }
 
-pub fn run_cluster(args: ClusterArgs) -> Result<()> {
+pub fn run_cluster(args: ClusterArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if args.limit == Some(0) {
         anyhow::bail!("--limit must be greater than zero; use --all for exhaustive results");
     }
@@ -295,7 +299,11 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
         limits: LimitReport { limit, sections },
     };
     let format = OutputFormat::resolve(args.format);
-    print_report(&report, format, render_cluster_text).context("writing cluster output")
+    write_report(&report, format, output, |report, out| {
+        render_cluster_text(report, out);
+        Ok(())
+    })
+    .context("writing cluster output")
 }
 
 /// Pair an interned module key with its human path label, falling back

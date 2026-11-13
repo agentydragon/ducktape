@@ -2,10 +2,10 @@
 use crate::contract_audit::{AuditContractsArgs, run as run_audit_contracts};
 use crate::propose_commutations::ProposeCommutationsArgs;
 use crate::validate::{ValidateArgs, run_validate_cmd};
-use crate::{emit_report, print_section};
+use crate::{emit_report, write_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use command_output::print_report;
+use command_output::write_report;
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
@@ -346,7 +346,10 @@ struct MatchSelectorArgs {
     pub format: Option<OutputFormat>,
 }
 
-fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
+fn run_synthesize_selectors_cmd(
+    args: SelectorCodemodArgs,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     let config = SelectorCodemodConfig {
         modules_root: args.modules_root,
@@ -363,22 +366,25 @@ fn run_synthesize_selectors_cmd(args: SelectorCodemodArgs) -> Result<()> {
     if format == OutputFormat::Ndjson {
         let report =
             selector_codemod::run_selector_codemod_with_module_results(&config, &mut |module| {
-                print_section("module", module)?;
-                std::io::Write::flush(&mut std::io::stdout())?;
+                write_section(output, "module", module)?;
                 Ok(())
             })?;
-        return print_section("summary", &report.summary);
+        return write_section(output, "summary", &report.summary);
     }
     let report = run_selector_codemod(&config)?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_selector_codemod_text,
+        |report, out| {
+            render_selector_codemod_text(report, out);
+            Ok(())
+        },
         "writing synthesize-selectors output",
     )
 }
 
-fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
+fn run_match_selector_cmd(args: MatchSelectorArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if args.explain {
         let config = crate::selector_explanation::ExplanationConfig {
             source_file: args.source_file,
@@ -393,9 +399,13 @@ fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
         };
         let report = crate::selector_explanation::explain(&config)?;
         return emit_report(
+            output,
             args.format,
             &report,
-            crate::selector_explanation::render,
+            |report, out| {
+                crate::selector_explanation::render(report, out);
+                Ok(())
+            },
             "writing selector explanation",
         );
     }
@@ -408,28 +418,35 @@ fn run_match_selector_cmd(args: MatchSelectorArgs) -> Result<()> {
         check_slack: !args.no_slack,
     })?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_match_selector_text,
+        |report, out| {
+            render_match_selector_text(report, out);
+            Ok(())
+        },
         "writing match-selector output",
     )
 }
 
-fn run_spec_stats_cmd(args: SpecStatsArgs) -> Result<()> {
+fn run_spec_stats_cmd(args: SpecStatsArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let stats = compute_spec_stats(&args.modules_root)?;
     let format = OutputFormat::resolve(args.format);
     match format {
         OutputFormat::Ndjson => {
-            print_section("modules", &stats.modules)?;
-            print_section("bindings", &stats.bindings)?;
+            write_section(output, "modules", &stats.modules)?;
+            write_section(output, "bindings", &stats.bindings)?;
             Ok(())
         }
-        _ => print_report(&stats, format, render_spec_stats_text)
-            .context("writing spec stats output"),
+        _ => write_report(&stats, format, output, |stats, out| {
+            render_spec_stats_text(stats, out);
+            Ok(())
+        })
+        .context("writing spec stats output"),
     }
 }
 
-fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
+fn run_selector_debt_cmd(args: SelectorDebtArgs, output: &mut dyn std::io::Write) -> Result<()> {
     if args.group_module_depth == Some(0) {
         bail!("--group-module-depth must be at least 1");
     }
@@ -468,51 +485,63 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs) -> Result<()> {
     }
     let format = OutputFormat::resolve(args.format);
     if format == OutputFormat::Ndjson {
-        emit_selector_debt_ndjson(&report)?;
+        emit_selector_debt_ndjson(&report, output)?;
         return Ok(());
     }
-    print_report(&report, format, render_selector_debt_text).context("writing selector-debt output")
+    write_report(&report, format, output, |report, out| {
+        render_selector_debt_text(report, out);
+        Ok(())
+    })
+    .context("writing selector-debt output")
 }
 
 /// One tagged JSON object per row, then a final `summary` line — the
 /// streaming shape `jq -c` consumers dispatch on via `.section`.
-fn emit_selector_debt_ndjson(report: &SelectorDebtReport) -> Result<()> {
+fn emit_selector_debt_ndjson(
+    report: &SelectorDebtReport,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     for row in &report.name_only {
-        print_section("name_only", row)?;
+        write_section(output, "name_only", row)?;
     }
     for row in &report.repeated_source_match {
-        print_section("repeated_source_match", row)?;
+        write_section(output, "repeated_source_match", row)?;
     }
     for row in &report.name_only_module_groups {
-        print_section("name_only_module_group", row)?;
+        write_section(output, "name_only_module_group", row)?;
     }
     for row in &report.source_aware_near_ambiguous {
-        print_section("source_aware_near_ambiguous", row)?;
+        write_section(output, "source_aware_near_ambiguous", row)?;
     }
     for row in &report.source_aware_repeated_exact {
-        print_section("source_aware_repeated_exact", row)?;
+        write_section(output, "source_aware_repeated_exact", row)?;
     }
     for row in &report.source_aware_binding_group_suggestions {
-        print_section("source_aware_binding_group_suggestion", row)?;
+        write_section(output, "source_aware_binding_group_suggestion", row)?;
     }
-    print_section("summary", &report.summary)
+    write_section(output, "summary", &report.summary)
 }
 
-pub(super) fn run(args: SpecNs, source_context: Option<&VerifiedGraphSourceContext>) -> Result<()> {
+pub(super) fn run(
+    args: SpecNs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     match args.command {
-        SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
-        SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s),
-        SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s),
-        SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s),
+        SpecNsCommand::Stats(s) => run_spec_stats_cmd(s, output),
+        SpecNsCommand::SelectorDebt(s) => run_selector_debt_cmd(s, output),
+        SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s, output),
+        SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s, output),
         SpecNsCommand::Validate(v) => {
-            run_validate_cmd(v).context("running keep-going selector validation")
+            run_validate_cmd(v, output).context("running keep-going selector validation")
         }
-        SpecNsCommand::AuditContracts(a) => run_audit_contracts(a),
-        SpecNsCommand::Lint(args) => crate::spec_lint::run(args),
+        SpecNsCommand::AuditContracts(a) => run_audit_contracts(a, output),
+        SpecNsCommand::Lint(args) => crate::spec_lint::run(args, output),
         SpecNsCommand::ProjectAnalysis(args) => args.run(),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,
             source_context.context("propose-commutations verifies its graph before dispatch")?,
+            output,
         ),
     }
 }

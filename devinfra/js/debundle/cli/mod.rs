@@ -27,7 +27,7 @@ mod static_imports;
 use analyze_command::AnalyzeArgs;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
-use command_output::print_report;
+use command_output::{ReportOutputError, write_report};
 use graph_provenance::{CurrentRoots, GraphMismatch, GraphMismatchReason};
 use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs};
@@ -35,6 +35,7 @@ use pipeline::{
     GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformRunOptions,
     run_transform_with_analysis,
 };
+use std::io::{self, Write};
 use std::process::ExitCode;
 use transform_command::TransformArgs;
 
@@ -468,6 +469,8 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
     let args = DebundleArgs::from_arg_matches(&matches)
         .expect("Clap validated DebundleArgs before constructing ArgMatches");
     let query_format = top_level_query_format(&args.command);
+    let stdout = io::stdout();
+    let mut stdout = stdout.lock();
     let result = (|| {
         let invocation = if args.invocation.requested() {
             Some(ResolvedInvocation::capture(
@@ -480,23 +483,34 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
         } else {
             None
         };
-        run_debundle_cli(args, invocation, analysis_engine_sha256)
+        run_debundle_cli(args, invocation, analysis_engine_sha256, &mut stdout)
     })();
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            if let Some(format) = query_format.filter(|format| *format != OutputFormat::Text) {
-                if error.downcast_ref::<GraphMismatch>().is_some() {
-                    emit_graph_mismatch_json(format, &error);
+            if report_output_broken_pipe(&error) {
+                return ExitCode::SUCCESS;
+            }
+            if let Some(format) = query_format
+                .filter(|format| *format != OutputFormat::Text)
+                .filter(|_| !has_report_output_error(&error))
+            {
+                let output_error = if error.downcast_ref::<GraphMismatch>().is_some() {
+                    emit_graph_mismatch_json(&mut stdout, format, &error)
                 } else {
-                    emit_query_failure(format, &error);
+                    emit_query_failure(&mut stdout, format, &error)
+                };
+                if let Err(output_error) = output_error {
+                    if report_output_broken_pipe(&output_error) {
+                        return ExitCode::SUCCESS;
+                    }
+                    return report_cli_error(&output_error);
                 }
             }
-            eprintln!("{error:#}");
             if error.downcast_ref::<GateRejected>().is_some() {
-                ExitCode::from(GATE_REJECTED_EXIT_CODE)
+                report_cli_error_with_code(&error, GATE_REJECTED_EXIT_CODE)
             } else {
-                ExitCode::from(1)
+                report_cli_error(&error)
             }
         }
     }
@@ -506,6 +520,7 @@ fn run_debundle_cli(
     args: DebundleArgs,
     invocation: Option<ResolvedInvocation>,
     analysis_engine_sha256: &'static str,
+    output: &mut dyn Write,
 ) -> Result<()> {
     if let Some(record) = invocation {
         if let Some(path) = &args.invocation.invocation_out {
@@ -515,7 +530,8 @@ fn run_debundle_cli(
                 .with_context(|| format!("writing invocation record to {}", path.display()))?;
         }
         if args.invocation.print_invocation {
-            println!("{}", serde_json::to_string_pretty(&record)?);
+            write_report(&record, OutputFormat::Json, output, |_, _| Ok(()))
+                .context("writing invocation record to stdout")?;
             return Ok(());
         }
     }
@@ -534,7 +550,7 @@ fn run_debundle_cli(
         Ok(source_context) => source_context,
         Err(error) => {
             if top_level_query_format(&args.command).is_none() {
-                emit_graph_mismatch_json(command_output_format(&args.command), &error);
+                emit_graph_mismatch_json(output, command_output_format(&args.command), &error)?;
             }
             return Err(error);
         }
@@ -609,39 +625,46 @@ fn run_debundle_cli(
             Ok(())
         }
         DebundleCommand::Analyze(args) => args.run(analysis_engine_sha256),
-        DebundleCommand::Bindings(args) => {
-            bindings_commands::run(args, source_context.as_ref(), analysis_engine_sha256)
-        }
-        DebundleCommand::Modules(args) => {
-            modules_commands::run(args, source_context.as_ref(), analysis_engine_sha256)
-        }
-        DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),
+        DebundleCommand::Bindings(args) => bindings_commands::run(
+            args,
+            source_context.as_ref(),
+            analysis_engine_sha256,
+            output,
+        ),
+        DebundleCommand::Modules(args) => modules_commands::run(
+            args,
+            source_context.as_ref(),
+            analysis_engine_sha256,
+            output,
+        ),
+        DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args, output),
         DebundleCommand::Coverage(args) => {
-            inspection_commands::run_coverage(args, source_context.as_ref())
+            inspection_commands::run_coverage(args, source_context.as_ref(), output)
         }
         DebundleCommand::GraphSummary(args) => {
-            inspection_commands::run_graph_summary(args, source_context.as_ref())
+            inspection_commands::run_graph_summary(args, source_context.as_ref(), output)
         }
         DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
             describe_args,
             source_context,
             describe_query.expect("Describe query was validated before graph preflight"),
+            output,
         ),
         DebundleCommand::InspectSource(args) => {
-            inspection_commands::run_inspect_source(args, source_context.as_ref())
+            inspection_commands::run_inspect_source(args, source_context.as_ref(), output)
         }
-        DebundleCommand::StaticImports(args) => static_imports::run(args),
+        DebundleCommand::StaticImports(args) => static_imports::run(args, output),
         DebundleCommand::ExplainIntegrity(explain_args) => {
-            integrity_explanation::run(explain_args, roots)
+            integrity_explanation::run(explain_args, roots, output)
         }
-        DebundleCommand::Scc(args) => run_scc(args),
-        DebundleCommand::Cluster(args) => run_cluster(args),
-        DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref()),
+        DebundleCommand::Scc(args) => run_scc(args, output),
+        DebundleCommand::Cluster(args) => run_cluster(args, output),
+        DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref(), output),
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
-        DebundleCommand::Gate(gate_args) => run_gate_cli(gate_args, roots),
+        DebundleCommand::Gate(gate_args) => run_gate_cli(gate_args, roots, output),
         DebundleCommand::Snapshot(snapshot_args) => snapshot::run(snapshot_args, roots),
     };
     if result.is_ok() && writes_with_graph {
@@ -650,6 +673,33 @@ fn run_debundle_cli(
         );
     }
     result
+}
+
+fn has_report_output_error(error: &anyhow::Error) -> bool {
+    first_report_output_error(error).is_some()
+}
+
+fn report_output_broken_pipe(error: &anyhow::Error) -> bool {
+    first_report_output_error(error).is_some_and(ReportOutputError::is_broken_pipe)
+}
+
+fn first_report_output_error(error: &anyhow::Error) -> Option<&ReportOutputError> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<ReportOutputError>())
+}
+
+fn report_cli_error(error: &anyhow::Error) -> ExitCode {
+    report_cli_error_with_code(error, 1)
+}
+
+fn report_cli_error_with_code(error: &anyhow::Error, code: u8) -> ExitCode {
+    let stderr = io::stderr();
+    let mut stderr = stderr.lock();
+    match writeln!(stderr, "{error:#}").and_then(|()| stderr.flush()) {
+        Ok(()) => ExitCode::from(code),
+        Err(_) => ExitCode::from(1),
+    }
 }
 
 fn command_output_format(command: &DebundleCommand) -> OutputFormat {
@@ -667,12 +717,16 @@ fn command_output_format(command: &DebundleCommand) -> OutputFormat {
     OutputFormat::resolve(format)
 }
 
-fn emit_graph_mismatch_json(format: OutputFormat, error: &anyhow::Error) {
+fn emit_graph_mismatch_json(
+    output: &mut dyn Write,
+    format: OutputFormat,
+    error: &anyhow::Error,
+) -> Result<()> {
     let Some(mismatch) = error.downcast_ref::<GraphMismatch>() else {
-        return;
+        return Ok(());
     };
     if format == OutputFormat::Text {
-        return;
+        return Ok(());
     }
     #[derive(serde::Serialize)]
     struct Rejection<'a> {
@@ -685,17 +739,7 @@ fn emit_graph_mismatch_json(format: OutputFormat, error: &anyhow::Error) {
         action: "rejected",
         mismatch,
     };
-    match format {
-        OutputFormat::Json => println!(
-            "{}",
-            serde_json::to_string_pretty(&value).expect("serialize mismatch")
-        ),
-        OutputFormat::Ndjson => println!(
-            "{}",
-            serde_json::to_string(&value).expect("serialize mismatch")
-        ),
-        OutputFormat::Text => unreachable!(),
-    }
+    write_report(&value, format, output, |_, _| Ok(())).context("writing graph mismatch output")
 }
 
 #[derive(serde::Serialize)]
@@ -722,7 +766,11 @@ struct QueryFailure<'a> {
     message: &'a str,
 }
 
-fn emit_query_failure(format: OutputFormat, error: &anyhow::Error) {
+fn emit_query_failure(
+    output: &mut dyn Write,
+    format: OutputFormat,
+    error: &anyhow::Error,
+) -> Result<()> {
     let unsupported_prefix = error
         .chain()
         .find_map(|cause| cause.downcast_ref::<inspection_commands::UnsupportedIdentifierPrefix>());
@@ -758,17 +806,7 @@ fn emit_query_failure(format: OutputFormat, error: &anyhow::Error) {
         reason,
         message: &message,
     };
-    match format {
-        OutputFormat::Json => println!(
-            "{}",
-            serde_json::to_string_pretty(&failure).expect("serialize query failure")
-        ),
-        OutputFormat::Ndjson => println!(
-            "{}",
-            serde_json::to_string(&failure).expect("serialize query failure")
-        ),
-        OutputFormat::Text => unreachable!(),
-    }
+    write_report(&failure, format, output, |_, _| Ok(())).context("writing query failure output")
 }
 
 fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
@@ -848,6 +886,7 @@ fn verify_mixed_graph_command(
 /// Shared tail of every report subcommand: resolve `format` (tty-aware default),
 /// render `report`, and tag IO errors with `context`.
 fn emit_report<T, F>(
+    output: &mut dyn Write,
     format: Option<OutputFormat>,
     report: &T,
     text_render: F,
@@ -855,31 +894,59 @@ fn emit_report<T, F>(
 ) -> Result<()>
 where
     T: serde::Serialize,
-    F: FnOnce(&T, &mut String),
+    F: FnOnce(&T, &mut String) -> Result<()>,
 {
-    print_report(report, OutputFormat::resolve(format), text_render).context(context)
+    write_report(report, OutputFormat::resolve(format), output, text_render).context(context)
 }
 
 /// One flattened, tagged NDJSON row. Each caller owns its section order and payload schema.
-fn print_section<T: serde::Serialize>(section: &str, payload: &T) -> Result<()> {
+fn write_section<T: serde::Serialize>(
+    output: &mut dyn Write,
+    section: &str,
+    payload: &T,
+) -> Result<()> {
     #[derive(serde::Serialize)]
     struct Line<'a, T> {
         section: &'a str,
         #[serde(flatten)]
         payload: &'a T,
     }
-    println!("{}", serde_json::to_string(&Line { section, payload })?);
-    Ok(())
+    write_report(
+        &Line { section, payload },
+        OutputFormat::Ndjson,
+        output,
+        |_, _| Ok(()),
+    )
+    .context("writing NDJSON section")
 }
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Error;
+    use std::io;
     use std::path::PathBuf;
 
     use clap::Parser;
     use transform_command::TransformArgs;
 
-    use super::{DebundleArgs, DebundleCommand};
+    use super::{DebundleArgs, DebundleCommand, ReportOutputError, report_output_broken_pipe};
+
+    #[test]
+    fn only_stdout_write_and_flush_broken_pipe_is_suppressed() {
+        let output_error = Error::new(ReportOutputError::Write(io::Error::new(
+            io::ErrorKind::BrokenPipe,
+            "closed output",
+        )));
+        assert!(report_output_broken_pipe(&output_error));
+
+        let callback_error = Error::new(ReportOutputError::Render(Error::new(
+            ReportOutputError::Write(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "callback's unrelated pipe",
+            )),
+        )));
+        assert!(!report_output_broken_pipe(&callback_error));
+    }
 
     fn parsed_run_args(argv: &[&str]) -> TransformArgs {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");

@@ -21,13 +21,14 @@ use analysis::reports::spec_lint::{
 };
 use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
-use command_output::print_report;
+use command_output::write_report;
 use output_layout::SPEC_LINT_REPORT;
 use peel::OutputFormat;
 use pipeline::{AnnotationProbe, AnnotationProbeRun, load_transform_spec_source};
 use serde::Serialize;
 use serde_json::Value;
 use spec::{MemberPurity, ReentryFreeOperation, TransformSpec};
+use std::io::Write;
 use transform_command::TransformArgs;
 
 use crate::validate::run_captured_pass;
@@ -222,7 +223,7 @@ impl ProbeTarget {
     }
 }
 
-pub fn run(args: SpecLintArgs) -> Result<()> {
+pub fn run(args: SpecLintArgs, output: &mut dyn Write) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     if let Some(max_probes) = args.max_probes {
         ensure!(max_probes > 0, "--max-probes must be positive");
@@ -311,15 +312,9 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
     if args.probe_analysis {
         probe_annotations(&args, &cli, &spec, &mut report)?;
     }
-    let rendered_text = if format == OutputFormat::Text {
-        Some(render_text(&report)?)
-    } else {
-        None
-    };
-    print_report(&report, format, |_, out| {
-        if let Some(rendered_text) = &rendered_text {
-            out.push_str(rendered_text);
-        }
+    write_report(&report, format, output, |report, out| {
+        out.push_str(&render_text(report)?);
+        Ok(())
     })
     .context("writing spec lint output")
 }

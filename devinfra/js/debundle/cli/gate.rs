@@ -395,16 +395,24 @@ pub struct GateDiagnoseCallArgumentWitness {
     pub inspection_command: String,
 }
 
-pub fn run_gate_cli(args: GateArgs, inspection_roots: CurrentRoots) -> Result<()> {
+pub fn run_gate_cli(
+    args: GateArgs,
+    inspection_roots: CurrentRoots,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     match args.command {
-        GateCommand::List(a) => run_list(a),
-        GateCommand::Describe(a) => run_describe(a, inspection_roots),
-        GateCommand::Cut(a) => run_cut(a),
-        GateCommand::Diagnose(a) => run_diagnose(a, inspection_roots),
+        GateCommand::List(a) => run_list(a, output),
+        GateCommand::Describe(a) => run_describe(a, inspection_roots, output),
+        GateCommand::Cut(a) => run_cut(a, output),
+        GateCommand::Diagnose(a) => run_diagnose(a, inspection_roots, output),
     }
 }
 
-fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: CurrentRoots) -> Result<()> {
+fn run_diagnose(
+    args: GateDiagnoseArgs,
+    inspection_roots: CurrentRoots,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     let graph = DependencyGraphInput::read(&args.graph)?;
     let limit = args.limit.unwrap_or(5);
     if limit == 0 && !args.all {
@@ -437,8 +445,11 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: CurrentRoots) -> Resul
         traces: returned,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    command_output::print_report(&report, format, render_diagnose_text)
-        .context("writing gate diagnose output")
+    command_output::write_report(&report, format, output, |report, out| {
+        render_diagnose_text(report, out);
+        Ok(())
+    })
+    .context("writing gate diagnose output")
 }
 
 fn diagnose_binding(
@@ -896,7 +907,7 @@ pub(crate) fn load_blocking_sccs(path: &Path) -> Result<Vec<BlockingSccEntry>> {
         .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
 }
 
-fn run_list(args: GateListArgs) -> Result<()> {
+fn run_list(args: GateListArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let report = GateListReport {
         blocking_sccs: entries
@@ -910,11 +921,14 @@ fn run_list(args: GateListArgs) -> Result<()> {
             .collect(),
     };
     let format = peel::OutputFormat::resolve(args.format);
-    if command_output::print_ndjson_list(&report.blocking_sccs, format)? {
+    if command_output::write_ndjson_list(&report.blocking_sccs, format, output)? {
         return Ok(());
     }
-    command_output::print_report(&report, format, render_list_text)
-        .context("writing gate list output")
+    command_output::write_report(&report, format, output, |report, out| {
+        render_list_text(report, out);
+        Ok(())
+    })
+    .context("writing gate list output")
 }
 
 fn render_list_text(report: &GateListReport, out: &mut String) {
@@ -944,7 +958,11 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
     })
 }
 
-fn run_describe(args: GateDescribeArgs, inspection_roots: CurrentRoots) -> Result<()> {
+fn run_describe(
+    args: GateDescribeArgs,
+    inspection_roots: CurrentRoots,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let graph = DependencyGraphInput::read(
@@ -992,8 +1010,11 @@ fn run_describe(args: GateDescribeArgs, inspection_roots: CurrentRoots) -> Resul
         sequenced_source_inspections,
     };
     let format = peel::OutputFormat::resolve(args.format);
-    command_output::print_report(&report, format, render_describe_text)
-        .context("writing gate describe output")
+    command_output::write_report(&report, format, output, |report, out| {
+        render_describe_text(report, out);
+        Ok(())
+    })
+    .context("writing gate describe output")
 }
 
 fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
@@ -1055,7 +1076,7 @@ fn render_describe_text(report: &GateDescribeReport, out: &mut String) {
     }
 }
 
-fn run_cut(args: GateCutArgs) -> Result<()> {
+fn run_cut(args: GateCutArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
     let report = GateCutReport {
@@ -1064,11 +1085,14 @@ fn run_cut(args: GateCutArgs) -> Result<()> {
         inert_commuting_edges: entry.inert_commuting_edges.clone(),
     };
     let format = peel::OutputFormat::resolve(args.format);
-    if command_output::print_ndjson_list(&report.cut, format)? {
+    if command_output::write_ndjson_list(&report.cut, format, output)? {
         return Ok(());
     }
-    command_output::print_report(&report, format, render_cut_text)
-        .context("writing gate cut output")
+    command_output::write_report(&report, format, output, |report, out| {
+        render_cut_text(report, out);
+        Ok(())
+    })
+    .context("writing gate cut output")
 }
 
 fn render_cut_text(report: &GateCutReport, out: &mut String) {
