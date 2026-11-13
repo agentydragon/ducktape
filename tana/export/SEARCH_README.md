@@ -15,13 +15,13 @@ Tana exports contain search nodes with their results frozen at export time. This
 
 ```bash
 # List all search nodes in an export
-bb run //tana/export:materialize_searches_bin -- export.json --list
+bb run //tana/export:materialize_searches_bin -- "$PWD/export.json" --list
 
 # Materialize a specific search
-bb run //tana/export:materialize_searches_bin -- export.json --search-id SEARCH_ID
+bb run //tana/export:materialize_searches_bin -- "$PWD/export.json" --search-id SEARCH_ID
 
 # Process all searches
-bb run //tana/export:materialize_searches_bin -- export.json --all
+bb run //tana/export:materialize_searches_bin -- "$PWD/export.json" --all
 ```
 
 ## Features
@@ -43,7 +43,7 @@ bb run //tana/export:materialize_searches_bin -- export.json --all
 ## Example
 
 ```bash
-$ bb run //tana/export:materialize_searches_bin -- tana_export.json --search-id QJYSvmW5NdlY
+$ bb run //tana/export:materialize_searches_bin -- "$PWD/tana_export.json" --search-id QJYSvmW5NdlY
 
 Search: Do next & Open
 ID: QJYSvmW5NdlY
