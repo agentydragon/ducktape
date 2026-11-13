@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"gopkg.in/yaml.v3"
 )
@@ -132,7 +133,7 @@ func TestRenderedStagingConfiguration(t *testing.T) {
 	t.Setenv("AGENTPLANE_OIDC_CLIENT_ID", "staging-client")
 	t.Setenv("AGENTPLANE_OIDC_CLIENT_SECRET", "staging-client-secret")
 	t.Setenv("AGENTPLANE_OIDC_SESSION_SECRET", "staging-session-secret")
-	loaded, err := loadConfig()
+	loaded, err := settings.Load()
 	if err != nil {
 		t.Fatalf("rendered staging app configuration rejected: %v", err)
 	}

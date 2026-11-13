@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 func TestStartupDiagnosticsReportFieldAndOmitRawError(t *testing.T) {
@@ -32,7 +32,7 @@ func TestStartupDiagnosticsReportFieldAndOmitRawError(t *testing.T) {
 	secret := "credential-sentinel"
 	settings = validStartupDiagnosticSettings(t)
 	connection := settings.Connections["provider"]
-	connection.TLS = &environment_runtime_transport.ClientTLS{CAFile: "relative-path", ServerURI: "spiffe://secret.invalid/service"}
+	connection.TLS = &peertls.ClientTLS{CAFile: "relative-path", ServerURI: "spiffe://secret.invalid/service"}
 	connection.Auth.Credential = secret
 	settings.Connections = map[string]samplersettings.ConnectionConfig{"connection-sentinel": connection}
 	model := settings.Models["route"]

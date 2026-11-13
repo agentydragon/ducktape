@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/app/go/migrations"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/go-logr/logr"
@@ -36,7 +37,7 @@ func main() {
 		slog.Error("invalid Agentplane app command line", "error", "only --migrate-only is supported")
 		os.Exit(1)
 	}
-	config, err := loadConfig()
+	config, err := settings.Load()
 	if err != nil {
 		slog.Error("invalid Agentplane app configuration", "error", err)
 		os.Exit(1)

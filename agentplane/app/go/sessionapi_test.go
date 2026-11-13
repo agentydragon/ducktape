@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"google.golang.org/grpc"
@@ -41,10 +42,10 @@ import (
 )
 
 func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
-	config := Config{
+	config := settings.Config{
 		SandboxNamespace: "test-sandboxes",
-		SandboxPresets:   map[string]SandboxPreset{"work": {ThreadPreset: "default"}},
-		ThreadPresets: map[string]ThreadPreset{
+		SandboxPresets:   map[string]settings.SandboxPreset{"work": {ThreadPreset: "default"}},
+		ThreadPresets: map[string]settings.ThreadPreset{
 			"default": {
 				Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/state/workspaces/{session_id}",
 				ReasoningEffort: sessionTestStringPtr("high"), Instructions: "from preset", SetupScript: "setup",
@@ -167,10 +168,10 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := Config{
+	config := settings.Config{
 		SandboxNamespace: "test-sandboxes",
-		SandboxPresets:   map[string]SandboxPreset{"work": {ThreadPreset: "default"}},
-		ThreadPresets:    map[string]ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
+		SandboxPresets:   map[string]settings.SandboxPreset{"work": {ThreadPreset: "default"}},
+		ThreadPresets:    map[string]settings.ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
 	}
 	server := NewHTTPServer(authentication)
 	if err := RegisterSessionRoutes(server, &appService{config: config, environments: peer, bridge: peer, threadWriter: peer}); err != nil {

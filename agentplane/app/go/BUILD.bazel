@@ -7,8 +7,6 @@ go_library(
     srcs = [
         "appconfigapi.go",
         "appservice.go",
-        "config.go",
-        "frontend_config.go",
         "main.go",
         "operatorapi.go",
         "runnerapi.go",
@@ -36,6 +34,7 @@ go_library(
         "//agentplane/app/go/historydata",
         "//agentplane/app/go/historywatch",
         "//agentplane/app/go/httperror",
+        "//agentplane/app/go/internal/settings",
         "//agentplane/app/go/migrations",
         "//agentplane/app/go/proxy",
         "//agentplane/app/go/sandboxes",
@@ -63,12 +62,9 @@ go_library(
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_go_logr_logr//:logr",
-        "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_google_uuid//:uuid",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_lib_pq//:pq",
-        "@com_github_spf13_viper//:viper",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -183,18 +179,12 @@ go_test(
 )
 
 go_test(
-    name = "config_test",
-    srcs = ["config_test.go"],
-    embed = [":main_lib"],
-    deps = ["//agentplane/sandboxes/runtimeconfig"],
-)
-
-go_test(
     name = "appconfigapi_test",
     srcs = ["appconfigapi_test.go"],
     embed = [":main_lib"],
     deps = [
         "//agentplane/app/go/auth",
+        "//agentplane/app/go/internal/settings",
         "//agentplane/sandboxes/runtimeconfig",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -231,6 +221,7 @@ go_test(
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/go/auth",
         "//agentplane/app/go/bridge",
+        "//agentplane/app/go/internal/settings",
         "//agentplane/app/go/sandboxes",
         "//agentplane/app/go/threads",
         "//agentplane/environments/v1:environment_service_go_proto",
@@ -339,6 +330,7 @@ go_test(
     embed = [":main_lib"],
     x_defs = {"github.com/agentydragon/ducktape/agentplane/app/go.stagingConfigRlocation": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
     deps = [
+        "//agentplane/app/go/internal/settings",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_bazel_rules_go//go/runfiles",
     ],
