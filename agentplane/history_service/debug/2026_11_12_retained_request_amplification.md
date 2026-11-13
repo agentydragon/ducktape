@@ -246,3 +246,14 @@ actual retained body bytes.
 rows join an evidence row on their four shared key columns; evidence has 1,452,984 rows total.
 Their [writer](../projection/recording.go) inserts both representations for observations with
 native sources. These are metadata/reference costs, separate from repeated body content.
+
+## Stopgap decision
+
+The operator accepted [event-block packing](https://github.com/agentydragon/ducktape/pull/16009)
+as a stopgap. It compresses original events together while retaining every delta's envelope and
+the native/derived representations.
+
+TODO: revisit the item-level representation and content sharing, including whether every tiny
+delta needs its own retained identity. Coordinate this with the
+[authored-conversation and evidence ownership design](../../plans/task_dag.md#agent_authored_conversations_design--conversations-agents-act-on-through-tools).
+The block-packing change selects no longer-term representation.
