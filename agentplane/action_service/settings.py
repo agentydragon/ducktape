@@ -9,11 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.orchestration_v1.binding import OrchestrationExecutorBinding
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.identity.auth.listener import Listener
+from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.net.peertls.config import ClientTLS
 from agentplane.subjects import ServiceAccountRef
 

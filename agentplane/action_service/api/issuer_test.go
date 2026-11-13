@@ -10,14 +10,16 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
 
 const (
-	operatorAudience = "test-operator-audience"
-	operatorSubject  = "test-operator"
-	operatorKeyID    = "test-key"
+	operatorAudience  = "test-operator-audience"
+	operatorSubject   = "test-operator"
+	operatorKeyID     = "test-key"
+	operatorClockSkew = 30 * time.Second
 )
 
 // issuer is a local OIDC issuer: it publishes its signing key at /jwks/ and signs operator tokens.
@@ -56,8 +58,8 @@ func newKey(t *testing.T) *rsa.PrivateKey {
 	return key
 }
 
-func (i *issuer) settings(profile TokenProfile) OperatorOIDCSettings {
-	return OperatorOIDCSettings{Issuer: i.url, Audience: operatorAudience, JWKSURI: i.url + "jwks/", TokenProfile: profile}
+func (i *issuer) settings(profile operatoroidc.TokenProfile) operatoroidc.Settings {
+	return operatoroidc.Settings{Issuer: i.url, Audience: operatorAudience, JWKSURI: i.url + "jwks/", TokenProfile: profile}
 }
 
 // claims are an operator token's claims as the issuer signs them by default, with changes applied: a nil value

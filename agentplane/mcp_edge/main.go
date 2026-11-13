@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver"
@@ -103,7 +104,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 	watchContext, stopWatching := context.WithCancel(ctx)
 	watching := runIdentities(watchContext, watches)
 	defer func() { stopWatching(); <-watching }()
-	operators, err := api.NewOperatorVerifier(c.OperatorOIDC)
+	operators, err := operator.NewVerifier(c.OperatorOIDC)
 	if err != nil {
 		return err
 	}

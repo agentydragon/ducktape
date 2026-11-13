@@ -48,6 +48,7 @@ import (
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
@@ -363,7 +364,7 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 		}
 	}
 	if c.operatorsEnabled() {
-		if options.Operators, err = api.NewOperatorVerifier(c.OperatorOIDC); err != nil {
+		if options.Operators, err = operator.NewVerifier(c.OperatorOIDC); err != nil {
 			return nil, err
 		}
 	}

@@ -28,8 +28,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from pydantic import AnyHttpUrl
 
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.app.action_federation_settings import DirectFederationSettings
+from agentplane.identity.operator.settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane import actions, app as app_component

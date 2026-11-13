@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.identity.operator.settings import OperatorOidcSettings, OperatorTokenProfile
 from util.urls import HttpEndpointUrl, HttpsOrLoopbackHttpEndpointUrl
 
 

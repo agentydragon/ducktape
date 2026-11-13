@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
+from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.net.peertls.config import ClientTLS
 
