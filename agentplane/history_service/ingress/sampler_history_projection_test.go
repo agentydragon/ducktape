@@ -339,14 +339,14 @@ func projectSamplerHistory(t *testing.T, fixture samplerExportFixture, sessionID
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := fixture.history.ReadPage(t.Context(), threadID, 0, 4096)
+	page, err := fixture.history.ReadPage(t.Context(), threadID, 0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page.GetEntries()) == 0 {
 		t.Fatal("History retained no sampler events")
 	}
-	runner := projection.NewFoldRunner(fixture.historyDB, fixture.history, 1, 4096)
+	runner := projection.NewFoldRunner(fixture.historyDB, fixture.history, 1, 1000)
 	backlog, err := runner.Cycle(t.Context())
 	if err != nil {
 		t.Fatalf("project retained sampler history: %v", err)
