@@ -18,6 +18,7 @@ import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
+from sqlalchemy import text
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.central_sampler.api import sampler_pb2
@@ -204,7 +205,7 @@ async def faulting_executor_proxy(
             yield observed
 
 
-@pytest.mark.parametrize("failure", ["failed", "429", "503", "invalid_wait", "partial"])
+@pytest.mark.parametrize("failure", ["permanent", "failed", "429", "503", "partial", "invalid_wait"])
 async def test_turn_outcomes_preserve_safe_continuation(
     store: Store,
     database_url: str,
@@ -227,16 +228,8 @@ async def test_turn_outcomes_preserve_safe_continuation(
                 ),
                 metadata=METADATA,
             )
-            async with await endpoint.next() as exchange:
-                if failure in {"429", "503"}:
-                    await exchange.respond(JsonResponse(b'{"error":{"code":"rate_limit_exceeded"}}', int(failure)))
-                elif failure == "failed":
-                    payload = {
-                        "type": "response.failed",
-                        "response": {"status": "failed", "error": {"code": "rate_limit_exceeded"}},
-                    }
-                    await exchange.send(SseEvent("response.failed", ("data: " + json.dumps(payload) + "\n\n").encode()))
-                elif failure == "invalid_wait":
+            if failure == "invalid_wait":
+                async with await endpoint.next() as exchange:
                     await exchange.send(
                         *response_stream(
                             [
@@ -248,12 +241,6 @@ async def test_turn_outcomes_preserve_safe_continuation(
                             model="test-model",
                         ).events
                     )
-                else:
-                    events = response_stream([Message("Partial")], model="test-model").through(
-                        "response.output_text.delta"
-                    )
-                    await exchange.send(*events.events)
-            if failure == "invalid_wait":
                 async with await endpoint.next() as exchange:
                     outputs = [
                         item
@@ -276,35 +263,80 @@ async def test_turn_outcomes_preserve_safe_continuation(
                 assert not observed.blocked
                 assert not any(intent.result is None for intent in await store.intents())
                 return
+
+            attempts = 1 if failure in {"permanent", "failed"} else 3
+            frozen_body: dict[str, Any] | None = None
+            for _ in range(attempts):
+                async with await endpoint.next() as exchange:
+                    if frozen_body is None:
+                        frozen_body = exchange.request.body
+                    else:
+                        assert exchange.request.body == frozen_body, "provider retry changed the frozen request"
+
+                    if failure in {"permanent", "429", "503"}:
+                        status = 400 if failure == "permanent" else int(failure)
+                        await exchange.respond(JsonResponse(b'{"error":{"code":"rate_limit_exceeded"}}', status))
+                    elif failure == "failed":
+                        payload = {
+                            "type": "response.failed",
+                            "response": {"status": "failed", "error": {"code": "rate_limit_exceeded"}},
+                        }
+                        await exchange.send(
+                            SseEvent("response.failed", ("data: " + json.dumps(payload) + "\n\n").encode())
+                        )
+                    else:
+                        events = response_stream(
+                            [
+                                CustomToolCall(
+                                    "partial-provider-call",
+                                    "exec",
+                                    'text(await tools.exec_command({cmd:"touch partial-provider-call-ran"}));',
+                                )
+                            ],
+                            model="test-model",
+                        ).through("response.output_item.done")
+                        await exchange.send(*events.events)
+                        await exchange.close()
+
+            assert frozen_body is not None
+            assert json.dumps(frozen_body["input"]).count('"Start"') == 1
             assert (await turn_completed(stub, request.session_id, "first")).status == event_pb2.TURN_STATUS_FAILED
             observed = await stub.GetSession(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
             )
-            assert observed.blocked == (failure == "partial")
+            assert not observed.blocked
             command = await stub.GetCommand(
                 sampler_pb2.GetCommandRequest(session_id=request.session_id, command_id="first"), metadata=METADATA
             )
-            assert command.outcome == (
-                sampler_pb2.COMMAND_OUTCOME_UNKNOWN if failure == "partial" else sampler_pb2.COMMAND_OUTCOME_FAILED
-            )
+            assert command.outcome == sampler_pb2.COMMAND_OUTCOME_FAILED
+            assert command.failure_reason
             intents = await store.intents()
+            async with store.engine.connect() as connection:
+                attempt_rows = (
+                    await connection.execute(
+                        text(
+                            "SELECT id::text, provider_attempt_no, provider_attempt_budget "
+                            "FROM sampler_intent WHERE provider_command_id=:command_id "
+                            "AND request->>'kind'='sampling' ORDER BY provider_attempt_no"
+                        ),
+                        {"command_id": "first"},
+                    )
+                ).all()
+            intents_by_id = {intent.id: intent for intent in intents}
+            attempts_for_command = [intents_by_id[row.id] for row in attempt_rows]
+            assert len(attempts_for_command) == attempts
+            assert [row.provider_attempt_no for row in attempt_rows] == list(range(1, attempts + 1))
+            assert all(row.provider_attempt_budget == 3 for row in attempt_rows)
+            failure_class = "transient" if failure in {"429", "503", "partial"} else "permanent"
+            assert all(
+                intent.result is not None
+                and intent.result.get("status") == "abandoned"
+                and intent.result.get("failure_class") == failure_class
+                and intent.result.get("failure_reason")
+                for intent in attempts_for_command
+            )
             if failure == "partial":
-                assert any(intent.result is None for intent in intents)
-            else:
-                rejected = [
-                    intent
-                    for intent in intents
-                    if intent.result is not None and intent.result.get("status") == "rejected"
-                ]
-                assert len(rejected) == 1
-                if failure == "failed":
-                    assert rejected[0].result is not None
-                    assert rejected[0].result["terminal"]["response"]["error"]["code"] == "rate_limit_exceeded"
-                if failure in {"429", "503"}:
-                    assert rejected[0].result is not None
-                    assert rejected[0].result["http_status"] == int(failure)
-            if failure == "partial":
-                return
+                assert not (tmp_path / "partial-provider-call-ran").exists()
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="second", text="Continue"
@@ -312,8 +344,16 @@ async def test_turn_outcomes_preserve_safe_continuation(
                 metadata=METADATA,
             )
             async with await endpoint.next() as exchange:
+                next_input = json.dumps(exchange.request.body["input"])
+                assert next_input.count('"Start"') == 1
+                assert next_input.count('"Continue"') == 1
+                assert "partial-provider-call" not in next_input
                 await exchange.send(*response_stream([Message("Recovered")], model="test-model").events)
             assert (await turn_completed(stub, request.session_id, "second")).status == event_pb2.TURN_STATUS_COMPLETED
+            observed = await stub.GetSession(
+                sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA
+            )
+            assert not observed.blocked
 
 
 async def test_lost_process_read_reply_resumes_same_process_and_cursor(
