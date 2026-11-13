@@ -33,8 +33,8 @@ cluster/generated/**
 cluster/k8s/ssh-mcp/flux-kustomization.yaml
 cluster/k8s/ssh-mcp/kustomization.yaml
 
-# The retired Python thread fold generated these golden vectors; threadfold/golden_test.go holds the Go fold to them.
-agentplane/history_service/threadfold/golden.json
+# The retired Python thread fold generated these golden vectors; internal/threadfold/golden_test.go holds the Go fold to them.
+agentplane/history_service/internal/threadfold/golden.json
 
 # The retired Python Notification Service generated these golden vectors; the Go store tests hold the store to them.
 agentplane/notification_service/internal/store/golden.json

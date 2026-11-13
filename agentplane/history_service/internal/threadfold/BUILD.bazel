@@ -10,9 +10,8 @@ go_library(
         "rows.go",
         "types.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/threadfold",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/threadfold",
     visibility = [
-        "//agentplane/central_sampler:__pkg__",
         "//agentplane/history_service:__subpackages__",
     ],
     deps = [

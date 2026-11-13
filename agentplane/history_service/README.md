@@ -321,7 +321,7 @@ harness merely to render the Thread. Existing/nonempty projections still require
 Event prefix.
 
 Every replica folds every retained Session into the thread projection
-(`threadfold/` computes it, `internal/projection/` runs it; `thread_*` tables, since a Thread is the projection of a
+(`internal/threadfold/` computes it, `internal/projection/` runs it; `thread_*` tables, since a Thread is the projection of a
 Session: [layering](../docs/thread_layering.md#authorities-and-representations)), in epoch
 `history-v1`, from cursor 0. A `session_history` trigger queues a Session in `session_fold_pending`
 when it is created or its committed prefix or feed state changes, so writers of any release mark it;
