@@ -1,0 +1,131 @@
+source_matches:
+  - match: |
+      var selected = (
+        selectedElements,
+        elementsMap,
+        handleDirection,
+        scene,
+        originalElementsMap,
+        {
+          shouldMaintainAspectRatio = !1,
+          shouldResizeFromCenter = !1,
+          flipByX = !1,
+          flipByY = !1,
+          nextHeight,
+          nextWidth,
+          originalBoundingBox,
+        } = {},
+      ) => {
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: resizeMultipleElements
+
+  - match: |
+      var selected = (
+        nextWidth,
+        nextHeight,
+        latestElement,
+        origElement,
+        elementsMap,
+        originalElementsMap,
+        handleDirection,
+        {
+          shouldInformMutation = !0,
+          shouldMaintainAspectRatio = !1,
+          shouldResizeFromCenter = !1,
+        } = {},
+      ) => {
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: resizeSingleElement
+
+  - match: |
+      var selected = (
+        selectedElements,
+        originalElementsMap,
+        elementsMap,
+        handleDirection,
+        pointerX,
+        pointerY,
+        {
+          shouldMaintainAspectRatio = !1,
+          shouldResizeFromCenter = !1,
+        } = {},
+      ) => {
+        STMT_LIST;
+        return {
+          originalBoundingBox: EXPR,
+          nextWidth: EXPR,
+          nextHeight: EXPR,
+          flipByX: EXPR,
+          flipByY: EXPR,
+        };
+      };
+    bindings:
+      - local: selected
+        name: getNextMultipleWidthAndHeightFromPointer
+
+  - match: |
+      var selected = (
+        prevOrigin,
+        prevWidth,
+        prevHeight,
+        newWidth,
+        newHeight,
+        angle,
+        handleDirection,
+        shouldMaintainAspectRatio,
+        shouldResizeFromCenter,
+      ) => {
+        let anchor = EXPR(
+          handleDirection,
+          shouldMaintainAspectRatio,
+          shouldResizeFromCenter,
+        ),
+          [x, y] = prevOrigin;
+        switch (anchor) {
+          case "top-left":
+            return { x: EXPR, y: EXPR };
+          case CASE_REST:
+          case "south-side":
+            return { x: EXPR, y: EXPR };
+        }
+      };
+    bindings:
+      - local: selected
+        name: getResizedOrigin
+
+  - match: |
+      var selected = (
+        originalElements,
+        element,
+        elementsMap,
+        handleDirection,
+        shouldResizeFromCenter,
+        pointerX,
+        pointerY,
+      ) => {
+        let [x1, y1, x2, y2, centerX, centerY] = EXPR(element, elementsMap),
+          [rotatedX, rotatedY] = EXPR(
+            EXPR(pointerX, pointerY),
+            EXPR(centerX, centerY),
+            -element.angle,
+          ),
+          scaleX = 0,
+          scaleY = 0;
+        handleDirection !== "e" && handleDirection !== "w" && EXPR;
+        let scale = Math.max(scaleX, scaleY);
+        if (scale > 0) {
+          STMT_LIST;
+        }
+        if (handleDirection === "e" || handleDirection === "w") {
+          STMT_LIST;
+        }
+      };
+    bindings:
+      - local: selected
+        name: resizeSingleTextElement
