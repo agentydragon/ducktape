@@ -18,35 +18,13 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import traced_scenario
 from agentplane.system_tests.scenarios import vm_sandbox
 from agentplane.system_tests.vm.configuration import SUPERVISION_TEMPLATE
-from agentplane.system_tests.vm.trace_contract import assert_vm_process_trace_contract
+from agentplane.system_tests.vm.trace_contract import wait_for_vm_process_trace_contract
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # session_pb2.pyi imports protobuf stubs directly during mypy's dependency traversal.
 # gazelle:include_dep @pypi//protobuf
 
 pytestmark = pytest.mark.vm_sandboxes
-
-
-async def _wait_for_vm_process_trace_contract() -> None:
-    output_dir = undeclared_outputs_dir()
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + 30
-    artifacts = [output_dir / "test-spans.jsonl", output_dir / "process-spans.jsonl"]
-    last_sizes: tuple[int, ...] = ()
-    error: AssertionError | None = None
-    while True:
-        current_sizes = tuple(path.stat().st_size if path.exists() else 0 for path in artifacts)
-        if current_sizes != last_sizes:
-            try:
-                assert_vm_process_trace_contract(output_dir)
-            except AssertionError as caught:
-                error = caught
-            else:
-                return
-            last_sizes = current_sizes
-        if loop.time() >= deadline:
-            raise AssertionError(f"VM process trace contract failed: {error}") from error
-        await asyncio.sleep(0.5)
 
 
 @pytest.mark.vm_sandboxes
@@ -78,7 +56,7 @@ async def test_vm_scenarios(
         )
         scenarios.create_task(traced_scenario("vm-turn-harness_codex", turn(session_pb2.HARNESS_CODEX, VM_TEMPLATE)))
 
-    await _wait_for_vm_process_trace_contract()
+    await wait_for_vm_process_trace_contract(undeclared_outputs_dir())
 
 
 if __name__ == "__main__":
