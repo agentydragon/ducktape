@@ -10,7 +10,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
-	"github.com/google/uuid"
 )
 
 var commitRefresh = refreshTable("github_commit_refresh",

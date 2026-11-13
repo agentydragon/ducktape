@@ -12,7 +12,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/go-github/v88/github"
 	"github.com/google/uuid"

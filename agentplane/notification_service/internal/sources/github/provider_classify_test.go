@@ -10,7 +10,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
