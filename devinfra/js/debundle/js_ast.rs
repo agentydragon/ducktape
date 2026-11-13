@@ -1,7 +1,7 @@
 use source_identity::{SourceUnitOrdinal, StatementId};
 use std::collections::BTreeMap;
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use binding_targets::declaration_name_strings;
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
@@ -180,7 +180,70 @@ impl FileLineIndex {
     }
 }
 
-pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule> {
+/// Native parser failures, retained until a caller presents or projects them.
+/// SWC's error type does not implement `std::error::Error`; its syntax kind and
+/// span remain accessible through `errors()` rather than a rendered cause.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JsParseError {
+    pub source_name: String,
+    pub source_start: BytePos,
+    pub failure: JsParseFailure,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum JsParseFailure {
+    Fatal {
+        error: swc_ecma_parser::error::Error,
+        recovered: Vec<swc_ecma_parser::error::Error>,
+    },
+    Recovered {
+        first: swc_ecma_parser::error::Error,
+        rest: Vec<swc_ecma_parser::error::Error>,
+    },
+}
+
+impl JsParseError {
+    pub fn errors(&self) -> impl Iterator<Item = &swc_ecma_parser::error::Error> {
+        let (first, rest) = match &self.failure {
+            JsParseFailure::Fatal { error, recovered } => (error, recovered),
+            JsParseFailure::Recovered { first, rest } => (first, rest),
+        };
+        std::iter::once(first).chain(rest)
+    }
+}
+
+impl std::fmt::Display for JsParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "failed to parse {}: ", self.source_name)?;
+        match &self.failure {
+            JsParseFailure::Fatal { error, recovered } => {
+                write!(f, "{:?}", error.kind())?;
+                for error in recovered {
+                    write!(f, "; {}", error.kind().msg())?;
+                }
+            }
+            JsParseFailure::Recovered { first, rest } => {
+                write!(
+                    f,
+                    "{} recoverable parser error(s): {}",
+                    1 + rest.len(),
+                    first.kind().msg()
+                )?;
+                for error in rest {
+                    write!(f, "; {}", error.kind().msg())?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for JsParseError {}
+
+pub fn parse_js_module(
+    source_name: &str,
+    source: &str,
+) -> std::result::Result<ParsedJsModule, JsParseError> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = source_file(&cm, source_name, source);
     let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
@@ -195,7 +258,10 @@ pub fn parse_js_module(source_name: &str, source: &str) -> Result<ParsedJsModule
 /// Like `parse_js_module` but takes ownership of the source string, avoiding
 /// the clone inside `source_file`. The source text is retrievable via
 /// `ParsedJsModule::source_text()`.
-pub fn parse_js_module_consuming(source_name: &str, source: String) -> Result<ParsedJsModule> {
+pub fn parse_js_module_consuming(
+    source_name: &str,
+    source: String,
+) -> std::result::Result<ParsedJsModule, JsParseError> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = cm.new_source_file(FileName::Custom(source_name.to_string()).into(), source);
     let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
@@ -211,7 +277,10 @@ pub fn parse_js_module_consuming(source_name: &str, source: String) -> Result<Pa
 /// The minted `Mark`s are discarded; callers that need to synthesize
 /// fresh bindings should use `parse_js_module` (which preserves the
 /// marks on `ParsedJsModule`) instead.
-pub fn parse_js_module_ast(source_name: &str, source: &str) -> Result<Module> {
+pub fn parse_js_module_ast(
+    source_name: &str,
+    source: &str,
+) -> std::result::Result<Module, JsParseError> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = source_file(&cm, source_name, source);
     let (module, _, _) = parse_and_resolve(source_name, &fm)?;
@@ -241,7 +310,7 @@ fn source_file(
 fn parse_and_resolve(
     source_name: &str,
     fm: &swc_common::SourceFile,
-) -> Result<(Module, Mark, Mark)> {
+) -> std::result::Result<(Module, Mark, Mark), JsParseError> {
     let mut module = parse_module_from_source_file(source_name, fm)?;
     let unresolved_mark = Mark::new();
     let top_level_mark = Mark::new();
@@ -250,7 +319,10 @@ fn parse_and_resolve(
     Ok((module, unresolved_mark, top_level_mark))
 }
 
-fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile) -> Result<Module> {
+fn parse_module_from_source_file(
+    source_name: &str,
+    fm: &swc_common::SourceFile,
+) -> std::result::Result<Module, JsParseError> {
     let lexer = Lexer::new(
         default_syntax(),
         Default::default(),
@@ -258,24 +330,28 @@ fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile)
         None,
     );
     let mut parser = Parser::new_from(lexer);
-    let module = parser
-        .parse_module()
-        .map_err(|error| anyhow::anyhow!("failed to parse {source_name}: {:?}", error.kind()))?;
+    let module = parser.parse_module();
     let recovered = parser.take_errors();
-    if !recovered.is_empty() {
-        // Include each recovered error's message so the rejection is
-        // actionable — e.g. a `with` statement in module (strict)
-        // code surfaces as its strict-mode syntax error here
-        // (docs/design.md A4) rather than as an opaque count.
-        let details = recovered
-            .iter()
-            .map(|error| error.kind().msg())
-            .collect::<Vec<_>>()
-            .join("; ");
-        bail!(
-            "failed to parse {source_name}: {count} recoverable parser error(s): {details}",
-            count = recovered.len(),
-        );
+    let module = match module {
+        Ok(module) => module,
+        Err(error) => {
+            return Err(JsParseError {
+                source_name: source_name.to_owned(),
+                source_start: fm.start_pos,
+                failure: JsParseFailure::Fatal { error, recovered },
+            });
+        }
+    };
+    let mut recovered = recovered.into_iter();
+    if let Some(first) = recovered.next() {
+        return Err(JsParseError {
+            source_name: source_name.to_owned(),
+            source_start: fm.start_pos,
+            failure: JsParseFailure::Recovered {
+                first,
+                rest: recovered.collect(),
+            },
+        });
     }
     Ok(module)
 }
@@ -967,7 +1043,19 @@ mod tests {
     #[test]
     fn canonical_parser_rejects_literal_assignment_target() {
         with_swc_globals(|| {
-            assert!(parse_js_module("invalid-target.ts", "1 = 2;").is_err());
+            let error = parse_js_module("invalid-target.ts", "1 = 2;")
+                .err()
+                .expect("literal assignment target must fail");
+            assert_eq!(error.source_name, "invalid-target.ts");
+            let errors: Vec<_> = error.errors().collect();
+            assert!(errors.iter().any(|diagnostic| matches!(
+                diagnostic.kind(),
+                swc_ecma_parser::error::SyntaxError::InvalidAssignTarget
+            )));
+            assert!(errors.iter().all(|diagnostic| {
+                diagnostic.span().lo >= error.source_start
+                    && diagnostic.span().hi.0 - error.source_start.0 <= 6
+            }));
         });
     }
 
