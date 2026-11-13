@@ -351,6 +351,73 @@ def test_generate_3d_border():
     assert len(rects) == inner_rects + 1  # +1 for border
 
 
+@pytest.mark.parametrize("axis_name", ["x", "y", "cols", "rows"])
+@pytest.mark.parametrize(
+    ("param", "default_value"),
+    [(CutParam.KERF_MM, 0.0), (CutParam.Z_OFFSET_MM, 0.0), (CutParam.Z_PER_PASS_MM, 0.0), (CutParam.NUM_PASSES, 1.0)],
+)
+def test_generate_rd_rejects_unsupported_sweep_axes_even_at_default(
+    axis_name: str, param: CutParam, default_value: float
+):
+    config = _minimal_config(**{axis_name: AxisConfig(param=param, values=[default_value])})
+
+    with pytest.raises(ValueError, match=f"{axis_name}.*{param.value}"):
+        generate_rd(config)
+
+
+def test_generate_rd_rejects_nonzero_constant_kerf():
+    config = _minimal_config(cut=CutConfig(kerf_mm=0.1))
+    with pytest.raises(ValueError, match="kerf_mm"):
+        generate_rd(config)
+
+
+@pytest.mark.parametrize(
+    ("config", "unsupported_field"),
+    [
+        (_minimal_config(cut=CutConfig(num_passes=2)), "num_passes"),
+        (_minimal_config(cut=CutConfig(z_offset_mm=0.1)), "z_offset_mm"),
+        (_minimal_config(cut=CutConfig(z_per_pass_mm=-0.1)), "z_per_pass_mm"),
+        (_minimal_config(border=BorderConfig(enabled=True, num_passes=2)), "num_passes"),
+    ],
+    ids=["cut-passes", "cut-z-offset", "cut-z-per-pass", "border-passes"],
+)
+def test_generate_rd_rejects_unsupported_constant_and_border_settings(config: GridConfig, unsupported_field: str):
+    with pytest.raises(ValueError, match=unsupported_field):
+        generate_rd(config).to_bytes()
+
+
+def test_generate_rd_default_settings_and_border_still_serialize():
+    config = _minimal_config(
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        border=BorderConfig(enabled=True, padding_mm=0),
+    )
+    job = generate_rd(config)
+
+    assert len(job.layers) == 2
+    assert len(job.rects) == 2
+    assert job.layers[-1].num_passes == 1
+    assert job.to_bytes().endswith(bytes([0x60]))  # scrambled D7 EOF
+
+
+def test_rd_cli_failure_preserves_existing_output(tmp_path):
+    config_path = tmp_path / "unsupported.toml"
+    config_path.write_text(
+        'x = { param = "power_pct", values = [10.0] }\n'
+        'y = { param = "speed_mm_s", values = [50.0] }\n'
+        "[cut]\nnum_passes = 2\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "existing.rd"
+    original_output = b"existing output must survive serialization failure"
+    output_path.write_bytes(original_output)
+
+    with pytest.raises(ValueError, match="num_passes"):
+        main([str(config_path), "--format", "rd", "--output", str(output_path)])
+
+    assert output_path.read_bytes() == original_output
+
+
 def test_generate_rd_border_offsets_cells_inside_nonnegative_border():
     padding = 3.0
     config = _minimal_config(border=BorderConfig(enabled=True, padding_mm=padding))

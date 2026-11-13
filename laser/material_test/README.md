@@ -42,6 +42,13 @@ Parameters that can be varied on X or Y axes, or held constant:
 | `z_per_pass_mm` | Z step per pass (typically ≤ 0)  | mm   |
 | `num_passes`    | Number of passes                 | —    |
 
+These parameters apply to LightBurn `.lbrn2` output. Ruida `.rd` output has a
+narrower contract: only `power_pct` and `speed_mm_s` may be sweep axes;
+`kerf_mm` must be zero, and `z_offset_mm`, `z_per_pass_mm`, and `num_passes`
+must remain at their defaults (0, 0, and 1) for every cut layer, including an
+optional border. Unsupported values and axes are rejected. The `.rd` exporter
+does not include the title, subtitle, axis labels, legend, or in-cell text.
+
 ## Layout
 
 ```

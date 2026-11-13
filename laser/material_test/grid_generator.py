@@ -910,6 +910,18 @@ def generate_rd(config: GridConfig) -> RdJob:
     Ruida's Y-down system (Y increases downward, origin at top-left). With a
     border, translate the cells so its unsigned absolute coordinates start at zero.
     """
+    axes = [("x", config.x), ("y", config.y)]
+    if config.cols is not None:
+        axes.append(("cols", config.cols))
+    if config.rows is not None:
+        axes.append(("rows", config.rows))
+    supported_axis_params = {CutParam.POWER_PCT, CutParam.SPEED_MM_S}
+    for name, axis in axes:
+        if axis.param not in supported_axis_params:
+            raise ValueError(f"Ruida .rd output does not support {name} sweep axis {axis.param.value!r}")
+    if config.cut.kerf_mm != 0:
+        raise ValueError(f"Ruida .rd output does not support kerf_mm={config.cut.kerf_mm!r}; expected 0")
+
     n_outer_cols = len(config.cols.values) if config.cols is not None else 1
     n_outer_rows = len(config.rows.values) if config.rows is not None else 1
     layer_count = len(config.x.values) * len(config.y.values) * n_outer_cols * n_outer_rows + int(config.border.enabled)
