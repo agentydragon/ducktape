@@ -147,8 +147,8 @@ func countUserMessage(t *testing.T, state protocol.Context, text string) int {
 		if item.Type != responses.ItemMessage || item.Role != "user" {
 			continue
 		}
-		got, err := responses.Text(item)
-		if err != nil {
+		var got string
+		if err := json.Unmarshal(item.Content, &got); err != nil {
 			t.Fatal(err)
 		}
 		if got == text {
@@ -198,7 +198,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 		requests <- body
 		switch count.Add(1) {
 		case 1:
-			w.Header().Set("Retry-After", "0")
+			w.Header().Set("Retry-After", "30")
 			http.Error(w, "temporarily rate limited", http.StatusTooManyRequests)
 		case 2:
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -360,7 +360,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 		requestNumber := requestCount.Add(1)
 		if requestNumber == 1 {
 			firstRequest <- body
-			w.Header().Set("Retry-After", "0")
+			w.Header().Set("Retry-After", "30")
 			http.Error(w, "temporarily rate limited", http.StatusTooManyRequests)
 			return
 		}
@@ -454,7 +454,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 			return
 		}
 		requestCount.Add(1)
-		w.Header().Set("Retry-After", "0")
+		w.Header().Set("Retry-After", "30")
 		http.Error(w, "temporarily rate limited", http.StatusTooManyRequests)
 	}))
 	t.Cleanup(server.Close)
@@ -499,6 +499,11 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	const commandID = "sampling-after-owner-loss"
 	const input = "continue after provider owner loss"
 	admitProviderSamplingCommand(t, store, session.ID, commandID, input)
+	manager, _ := newFakeCodeModeManager(t)
+	priorHostID := "00000000-0000-4000-8000-000000000001"
+	if manager.InstanceID() == priorHostID {
+		priorHostID = "00000000-0000-4000-8000-000000000002"
+	}
 	requests := make(chan []byte, 1)
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -522,7 +527,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	if err != nil || command == nil || command.ID != commandID {
 		t.Fatalf("active command=%v err=%v", command, err)
 	}
-	if err := store.StampCodeHostInstance(t.Context(), oldOwner, "00000000-0000-4000-8000-000000000001"); err != nil {
+	if err := store.StampCodeHostInstance(t.Context(), oldOwner, priorHostID); err != nil {
 		t.Fatal(err)
 	}
 	state, err := store.ExecutionState(t.Context(), oldOwner)
@@ -558,7 +563,16 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 		t.Fatal(err)
 	}
 
-	runtime, stop := startProviderSamplingRuntime(t, store, settings)
+	runtime := NewRuntime(store, settings, manager)
+	cancel, done := startRuntimeForTest(t, runtime)
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			cancel()
+			waitRuntimeDone(t, done)
+		})
+	}
+	t.Cleanup(stop)
 	runtime.Wake(session.ID)
 	freshWire := receiveProviderRequest(t, requests)
 	if bytes.Equal(frozenWire, freshWire) {
