@@ -1,0 +1,15 @@
+# Original home: packages/excalidraw/element/transformHandles.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      var selected = (device) =>
+        !(device.viewport.isMobile ||
+          device.isTouchScreen && (EXPR || EXPR));
+    bindings:
+      - local: selected
+        name: canResizeFromSides
+
+  - match: |
+      var selected = (device) => canResizeFromSides(device) ? EXPR : {};
+    bindings:
+      - local: selected
+        name: getOmitSidesForDevice

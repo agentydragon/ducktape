@@ -61,6 +61,10 @@ fn claimed_modules_export_their_entry_points() {
             "editor/packages/excalidraw/element/bounds.js",
             &["getVisibleSceneBounds", "doBoundsIntersect"],
         ),
+        (
+            "editor/packages/excalidraw/element/transformHandles.js",
+            &["canResizeFromSides", "getOmitSidesForDevice"],
+        ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
             "main/packages/excalidraw/actions/manager.js",
