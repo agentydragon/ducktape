@@ -30,25 +30,45 @@ The example allows ten minutes for a cold Ollama model to warm up; command deadl
 bb run //agentplane/x/authored_conversation:main_bin -- --config /absolute/path/to/config.json
 ```
 
-Type a message and press Enter. You can submit another message while the model works. The next
-model request receives a notice naming it. Published agent messages appear in the terminal as
-complete messages, along with run status. Ordinary model text is visible through `/trace`.
-The interactive prompt supports cursor editing, Up/Down input history and Tab completion for
-commands and message IDs. Background output appears above your draft. Ctrl+C cancels the draft;
-Ctrl+D on an empty prompt drains active work and exits.
+With terminal input and output, this opens a full-screen Textual app. **Thread** shows the retained
+conversation immediately, with Markdown bodies and author/revision headers. New messages append;
+edits update the existing message in place. Type in the composer: Enter adds a line and **Ctrl+S**
+sends. You can send another message while the agent works; the next model request receives its
+notice. A spinner, elapsed time and model-call number distinguish active work from idle.
 
-| Command           | Effect                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| `/thread`         | Show all retained human and agent messages.                                                 |
-| `/edit <id>`      | Edit your own message in a prefilled multiline draft; Esc then Enter saves, Ctrl+C cancels. |
-| `/revisions <id>` | Show every retained version of a message, including its recording time.                     |
-| `/help`           | Show commands and editing keys.                                                             |
-| `/models`         | List routes accessible with the configured key, for selecting `model` in the config.        |
-| `/trace`          | Show raw diagnostic events from `trace.jsonl`.                                              |
-| `/reset-context`  | While idle, clear working context while retaining the thread and trace.                     |
-| `/continue`       | Start another bounded run, including after reopening retained state.                        |
-| `/wait`           | Finish the active run before reading another input line; useful in piped scenarios.         |
-| `/quit`           | Exit and cancel active work. EOF instead drains active work before exiting.                 |
+**Trace** shows retained diagnostic events in a table and the selected event's full JSON. It follows
+new events while open, preserving a selected older event. Ordinary model text and tool activity
+appear here. The thread contains only authored messages.
+
+| Control       | Effect                                                                                  |
+| ------------- | --------------------------------------------------------------------------------------- |
+| F2 / F3       | Switch to Thread / Trace.                                                               |
+| Ctrl+S / Send | Send the composer; Enter inserts a newline.                                             |
+| Edit          | Open a human message's Markdown source in a separate editor. Ctrl+S saves; Esc cancels. |
+| Revisions     | Inspect all versions of a message; Esc closes.                                          |
+| F5            | Continue retained work or start another bounded run.                                    |
+| Ctrl+R        | Reset model context while idle, preserving the thread and trace.                        |
+| Ctrl+Q        | Quit and cancel active work.                                                            |
+
+Editing preserves the new-message draft. Stale edits stay open with their source intact, so they can
+be cancelled and reconsidered against the current revision. The stored body remains Markdown source.
+
+If either input or output is redirected, the CLI accepts one message or command per line. Message
+display uses Rich Markdown; diagnostics remain raw JSONL. The following commands are for this
+line-oriented mode:
+
+| Command                        | Effect                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| `/thread`                      | Show all retained human and agent messages.                                          |
+| `/edit <id> <revision> <text>` | Revise your own message, checking its expected revision.                             |
+| `/revisions <id>`              | Show every retained version of a message, including its recording time.              |
+| `/help`                        | Show commands.                                                                       |
+| `/models`                      | List routes accessible with the configured key, for selecting `model` in the config. |
+| `/trace`                       | Show raw diagnostic events from `trace.jsonl`.                                       |
+| `/reset-context`               | While idle, clear working context while retaining the thread and trace.              |
+| `/continue`                    | Start another bounded run, including after reopening retained state.                 |
+| `/wait`                        | Finish the active run before reading another input line; useful in piped scenarios.  |
+| `/quit`                        | Exit and cancel active work. EOF instead drains active work before exiting.          |
 
 Edits keep message IDs and original positions. The thread shows the latest body with its revision
 number and an edited marker. The agent can read particular revisions through `read_message` and

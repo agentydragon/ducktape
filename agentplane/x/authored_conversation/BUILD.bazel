@@ -27,9 +27,10 @@ py_library(
         ":settings",
         ":store",
         ":trace",
+        ":tui",
         "@pypi//openai",
-        "@pypi//prompt_toolkit",
         "@pypi//pydantic",
+        "@pypi//rich",
     ],
 )
 
@@ -109,7 +110,6 @@ py_test(
         ":trace",
         "//:conftest",
         "@pypi//httpx2",
-        "@pypi//prompt_toolkit",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -145,4 +145,34 @@ py_library(
     name = "migrations",
     srcs = ["migrations.py"],
     deps = ["@pypi//sqlalchemy"],
+)
+
+py_library(
+    name = "tui",
+    srcs = ["tui.py"],
+    deps = [
+        ":agent",
+        ":store",
+        ":trace",
+        "@pypi//openai",
+        "@pypi//textual",
+    ],
+)
+
+py_test(
+    name = "test_tui",
+    srcs = ["test_tui.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        ":store",
+        ":trace",
+        ":tui",
+        "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//httpx2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//textual",
+    ],
 )
