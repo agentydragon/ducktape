@@ -95,22 +95,6 @@ func (c *Client) grpcClient() (historypb.HistoryServiceClient, error) {
 	return historypb.NewHistoryServiceClient(conn), nil
 }
 
-func (c *Client) FollowSession(ctx context.Context, request *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error) {
-	client, err := c.grpcClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.FollowSession(ctx, request)
-}
-
-func (c *Client) ReadSessionObservations(ctx context.Context, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
-	client, err := c.grpcClient()
-	if err != nil {
-		return nil, err
-	}
-	return client.ReadSessionObservations(ctx, request)
-}
-
 func (c *Client) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
 	client, err := c.grpcClient()
 	if err != nil {
@@ -156,8 +140,6 @@ func (c *Client) Close() error {
 }
 
 var _ interface {
-	FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
-	ReadSessionObservations(context.Context, *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error)
 	GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error)
 	WatchSessionSummaries(context.Context, *historypb.WatchSessionSummariesRequest) (historypb.HistoryService_WatchSessionSummariesClient, error)
 	Redial()
