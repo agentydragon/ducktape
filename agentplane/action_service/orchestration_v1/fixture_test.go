@@ -28,6 +28,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -158,7 +159,7 @@ func newFixture(t *testing.T) fixture {
 	}
 }
 
-// serve serves what register registers in memory until the test ends, and is a connection to it.
+// serve starts the registered in-memory services and returns a ready connection.
 func serve(t *testing.T, register func(*grpc.Server), serverOptions ...grpc.ServerOption) *grpc.ClientConn {
 	t.Helper()
 	listener := bufconn.Listen(1 << 20)
@@ -176,6 +177,16 @@ func serve(t *testing.T, register func(*grpc.Server), serverOptions ...grpc.Serv
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
+	connection.Connect()
+	readyCtx, cancelReady := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelReady()
+	state := connection.GetState()
+	for state != connectivity.Ready {
+		if !connection.WaitForStateChange(readyCtx, state) {
+			t.Fatalf("gRPC fixture connection did not become ready from %s: %v", state, readyCtx.Err())
+		}
+		state = connection.GetState()
+	}
 	return connection
 }
 
