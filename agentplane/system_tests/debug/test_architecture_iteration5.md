@@ -114,6 +114,26 @@ control. [Curated execution evidence](test_architecture_guest_setup_contract.jso
 keeps physical wall/CPU observations separate; this is assertion-transfer
 validation, not a latency comparison. No required gate or timeout changed.
 
+The Notification process seam now starts production `serve` in a child of a
+separate Go test binary, avoiding the existing integration package's private
+`TestMain`. The parent owns one envtest API, CA and migrated PostgreSQL clone;
+the child consumes their explicit kubeconfig, service SVID and database URL.
+Listing through an accepted WorkloadCredential SVID returns the exact preseeded
+subscription ID, key and Action request ID. A trusted but unrecorded SVID receives
+`Unauthenticated`. This proves a nonempty owned read, not credential revocation or
+the packaged CLI route.
+
+The [focused subprocess contract](https://app.buildbuddy.io/invocation/f8bf3c52-44c2-4d32-bb8c-18d5796c15e3)
+passed as one fresh test in 34.8 seconds after cleanup and stderr-artifact repairs.
+Final source cleanup changes only diagnostic messages and BUILD dependency order;
+scoped pre-commit passes. Earlier attempts include BUILD analysis and Go compile
+errors before any test, a prior passing test, then a disconnected observer with
+three successful build actions and no observed test execution. The final pass
+does not erase those attempts or establish a reliability rate. The new driver
+leaves production configuration and in-cluster startup unchanged. The next
+consumer is the direct guest Egress/sidecar/Notification CLI composition; no
+deployed scenario is removed by this seam.
+
 A published internal-service image baseline currently lacks a test-side read-auth
 path to private Forgejo images. Do not pass publishing credentials into PR actions.
 A shadow baseline needs immutable image/source proof and API compatibility keys;
