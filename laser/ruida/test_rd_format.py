@@ -2,6 +2,7 @@ import pytest
 import pytest_bazel
 
 from laser.ruida.rd_format import (
+    MAX_LAYERS,
     RdJob,
     RdLayer,
     RdRect,
@@ -85,6 +86,25 @@ def test_60_layers():
     raw = unscramble_bytes(job.to_bytes())
     # Layer 59 (0x3B) should appear in the header as a layer byte
     assert bytes([59]) in raw
+
+
+def test_layer_indices_at_limit():
+    layers = [RdLayer(index=i, min_power_pct=20, max_power_pct=80, speed_mm_s=100) for i in range(MAX_LAYERS)]
+    raw = unscramble_bytes(RdJob(layers=layers).to_bytes())
+    assert bytes([0xC9, 0x04, 127]) in raw
+
+
+@pytest.mark.parametrize("index", [-1, MAX_LAYERS])
+def test_layer_index_outside_wire_range_is_rejected(index: int):
+    job = RdJob(layers=[RdLayer(index=index, min_power_pct=20, max_power_pct=80, speed_mm_s=100)])
+    with pytest.raises(ValueError, match="layer indices must be between 0 and 127"):
+        job.to_bytes()
+
+
+def test_duplicate_layer_indices_are_rejected():
+    layer = RdLayer(index=0, min_power_pct=20, max_power_pct=80, speed_mm_s=100)
+    with pytest.raises(ValueError, match="layer indices must be unique"):
+        RdJob(layers=[layer, layer]).to_bytes()
 
 
 def test_multi_rect_per_layer():

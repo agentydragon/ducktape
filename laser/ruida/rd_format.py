@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+MAX_LAYERS = 128
+
 # ── Byte-level encoding primitives ────────────────────────────────────────────
 
 
@@ -145,6 +147,11 @@ class RdJob:
 
     def to_bytes(self) -> bytes:
         """Serialize to a complete scrambled .rd binary file."""
+        indices = [layer.index for layer in self.layers]
+        if any(index < 0 or index >= MAX_LAYERS for index in indices):
+            raise ValueError(f"Ruida layer indices must be between 0 and {MAX_LAYERS - 1}")
+        if len(set(indices)) != len(indices):
+            raise ValueError("Ruida layer indices must be unique")
         raw = self._header() + self._body() + self._trailer()
         return scramble_bytes(raw)
 
