@@ -1,116 +1,60 @@
 # Workload identity lifecycle
 
-Status: **inventory open; the Sandbox Identity rollout is accepted.** This is a 2026-11-10
-inventory with the Sandbox rows updated for #15742 and #15744; revalidate the other rows before
-dispatch. Sandbox live acceptance and owned cleanup passed on 2026-11-12; see the
-[rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md). Decision node
-[`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target).
-The issuer, the `WorkloadCredential` kind, the resolver and every workload requester have landed:
-Sandboxes, Action command/build boxes, and the standing records for Haku (`haku-ui`, `haku-anki`,
-`haku-jupyter`) and the `haku-ci` relay. Their contract is in
-[workload authentication](../docs/workload_authentication.md#workloadcredentials). This plan
-inventories the paths that do not yet resolve to an `Identity` through one of the
-[three credential forms](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms).
+The workload identity source cutover is complete. Agent workloads receive SVIDs through
+Identity-subject `WorkloadCredential`s; the issuer requires an Identity subject, and the live
+resolver rejects retained ServiceAccount-subject records. Sandbox source and live acceptance are
+recorded in the [rollout evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md).
+Deployment-specific standing-workload proxy observation remains tracked separately in the
+[task DAG](task_dag.md#standing_workload_identity--standing-workloads-run-as-identities).
 
 ## Remaining paths
 
-Audited against the code on 2026-11-10. Buckets: **(a)** Kubernetes-API use, kept; **(b)** an
-Agentplane API that moves to SVID mTLS; **(c)** a caller that may need a non-SVID form; **(d)** dead;
-**(o)** MCP edge OAuth, a target form whose binding still ends at a ServiceAccount. **(s)** Agentplane
-services calling each other as themselves, kept on TokenReview (operator, 2026-11-10). Ordered by what
-to do first.
+These are distinct from the completed workload credential cutover. In particular, ServiceAccount
+authentication between Agentplane components and ServiceAccount use for Kubernetes API access are
+platform credentials with retained attribution, not agent Identity credentials.
 
-| #   | Path                                            | Evidence                                                                                                                                                                     | Accepts today                                                                                                                     | Callers on the token path                                                                                                 | Bucket  | Next step / blocker                                                                                                                             |
-| --- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | MCP edge to the Action Service                  | `mcp_edge/core_client.go:96`, `mcp_edge/core_client.go:138`, `action_service/internal/rpc/gate.go:153`                                                                       | The edge mints a TokenRequest for the Connection's ServiceAccount and forwards it as `Bearer`; the Action Service TokenReviews it | Every claude.ai Connection, acting as `claude-ai`                                                                         | (o)     | The edge authenticates with its own SVID and delegates the Identity (identity plan § MCP edge), at `IDENTITY_CUTOVER`                           |
-| 2   | MCP edge Connection binding                     | `mcp_edge/internal/authserver/tokens.go:296`, `mcp_edge/internal/connections/service.go:100`, `mcp_edge/internal/connections/authorizations.go:133`, `mcp_edge/config.go:40` | An access token resolves to its Connection's `bound_caller`, a ServiceAccount; `connection_identities` is parsed but not rendered | The same Connections                                                                                                      | (o)     | `bound_caller` and `original_caller` become Identities; `connection_identities` set, at `IDENTITY_CUTOVER`                                      |
-| 3   | Projected Kubernetes token beside the SVID      | Sandbox templates and VM launcher source changed in #15258 and #15742.                                                                                                       | Sandbox source uses Identity credentials and Kubernetes impersonation; command/build boxes retain separate paths.                 | Command/build boxes; verify the live Sandbox path during acceptance.                                                      | (b)→(a) | Complete Sandbox rollout acceptance at `SANDBOX_IDENTITY_SPEC`; boxes remain at `IDENTITY_CUTOVER`.                                             |
-| 4   | SVIDs and binding subjects                      | `sandbox_controller/internal/controller/identity.go`, `cluster/cdk8s/agentplane/standing_caller.py`, `action_service/internal/rpc/policy.go`                                 | The merged Sandbox controller issues Identity-subject credentials; other workload paths retain their own migration steps.         | Sandboxes, standing workloads and boxes.                                                                                  | (b)     | Sandbox rollout at `SANDBOX_IDENTITY_SPEC`; standing records at `STANDING_WORKLOAD_IDENTITY`; boxes and catalog bindings at `IDENTITY_CUTOVER`. |
-| 5   | App bearer for `agentplane-agent`               | `app/internal/auth/auth.go`, `cluster/cdk8s/agentplane/app_settings.py:212`                                                                                                  | Operator OIDC session or ID token; a TokenReview bearer naming `agentplane-agent` remains                                         | Staging live suites, shared-cluster allocation, and hand-run scripts                                                      | (c)     | Decide whether remaining callers can use real-issuer ID tokens; test fixtures switched in #15448, but do not remove TokenReview yet             |
-| 6   | Backend callers of the shared service listeners | `history_service.py:194`, `notifications.py:202`, `runner_gateway_workload.py:266`, `llm_ingress.py:212`, `actions.py:382`                                                   | SVID, or each service's audience by TokenReview                                                                                   | The app, Notification, Action Service, Sandbox Controller, Runner Gateway and central sampler, each as itself             | (s)     | Kept: service-to-service TokenReview (operator, 2026-11-10)                                                                                     |
-| 7   | Bearer-only service listeners                   | `egress/cmd/admin_grpc.go:103`, `policy_controller/cmd/main.go:146`, `central_sampler/cmd/main.go:69`, `runner_gateway/main.go:267`                                          | TokenReview alone; the Policy Service listens without TLS                                                                         | The app (egress admin, Policy Service, Gateway), Notification and the Sandbox Controller (Gateway), the Gateway (sampler) | (s)     | Kept: service-to-service TokenReview (operator, 2026-11-10)                                                                                     |
-| 8   | Delegated calls                                 | `identity/auth/delegation.go:57`, `runner_gateway/main.go:347`                                                                                                               | A Pod-bound TokenReview proves the actor; the envelope names a ServiceAccount effective caller                                    | The Action Service toward Dispatcher and History                                                                          | (s)     | Actor stays TokenReview; the envelope gains an Identity effective caller in #15389, and loses the ServiceAccount one at `IDENTITY_CUTOVER`      |
+| Path                                   | Current contract                                                                                                                                                                                            | Remaining work                                                                                                                                                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App bearer for `agentplane-agent`      | The app accepts operator OIDC and a TokenReview bearer for `agentplane-agent` (`app/internal/auth/auth.go`). This is not a workload SVID path.                                                              | Decide whether the remaining staging and hand-run callers can use real-issuer ID tokens (`APP_AGENT_TOKEN_DECISION`). Keep the current configuration until the callers move or the exception is explicitly retained. |
+| Backend service callers                | Agentplane components continue authenticating to shared listeners as themselves, using SVID or their configured audience through TokenReview.                                                               | Retained by operator decision. Preserve component ServiceAccount auth and actor/writer/sender provenance.                                                                                                            |
+| Bearer-only component listeners        | The egress admin, Policy Service, sampler and selected Gateway methods accept component TokenReview; the Policy Service listener has no TLS.                                                                | Retained by operator decision; this is service-to-service auth, not an agent bearer migration.                                                                                                                       |
+| Delegated workload calls               | The component actor proves itself through its own credential; the delegation envelope names the exact Identity effective caller. Receivers check the actor per method and authorize the delegated Identity. | No ServiceAccount effective-caller removal remains. Keep actor proof and workload Identity authority distinct.                                                                                                       |
+| Off-cluster workloads presenting SVIDs | No current off-cluster workload delivery path is recorded. External MCP clients use the edge's OAuth grants bound to an Identity.                                                                           | Revisit SVID delivery when an actual off-cluster workload requires it.                                                                                                                                               |
 
-The claude.ai policy view's `subject: {namespace: agentplane-staging, name: claude-ai}` is not a
-rendering artifact: staging's `claude-ai` `PolicyBinding` names the ServiceAccount, since
-`StandingCaller.subject` renders an Identity only with `identity_catalog`, and `GetActionPolicy`
-resolves bindings by `ServiceAccountRef`. The OAuth credential itself (edge-issued access tokens for
-dynamically registered clients) is one of the target forms; rows 1 and 2 are what still ties it to
-an account.
+## Workload credential authorization
 
-Kept, bucket (a): every controller and service reaching the Kubernetes API as its own account, the
-egress proxy's own token for impersonation (`local_api_server`), Flux and its impersonated appliers.
-The edge's TokenRequest right on `claude-ai` is Kubernetes-API use too, but exists only for row 1
-and goes with it.
-
-The central sampler holds no SVID, so rows 6 to 8 include it. Nothing acts as a central Session's
-identity yet (`CENTRAL_SESSION_ACTING_DESIGN`); its own calls are a backend
-service's.
-
-**Per-incarnation credential IDs: revisit after the plan lands (operator, 2026-11-09).** The
-cluster has no CRL or OCSP, so a fresh ID per accepted binding is what makes replacing an
-incarnation revoke the old key, even one left in a terminating Pod, a VM disk or a Firecracker
-snapshot. The alternative is one stable ID per record plus the Pod-binding check, which covers only
-callers that forward a Pod-bound token. Revisit if the ID check proves redundant with binding checks
-on every route, or if reissue latency hurts startup. Nothing in the migration waits on it.
-
-## Authorization
-
-**Coarse (operator, 2026-11-09).** RBAC grants `create`, `update` and `delete` on
-`workloadcredentials` to exactly three accounts: the Sandbox Controller, the Action Service and
-Flux's applier. Each may name any subject: a ServiceAccount in the record's namespace until the
-cutover, and after it any `Identity` in the policy namespace. So each of those accounts can make a
-workload act as any identity in its namespace. The real gates stay upstream:
+RBAC grants `create`, `update` and `delete` on `WorkloadCredential`s to exactly three accounts: the
+Sandbox Controller, the Action Service and Flux's applier. Records name an Identity in the policy
+namespace. The upstream gates stay distinct:
 
 - for a Sandbox, who may set `Sandbox.spec.identity`;
-- for a box, the caller the Action Service authenticated;
+- for an Action box, the Identity caller authenticated by the Action Service;
 - for a standing workload, git.
 
 Flux's kustomize-controller already holds `*`, so a narrower grant to Flux would record intent but
 not enforce it. Haku cannot author a record, because the `haku-state` Kustomization impersonates
 `haku-state-reconciler`, which holds no right on `WorkloadCredential`s. A narrower requester can be
 added later without changing anything here: a `ValidatingAdmissionPolicy` calling the CEL
-`authorizer` for a custom `use` verb on the named identity.
-
-## After the bearer hop
-
-The proxy's `forward` listener authenticates SVIDs alone. Its `allowed_service_account_namespaces`
-now serves only projected-token reviews (row 3), which `public-coder-agent` and the standing
-namespaces never send, and the Action Service's `caller_service_account_namespaces` keeps
-`public-coder-agent` for no caller. `kubernetes_bearer` stays on service listeners for rows 1, 6
-and 7 until they move.
-
-## With `IDENTITY_CUTOVER`
-
-The ordering edge and the owner switch were decided by the operator on 2026-11-09. Box creation
-needs the caller's own ServiceAccount: `stamp` in `action_service/sandbox/inventory.go` reads it, runs
-the box as it, names it as the record's subject, and makes its controller, the calling Sandbox, the
-record's owner, which owns the box. The merged `SANDBOX_IDENTITY_SPEC` source stops creating that
-account for Sandboxes; the box migration is still open. A Sandbox
-caller's boxes already hang off the Sandbox, not the account; with `SERVICES_IDENTITY_PRINCIPAL`,
-which gives the Action Service its caller as an Identity, a box names that Identity as its subject
-and runs on the default ServiceAccount; its record has no owner (operator, 2026-11-10: acting as an
-Identity confers no authority over a box), so deleting the Identity revokes the box's credential and
-deletes nothing. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the cutover,
-requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches every
-requester's `subject` to an identity. The standing records moved first
-(`STANDING_WORKLOAD_IDENTITY`): cdk8s renders the `haku-ui` and `haku-ci-egress` `Identity`s and
-the records name them by name alone, since git cannot know a UID; the resolver reads
-`spec.subject.identity` live in the policy namespace rather than the record's own.
+`authorizer` for a custom `use` verb on the named Identity.
 
 ## Open questions
 
-1. **The app's `agentplane-agent` bearer (row 5).** Staging live suites, the shared-cluster
-   allocation probe and hand-run scripts still use this TokenReview path through the public route,
-   where TLS ends at the Gateway, so a client certificate cannot reach the app as mTLS. PR #15448
-   moved k3s fixtures to short-lived test-minted OIDC ID tokens and added operator ID-token bearer
-   support to the app; it did not move these staging callers. Decide whether they can obtain ID
-   tokens from the real issuer or should retain the narrow TokenReview exception. Keep the
-   TokenReview configuration until every remaining caller has moved or the exception is accepted.
-2. **Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Recommendation:
-   design delivery when one exists. The record and the resolver stay as they are. External MCP
-   clients use the edge's OAuth form instead.
+1. **The app's `agentplane-agent` bearer.** Staging live suites, the shared-cluster allocation probe
+   and hand-run scripts still use this TokenReview path through the public route, where TLS ends at
+   the Gateway, so a client certificate cannot reach the app as mTLS. PR #15448 moved k3s fixtures
+   to short-lived test-minted OIDC ID tokens and added operator ID-token bearer support to the app;
+   it did not move these staging callers. The remaining decision is tracked by
+   [`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target).
+2. **Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Revisit delivery
+   when one exists; the record and resolver need no change for the current in-cluster workloads.
 
-When rows 1 to 4 are gone and the open questions are settled, the rest of this content moves into
-`docs/workload_authentication.md` and the SPECs of the Policy Controller, Sandbox Controller, egress
-proxy, Action Service and MCP edge, and this file is deleted.
+3. **Per-incarnation credential IDs.** The current design uses a fresh `WorkloadCredential` ID for
+   each accepted binding, so a replacement cannot reuse credentials left on a terminating Pod,
+   VM disk or Firecracker snapshot. Revisit whether the binding checks alone make this redundant
+   or whether lookup latency makes a stable ID with a Pod-binding check preferable. This is a
+   deferred design question, not a cutover blocker.
+
+The serving contract lives in the
+[`workload_authentication.md`](../docs/workload_authentication.md). Revisit off-cluster SVID
+delivery if an actual workload needs it; this inventory does not gate the completed workload
+identity cutover.

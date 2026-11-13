@@ -138,7 +138,10 @@ It changes no authorization rule. Serving the updated guidance remains a separat
 Live LLM Ingress and History mount `policy_namespace: agentplane-staging`; the Runner Gateway receives
 that namespace through its existing `AGENTPLANE_RUNNER_GATEWAY_POLICY_NAMESPACE` environment setting.
 Their serving images, observed generations and configuration sources are recorded in the evidence.
-The source-level removal of optional verifier inputs remains separately open in `SANDBOX_IDENTITY_SPEC`;
-this record accepts the live cutover and does not claim that cleanup has landed. The unused rollout hold
-plan and patch were retired. Lasting recovery guidance is in
+The evidence JSON preserves the optional-verifier follow-up as observed during this 2026-11-12
+acceptance. That source/configuration follow-up completed in [#15893](https://github.com/agentydragon/ducktape/pull/15893);
+current workload verifiers require their policy namespace and Identity reader. The separate staging
+proxy decision-log observation remains tracked by `STANDING_WORKLOAD_IDENTITY` in the task DAG.
+This record accepts the live Sandbox cutover; it does not claim that standing-workload observation
+is complete. The unused rollout hold plan and patch were retired. Lasting recovery guidance is in
 [workload authentication](../workload_authentication.md#sandbox-rollout-and-recovery).

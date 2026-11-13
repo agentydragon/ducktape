@@ -73,13 +73,15 @@ supplied MCP schemas and policy-authored argument schemas retain their own JSON 
 
 ## Caller admission and Connection authority
 
-A workload caller is a Kubernetes ServiceAccount carrying the label
-`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace, or,
-by SVID only, an `Identity` of the policy namespace.
+A caller is either a directly authenticated platform ServiceAccount in a configured caller
+namespace, or an `Identity` of the policy namespace. Agent workload `WorkloadCredential`s and
+command/build boxes now name Identity subjects; the retained ServiceAccount authentication path is
+for component callers, not a newly issued workload credential.
 The shared TLS RPC listener on 8080 verifies an agentplane Runtime SVID with explicit
-clientAuth against the trust-manager roots. It resolves the exact live Sandbox UID and accepted
-credential to the subject the credential names: a ServiceAccount and its canonical UID, or an
-Identity and its UID, read live and fenced on that UID. The sidecar originates TLS
+clientAuth against the trust-manager roots. It resolves the accepted credential and exact live
+Sandbox UID to the Identity subject its `WorkloadCredential` names, read live and fenced on that UID.
+The issuer now requires an Identity subject; the resolver rejects retained ServiceAccount-subject
+records. Direct component ServiceAccount authentication is the separate TokenReview path below. The sidecar originates TLS
 through the central proxy's opaque CONNECT; the proxy supplies no identity. Native gRPC runs
 the same Gate. Bearer headers cannot replace the certificate
 peer; deleted Sandboxes, stale credentials and invalid leaves fail before a handler runs.
@@ -93,29 +95,35 @@ Health methods remain public. Linkage methods remain bearer-free because the cal
 single-use state itself and the client metadata document is public. A new RPC stays denied until it
 is assigned an explicit boundary.
 
-On the same listener, a Kubernetes token proves that account directly through TokenReview for the configured audience.
-The resolver requires an allowed namespace and ServiceAccount UID; Actions accepts tokens with or without a Pod binding. A supplied
-Pod binding must have exactly one name and UID. An external MCP bearer proves an active
-Connection grant whose currently bound account is admitted by the same label. Nothing is admitted
-before the ServiceAccount watch has synced. Missing or unlabeled accounts cannot submit Actions.
+On the same listener, a Kubernetes token proves a ServiceAccount directly through TokenReview for
+the configured audience. The resolver requires an allowed namespace and the live ServiceAccount UID;
+the ServiceAccount must also carry `agentplane.allegedly.works/use-action-service: "true"`.
+Actions accepts tokens with or without a Pod binding. A supplied Pod binding must have exactly one
+name and UID. An external MCP
+bearer is resolved by the edge to an active grant and Connection bound to an exact live Identity;
+the edge delegates as its own component caller and carries typed Connection/grant provenance. It
+does not mint or forward a workload ServiceAccount token. Nothing is admitted before the relevant
+identity watch has synced.
 
-The operator can inspect Connections, rename them, rebind them to an eligible ServiceAccount, and
-unbind them. Updates carry the reviewed version; an already-unbound Connection returns unchanged.
-A Connection's UUID survives rename and rebind; names need not be unique. Each grant retains its original caller and immutable grant
-revision, while future requests from its existing token act as the Connection's current bound
-account. Rebinding does not require issuing another token.
+The operator can inspect Connections, rename them, bind or unbind them to an eligible Identity, and
+review their grants. Updates carry the reviewed version; an already-unbound Connection returns
+unchanged. A Connection's UUID survives rename and rebind; names need not be unique. Each grant
+retains its original caller and immutable grant revision, while future requests from its existing
+token act as the Connection's current bound Identity incarnation. Rebinding does not require issuing
+another token.
 
 A grant is created active in the transaction that issues its OAuth tokens. Reconnect revokes the
-previous grants and creates a new revision. Unbind, revocation, or loss of the current account's
+previous grants and creates a new revision. Unbind, revocation, or loss of the bound Identity's live
 admission refuses subsequent MCP authority resolution. Revoking an old grant cannot revoke its
 replacement, and no Connection or grant history is deleted.
 
-The core receives a ServiceAccount principal and has no Connection authority or grant provenance.
-At admission it stores the authentication-verified UID beside the ServiceAccount's namespace and name.
-The UID pins the exact account incarnation in receipts and execution payloads. Requests whose
-admitting writer did not store a UID remain explicitly unknown, including writes by older replicas
-during a roll. The service never looks up a same-name live account to fill it in, and a
-caller-delegating executor must refuse those requests.
+The core receives either a directly authenticated component ServiceAccount principal or, on the
+delegated MCP path, the edge's component ServiceAccount actor with an effective Identity caller.
+Connection and grant provenance remain typed edge metadata; the core does not resolve or own
+Connections. It stores the verified caller incarnation in receipts and execution payloads. Requests
+whose admitting writer did not store the required incarnation remain explicitly unknown, including
+writes by older replicas during a roll. The service never looks up a same-name live subject to fill
+it in, and a caller-delegating executor must refuse requests whose required caller proof is absent.
 
 An Identity caller is admitted while a live `PolicyBinding` of the policy namespace names its
 Identity incarnation, whether or not the binding grants an Action rule; the index answers only
@@ -123,29 +131,34 @@ while that Identity of that UID exists, and a watch rechecks it before every fra
 a service reader. It is recorded by name and UID on its requests and cancellation events, and owns,
 reads, cancels and spends idempotency keys by incarnation: a later Identity of the same name shares
 nothing with it, as it shares none of its bindings. Its policy is the bindings naming its Identity.
-`orchestration_v1` launches, which act as the calling ServiceAccount, refuse an Identity's request
-with `caller_not_service_account`. `session_delegation` forwards it as that Identity incarnation,
-which Dispatcher and History authorize as the Identity's own workload; the Environment Service
-admits no Identity caller and refuses it, and Dispatcher refuses its `sessions/create`. MCP groups
-run it, and a `pod` group gives it boxes of its own. A request a newer release recorded for a caller kind this one does not know names no
-caller in its receipt, is no workload's, and the executors that act as the caller refuse it.
+`orchestration_v1` can launch for an Identity caller and records that caller on the resulting
+resources. `session_delegation` forwards the exact Identity incarnation, which Dispatcher and
+History authorize as the Session's workload. Environment inventory reads admit an Identity caller;
+explicit `ResumeEnvironment` remains limited to the configured direct Pod-bound operator, while
+automatic Identity wake uses the existing `resumePolicy.allowOwnServiceAccount` target setting.
+Dispatcher still refuses an Identity caller's `sessions/create`. MCP groups run for the Identity,
+and the `sandbox` group gives it boxes of its own. A request a newer release recorded for a caller
+kind this one does not know names no caller in its receipt, is no workload's, and the executors that
+act as the caller refuse it.
 
-Ownership reads, PolicySet subject matching, and submission idempotency remain scoped by the
-ServiceAccount namespace and name for a ServiceAccount caller. A same-name replacement therefore shares the existing read and
-idempotency scope: it can read the retained request and reusing its key is refused, while that
-request still carries its original UID and does not become a request from the replacement account.
-Connections acting as the same account share its receipt reads; different accounts remain isolated.
-Rebinding changes only future submissions, not the account identity recorded on an existing Action.
+Ownership reads, PolicySet subject matching and submission idempotency for direct ServiceAccount
+callers remain scoped by the ServiceAccount namespace and name. A same-name replacement therefore
+shares that existing read and idempotency scope: it can read the retained request and reusing its
+key is refused, while that request still carries its original UID and does not become a request
+from the replacement account. MCP Connections resolve to their current effective Identity; callers
+with the same Identity incarnation share receipt reads and idempotency, while a different
+incarnation remains isolated. Rebinding never rewrites the caller recorded on an existing Action.
 Revoking a Connection stops further requests; it does not cancel an Action the core has already
 accepted. Decisions stay linked to their ActionRequest rather than duplicating its caller identity;
 caller-authored event actors record their verified UID when known.
 
 ## Action policies
 
-A `PolicySet` holds typed policies as `action_auto_approve` rules; a `PolicyBinding` joins one
-subject -- a namespaced ServiceAccount, which is what a workload's Pod runs as and what an external
-Connection acts as -- to sets by name, optionally until `expiresAt`. Both are namespaced Kubernetes
-objects the service watches in its configured policy namespace. Labeled caller ServiceAccounts are
+A `PolicySet` holds typed policies as `action_auto_approve` rules; a `PolicyBinding` joins either
+an Identity or a namespaced ServiceAccount subject to sets by name, optionally until `expiresAt`.
+Workload and MCP Connection bindings name Identities; direct component callers may use labeled,
+configured ServiceAccount subjects. Both are namespaced Kubernetes objects the service watches in its
+configured policy namespace. Labeled caller ServiceAccounts are
 watched independently in configured caller namespaces, so a binding can target an account outside
 the policy namespace. The service reads `spec` only. A set with a rule that does not parse
 contributes nothing; a set a binding names that is missing or refused does not stop its other sets
@@ -169,10 +182,9 @@ anything else matches nothing and stays on the human path. This version decides 
 `action_auto_approve` rules only; there is no deny form.
 
 Policies are evaluated once, at admission, against the objects as the service holds them then:
-the caller's bindings, whose subject is matched from the ServiceAccount the bearer
-proved -- the one its Pod runs as, or the one its Connection acts as -- and never from any request
-field, the
-existing valid sets they name, and the first `action_auto_approve` policy that matches. A match
+the caller's bindings, whose subject is matched from the verified direct caller or the effective
+Identity on a delegated MCP request, and never from an untrusted request field; the existing valid
+sets they name; and the first `action_auto_approve` policy that matches. A match
 auto-approves with an Execution; no match leaves the request on the human path; until the watch
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
@@ -202,7 +214,7 @@ while the stream is idle and before each frame; it does not impose a fixed watch
 
 An enrollment names one validated OAuth authorization and expires within fifteen minutes. Its
 first authenticated preview pins it to that operator's issuer and subject. That operator can
-approve an eligible ServiceAccount and either a new Connection name or an explicitly confirmed
+approve an eligible Identity and either a new Connection name or an explicitly confirmed
 existing Connection and its reviewed version. Denial grants no authority. A different operator
 cannot inspect or decide the enrollment; browser identity does not supply authority.
 
@@ -267,9 +279,9 @@ periodic state-query fallback.
 ## MCP edge request path
 
 The standalone MCP edge serves the external `/mcp` and OAuth protocol endpoints and owns
-ConnectionService. It resolves an external bearer to the Connection's currently bound
-ServiceAccount, then calls Action Service with that workload identity. Action Service does not
-serve the external MCP or OAuth endpoints.
+ConnectionService. It resolves an external bearer to the Connection's current Identity and calls
+Action Service as its own component caller with the delegated Identity and typed Connection/grant
+provenance. Action Service does not serve the external MCP or OAuth endpoints.
 
 The edge exposes a generic MCP frontend backed by Action Service, with the same catalog,
 admission, Decision, Execution, and receipt authority as its gRPC interface. Its fixed tools
@@ -294,16 +306,18 @@ its core calls. Operator bearers, unexchanged credential placeholders, and calle
 identity/policy claims cannot acquire this authority. An Origin header does not grant authority or
 categorically disqualify a caller. Browser cookies are not authentication on this endpoint.
 Clients may use DCR registration or HTTPS Client ID Metadata Documents (CIMD).
-Neither registration nor metadata discovery is authority. Consent binds one labeled caller
-ServiceAccount and named Connection to the validated authorization interaction and approving
-operator; upstream issuer/subject must match the explicit operator mapping before token issuance.
+Neither registration nor metadata discovery is authority. Consent binds one eligible Identity and
+named Connection to the validated authorization interaction and approving operator; upstream
+issuer/subject must match the explicit operator mapping before token issuance.
 One consent permits at most one token family. Ambiguous post-claim issuance requires fresh
 authorization.
 
 Refresh and bearer admission resolve current canonical grant validity and the current Connection
-binding. External receipts and idempotency are ServiceAccount-scoped. Connections retain their grant
-history; accepted Actions retain their submitting account independently of later Connection changes.
-In-cluster Actions RPCs use live ServiceAccount authentication; workload tokens
+binding. External receipts and idempotency are scoped to the delegated Identity incarnation.
+Connections retain their grant history; accepted Actions retain their submitting caller
+independently of later Connection changes.
+In-cluster Actions RPCs use live ServiceAccount authentication for component calls and SVID
+Identity authentication or delegated Identity authority for workload calls; workload tokens
 do not authenticate to `/mcp`. Neither path accepts operator credentials as a caller bypass. OAuth protocol state is durable across replacement and replicas. Recoverable upstream refresh
 tokens are stored in the service database; issued opaque token values are stored only as hashes. Enabling these contracts does not imply deployed client acceptance.
 
@@ -336,17 +350,15 @@ Each box has a `WorkloadCredential` of the box Pod's name, subject the caller, b
 once it exists. Create waits for the record's unbound credential, starts the
 Pod with that credential's Secret mounted into its egress sidecar alone, and then binds the Pod,
 which accepts that credential ID. A box made from a template without a sidecar mounts nothing.
-The record is the box Pod's controller owner. A ServiceAccount caller's box runs as it, and the
-record's own owner is the account's controller (a Session Sandbox), else the account. An Identity
-caller's box runs on the group namespace's `default` ServiceAccount, in any group namespace, and its
-record names the Identity incarnation and has no owner: acting as an Identity confers no authority
-over a box's lifecycle, so the box lives until it is disposed of, and deleting the Identity only
-revokes its SVID. Boxes are found by their caller's labels: a later Identity of the same name, or a
-same-named account, reaches none of them, and its create of a box of the same name is refused while
-that box exists. Dispose deletes the record before the Pod, so the
-box's SVID stops resolving before the Pod has stopped; garbage collection of a ServiceAccount caller's
-Sandbox or account removes both. A new box of the same name gets a fresh credential ID, so the earlier box's SVID never
-resolves against it.
+The record is the box Pod's controller owner. A ServiceAccount caller is rejected by the Sandbox
+executor; a box runs on the group namespace's `default`
+ServiceAccount, and its record names the caller's exact Identity incarnation and has no owner:
+acting as an Identity confers no authority over a box's lifecycle, so the box lives until it is
+disposed of, and deleting the Identity only revokes its SVID. Boxes are found by their caller's
+labels: a later Identity of the same name reaches none of them, and its create of a box of the same
+name is refused while that box exists. Dispose deletes the record before the Pod, so the box's SVID
+stops resolving before the Pod has stopped. A new box of the same name gets a fresh credential ID,
+so the earlier box's SVID never resolves against it.
 
 ## Orchestration Actions (v1)
 
@@ -363,25 +375,27 @@ Sandbox owns.
 
 ## Same-principal Session delegation Actions
 
-A `session_delegation` group acts on behalf of the Action caller only when the durable request
-retains its verified ServiceAccount UID. Each outbound call authenticates Actions as the service
-actor and carries the caller account, UID, Action request UUID and Execution UUID in the shared
+A `session_delegation` group forwards the Action caller's exact Identity incarnation; a retained
+ServiceAccount-subject caller is refused. Each outbound call authenticates as the Action Service
+actor and carries the effective Identity, Action request UUID and Execution UUID in the shared
 delegation envelope. Discovery, Dispatcher and History apply their normal resource checks to that
-effective caller; privileged actor membership does not widen the caller's authority. Missing caller
-UIDs fail closed, and ambiguous mutation replies end as `execution_unknown` without replay.
+effective caller; privileged actor membership does not widen the Identity's authority. Missing
+Identity UIDs fail closed, and ambiguous mutation replies end as `execution_unknown` without replay.
 
-The reviewed `environments` group lists, reads and explicitly resumes existing eligible targets.
-Reads return the current snapshot immediately; they neither wait nor resume. The resume Action uses
-`EnvironmentService`, which rechecks the effective caller's current same-ServiceAccount
-`resumePolicy` and exact Sandbox UID/generation; it creates no target or grant. The `sessions` group
-creates Sessions, submits input with caller-minted command IDs, observes input delivery and History
-facts, cancels only a queued input whose durable receipt matches the supplied Session, interrupts
-the exact observed turn, reads the retained Dispatcher Session and History summary, and reads
-paginated retained turns with explicit coverage and source errors. These projections do not look up
-live environments and preserve facts already observed when another source is unavailable. Session creation
-does not start a turn; `additional_instructions` is an additive standing brief and the caller submits
-the task separately. This surface creates no environments or caller grants. Explicit resume uses
-the existing target policy; submitted input follows the separate backend wake-on-send policy.
+The reviewed `environments` group lists and reads eligible targets. These reads admit the current
+Identity's exact self-read and return the current snapshot immediately; they neither wait nor
+resume. Explicit `ResumeEnvironment` remains ServiceAccount-only and is limited to the configured
+Pod-bound operator; it refuses a workload Identity caller and creates no target or grant. Automatic
+Identity wake is separate and follows the existing target `resumePolicy`. The `sessions` group
+exposes creation, input submission with caller-minted command IDs, input-delivery and History
+observation, cancellation of only a queued input whose durable receipt matches the supplied Session,
+interruption of the exact observed turn, retained Dispatcher Session and History-summary reads, and
+paginated retained turns with explicit coverage and source errors. An Identity caller still lacks
+`CreateSession` authority; child-Session creation remains under `SESSION_SUBAGENT_DELEGATION`.
+Projections do not look up live environments and preserve facts already observed when another source
+is unavailable. Session creation does not start a turn; `additional_instructions` is an additive
+standing brief and the caller submits the task separately. This surface creates no environments or
+caller grants. Submitted input follows the separate backend wake-on-send policy.
 
 MCP Edge names direct tools `<group>__<action>` (for example `sessions__submit_input`) while the
 Action catalog retains the reviewed group/action pair. Successful output is structured JSON from

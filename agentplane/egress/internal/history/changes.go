@@ -94,9 +94,9 @@ type listenerConnection interface {
 }
 
 // notifiedSubject is one subject's events in a notification every replica decodes. A replica
-// predating Identity fails its decision watches on a notification naming one; none is written
-// before a workload runs as an Identity (SANDBOX_IDENTITY_SPEC, agentplane/plans/task_dag.md), which
-// a later release brings.
+// predating Identity fails its decision watches on a notification naming one; roll consumers that
+// decode this field with any producer that writes it. The accepted cutover and rollback sequence is
+// recorded in agentplane/docs/sandbox_identity_cutover_2026_11_12/README.md.
 type notifiedSubject struct {
 	Namespace       string   `json:"namespace,omitempty"`
 	Name            string   `json:"name,omitempty"`
