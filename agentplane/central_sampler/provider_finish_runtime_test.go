@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -22,8 +24,15 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				t.Fatal(err)
 			}
 			admitProviderCommand(t, store, owner, session.ID, "ambiguous-finish", false)
-			request, prepare := providerAttemptTestRequest(PendingIntentSampling)
-			intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+			config := samplersettings.ModelConfig{
+				Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
+				ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite},
+			}
+			request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config)
+			preparation := &sessionstore.ProviderRequestPreparation{
+				ModelConfig: config, SessionEffort: session.Effort, SessionConfiguration: append([]byte(nil), session.Configuration...),
+			}
+			intentID, _, err := store.Begin(t.Context(), owner, request, preparation, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
 			}

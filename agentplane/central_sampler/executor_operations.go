@@ -8,6 +8,8 @@ import (
 	"maps"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -145,23 +147,23 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	if err != nil {
 		return nil, err
 	}
-	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, requestJSON)
+	intent, err := e.store.RecordNested(ctx, e.owner, sessionstore.IntentExecutor, requestJSON)
 	if err != nil {
 		return nil, err
 	}
 	request, err := e.typedRequest(ctx, method, params, intent)
 	if err != nil {
-		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": sessionstore.NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
 		return nil, errors.Join(err, finishErr)
 	}
 	response, err := e.callWithReadDeadline(ctx, method, request)
 	readRetried := false
 	if err != nil {
-		remoteOutcome := NestedNotDispatched
+		remoteOutcome := sessionstore.NestedNotDispatched
 		if method == executorMethodProcessRead {
 			// The read did not reach the current execution incarnation, but the process
 			// may still be running from an earlier successful StartProcess.
-			remoteOutcome = NestedUnknown
+			remoteOutcome = sessionstore.NestedUnknown
 		}
 		scope := executionScopeFromContext(ctx, e.scopeSnapshot())
 		if fence := e.incarnationFenceError(err, scope, method, intent, executorProcessID(params), e.sessionID, nil, nil, remoteOutcome); fence != nil {
@@ -201,7 +203,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				environment.afterSequence = read.AfterSeq
 				environment.output = read.ObservedOutput
 				// A failed read cannot establish whether the already-started process exited.
-				environment.remoteOutcome = NestedUnknown
+				environment.remoteOutcome = sessionstore.NestedUnknown
 			}
 			e.setReconnectRequired(true)
 			if finishErr := e.finishNested(ctx, intent, environment.intentEvidence()); finishErr != nil {
@@ -267,7 +269,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			message = "request rejected"
 		}
 		rejected := map[string]any{"code": statusValue.UpstreamCode, "message": message}
-		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": sessionstore.NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
 		if frameJournalErr != nil {
 			return nil, errors.Join(frameJournalErr, finishErr)
 		}
@@ -301,12 +303,12 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	result, err := responseObject(method, response)
 	if err != nil {
-		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": sessionstore.NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
-		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": sessionstore.NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	evidenceResult := make(map[string]any, len(result))
@@ -315,7 +317,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		evidenceResult = resultEvidence(result)
 	}
 	evidence := evidenceResult
-	evidence["outcome"] = NestedCompleted
+	evidence["outcome"] = sessionstore.NestedCompleted
 	evidence["request_id"] = intent
 	evidence["execution_session_id"] = e.sessionID
 	if err := e.finishNested(ctx, intent, evidence); err != nil {
@@ -378,7 +380,7 @@ type executorEnvironmentFailureError struct {
 	processID          string
 	executionSessionID string
 	state              executorpb.ExecutionEnvironmentFailure_State
-	remoteOutcome      NestedOutcome
+	remoteOutcome      sessionstore.NestedOutcome
 	afterSequence      *uint64
 	output             *outputbuffer.Buffer
 	cause              error
@@ -386,7 +388,7 @@ type executorEnvironmentFailureError struct {
 
 func (e *executorEnvironmentFailureError) Error() string {
 	message := fmt.Sprintf("execution environment is %s; typed execution %s was not admitted", e.state.String(), e.method)
-	if e.remoteOutcome == NestedUnknown {
+	if e.remoteOutcome == sessionstore.NestedUnknown {
 		return message + "; the existing process outcome remains unknown and was not replayed"
 	}
 	return message + "; the request was not dispatched and was not retried"
@@ -395,7 +397,7 @@ func (e *executorEnvironmentFailureError) Error() string {
 func (e *executorEnvironmentFailureError) Unwrap() error { return e.cause }
 
 func (e *executorEnvironmentFailureError) executionFailureRecord() executionFailureRecord {
-	requestOutcome := NestedNotDispatched
+	requestOutcome := sessionstore.NestedNotDispatched
 	return executionFailureRecord{
 		message: e.Error(), method: e.method, intentID: e.intentID, processID: e.processID,
 		executionSessionID: e.executionSessionID, afterSequence: e.afterSequence,
@@ -407,7 +409,7 @@ func (e *executorEnvironmentFailureError) executionFailureRecord() executionFail
 func (e *executorEnvironmentFailureError) intentEvidence() executionFailureEvidence {
 	evidence := e.executionFailureRecord().intentEvidence()
 	// This RPC was refused before dispatch even when the existing process remains unknown.
-	evidence.RemoteOutcome = NestedNotDispatched
+	evidence.RemoteOutcome = sessionstore.NestedNotDispatched
 	return evidence
 }
 
@@ -418,7 +420,7 @@ func (e *Executor) newEnvironmentFailure(method executionMethod, intentID, proce
 	}
 	return &executorEnvironmentFailureError{
 		method: method, intentID: intentID, processID: processID, executionSessionID: executionSessionID,
-		state: detail.GetState(), remoteOutcome: NestedNotDispatched, afterSequence: afterSequence, output: output, cause: cause,
+		state: detail.GetState(), remoteOutcome: sessionstore.NestedNotDispatched, afterSequence: afterSequence, output: output, cause: cause,
 	}
 }
 
@@ -457,7 +459,7 @@ func (e *executorTransportError) evidence(retainedSession string) executionFailu
 	return (executionFailureRecord{
 		message: e.Error(), method: e.method, phase: e.phase, intentID: e.intentID,
 		processID: e.processID, executionSessionID: retainedSession, afterSequence: e.afterSequence,
-		remoteOutcome: NestedUnknown, automaticReplay: false, transportError: e.cause.Error(), output: e.output,
+		remoteOutcome: sessionstore.NestedUnknown, automaticReplay: false, transportError: e.cause.Error(), output: e.output,
 	}).intentEvidence()
 }
 

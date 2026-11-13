@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -48,17 +50,17 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan, err := adapter.PrepareCompaction(conversation, session, &ExecutionState{}, protocol.SessionAttribution{}, "")
+			plan, err := adapter.PrepareCompaction(conversation, session, &sessionstore.ExecutionState{}, protocol.SessionAttribution{}, "")
 			if err != nil {
 				t.Fatal(err)
 			}
-			intentID, _, err := store.BeginCompaction(t.Context(), owner, providerRequestIntent(PendingIntentCompaction, connection, config),
-				conversation.Context(), plan.Prepare, providerAttemptTestPolicy())
+			intentID, _, err := store.BeginCompaction(t.Context(), owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, config),
+				conversation.Context(), plan.Preparation, providerAttemptTestPolicy())
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
-				Class: ProviderAttemptTransient, Reason: "upstream unavailable", RetryAfter: time.Second,
+			if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, sessionstore.ProviderAttemptFailure{
+				Class: sessionstore.ProviderAttemptTransient, Reason: "upstream unavailable", RetryAfter: time.Second,
 			}); err != nil {
 				t.Fatal(err)
 			}

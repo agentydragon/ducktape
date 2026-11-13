@@ -18,15 +18,17 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	sampler := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
 
 	delegated := fixture.openSessionExecutingAs(t, identity)
-	updateSamplerModel(t, fixture.sampler, delegated, 2, "test-model-delegated")
+	if err := fixture.source.ChangeModels(t.Context(), delegated, 2, "test-model-delegated"); err != nil {
+		t.Fatal(err)
+	}
 	ctx, _ := samplerExportContext(t)
-	if err := samplerExportResult(t, startSamplerExport(ctx, fixture, delegated.ID)); err != nil {
+	if err := samplerExportResult(t, startSamplerExport(ctx, fixture, delegated)); err != nil {
 		t.Fatalf("export acting for the Identity: %v", err)
 	}
-	cursor := assertSamplerHistoryMatchesSource(t, fixture, delegated.ID, "test-model-delegated")
-	assertSamplerExportCheckpoint(t, fixture, delegated.ID, &cursor)
+	cursor := assertSamplerHistoryMatchesSource(t, fixture, delegated, "test-model-delegated")
+	assertSamplerExportCheckpoint(t, fixture, delegated, &cursor)
 	var writerName, identityName, identityUID string
-	if err := fixture.historyDB.QueryRowContext(t.Context(), "SELECT writer_name, execution_identity_name, execution_identity_uid FROM session_history WHERE id=$1", delegated.ID).
+	if err := fixture.historyDB.QueryRowContext(t.Context(), "SELECT writer_name, execution_identity_name, execution_identity_uid FROM session_history WHERE id=$1", delegated).
 		Scan(&writerName, &identityName, &identityUID); err != nil {
 		t.Fatal(err)
 	}
@@ -35,11 +37,13 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	}
 
 	direct := fixture.openLegacySession(t)
-	updateSamplerModel(t, fixture.sampler, direct, 1, "test-model-direct")
-	if err := samplerExportResult(t, startSamplerExport(ctx, fixture, direct.ID)); err != nil {
+	if err := fixture.source.ChangeModels(t.Context(), direct, 1, "test-model-direct"); err != nil {
+		t.Fatal(err)
+	}
+	if err := samplerExportResult(t, startSamplerExport(ctx, fixture, direct)); err != nil {
 		t.Fatalf("export as the sampler itself: %v", err)
 	}
-	assertSamplerHistoryMatchesSource(t, fixture, direct.ID, "test-model-direct")
+	assertSamplerHistoryMatchesSource(t, fixture, direct, "test-model-direct")
 
 	fixture.ingress.mu.Lock()
 	admissions := append([]auth.Admission(nil), fixture.ingress.admissions...)
@@ -49,7 +53,7 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	}
 	acting, ok := admissions[0].(auth.DelegatedIdentityAdmission)
 	if !ok || acting.Actor.Account != sampler || acting.EffectiveCaller != (auth.Identity{Name: identity.Name, UID: identity.Uid}) ||
-		acting.Provenance.GetSession().GetSessionId() != delegated.ID {
+		acting.Provenance.GetSession().GetSessionId() != delegated {
 		t.Fatalf("the Identity Session's push was admitted as %#v, want %v acting for %v", admissions[0], sampler, identity)
 	}
 	if _, ok := admissions[1].(auth.DirectAdmission); !ok {
@@ -59,10 +63,12 @@ func TestTheExporterActsForTheIdentityASessionExecutesAs(t *testing.T) {
 	if err := fixture.identity.Objects.Delete(t.Context(), fixture.identity.Identity); err != nil {
 		t.Fatal(err)
 	}
-	updateSamplerModel(t, fixture.sampler, delegated, 1, "test-model-after-deletion")
-	err := samplerExportResult(t, startSamplerExport(ctx, fixture, delegated.ID))
+	if err := fixture.source.ChangeModels(t.Context(), delegated, 1, "test-model-after-deletion"); err != nil {
+		t.Fatal(err)
+	}
+	err := samplerExportResult(t, startSamplerExport(ctx, fixture, delegated))
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("export for a deleted Identity incarnation = %v, want PermissionDenied", err)
 	}
-	assertSamplerPending(t, fixture, delegated.ID, true)
+	assertSamplerPending(t, fixture, delegated, true)
 }

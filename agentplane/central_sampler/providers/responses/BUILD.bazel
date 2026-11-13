@@ -19,6 +19,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses",
     visibility = [
         "//agentplane/central_sampler:__pkg__",
+        "//agentplane/central_sampler:__subpackages__",
         "//agentplane/central_sampler/internal/settings:__pkg__",
         "//agentplane/history_service/internal/ingress:__pkg__",
     ],

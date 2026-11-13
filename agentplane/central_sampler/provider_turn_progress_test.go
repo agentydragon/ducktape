@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -170,7 +172,7 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 			WHERE provider_command_id=$1`, "long-provider-turn").Scan(&status, &failureClass); err != nil {
 			t.Fatal(err)
 		}
-		if status != string(IntentResultAbandoned) || failureClass != string(ProviderAttemptPermanent) {
+		if status != string(sessionstore.IntentResultAbandoned) || failureClass != string(sessionstore.ProviderAttemptPermanent) {
 			t.Fatalf("expired attempt: status=%s failure_class=%s", status, failureClass)
 		}
 		state, err := store.GetSession(t.Context(), session.ID, "")

@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc"
@@ -31,6 +33,19 @@ type executorClient interface {
 	OpenFile(context.Context, *executorpb.OpenFileRequest, ...grpc.CallOption) (*executorpb.OpenFileResponse, error)
 	ReadFile(context.Context, *executorpb.ReadFileRequest, ...grpc.CallOption) (*executorpb.ReadFileResponse, error)
 	CloseFile(context.Context, *executorpb.CloseFileRequest, ...grpc.CallOption) (*executorpb.CloseFileResponse, error)
+}
+
+func nativeFramePhase(direction string) (eventpb.ExecutionProgress_Phase, error) {
+	switch direction {
+	case "request":
+		return eventpb.ExecutionProgress_PHASE_REQUEST, nil
+	case "response":
+		return eventpb.ExecutionProgress_PHASE_RESPONSE, nil
+	case "notification":
+		return eventpb.ExecutionProgress_PHASE_NOTIFICATION, nil
+	default:
+		return eventpb.ExecutionProgress_PHASE_UNSPECIFIED, fmt.Errorf("executor native frame has unknown direction=%q", direction)
+	}
 }
 
 // typedExecutorClient keeps the sampler's narrow stream interface injectable in tests while
@@ -97,7 +112,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 	if rebind, ok := incarnationRebindFromContext(ctx); ok {
 		intentRequest["incarnation_rebind_from"] = rebind.previousUID
 	}
-	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, intentRequest)
+	intent, err := e.store.RecordNested(ctx, e.owner, sessionstore.IntentExecutor, intentRequest)
 	if err != nil {
 		return err
 	}
@@ -192,7 +207,7 @@ func (e *Executor) openSessionAtScopeWithHandshake(ctx context.Context, resume *
 		environmentInfo = map[string]any{"shell": map[string]any{"name": opened.Shell.Name, "path": opened.Shell.Path}}
 	}
 	if err := e.finishNested(ctx, intent, map[string]any{
-		"outcome": NestedCompleted, "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
+		"outcome": sessionstore.NestedCompleted, "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
 		"sessionId": opened.ExecutionSessionId, "environmentInfo": environmentInfo,
 	}); err != nil {
 		cancel()
@@ -253,7 +268,7 @@ func (e *Executor) finishOpenSessionFailure(ctx, handshakeCtx context.Context, i
 		}
 		return environmentFailure
 	}
-	if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
+	if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, sessionstore.NestedNotDispatched); fence != nil {
 		if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
 			return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
 		}
@@ -279,7 +294,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 		}
 		rejectedError := &executorRejectedError{method: executorMethodInitialize, code: int(response.Status.GetUpstreamCode()), message: message}
 		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
-		if err := e.finishNested(ctx, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
+		if err := e.finishNested(ctx, intent, map[string]any{"outcome": sessionstore.NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
 			return fmt.Errorf("record rejected OpenSession result: %w", errors.Join(nativeEvidenceErr, err))
 		}
 		// A typed rejection alone is insufficient if accompanying native frames failed to
@@ -294,7 +309,7 @@ func (e *Executor) finishOpenFailure(ctx context.Context, intent string, respons
 	if response.Status != nil && response.Status.Message != "" {
 		message = response.Status.Message
 	}
-	if err := e.finishNested(ctx, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "message": message}); err != nil {
+	if err := e.finishNested(ctx, intent, map[string]any{"outcome": sessionstore.NestedUnknown, "request_id": intent, "message": message}); err != nil {
 		return errors.Join(nativeEvidenceErr, errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
 	}
 	if nativeEvidenceErr != nil {

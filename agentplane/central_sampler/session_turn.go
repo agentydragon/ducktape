@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner Owner, live *liveHost, client *http.Client, session *Session) (TurnResult, error) {
+func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
 	interrupts, err := r.store.PendingInterrupts(ctx, owner)
 	if err != nil {
 		return "", err
@@ -20,7 +21,7 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 	}
 	advanceCtx, cancel := context.WithCancel(ctx)
 	type advanceResult struct {
-		result TurnResult
+		result sessionstore.TurnResult
 		err    error
 	}
 	completed := make(chan advanceResult, 1)
@@ -85,23 +86,23 @@ func (r *Runtime) controlledAdvance(ctx context.Context, sessionID string, owner
 	}
 }
 
-func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, client *http.Client, session *Session) (TurnResult, error) {
+func (r *Runtime) advance(ctx context.Context, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
 		return "", err
 	}
 	if conversation.Stopped && conversation.Pending == nil {
-		return TurnInterrupted, nil
+		return sessionstore.TurnInterrupted, nil
 	}
 	frontier, err := r.providerFrontier(ctx, owner, session)
 	if err != nil {
 		return "", err
 	}
-	if frontier != nil && frontier.Kind == PendingIntentCompaction {
+	if frontier != nil && frontier.Kind == sessionstore.PendingIntentCompaction {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
-		return TurnCompact, nil
+		return sessionstore.TurnCompact, nil
 	}
 	config, configured := r.settings.Models[session.Model]
 	if !configured || conversation.API != config.API {
@@ -112,7 +113,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", &protocol.UnknownEffectError{Reason: "unresolved provider or executor intent blocks continuation; automatic replay is unsafe"}
 	}
 	if conversation.Stopped {
-		return TurnInterrupted, nil
+		return sessionstore.TurnInterrupted, nil
 	}
 	if err := r.store.CheckLiveCells(ctx, owner, live != nil); err != nil {
 		return "", err
@@ -141,7 +142,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			notDispatched := false
-			intentID, _, err := r.store.Begin(ctx, owner, IntentPayload{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil, nil)
+			intentID, _, err := r.store.Begin(ctx, owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil, nil)
 			if err != nil {
 				return "", err
 			}
@@ -152,12 +153,12 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 				return "", err
 			}
-			return TurnCell, nil
+			return sessionstore.TurnCell, nil
 		}
 		if live == nil {
 			return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
-		intentID, _, err := r.store.Begin(ctx, owner, IntentPayload{Kind: PendingIntentCell, Call: call}, nil, nil)
+		intentID, _, err := r.store.Begin(ctx, owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentCell, Call: call}, nil, nil)
 		if err != nil {
 			return "", err
 		}
@@ -173,7 +174,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 				if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 					return "", err
 				}
-				return TurnCell, nil
+				return sessionstore.TurnCell, nil
 			}
 			var known *protocol.KnownFailureError
 			if errors.As(err, &known) {
@@ -187,7 +188,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 			return "", err
 		}
-		return TurnCell, nil
+		return sessionstore.TurnCell, nil
 	}
 	if frontier == nil {
 		// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
@@ -197,7 +198,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return "", err
 		}
 		if drained {
-			return TurnNotification, nil
+			return sessionstore.TurnNotification, nil
 		}
 		// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
 		// input waits for the prepared provider step (including retries) to settle; cutting that
@@ -207,10 +208,10 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return "", err
 		}
 		if steered {
-			return TurnSteer, nil
+			return sessionstore.TurnSteer, nil
 		}
 		if conversation.Transcript.TurnComplete() {
-			return TurnDone, nil
+			return sessionstore.TurnDone, nil
 		}
 	}
 	adapter, err := adapterFor(config)
@@ -226,9 +227,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if err := r.compact(ctx, owner, session.Model); err != nil {
 			return "", err
 		}
-		return TurnCompact, nil
+		return sessionstore.TurnCompact, nil
 	}
-	if frontier == nil || frontier.RetrySuppressed == ProviderRetrySuppressionHostLoss {
+	if frontier == nil || frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
 		if err != nil {
 			return "", &deferredProviderError{cause: err}
@@ -244,13 +245,13 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		return "", err
 	}
 	preparation := adapter.Prepare(session, metadata)
-	request := providerRequestIntent(PendingIntentSampling, connection, config)
+	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
 	policy := runtimeProviderAttemptPolicy(r.settings)
 	var intentID string
 	var wire []byte
 	if frontier == nil {
 		intentID, wire, err = r.store.Begin(ctx, owner, request, preparation, &policy)
-	} else if frontier.RetrySuppressed == ProviderRetrySuppressionHostLoss {
+	} else if frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		intentID, wire, err = r.store.BeginSamplingAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, preparation, policy)
 	} else {
 		intentID, wire, err = r.store.BeginSamplingRetry(ctx, owner, frontier.IntentID, policy)
@@ -262,10 +263,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	candidate, err := cloneNativeContext(conversation.Transcript)
-	if err == nil {
-		err = candidate.AppendRecords(response.Records)
-	}
+	candidate := conversation.Transcript.Clone()
+	err = candidate.AppendRecords(response.Records)
 	if err == nil {
 		var pending []protocol.ToolInvocation
 		pending, err = candidate.PendingCalls()
@@ -285,5 +284,5 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}); err != nil {
 		return "", err
 	}
-	return TurnSample, nil
+	return sessionstore.TurnSample, nil
 }

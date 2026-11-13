@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"google.golang.org/grpc/codes"
@@ -67,7 +69,7 @@ func TestSamplerErrorsExposeFixedStatus(t *testing.T) {
 	for _, c := range []struct {
 		err  error
 		code codes.Code
-	}{{ErrForbidden, codes.PermissionDenied}, {ErrConflict, codes.AlreadyExists}, {protocol.ErrMissing, codes.NotFound}, {protocol.ErrPrecondition, codes.FailedPrecondition}, {protocol.ErrInvalid, codes.InvalidArgument}, {errors.New("secret provider key"), codes.Unavailable}} {
+	}{{sessionstore.ErrForbidden, codes.PermissionDenied}, {sessionstore.ErrConflict, codes.AlreadyExists}, {protocol.ErrMissing, codes.NotFound}, {protocol.ErrPrecondition, codes.FailedPrecondition}, {protocol.ErrInvalid, codes.InvalidArgument}, {errors.New("secret provider key"), codes.Unavailable}} {
 		err := samplerError(t.Context(), c.err)
 		if status.Code(err) != c.code {
 			t.Fatalf("%v: %v", c.err, err)

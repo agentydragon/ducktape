@@ -3,7 +3,6 @@ package ingress
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,26 +13,21 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/exportfixture"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-)
-
-const (
-	samplerOwnerUID = "test-central-sampler-owner-uid"
 )
 
 type samplerExportPlan struct {
@@ -152,7 +146,7 @@ func (s *samplerExportStream) Recv() (*session_ingresspb.PushFrame, error) {
 type samplerExportFixture struct {
 	history   *storage.Store
 	historyDB *sql.DB
-	sampler   *centralsampler.Store
+	source    *exportfixture.Source
 	target    string
 	token     string
 	// identity is a live Identity the sampler may act for; ingress records how each push was admitted.
@@ -192,7 +186,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if err := migrations.Up(ctx, samplerDB); err != nil {
 		t.Fatal(err)
 	}
-	samplerStore := centralsampler.New(samplerDB, 30*time.Second)
+	samplerSource := exportfixture.New(samplerDB, 30*time.Second)
 
 	account := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
 	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
@@ -232,27 +226,27 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 		t.Fatal(err)
 	}
 	return samplerExportFixture{
-		history: history, historyDB: historyDB, samplerDB: samplerDB, sampler: samplerStore, target: listener.Addr().String(), token: tokenFile,
+		history: history, historyDB: historyDB, samplerDB: samplerDB, source: samplerSource, target: listener.Addr().String(), token: tokenFile,
 		identity: named, ingress: ingressServer,
 	}
 }
 
-func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session {
+func (f samplerExportFixture) openSession(t *testing.T) string {
 	t.Helper()
 	return f.openSessionExecutingAs(t, &identitypb.Identity{Name: f.identity.Identity.Name, Uid: string(f.identity.Identity.UID)})
 }
 
 // openSessionExecutingAs opens a Session the Dispatcher recorded as executing as identity.
-func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *identitypb.Identity) *centralsampler.Session {
+func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *identitypb.Identity) string {
 	t.Helper()
 	return f.openSessionWithAPI(t, identity, protocol.APIStyleResponses)
 }
 
-func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identitypb.Identity, api protocol.APIStyle) *centralsampler.Session {
+func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identitypb.Identity, api protocol.APIStyle) string {
 	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
 	executorUID := uuid.NewString()
-	session, err := f.sampler.CreateSession(t.Context(), &samplerpb.CreateSessionRequest{
+	sessionID, err := f.source.CreateSession(t.Context(), &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
@@ -266,66 +260,27 @@ func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identit
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
 		ExecutionIdentity:      identity,
-	}, samplerOwnerUID, api, &platformInstructions)
+	}, api, &platformInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return session
+	return sessionID
 }
 
 // openLegacySession represents a retained pre-cutover request with no execution Identity. New
 // Session creation still requires one; only this fixture installs the historical wire shape.
-func (f samplerExportFixture) openLegacySession(t *testing.T) *centralsampler.Session {
+func (f samplerExportFixture) openLegacySession(t *testing.T) string {
 	t.Helper()
-	session := f.openSession(t)
-	var request samplerpb.CreateSessionRequest
-	if err := proto.Unmarshal(session.Configuration, &request); err != nil {
+	sessionID := f.openSession(t)
+	if err := f.source.RemoveExecutionIdentity(t.Context(), sessionID); err != nil {
 		t.Fatal(err)
 	}
-	request.ExecutionIdentity = nil
-	wire, err := proto.Marshal(&request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.samplerDB.ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", session.ID, wire); err != nil {
-		t.Fatal(err)
-	}
-	session.Configuration = wire
-	return session
-}
-
-func updateSamplerModel(t *testing.T, store *centralsampler.Store, session *centralsampler.Session, count int, final string) {
-	t.Helper()
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := store.Release(t.Context(), owner); err != nil {
-			t.Errorf("release sampler owner: %v", err)
-		}
-	}()
-	for index := 0; index < count; index++ {
-		model := fmt.Sprintf("test-model-update-%d", index)
-		if index == count-1 {
-			model = final
-		}
-		commandID := uuid.NewString()
-		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-			CommandId: commandID,
-			Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: model}},
-		}, samplerOwnerUID, nil); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
+	return sessionID
 }
 
 func startSamplerExport(ctx context.Context, f samplerExportFixture, sessionID string) <-chan error {
 	done := make(chan error, 1)
-	go func() { done <- historyexport.ExportSession(ctx, f.sampler, sessionID, f.target, f.token, nil) }()
+	go func() { done <- historyexport.ExportSession(ctx, f.source.Outbox(), sessionID, f.target, f.token, nil) }()
 	return done
 }
 
@@ -410,11 +365,12 @@ func assertSamplerHistoryMatchesSource(t *testing.T, f samplerExportFixture, ses
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceSession, err := f.sampler.GetSession(t.Context(), sessionID, "")
+	source := f.source.Outbox()
+	cursor, err := source.CurrentCursor(t.Context(), sessionID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := f.sampler.Events(t.Context(), sessionID, 0, 4096)
+	events, err := source.Events(t.Context(), sessionID, 0, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,24 +378,24 @@ func assertSamplerHistoryMatchesSource(t *testing.T, f samplerExportFixture, ses
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.GetEntries()) != len(source) {
-		t.Fatalf("History has %d events, Sampler has %d", len(page.GetEntries()), len(source))
+	if len(page.GetEntries()) != len(events) {
+		t.Fatalf("History has %d events, Sampler has %d", len(page.GetEntries()), len(events))
 	}
-	for index, entry := range source {
+	for index, entry := range events {
 		if entry.GetCursor() != uint64(index+1) || !proto.Equal(entry, page.GetEntries()[index]) {
 			t.Fatalf("History event %d = %v, want exact Sampler event %v", index+1, page.GetEntries()[index], entry)
 		}
 	}
 	attached := page.GetFeedState().GetAttached()
-	if attached == nil || attached.GetLastCursor() != sourceSession.Cursor || attached.GetSpec().GetModel() != model {
-		t.Fatalf("History attachment = %v, want cursor %d and model %q", attached, sourceSession.Cursor, model)
+	if attached == nil || attached.GetLastCursor() != cursor || attached.GetSpec().GetModel() != model {
+		t.Fatalf("History attachment = %v, want cursor %d and model %q", attached, cursor, model)
 	}
-	return sourceSession.Cursor
+	return cursor
 }
 
 func assertSamplerExportCheckpoint(t *testing.T, f samplerExportFixture, sessionID string, want *uint64) {
 	t.Helper()
-	got, err := f.sampler.Checkpoint(t.Context(), sessionID, f.target)
+	got, err := f.source.Outbox().Checkpoint(t.Context(), sessionID, f.target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +406,7 @@ func assertSamplerExportCheckpoint(t *testing.T, f samplerExportFixture, session
 
 func assertSamplerPending(t *testing.T, f samplerExportFixture, sessionID string, want bool) {
 	t.Helper()
-	ids, err := f.sampler.PendingSessionIDs(t.Context(), f.target, "", 10)
+	ids, err := f.source.Outbox().PendingSessionIDs(t.Context(), f.target, "", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,11 +427,13 @@ func TestConcurrentSamplerExportsKeepNewestSnapshotAndAcceptCumulativeAcknowledg
 	session := fixture.openSession(t)
 
 	firstContext, _ := samplerExportContext(t)
-	firstDone := startSamplerExport(firstContext, fixture, session.ID)
+	firstDone := startSamplerExport(firstContext, fixture, session)
 	waitSamplerExportSignal(t, first.ackHeld, "the old export's initial History acknowledgement")
-	updateSamplerModel(t, fixture.sampler, session, 10, "test-model-latest")
+	if err := fixture.source.ChangeModels(t.Context(), session, 10, "test-model-latest"); err != nil {
+		t.Fatal(err)
+	}
 	secondContext, _ := samplerExportContext(t)
-	if err := samplerExportResult(t, startSamplerExport(secondContext, fixture, session.ID)); err != nil {
+	if err := samplerExportResult(t, startSamplerExport(secondContext, fixture, session)); err != nil {
 		t.Fatalf("new export: %v", err)
 	}
 	first.releaseAcknowledgement()
@@ -483,9 +441,9 @@ func TestConcurrentSamplerExportsKeepNewestSnapshotAndAcceptCumulativeAcknowledg
 		t.Fatalf("old export after the new export committed: %v", err)
 	}
 
-	cursor := assertSamplerHistoryMatchesSource(t, fixture, session.ID, "test-model-latest")
-	assertSamplerExportCheckpoint(t, fixture, session.ID, &cursor)
-	assertSamplerPending(t, fixture, session.ID, false)
+	cursor := assertSamplerHistoryMatchesSource(t, fixture, session, "test-model-latest")
+	assertSamplerExportCheckpoint(t, fixture, session, &cursor)
+	assertSamplerPending(t, fixture, session, false)
 }
 
 func TestSamplerExporterContinuesConsecutivelyAfterAnAheadOfPageAcknowledgement(t *testing.T) {
@@ -495,40 +453,44 @@ func TestSamplerExporterContinuesConsecutivelyAfterAnAheadOfPageAcknowledgement(
 	fixture := newSamplerExportFixture(t, bootstrap, first, peer)
 	session := fixture.openSession(t)
 
-	updateSamplerModel(t, fixture.sampler, session, 7, "test-model-bootstrap")
+	if err := fixture.source.ChangeModels(t.Context(), session, 7, "test-model-bootstrap"); err != nil {
+		t.Fatal(err)
+	}
 	bootstrapContext, _ := samplerExportContext(t)
-	if err := samplerExportResult(t, startSamplerExport(bootstrapContext, fixture, session.ID)); err != nil {
+	if err := samplerExportResult(t, startSamplerExport(bootstrapContext, fixture, session)); err != nil {
 		t.Fatalf("bootstrap export: %v", err)
 	}
 	checkpoint := uint64(16)
-	assertSamplerExportCheckpoint(t, fixture, session.ID, &checkpoint)
-	updateSamplerModel(t, fixture.sampler, session, 16, "test-model-latest")
+	assertSamplerExportCheckpoint(t, fixture, session, &checkpoint)
+	if err := fixture.source.ChangeModels(t.Context(), session, 16, "test-model-latest"); err != nil {
+		t.Fatal(err)
+	}
 
 	firstContext, _ := samplerExportContext(t)
-	firstDone := startSamplerExport(firstContext, fixture, session.ID)
+	firstDone := startSamplerExport(firstContext, fixture, session)
 	waitSamplerExportSignal(t, first.incomingHeld, "the old export's first entry after the bootstrap cursor")
 	peerContext, cancelPeer := samplerExportContext(t)
-	peerDone := startSamplerExport(peerContext, fixture, session.ID)
+	peerDone := startSamplerExport(peerContext, fixture, session)
 	waitSamplerExportSignal(t, peer.ackHeld, "the peer's committed cursor 36")
-	if got := committedCursor(t, fixture.history, session.ID); got != 36 {
+	if got := committedCursor(t, fixture.history, session); got != 36 {
 		t.Fatalf("peer committed through %d while its acknowledgement was gated, want 36", got)
 	}
 	cancelPeer()
 	if err := samplerExportResult(t, peerDone); status.Code(err) != codes.Canceled {
 		t.Fatalf("interrupted peer export error = %v, want Canceled", err)
 	}
-	assertSamplerExportCheckpoint(t, fixture, session.ID, &checkpoint)
+	assertSamplerExportCheckpoint(t, fixture, session, &checkpoint)
 
 	first.releaseIncoming()
 	if err := samplerExportResult(t, firstDone); err != nil {
 		t.Fatalf("export continuing after cumulative cursor 36: %v", err)
 	}
-	cursor := assertSamplerHistoryMatchesSource(t, fixture, session.ID, "test-model-latest")
+	cursor := assertSamplerHistoryMatchesSource(t, fixture, session, "test-model-latest")
 	if cursor != 48 || first.entriesReceived() != 32 {
 		t.Fatalf("source cursor=%d, old stream sent %d entries; want 48 and two consecutive 16-entry pages", cursor, first.entriesReceived())
 	}
-	assertSamplerExportCheckpoint(t, fixture, session.ID, &cursor)
-	assertSamplerPending(t, fixture, session.ID, false)
+	assertSamplerExportCheckpoint(t, fixture, session, &cursor)
+	assertSamplerPending(t, fixture, session, false)
 }
 
 func TestSamplerExportRequiresCleanFinalStatusAndRetriesAfterAllEventsWereCommitted(t *testing.T) {
@@ -536,29 +498,31 @@ func TestSamplerExportRequiresCleanFinalStatusAndRetriesAfterAllEventsWereCommit
 	retry := newSamplerExportPlan(0, 0, false)
 	fixture := newSamplerExportFixture(t, failed, retry)
 	session := fixture.openSession(t)
-	updateSamplerModel(t, fixture.sampler, session, 2, "test-model-final")
+	if err := fixture.source.ChangeModels(t.Context(), session, 2, "test-model-final"); err != nil {
+		t.Fatal(err)
+	}
 
 	failedContext, _ := samplerExportContext(t)
-	err := samplerExportResult(t, startSamplerExport(failedContext, fixture, session.ID))
+	err := samplerExportResult(t, startSamplerExport(failedContext, fixture, session))
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("export after the server's accepted snapshot returned %v, want Unavailable", err)
 	}
-	cursor := assertSamplerHistoryMatchesSource(t, fixture, session.ID, "test-model-final")
+	cursor := assertSamplerHistoryMatchesSource(t, fixture, session, "test-model-final")
 	if failed.entriesReceived() == 0 {
 		t.Fatal("the failed export sent no event data")
 	}
-	assertSamplerExportCheckpoint(t, fixture, session.ID, nil)
-	assertSamplerPending(t, fixture, session.ID, true)
+	assertSamplerExportCheckpoint(t, fixture, session, nil)
+	assertSamplerPending(t, fixture, session, true)
 
 	retryContext, _ := samplerExportContext(t)
-	if err := samplerExportResult(t, startSamplerExport(retryContext, fixture, session.ID)); err != nil {
+	if err := samplerExportResult(t, startSamplerExport(retryContext, fixture, session)); err != nil {
 		t.Fatalf("retry after all event data was committed: %v", err)
 	}
 	if retry.entriesReceived() != 0 {
 		t.Fatalf("retry resent %d committed events, want metadata-only reconciliation", retry.entriesReceived())
 	}
-	assertSamplerExportCheckpoint(t, fixture, session.ID, &cursor)
-	assertSamplerPending(t, fixture, session.ID, false)
+	assertSamplerExportCheckpoint(t, fixture, session, &cursor)
+	assertSamplerPending(t, fixture, session, false)
 }
 
 func TestCancelingOneSamplerExporterDoesNotStopItsPeer(t *testing.T) {
@@ -568,13 +532,15 @@ func TestCancelingOneSamplerExporterDoesNotStopItsPeer(t *testing.T) {
 	fixture := newSamplerExportFixture(t, canceled, peer)
 	defer canceled.releaseAcknowledgement()
 	session := fixture.openSession(t)
-	updateSamplerModel(t, fixture.sampler, session, 9, "test-model-final")
+	if err := fixture.source.ChangeModels(t.Context(), session, 9, "test-model-final"); err != nil {
+		t.Fatal(err)
+	}
 
 	canceledContext, cancelCanceled := samplerExportContext(t)
-	canceledDone := startSamplerExport(canceledContext, fixture, session.ID)
+	canceledDone := startSamplerExport(canceledContext, fixture, session)
 	waitSamplerExportSignal(t, canceled.ackHeld, "the canceled export's initial History acknowledgement")
 	peerContext, _ := samplerExportContext(t)
-	peerDone := startSamplerExport(peerContext, fixture, session.ID)
+	peerDone := startSamplerExport(peerContext, fixture, session)
 	waitSamplerExportSignal(t, peer.ackHeld, "the peer's committed first page")
 	cancelCanceled()
 	if err := samplerExportResult(t, canceledDone); status.Code(err) != codes.Canceled {
@@ -584,12 +550,12 @@ func TestCancelingOneSamplerExporterDoesNotStopItsPeer(t *testing.T) {
 	if err := samplerExportResult(t, peerDone); err != nil {
 		t.Fatalf("peer export after the other exporter was canceled: %v", err)
 	}
-	cursor := assertSamplerHistoryMatchesSource(t, fixture, session.ID, "test-model-final")
+	cursor := assertSamplerHistoryMatchesSource(t, fixture, session, "test-model-final")
 	if cursor != 20 {
 		t.Fatalf("source cursor %d, want 20", cursor)
 	}
-	assertSamplerExportCheckpoint(t, fixture, session.ID, &cursor)
-	assertSamplerPending(t, fixture, session.ID, false)
+	assertSamplerExportCheckpoint(t, fixture, session, &cursor)
+	assertSamplerPending(t, fixture, session, false)
 }
 
 func committedCursor(t *testing.T, history *storage.Store, sessionID string) uint64 {

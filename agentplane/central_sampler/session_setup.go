@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (bool, error) {
+func (r *Runtime) setup(ctx context.Context, sessionID string, owner sessionstore.Owner) (bool, error) {
 	session, err := r.store.GetSession(ctx, sessionID, "")
 	if err != nil {
 		return false, err

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc/codes"
@@ -86,7 +88,7 @@ func (e *Executor) setScope(scope *executorpb.ExecutionScope) {
 // routing failures never carry a current UID through this error.
 type executorIncarnationFenceError struct {
 	currentIncarnationUID string
-	remoteOutcome         NestedOutcome
+	remoteOutcome         sessionstore.NestedOutcome
 	method                executionMethod
 	intentID              string
 	processID             string
@@ -98,7 +100,7 @@ type executorIncarnationFenceError struct {
 }
 
 func (e *executorIncarnationFenceError) Error() string {
-	if e.remoteOutcome == NestedUnknown {
+	if e.remoteOutcome == sessionstore.NestedUnknown {
 		return fmt.Sprintf("execution incarnation fence rejected %s; the existing process outcome is unknown and was not replayed; current authorized incarnation UID is %s", e.method, e.currentIncarnationUID)
 	}
 	return fmt.Sprintf("execution incarnation fence rejected %s before dispatch; current authorized incarnation UID is %s", e.method, e.currentIncarnationUID)
@@ -107,7 +109,7 @@ func (e *executorIncarnationFenceError) Error() string {
 func (e *executorIncarnationFenceError) Unwrap() error { return e.cause }
 
 func (e *executorIncarnationFenceError) executionFailureRecord() executionFailureRecord {
-	requestOutcome := NestedNotDispatched
+	requestOutcome := sessionstore.NestedNotDispatched
 	return executionFailureRecord{
 		message: e.Error(), method: e.method, intentID: e.intentID, processID: e.processID,
 		executionSessionID: e.executionSessionID, afterSequence: e.afterSequence,
@@ -120,7 +122,7 @@ func (e *executorIncarnationFenceError) intentEvidence() executionFailureEvidenc
 	return e.executionFailureRecord().intentEvidence()
 }
 
-func (e *Executor) incarnationFenceError(err error, scope *executorpb.ExecutionScope, method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *outputbuffer.Buffer, remoteOutcome NestedOutcome) *executorIncarnationFenceError {
+func (e *Executor) incarnationFenceError(err error, scope *executorpb.ExecutionScope, method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *outputbuffer.Buffer, remoteOutcome sessionstore.NestedOutcome) *executorIncarnationFenceError {
 	changed, ok := sandboxIncarnationChanged(err, scope)
 	if !ok {
 		return nil

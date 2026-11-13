@@ -1,0 +1,31 @@
+package sessionstore
+
+import (
+	"encoding/json"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+)
+
+func newNativeContext(api protocol.APIStyle) (protocol.Context, error) {
+	switch api {
+	case protocol.APIStyleResponses:
+		return &responses.Context{}, nil
+	case protocol.APIStyleAnthropicMessages:
+		return &anthropic.Context{}, nil
+	default:
+		return nil, protocol.ErrInvalid
+	}
+}
+
+func decodeNativeRecords(api protocol.APIStyle, records []json.RawMessage) (protocol.Context, error) {
+	state, err := newNativeContext(api)
+	if err != nil {
+		return nil, err
+	}
+	if err := state.AppendRecords(records); err != nil {
+		return nil, err
+	}
+	return state, nil
+}

@@ -4,10 +4,11 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error {
+func (r *Runtime) compact(ctx context.Context, owner sessionstore.Owner, model string) error {
 	session, err := r.store.GetSessionForConversation(ctx, owner)
 	if err != nil {
 		return err
@@ -16,7 +17,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	if frontier != nil && frontier.Kind != PendingIntentCompaction {
+	if frontier != nil && frontier.Kind != sessionstore.PendingIntentCompaction {
 		return protocol.ErrPrecondition
 	}
 	state, err := r.store.ExecutionState(ctx, owner)
@@ -47,11 +48,11 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if adapter.API() != conversation.API {
 		return protocol.ErrPrecondition
 	}
-	environment, err := r.store.environmentContext(conversation, session)
+	environment, err := r.store.CurrentEnvironmentContext(session.Configuration, conversation.ExecutorShell)
 	if err != nil {
 		return err
 	}
-	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, environmentContextUpdate(nil, environment))
+	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, sessionstore.EnvironmentContextUpdate(nil, environment))
 	if err != nil {
 		return err
 	}
@@ -60,14 +61,14 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 		return err
 	}
 	original := conversation.Context()
-	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model])
+	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, r.settings.Models[model])
 	policy := runtimeProviderAttemptPolicy(r.settings)
 	var intentID string
 	var wire []byte
 	if frontier == nil {
-		intentID, wire, err = r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare, policy)
-	} else if frontier.RetrySuppressed == ProviderRetrySuppressionHostLoss {
-		intentID, wire, err = r.store.BeginCompactionAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, original, plan.Prepare, policy)
+		intentID, wire, err = r.store.BeginCompaction(ctx, owner, request, original, plan.Preparation, policy)
+	} else if frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
+		intentID, wire, err = r.store.BeginCompactionAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, original, plan.Preparation, policy)
 	} else {
 		intentID, wire, err = r.store.BeginCompactionRetry(ctx, owner, frontier.IntentID, original, policy)
 	}

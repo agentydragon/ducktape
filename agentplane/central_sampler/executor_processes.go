@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -20,12 +22,12 @@ import (
 // rejectedProcessReadEvidence preserves the existing projection for a known exec-server
 // read rejection while keeping the values typed until JSON serialization.
 type rejectedProcessReadEvidence struct {
-	Error              string        `json:"error"`
-	ExecutorIntentID   string        `json:"executor_intent_id"`
-	ProcessID          string        `json:"process_id"`
-	ExecutionSessionID string        `json:"execution_session_id"`
-	RemoteOutcome      NestedOutcome `json:"remote_outcome"`
-	AutomaticReplay    bool          `json:"automatic_replay"`
+	Error              string                     `json:"error"`
+	ExecutorIntentID   string                     `json:"executor_intent_id"`
+	ProcessID          string                     `json:"process_id"`
+	ExecutionSessionID string                     `json:"execution_session_id"`
+	RemoteOutcome      sessionstore.NestedOutcome `json:"remote_outcome"`
+	AutomaticReplay    bool                       `json:"automatic_replay"`
 }
 
 // startProcess registers a model-visible process under a fresh unified exec session number and
@@ -51,7 +53,7 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 			break
 		}
 		lock.Unlock()
-		if !errors.Is(err, ErrConflict) {
+		if !errors.Is(err, sessionstore.ErrConflict) {
 			return "", 0, nil, err
 		}
 	}
@@ -60,7 +62,7 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 		var rejected *executorRejectedError
 		var fence *executorIncarnationFenceError
 		if errors.As(err, &rejected) && rejected.method == executorMethodProcessStart ||
-			errors.As(err, &fence) && fence.method == executorMethodProcessStart && fence.remoteOutcome == NestedNotDispatched {
+			errors.As(err, &fence) && fence.method == executorMethodProcessStart && fence.remoteOutcome == sessionstore.NestedNotDispatched {
 			// No process exists; release its session number.
 			if settleErr := e.store.ProcessResult(ctx, e.owner, processID, nil, protocol.ProcessExited, nil, true); settleErr != nil {
 				lock.Unlock()
@@ -497,7 +499,7 @@ func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 		if process.Status == protocol.ProcessExitedUnread || process.Status == protocol.ProcessExited {
 			continue
 		}
-		intent, err := e.store.RecordNested(ctx, e.owner, IntentInterruptProcess, map[string]any{"session_id": process.ID})
+		intent, err := e.store.RecordNested(ctx, e.owner, sessionstore.IntentInterruptProcess, map[string]any{"session_id": process.ID})
 		if err != nil {
 			return outcomes, err
 		}

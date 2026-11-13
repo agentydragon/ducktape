@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
@@ -23,12 +25,16 @@ type deferredProviderError struct{ cause error }
 func (e *deferredProviderError) Error() string { return e.cause.Error() }
 func (e *deferredProviderError) Unwrap() error { return e.cause }
 
+func runtimeProviderAttemptPolicy(settings samplersettings.Settings) sessionstore.ProviderAttemptPolicy {
+	return sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: settings.ProviderAttemptLease()}
+}
+
 func providerBackoff(number int, hint time.Duration) time.Duration {
 	delay := time.Second
-	for i := 1; i < number && delay < maxProviderBackoff; i++ {
+	for i := 1; i < number && delay < sessionstore.MaxProviderBackoff; i++ {
 		delay *= 2
 	}
-	return min(max(delay, hint), maxProviderBackoff)
+	return min(max(delay, hint), sessionstore.MaxProviderBackoff)
 }
 
 func providerFailureReason(reason string) string {
@@ -39,16 +45,16 @@ func providerFailureReason(reason string) string {
 	return reason
 }
 
-func (r *Runtime) providerProgress(owner Owner, intentID string) protocol.ProviderProgress {
+func (r *Runtime) providerProgress(owner sessionstore.Owner, intentID string) protocol.ProviderProgress {
 	return func(ctx context.Context) error {
 		return r.store.RenewProviderAttempt(ctx, owner, intentID, r.settings.ProviderProgressLease())
 	}
 }
 
-func (r *Runtime) providerFailure(ctx context.Context, owner Owner, session *Session, intentID string, cause error) error {
+func (r *Runtime) providerFailure(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, cause error) error {
 	var persistence *protocol.ProviderEvidencePersistenceError
 	var progress *protocol.ProviderProgressError
-	var lost *LostOwnershipError
+	var lost *sessionstore.LostOwnershipError
 	if ctx.Err() != nil || errors.As(cause, &persistence) || errors.As(cause, &progress) || errors.As(cause, &lost) || r.isDraining() {
 		return &deferredProviderError{cause: cause}
 	}
@@ -59,13 +65,13 @@ func (r *Runtime) providerFailure(ctx context.Context, owner Owner, session *Ses
 	if attempt == nil || attempt.IntentID != intentID {
 		return &deferredProviderError{cause: cause}
 	}
-	failure := ProviderAttemptFailure{Class: ProviderAttemptPermanent, Reason: providerFailureReason(cause.Error())}
+	failure := sessionstore.ProviderAttemptFailure{Class: sessionstore.ProviderAttemptPermanent, Reason: providerFailureReason(cause.Error())}
 	var transient *protocol.ProviderTransientError
 	var phase *protocol.ProviderPhaseTimeoutError
 	if errors.As(cause, &transient) {
-		failure.Class, failure.RetryAfter = ProviderAttemptTransient, providerBackoff(attempt.Number, transient.RetryAfter)
+		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, providerBackoff(attempt.Number, transient.RetryAfter)
 	} else if errors.As(cause, &phase) {
-		failure.Class, failure.RetryAfter = ProviderAttemptTransient, providerBackoff(attempt.Number, 0)
+		failure.Class, failure.RetryAfter = sessionstore.ProviderAttemptTransient, providerBackoff(attempt.Number, 0)
 	}
 	if err := r.store.AbandonProviderAttempt(ctx, owner, intentID, failure); err != nil {
 		return &deferredProviderError{cause: err}
@@ -73,7 +79,7 @@ func (r *Runtime) providerFailure(ctx context.Context, owner Owner, session *Ses
 	return errProviderRecovery
 }
 
-func (r *Runtime) failProviderFrontier(ctx context.Context, owner Owner, session *Session, frontier *ProviderAttempt, reason string) error {
+func (r *Runtime) failProviderFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, frontier *sessionstore.ProviderAttempt, reason string) error {
 	if reason == "" {
 		reason = "provider attempt budget exhausted"
 	}
@@ -85,14 +91,14 @@ func (r *Runtime) failProviderFrontier(ctx context.Context, owner Owner, session
 }
 
 // This runs only between joined provider calls, never alongside an upstream request.
-func (r *Runtime) providerFrontier(ctx context.Context, owner Owner, session *Session) (*ProviderAttempt, error) {
+func (r *Runtime) providerFrontier(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session) (*sessionstore.ProviderAttempt, error) {
 	current, err := r.store.CurrentProviderAttempt(ctx, owner, session.ID)
 	if err != nil {
 		return nil, &deferredProviderError{cause: err}
 	}
 	if current != nil {
-		if err := r.store.AbandonProviderAttempt(ctx, owner, current.IntentID, ProviderAttemptFailure{
-			Class: ProviderAttemptTransient, Reason: "provider attempt ended without a committed result",
+		if err := r.store.AbandonProviderAttempt(ctx, owner, current.IntentID, sessionstore.ProviderAttemptFailure{
+			Class: sessionstore.ProviderAttemptTransient, Reason: "provider attempt ended without a committed result",
 			RetryAfter: providerBackoff(current.Number, 0),
 		}); err != nil {
 			return nil, &deferredProviderError{cause: err}
@@ -105,16 +111,16 @@ func (r *Runtime) providerFrontier(ctx context.Context, owner Owner, session *Se
 	if frontier == nil {
 		return nil, nil
 	}
-	if frontier.FailureClass == ProviderAttemptInterrupted || frontier.RetrySuppressed == ProviderRetrySuppressionInterrupted {
+	if frontier.FailureClass == sessionstore.ProviderAttemptInterrupted || frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionInterrupted {
 		return nil, &deferredProviderError{cause: errors.New("interrupted provider command awaits interrupt settlement")}
 	}
-	if frontier.FailureClass == ProviderAttemptDraining {
+	if frontier.FailureClass == sessionstore.ProviderAttemptDraining {
 		return nil, &deferredProviderError{cause: errors.New("draining provider command awaits a successor")}
 	}
-	if frontier.Number >= frontier.Budget || frontier.FailureClass == ProviderAttemptPermanent {
+	if frontier.Number >= frontier.Budget || frontier.FailureClass == sessionstore.ProviderAttemptPermanent {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, frontier.FailureReason)
 	}
-	if frontier.RetrySuppressed != ProviderRetrySuppressionHostLoss && !frontier.Retryable {
+	if frontier.RetrySuppressed != sessionstore.ProviderRetrySuppressionHostLoss && !frontier.Retryable {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, frontier.FailureReason)
 	}
 	if frontier.Retryable && !frontier.Ready {
@@ -125,23 +131,23 @@ func (r *Runtime) providerFrontier(ctx context.Context, owner Owner, session *Se
 	if !ok || err != nil || frontier.ProviderRequest == nil {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider route is no longer configured")
 	}
-	expected := providerRequestIntent(frontier.Kind, connection, config).ProviderRequest
+	expected := sessionstore.ProviderRequestIntent(frontier.Kind, connection, config).ProviderRequest
 	stored := frontier.ProviderRequest
 	if expected.API != stored.API || expected.Connection != stored.Connection || expected.ProviderModel != stored.ProviderModel ||
 		expected.Method != stored.Method || expected.URL != stored.URL || !maps.Equal(expected.Headers, stored.Headers) {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider route changed during recovery")
 	}
-	if providerProjectionKey(config) != stored.ProjectionKey {
+	if !sessionstore.ProviderRequestProjectionMatches(config, stored) {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider parser profile changed during recovery")
 	}
-	if frontier.Kind == PendingIntentCompaction && ((expected.CompactionControl == nil) != (stored.CompactionControl == nil) ||
+	if frontier.Kind == sessionstore.PendingIntentCompaction && ((expected.CompactionControl == nil) != (stored.CompactionControl == nil) ||
 		expected.CompactionControl != nil && *expected.CompactionControl != *stored.CompactionControl) {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction suffix or effort policy changed during recovery")
 	}
 	return frontier, nil
 }
 
-func (r *Runtime) finishProvider(ctx context.Context, owner Owner, intentID string, persist func(context.Context) error) error {
+func (r *Runtime) finishProvider(ctx context.Context, owner sessionstore.Owner, intentID string, persist func(context.Context) error) error {
 	err := persist(ctx)
 	if err == nil {
 		return nil
@@ -173,7 +179,7 @@ func (r *Runtime) finishProvider(ctx context.Context, owner Owner, intentID stri
 }
 
 // The execution permit is released by the caller; ownership and the live host remain resident.
-func (r *Runtime) waitProviderRecovery(ctx context.Context, owner Owner, sessionID string, task *residentSession, live *liveHost) error {
+func (r *Runtime) waitProviderRecovery(ctx context.Context, owner sessionstore.Owner, sessionID string, task *residentSession, live *liveHost) error {
 	for {
 		if r.isDraining() {
 			return &deferredProviderError{cause: errors.New("provider recovery paused for drain")}
@@ -210,7 +216,7 @@ func (r *Runtime) waitProviderRecovery(ctx context.Context, owner Owner, session
 	}
 }
 
-func (r *Runtime) sampleProvider(ctx context.Context, owner Owner, session *Session, intentID string, adapter protocolAdapter,
+func (r *Runtime) sampleProvider(ctx context.Context, owner sessionstore.Owner, session *sessionstore.Session, intentID string, adapter protocolAdapter,
 	client *http.Client, wire []byte, compact bool,
 ) (*sampleResult, error) {
 	connection, err := r.settings.Connection(session.Model)
@@ -235,7 +241,7 @@ func (r *Runtime) sampleProvider(ctx context.Context, owner Owner, session *Sess
 	}
 	providerCtx, hooks, stop := protocol.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), r.providerProgress(owner, intentID))
 	defer stop()
-	result, err := adapter.Sample(providerCtx, client, connection, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID},
+	result, err := adapter.Sample(providerCtx, client, connection, wire, &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID},
 		providerAttribution{SessionID: metadata.SessionID, Identity: identity}, compact, hooks)
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)

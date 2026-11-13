@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/google/uuid"
 )
 
@@ -29,27 +28,6 @@ const (
 
 // Codex rust-v0.162.1 core/src/tools/handlers/view_image.rs VIEW_IMAGE_INVALID_MESSAGE
 const viewImageInvalidMessage = "unable to process image: invalid or unsupported image data"
-
-// Codex rust-v0.162.1 core/src/tools/handlers/view_image_spec.rs create_view_image_tool with
-// ViewImageToolOptions all false: the sampler has no model catalog to enable original detail.
-func viewImageToolDefinition() protocol.CodeToolDefinition {
-	closed := false
-	detail := schemaString("Image detail hint returned by view_image. Returns `high` for default resized behavior or `original` when original resolution is preserved.")
-	detail.Enum = []string{"high", "original"}
-	return protocol.CodeToolDefinition{
-		Name: "view_image", ToolName: protocol.ToolName{Name: "view_image"},
-		Description: "View a local image file from the filesystem when visual inspection is needed. Use this for images already available on disk.",
-		Kind:        "function",
-		InputSchema: &protocol.JSONSchema{
-			Type: "object", Required: []string{"path"}, AdditionalProperties: &closed,
-			Properties: map[string]protocol.JSONSchema{"path": schemaString("Local filesystem path to an image file.")},
-		},
-		OutputSchema: &protocol.JSONSchema{
-			Type: "object", Required: []string{"image_url", "detail"}, AdditionalProperties: &closed,
-			Properties: map[string]protocol.JSONSchema{"image_url": schemaString("Data URL for the loaded image."), "detail": detail},
-		},
-	}
-}
 
 // Codex rust-v0.162.1 core/src/tools/handlers/view_image.rs ViewImageArgs. Upstream also accepts
 // environment_id; the sampler has one environment, so like other unknown fields it is ignored.

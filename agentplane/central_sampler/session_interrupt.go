@@ -5,11 +5,13 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
-func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Owner, live *liveHost, interruptIDs []string, pending ...*PendingIntent) (TurnResult, error) {
-	var currentPending *PendingIntent
+func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, interruptIDs []string, pending ...*sessionstore.PendingIntent) (sessionstore.TurnResult, error) {
+	var currentPending *sessionstore.PendingIntent
 	if len(pending) > 0 {
 		currentPending = pending[0]
 	} else {
@@ -54,18 +56,18 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 			complete = false
 		}
 	}
-	providerPending := currentPending != nil && (currentPending.Kind == PendingIntentSampling || currentPending.Kind == PendingIntentCompaction)
+	providerPending := currentPending != nil && (currentPending.Kind == sessionstore.PendingIntentSampling || currentPending.Kind == sessionstore.PendingIntentCompaction)
 	result := map[string]any{
-		"status": TurnEffectsUnknown, "provider_cancelled": providerPending,
+		"status": sessionstore.TurnEffectsUnknown, "provider_cancelled": providerPending,
 		"provider_completion_unknown": providerPending, "cells": cells, "processes": processes,
 		"cleanup_complete": complete, "partial_effects_possible": true,
 	}
 	if cleanupErr != nil {
 		result["cleanup_error"] = cleanupErr.Error()
 	}
-	status := TurnEffectsUnknown
+	status := sessionstore.TurnEffectsUnknown
 	if complete {
-		status = TurnInterrupted
+		status = sessionstore.TurnInterrupted
 	}
 	result["status"] = string(status)
 	if err := r.store.AcknowledgeInterrupt(cleanupCtx, owner, interruptIDs, result); err != nil {

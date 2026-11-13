@@ -10,7 +10,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/migrations",
     visibility = [
         "//agentplane/central_sampler:__pkg__",
-        "//agentplane/central_sampler/cmd:__pkg__",
+        "//agentplane/central_sampler:__subpackages__",
         "//agentplane/history_service/internal/ingress:__pkg__",  # sampler export integration test
     ],
     deps = ["//agentplane/postgres/migrate"],

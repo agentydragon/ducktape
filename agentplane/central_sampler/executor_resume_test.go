@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -263,7 +265,7 @@ func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing
 	if !errors.As(err, &fence) || !fence.recorded {
 		t.Fatalf("exec error=%v, want recorded stale process/start rejection", err)
 	}
-	if fence.currentIncarnationUID != "current-incarnation" || fence.remoteOutcome != NestedNotDispatched || fence.method != executorMethodProcessStart {
+	if fence.currentIncarnationUID != "current-incarnation" || fence.remoteOutcome != sessionstore.NestedNotDispatched || fence.method != executorMethodProcessStart {
 		t.Fatalf("unexpected stale fence facts: %+v", fence)
 	}
 	if starts != 1 || reads != 0 || executor.workspacePrepared {
@@ -353,8 +355,8 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 	if !ok {
 		t.Fatalf("process/read fence evidence has type %T, want executionFailureEvidence", outcome.evidence)
 	}
-	if toolEvidence.CurrentIncarnationUID != "current-incarnation" || toolEvidence.RemoteOutcome != NestedUnknown ||
-		toolEvidence.RequestOutcome == nil || *toolEvidence.RequestOutcome != NestedNotDispatched ||
+	if toolEvidence.CurrentIncarnationUID != "current-incarnation" || toolEvidence.RemoteOutcome != sessionstore.NestedUnknown ||
+		toolEvidence.RequestOutcome == nil || *toolEvidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		toolEvidence.ProcessID == "" || toolEvidence.ExecutionSessionID != "retained-executor" ||
 		toolEvidence.AfterSeq == nil || *toolEvidence.AfterSeq != 1 || toolEvidence.BufferedOutput == nil ||
 		*toolEvidence.BufferedOutput != "partial output" || toolEvidence.BufferedOutputBase64 == nil ||
@@ -694,7 +696,7 @@ func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t 
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
-func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*Store, Owner, *samplerpb.CreateSessionRequest) {
+func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*sessionstore.Store, sessionstore.Owner, *samplerpb.CreateSessionRequest) {
 	t.Helper()
 	store := newTestStore(t)
 	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}

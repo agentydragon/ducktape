@@ -15,6 +15,7 @@ import (
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
@@ -116,13 +117,13 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	if err != nil {
 		return atStartupStage("token_review_resolver", err)
 	}
-	store := centralsampler.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
-	hub, err := wakeups.Listen(ctx, databaseURL, centralsampler.OutboxChannel, centralsampler.WorkChannel)
+	store := sessionstore.New(db, time.Duration(settings.RPCTimeoutSeconds)*time.Second)
+	hub, err := wakeups.Listen(ctx, databaseURL, sessionstore.OutboxChannel, sessionstore.WorkChannel)
 	if err != nil {
 		return atStartupStage("database_wakeups", err)
 	}
 	defer hub.Close()
-	work, unsubscribe, err := hub.Subscribe(centralsampler.WorkChannel)
+	work, unsubscribe, err := hub.Subscribe(sessionstore.WorkChannel)
 	if err != nil {
 		return atStartupStage("work_subscription", err)
 	}
@@ -141,7 +142,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	running.Go(func() error { return runtime.Run(runningCtx, work) })
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
-			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, centralsampler.OutboxChannel, hub, settings.HistoryTLS)
+			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, sessionstore.OutboxChannel, hub, settings.HistoryTLS)
 		})
 	}
 	running.Go(func() error {
