@@ -172,15 +172,16 @@ pub struct CommutationProposal {
     pub inerted_edges: Vec<InertedEdge>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display, strum::EnumMessage)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RankReason {
     /// This pair alone breaks the SCC.
-    #[strum(to_string = "single-pair cut")]
+    #[strum(message = "single-pair cut")]
     SinglePairCut,
     /// The SCC stays cyclic; ranked by the parallel edges left on its
     /// module pair.
-    #[strum(to_string = "partial cut")]
+    #[strum(message = "partial cut")]
     PartialCut,
 }
 
@@ -317,28 +318,41 @@ pub struct BlockingEdgeCount {
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, strum::Display)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    strum::Display,
+    strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum BlockingReason {
     /// A third-statement ordering survives the proposed pair assertions.
-    #[strum(to_string = "third-statement ordering survives the proposed pairs")]
+    #[strum(message = "third-statement ordering survives the proposed pairs")]
     PreservedOrder,
     /// A premise never inerts this kind (`eager_use` and the other
     /// non-`sequenced` kinds); the remedy is co-location.
-    #[strum(to_string = "no premise inerts this kind; co-locate")]
+    #[strum(message = "no premise inerts this kind; co-locate")]
     KindNotInertable,
     /// The pair's premise would contradict a source fact.
-    #[strum(to_string = "the pair's premise contradicts a source fact")]
+    #[strum(message = "the pair's premise contradicts a source fact")]
     KnownConflict,
     /// Strict-chain adjacency of two summarized effects; a premise inerts
     /// nothing.
-    #[strum(to_string = "summarized effects; a premise inerts nothing")]
+    #[strum(message = "summarized effects; a premise inerts nothing")]
     Summarized,
     /// The graph predates retained verdicts.
-    #[strum(to_string = "no retained premise verdict; regenerate the graph")]
+    #[strum(message = "no retained premise verdict; regenerate the graph")]
     VerdictNotRecorded,
     /// An endpoint of the pair has no unique selector.
-    #[strum(to_string = "an endpoint has no unique selector")]
+    #[strum(message = "an endpoint has no unique selector")]
     NoUniqueSelector,
 }
 
@@ -1446,7 +1460,9 @@ fn render_draft(chunk: &str, proposals: &[CommutationProposal]) -> Result<String
     for proposal in proposals {
         let mut comments = vec![format!(
             "rank {} ({}) in SCC {}",
-            proposal.rank, proposal.rank_reason, proposal.scc_id,
+            proposal.rank,
+            strum::EnumMessage::get_message(&proposal.rank_reason).unwrap_or_default(),
+            proposal.scc_id,
         )];
         for edge in &proposal.inerted_edges {
             comments.push(format!(
@@ -1535,7 +1551,9 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
                 for row in blocking_edges {
                     out.push_str(&format!(
                         "    {} {} edge(s): {}\n",
-                        row.count, row.kind, row.reason
+                        row.count,
+                        row.kind,
+                        strum::EnumMessage::get_message(&row.reason).unwrap_or_default()
                     ));
                 }
             }
@@ -1546,7 +1564,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
             "  #{} SCC {} [{}] remaining module-pair edges: {}\n    a: {}\n    b: {}\n",
             proposal.rank,
             proposal.scc_id,
-            proposal.rank_reason,
+            strum::EnumMessage::get_message(&proposal.rank_reason).unwrap_or_default(),
             proposal.remaining_module_pair_edges,
             location_text(&proposal.a),
             location_text(&proposal.b),

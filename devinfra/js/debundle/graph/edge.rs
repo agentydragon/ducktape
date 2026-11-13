@@ -215,18 +215,29 @@ impl EffectProvenance {
 }
 
 #[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumMessage,
 )]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum BindingTimelineOrder {
     /// `to` and `from` both write the binding; later writer last.
-    #[strum(to_string = "writes after target wrote")]
+    #[strum(message = "writes after target wrote")]
     WriterAfterWriter,
     /// `from` observes the binding after `to`, its nearest preceding writer.
-    #[strum(to_string = "observes after target wrote")]
+    #[strum(message = "observes after target wrote")]
     ReaderAfterWriter,
     /// `from` writes the binding after `to`, a preceding observer, read it.
-    #[strum(to_string = "writes after target observed")]
+    #[strum(message = "writes after target observed")]
     WriterAfterReader,
 }
 
@@ -256,26 +267,37 @@ pub enum CellEffectClass {
 /// One disjunct of the heap-content opacity test in
 /// `emit_heap_content_order` (docs/design.md "Emission modes").
 #[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumMessage,
 )]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum HeapBarrierCause {
     /// The array-content collector recorded an opaque at-init effect:
     /// member write, mutating method call, escaped array, key
     /// enumeration, optional call or tagged template.
-    #[strum(to_string = "array content effects")]
+    #[strum(message = "array content effects")]
     ArrayContentEffects,
     /// Impure and not dataflow-summarizable (unproven call/`new`,
     /// member write through a binding, dynamic-dispatch shape).
-    #[strum(to_string = "impure and not summarizable")]
+    #[strum(message = "impure and not summarizable")]
     NonSummarizableImpure,
     /// Synchronous execution analysis reported incomplete effects
     /// (`synchronous_execution.complete = false`).
-    #[strum(to_string = "incomplete synchronous execution")]
+    #[strum(message = "incomplete synchronous execution")]
     IncompleteSynchronousExecution,
     /// The body of a callable synchronous execution invoked is itself
     /// heap-opaque.
-    #[strum(to_string = "heap-opaque callee body")]
+    #[strum(message = "heap-opaque callee body")]
     CalleeHeapEffects,
 }
 
@@ -386,7 +408,7 @@ impl fmt::Display for CellEffectClass {
                     if i > 0 {
                         f.write_str(", ")?;
                     }
-                    write!(f, "{cause}")?;
+                    f.write_str(strum::EnumMessage::get_message(cause).unwrap_or_default())?;
                 }
                 f.write_str(")")
             }
@@ -397,7 +419,7 @@ impl fmt::Display for CellEffectClass {
                     if i > 0 {
                         f.write_str(", ")?;
                     }
-                    write!(f, "{cause}")?;
+                    f.write_str(strum::EnumMessage::get_message(cause).unwrap_or_default())?;
                 }
                 f.write_str(")")
             }
@@ -481,7 +503,11 @@ impl fmt::Display for SequencedCause {
                 source,
                 target,
             } => {
-                write!(f, "at-init timeline of `{binding}`: source {order}")?;
+                write!(
+                    f,
+                    "at-init timeline of `{binding}`: source {}",
+                    strum::EnumMessage::get_message(order).unwrap_or_default()
+                )?;
                 write_assumed(f, source, target)
             }
             Self::UninitializedObservation {

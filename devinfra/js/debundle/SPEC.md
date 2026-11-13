@@ -1592,6 +1592,10 @@ The three loader keys describe a loader, so each requires
 `unknown` is accepted and asserts nothing. `export_reentry.json` echoes the
 block as read.
 
+Enum names use `snake_case`: for example `fs_promises` identifies the
+`fs/promises` Node module, and `bun_ffi` identifies the `bun:ffi` module.
+The JavaScript import specifiers themselves keep their runtime spelling.
+
 Every non-default value is an author assertion about the host. The author
 verifies it against the exact executable recorded in `note`, re-audits on every
 executable change, and checks that the analyzed program runs under that

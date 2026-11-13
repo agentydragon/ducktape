@@ -880,6 +880,7 @@ rust_library(
         ":binding_targets",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -1277,6 +1278,7 @@ rust_library(
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1573,6 +1575,7 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_ir",
         ":source_identity",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1661,6 +1664,7 @@ rust_library(
     deps = [
         ":cp_model_rust_proto",
         ":sat_parameters_rust_proto",
+        "@crates//:thiserror",
         "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )

@@ -2,8 +2,6 @@
 
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
-use std::fmt;
 
 use selector_constraint_backend::{
     AllowedTupleRowsId, BackendValueId, BindingProjection, CompiledSelectorProblem,
@@ -77,69 +75,26 @@ pub fn compile_selector_problem(
         .map_err(CompiledSelectorProblemBuildError::from)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CompiledSelectorProblemBuildError {
-    InvalidProgram(SelectorProgramError),
-    InvalidModel(CompiledSelectorProblemError),
-    UnknownSelectorVariable {
-        variable: SelectorVariableId,
-    },
-    UnsupportedAtom {
-        atom: String,
-    },
-    ConstantOnlyAtomUnsatisfied {
-        atom: String,
-    },
+    #[error("invalid selector program: {0}")]
+    InvalidProgram(#[source] SelectorProgramError),
+    #[error("invalid compiled selector problem: {0}")]
+    InvalidModel(#[source] CompiledSelectorProblemError),
+    #[error("selector variable {variable:?} has no model variable")]
+    UnknownSelectorVariable { variable: SelectorVariableId },
+    #[error("selector atom is not supported by the compiled selector problem builder: {atom}")]
+    UnsupportedAtom { atom: String },
+    #[error("constant-only selector atom has no matching fact: {atom}")]
+    ConstantOnlyAtomUnsatisfied { atom: String },
+    #[error(
+        "selector source unit variable {source_unit:?} has conflicting target binding projections: {existing:?} vs {actual:?}"
+    )]
     ConflictingTargetBindingProjection {
         source_unit: SelectorVariableId,
         existing: SourceBindingProjection,
         actual: SourceBindingProjection,
     },
-}
-
-impl fmt::Display for CompiledSelectorProblemBuildError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidProgram(err) => write!(f, "invalid selector program: {err}"),
-            Self::InvalidModel(err) => write!(f, "invalid compiled selector problem: {err}"),
-            Self::UnknownSelectorVariable { variable } => {
-                write!(f, "selector variable {variable:?} has no model variable")
-            }
-            Self::UnsupportedAtom { atom } => {
-                write!(
-                    f,
-                    "selector atom is not supported by the compiled selector problem builder: {atom}"
-                )
-            }
-            Self::ConstantOnlyAtomUnsatisfied { atom } => {
-                write!(
-                    f,
-                    "constant-only selector atom has no matching fact: {atom}"
-                )
-            }
-            Self::ConflictingTargetBindingProjection {
-                source_unit,
-                existing,
-                actual,
-            } => write!(
-                f,
-                "selector source unit variable {source_unit:?} has conflicting target binding projections: {existing:?} vs {actual:?}"
-            ),
-        }
-    }
-}
-
-impl Error for CompiledSelectorProblemBuildError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::InvalidProgram(err) => Some(err),
-            Self::InvalidModel(err) => Some(err),
-            Self::UnknownSelectorVariable { .. }
-            | Self::UnsupportedAtom { .. }
-            | Self::ConstantOnlyAtomUnsatisfied { .. }
-            | Self::ConflictingTargetBindingProjection { .. } => None,
-        }
-    }
 }
 
 impl From<CompiledSelectorProblemError> for CompiledSelectorProblemBuildError {

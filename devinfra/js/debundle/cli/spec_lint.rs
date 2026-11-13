@@ -553,7 +553,7 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 "warning",
                 format!(
                     "inferable ({}); remove it in a reviewed spec edit and revalidate",
-                    reason
+                    strum::EnumMessage::get_message(reason).unwrap_or_default()
                 ),
             ),
             InferenceVerdict::Inconclusive { reason } => {

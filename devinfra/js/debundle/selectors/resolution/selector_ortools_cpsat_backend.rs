@@ -6,8 +6,6 @@
 //! repeatedly to list the values each projected variable supports.
 
 use std::collections::BTreeSet;
-use std::error::Error;
-use std::fmt;
 use std::num::{NonZeroI32, NonZeroUsize};
 
 use cp_model_proto::operations_research::sat::{ConstraintProto, CpSolverStatus};
@@ -130,32 +128,15 @@ impl SelectorProblemBackend for OrToolsCpSatBackend {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum OrToolsCpSatBackendError {
-    InvalidProblem(InvalidProblem),
+    #[error("invalid CP-SAT problem: {0}")]
+    InvalidProblem(#[source] InvalidProblem),
     /// CP-SAT rejected the model it was given.
+    #[error("CP-SAT rejected the model: {0}")]
     ModelInvalid(String),
-    Solve(SolveError),
-}
-
-impl fmt::Display for OrToolsCpSatBackendError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidProblem(err) => write!(f, "invalid CP-SAT problem: {err}"),
-            Self::ModelInvalid(reason) => write!(f, "CP-SAT rejected the model: {reason}"),
-            Self::Solve(err) => write!(f, "CP-SAT solve failed: {err}"),
-        }
-    }
-}
-
-impl Error for OrToolsCpSatBackendError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::InvalidProblem(err) => Some(err),
-            Self::Solve(err) => Some(err),
-            Self::ModelInvalid(_) => None,
-        }
-    }
+    #[error("CP-SAT solve failed: {0}")]
+    Solve(#[source] SolveError),
 }
 
 impl From<InvalidProblem> for OrToolsCpSatBackendError {

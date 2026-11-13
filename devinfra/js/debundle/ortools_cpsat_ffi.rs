@@ -6,9 +6,7 @@
 //! internal failures, and a solve that exhausts memory terminates the whole
 //! process (`std::bad_alloc` is not caught).
 
-use std::error::Error;
 use std::ffi::{c_int, c_void};
-use std::fmt;
 use std::panic;
 use std::ptr::{self, NonNull};
 use std::slice;
@@ -38,34 +36,13 @@ unsafe extern "C" {
     fn free(ptr: *mut c_void);
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SolveError {
     /// A serialized message is longer than the C API's `int` length.
-    MessageTooLarge {
-        bytes: usize,
-    },
-    Response(prost::DecodeError),
-}
-
-impl fmt::Display for SolveError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MessageTooLarge { bytes } => write!(
-                f,
-                "CP-SAT message of {bytes} bytes exceeds the C API's int length"
-            ),
-            Self::Response(err) => write!(f, "failed to decode CP-SAT response: {err}"),
-        }
-    }
-}
-
-impl Error for SolveError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::MessageTooLarge { .. } => None,
-            Self::Response(err) => Some(err),
-        }
-    }
+    #[error("CP-SAT message of {bytes} bytes exceeds the C API's int length")]
+    MessageTooLarge { bytes: usize },
+    #[error("failed to decode CP-SAT response: {0}")]
+    Response(#[source] prost::DecodeError),
 }
 
 /// A response buffer the C API allocated, freed once on drop.
