@@ -1,29 +1,123 @@
 {
   "schema_version": 1,
-  "scope": "Final architecture report and modified root navigation; desktop/mobile light/dark, real pinned CDN loading, live preference changes, all selector states, coverage and six expanded implementation steps.",
-  "verified_at_utc": "2026-11-13T05:10:16.439690+00:00",
-  "invocation_url": "https://app.buildbuddy.io/invocation/999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+  "scope": "Final architecture report and modified root navigation; desktop/mobile light/dark, real pinned CDN loading, live preference changes, populated four-target and native ABBA progress tables, all selector states, coverage and six expanded implementation steps.",
+  "verified_at_utc": "2026-11-13T06:35:34.283666+00:00",
+  "invocation_url": "https://app.buildbuddy.io/invocation/085f5574-c7f8-4504-b651-a46e117ba7ca",
   "target": "//x/ci_reports_preview:visual_test",
   "native_result": {
     "status": "PASSED",
     "pytest_passed_cases": 8,
-    "pytest_duration_seconds": 28.45,
-    "bazel_wall_seconds": 41.993,
-    "test_duration_seconds": 35.483,
-    "fresh_test_executions": 1,
-    "physical_execution_id": "/uploads/08c6a230-2512-44b2-82ab-1a30e16f4a3c/blobs/b2321652c5d992568720e6061ab77f0adbe75027aed13ce02cc170147635d633/501",
-    "runs": 1,
-    "attempts": 1,
-    "test_result_status": "PASSED",
-    "command": "bbr test //x/ci_reports_preview:visual_test --nocache_test_results",
-    "preliminary_attempt": "4b96b84f-dfb7-4e55-9807-48aeaa25afc6 failed preview-harness PT018 lint before browser execution; localized assertion repair, then all eight cases passed"
+    "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
+    "invocation_status": "COMPLETE_INVOCATION_STATUS",
+    "invocation_success": true,
+    "invocation_url": "https://app.buildbuddy.io/invocation/085f5574-c7f8-4504-b651-a46e117ba7ca",
+    "target": "//x/ci_reports_preview:visual_test",
+    "test_summary": {
+      "overallStatus": "PASSED",
+      "totalRunCount": 1,
+      "runCount": 1,
+      "attemptCount": 1,
+      "passed": [
+        {
+          "uri": "bytestream://remote.buildbuddy.io/blobs/2eb00e8ecace3437edad5ccff3275051bbd03554ba52daba2b7c1883a79b00f9/1140"
+        }
+      ],
+      "firstStartTimeMillis": "1794551577001",
+      "firstStartTime": "2026-11-13T06:32:57.001Z",
+      "lastStopTimeMillis": "1794551618109",
+      "lastStopTime": "2026-11-13T06:33:38.109Z",
+      "totalRunDurationMillis": "41108",
+      "totalRunDuration": "41.108s"
+    },
+    "recorded_commit": "84e77122e5c418a7b2115c468038bade0c243f98",
+    "launcher_exit_code": 0,
+    "artifact_root": "/tmp/agents/2026_11_12/agentplane-ci-replan/iteration2/visual/final-width-artifacts",
+    "validation_records": 8,
+    "validation_payloads": 8,
+    "screenshot_records": 36,
+    "screenshot_pngs": 36,
+    "all_advertised_record_metadata": 88,
+    "frozen_asset_map": "/tmp/agents/2026_11_12/agentplane-ci-replan/iteration2/frozen-assets.json",
+    "frozen_asset_sha256": {
+      "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+      "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+      "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
+      "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+      "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
+      "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+      "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+      "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+      "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+    },
+    "observed_asset_sha256": {
+      "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+      "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+      "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
+      "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+      "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
+      "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+      "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+      "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+      "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+    },
+    "prior_passed_content_versions": [
+      {
+        "invocation_id": "48021fe0-9b20-490e-a5f3-6b3f5fc33c33",
+        "status": "PASSED",
+        "launcher_note": "Local launcher returned 143 during delivery, but BuildBuddy confirmed COMPLETE/success=true with the 8-case test target PASSED.",
+        "superseded_by": "final-width readability freeze only"
+      },
+      {
+        "invocation_id": "23e43c0c-7a11-48a9-af94-81ea7775a851",
+        "status": "PASSED",
+        "superseded_by": "later readability freezes"
+      }
+    ],
+    "superseded_harness_attempts": [
+      {
+        "invocation_id": "3fccd6dc-1966-4797-94b6-4878a85418df",
+        "status": "BUILD_FAILED_BEFORE_TEST_EXECUTION",
+        "reason": "RBE Ruff PT018 rejected four compound evidence assertions."
+      },
+      {
+        "invocation_id": "067ead79-4221-43ba-aa84-fdf93c60bcc9",
+        "status": "FAILED_READINESS_PREDICATE",
+        "pytest_passed_cases": 0,
+        "pytest_failed_cases": 8,
+        "reason": "Stale readiness label; frozen HTML says Initial source audit. Predicate corrected without changing report content."
+      }
+    ],
+    "progress_screenshots": [
+      {
+        "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+        "path": "files/62197a4ae15384274bdadcfe5bedb5613deb4139ed43110b9d0b0c9a4e133da4.png"
+      },
+      {
+        "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+        "path": "files/858677d460d60f16e4cabc11dd8b368dd13123585697d726603fba955209eeb2.png"
+      },
+      {
+        "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+        "path": "files/98bc321bffcaba61763ea0957cb846b937afb7b1807e1e352d2b8b740f8d274e.png"
+      },
+      {
+        "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+        "path": "files/d72be891bd8f12fb1c14adcdc6cd1b92d9143104b98c34a385ca6678ffec812a.png"
+      }
+    ]
   },
   "final_asset_sha256": {
-    "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-    "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-    "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+    "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+    "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+    "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
     "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-    "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+    "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
     "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
     "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
     "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -64,6 +158,15 @@
         "adoption_protocol",
         "contract_audit",
         "current_static_graph",
+        "initial_scope",
+        "iteration2_ci",
+        "iteration2_comparison",
+        "iteration2_experiments",
+        "iteration2_final_validation",
+        "iteration2_native",
+        "iteration2_older_base_runs",
+        "iteration2_status",
+        "iteration2_submission_errors",
         "observed_at_utc",
         "pilot",
         "prior_work_disposition",
@@ -77,24 +180,31 @@
       "failed_requests": [],
       "live_theme_change": true,
       "manifest_metadata": {
-        "attribution": "Complete required-CI improvement not measured",
-        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "attribution": "One four-target pair observed70.372s (20.57%) lower Bazel wall; full required-CI saving and reliability improvement not established.",
+        "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "ci_synthetic_merge_base_commit": "ca8e6f40aefc655b3d19365066f1e0c23b537570",
+        "ci_synthetic_merge_commit": "a7e97abfa650f2b610bc700d0529ef5284501d28",
+        "evidence_sha256": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_base_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
-        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
-        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
-        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_head_commit": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+        "previous_gh_pages_commit": "d46cbaff2ae5aaff405224aea816fe4f21a72dcf",
+        "published_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "report_sha256": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "scope": "Agentplane test architecture, initial native pilot and iteration2 implementation. Devel gate unchanged; experimental branch changes four existing fixture profiles, not their scenarios. No measured complete required-CI improvement.",
+        "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
         "visual_validation": "visual-validation.json"
       },
+      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
+      "native_observation_rows": 4,
       "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
@@ -103,21 +213,22 @@
         "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
+      "progress_target_rows": 4,
       "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
       "report": "agentplane-test-architecture/index.html",
       "rollout_expanded_panel_ids": [
-        "mantine-1nyg60y6l-panel-p1",
-        "mantine-1nyg60y6l-panel-p2",
-        "mantine-1nyg60y6l-panel-p3",
-        "mantine-1nyg60y6l-panel-p4",
-        "mantine-1nyg60y6l-panel-p5",
-        "mantine-1nyg60y6l-panel-p6"
+        "mantine-ilnmdib0j-panel-p1",
+        "mantine-ilnmdib0j-panel-p2",
+        "mantine-ilnmdib0j-panel-p3",
+        "mantine-ilnmdib0j-panel-p4",
+        "mantine-ilnmdib0j-panel-p5",
+        "mantine-ilnmdib0j-panel-p6"
       ],
       "rollout_item_count": 6,
       "selected_contract_panels": {
@@ -132,7 +243,7 @@
         "width": 390
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
       "console_errors": [],
@@ -165,6 +276,15 @@
         "adoption_protocol",
         "contract_audit",
         "current_static_graph",
+        "initial_scope",
+        "iteration2_ci",
+        "iteration2_comparison",
+        "iteration2_experiments",
+        "iteration2_final_validation",
+        "iteration2_native",
+        "iteration2_older_base_runs",
+        "iteration2_status",
+        "iteration2_submission_errors",
         "observed_at_utc",
         "pilot",
         "prior_work_disposition",
@@ -178,24 +298,31 @@
       "failed_requests": [],
       "live_theme_change": true,
       "manifest_metadata": {
-        "attribution": "Complete required-CI improvement not measured",
-        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "attribution": "One four-target pair observed70.372s (20.57%) lower Bazel wall; full required-CI saving and reliability improvement not established.",
+        "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "ci_synthetic_merge_base_commit": "ca8e6f40aefc655b3d19365066f1e0c23b537570",
+        "ci_synthetic_merge_commit": "a7e97abfa650f2b610bc700d0529ef5284501d28",
+        "evidence_sha256": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_base_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
-        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
-        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
-        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_head_commit": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+        "previous_gh_pages_commit": "d46cbaff2ae5aaff405224aea816fe4f21a72dcf",
+        "published_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "report_sha256": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "scope": "Agentplane test architecture, initial native pilot and iteration2 implementation. Devel gate unchanged; experimental branch changes four existing fixture profiles, not their scenarios. No measured complete required-CI improvement.",
+        "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
         "visual_validation": "visual-validation.json"
       },
+      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
+      "native_observation_rows": 4,
       "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
@@ -204,21 +331,22 @@
         "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
+      "progress_target_rows": 4,
       "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
       "report": "agentplane-test-architecture/index.html",
       "rollout_expanded_panel_ids": [
-        "mantine-awxzi0cti-panel-p1",
-        "mantine-awxzi0cti-panel-p2",
-        "mantine-awxzi0cti-panel-p3",
-        "mantine-awxzi0cti-panel-p4",
-        "mantine-awxzi0cti-panel-p5",
-        "mantine-awxzi0cti-panel-p6"
+        "mantine-tdlvssjqf-panel-p1",
+        "mantine-tdlvssjqf-panel-p2",
+        "mantine-tdlvssjqf-panel-p3",
+        "mantine-tdlvssjqf-panel-p4",
+        "mantine-tdlvssjqf-panel-p5",
+        "mantine-tdlvssjqf-panel-p6"
       ],
       "rollout_item_count": 6,
       "selected_contract_panels": {
@@ -233,10 +361,10 @@
         "width": 1280
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
-      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
       "console_errors": [],
       "document_overflow": false,
       "esm_module_urls": [
@@ -264,11 +392,11 @@
       ],
       "failed_requests": [],
       "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "manifest_metadata_text": "Reviewed 2026-11-13T06:11:06.819976+00:00 \u00b7 devel 73c214534d",
       "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -285,8 +413,8 @@
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
       "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -295,7 +423,7 @@
         "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
       },
       "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
       "status": "passed",
       "theme": "light",
       "viewport": {
@@ -304,7 +432,7 @@
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-mobile]",
       "report": "index.html",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
       "console_errors": [],
@@ -337,6 +465,15 @@
         "adoption_protocol",
         "contract_audit",
         "current_static_graph",
+        "initial_scope",
+        "iteration2_ci",
+        "iteration2_comparison",
+        "iteration2_experiments",
+        "iteration2_final_validation",
+        "iteration2_native",
+        "iteration2_older_base_runs",
+        "iteration2_status",
+        "iteration2_submission_errors",
         "observed_at_utc",
         "pilot",
         "prior_work_disposition",
@@ -350,24 +487,31 @@
       "failed_requests": [],
       "live_theme_change": true,
       "manifest_metadata": {
-        "attribution": "Complete required-CI improvement not measured",
-        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "attribution": "One four-target pair observed70.372s (20.57%) lower Bazel wall; full required-CI saving and reliability improvement not established.",
+        "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "ci_synthetic_merge_base_commit": "ca8e6f40aefc655b3d19365066f1e0c23b537570",
+        "ci_synthetic_merge_commit": "a7e97abfa650f2b610bc700d0529ef5284501d28",
+        "evidence_sha256": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_base_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
-        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
-        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
-        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_head_commit": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+        "previous_gh_pages_commit": "d46cbaff2ae5aaff405224aea816fe4f21a72dcf",
+        "published_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "report_sha256": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "scope": "Agentplane test architecture, initial native pilot and iteration2 implementation. Devel gate unchanged; experimental branch changes four existing fixture profiles, not their scenarios. No measured complete required-CI improvement.",
+        "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
         "visual_validation": "visual-validation.json"
       },
+      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
+      "native_observation_rows": 4,
       "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
@@ -376,21 +520,22 @@
         "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
+      "progress_target_rows": 4,
       "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
       "report": "agentplane-test-architecture/index.html",
       "rollout_expanded_panel_ids": [
-        "mantine-5moorw695-panel-p1",
-        "mantine-5moorw695-panel-p2",
-        "mantine-5moorw695-panel-p3",
-        "mantine-5moorw695-panel-p4",
-        "mantine-5moorw695-panel-p5",
-        "mantine-5moorw695-panel-p6"
+        "mantine-j2wl49qtd-panel-p1",
+        "mantine-j2wl49qtd-panel-p2",
+        "mantine-j2wl49qtd-panel-p3",
+        "mantine-j2wl49qtd-panel-p4",
+        "mantine-j2wl49qtd-panel-p5",
+        "mantine-j2wl49qtd-panel-p6"
       ],
       "rollout_item_count": 6,
       "selected_contract_panels": {
@@ -405,10 +550,10 @@
         "width": 1280
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
-      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
       "console_errors": [],
       "document_overflow": false,
       "esm_module_urls": [
@@ -436,11 +581,11 @@
       ],
       "failed_requests": [],
       "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "manifest_metadata_text": "Reviewed 2026-11-13T06:11:06.819976+00:00 \u00b7 devel 73c214534d",
       "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -457,8 +602,8 @@
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
       "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -467,7 +612,7 @@
         "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
       },
       "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
       "status": "passed",
       "theme": "dark",
       "viewport": {
@@ -476,7 +621,7 @@
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-mobile]",
       "report": "index.html",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
       "console_errors": [],
@@ -509,6 +654,15 @@
         "adoption_protocol",
         "contract_audit",
         "current_static_graph",
+        "initial_scope",
+        "iteration2_ci",
+        "iteration2_comparison",
+        "iteration2_experiments",
+        "iteration2_final_validation",
+        "iteration2_native",
+        "iteration2_older_base_runs",
+        "iteration2_status",
+        "iteration2_submission_errors",
         "observed_at_utc",
         "pilot",
         "prior_work_disposition",
@@ -522,24 +676,31 @@
       "failed_requests": [],
       "live_theme_change": true,
       "manifest_metadata": {
-        "attribution": "Complete required-CI improvement not measured",
-        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "attribution": "One four-target pair observed70.372s (20.57%) lower Bazel wall; full required-CI saving and reliability improvement not established.",
+        "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "ci_synthetic_merge_base_commit": "ca8e6f40aefc655b3d19365066f1e0c23b537570",
+        "ci_synthetic_merge_commit": "a7e97abfa650f2b610bc700d0529ef5284501d28",
+        "evidence_sha256": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_base_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "pilot_branch": "agent/test-architecture-pivot",
-        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
-        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
-        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
-        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
-        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "pilot_head_commit": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+        "previous_gh_pages_commit": "d46cbaff2ae5aaff405224aea816fe4f21a72dcf",
+        "published_at_utc": "2026-11-13T06:11:06.819976+00:00",
+        "report_sha256": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "scope": "Agentplane test architecture, initial native pilot and iteration2 implementation. Devel gate unchanged; experimental branch changes four existing fixture profiles, not their scenarios. No measured complete required-CI improvement.",
+        "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
         "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
         "visual_validation": "visual-validation.json"
       },
+      "native_observation_arm_order": ["A1", "B1", "B2", "A2"],
+      "native_observation_rows": 4,
       "packaged_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
@@ -548,21 +709,22 @@
         "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
+      "progress_target_rows": 4,
       "rendered_asset_sha256": {
-        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
-        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/evidence.json": "192ac93d71bfd0f090bd4a5f7ddb7ef1ce147c609bf7d57f0f95042176e46224",
+        "agentplane-test-architecture/index.html": "b85bc9940dd1043a646f0c273f2e42dfdac00210ebe6c7a7508fc5418d2c43cc",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
         "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
       },
       "report": "agentplane-test-architecture/index.html",
       "rollout_expanded_panel_ids": [
-        "mantine-du05r8y15-panel-p1",
-        "mantine-du05r8y15-panel-p2",
-        "mantine-du05r8y15-panel-p3",
-        "mantine-du05r8y15-panel-p4",
-        "mantine-du05r8y15-panel-p5",
-        "mantine-du05r8y15-panel-p6"
+        "mantine-zppjl7ju9-panel-p1",
+        "mantine-zppjl7ju9-panel-p2",
+        "mantine-zppjl7ju9-panel-p3",
+        "mantine-zppjl7ju9-panel-p4",
+        "mantine-zppjl7ju9-panel-p5",
+        "mantine-zppjl7ju9-panel-p6"
       ],
       "rollout_item_count": 6,
       "selected_contract_panels": {
@@ -577,10 +739,10 @@
         "width": 390
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
-      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
       "console_errors": [],
       "document_overflow": false,
       "esm_module_urls": [
@@ -608,11 +770,11 @@
       ],
       "failed_requests": [],
       "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "manifest_metadata_text": "Reviewed 2026-11-13T06:11:06.819976+00:00 \u00b7 devel 73c214534d",
       "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -629,8 +791,8 @@
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
       "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -639,7 +801,7 @@
         "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
       },
       "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
       "status": "passed",
       "theme": "dark",
       "viewport": {
@@ -648,10 +810,10 @@
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-desktop]",
       "report": "index.html",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     },
     {
-      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "audited_at_utc": "2026-11-13T06:11:06.819976+00:00",
       "console_errors": [],
       "document_overflow": false,
       "esm_module_urls": [
@@ -679,11 +841,11 @@
       ],
       "failed_requests": [],
       "live_theme_change": true,
-      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "manifest_metadata_text": "Reviewed 2026-11-13T06:11:06.819976+00:00 \u00b7 devel 73c214534d",
       "packaged_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
         "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -700,8 +862,8 @@
         "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
       ],
       "rendered_root_sha256": {
-        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
-        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "agentplane-test-architecture/manifest.json": "4b3366d611813aa472edd6500679d3654dff7bab13ca27375c0cd4f6d5a16414",
+        "index.html": "b7834e1201c9f38ae8243fb4a6e9f881c9c56eebbc4189a5117e35b7236c7df9",
         "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
         "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
         "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
@@ -710,7 +872,7 @@
         "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
       },
       "report_link_href": "agentplane-test-architecture/",
-      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "source_devel_commit": "73c214534dc211f8460fb233d3a63e4808947399",
       "status": "passed",
       "theme": "light",
       "viewport": {
@@ -719,299 +881,335 @@
       },
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-desktop]",
       "report": "index.html",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca"
     }
   ],
   "screenshots": [
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "rollout-expanded",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/398bcc246ec1ad463499be16dc0c1d23806e6169a037e782e57d3d39d27dd4dd.png",
       "width": 1152,
-      "height": 1362,
-      "sha256": "9beb42268846a86881e2bfaf9832c47f8915ae5539a2ed75ac08a86be9a897cc"
+      "height": 1413,
+      "sha256": "d520645bcd380ee41afbb1901515371a7b256f7e9808c16103accf92bf0ee51d"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "coverage",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/7c5eeda1fae2807e03464fe066acebf6823e84701b1a05fe920e5320dc5055f3.png",
       "width": 358,
-      "height": 1082,
-      "sha256": "929a9676e2bd7c3ad56f3eddf5976296784f1c498aa1c6875572e28e19dfb0d1"
+      "height": 1104,
+      "sha256": "799723e54c1f214d3a901beac84ba5c725064b35d34cabb03ebdc8cd0cf76ecd"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "coverage",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/94261bdea4e83fe66771c9a8802462b66e92ce115a3b5053ecf90bd19bd57093.png",
       "width": 1152,
-      "height": 728,
-      "sha256": "a5fc5efba4cc0455e4c87c8215cae97f6b1d7c971da011cefdad8d6f7b0ea83e"
+      "height": 707,
+      "sha256": "fe1aabacf00f416c00b1d7dd59d65520976437f4bb2857e2f8304f265d793ecf"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "selected-app",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/a11f4ba0efa0db40fb396babb78077a136681acb7d75e00ab8e5b77713d31184.png",
       "width": 1152,
-      "height": 635,
-      "sha256": "20d65a566e946e103143eec30a8a9a79c3552787d8efa2a098e63cc989128365"
+      "height": 634,
+      "sha256": "2b30aa3ea2fa5742a6410f5123a155e2ecd0710ae572deeead7104dfaa33ce3b"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "selected-runtime",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/053703e8e341a6a9c685621deb19007b7bd488138afc9f353d33fef42b0f13e7.png",
       "width": 1152,
-      "height": 635,
-      "sha256": "e0c12ae0d225036033b19209e654bb0bdf32a68e9dbec014dcecb5537bfb6d46"
+      "height": 634,
+      "sha256": "2aca180b92fbd5f57a45f166030f37841b93938d733b658d980561bd533235f1"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "selected-platform",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/00b08b65f77d82a7761d1a3da8ae4542ae9b78485d92d9622723b2fcbdc83279.png",
       "width": 1152,
-      "height": 635,
-      "sha256": "ab8fc151fed3643847875a386b384a1f81787662d6c0de563ee617966f8203f0"
+      "height": 634,
+      "sha256": "b7a10eb78cdb70471afef3202fa2f9b8e7c0d61b619a03f93ec40e70fb9f2233"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "selected-runtime",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/ccb051176a21f2d2a5bc0781b892aace6b456bf9c00b0b4510211a6a9ee3347b.png",
       "width": 1152,
-      "height": 635,
-      "sha256": "0b1a6005f82933a81368d39e07da609d20efa7da8497db129a8d32a1b0db3c7a"
+      "height": 634,
+      "sha256": "c9c73ba7a56a7545cda052d487e746421f8ab803a34ebb7c0bef656e397efa10"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "coverage",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/342be99de53c5ffa0371766cfe1dd21ae02aaeb64beceb629b55594ba750ab16.png",
       "width": 358,
-      "height": 1082,
-      "sha256": "9ae00085d35bf621f4e78668fd6889317d395d99601107a7e9af808e52ab5d47"
+      "height": 1104,
+      "sha256": "8e8b2ae5e05af19fe6e665d023e0b42104b228bd469dada45fd43e98886fe56c"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "rollout-expanded",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/f948a1ecf921cbd2c160c95186ee452a35894b7f0b4006954c8a980c62422c20.png",
       "width": 358,
-      "height": 2885,
-      "sha256": "1b5aa80d07374b57a4d15efe102cef4ac936803c4b97e189e88a731ff0819ec1"
+      "height": 2984,
+      "sha256": "baf7be2e66138e516977529a5554ad64df8b71b51676f752aeed63f3ff44652a"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "selected-app",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/c261eb7d5b3ed0aafb00fbe15a9311f01617990bb6c564444c9e1740a2924b17.png",
       "width": 358,
-      "height": 1106,
-      "sha256": "726c4e5705ea0782d80a5e2eec16b4d1cba346f18647f456f6cbe07ebb72057f"
+      "height": 1105,
+      "sha256": "51f99723d52d27adb7f8d39884e520555595ae2bf866048c88f048434d373155"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-desktop]",
       "checkpoint": "root-architecture-link",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/18016815ffd0f2b826cc7a3f3b1d2fc268edd5fee8de0c884d1043af2d43be15.png",
       "width": 373,
       "height": 339,
-      "sha256": "5b4c0cb2a481a1afd058a3e8d71cfbd6977861eec7bf8ee3d177daf68aeabf8a"
+      "sha256": "7ec458aa556f3f9b6a6c0e79e82181e5ed44bc21ff678db27d92c7c32a2af1ba"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "architecture",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/38e12653e74bc4d45c421a21c441c4d42d651677f9becba61e27850d7eb2ffce.png",
       "width": 1152,
-      "height": 930,
-      "sha256": "8992e6b3e7b27a0e9f60d21d505854c0b762c297309e034addc679321ba1ff99"
+      "height": 931,
+      "sha256": "d21f3fcb812f2349d3850b673c6ca8c0a20133bed84d3f75d0b73b7a965047b3"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "overview",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/b70bcf070a3fd4545850857bb50d26ca6957686e05183dcbb34a56d2ba440282.png",
       "width": 1280,
       "height": 900,
-      "sha256": "789c9af5a3e7a520d27100eb780e9f9e526a059ef1f515dbc1efa248a4d5d739"
+      "sha256": "978951fa706b979aad1c9a415f23431ea3af0a53200274b2066ae31aa9667539"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "architecture",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/82ef7d46a7e615985471875b300c1a9a2067c39f4fe07227b4d3ed3ccd62a3de.png",
       "width": 1152,
-      "height": 930,
-      "sha256": "888c192b2aed16e349faf5ef1f94332c1c09abd06eb58d993f233bbe36662f95"
+      "height": 931,
+      "sha256": "ac459b9783b9197cdda8b1cc09e149a199d3dd133ceb213d0881ec369c853cdc"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "overview",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/40df4201fd541a8da8fa6d6e68af3a1c9c698af96d97ceec115d740ff79c0565.png",
       "width": 390,
       "height": 844,
-      "sha256": "f914b8f38709705090381ae8e486d6078c07cf9427d79b3a31d8183a9492f5b5"
+      "sha256": "03596543a7ad32a79886f77274e8a2fc9224ccad0af4bd1bbdef22897e2817e9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "progress",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
+      "artifact_path": "files/62197a4ae15384274bdadcfe5bedb5613deb4139ed43110b9d0b0c9a4e133da4.png",
+      "width": 1152,
+      "height": 2372,
+      "sha256": "f9b0597b688af683252c7ece2bde17b8c31d275343f726e5fd0865784a26edbd"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "architecture",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/915d8bfc0cf854257856c4536593c6cab558a4482589fdb8d350b5d77bdfde81.png",
       "width": 358,
-      "height": 2218,
-      "sha256": "7fb4624b368e92143252dc91ff92d0c486be7f9b590b1974cb9d800e37b3beca"
+      "height": 2219,
+      "sha256": "016a29dfdaeecdffc379508edad168d894c3db8ee74067118917a4d80706f56f"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "architecture",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/04802cb2ebbc61dd96fac1376599f9dff39ec8f7848e4f2c593e26178ca5f3c3.png",
       "width": 358,
-      "height": 2218,
-      "sha256": "9833daf47a6b858690e34e4aefd399e7252a532f4078c6d96bb4803ddadb09e5"
+      "height": 2219,
+      "sha256": "872815db6c309a3f22a501ea7243f8f8e0b344e49041be75af3c52f6adc9de80"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "selected-platform",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/eebfcd6f11f09e82a13f5032376fa82ef80b626f8d54505f96ec79c5753f6e38.png",
       "width": 358,
-      "height": 1106,
-      "sha256": "5bcc153770fdcd76b14340a3bef3ccdf095aa245ef57f029d7d64e8e341a70d0"
+      "height": 1105,
+      "sha256": "342f67d2f62034614a11d6af744f0a85b73b0d2fc94a24faae79f01b7f6a61be"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-desktop]",
       "checkpoint": "root-architecture-link",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/2c4d64183c39b870198e423b3e34dae43cb19d3097fa33847df46123bf65ce4a.png",
       "width": 373,
       "height": 339,
-      "sha256": "0e9d6e000fe8587e899a8c860507ab3b2f895f449acbe2a1b286f4c944c73287"
+      "sha256": "f379e1be9e30519c5064b469be4680c89d12f453472ff246e403121e784ef815"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "overview",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/f0db531260540a56e7e79152a14d7075e07148a294631b4f80b9f243ac09b276.png",
       "width": 390,
       "height": 844,
-      "sha256": "128db7580e47fa422ddc2c3c79e1e9ac9ce17045c8053a1b226c80bb7092cc97"
+      "sha256": "bc48717b322cff663fd7b3585a08b18f150c55e5f7679a1215906ea6d3ff299c"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "rollout-expanded",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/d286c34a9a4820cb6e9a796530df47440da39a6ce728f4f911152607d6a2b884.png",
       "width": 358,
-      "height": 2885,
-      "sha256": "354bce99ec240da8d525f2e262fdf1685f3a669ad0e09f5952135a84c125441f"
+      "height": 2984,
+      "sha256": "3de83115d76271cc08cb215584a6bafa6ca530f788af3eef15d19dc1f82df057"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "selected-app",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/bc0341953fce4c26fba4afdde0f1234318f39177ab2ba04ee0b8ef9ac2677469.png",
       "width": 358,
-      "height": 1106,
-      "sha256": "8815666a416c0dc3ed5ddb253f7b87e5b09cff801559bd5b85135333ba57a445"
+      "height": 1105,
+      "sha256": "00a401350bc159c021617d743eea5f2b745e06d5bc80a558559b8314d1a1d0b3"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "overview",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/feae4ed8b21861c36f2984c1c99b0e0173cbe9a0cb9395ea80d66ececd77584a.png",
       "width": 1280,
       "height": 900,
-      "sha256": "eb497fd30eb92b258b53baa3be8c0396faafdba6c00c414281e41428abd7a41f"
+      "sha256": "20ba8e0801c8348d764a13e03b4be86dc74abee944f033bf7e2cfa89a0e9b1dd"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "selected-app",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/a87d7589cc15e2f0019e8082c9b7160d560cb9314358d0aa2e8268ced8e31a8a.png",
       "width": 1152,
-      "height": 635,
-      "sha256": "81d576f44a1e301a68dd510c56dc02b13952cdbaf0412a4001042f101a4cc8c3"
+      "height": 634,
+      "sha256": "f47bb4c21525ce0de6733a3a72897447ede41d0d26c8608c94d931a4e914ec15"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "coverage",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/affe05e26873f99928eda8c1636382fa7b5e2bf71621d3ac680680777572e3f4.png",
       "width": 1152,
-      "height": 728,
-      "sha256": "255bd95323065fd80d3af254432f22a101626748e0d3f92a38cd8e4d2d3d2bb8"
+      "height": 707,
+      "sha256": "2bae6003c7f37810ef5bada3bee80e0de0ae5b5c7374e16da3931fa9dc9afe71"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "progress",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
+      "artifact_path": "files/98bc321bffcaba61763ea0957cb846b937afb7b1807e1e352d2b8b740f8d274e.png",
+      "width": 358,
+      "height": 3950,
+      "sha256": "1bcf8d6aa17da4fe02c656b7b0cf6b32b7e291a4f322be7dc60c4faf57732641"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
       "checkpoint": "selected-platform",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/d56f2239dccd49d1d617970a325542999ae1146a350a871c1b5b724ad06c4cea.png",
       "width": 1152,
-      "height": 635,
-      "sha256": "0d1f6271b62f6f547e75f9b440f724cf6eac14bfedc9cbe1a163567a2ce40b23"
+      "height": 634,
+      "sha256": "f67a4f8182f1fbc6376d4652bcf8b7534579da3717c659f66d7b1dac29ac95cf"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-mobile]",
       "checkpoint": "root-architecture-link",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/2935093af7a04b03c7d737bc3a65a334b031e22848984314e7339a58aae2a09f.png",
       "width": 358,
-      "height": 289,
-      "sha256": "6eb9d1b35ba123648d27004f3917e2bf8f3cfc9b01cc15425bc375bbe073f006"
+      "height": 314,
+      "sha256": "682a8b4899a807388686bca59ce7279cbee48231eda4d5f2c74f6d51d26874e0"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "selected-runtime",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/4cc0d75a7bb33518212be09d2bb91b9db91813ff561c7ed1606ac46b6772b785.png",
       "width": 358,
-      "height": 1131,
-      "sha256": "1fb5d1fc6c16a24b82f7c9eed996a21bf04b6966106e71c1861e07261468c462"
+      "height": 1130,
+      "sha256": "ede986189bb15fe5a84c9f7ac2ac275938de887344c00b4ff48f21c154da18c9"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "progress",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
+      "artifact_path": "files/858677d460d60f16e4cabc11dd8b368dd13123585697d726603fba955209eeb2.png",
+      "width": 1152,
+      "height": 2372,
+      "sha256": "f8f5be58059c461112e0632984eab9722f7fb481cd45a6351561c5b369e5c4e4"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-mobile]",
       "checkpoint": "root-architecture-link",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/c8a2e4c441247db89b5ef336dfb78a98890390b2e5cc2d68f7a2be27515ac149.png",
       "width": 358,
-      "height": 289,
-      "sha256": "5e18dd176cf1b6083e3e8561b1ba36d549af3597e3a78787bda5283f11a4e7f2"
+      "height": 314,
+      "sha256": "5879bab8e220995d9f8144634253c44b33947dcbed191f484b7aa70b1b620fa7"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
       "checkpoint": "rollout-expanded",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/b9fbf710267645a22b36ee44f117ac5bc98bfdeb58a876d05256f633aba3af03.png",
       "width": 1152,
-      "height": 1361,
-      "sha256": "ec20b26c7c4ff3b434a58050381777d04cedf0e04dcd2fc94bc6bbb7f6265e9f"
+      "height": 1413,
+      "sha256": "a0f4a00c1530cc827df50a6060032f66fa8ff731da36a511070b60e38468222f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "progress",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
+      "artifact_path": "files/d72be891bd8f12fb1c14adcdc6cd1b92d9143104b98c34a385ca6678ffec812a.png",
+      "width": 358,
+      "height": 3950,
+      "sha256": "641ec0c0d3479ac2cb0ae0bebec0ea9efe34473558769b2eabf17eafb6da8bea"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
       "checkpoint": "selected-runtime",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/39ae73c8bba6bc8dd4a5215e5acaf5c955183eb08e79bb8f96636d92cc4afb5a.png",
       "width": 358,
-      "height": 1131,
-      "sha256": "db6a4f0937020616c9d11a132067202b5425505a42d8d8397a69ccd8b38f121f"
+      "height": 1130,
+      "sha256": "ce66bfd76f98948300e02126417f1c499bd9cfef59fbe31f28e4adde0d6178db"
     },
     {
       "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
       "checkpoint": "selected-platform",
-      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "invocation_id": "085f5574-c7f8-4504-b651-a46e117ba7ca",
       "artifact_path": "files/5085dc106452123215c6346e8daefd72d324d4acadad6890f747e93205a39032.png",
       "width": 358,
-      "height": 1106,
-      "sha256": "12f50dda9106f90e3e0f39628319fbdb06866b5dac284bfd4c6e7e5597a0b02f"
+      "height": 1105,
+      "sha256": "52f85e66a3d1ed4d696152e79a2eaa7a6b9a8fb6af38eae499c07cebed8b2654"
     }
   ],
-  "screenshot_review": "Representative desktop/mobile, light/dark captures visually reviewed for populated architecture panels, readable labels/tables, selector states, root navigation and expanded rollout. Horizontal tables scroll within their containers.",
+  "screenshot_review": "Representative desktop/mobile, light/dark captures visually reviewed for populated progress tables and architecture panels, readable labels/tables, selector states, root navigation and expanded rollout. Horizontal tables scroll within their containers.",
   "limits": "Visual proof checks rendering and controls, not architecture correctness, deployment or CI saving. Its own JSON is excluded from rendered asset hashes to avoid self-reference."
 }

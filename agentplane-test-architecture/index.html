@@ -83,8 +83,9 @@
           <${Title} order=${2} mb="md">${title}<//>${children}<//
         >`;
       }
-      function Rows({ headers, rows }) {
-        return html`<${Table.ScrollContainer} minWidth=${680}>
+      function Rows({ headers, rows, minWidth = 680 }) {
+        const readableCell = { overflowWrap: "normal", wordBreak: "normal" };
+        return html`<${Table.ScrollContainer} minWidth=${minWidth}>
           <${Table}
             striped
             withTableBorder
@@ -93,11 +94,11 @@
           >
             <${Table.Thead}
               ><${Table.Tr}
-                >${headers.map((s) => html`<${Table.Th} key=${s}>${s}<//>`)}<//
+                >${headers.map((s) => html`<${Table.Th} key=${s} style=${readableCell}>${s}<//>`)}<//
               ><//
             >
             <${Table.Tbody}
-              >${rows.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((v, j) => html`<${Table.Td} key=${j}>${v}<//>`)}<//>`)}<//
+              >${rows.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((v, j) => html`<${Table.Td} key=${j} style=${typeof v === "string" && /^\d+(?:\.\d+)?s$/.test(v) ? { ...readableCell, whiteSpace: "nowrap" } : readableCell}>${v}<//>`)}<//>`)}<//
             >
           <//><//
         >`;
@@ -255,7 +256,7 @@
             ><${Badge} color="gray">Complete CI saving not established<//><//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Source audit ${source} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${source} · progress head ${manifest.pilot_head_commit?.slice(0, 10)} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
@@ -303,7 +304,7 @@
                 [
                   "P3 · Deployment profile",
                   "Same four K3s cases; 175 → 162 rendered objects and 15 → 12 Deployments. Dex/MCP Everything/OAuth fixture removed; real app, Actions, MCP-edge, Gateway, History, sampler, controllers and PostgreSQL stay.",
-                  "Finish source-qualified matched target comparison, then map profile ownership to the real selector and preserve required deployment acceptance.",
+                  "The current-base four-target pair passed: 342.108s control → 271.736s candidate. Broader service/image ownership and whole-PR shadows remain; preserve required deployment acceptance.",
                 ],
                 [
                   "P4 · Scenario duration",
@@ -313,7 +314,7 @@
                 [
                   "P5 · Whole-PR shadow",
                   "Pending; the four-target experiment is not a whole-PR shadow.",
-                  "At least 30 pinned base/head pairs, 100 fresh contract executions, three busy windows and a four-PR burst, including remaining required gates.",
+                  "Current head passed all required checks in 10m39s; this is one head, not an improvement cohort. Next: at least 30 pinned pairs, 100 fresh contract executions, three busy windows and a four-PR burst.",
                 ],
                 [
                   "P6 · Adoption",
@@ -329,6 +330,7 @@
             >
             ${p(comparison?.scope_note || "The control is one warm invocation with four passing targets (447.970s invocation time). Final exact-published-head candidate results are pending. This table will show process, setup and case time separately; one sequence will not establish complete CI savings.")}
             <${Rows}
+              minWidth=${1152}
               headers=${["Target", "Control process", "Candidate process", "Control setup", "Candidate setup", "Control case", "Candidate case", "Outcome"]}
               rows=${comparisonRows}
             />
@@ -337,6 +339,11 @@
                 href=${comparison?.control_url || "https://app.buildbuddy.io/invocation/aac4b20f-b5c2-4bd6-9000-315d8a7b9808"}
                 >${comparison?.control_link_text || "Initial control · warm four-target run · 447.970s"}<//
               >
+              <${Anchor}
+                href=${comparison?.candidate_url || `${repo}/pull/16102`}
+              >
+                Candidate e81dd61bc9 · four targets · 271.736s
+              <//>
               <${Anchor}
                 href="https://github.com/agentydragon/ducktape/pull/16102"
                 >Experimental source PR #16102<//
@@ -347,6 +354,11 @@
               they are not additive. A single sequence is not a population
               result, whole-PR shadow or complete CI saving.
             <//>
+            <${Title} order=${3} mt="xl" mb="sm"
+              >What limits the whole PR now<//
+            >
+            ${p(data?.iteration2_status?.next_measured_bottleneck || "See current source PR checks for whole-graph evidence.")}
+            ${p("Next bounded architecture step: split the Pod suite's owner authorization, History and identity contracts into fresh native fixtures, while keeping real idle/resume, Secret projection, Pod replacement, storage and packaged-image witnesses in focused deployment acceptance. Compare setup duplication, longest action and CPU before changing grouping or required selection. The current branch has not finished that split.")}
             <${Title} order=${3} mt="xl" mb="sm">Native helper ABBA timing<//>
             ${p(nativeIteration?.scope_note || "The ordered native ABBA observations are still pending final evidence. Any eventual timing is a small fixture comparison, not whole-CI or whole-PR savings.")}
             <${Rows}
