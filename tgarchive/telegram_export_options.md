@@ -2,9 +2,11 @@
 
 When you want to export only specific groups/channels, not your entire Telegram history.
 
-## API Credentials (prerequisite for all options below except built-in takeout)
+## API credentials
 
-Credentials and provisioning instructions live in <../secrets/shared/telegram-api.yaml> (SOPS-encrypted). Run `sops -d secrets/shared/telegram-api.yaml` to read them, or `sops edit ...` to rotate.
+API credentials live in the SOPS-encrypted <../secrets/shared/telegram-api.yaml>.
+The repository's `tg.sh` and `tg_backup.py` read it directly; the other tools may
+ask you to provide the API ID and hash. Keep the Telegram session file private too.
 
 ## Recommended: tg-archive
 
@@ -71,25 +73,25 @@ telethon-cli messages get-messages --session myname --entity chat_username --out
 - **Good for:** Quick dumps, data analysis, custom processing
 - **Docs:** [Telethon documentation](https://docs.telethon.dev/)
 
-## Custom Scripts: Telethon/Pyrogram
+## Repository script: selective JSON and media
 
-Build your own export logic for full control.
+The repository includes [`tg_backup.py`](tg_backup.py), a Telethon Takeout
+exporter for selected entities. It accepts `@username`s, numeric IDs, `t.me/...`
+links, or exact dialog titles, and writes `entity.json`, `messages.json`, and
+downloaded files under `media/` for each entity.
 
-```python
-from telethon.sync import TelegramClient
-import asyncio
+It reads credentials from the SOPS file above. Its default session (`session`)
+and export (`backup/`) paths are relative to the current directory; run with
+`tgarchive/` as the current directory to keep both under the existing
+`.gitignore` rules. A completed run rewrites an entity's `entity.json` and
+`messages.json`; use a new `--output` directory under `backup/` (for example,
+`backup/another-snapshot`) to retain an older snapshot while keeping it ignored.
+The export still contains private messages and media; `.gitignore` only
+prevents accidental commits.
 
-async def export_chat():
-    client = TelegramClient('session', api_id, api_hash)
-    await client.start(phone)  # Prompts for phone + verification code
-
-    async for message in client.iter_messages(chat_id):
-        # Save to your format/database
-        pass
-```
-
-- **Telethon:** [docs.telethon.dev](https://docs.telethon.dev/) - MTProto client
-- **Pyrogram:** [docs.pyrogram.org](https://docs.pyrogram.org/) - Similar alternative
+The script imports `telethon`, `PyYAML`, and `tqdm`. This tree is excluded from
+Bazel and has no local Python dependency manifest; the root dependency manifest
+does not declare `telethon`, so its runnable environment remains unverified.
 
 ## Built-in Takeout (Not Recommended)
 
@@ -101,11 +103,11 @@ Telegram's official export tool at `Settings > Advanced > Export Telegram Data`.
 
 ## Summary
 
-| Tool             | Selective? | Output      | Best For                    |
-| ---------------- | ---------- | ----------- | --------------------------- |
-| tg-archive       | ✓          | Static HTML | Public archives, browsing   |
-| Telethon CLI     | ✓          | JSON        | Quick dumps, analysis       |
-| Custom script    | ✓          | Any         | Full control, custom format |
-| Built-in takeout | ✗          | HTML/JSON   | Full backups only           |
+| Tool              | Selective? | Output       | Best For                       |
+| ----------------- | ---------- | ------------ | ------------------------------ |
+| tg-archive        | ✓          | Static HTML  | Public archives, browsing      |
+| Telethon CLI      | ✓          | JSON         | Quick dumps, analysis          |
+| Repository script | ✓          | JSON + media | Local export; setup unverified |
+| Built-in takeout  | ✗          | HTML/JSON    | Full backups only              |
 
 **Recommendation:** Use **tg-archive** for browsing archives, **Telethon CLI** for data dumps.
