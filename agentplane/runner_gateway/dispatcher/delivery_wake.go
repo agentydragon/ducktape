@@ -261,10 +261,6 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		}
 	}
 
-	if work.wakeRequestedAt != nil || work.wakeAssessment.GetState() == environmentpb.WakeState_WAKE_STATE_REQUESTED {
-		return w.waitForRequestedWake(ctx, work, owner, sandbox, blocker)
-	}
-
 	// The lifecycle manager authorizes the wake for the row's retained effective caller: its
 	// ServiceAccount, or the Identity it acted as. A row attributed to no one (a legacy writer's)
 	// never wakes.
