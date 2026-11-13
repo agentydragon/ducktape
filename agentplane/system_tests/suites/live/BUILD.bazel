@@ -14,8 +14,14 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:live_dispatcher_tls",
+        "//agentplane/system_tests/driver:tls",
+        "@pypi//grpcio",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -23,6 +29,10 @@ py_test(
     name = "test_ollama_routes",
     timeout = "eternal",
     srcs = ["test_ollama_routes.py"],
+    data = ["//agentplane/system_tests/driver/dispatcher_tls_proxy"],
+    env = {
+        "LIVE_DISPATCHER_TLS_PROXY_RLOCATION": "$(rlocationpath //agentplane/system_tests/driver/dispatcher_tls_proxy:dispatcher_tls_proxy)",
+    },
     env_inherit = [
         "HOME",
         "KUBECONFIG",
@@ -59,6 +69,10 @@ py_test(
     name = "test_thread_latency",
     timeout = "eternal",
     srcs = ["test_thread_latency.py"],
+    data = ["//agentplane/system_tests/driver/dispatcher_tls_proxy"],
+    env = {
+        "LIVE_DISPATCHER_TLS_PROXY_RLOCATION": "$(rlocationpath //agentplane/system_tests/driver/dispatcher_tls_proxy:dispatcher_tls_proxy)",
+    },
     env_inherit = [
         "AGENTPLANE_SYSTEM_TEST_NAMESPACE",
         "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT",
