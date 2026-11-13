@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry"
 	"github.com/google/uuid"
 )
 

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 )
 
 // Settings are the worker's tunables, as the service's settings file holds them: the service's config embeds

@@ -7,10 +7,10 @@ coordinates source reads and notice delivery. The integration app is only a clie
 ## Package boundaries
 
 `model` owns subscription definitions, source-event identities, GitHub facts, selection rules and their
-JSON encoding. It has no database, transport or worker dependency. `store` owns PostgreSQL transactions,
-claims, refresh leases and durable recording; `store/internal/entry` maps event identities to relational
-entry rows inside a transaction supplied by its caller. The store consumes model types without defining their
-vocabulary.
+JSON encoding. It has no database, transport or worker dependency. `internal/store` owns PostgreSQL
+transactions, claims, refresh leases and durable recording; `internal/store/internal/entry` maps event
+identities to relational entry rows inside a transaction supplied by its caller. The store consumes
+model types without defining their vocabulary.
 
 `github/client` owns authenticated REST reads, pagination, response normalization and typed request
 errors. It depends on `model` and the shared `github/settings`, not on persistence or scheduling.
@@ -38,7 +38,7 @@ Workers drain durable state at startup and after reconnect. Inbox claims, source
 fenced commits prevent stale workers from overwriting newer work. Listener loss fails readiness.
 Actions history is read through its API, not its database. GitHub refresh deadlines, provider
 backoff, delivery retries and retention remain durable or scheduled work even without new ingress.
-See [`worker`](../worker/worker.go), [`store`](../store/store.go) and
+See [`worker`](../worker/worker.go), [`store`](../internal/store/store.go) and
 [`wakeups`](../../postgres/wakeups).
 
 ## Notice delivery and history
@@ -73,8 +73,8 @@ cascades to their subject links without removing independent inbox copies.
 
 Shared failure observations belong to their access/subject records, not copies on every
 subscription or inbox history. These are current-state records, not temporal versions. See
-[`github_state.go`](../store/github_state.go), [`github_ingest.go`](../store/github_ingest.go),
-[`github_deliveries.go`](../store/github_deliveries.go), and the
+[`github_state.go`](../internal/store/github_state.go), [`github_ingest.go`](../internal/store/github_ingest.go),
+[`github_deliveries.go`](../internal/store/github_deliveries.go), and the
 [schema](../migrations/notifications/00013_baseline.sql).
 
 ### Mergeability freshness

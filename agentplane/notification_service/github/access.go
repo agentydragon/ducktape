@@ -7,8 +7,8 @@ import (
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/client"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 )
 
 // access is the App's access to a repository through the installation that covers it.

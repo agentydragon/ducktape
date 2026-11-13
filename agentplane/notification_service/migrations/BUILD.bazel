@@ -20,8 +20,8 @@ go_test(
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/model",
-        "//agentplane/notification_service/store",
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",

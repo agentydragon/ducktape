@@ -17,7 +17,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	githubapi "github.com/google/go-github/v88/github"
 	"github.com/google/uuid"
 )
