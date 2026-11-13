@@ -169,6 +169,15 @@ def _deployment_images(objects: list[dict[str, Any]]) -> set[str]:
     }
 
 
+def _pod_template_images(objects: list[dict[str, Any]]) -> set[str]:
+    return {
+        container["image"]
+        for doc in objects
+        if doc["kind"] == "PodTemplate"
+        for container in (doc["template"]["spec"].get("initContainers", []) + doc["template"]["spec"]["containers"])
+    }
+
+
 def _ready_fixture_postgres_pod(
     pods: list[dict[str, Any]], replica_sets: list[dict[str, Any]], deployment_uid: str
 ) -> dict[str, Any]:
@@ -456,6 +465,15 @@ def running_stack(
                 raise ValueError(f"Guest images are used by Deployments: {sorted(used)}")
             if missing := deployment_images - fixture_images.keys():
                 raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
+            # PodTemplates do not start Pods when applied. Import their private images while
+            # the Deployments start, but join before the suite can create a Sandbox from them.
+            template_images = _pod_template_images(fixture.objects) if virtualization is None else set()
+            deferred_images = {
+                image: layout
+                for image, layout in fixture_images.items()
+                if image in template_images and image not in deployment_images
+            }
+            startup_images = {image: layout for image, layout in fixture_images.items() if image not in deferred_images}
             install_baseline = not baseline_warm
             # A later group may already have an ID alias while CRI is still publishing its tag.
             # Register every current runfile image before any of the import-group sweeps.
@@ -480,11 +498,16 @@ def running_stack(
                 # Applying a workload before its image is imported would pull it from the registry.
                 if pki_import is not None:
                     pki_import.result()
-                fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
+                fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, startup_images)
                 pki_infrastructure.prepare(k3s.kubectl, cert_manager, trust_manager, warm=baseline_warm)
                 setup.add_event("cert-manager and trust-manager ready")
                 fixture_import.result()
-                setup.add_event("fixture images imported" if guest_images else "images imported")
+                if guest_images:
+                    setup.add_event("fixture images imported")
+                elif deferred_images:
+                    setup.add_event("service images imported")
+                else:
+                    setup.add_event("images imported")
                 if guest_images:
                     # The VM root image is this stack's largest cold import. Sampling proceeds while
                     # the importer and the rest of setup work; joining happens at fixture teardown.
@@ -496,6 +519,11 @@ def running_stack(
                         k3s.profile_containerd("trace", 5, outputs / "containerd-import.runtime.trace")
                     )
                 guest_import = importing.submit(contextvars.copy_context().run, k3s.import_images, guest_images)
+                deferred_import = (
+                    importing.submit(contextvars.copy_context().run, k3s.import_images, deferred_images)
+                    if deferred_images
+                    else None
+                )
                 if fixture.firecracker_sandboxes:
                     # The raw boot disk's cold unpack competes with PostgreSQL initialization and
                     # k3s SQLite writes on the KVM worker. Finish it before starting app workloads.
@@ -525,23 +553,27 @@ def running_stack(
                 guest_import.result()
                 if guest_images:
                     setup.add_event("images imported")
-
-            failed: list[str] = []
-            deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
-            deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
-            for name in deployments:
-                remaining = max(5, int(deadline - time.monotonic()))
-                with tracer.start_as_current_span("system_test.deployment.ready", attributes={"deployment.name": name}):
-                    out = k3s.kubectl(
-                        "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture.namespace,
-                        f"--timeout={remaining}s", check=False,
-                    )  # fmt: skip
-                    if "condition met" not in out:
-                        failed.append(name)
-            if failed:
-                print(k3s.report(fixture.namespace))
-                raise RuntimeError(f"Deployments not Available: {failed}")
-            setup.add_event("Deployments Available")
+                failed: list[str] = []
+                deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
+                deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
+                for name in deployments:
+                    remaining = max(5, int(deadline - time.monotonic()))
+                    with tracer.start_as_current_span(
+                        "system_test.deployment.ready", attributes={"deployment.name": name}
+                    ):
+                        out = k3s.kubectl(
+                            "wait", "--for=condition=Available", f"deployment/{name}", "-n", fixture.namespace,
+                            f"--timeout={remaining}s", check=False,
+                        )  # fmt: skip
+                        if "condition met" not in out:
+                            failed.append(name)
+                if failed:
+                    print(k3s.report(fixture.namespace))
+                    raise RuntimeError(f"Deployments not Available: {failed}")
+                setup.add_event("Deployments Available")
+                if deferred_import is not None:
+                    deferred_import.result()
+                    setup.add_event("images imported")
             if virtualization is not None:
                 virtualization.wait_until_ready(k3s)
                 setup.add_event("KubeVirt and Kyverno ready")
