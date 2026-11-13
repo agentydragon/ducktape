@@ -22,7 +22,7 @@ Staged API change: [action result discriminator rollout](docs/action_result_disc
 - `frontend/`: `sync.js` (REST + WebSocket client, Zod-parsed), `use_casino.js` (state +
   mutations hook), one `.jsx` per view/game; bundled via `//devinfra/js:spa_bundle`.
   The bundle does not ship a service worker; `main.jsx` unregisters workers left by older
-  deployments so stale cached JavaScript cannot shadow the current bundle.
+  deployments.
 
 ## Auth
 
