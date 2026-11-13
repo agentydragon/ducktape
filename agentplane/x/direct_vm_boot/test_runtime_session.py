@@ -52,7 +52,11 @@ from agentplane.x.direct_vm_boot.runtime_guest import (
     sandbox_with_runtime_gateway,
     write_guest_inputs,
 )
-from agentplane.x.direct_vm_boot.session_helpers import history_turn_completed, wait_for_session_ready
+from agentplane.x.direct_vm_boot.session_helpers import (
+    assert_guest_setup_is_supervised,
+    history_turn_completed,
+    wait_for_session_ready,
+)
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep //agentplane/testing:native_gateway_fixtures
@@ -318,6 +322,9 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
     container_name = f"agentplane-runtime-session-{UUID(sandbox.uid).hex[:16]}"
     requested_command_ids = (str(uuid4()), str(uuid4()))
     assert len(set(requested_command_ids)) == 2
+    resources = RESOURCES.model_copy(update={"executor": None})
+    if os.environ.get("DIRECT_VM_SETUP_WRONG_PROCESS_LIMIT_CONTROL") == "1":
+        resources = resources.model_copy(update={"process": RESOURCES.process.model_copy(update={"pids_max": 96})})
     async with model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target:
         config = Configuration(
             version=2,
@@ -342,10 +349,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                 token_env="ANTHROPIC_AUTH_TOKEN",
             ),
             environment=VMEnvironment(
-                resources=RESOURCES.model_copy(update={"executor": None}),
-                agent_uid=107,
-                agent_gid=107,
-                block_devices=("/dev/disk/by-id/virtio-workspace",),
+                resources=resources, agent_uid=107, agent_gid=107, block_devices=("/dev/disk/by-id/virtio-workspace",)
             ),
         )
         write_guest_inputs(inputs, sandbox, config)
@@ -412,6 +416,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             )
             assert first_entries
             assert second_entries
+            await assert_guest_setup_is_supervised(dispatcher, history_service.reader, spec)
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
             assert final_status.environment_runtime_boot_id == initial_status.environment_runtime_boot_id
