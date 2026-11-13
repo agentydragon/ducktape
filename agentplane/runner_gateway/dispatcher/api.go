@@ -16,6 +16,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -111,7 +112,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	leaseCtx, endLease := context.WithTimeout(ctx, lease)
 	defer endLease()
 	written := map[string]*dispatcherpb.Dispatch{}
-	var terminal []TerminalEvent
+	var terminal []terminalnotice.Event
 	changed, caughtUp := true, false
 	for {
 		if changed {
@@ -171,7 +172,7 @@ func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, 
 	}
 }
 
-func terminalVisibleTo(event TerminalEvent, caller Caller) bool {
+func terminalVisibleTo(event terminalnotice.Event, caller Caller) bool {
 	switch c := caller.(type) {
 	case ServiceAccountCaller:
 		return c.Privileged

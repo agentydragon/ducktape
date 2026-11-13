@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "terminalnotice",
+    srcs = ["terminalnotice.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice",
+    visibility = ["//agentplane/runner_gateway/dispatcher:__pkg__"],
+    deps = [
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/internal/notification:dispatcher_notification_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

@@ -68,7 +68,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{
 		Store: store, DispatcherCallers: sets.New(actor), Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,

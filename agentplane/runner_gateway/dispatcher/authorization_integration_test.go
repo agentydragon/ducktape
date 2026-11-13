@@ -219,7 +219,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 		t.Fatal(err)
 	}
 	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
@@ -311,7 +311,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 		t.Fatal(err)
 	}
 	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
@@ -388,7 +388,7 @@ func TestRPCIdentityOnlyOwnershipKeepsPodBoundBackendReads(t *testing.T) {
 		sandbox:  SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: authoritySandboxUID},
 		identity: ownerIdentity,
 	}
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	client := authorityClient(t, store, inventory, tokenReviewStub{
 		"owner-account":   {account: caller, uid: ownerAccount.GetUid()},
 		"owner-pod":       {account: caller, uid: ownerAccount.GetUid(), pod: true},

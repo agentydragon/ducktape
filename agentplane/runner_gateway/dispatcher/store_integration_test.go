@@ -19,6 +19,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -836,18 +837,18 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 }
 
 func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
+	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
 	sub, unsubscribe, err := hub.subscribe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer unsubscribe()
 	reason := "sandbox_deleted"
-	event := TerminalEvent{ID: "00000000-0000-4000-8000-000000000123", Dispatch: &dispatcherpb.Dispatch{
+	event := terminalnotice.Event{ID: "00000000-0000-4000-8000-000000000123", Dispatch: &dispatcherpb.Dispatch{
 		CommandId: "terminal", Sandbox: strings.Repeat("sandbox", 1200),
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, Reason: &reason,
 	}}
-	payloads, err := terminalPayloads(event)
+	payloads, err := terminalnotice.Encode(event)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -857,7 +858,7 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 	// LISTEN preserves order on one connection, but separate writers and reconnects
 	// make reassembly independent of arrival order.
 	for i := len(payloads) - 1; i >= 0; i-- {
-		if len(payloads[i]) > terminalMaxNotifyBytes {
+		if len(payloads[i]) > terminalnotice.MaxPayloadBytes {
 			t.Fatalf("part %d exceeds PostgreSQL NOTIFY limit", i)
 		}
 		if err := hub.terminalPart(payloads[i]); err != nil {
@@ -966,7 +967,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 		}
 	}
 	service := &Service{
-		Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+		Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
@@ -1106,7 +1107,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			defer endLease()
 			if tc.cancel {
 				service := &Service{
-					Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true},
+					Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
 					WatchLease: time.Hour,
 				}
 				request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
@@ -3129,7 +3130,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 				}
 			}
 			marked := make(chan bool, 1)
-			deleted := make(chan []TerminalEvent, 1)
+			deleted := make(chan []terminalnotice.Event, 1)
 			errors := make(chan error, 2)
 			mark := func() {
 				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, *owner)
