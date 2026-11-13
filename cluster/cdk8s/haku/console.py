@@ -191,6 +191,7 @@ class Console(Construct):
         image_metadata = ConfigMap.from_config_map_name(self, "image-metadata-ref", IMAGE_METADATA_CONFIG_MAP)
         return dict(
             [
+                ("SSL_CERT_FILE", EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt")),
                 (env_name(Settings, "image_tag"), EnvValue.from_config_map(image_metadata, _IMAGE_TAG_KEY)),
                 # Capability tier: the launch-routine action. The console builds both the fire
                 # URL and the claude.ai/code deep-link from this routine (trigger) id; the bearer
@@ -244,7 +245,7 @@ class Console(Construct):
                     # Only the API's own mounted ConfigMap and credentials, never reloader's
                     # blanket auto mode: the projected static-image metadata changes on every
                     # frontend release and must not restart API/MCP/background work.
-                    "configmap.reloader.stakater.com/reload": config.config_map.name,
+                    "configmap.reloader.stakater.com/reload": f"{config.config_map.name},public-web-pki",
                     "secret.reloader.stakater.com/reload": ",".join(sorted(self._secrets)),
                 },
             ),
@@ -292,6 +293,12 @@ class Console(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
+        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
+        container.mount(
+            "/var/run/public-web-pki",
+            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
+            read_only=True,
+        )
         config.mount_into(container, env=CONFIG_FILE_ENV)
         static_metadata = ConfigMap.from_config_map_name(self, "static-metadata-ref", STATIC_METADATA_CONFIG_MAP)
         container.mount(

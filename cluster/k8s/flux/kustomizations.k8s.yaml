@@ -4560,6 +4560,8 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-operator
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation

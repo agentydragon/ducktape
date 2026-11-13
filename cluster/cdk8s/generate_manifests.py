@@ -1943,6 +1943,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
+        cert_manager_environment_kustomization,
     )
     agentplane_staging_artifact = artifact("agentplane-staging", staging.LAYOUT.output_dir)
     agentplane_staging_kustomization = staging.agentplane_staging(
