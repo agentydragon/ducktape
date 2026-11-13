@@ -500,5 +500,43 @@ async def test_fonts_class(playwright_driver: Playwright, origin: str) -> None:
         assert result == {"families": [1, 3], "updates": [1, 1], "sharedRegistration": True}
 
 
+async def test_element_construction(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            r"""async () => {
+                const create = await import('./editor/packages/excalidraw/element/newElement.js');
+                const rectangle = create.newElement({id: 'constructed-rectangle', type: 'rectangle',
+                    x: 10, y: 20, width: 30, height: 40, seed: 4, version: 3, versionNonce: 9, locked: true});
+                const ellipse = create._newElementBase('ellipse', {id: 'constructed-ellipse', x: 1, y: 2});
+                const text = create.newTextElement({id: 'constructed-text', x: 100, y: 200,
+                    text: 'hello\tworld\r\n界', fontFamily: 3, fontSize: 20, lineHeight: 1.2,
+                    textAlign: 'center', verticalAlign: 'middle'});
+                return {
+                    rectangle: [rectangle.id, rectangle.type, rectangle.x, rectangle.y,
+                                rectangle.width, rectangle.height, rectangle.seed, rectangle.version,
+                                rectangle.versionNonce, rectangle.locked, rectangle.isDeleted],
+                    defaults: [ellipse.type, ellipse.width, ellipse.height, ellipse.groupIds,
+                               ellipse.frameId, ellipse.boundElements, ellipse.version, ellipse.versionNonce],
+                    text: [text.type, text.text, text.originalText, text.fontFamily, text.fontSize,
+                           text.lineHeight, text.containerId, text.autoResize],
+                    metrics: [text.width > 0, text.height === 48,
+                              Math.abs(text.x + text.width / 2 - 100) < 1e-9,
+                              Math.abs(text.y + text.height / 2 - 200) < 1e-9],
+                };
+            }"""
+        )
+        assert result == {
+            "rectangle": ["constructed-rectangle", "rectangle", 10, 20, 30, 40, 4, 3, 9, True, False],
+            "defaults": ["ellipse", 0, 0, [], None, None, 1, 0],
+            "text": ["text", "hello        world\n界", "hello        world\n界", 3, 20, 1.2, None, True],
+            "metrics": [True, True, True, True],
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

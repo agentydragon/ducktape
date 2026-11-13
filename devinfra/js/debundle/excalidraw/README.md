@@ -71,6 +71,9 @@ module it bundles. Every other chunk is `inline_in_entry`.
     `LinearElementEditor` class, including point selection, dragging,
     coordinate conversion, normalization and fixed-segment editing. Its
     generated static-field initialization stays in the entry.
+  - `editor`: `packages/excalidraw/element/newElement` restores
+    `_newElementBase`, `newElement` and `newTextElement`, including default
+    properties, text normalization, measurement and alignment offsets.
   - `editor`: `packages/math/{point,vector,angle,utils}` restores the original
     package paths and names for point geometry, vector arithmetic, angle
     conversion, tolerances and rounding. Its emitted modules run under Node
@@ -110,6 +113,8 @@ The action-manager probe checks registration, synchronous/asynchronous results,
 keyboard dispatch, view-only and configured-disabled actions, and predicates.
 The Fonts probe checks family deduplication, shared registration, and the
 one-time scene invalidation for newly loaded font faces.
+The construction probe checks supplied/default element properties and text
+normalization, dimensions and alignment in the browser.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the
