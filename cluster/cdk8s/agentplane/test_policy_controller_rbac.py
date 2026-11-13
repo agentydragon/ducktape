@@ -3,16 +3,15 @@ managed accounts' EgressCredentials and PolicySets only in its policy namespace,
 policy kind it reports on."""
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
+import yaml
 from more_itertools import one
 
-from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from util.settings_contract import env_name
 
 _GROUP = "agentplane.allegedly.works"
 
@@ -50,17 +49,17 @@ def _allowed(documents: list[dict[str, Any]], group: str, resource: str, verbs: 
     }
 
 
-def _settings(documents: list[dict[str, Any]]) -> dict[str, str]:
-    deployment = one(
-        doc for doc in documents if doc["kind"] == "Deployment" and doc["metadata"]["name"] == policy_controller.NAME
+def _settings(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    config = one(
+        doc
+        for doc in documents
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "policy-controller-settings"
     )
-    return {
-        entry["name"]: entry.get("value") for entry in one(deployment["spec"]["template"]["spec"]["containers"])["env"]
-    }
+    return cast(dict[str, Any], yaml.safe_load(one(config["data"].values())))
 
 
 def test_service_account_writes_are_scoped_to_the_accounts_namespace(staging_manifests: list[dict[str, Any]]) -> None:
-    accounts_namespace = _settings(staging_manifests)[env_name(Settings, "accounts_namespace")]
+    accounts_namespace = _settings(staging_manifests)["accounts_namespace"]
     assert accounts_namespace != STAGING_NAMESPACE
     assert _allowed(staging_manifests, "", "serviceaccounts", {"create", "delete"}) == {accounts_namespace}
 
@@ -69,7 +68,7 @@ def test_service_account_writes_are_scoped_to_the_accounts_namespace(staging_man
 def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
     staging_manifests: list[dict[str, Any]], resource: str
 ) -> None:
-    policy_namespace = _settings(staging_manifests)[env_name(Settings, "policy_namespace")]
+    policy_namespace = _settings(staging_manifests)["policy_namespace"]
     # Server-side apply creates or patches.
     assert _allowed(staging_manifests, _GROUP, resource, {"create", "patch"}) == {policy_namespace}
     assert not _allowed(staging_manifests, _GROUP, resource, {"delete", "deletecollection"})
@@ -79,7 +78,7 @@ def test_managed_account_use_writes_are_scoped_to_the_policy_namespace(
     "status", ["policybindings/status", "serviceaccountgrants/status", "managedserviceaccounts/status"]
 )
 def test_controller_may_apply_the_status_it_reports(staging_manifests: list[dict[str, Any]], status: str) -> None:
-    policy_namespace = _settings(staging_manifests)[env_name(Settings, "policy_namespace")]
+    policy_namespace = _settings(staging_manifests)["policy_namespace"]
     # Server-side apply of a status subresource is a patch.
     assert policy_namespace in _allowed(staging_manifests, _GROUP, status, {"patch"})
 

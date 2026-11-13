@@ -6,6 +6,14 @@ every rule type, and is the reader of the Kubernetes rule types of `PolicySet`
 (`agentplane/crds/manifests/crd-policysets.yaml`), of `ServiceAccountGrant` and
 `KubernetesRoleSet`, and of `ManagedServiceAccount`.
 
+## Settings
+
+`AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE` must name one readable YAML document matching
+[`settings.py`](settings.py). Unknown keys are rejected. Namespace scopes, listener addresses,
+audience and component reader/writer allowlists come only from that file; generic environment
+overrides are not supported. This service has no service-specific runtime Secret settings.
+Kubernetes client configuration and telemetry still use their infrastructure environment.
+
 ## Expiry
 
 The controller deletes a `PolicyBinding`, `ServiceAccountGrant` or `ManagedServiceAccount` once

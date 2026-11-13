@@ -31,13 +31,18 @@ Staging runs it from
 [`cluster/cdk8s/agentplane/policy_controller.py`](../../cluster/cdk8s/agentplane/policy_controller.py),
 which also renders staging's Flux-owned PolicySets from the grant catalog in
 [`agent_access_profiles.py`](../../cluster/cdk8s/agent_access_profiles.py) and alerts when a
-`PolicyBinding` outlives its `expiresAt`. Its settings are `AGENTPLANE_POLICY_CONTROLLER_*`
-environment variables, named by the fields of [`settings.py`](settings.py). Locally:
+`PolicyBinding` outlives its `expiresAt`. The required YAML file is authored through
+[`settings.py`](settings.py); unknown keys are rejected and individual environment variables do
+not override it. Locally, write `config.yaml`:
+
+```yaml
+policy_namespace: agentplane-staging
+subject_namespaces: [agentplane-staging]
+accounts_namespace: agentplane-staging-k8s-accounts
+```
 
 ```bash
-AGENTPLANE_POLICY_CONTROLLER_POLICY_NAMESPACE=agentplane-staging \
-  AGENTPLANE_POLICY_CONTROLLER_SUBJECT_NAMESPACES=agentplane-staging \
-  AGENTPLANE_POLICY_CONTROLLER_ACCOUNTS_NAMESPACE=agentplane-staging-k8s-accounts \
+AGENTPLANE_POLICY_CONTROLLER_CONFIG_FILE="$PWD/config.yaml" \
   bb run //agentplane/policy_controller/cmd:policy-controller
 ```
 

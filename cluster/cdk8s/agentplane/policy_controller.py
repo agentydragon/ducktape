@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Set
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
@@ -17,13 +17,14 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
+from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name
 
 NAME = "policy-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
@@ -71,36 +72,33 @@ class PolicyController(Construct):
         self.env = env
         namespace = env.namespace
         endpoint = metrics(namespace)
-        scalars = {
-            field: checked_value(Settings, field, value)
-            for field, value in {
-                "policy_namespace": namespace,
-                "accounts_namespace": accounts_namespace,
-                "metrics_bind_address": f":{endpoint.port.number}",
-                "health_probe_bind_address": f":{_HEALTH_PORT}",
-                "grpc_bind_address": f":{service(namespace).pod_port}",
-                "grpc_audience": TOKEN_AUDIENCE,
-                "workload_issuer": WORKLOAD_ISSUER.name,
-            }.items()
-        }
-        subject_namespaces = checked_value(Settings, "subject_namespaces", frozenset({namespace}))
-        # policy_controller_rbac.py grants the issuer the same namespaces.
-        workload_namespaces = checked_value(Settings, "workload_namespaces", frozenset(workload_namespaces))
-        text = {
-            **scalars,
-            "subject_namespaces": ",".join(sorted(subject_namespaces)),
-            "workload_namespaces": ",".join(sorted(workload_namespaces)),
-            "reader_accounts": f"{namespace}/app",
-            # Set only after the server image with this configuration key is deployed and healthy.
-            "writer_accounts": f"{namespace}/app",
-        }
+        settings = Settings(
+            policy_namespace=namespace,
+            subject_namespaces=frozenset({namespace}),
+            accounts_namespace=accounts_namespace,
+            metrics_bind_address=f":{endpoint.port.number}",
+            health_probe_bind_address=f":{_HEALTH_PORT}",
+            grpc_bind_address=f":{service(namespace).pod_port}",
+            grpc_audience=TOKEN_AUDIENCE,
+            workload_issuer=WORKLOAD_ISSUER.name,
+            # policy_controller_rbac.py grants the issuer the same namespaces.
+            workload_namespaces=workload_namespaces,
+            reader_accounts=frozenset({f"{namespace}/app"}),
+            writer_accounts=frozenset({f"{namespace}/app"}),
+        )
+        settings_file = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name="policy-controller-settings", namespace=namespace),
+            content=yaml_config(settings),
+            path="/etc/agentplane-policy-controller/config.yaml",
+        )
         workload = add_service_workload(
             self,
             env,
             serves=[endpoint, service(namespace)],
             container="policy-controller",
             image=f"{_IMAGE}:unset",
-            env_variables={env_name(Settings, field): EnvValue.from_value(value) for field, value in text.items()},
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
@@ -113,6 +111,7 @@ class PolicyController(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
         )
+        settings_file.mount_into(workload.container, env=Settings.config_file_env)
         self.account = workload.account
         token_reviewer_cluster_rbac(
             self,
