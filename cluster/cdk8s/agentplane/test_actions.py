@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 from typing import Any
 
@@ -159,13 +158,25 @@ def test_gaffer_pr_policy_approves_only_create_pull_request(staging_manifests: l
     assert approval["schema"]["additionalProperties"] is False
 
 
-def test_cross_owner_reader_is_explicit_and_json_encoded(staging_manifests: list[dict[str, Any]]) -> None:
+def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = one(
         doc for doc in staging_manifests if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "actions"
     )
     container = one(item for item in deployment["spec"]["template"]["spec"]["containers"] if item["name"] == "actions")
-    readers = one(item for item in container["env"] if item["name"] == "AGENTPLANE_ACTIONS_READER_ACCOUNTS")
-    assert json.loads(readers["value"]) == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
+    config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
+    )
+    settings = yaml.safe_load(config["data"]["settings.yaml"])
+    assert settings["reader_accounts"] == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
+    assert "database_url" not in settings
+    assert "private_key_pem" not in settings["web_push"]
+    assert settings["mcp_servers"]["github"]["client_id_file"] == "/etc/agentplane-github/client_id"
+    assert (
+        "client_id" not in settings["mcp_servers"]["github"] or settings["mcp_servers"]["github"]["client_id"] is None
+    )
+    names = {entry["name"] for entry in container["env"]}
+    assert "AGENTPLANE_ACTIONS_READER_ACCOUNTS" not in names
+    assert "AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID" not in names
     assert not any(arg.startswith("--reader-accounts") for arg in container.get("args", []))
 
 

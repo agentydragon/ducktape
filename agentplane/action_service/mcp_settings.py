@@ -26,6 +26,7 @@ class McpOAuthServer(BaseModel):
     authorization_endpoint: str | None = None
     token_endpoint: str | None = None
     client_id: str | None = Field(default=None, min_length=1)
+    client_id_file: Path | None = None
     use_shared_cimd: bool = False
     client_secret_file: Path | None = None
     redirect_uri: str = Field(min_length=1)
@@ -34,8 +35,8 @@ class McpOAuthServer(BaseModel):
 
     @model_validator(mode="after")
     def validate_client_configuration(self) -> McpOAuthServer:
-        if (self.client_id is None) != self.use_shared_cimd:
-            raise ValueError("configure exactly one of client_id or use_shared_cimd")
+        if sum((self.client_id is not None, self.client_id_file is not None, self.use_shared_cimd)) != 1:
+            raise ValueError("configure exactly one of client_id, client_id_file or use_shared_cimd")
         if self.use_shared_cimd and self.client_secret_file is not None:
             raise ValueError("CIMD clients use public token authentication and cannot have a client secret")
         return self

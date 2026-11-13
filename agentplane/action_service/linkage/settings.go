@@ -18,7 +18,9 @@ type Server struct {
 	TokenEndpoint         *string `mapstructure:"token_endpoint"`
 	// ClientID is the client registered with the server's authorization server; nil when it uses the shared Client
 	// ID Metadata Document instead.
-	ClientID      *string `mapstructure:"client_id"`
+	ClientID *string `mapstructure:"client_id"`
+	// ClientIDFile is resolved at startup from a projected Secret before linkage is validated.
+	ClientIDFile  *string `mapstructure:"client_id_file"`
 	UseSharedCIMD bool    `mapstructure:"use_shared_cimd"`
 	// ClientSecretFile holds the registered client's secret, read at each token request; nil for a public client.
 	ClientSecretFile *string `mapstructure:"client_secret_file"`

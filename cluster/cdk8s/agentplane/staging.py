@@ -263,7 +263,7 @@ _MCP_SERVERS = {
     "github": McpOAuthServer(
         server_id="github",
         server_url=_GITHUB_MCP_URL,
-        client_id="configured-by-secret",
+        client_id_file=Path("/etc/agentplane-github/client_id"),
         client_secret_file=Path("/etc/agentplane-github/client_secret"),
         redirect_uri=f"https://{_HOSTNAME}/mcp-linkage/callback",
     ),

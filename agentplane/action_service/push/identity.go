@@ -22,7 +22,7 @@ import (
 // Secret, as AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM.
 type Settings struct {
 	// PrivateKeyPEM is the VAPID key: a P-256 private key, PKCS #8 or SEC 1.
-	PrivateKeyPEM string `mapstructure:"private_key_pem"`
+	PrivateKeyPEM string `mapstructure:"-"`
 	// Subject is the VAPID contact, a `mailto:` or `https:` URI.
 	Subject string `mapstructure:"subject"`
 	// PublicBaseURL is the integration app's address, which a notification links into.

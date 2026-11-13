@@ -155,7 +155,7 @@ deployable defaults:
   token preserves the login token's subject. This is an identity-continuity invariant, not an
   operator authorization list.
 
-Set the Action Service's `operator_oidc` YAML key (or `AGENTPLANE_ACTIONS_OPERATOR_OIDC` JSON) to
+Set the Action Service's `operator_oidc` YAML key to
 the same `issuer`, `audience`, `jwks_uri`, and `token_profile` pins as the app's `target`. Authentik's target
 application policy decides who can obtain the target token; the Action Service does not maintain a
 second subject list.
@@ -247,9 +247,9 @@ preserve this source contract or update and revalidate the subject mode.
    Kustomization; it contains only the two verification/federation JSON objects, **no target client
    secret, user list, or shared operator bearer**.
 2. Action Service depends on the Terraform layer and Reflector for the Secrets it consumes. It reads
-   `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the Git-owned ConfigMap and runs its embedded migrations
-   before serving requests or starting workers. The required ConfigMap reference keeps pods from
-   starting until the Actions Kustomization has delivered it. Reloader rolls both consumers when the
+   `operator_oidc` from its required, Git-owned YAML settings ConfigMap and runs its embedded
+   migrations before serving requests or starting workers. The required ConfigMap reference keeps
+   pods from starting until the Actions Kustomization has delivered it. Reloader rolls both consumers when the
    configuration changes.
 3. The app depends on the Action Service and retains its existing database, OIDC client, and session
    signing Secret. Its `action_federation` and static `oidc` settings come from the mounted

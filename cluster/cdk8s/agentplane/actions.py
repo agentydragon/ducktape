@@ -5,10 +5,8 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -37,6 +35,7 @@ from agentplane.action_service.orchestration_v1.binding import (
     PresetSession,
     PresetSessionSpec,
 )
+from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
@@ -57,7 +56,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "actions"
@@ -345,35 +343,34 @@ class Actions(Construct):
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
         props = env.actions
-        content: dict[str, Any] = {
-            "operator_oidc": props.operator_oidc,
-            "policy_namespace": env.namespace,
-            "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
-            "direct_wait_seconds": 30,
-        }
-        if props.connection_delegation_actor is not None:
-            if props.connection_delegation_actor.namespace not in props.caller_service_account_namespaces:
-                raise ValueError("connection_delegation_actor namespace must be an Action caller namespace")
-            content["connection_delegation_actor"] = props.connection_delegation_actor
-        if props.web_push is not None:
-            content["web_push"] = {
-                "subject": props.web_push.subject,
-                "public_base_url": props.web_push.public_base_url,
-                "allowed_push_hosts": list(props.web_push.allowed_push_hosts),
-            }
-        if props.mcp_client_metadata is not None:
-            content["mcp_client_metadata"] = props.mcp_client_metadata
-        content["mcp_servers"] = dict(props.mcp_servers)
+        if (
+            props.connection_delegation_actor is not None
+            and props.connection_delegation_actor.namespace not in props.caller_service_account_namespaces
+        ):
+            raise ValueError("connection_delegation_actor namespace must be an Action caller namespace")
+        web_push = (
+            WebPushSettings(
+                subject=props.web_push.subject,
+                public_base_url=props.web_push.public_base_url,
+                allowed_push_hosts=frozenset(props.web_push.allowed_push_hosts),
+            )
+            if props.web_push is not None
+            else None
+        )
+        dispatcher_peer = None
+        history_peer = None
+        delegated_dispatcher_peer = None
+        delegated_history_peer = None
         groups = dict(props.action_groups)
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
-            content["session_dispatcher"] = ServicePeer(
+            dispatcher_peer = ServicePeer(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
                 token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             )
-            content["history_service"] = ServicePeer(
+            history_peer = ServicePeer(
                 target=f"{history.fqdn}:{history.pod_port}",
                 token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_PEER_TIMEOUT_SECONDS,
@@ -381,19 +378,18 @@ class Actions(Construct):
             )
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
-            content["session_delegation_dispatcher"] = ServicePeer(
+            delegated_dispatcher_peer = ServicePeer(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
                 token_file=f"{_PEER_TOKEN_DIR}/dispatcher",
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             )
-            content["session_delegation_history"] = ServicePeer(
+            delegated_history_peer = ServicePeer(
                 target=f"{history.fqdn}:{history.pod_port}",
                 token_file=f"{_PEER_TOKEN_DIR}/history",
                 request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
                 tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
             )
-        content["action_groups"] = groups
         settings_name = "actions-settings"
         workload = self._add_workload(settings_name)
         serving_tls = workload_tls.serving_certificate(
@@ -402,7 +398,7 @@ class Actions(Construct):
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        content["rpc"] = listener.Listener(
+        rpc = listener.Listener(
             listen_address=f"0.0.0.0:{self.service.pod_port}",
             tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
             auth=[
@@ -414,7 +410,25 @@ class Actions(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(
+                Settings(
+                    rpc=rpc,
+                    policy_namespace=env.namespace,
+                    caller_service_account_namespaces=props.caller_service_account_namespaces,
+                    connection_delegation_actor=props.connection_delegation_actor,
+                    reader_accounts=frozenset({ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
+                    operator_oidc=props.operator_oidc,
+                    direct_wait_seconds=30,
+                    web_push=web_push,
+                    mcp_client_metadata=props.mcp_client_metadata,
+                    mcp_servers=dict(props.mcp_servers),
+                    action_groups=groups,
+                    session_dispatcher=dispatcher_peer,
+                    history_service=history_peer,
+                    session_delegation_dispatcher=delegated_dispatcher_peer,
+                    session_delegation_history=delegated_history_peer,
+                )
+            ),
             path="/etc/agentplane-actions/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
@@ -558,7 +572,7 @@ class Actions(Construct):
             binding.add_subjects(subject)
 
     def _database_env(self) -> dict[str, EnvValue]:
-        return {env_name(Settings, "database_url"): self.database_url}
+        return {Settings.database_url_env: self.database_url}
 
     def _container_env(self) -> dict[str, EnvValue]:
         env = self._database_env()
@@ -566,20 +580,11 @@ class Actions(Construct):
         # Export metrics through the shared Alloy OTLP receiver.
         env["OTEL_METRICS_EXPORTER"] = EnvValue.from_value("otlp")
         env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] = EnvValue.from_value("cumulative")
-        env[env_name(Settings, "reader_accounts")] = EnvValue.from_value(
-            json.dumps([ServiceAccountRef(namespace=namespace, name=notifications.NAME).model_dump()])
-        )
         if self.env.actions.web_push is not None:
-            env[env_name(Settings, "web_push", "private_key_pem")] = (
+            env[Settings.web_push_private_key_env] = (
                 SecretRef(namespace=namespace, name=self.env.actions.web_push.secret_name)
                 .key("private-key-pem")
                 .env_value(self, "web-push-secret")
-            )
-        if self.env.actions.github_mcp_client_secret_name is not None:
-            env[env_name(Settings, "mcp_servers", "github", "client_id")] = (
-                SecretRef(namespace=namespace, name=self.env.actions.github_mcp_client_secret_name)
-                .key("client_id")
-                .env_value(self, "github-mcp-client-secret-env")
             )
         return env | dict(self.container_env)
 
@@ -669,7 +674,7 @@ class Actions(Construct):
                 "github-mcp-client-volume",
                 github_secret,
                 default_mode=0o440,
-                items={"client_secret": PathMapping(path="client_secret")},
+                items={"client_id": PathMapping(path="client_id"), "client_secret": PathMapping(path="client_secret")},
             )
             container.mount("/etc/agentplane-github", github_volume, read_only=True)
         for mount in self.env.actions.bearer_mcp_mounts:

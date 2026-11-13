@@ -98,15 +98,12 @@ py_library(
         ":mcp_settings",
         ":operator_oidc_settings",
         ":push_settings",
-        "//agentplane:log_levels",
         "//agentplane:subjects",
         "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/action_service/session_delegation:binding",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/identity/auth:listener",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 
@@ -130,6 +127,8 @@ py_test(
         ":conftest",
         ":settings",
         "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
