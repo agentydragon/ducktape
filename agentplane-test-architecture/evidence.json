@@ -851,11 +851,7 @@
       "objects_after": 162,
       "deployments_before": 15,
       "deployments_after": 12,
-      "removed_workloads": [
-        "dex",
-        "mcp-everything",
-        "oauth-fixture"
-      ],
+      "removed_workloads": ["dex", "mcp-everything", "oauth-fixture"],
       "feasibility_invocation": "8b92eb38-291f-4a4d-ae1e-bbe0efcb32db",
       "ordinary_deadline_seconds": 120,
       "result": "4unchanged cases passed,1attempt each,warm baseline,clean teardown; six-target invocation includes render tests and is not a four-target wall comparison",
@@ -5370,10 +5366,7 @@
         "manifest_published_at_utc": "2026-11-13T03:43:49.914251+00:00",
         "evidence_sha256": "0c8f2fda78a96ca6312caa02ceff78b63bbc7406e646eb17729deb38c71772fc",
         "source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
-        "source_window_utc": [
-          "2026-11-10T00:00:00Z",
-          "2026-11-13T03:03:35Z"
-        ]
+        "source_window_utc": ["2026-11-10T00:00:00Z", "2026-11-13T03:03:35Z"]
       },
       "historical_frame": "latest gh-pages latency/evidence.json -> backend_refresh.heads (159 distinct latest PR heads in the report window)",
       "historical_frame_count": 159,
@@ -5491,18 +5484,9 @@
         "tested_source_commit_objects_available": 30,
         "landing_merge_commit_objects_available": 28,
         "current_pr_api_base_differs_from_tested_base_count": 4,
-        "current_pr_api_base_differs_pr_numbers": [
-          15323,
-          15844,
-          15893,
-          16009
-        ],
+        "current_pr_api_base_differs_pr_numbers": [15323, 15844, 15893, 16009],
         "nonzero_action_log_fetch_count": 3,
-        "nonzero_action_log_fetch_pr_numbers": [
-          15393,
-          15713,
-          15714
-        ]
+        "nonzero_action_log_fetch_pr_numbers": [15393, 15713, 15714]
       },
       "missingness_and_limits": [
         "The GitHub PR API base SHA is the value observed during collection; it is recorded separately and is not silently substituted for the actual CI base. The actual CI base is the first parent of the resolved tested source revision, and the actual tested PR head is its second parent.",
@@ -6597,9 +6581,7 @@
           "changed_path_count": 1,
           "changed_paths_sha256_newline_terminated": "0ca99f5d3580e4fb14868be56a9d5bb9f47be82f4e2944fab2c2d8403df0fabf",
           "changed_paths_match_snapshot_and_github_api": true,
-          "changed_paths": [
-            "agentplane/env/runtime/codexappserver/host.go"
-          ],
+          "changed_paths": ["agentplane/env/runtime/codexappserver/host.go"],
           "snapshot_head_sha": "6fa67275f62743e7dd78b8b587ead8f72e5cba2a",
           "required_gate_outcome": "green",
           "current_github_pr_api_base_sha": "1e0aa905a87b76454da4c3b0462adbb456e053be",
@@ -7414,9 +7396,7 @@
           "changed_path_count": 1,
           "changed_paths_sha256_newline_terminated": "07106b68d32582e74f090080b6bbb1dc010e75e86e8cabf4d4c17b89b63b3645",
           "changed_paths_match_snapshot_and_github_api": true,
-          "changed_paths": [
-            "agentplane/env/runtime/retained/retained.go"
-          ],
+          "changed_paths": ["agentplane/env/runtime/retained/retained.go"],
           "snapshot_head_sha": "f955763be7b7eac72392dcf55752e32718ad21bd",
           "required_gate_outcome": "green",
           "current_github_pr_api_base_sha": "1ade3b7a9be1fff05a916c43f9520f734d028bbb",
@@ -8734,14 +8714,8 @@
         "calls": 2,
         "request_bytes_equal": true,
         "response_bytes_equal": true,
-        "handler_codes": [
-          "OK",
-          "OK"
-        ],
-        "returned_codes": [
-          "Unavailable",
-          "OK"
-        ]
+        "handler_codes": ["OK", "OK"],
+        "returned_codes": ["Unavailable", "OK"]
       },
       "boot_artifacts": {
         "host_marker_matches": true,
@@ -9465,10 +9439,7 @@
       "candidate_built_or_tested": false,
       "qualified_historical_pairs": 0,
       "limit": "One isolated App-ownership subfeature on historical PR #15858, with complete source/tree and AST preservation audits. No test bodies or selected builds ran. This is not a full current-architecture qualified pair, runtime-equivalence proof, workload-frequency estimate or feedback saving. The initial missing-added-file audit failure before selection is retained; corrected optional-presence audit preserves exact candidate tree IDs. The broad 73-path overlay is rejected for 18\u201321 pair-dependent conflicts including authentication changes.",
-      "broad_overlay_conflicts_count_range_by_pair": [
-        18,
-        21
-      ],
+      "broad_overlay_conflicts_count_range_by_pair": [18, 21],
       "staging_artifact": "historical-app-cut-stage.json",
       "selector_invocation": "a02076ae-283e-4889-83a2-aa44f2abc110",
       "affected_targets": {
@@ -9516,12 +9487,7 @@
     "bridge_sharding": {
       "source_commit": "a69a053dc490f06139393129ff0309e0dbc5d1f9",
       "target": "//agentplane/app:test_bridge",
-      "run_order": [
-        4,
-        8,
-        8,
-        4
-      ],
+      "run_order": [4, 8, 8, 4],
       "runs": [
         {
           "run_index": 1,
@@ -9606,10 +9572,7 @@
           "memory_gib": 60
         },
         "resource_estimates_are_not_observed_aggregate_usage": true,
-        "observed_per_action_peak_memory_gib_range": [
-          1.2,
-          1.25
-        ],
+        "observed_per_action_peak_memory_gib_range": [1.2, 1.25],
         "observed_queue_seconds_approx": 0.06
       },
       "decision": "Eight shards are enabled on the architecture branch as a scheduling candidate; no devel backport. Source 0a9acbf620a8aac16fee074812d58c8d63e603e1 passed all three required checks in 264s from earliest required workflow creation to last required result; the test invocation had eight NEW Bridge actions, 24 passing cases, and zero fresh K3s actions.",

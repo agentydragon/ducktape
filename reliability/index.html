@@ -687,7 +687,12 @@
               <//>
             <//>
           <//>
-          <${Stack} component="section" id="architecture-followup-iteration10" gap="sm" my="xl">
+          <${Stack}
+            component="section"
+            id="architecture-followup-iteration10"
+            gap="sm"
+            my="xl"
+          >
             <${Title} order=${2}>Iteration 10 architecture follow-up<//>
             <${Text} size="sm" c="dimmed">
               Selected evidence observed 2026-11-13T22:27:42Z. The retained
@@ -695,24 +700,42 @@
               remain unchanged.
             <//>
             <${Text}>
-              Current PR head 1948106 passed all three required checks by 22:10:16Z; no current-head
-              test-action/JUnit cohort is curated. The detailed
-              2196229 run and manual guest checks are separate evidence; they do
-              not refresh the reliability population. The current packaged CLI/Egress/Notification composition remains
-              uncommitted. Three runs produced six audited failed NEW physical exposures across parser,
-              harness-output and Notification-shutdown stages. The latest two passed
-              CLI/setup/History/old-SVID assertions before teardown failed at 10s. Two focused Go controls passed without reproducing the Python wedge or proving repair. A Python-only child GO_TEST_WRAP=0 control passed, supporting but not proving the rules_go wrapper hypothesis; the uncommitted full packaged guest composition d68330b6 then passed 2/2 NEW actions in 239.693s (Codex 140.3s; Claude 198.4s); the independent wrong-server-URI negative d2cba508 failed at CLI response interpretation (error object instead of seeded subscription) but tore down normally; the exact TLS payload was not inspected. The wrong-server-URI negative d2cba508 failed at CLI response interpretation (error object instead of seeded subscription), with normal teardown; exact TLS payload not inspected. Keep these outside reliability rates. <${Anchor}
-                href="../agentplane-test-architecture/iteration10.json"
-                >Full architecture and guest-contract evidence<//>
+              Current PR head 1948106 passed all three required checks by
+              22:10:16Z; no current-head test-action/JUnit cohort is curated.
+              The detailed 2196229 run and manual guest checks are separate
+              evidence; they do not refresh the reliability population. The
+              current packaged CLI/Egress/Notification composition remains
+              uncommitted. Three runs produced six audited failed NEW physical
+              exposures across parser, harness-output and Notification-shutdown
+              stages. The latest two passed CLI/setup/History/old-SVID
+              assertions before teardown failed at 10s. Two focused Go controls
+              passed without reproducing the Python wedge or proving repair. A
+              Python-only child GO_TEST_WRAP=0 control passed, supporting but
+              not proving the rules_go wrapper hypothesis; the uncommitted full
+              packaged guest composition d68330b6 then passed 2/2 NEW actions in
+              239.693s (Codex 140.3s; Claude 198.4s); the independent
+              wrong-server-URI negative d2cba508 failed at CLI response
+              interpretation (error object instead of seeded subscription) but
+              tore down normally; the exact TLS payload was not inspected. The
+              wrong-server-URI negative d2cba508 failed at CLI response
+              interpretation (error object instead of seeded subscription), with
+              normal teardown; exact TLS payload not inspected. Keep these
+              outside reliability rates.
+              <${Anchor} href="../agentplane-test-architecture/iteration10.json"
+                >Full architecture and guest-contract evidence<//
+              >
             <//>
             <${Text}>
               A deliberate wrong-process-limit failure is a negative control,
-              not healthy reliability exposure. The focused Notification ownership test remains a separate positive contract;
-              the uncommitted CLI composition has six earlier failed actions and a later two-action pass with GO_TEST_WRAP=0. The independent wrong-server-URI negative failed at CLI response interpretation, then tore down normally. The selected
-              archive-diagnostics and Central Sampler auth/History-outage ideas
-              are candidate ports with no rate or speed claim. The four-case
-              concurrency screen remains unqualified because it mixed
-              whole-suite conditions.
+              not healthy reliability exposure. The focused Notification
+              ownership test remains a separate positive contract; the
+              uncommitted CLI composition has six earlier failed actions and a
+              later two-action pass with GO_TEST_WRAP=0. The independent
+              wrong-server-URI negative failed at CLI response interpretation,
+              then tore down normally. The selected archive-diagnostics and
+              Central Sampler auth/History-outage ideas are candidate ports with
+              no rate or speed claim. The four-case concurrency screen remains
+              unqualified because it mixed whole-suite conditions.
             <//>
           <//>
           <${ReliabilityWork} />

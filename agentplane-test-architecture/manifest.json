@@ -3,8 +3,8 @@
   "audited_at_utc": "2026-11-13T22:27:42Z",
   "published_at_utc": null,
   "scope": "Iteration10 supplemental architecture and guest-contract evidence; existing latency/reliability populations, windows, rates and denominators are retained. Required gate and test frequency unchanged.",
-  "report_sha256": "88676399161c9a04c4237a2d6f9b229b48ca0384e52446bcaef58233f9407e68",
-  "evidence_sha256": "31242e3a72e71228899950ae9ce426a5cb833fdea7f4a11becaaf4f605820b40",
+  "report_sha256": "f5a786714427e93f6c97dd27868322b8f0334b3790ec4b42c4ec8cfc55086478",
+  "evidence_sha256": "f680395bac6a31e6f31b98516c4ea2ce7c367dd4b3c54a5ee1e2f76fd3cac6a4",
   "previous_gh_pages_commit": "b03106b455d64b2aa154ab68fbf6df83a64e15fd",
   "pilot_branch": "agent/test-architecture-pivot",
   "pilot_head_commit": "194810646c5122f5574ae7d6ad9fe02044cc7113",
@@ -122,5 +122,7 @@
     "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
-  "source_devel_commit_scope": "The devel base integrated into snapshot source194; this is distinct from its tested synthetic-merge base and the separately recorded fetched origin/devel."
+  "source_devel_commit_scope": "The devel base integrated into snapshot source194; this is distinct from its tested synthetic-merge base and the separately recorded fetched origin/devel.",
+  "publication_base_gh_pages_commit": "58719ab4f4",
+  "root_navigation_sha256": "ec2c42e5f7778f1f263ac95a11202a773cfa9e746896b046fc633b79e4877d69"
 }

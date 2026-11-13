@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "31b12baffa4e210428d9d35294b34a88ed10d4d5e1bdfb1df12c97b4f1f7df3b",
-  "evidence_sha256": "d046e6473cd7b194ae42936a2a9c30f91166ef306ac590dbaa835a7c7350fde4",
+  "report_sha256": "4dbdf8e51aff0e62381abd10e16d9310feae5af1792fb77b0ecd5db6af94994f",
+  "evidence_sha256": "6177a436b1a72ccc5184e607dbc4bb6699cfa1c4d65f16889bc15cc892d6c94c",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -61,5 +61,6 @@
     "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
-  "prepared_at_utc": "2026-11-13T22:27:42Z"
+  "prepared_at_utc": "2026-11-13T22:27:42Z",
+  "publication_base_gh_pages_commit": "58719ab4f4"
 }
