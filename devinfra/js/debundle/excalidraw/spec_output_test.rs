@@ -76,6 +76,55 @@ fn blob_to_array_buffer_reads_a_blob_under_node() {
 }
 
 #[test]
+fn recovered_math_modules_run_without_the_browser_entry() {
+    let probe_dir = tempfile::tempdir().expect("tempdir");
+    let probe = probe_dir.path().join("probe.mjs");
+    let math = out_root().join("app/editor/packages/math");
+    let module_url = |name: &str| {
+        serde_json::to_string(&format!("file://{}", math.join(name).display())).unwrap()
+    };
+    fs::write(
+        &probe,
+        format!(
+            r#"
+import * as point from {point};
+import * as vector from {vector};
+import * as angle from {angle};
+import * as utils from {utils};
+console.log(JSON.stringify([
+  point.pointDistance([0, 0], [3, 4]),
+  point.pointsEqual(point.pointRotateRads([1, 0], [0, 0], Math.PI / 2), [0, 1]),
+  point.pointScaleFromOrigin([3, 5], [1, 1], 2),
+  point.isPointWithinBounds([0, 0], [1, 1], [2, 2]),
+  point.isPoint([1, NaN]),
+  vector.vectorNormalize([3, 4]),
+  vector.vectorNormalize([0, 0]),
+  vector.vectorCross([1, 0], [0, 1]),
+  vector.vectorDot([1, 2], [3, 4]),
+  angle.degreesToRadians(180) === Math.PI,
+  angle.isRightAngleRads(Math.PI / 2),
+  utils.clamp(12, 0, 10),
+  utils.round(1.234, 2),
+  utils.roundToStep(1.25, 0.5),
+  utils.isFiniteNumber(Infinity),
+  utils.isCloseTo(1, 1.00001),
+]));
+"#,
+            point = module_url("point.js"),
+            vector = module_url("vector.js"),
+            angle = module_url("angle.js"),
+            utils = module_url("utils.js"),
+        ),
+    )
+    .expect("write probe");
+    assert_node_output(
+        &probe,
+        "[5,true,[5,9],true,false,[0.6,0.8],[0,0],1,11,true,true,10,1.23,1.5,false,true]\n",
+        "",
+    );
+}
+
+#[test]
 fn clsx_consumers_import_the_package() {
     let app = out_root().join("app");
     for entry in ["main/entry.js", "editor/entry.js"] {

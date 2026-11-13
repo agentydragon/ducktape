@@ -1,0 +1,29 @@
+# Upstream owner: packages/math/angle.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      var normalizeRadians = (angle) =>
+        angle < 0
+          ? angle + 2 * Math.PI
+          : angle >= 2 * Math.PI
+            ? angle - 2 * Math.PI
+            : angle;
+    bindings:
+      - normalizeRadians
+  - match: |
+      function degreesToRadians(degrees) {
+        return degrees * Math.PI / 180;
+      }
+    bindings:
+      - degreesToRadians
+  - match: |
+      function radiansToDegrees(radians) {
+        return radians * 180 / Math.PI;
+      }
+    bindings:
+      - radiansToDegrees
+  - match: |
+      function isRightAngleRads(radians) {
+        return Math.abs(Math.sin(2 * radians)) < 1e-4;
+      }
+    bindings:
+      - isRightAngleRads

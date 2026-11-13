@@ -1,0 +1,29 @@
+note: >-
+  average remains in the editor entry because the current gate links its
+  initializer to the residual effect chain. See debug/2026_11_12_excalidraw_math_average.md.
+# Upstream owner: packages/math/utils.ts (Excalidraw v0.18.1)
+source_matches:
+  # The six neighboring exports form a distinctive math utility run in the
+  # current generated var list; keep the run together to avoid generic formula
+  # matches such as midpoint or clamp helpers elsewhere in the app.
+  - match: |
+      var ANYTHING = ANYTHING,
+        clamp = (value, min, max) => Math.min(Math.max(value, min), max),
+        round = (value, precision, func = "round") => {
+          let multiplier = Math.pow(10, precision);
+          return Math[func]((value + Number.EPSILON) * multiplier) / multiplier;
+        },
+        roundToStep = (value, step, func = "round") => {
+          let factor = 1 / step;
+          return Math[func](value * factor) / factor;
+        },
+        average = (a, b) => (a + b) / 2,
+        isFiniteNumber = (value) => typeof value == "number" && Number.isFinite(value),
+        isCloseTo = (a, b, precision = 1e-4) => Math.abs(a - b) < precision,
+        ANYTHING = ANYTHING;
+    bindings:
+      - clamp
+      - round
+      - roundToStep
+      - isFiniteNumber
+      - isCloseTo
