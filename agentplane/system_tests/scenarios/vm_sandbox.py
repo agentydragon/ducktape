@@ -27,6 +27,11 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import runner_credentials
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm.guest_logs import check_boot, systemd_supervision_passed
+from agentplane.system_tests.vm.guest_supervision_probe import (
+    VM_SUPERVISION_PROBE,
+    assert_native_service_cgroup,
+    assert_vm_supervision_probe,
+)
 from agentplane.system_tests.vm.host_qemu import observe_active_turn
 from agentplane.system_tests.vm.supervision import session_setup_is_supervised
 from agentplane.testing.codex_model import CodexModel
@@ -34,17 +39,6 @@ from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 PING = "Run a shell command, then say exactly PING."
-
-VM_SUPERVISION_PROBE = r"""set -eu
-printf 'VM_UID %s\n' "$(id -u)"
-printf 'VM_PID1 %s\n' "$(cat /proc/1/comm)"
-printf 'VM_CGROUP %s\n' "$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)"
-if systemctl_output=$(/usr/bin/systemctl --no-ask-password restart agentplane-cgroup-observer.service 2>&1); then
-    echo VM_SYSTEMCTL_UNEXPECTED_SUCCESS
-    exit 23
-fi
-printf 'VM_SYSTEMCTL_OUTPUT %s\n' "$systemctl_output"
-"""
 
 # The test guest's root observer publishes kernel counters without granting the tool cgroup access.
 # Wait for a new snapshot so the follow-up cannot accidentally read pre-OOM counters.
@@ -98,15 +92,6 @@ class _MemoryEvidence(BaseModel):
 class _ExecResult(BaseModel):
     output: str
     exit_code: int
-
-
-def _assert_native_service_cgroup(cgroup: str, slice_name: str) -> None:
-    prefix = f"/agentplane.slice/{slice_name}/agentplane-native-"
-    assert cgroup.startswith(prefix), cgroup
-    unit = cgroup.rsplit("/", 1)[-1]
-    assert re.fullmatch(
-        r"agentplane-native-.+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.service", unit
-    ), cgroup
 
 
 async def _command(
@@ -208,17 +193,8 @@ async def vm_sandbox_turn(
         )
     assert len(turn.tool_outputs) == 1, turn.transcript
     output_text = turn.tool_outputs[0]
-    assert "VM_UID 107" in output_text, turn.transcript
-    assert "VM_PID1 systemd" in output_text, turn.transcript
-    (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
-    cgroup = cgroup_line.removeprefix("VM_CGROUP ")
     subtree = "agentplane-executors.slice" if harness == session_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
-    _assert_native_service_cgroup(cgroup, subtree)
-    assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, turn.transcript
-    systemctl_denial = re.search(
-        r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
-    )
-    assert systemctl_denial is not None, turn.transcript
+    assert_vm_supervision_probe(output_text, slice_name=subtree)
     assert "PING" in turn.answer, turn.transcript
     rules_turn = await agent.run_shell(model, "agentplane --json egress rules")
     rules_output = rules_turn.tool_outputs[-1]
@@ -291,7 +267,7 @@ async def codex_tool_oom(
             _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)
             before = _MemoryEvidence.from_output(output.output)
             evidence["memory_before"] = before.model_dump()
-            _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
+            assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
             assert before.max > 0
             assert before.swap_max == before.oom_group == before.oom_group_kill == 0
             original = await client.runner_status(view.target.name, view.target.uid)

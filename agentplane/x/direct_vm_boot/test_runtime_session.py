@@ -40,14 +40,15 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.system_tests.vm.configuration import RESOURCES
+from agentplane.system_tests.vm.guest_supervision_probe import VM_SUPERVISION_PROBE, assert_vm_supervision_probe
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ShellCall, Text
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf
 from agentplane.x.direct_vm_boot.runtime_guest import (
     authenticated_readiness,
-    copy_guest_images,
     gateway_address,
+    guest_image_bind_mounts,
     runtime_guest_container,
     sandbox_with_runtime_gateway,
     write_guest_inputs,
@@ -305,7 +306,7 @@ async def _run_shell_turn(
     shell_command: str,
     expected_output: str,
     final_text: str,
-) -> list[event_log_pb2.EventEntry]:
+) -> tuple[list[event_log_pb2.EventEntry], str]:
     dispatch = await dispatcher.submit_input(session_id, command_id, sandbox.name, sandbox.uid, input_text)
     receipt = (await admitted(dispatcher, dispatch)).admission
 
@@ -320,7 +321,8 @@ async def _run_shell_turn(
     assert not native_output.is_error
     assert native_output.text.splitlines()[0] == expected_output
     await model.reply(tool_request, Text(final_text))
-    return await _history_turn_completed(history, session_id, receipt.cursor - 1)
+    entries = await _history_turn_completed(history, session_id, receipt.cursor - 1)
+    return entries, native_output.text
 
 
 async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
@@ -342,7 +344,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
     inputs.mkdir()
     state.mkdir()
     outputs.mkdir()
-    copy_guest_images(inputs)
+    guest_image_mounts = guest_image_bind_mounts(inputs)
 
     with pytest.raises(ServiceError) as health_reader:
         await history_service.reader.get_session_summary(str(uuid4()))
@@ -385,7 +387,12 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
         )
         write_guest_inputs(inputs, sandbox, config)
         async with runtime_guest_container(
-            container_name=container_name, inputs=inputs, state=state, outputs=outputs, gateway_address=hostfwd_address
+            container_name=container_name,
+            inputs=inputs,
+            guest_image_mounts=guest_image_mounts,
+            state=state,
+            outputs=outputs,
+            gateway_address=hostfwd_address,
         ) as docker_done:
             ready_task = asyncio.create_task(
                 authenticated_readiness(gateway_service, client_token, api_server, sandbox)
@@ -410,8 +417,10 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
 
             marker = f"direct-vm-{session_id.hex}"
             marker_path = str(workspace / "session-marker.txt")
-            first_command = f"printf '%s\\n' '{marker}' > '{marker_path}' && cat '{marker_path}'"
-            first_entries = await _run_shell_turn(
+            first_command = (
+                f"set -eu\nprintf '%s\\n' '{marker}' > '{marker_path}' && cat '{marker_path}'\n{VM_SUPERVISION_PROBE}"
+            )
+            first_entries, first_output = await _run_shell_turn(
                 dispatcher=dispatcher,
                 history=history_service.reader,
                 model=model,
@@ -424,7 +433,8 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                 expected_output=marker,
                 final_text="MARKER_WRITTEN",
             )
-            second_entries = await _run_shell_turn(
+            assert_vm_supervision_probe(first_output, slice_name="agentplane-workloads.slice")
+            second_entries, _ = await _run_shell_turn(
                 dispatcher=dispatcher,
                 history=history_service.reader,
                 model=model,
