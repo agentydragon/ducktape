@@ -22,8 +22,9 @@ The shared child process, wire framing, request routing and logical-session life
 `internal/codemode`. The sampler binds each session to its lease-fenced journal and delegated tool
 handler; model tool adaptation, nested executor intents and result evidence remain sampler-owned.
 
-The service, sampling loop, persistence and exporter are implemented in Go. The JavaScript host is
-the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
+The service, sampling loop and persistence are implemented in Go. History export lives in the
+`historyexport` package and reaches sampler state through its durable outbox interface. The
+JavaScript host is the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
 
 [The API](sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
 recovery and evidence.

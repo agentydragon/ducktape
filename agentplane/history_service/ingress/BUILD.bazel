@@ -45,6 +45,7 @@ go_test(
     deps = [
         "//agentplane/central_sampler",
         "//agentplane/central_sampler:sampler_go_proto",
+        "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/protocol",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",

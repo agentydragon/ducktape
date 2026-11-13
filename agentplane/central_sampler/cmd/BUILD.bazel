@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//agentplane/central_sampler",
         "//agentplane/central_sampler:sampler_go_proto",
+        "//agentplane/central_sampler/historyexport",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth/auth",
         "//agentplane/net/listener",

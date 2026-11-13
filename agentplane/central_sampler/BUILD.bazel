@@ -359,7 +359,7 @@ go_library(
         "executor_operations.go",
         "executor_processes.go",
         "executor_session.go",
-        "exporter.go",
+        "exporter_outbox.go",
         "migration.go",
         "native_context.go",
         "native_store.go",
@@ -413,6 +413,7 @@ go_library(
     deps = [
         ":sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/outputbuffer",
         "//agentplane/central_sampler/internal/promptimage",
@@ -423,9 +424,7 @@ go_library(
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
-        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/identity/auth/auth",
-        "//agentplane/identity/auth/grpc",
         "//agentplane/postgres",
         "//agentplane/postgres/lease",
         "//agentplane/postgres/migrate",
@@ -440,7 +439,6 @@ go_library(
         "@com_github_google_uuid//:uuid",
         "@com_github_invopop_jsonschema//:jsonschema",
         "@com_github_lib_pq//:pq",
-        "@io_k8s_client_go//util/workqueue",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
@@ -449,7 +447,6 @@ go_library(
         "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
-        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -485,6 +482,7 @@ go_test(
     deps = [
         ":sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/outputbuffer",
         "//agentplane/central_sampler/internal/storage",
@@ -507,7 +505,6 @@ go_test(
         "@com_github_lib_pq//:pq",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_client_go//util/workqueue",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
