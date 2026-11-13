@@ -43,6 +43,9 @@ module it bundles. Every other chunk is `inline_in_entry`.
   - `main`: `packages/excalidraw/history` contains the complete original
     `History`, `HistoryEntry` and `HistoryChangedEvent` classes, including
     recording, inverse entries, undo/redo stacks and change notifications.
+  - `main`: `packages/excalidraw/actions/manager` restores `ActionManager`,
+    including action registration, keyboard dispatch, enabled predicates,
+    panel rendering and synchronous/asynchronous result delivery.
   - `editor`: `packages/excalidraw/scene/Scene` restores the complete `Scene`
     class, including element maps, selection caching, frame filtering,
     insertion and update notifications. Its two static-map writes and four
@@ -99,6 +102,8 @@ the non-enumerable observed-state marker, and forward/inverse state and element
 changes.
 The linear-editor probe checks constructor state, static initialization,
 element lookup, rotation and global coordinates, and point normalization.
+The action-manager probe checks registration, synchronous/asynchronous results,
+keyboard dispatch, view-only and configured-disabled actions, and predicates.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the

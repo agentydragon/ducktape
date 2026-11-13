@@ -419,5 +419,54 @@ async def test_linear_element_editor(playwright_driver: Playwright, origin: str)
         }
 
 
+async def test_action_manager(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { ActionManager } = await import('./main/packages/excalidraw/actions/manager.js');
+                const updates = [];
+                const state = {viewModeEnabled: false};
+                const app = {props: {UIOptions: {canvasActions: {}}}};
+                const manager = new ActionManager(update => updates.push(update),
+                    () => state, () => [{id: 'one'}], app);
+                const action = {
+                    name: 'test-action', trackEvent: false,
+                    predicate: elements => elements.length === 1,
+                    keyTest: event => event.key === 'x',
+                    perform: (elements, appState, value) => ({value, count: elements.length})
+                };
+                manager.registerAll([action, {...action, name: 'async-action', keyTest: () => false,
+                    perform: async (elements, appState, value) => ({value, count: elements.length})}]);
+                manager.executeAction(action, 'api', 'direct');
+                manager.executeAction(manager.actions['async-action'], 'api', 'async');
+                await Promise.resolve();
+                let consumed = 0;
+                const key = {key: 'x', preventDefault: () => consumed++, stopPropagation: () => consumed++};
+                const dispatched = manager.handleKeyDown(key);
+                state.viewModeEnabled = true;
+                const viewOnly = manager.handleKeyDown(key);
+                state.viewModeEnabled = false;
+                app.props.UIOptions.canvasActions['test-action'] = false;
+                const disabled = manager.handleKeyDown(key);
+                return {updates, consumed, dispatched, viewOnly, disabled,
+                    enabled: [manager.isActionEnabled(action),
+                              manager.isActionEnabled({...action, predicate: () => false})]};
+            }"""
+        )
+        assert result == {
+            "updates": [{"value": "direct", "count": 1}, {"value": "async", "count": 1}, {"value": None, "count": 1}],
+            "consumed": 2,
+            "dispatched": True,
+            "viewOnly": False,
+            "disabled": False,
+            "enabled": [True, False],
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
