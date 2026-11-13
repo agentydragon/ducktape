@@ -217,7 +217,7 @@ impl std::fmt::Display for JsParseError {
         write!(f, "failed to parse {}: ", self.source_name)?;
         match &self.failure {
             JsParseFailure::Fatal { error, recovered } => {
-                write!(f, "{:?}", error.kind())?;
+                f.write_str(&error.kind().msg())?;
                 for error in recovered {
                     write!(f, "; {}", error.kind().msg())?;
                 }
