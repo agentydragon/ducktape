@@ -29,6 +29,7 @@ class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_POD = "local-model-pod"
+    LOCAL_MODEL_CENTRAL_SERVICES = "local-model-central-services"
     LOCAL_MODEL_CENTRAL_BUDGET = "local-model-central-budget"
     LOCAL_MODEL_VM = "local-model-vm"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
@@ -104,6 +105,15 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 variant,
                 Backend.LOCAL_MODEL,
                 vm_sandboxes=False,
+                profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
+            )
+        case FixtureVariant.LOCAL_MODEL_CENTRAL_SERVICES:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                central_sampler=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
             )
         case FixtureVariant.LOCAL_MODEL_CENTRAL_BUDGET:

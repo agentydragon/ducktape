@@ -837,6 +837,20 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
+def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(runfiles: Runfiles) -> None:
+    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
+    services = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION")
+    assert services.central_sampler
+    assert services.mcp_fixtures is None
+    central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
+    service_deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
+    assert service_deployments == central_deployments - {"mcp-edge"}
+    for component in ("app", "actions", "central-sampler", "runner-gateway", "history-service"):
+        assert _resource(services.objects, "Deployment", component) == _resource(
+            central.objects, "Deployment", component
+        )
+
+
 def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(runfiles: Runfiles) -> None:
     central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
     budget = _filled_fixture(runfiles, "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION")
