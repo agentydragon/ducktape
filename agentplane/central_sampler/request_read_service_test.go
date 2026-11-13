@@ -54,7 +54,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 
 	config := samplersettings.ModelConfig{
 		Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses,
-		Responses: responses.Config{Dialect: responses.DialectLite},
+		ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectLite},
 	}
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	intent := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
