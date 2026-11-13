@@ -39,6 +39,9 @@ module it bundles. Every other chunk is `inline_in_entry`.
     implementation, Unicode regex builders and caches, and its internal helpers).
   - `main`: `packages/excalidraw/components/Card` (`Card`) and separate
     `packages/excalidraw/components/ColorPicker/{HotkeyLabel,PickerHeading}` modules.
+  - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
+    source path and names for element classification, arrow/text bindings,
+    frame variants and roundness rules.
 - **Vendor swaps**: whole-chunk `swap` of the default-only `vendor/clsx` and
   `vendor/roughjs` entry chunks, and a `partial_swap` of the shared clsx chunk,
   which rewrites the editor's and `main`'s imports to `"clsx"`. Its symbol key

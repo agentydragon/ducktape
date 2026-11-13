@@ -1,0 +1,241 @@
+source_matches:
+  - match: |
+      var selected = (element) =>
+        !!element && element.type === "image" && !!element.fileId;
+    bindings:
+      - local: selected
+        name: isInitializedImageElement
+
+  - match: |
+      var selected = (element) => !!element && element.type === "image";
+    bindings:
+      - local: selected
+        name: isImageElement
+
+  - match: |
+      var selected = (element) => !!element && element.type === "embeddable";
+    bindings:
+      - local: selected
+        name: isEmbeddableElement
+
+  - match: |
+      var selected = (element) => !!element && element.type === "iframe";
+    bindings:
+      - local: selected
+        name: isIframeElement
+
+  - match: |
+      var selected = (element) =>
+        !!element &&
+        (element.type === "iframe" || element.type === "embeddable");
+    bindings:
+      - local: selected
+        name: isIframeLikeElement
+
+  - match: |
+      var selected = (element) => element != null && element.type === "text";
+    bindings:
+      - local: selected
+        name: isTextElement
+
+  - match: |
+      var selected = (element) => element != null && element.type === "frame";
+    bindings:
+      - local: selected
+        name: isFrameElement
+
+  - match: |
+      var selected = (element) => element != null && element.type === "magicframe";
+    bindings:
+      - local: selected
+        name: isMagicFrameElement
+
+  - match: |
+      var selected = (element) =>
+        element != null &&
+        (element.type === "frame" || element.type === "magicframe");
+    bindings:
+      - local: selected
+        name: isFrameLikeElement
+
+  - match: |
+      var selected = (element) =>
+        element != null && isFreeDrawElementType(element.type);
+    bindings:
+      - local: selected
+        name: isFreeDrawElement
+
+  - match: |
+      var selected = (elementType) => elementType === "freedraw";
+    bindings:
+      - local: selected
+        name: isFreeDrawElementType
+
+  - match: |
+      var selected = (element) =>
+        element != null && isLinearElementType(element.type);
+    bindings:
+      - local: selected
+        name: isLinearElement
+
+  - match: |
+      var selected = (element) => element != null && element.type === "arrow";
+    bindings:
+      - local: selected
+        name: isArrowElement
+
+  - match: |
+      var selected = (element) => isArrowElement(element) && element.elbowed;
+    bindings:
+      - local: selected
+        name: isElbowArrow
+
+  - match: |
+      var selected = (elementType) =>
+        elementType === "arrow" || elementType === "line";
+    bindings:
+      - local: selected
+        name: isLinearElementType
+
+  - match: |
+      var selected = (element, includeLocked = !0) =>
+        element != null &&
+        (!element.locked || includeLocked === !0) &&
+        isBindingElementType(element.type);
+    bindings:
+      - local: selected
+        name: isBindingElement
+
+  - match: |
+      var selected = (elementType) => elementType === "arrow";
+    bindings:
+      - local: selected
+        name: isBindingElementType
+
+  - match: |
+      var selected = (element, includeLocked = !0) =>
+        element != null &&
+        (!element.locked || includeLocked === !0) &&
+        (EXPR || (element.type === "text" && !element.containerId));
+    bindings:
+      - local: selected
+        name: isBindableElement
+
+  - match: |
+      var selected = (element) =>
+        element != null &&
+        (EXPR || (element.type === "text" && !element.containerId));
+    bindings:
+      - local: selected
+        name: isRectanguloidElement
+
+  - match: |
+      var selected = (element, includeLocked = !0) =>
+        element != null &&
+        (!element.locked || includeLocked === !0) &&
+        (EXPR || isArrowElement(element));
+    bindings:
+      - local: selected
+        name: isTextBindableContainer
+
+  - match: |
+      var selected = (element) => {
+        let type = element?.type;
+        if (!type) return !1;
+        switch (type) {
+          case "text":
+          case "diamond":
+          case "rectangle":
+          case "iframe":
+          case "embeddable":
+          case "ellipse":
+          case "arrow":
+          case "freedraw":
+          case "line":
+          case "frame":
+          case "magicframe":
+          case "image":
+          case "selection":
+            return !0;
+          default:
+            return ANYTHING(type, null), !1;
+        }
+      };
+    bindings:
+      - local: selected
+        name: isExcalidrawElement
+
+  - match: |
+      var selected = (element) =>
+        element.type === "rectangle" ||
+        element.type === "ellipse" ||
+        element.type === "diamond";
+    bindings:
+      - local: selected
+        name: isFlowchartNodeElement
+
+  - match: |
+      var selected = (element) =>
+        isTextBindableContainer(element) &&
+        !!element.boundElements?.some(({ type }) => type === "text");
+    bindings:
+      - local: selected
+        name: hasBoundTextElement
+
+  - match: |
+      var selected = (element) =>
+        element !== null &&
+        "containerId" in element &&
+        element.containerId !== null &&
+        isTextElement(element);
+    bindings:
+      - local: selected
+        name: isBoundToContainer
+
+  - match: |
+      var selected = (type) =>
+        type === "rectangle" ||
+        type === "embeddable" ||
+        type === "iframe" ||
+        type === "image";
+    bindings:
+      - local: selected
+        name: isUsingAdaptiveRadius
+
+  - match: |
+      var selected = (type) =>
+        type === "line" || type === "arrow" || type === "diamond";
+    bindings:
+      - local: selected
+        name: isUsingProportionalRadius
+
+  - match: |
+      var selected = (roundnessType, element) =>
+        !!(
+          (roundnessType === ROUNDNESS.ADAPTIVE_RADIUS ||
+            roundnessType === ROUNDNESS.LEGACY) &&
+            isUsingAdaptiveRadius(element.type) ||
+          roundnessType === ROUNDNESS.PROPORTIONAL_RADIUS &&
+            isUsingProportionalRadius(element.type)
+        );
+    bindings:
+      - local: selected
+        name: canApplyRoundnessTypeToElement
+
+  - match: |
+      var selected = (element) =>
+        isUsingProportionalRadius(element.type)
+          ? { type: ROUNDNESS.PROPORTIONAL_RADIUS }
+          : isUsingAdaptiveRadius(element.type)
+            ? { type: ROUNDNESS.ADAPTIVE_RADIUS }
+            : null;
+    bindings:
+      - local: selected
+        name: getDefaultRoundnessTypeForElement
+
+  - match: |
+      var selected = (binding) =>
+        Object.hasOwn(binding, "fixedPoint") && binding.fixedPoint != null;
+    bindings:
+      - local: selected
+        name: isFixedPointBinding

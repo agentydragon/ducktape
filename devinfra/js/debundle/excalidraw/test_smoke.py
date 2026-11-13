@@ -148,5 +148,59 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         assert failed_requests == []
 
 
+async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(playwright_driver, frozen_now_ms=None) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const checks = await import('./editor/packages/excalidraw/element/typeChecks.js');
+                return {
+                    images: [
+                        checks.isImageElement(null),
+                        checks.isImageElement({type: 'image'}),
+                        checks.isInitializedImageElement({type: 'image'}),
+                        checks.isInitializedImageElement({type: 'image', fileId: 'image-file'}),
+                    ],
+                    arrows: [
+                        checks.isLinearElement({type: 'line'}),
+                        checks.isBindingElement({type: 'line'}),
+                        checks.isBindingElement({type: 'arrow', locked: true}),
+                        checks.isBindingElement({type: 'arrow', locked: true}, false),
+                        checks.isElbowArrow({type: 'arrow', elbowed: true}),
+                    ],
+                    containers: [
+                        checks.isBindableElement({type: 'text', containerId: null}),
+                        checks.isBindableElement({type: 'text', containerId: 'container'}),
+                        checks.hasBoundTextElement({type: 'rectangle', boundElements: [{type: 'text'}]}),
+                        checks.isBoundToContainer({type: 'text', containerId: 'container'}),
+                        checks.isBoundToContainer({type: 'text', containerId: null}),
+                    ],
+                    frames: [
+                        checks.isFrameElement({type: 'magicframe'}),
+                        checks.isFrameLikeElement({type: 'magicframe'}),
+                    ],
+                    roundness: [
+                        checks.getDefaultRoundnessTypeForElement({type: 'rectangle'}),
+                        checks.getDefaultRoundnessTypeForElement({type: 'diamond'}),
+                        checks.getDefaultRoundnessTypeForElement({type: 'text'}),
+                    ],
+                    fixedBindings: [checks.isFixedPointBinding({}), checks.isFixedPointBinding({fixedPoint: [0, 0]})],
+                    elements: [checks.isExcalidrawElement({}), checks.isExcalidrawElement({type: 'selection'})],
+                };
+            }"""
+        )
+        assert result == {
+            "images": [False, True, False, True],
+            "arrows": [True, False, True, False, True],
+            "containers": [True, False, True, True, False],
+            "frames": [False, True],
+            "roundness": [{"type": 3}, {"type": 2}, None],
+            "fixedBindings": [False, True],
+            "elements": [False, True],
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
