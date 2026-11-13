@@ -14,8 +14,8 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/threadfold"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
-	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

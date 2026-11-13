@@ -10,7 +10,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/settledcursors"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
-	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/threadfold"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
 )

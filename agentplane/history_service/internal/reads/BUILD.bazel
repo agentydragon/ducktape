@@ -15,7 +15,7 @@ go_library(
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/internal/storage",
-        "//agentplane/history_service/threadfold",
+        "//agentplane/history_service/internal/threadfold",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:session_go_proto",
         "@com_github_google_uuid//:uuid",

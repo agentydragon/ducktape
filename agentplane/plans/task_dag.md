@@ -2177,7 +2177,7 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 
 **Decision, unscheduled; operator direction, 2026-11-10.** The incident's
 `HarnessUserMessageConfirmed` and later `CommandFailed` name the same command. The
-[Thread fold](../history_service/threadfold/fold.go) narrowly tolerates that sequence for a
+[Thread fold](../history_service/internal/threadfold/fold.go) narrowly tolerates that sequence for a
 `SubmitInput` only when the failure reason is `session blocked by unresolved effects`; other
 contradictory settlements still fail the fold. The [History append](../history_service/internal/storage/store.go)
 accepts exact cursor replays and commits new cursor-valid entries without checking command outcomes,

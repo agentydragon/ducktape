@@ -8,7 +8,7 @@ import (
 	"math"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/threadfold"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
