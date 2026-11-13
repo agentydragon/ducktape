@@ -58,7 +58,7 @@ def query_orphan_py_libraries(workspace: BazelWorkspace, *, keep_going: bool = F
     return set(workspace.query(expr, keep_going=keep_going))
 
 
-def query_bazel_files(workspace: BazelWorkspace) -> set[Path]:
+def query_bazel_files(workspace: BazelWorkspace, *, keep_going: bool = False) -> set[Path]:
     """Query all source files covered by Bazel targets.
 
     Uses srcs/data directly and traverses the entry_point and compile_data
@@ -75,7 +75,7 @@ def query_bazel_files(workspace: BazelWorkspace) -> set[Path]:
         "  union deps(kind('create_data_blob', //...))"
         ")"
     )
-    labels = workspace.query(expr)
+    labels = workspace.query(expr, keep_going=keep_going)
     return {p for label in labels if (p := label.path)}
 
 
@@ -87,7 +87,9 @@ def get_git_files(repo_root: Path) -> set[Path]:
     return {Path(entry.path) for entry in index}
 
 
-def run_report(workspace: BazelWorkspace, whitelist_path: Path) -> tuple[list[Path], list[PatternStats]]:
+def run_report(
+    workspace: BazelWorkspace, whitelist_path: Path, *, keep_going: bool = False
+) -> tuple[list[Path], list[PatternStats]]:
     """Return (orphaned_files, per_pattern_stats), querying Bazel once.
 
     Each non-blank, non-comment whitelist pattern is parsed exactly once and
@@ -98,7 +100,7 @@ def run_report(workspace: BazelWorkspace, whitelist_path: Path) -> tuple[list[Pa
     or because the pattern matches no git-tracked files at all.
     """
     git_files = get_git_files(workspace.root)
-    bazel_files = query_bazel_files(workspace)
+    bazel_files = query_bazel_files(workspace, keep_going=keep_going)
 
     raw_orphans = git_files - bazel_files
     covered_files = git_files - raw_orphans  # files in both git and Bazel
@@ -136,7 +138,12 @@ def main() -> None:
         "--check", action="store_true", help="Exit with code 1 if any orphans or dead whitelist entries exist"
     )
     parser.add_argument(
-        "--keep-going", action="store_true", help="Continue past Bazel query errors (e.g. broken external deps)"
+        "--keep-going",
+        action="store_true",
+        help=(
+            "Continue past Bazel query errors (e.g. broken external deps); partial results may misclassify "
+            "orphans and whitelist entries"
+        ),
     )
     args = parser.parse_args()
 
@@ -144,7 +151,7 @@ def main() -> None:
     workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
     whitelist_path = args.whitelist or repo_root / "devinfra/orphans/whitelist.txt"
 
-    orphans, stats = run_report(workspace, whitelist_path)
+    orphans, stats = run_report(workspace, whitelist_path, keep_going=args.keep_going)
     orphan_libs = query_orphan_py_libraries(workspace, keep_going=args.keep_going)
 
     for orphan in orphans:
