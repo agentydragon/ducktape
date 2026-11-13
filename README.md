@@ -19,7 +19,7 @@ report snapshots. The CI reports are:
 
 - **Cluster storage:** [HDD budget scenarios, volume fullness and interventions](storage/index.html), with dated Langfuse, SeaweedFS, ClickHouse, Zot, Mimir and Loki evidence and the earlier inventory retained below it.
 - **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
-- **Agentplane organization:** [architecture, ownership inventory and staged package plan](agentplane-organization/index.html), with original ownership inventory at `93f2ba8eef`, reorganization preflight at `1f7caaa9dc` (implementation baseline; GitHub PR state observed 2026-11-13 10:40:29 UTC), 36 earlier tracked PRs merged; this set: 19 merged, 0 open; native stack #16183 is complete; separate CI repairs: #16180 merged, #16199 merged. [Evidence](agentplane-organization/evidence.json).
+- **Agentplane organization:** [whole Go-tree plan, architecture and burn-down](agentplane-organization/index.html#go-plan). The new plan covers all 1,227 Go files in 205 directories, ten grouped ownership changes and native stack #16208; [per-file destinations](agentplane-organization/go-files.json) and [current PR evidence](agentplane-organization/go-plan.json). The original inventory stays pinned and the earlier nineteen-PR batch remains completed history.
 - **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
 
 Each CI refresh replaces its own directory's `index.html`, `evidence.json`,

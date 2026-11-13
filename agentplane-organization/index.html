@@ -65,6 +65,2618 @@
         Title,
       } from "@mantine/core";
       import { html, mount } from "../report.js";
+      const goBatch = {
+        observed_at_utc: "2026-11-13T12:14:30+00:00",
+        source_sha: "d9b2064b76c69ebd9332342e5e95e11dc192717a",
+        scope:
+          "Every tracked .go file under agentplane, including tests, experiments and generated files. No directory or filename exclusions.",
+        counts: { files: 1227, directories: 205, production: 674, tests: 553 },
+        native_stack: 16208,
+        lanes: [
+          {
+            id: "peer-tls",
+            number: 16206,
+            title: "Shared peer TLS",
+            from: ["environment_runtime_transport/"],
+            to: ["net/peertls/"],
+            preserve:
+              "Peer URI/EKU verification, credential rotation, expiry closure, and explicit insecure configuration. Deferred auth design is a separate DAG decision.",
+            checks:
+              "Existing peertls tests passed; full CI checks every Go/Python/Bazel importer.",
+            dependency: "Accepted base move; no authentication-policy choice.",
+            status: "MERGED",
+            head: "734959564f880f7639a7f815ffc49e124d91d446",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16206",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T11:34:16Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T11:21:47Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T11:23:09Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43416446983/job/131855446687",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T11:21:47Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T11:22:51Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43416446816/job/131855445788",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T11:21:48Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T11:33:50Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/feba5bfb-2f0b-570a-8211-48e3387bbc98",
+              },
+            ],
+            ci: [
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739",
+              },
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43416446983/job/131855446687",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43416446816/job/131855445788",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/feba5bfb-2f0b-570a-8211-48e3387bbc98",
+              },
+            ],
+          },
+          {
+            id: "app-settings",
+            number: 16207,
+            title: "App deployment settings",
+            from: [
+              "app/go/config.go",
+              "app/go/frontend_config.go",
+              "app/go/config_test.go",
+            ],
+            to: [
+              "app/go/internal/settings/ (then app/internal/settings/ in the private-library layer)",
+            ],
+            preserve:
+              "Required YAML plus explicit Secret inputs, strict validation, preset ordering and API response values.",
+            checks:
+              "Settings, App config API, Session API and generated staging config: 4 focused RBE tests passed.",
+            dependency: "Uses the new peer-TLS path.",
+            status: "MERGED",
+            head: "cc507b795bdb5bc3b117a837f919e430afc25bdf",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16207",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T11:47:13Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T11:37:28Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T11:38:57Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43418547332/job/131862454456",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T11:37:27Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T11:38:28Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43418547355/job/131862455559",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T11:37:28Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T11:47:04Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43418547332/job/131862454456",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43418547355/job/131862455559",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35",
+              },
+            ],
+          },
+          {
+            id: "auth-namespace",
+            number: 16210,
+            title: "Remove identity/auth/auth repetition",
+            from: ["identity/auth/auth/"],
+            to: ["identity/auth/"],
+            preserve:
+              "Resolver caching, Pod/UID proof, live SVID lookup, delegation and per-method authorization.",
+            checks:
+              "Mandatory hooks pass; existing authentication/service suites run in hosted CI.",
+            dependency:
+              "Path cleanup only; SPIFFE/TokenReview/configurability design stays deferred.",
+            status: "OPEN",
+            head: "a902851443a64abf355bad65ea07b06294e4062a",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16210",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:55Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131876385808",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:05Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:36Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712067/job/131876385883",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:09:21Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:57Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711978/job/131876385555",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:09:44Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:11:45Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b",
+              },
+            ],
+            ci: [
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131876385808",
+              },
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712067/job/131876385883",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711978/job/131876385555",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b",
+              },
+            ],
+          },
+          {
+            id: "runner-control",
+            number: 16211,
+            title: "Separate runner RPC adapters",
+            from: [
+              "sandbox_controller/internal/controller/quiescer.go",
+              "sandbox_controller/internal/controller/quiescer_test.go",
+              "sandbox_controller/internal/controller/firecracker_suspend.go",
+            ],
+            to: ["sandbox_controller/internal/runnercontrol/"],
+            preserve:
+              "Controller keeps its consumer interfaces, state machines and generations; command wires the concrete RPC clients.",
+            checks:
+              "Controller and adapter tests passed; controller command library built on RBE.",
+            dependency:
+              "Independent extraction; uses peer TLS at its accepted path.",
+            status: "OPEN",
+            head: "46187487baa58b2c4efe7c68b198bd9d025eef21",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16211",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710670/job/131876380541",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710639/job/131876380610",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:32Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710640/job/131876380740",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:08:57Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:45Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131876388615",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:00Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:01Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712563/job/131876393417",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:09:41Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:27Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712554/job/131876392852",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:09:22Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:10:35Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/7eb796e9-cb23-564d-a19e-9d9e461c9bbf",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712563/job/131876393417",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712554/job/131876392852",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131876388615",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/7eb796e9-cb23-564d-a19e-9d9e461c9bbf",
+              },
+            ],
+          },
+          {
+            id: "terminal-notice",
+            number: 16212,
+            title: "Dispatcher terminal-notice protocol",
+            from: [
+              "runner_gateway/dispatcher/terminal.go",
+              "runner_gateway/dispatcher/watch.go",
+            ],
+            to: ["runner_gateway/dispatcher/internal/terminalnotice/"],
+            preserve:
+              "Deletion and NOTIFY stay in one SQL transaction. WatchHub keeps subscriptions and reconnects; codec owns bounded multipart assembly.",
+            checks:
+              "Store integration, multipart/out-of-order notices and watch tests passed; Gateway executable built.",
+            dependency:
+              "Independent of controller adapters; ordered in the requested native stack.",
+            status: "OPEN",
+            head: "25a1fa4aa0090957c710d650425bc0fa6af073c5",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16212",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422709479/job/131876376292",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:49Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422709365/job/131876376070",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:08:49Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:18Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422709490/job/131876377026",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:37Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:24Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712382/job/131876387093",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:43Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:32Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712306/job/131876391500",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:10:23Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:22Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712302/job/131876390864",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:10:18Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:11:17Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/eeac4f30-9fcd-5d9d-92ef-dd5683ae5cb7",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712306/job/131876391500",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712302/job/131876390864",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712382/job/131876387093",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/eeac4f30-9fcd-5d9d-92ef-dd5683ae5cb7",
+              },
+            ],
+          },
+          {
+            id: "sandbox-inventory",
+            number: 16213,
+            title: "Sandbox Kubernetes inventory adapter",
+            from: [
+              "runner_gateway/dispatcher/sandbox_kubernetes.go",
+              "runner_gateway/dispatcher/sandbox_kubernetes_test.go",
+            ],
+            to: ["runner_gateway/internal/sandboxinventory/"],
+            preserve:
+              "Dispatcher keeps SandboxSnapshot/Catalog contracts; adapter keeps cached inventory and authoritative uncached checks.",
+            checks:
+              "Existing inventory and Dispatcher/Gateway tests; verify constructor wiring and stale/replaced Sandbox refusal.",
+            dependency:
+              "Command wires adapter through the existing structural interface.",
+            status: "OPEN",
+            head: "5a332ac8b0aa459156c5edcf51a0354c0f4f6528",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16213",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711070/job/131876382601",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711073/job/131876382856",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:59Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711272/job/131876383600",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:00Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:11Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711965/job/131876385807",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:25Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:08Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711707/job/131876390288",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:09:58Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:12Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711815/job/131876391172",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:10:08Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:11:03Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/cf101977-d81a-58a3-8fdf-6ad38c63bdfe",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711707/job/131876390288",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711815/job/131876391172",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711965/job/131876385807",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/cf101977-d81a-58a3-8fdf-6ad38c63bdfe",
+              },
+            ],
+          },
+          {
+            id: "workload-uri",
+            number: 16214,
+            title: "Workload identity URI contract",
+            from: [
+              "net/peertls/credentials.go (WorkloadID, URI codec and validation)",
+              "net/peertls/credentials_test.go (canonical URI test)",
+            ],
+            to: ["identity/credentials/workloadid/"],
+            preserve:
+              "Exact trust domain, canonical URI format, validation errors and record identity semantics. TLS implementation consumes the contract.",
+            checks:
+              "Canonical URI test moves with codec; peer-TLS, issuer and resolver tests stay intact.",
+            dependency:
+              "Requires peer-TLS base; no new SPIFFE authentication rollout.",
+            status: "OPEN",
+            head: "c6f87560ab8bbb39eeb3a4a008c5b23af299b11d",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16214",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:52Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710561/job/131876380859",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:26Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:17Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710494/job/131876380118",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:52Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:25Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710462/job/131876380185",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:09:22Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:11:38Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/529d0a67-a92b-5ae5-a855-08c6f7ac385d",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422710494/job/131876380118",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422710462/job/131876380185",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422710561/job/131876380859",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/529d0a67-a92b-5ae5-a855-08c6f7ac385d",
+              },
+            ],
+          },
+          {
+            id: "app-private",
+            number: 16216,
+            title: "App-owned implementation libraries",
+            from: [
+              "app/go/auth/",
+              "app/go/bridge/",
+              "app/go/federation/",
+              "app/go/historyclient/",
+              "app/go/historydata/",
+              "app/go/historywatch/",
+              "app/go/httperror/",
+              "app/go/migrations/",
+              "app/go/proxy/",
+              "app/go/sandboxes/",
+              "app/go/status/",
+              "app/go/threads/",
+              "app/go/internal/settings/",
+            ],
+            to: ["app/internal/<responsibility>/"],
+            preserve:
+              "All imports, BUILD targets, embeds, fixtures and image/runfiles callers move together. Backends remain independent of the App.",
+            checks:
+              "Existing App package/HTTP/settings tests and generated staging contract; complete old-path search.",
+            dependency: "Builds on the App settings extraction.",
+            status: "OPEN",
+            head: "d8eb561b65135b0b3886285278fc71c749e3a242",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16216",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:50Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422709802/job/131876377611",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:50Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422709929/job/131876378186",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:33Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422709937/job/131876378760",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:21Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:12:39Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711250/job/131876383101",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:10:51Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:12:11Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711258/job/131876388889",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:10:49Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:39Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711136/job/131876387608",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:09:38Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:12:29Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/cc587447-b734-5223-8e3f-f810bacfd04c",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711258/job/131876388889",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711136/job/131876387608",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422711250/job/131876383101",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/cc587447-b734-5223-8e3f-f810bacfd04c",
+              },
+            ],
+          },
+          {
+            id: "app-server-command",
+            number: 16217,
+            title: "App command and HTTP composition",
+            from: [
+              "app/go/main.go",
+              "app/go/*.go (remaining HTTP composition and tests)",
+            ],
+            to: ["app/cmd/", "app/internal/server/"],
+            preserve:
+              "Command owns process signals, logging and CLI modes; server owns HTTP wiring and handlers. Schema and route behavior stay unchanged.",
+            checks:
+              "Schema export, HTTP routes, staging settings and binary/image callers; tests follow their owner.",
+            dependency:
+              "Follows App-private libraries; no service or deployment split.",
+            status: "OPEN",
+            head: "9d636ab12e1a54260d4b07eaf11ed85edc000325",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16217",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710610/job/131876380346",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:50Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710552/job/131876379947",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:12:18Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710618/job/131876380935",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:10:28Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:12:21Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710790/job/131876381578",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:10:30Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:00Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710684/job/131876390468",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:09:31Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:10:27Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422710535/job/131876387045",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:09:17Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:12:06Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/b7911ed4-885a-50eb-a985-ecd3a7819256",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422710684/job/131876390468",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422710535/job/131876387045",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422710790/job/131876381578",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/b7911ed4-885a-50eb-a985-ecd3a7819256",
+              },
+            ],
+          },
+          {
+            id: "sampler-leaves",
+            number: 16219,
+            title: "Clarify sampler leaf ownership",
+            from: [
+              "central_sampler/internal/storage/ (pure content values)",
+              "central_sampler/migration.go",
+              "central_sampler/schema/",
+            ],
+            to: [
+              "central_sampler/internal/content/",
+              "central_sampler/migrations/",
+            ],
+            preserve:
+              "Content IDs and canonical bytes; unchanged SQL files, Goose history table, lock ID and embed basenames. No Store/Executor transaction split.",
+            checks:
+              "Existing content, migration/adoption and sampler/export integration coverage; SQL byte hashes unchanged.",
+            dependency:
+              "Implemented in proposed PR; real History ingress integration uses a narrowly visible migrations contract.",
+            status: "OPEN",
+            head: "daa539e6ca2d6dbe340c7906e17612f3b9ee2308",
+            native_member: true,
+            url: "https://github.com/agentydragon/ducktape/pull/16219",
+            ci_attempts: [
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711434/job/131876383425",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:08:51Z",
+                conclusion: "CANCELLED",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711495/job/131876383648",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:08:50Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:12:32Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422711568/job/131876384050",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:13Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:12:32Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712568/job/131876388576",
+                name: "bazel-ci / Test & Build",
+                startedAt: "2026-11-13T12:09:23Z",
+                status: "COMPLETED",
+                workflowName: "CI",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:27Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712486/job/131876391913",
+                name: "Build artifacts + imports check",
+                startedAt: "2026-11-13T12:10:13Z",
+                status: "COMPLETED",
+                workflowName: "Nix wheel check",
+              },
+              {
+                __typename: "CheckRun",
+                completedAt: "2026-11-13T12:11:16Z",
+                conclusion: "SUCCESS",
+                detailsUrl:
+                  "https://github.com/agentydragon/ducktape/actions/runs/43422712479/job/131876392542",
+                name: "Pre-commit checks",
+                startedAt: "2026-11-13T12:10:13Z",
+                status: "COMPLETED",
+                workflowName: "Pre-commit checks",
+              },
+              {
+                __typename: "StatusContext",
+                context: "BuildBuddy / Bazel ordinary tests (live)",
+                startedAt: "2026-11-13T12:12:25Z",
+                state: "SUCCESS",
+                targetUrl:
+                  "https://app.buildbuddy.io/invocation/4e6971af-b579-54d6-86e8-ac3634688f82",
+              },
+            ],
+            ci: [
+              {
+                name: "Build artifacts + imports check",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712486/job/131876391913",
+              },
+              {
+                name: "Pre-commit checks",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712479/job/131876392542",
+              },
+              {
+                name: "bazel-ci / Test & Build",
+                state: "SUCCESS",
+                url: "https://github.com/agentydragon/ducktape/actions/runs/43422712568/job/131876388576",
+              },
+              {
+                name: "BuildBuddy / Bazel ordinary tests (live)",
+                state: "SUCCESS",
+                url: "https://app.buildbuddy.io/invocation/4e6971af-b579-54d6-86e8-ac3634688f82",
+              },
+            ],
+          },
+        ],
+        ownership_gates: [
+          {
+            owner: "central_sampler",
+            counts: "51 production + 27 test files",
+            target:
+              "Keep session transaction/content persistence together first; later extract sessionstore, executor and resident-session runtime behind explicit operations.",
+            next: "Specify lease/admission and provider-intent transaction boundaries, retained content roots, and no-replay recovery. Existing mixed Store/Executor tests must follow real ownership, not require exported test internals.",
+            state: "Design gate; not a mechanical move.",
+          },
+          {
+            owner: "env/runtime/internal/coordinator",
+            counts: "24 production + 33 test files",
+            target:
+              "Retain the coordinator aggregate; separate a lifecycle owner only when its admissions, cancellation and shutdown protocol is explicit.",
+            next: "Map shutdown/reconciliation ownership, generation fencing, journal sealing and final History ACK; simplify one bounded path with existing race/lifecycle tests.",
+            state: "Design gate; runner lifecycle follow-up remains open.",
+          },
+          {
+            owner: "env/runtime/session and env/runtime/supervision",
+            counts: "14 production + 11 tests in each",
+            target:
+              "Retain native-session and subprocess-supervision ownership as two cohesive packages.",
+            next: "Move a real separate responsibility if future source evidence identifies one; do not split methods across packages just to reduce a file count.",
+            state: "Retain current scope for this batch.",
+          },
+          {
+            owner: "notification_service/internal/store",
+            counts: "17 production + 32 test files",
+            target:
+              "Keep inbox/cursor updates, provider observations and lease/advisory locks under one transaction authority.",
+            next: "Define a transaction API before extracting query families; preserve generation, row/advisory lock ordering and receipt/cursor atomicity.",
+            state: "Design gate; not a filename-prefix split.",
+          },
+          {
+            owner: "action_service/api and MCP admission",
+            counts: "12 production + 16 test files in Action handlers",
+            target:
+              "Public protobuf contracts stay public; Action handlers should become owner-private once shared operator admission is separated deliberately.",
+            next: "MCP currently imports Action Gate/OIDC code whose principal types belong to Action Store. Design that authority boundary before imposing internal/rpc privacy or inventing generic callback gates.",
+            state:
+              "Design gate; existing sharing is recorded, not endorsed as a final boundary.",
+          },
+          {
+            owner:
+              "All remaining Go directories, commands, tests and experiments",
+            counts: "205 directories covered by the full file inventory",
+            target:
+              "Keep cohesive owners and colocated tests; improve names and placement when a concrete owner/caller boundary justifies it.",
+            next: "Every tracked Go file is eligible, including support libraries and x/. The directory ledger lists all current files and identifies selected moves; unselected files are not declared permanently exempt.",
+            state: "In scope; no arbitrary package-size limit.",
+          },
+        ],
+        auth_design:
+          "Future review compares audience-scoped ServiceAccount/TokenReview over pinned TLS, Kubernetes-independent service SPIFFE, and explicit per-target configuration. No mechanism selected; preserve role and delegation boundaries.",
+        sampler_sequence: [
+          {
+            step: 0,
+            pr: "Complete the already-approved internal/content and migrations leaf moves",
+            files_or_functions: [
+              "internal/storage -> internal/content",
+              "migration.go and schema/ -> migrations",
+            ],
+            why_first:
+              "Bounded content and migration leaves are implemented in PR #16219; they do not dissolve the Store/Executor/Runtime shared-state cluster.",
+            existing_proof: [
+              "internal/storage/content_test.go",
+              "provider stored-content tests",
+              "baseline_migration_test.go",
+              "provider_attempt_test.go:TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance",
+            ],
+            status: "Ready proposed PR #16219 in native stack #16208",
+            package_path:
+              "central_sampler/internal/content + central_sampler/migrations",
+          },
+          {
+            step: 1,
+            pr: "Establish internal/sessionstore as the transactional ownership boundary",
+            files_or_functions: [
+              "Store receiver cluster in the map",
+              "types.go durable domain values",
+              "content_store.go/content_request.go/request_plan.go",
+              "protocol_adapter.go request-preparation portion",
+              "exporter_outbox.go/provider_evidence.go",
+            ],
+            contract_to_choose:
+              "Named sessionstore sampling/compaction preparation methods that atomically project and freeze the provider request, commit its intent and source context/control, and return the frozen wire request. Keep the Provider HTTP streaming half outside once that result exists. No exported *contentStore or cross-package generic callback.",
+            leave_together:
+              "All current Store transaction helpers, owner fencing, Conversation checkpoints, and provider intent writes remain in this package; migration package remains a leaf.",
+            existing_proof: [
+              "store_integration_test.go:TestStoreFencesEveryWriteToTheLiveLeaseGeneration",
+              "store_integration_test.go:TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection",
+              "store_integration_test.go:TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner",
+              "provider_attempt_test.go:TestProviderFinishDoesNotCommitAfterDurableInterrupt",
+              "provider_attempt_test.go:TestProviderHostLossSuccessorsPreserveFiniteLineageAndUseFreshContext",
+              "store_lifecycle_integration_test.go:TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction",
+            ],
+            integration_files: [
+              "central_sampler/BUILD.bazel",
+              "root Go test target declarations",
+            ],
+            status: "Planned; contract review required before implementation",
+            package_path: "central_sampler/internal/sessionstore",
+          },
+          {
+            step: 2,
+            pr: "Move the executor adapter into internal/executor",
+            files_or_functions: [
+              "executor.go",
+              "executor_failure.go",
+              "executor_operations.go",
+              "executor_processes.go",
+              "executor_session.go",
+              "exec_incarnation_fence.go",
+              "unified_exec.go",
+              "view_image.go",
+            ],
+            contract_to_choose:
+              "An internal concrete API used by runtime: construct executor for a session/owner/settings; invoke typed model tools; setup; reconcile; interrupt; close transport. Depend on concrete sessionstore Store and sessionstore-owned durable values; keep stream and error implementation private. No generic executor port.",
+            leave_together:
+              "Stream/session/cursor/reconnect/expected-incarnation/rejection evidence and mutation outcome classification stay in one Executor package.",
+            existing_proof: [
+              "executor_test.go:TestExecutorRetriesOnlyCursorReadWithSameIdentity",
+              "executor_test.go:TestExecutorDoesNotReplayMutationAfterLostReply",
+              "executor_test.go:TestExitedOpenProcessYieldsAndRetainsLateOutput",
+              "executor_test.go:TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation",
+              "executor_resume_test.go:TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen",
+            ],
+            integration_files: [
+              "central_sampler/BUILD.bazel",
+              "runtime call sites in session_setup.go and session_host.go",
+            ],
+            status: "Planned; contract review required before implementation",
+            package_path: "central_sampler/internal/executor",
+          },
+          {
+            step: 3,
+            pr: "Move resident scheduling and host-bound turn orchestration into internal/residentruntime",
+            files_or_functions: [
+              "runtime.go",
+              "runtime_replica.go",
+              "session_driver.go",
+              "session_host.go",
+              "session_setup.go",
+              "session_turn.go",
+              "session_interrupt.go",
+              "session_compaction.go",
+              "provider_recovery_runtime.go",
+              "codemode.go",
+              "codemode_host.go",
+              "provider_dispatch.go",
+              "tool_invocation.go",
+            ],
+            contract_to_choose:
+              "Runtime API for construction, Wake, Run, and coordinated shutdown, depending on concrete sessionstore and executor packages. Keep current newExecutor factory only as runtime package's test seam. Provider request preparation is already resolved by step 1.",
+            leave_together:
+              "Lease claim/renew/release, resident scan, execution permit, shutdown drain, shared host lifecycle, turn control and provider recovery remain one Runtime receiver family.",
+            existing_proof: [
+              "runtime_lifecycle_test.go:TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles",
+              "runtime_lifecycle_test.go:TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles",
+              "provider_recovery_runtime_test.go:TestRuntimeInterruptDuringProviderBackoffPreventsRetry",
+              "provider_finish_runtime_test.go:TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling",
+              "codemode_test.go:TestCodeModeHostFailureFansOutThenRestartsWithoutReplay",
+            ],
+            integration_files: [
+              "central_sampler/BUILD.bazel",
+              "cmd/main.go construction and work-channel wiring",
+            ],
+            status: "Planned; contract review required before implementation",
+            package_path: "central_sampler/internal/residentruntime",
+          },
+          {
+            step: 4,
+            pr: "Move gRPC handlers into internal/rpc",
+            files_or_functions: ["service.go", "provider_request_read.go"],
+            contract_to_choose:
+              "Sampler depends directly on concrete sessionstore Store, resident-runtime Runtime, settings, resolver and wakeups. Preserve the existing narrow admission validator's transaction ordering or replace it with a typed policy before this move. Keep authentication, model compatibility and event/request stream behavior in RPC ownership.",
+            leave_together:
+              "Store.LoadProviderRequest reconstructs stored bytes; RPC owns redaction/chunk transmission. Runtime wake remains after committed admission.",
+            existing_proof: [
+              "service_test.go:TestAdmissionAuthenticatesAndAuthorizesAccountUID",
+              "service_test.go:TestSamplerErrorsExposeFixedStatus",
+              "BUILD.bazel test_service and test_anthropic_service targets",
+            ],
+            integration_files: [
+              "central_sampler/BUILD.bazel",
+              "cmd/main.go registration and dependency wiring",
+            ],
+            status: "Planned; contract review required before implementation",
+            package_path: "central_sampler/internal/rpc",
+          },
+        ],
+        sampler_design_source: {
+          repo: "agentydragon/ducktape",
+          branch: "origin/devel",
+          commit: "5bce8ae54d1ee2ffc0228fda76f2db8a096dfffd",
+          date: "2026-11-13",
+          extraction:
+            "Read-only source snapshot at agentplane/central_sampler; 51 root production .go files, excluding tests and nested packages.",
+        },
+        proto_design:
+          "Later align protobuf package/go_package declarations with filesystem directories through explicit wire-name and stored-payload migrations; ordinary source moves do not rename protocols.",
+        retain_decisions: [
+          {
+            area: "Egress",
+            paths: [
+              "agentplane/egress/api/v1alpha1",
+              "agentplane/egress/resources",
+              "agentplane/egress/internal/{admin,decision,history,identity,informer,policy,presentation,proxy,rules,upstream}",
+              "agentplane/egress/sidecar",
+            ],
+            evidence: [
+              "Egress resources are a deliberate cross-service boundary: agentplane/policy_controller/internal/controller/account_use.go imports agentplane/egress/resources.Placeholder; BUILD grants only that controller package as the exception to Egress subpackage visibility.",
+              "The sidecar is a separate deployed binary with no Go importers; its go_library and binary are already restricted to //agentplane/egress:__pkg__. Its location documents the separate runtime alongside sidecar_config.py/platform_routes.py, and egress/README.md describes the split.",
+              "The existing internal packages already align with runtime responsibilities; EgressAdmin and EgressRules have prior accepted moves and are excluded.",
+            ],
+            decision:
+              "Retain. Internalizing resources would break a real policy-controller boundary. Moving the sidecar would add Bazel labels/runfile-path churn without changing its already restricted ownership or public API.",
+            existing_checks: [
+              "//agentplane/egress/resources:resources_test",
+              "//agentplane/egress/sidecar:sidecar_test",
+              "//agentplane/egress:test_sidecar",
+              "//agentplane/egress:test_proxy",
+              "//agentplane/egress:test_platform_routes",
+            ],
+            invariants:
+              "Keep API/resource interpretation, Egress placeholder derivation, and independent sidecar deployment/configuration boundaries intact.",
+          },
+          {
+            area: "LLM ingress",
+            paths: [
+              "agentplane/llm_ingress/{config.go,codex_catalog.go,main.go,model_config.go,server.go}",
+              "agentplane/llm_ingress/v1",
+            ],
+            evidence: [
+              "The five Go service files share package main and form one binary/configuration/handler boundary. No other package imports the implementation import path; Runtime imports the generated llm_ingress/v1 ModelConfig proto contract instead.",
+              "codex_catalog.go is a small in-memory catalog loader consumed only by ingressHandler; model_config.go is the service's implementation of its generated RPC. Splitting either would create a helper package without a separate owner.",
+            ],
+            decision:
+              "Retain the service implementation together and keep the versioned proto as the shared contract; no additional ownership boundary is justified.",
+            existing_checks: [
+              "//agentplane/llm_ingress:ingress_test",
+              "//agentplane/llm_ingress:test_models",
+            ],
+            invariants:
+              "Preserve request authentication, attribution, proxy behavior, Codex catalog response/ETag, and ModelConfig RPC semantics.",
+          },
+          {
+            area: "Firecracker",
+            paths: [
+              "agentplane/firecracker/{config.go,credentials.go,firecracker_api.go,guest_management.go,network.go,storage.go,supervisor.go}",
+              "agentplane/firecracker/vsock",
+              "agentplane/firecracker/workloadidentity",
+              "agentplane/firecracker/cmd/launcher",
+              "agentplane/firecracker/testing/runtime_probe",
+            ],
+            evidence: [
+              "The root Firecracker API/VMM/guest lifecycle files form the host-side VM owner and are consumed by agentplane/env/firecracker; the root BUILD intentionally exposes them only to Agentplane subpackages.",
+              "vsock already separates the host/guest stream protocol and restricts BUILD visibility to the two direct Firecracker owners. workloadidentity separately owns the guest Workload API server/PEM parsing. launcher and runtime_probe are standalone command/test tools.",
+            ],
+            decision:
+              "Retain existing split. Further splitting API, guest management, credentials, and VM supervision would cut across one guest-start/credential-delivery lifecycle and require new package APIs without a distinct owner.",
+            existing_checks: [
+              "//agentplane/firecracker:firecracker_test",
+              "//agentplane/firecracker/vsock:vsock_test",
+              "//agentplane/firecracker/workloadidentity:workloadidentity_test",
+              "//agentplane/env/firecracker:thaw_test",
+            ],
+            invariants:
+              "Keep boot identity verification, credential delivery, guest synchronization, VMM ownership, vsock framing and shutdown behavior unchanged.",
+          },
+          {
+            area: "History Service",
+            paths: [
+              "agentplane/history_service/internal/{ingress,migrations,projection,reads,rpc,settledcursors,storage,threadfold}",
+              "agentplane/history_service/{backfill,ops,testing,testing/spans}",
+            ],
+            evidence: [
+              "Current package responsibilities already identify the main data and RPC owners. settledcursors is an 82-line leaf used by both internal/projection and internal/threadfold; it centralizes cursor-range semantics rather than belonging to one consumer.",
+              "threadfold owns event-to-Thread folding and golden fixtures; projection consumes it. storage owns the transactional raw-history/settlement store; ingress and rpc own separate server surfaces. backfill and ops are operational tools, not service implementation subpackages.",
+            ],
+            decision:
+              "Retain current owners; no useful consolidation or split remains in this audit scope.",
+            existing_checks: [
+              "//agentplane/history_service/internal/settledcursors:settledcursors_test",
+              "//agentplane/history_service/internal/threadfold:fold_test",
+              "//agentplane/history_service/internal/projection:integration_test",
+              "//agentplane/history_service/internal/storage:settlement_test",
+              "//agentplane/history_service/internal/ingress:ingress_test",
+              "//agentplane/history_service/internal/rpc:service_test",
+            ],
+            invariants:
+              "Keep append/settlement transaction boundaries, cursor coverage semantics, lease ownership, projection epoch behavior, and ingress caller revalidation with their existing owners.",
+          },
+          {
+            area: "Public Sandbox client/config SDK and shared support",
+            paths: [
+              "agentplane/sandboxes/{api,environmentruntimeclient,lease,runtimeconfig,sandboxreader}",
+              "agentplane/net/{httpconnect,listener}",
+              "agentplane/grpc/{bearer,facade,graceful,healthprobe,streaming}",
+              "agentplane/postgres/{lease,migrate,probes,wakeups}",
+              "agentplane/identity/{auth,credentials}",
+              "agentplane/testing/*",
+              "agentplane/x/*",
+            ],
+            evidence: [
+              "environmentruntimeclient is genuinely shared by Runner Gateway Dispatcher, Sandbox Controller, Notification, and App bridge; sandboxes is the common domain owner, while moving it beneath any one consumer would reverse ownership.",
+              "runtimeconfig is the deployment-published model/harness/template contract shared by App, Action orchestration, Runner Gateway, and cdk8s; the App README documents that external contract. It is intentionally separate from service-specific settings.",
+              "net/grpc/postgres/identity packages are individually named by their shared capability. postgres/wakeups has cross-service production importers, whereas postgres/lease is a distinct database primitive from sandboxes/lease. testing/postgres is explicitly testonly and shared across integration targets; x packages remain experimental by location.",
+            ],
+            decision:
+              "Retain these shared boundaries. Moving them under a single consuming service or broad common package would make ownership less accurate; no extra refactor group recommended.",
+            existing_checks: [
+              "//agentplane/sandboxes/environmentruntimeclient:environmentruntimeclient_test",
+              "//agentplane/grpc/facade:facade_test",
+              "//agentplane/postgres/wakeups:integration_test",
+              "//agentplane/postgres/lease:integration_test",
+              "//agentplane/testing/postgres:postgres_test",
+            ],
+            invariants:
+              "Preserve shared per-RPC token/transport behavior, deployment-published configuration semantics, wakeup fan-out/reconnect signals, lease ownership, and test-only fixture boundaries.",
+          },
+        ],
+        directories: [
+          {
+            path: "agentplane/action_service",
+            production: 2,
+            tests: 7,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/api",
+            production: 12,
+            tests: 16,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/callers",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/docs",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/admission/catalog",
+            production: 3,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/admission/informer",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/admission/policies",
+            production: 6,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/admission/policyview",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/linkage",
+            production: 6,
+            tests: 6,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/mcpexec",
+            production: 4,
+            tests: 6,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/push",
+            production: 3,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/store",
+            production: 10,
+            tests: 14,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/internal/worker",
+            production: 3,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/migrations",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/orchestration_v1",
+            production: 6,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/orchestration_v1/contract",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/sandbox",
+            production: 3,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/sandbox/contract",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/session_delegation",
+            production: 1,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/session_delegation/contract",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/testing/nettest",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/action_service/testing/oauthprovider",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/app/go",
+            production: 14,
+            tests: 14,
+            move_plan: ["app-server-command"],
+          },
+          {
+            path: "agentplane/app/go/auth",
+            production: 4,
+            tests: 5,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/bridge",
+            production: 4,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/federation",
+            production: 2,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/historyclient",
+            production: 1,
+            tests: 0,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/historydata",
+            production: 1,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/historywatch",
+            production: 1,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/httperror",
+            production: 1,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/internal/settings",
+            production: 2,
+            tests: 1,
+            move_plan: ["app-private", "app-settings"],
+          },
+          {
+            path: "agentplane/app/go/migrations",
+            production: 1,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/proxy",
+            production: 2,
+            tests: 2,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/sandboxes",
+            production: 3,
+            tests: 2,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/status",
+            production: 1,
+            tests: 2,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/app/go/threads",
+            production: 1,
+            tests: 1,
+            move_plan: ["app-private"],
+          },
+          {
+            path: "agentplane/central_sampler",
+            production: 51,
+            tests: 27,
+            move_plan: ["sampler-leaves"],
+          },
+          {
+            path: "agentplane/central_sampler/cmd",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/historyexport",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/codemode",
+            production: 5,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/eventcodec",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/outputbuffer",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/promptimage",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/settings",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/storage",
+            production: 1,
+            tests: 1,
+            move_plan: ["sampler-leaves"],
+          },
+          {
+            path: "agentplane/central_sampler/internal/toolcontract",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/internal/tooloutput",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/protocol",
+            production: 11,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/providers/anthropic",
+            production: 7,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/central_sampler/providers/responses",
+            production: 7,
+            tests: 2,
+            move_plan: [],
+          },
+          { path: "agentplane/cli", production: 14, tests: 10, move_plan: [] },
+          {
+            path: "agentplane/egress/api/v1alpha1",
+            production: 3,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/cmd",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/docs",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/admin",
+            production: 4,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/decision",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/history",
+            production: 3,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/history/migrations",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/identity",
+            production: 3,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/informer",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/policy",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/presentation",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/proxy",
+            production: 6,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/rules",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/internal/upstream",
+            production: 2,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/resources",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/sidecar",
+            production: 7,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/x/iron_proxy",
+            production: 0,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/egress/x/iron_proxy/bridge",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/configuration",
+            production: 3,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/cosi",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/firecracker",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/firecracker/cmd",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/jsonrpc",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/oneoff",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/cmd",
+            production: 3,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/codexappserver",
+            production: 4,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/control",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/adapter",
+            production: 5,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/adapter/testing",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/cmd",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/codexexecserver",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/companion",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/companion/control",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/execution/service",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/harness",
+            production: 4,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/ingress",
+            production: 2,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/bootstrap",
+            production: 5,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/coordinator",
+            production: 24,
+            tests: 33,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/cosistate",
+            production: 2,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/harnesses/claude",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/harnesses/codex",
+            production: 4,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/lifecycle",
+            production: 2,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/retained",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/internal/workspace",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/journal",
+            production: 4,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/session",
+            production: 14,
+            tests: 11,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/stream",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/supervision",
+            production: 14,
+            tests: 11,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/runtime/testing/adaptertest",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/env/scripts",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/firecracker",
+            production: 7,
+            tests: 7,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/firecracker/cmd/launcher",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/firecracker/testing/runtime_probe",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/firecracker/vsock",
+            production: 2,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/firecracker/workloadidentity",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/grpc/bearer",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/grpc/facade",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/grpc/graceful",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/grpc/healthprobe",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/grpc/streaming",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service",
+            production: 4,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/backfill",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/ingress",
+            production: 2,
+            tests: 9,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/migrations",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/projection",
+            production: 7,
+            tests: 8,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/reads",
+            production: 5,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/rpc",
+            production: 3,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/settledcursors",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/storage",
+            production: 6,
+            tests: 9,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/internal/threadfold",
+            production: 4,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/ops",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/testing",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/history_service/testing/spans",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/auth/auth",
+            production: 4,
+            tests: 4,
+            move_plan: ["auth-namespace"],
+          },
+          {
+            path: "agentplane/identity/auth/grpc",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/auth/listener",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/auth/testing",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/credentials/api/v1alpha1",
+            production: 3,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/credentials/issuer",
+            production: 2,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/credentials/requester",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/credentials/resolver",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/identity/credentials/testing",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/kubeclient",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/llm_ingress",
+            production: 5,
+            tests: 7,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/mcp_edge",
+            production: 5,
+            tests: 3,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/mcp_edge/internal/authserver",
+            production: 5,
+            tests: 6,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/mcp_edge/internal/connections",
+            production: 5,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/mcp_edge/internal/mcpserver",
+            production: 9,
+            tests: 5,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/mcp_edge/migrations",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/net/httpconnect",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/net/listener",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/net/peertls",
+            production: 8,
+            tests: 6,
+            move_plan: ["peer-tls", "workload-uri"],
+          },
+          {
+            path: "agentplane/net/peertls/testing",
+            production: 1,
+            tests: 0,
+            move_plan: ["peer-tls"],
+          },
+          {
+            path: "agentplane/notification_service",
+            production: 3,
+            tests: 8,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/docs",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/inboxaccess",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/rpc",
+            production: 11,
+            tests: 11,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sessionidentity",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sources/actions",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sources/github",
+            production: 10,
+            tests: 8,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sources/github/client",
+            production: 10,
+            tests: 7,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sources/github/settings",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sources/github/testing",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/sources/github/webhook",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/storagecodec",
+            production: 6,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/store",
+            production: 17,
+            tests: 32,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/store/internal/entry",
+            production: 2,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/internal/worker",
+            production: 5,
+            tests: 8,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/migrations",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/model",
+            production: 9,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/notification_service/testing",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/observability",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          { path: "agentplane/policy", production: 1, tests: 0, move_plan: [] },
+          {
+            path: "agentplane/policy/api/v1alpha1",
+            production: 6,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/policy/api/v1alpha1/protogen",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/policy/client/apply",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/policy/reader",
+            production: 4,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/policy_controller/cmd",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/policy_controller/internal/controller",
+            production: 4,
+            tests: 4,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/policy_controller/internal/rpc",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/postgres",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/postgres/lease",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/postgres/migrate",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/postgres/probes",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/postgres/wakeups",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/dispatcher",
+            production: 12,
+            tests: 14,
+            move_plan: ["sandbox-inventory", "terminal-notice"],
+          },
+          {
+            path: "agentplane/runner_gateway/dispatcher/internal/placement",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/environments",
+            production: 4,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/environments/internal/management",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/environments/internal/view",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/environments/lifecycle",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/internal/gateway",
+            production: 8,
+            tests: 9,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/runner_gateway/migrations",
+            production: 1,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/sandbox_controller/cmd",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/sandbox_controller/internal/controller",
+            production: 16,
+            tests: 13,
+            move_plan: ["runner-control"],
+          },
+          {
+            path: "agentplane/sandboxes/api",
+            production: 5,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/sandboxes/environmentruntimeclient",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/sandboxes/lease",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/sandboxes/runtimeconfig",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/sandboxes/sandboxreader",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/session_client",
+            production: 3,
+            tests: 2,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/session_instructions",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/system_tests/x/shared_cluster/node",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/configtest",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/envtest",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/eventually",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/grpcmethods",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/httptransport",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/kubeapiserver",
+            production: 2,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/postgres",
+            production: 2,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/testing/yamltest",
+            production: 1,
+            tests: 0,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/watchhealth",
+            production: 1,
+            tests: 1,
+            move_plan: [],
+          },
+          {
+            path: "agentplane/x/runner_layering",
+            production: 2,
+            tests: 0,
+            move_plan: [],
+          },
+        ],
+      };
       const sourceSHA = "1f7caaa9dc952c773fada772285b17fc53e41689";
       const nextPRs = [
         {
@@ -5667,6 +8279,169 @@
           >${`#${number}${state ? ` · ${state.toLowerCase()}` : ""}`}<//
         >`;
       }
+      function GoPlan() {
+        const codeStyle = {
+          maxWidth: "100%",
+          minWidth: 0,
+          whiteSpace: "pre-wrap",
+          overflowWrap: "anywhere",
+        };
+        return html`<${Stack} component="section" id="go-plan" gap="md" my="xl">
+          <${Title} order=${2}>${"Plan for every Agentplane Go file"}<//>
+          <${Text}
+            >${`${goBatch.counts.files.toLocaleString()} Go files · ${goBatch.counts.directories} directories · ${goBatch.counts.production} production files · ${goBatch.counts.tests} tests. Every tracked Go file under agentplane/ is in scope, including commands, support libraries, tests and experiments.`}<//
+          >
+          <${Text} size="sm" c="dimmed"
+            >${`Full-tree source: ${goBatch.source_sha} · PR/check snapshot: ${goBatch.observed_at_utc}. The original inventory and completed nineteen-PR batch below keep their historical pins.`}<//
+          >
+          <${Group} gap="sm"
+            ><${Anchor} href="go-files.json"
+              >${"Complete file-by-file plan and fingerprints"}<//
+            ><${Anchor} href="go-plan.json">${"Plan and current PR evidence"}<//
+            ><${Anchor}
+              href="https://github.com/agentydragon/ducktape/stack/16208"
+              >${"Native stack #16208"}<//
+            ><//
+          >
+          <${Blockquote} color="blue"
+            >${"The target is a navigable ownership tree: commands compose; public API packages contain contracts; internal packages own implementations; tests follow the behavior they verify. A directory is a Go package, so moving methods on one concrete owner requires a real responsibility split. A high test-file count alone is not a reason to split a cohesive owner."}<//
+          >
+          <${Text}
+            >${"The ten groups below include the accepted transport move and nine successor groups. Published PRs are ready and labeled proposed. Work in progress has no PR number until a concrete, validated change exists. Stack order is review order; the actual content dependencies are stated per group."}<//
+          >
+          ${goBatch.lanes.some((lane) => lane.status === "MERGED") ? html`<${Title} order=${3}>${"Completed in this batch"}<//><${List}>${goBatch.lanes.filter((lane) => lane.status === "MERGED").map((lane) => html`<${List.Item} key=${lane.id}><${PRLink} number=${lane.number} state=${lane.status} />${" · "}${lane.title}<//>`)}<//>` : ""}
+          <${Title} order=${3}>${"Active ownership groups"}<//>
+          <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
+            ${goBatch.lanes
+              .filter((lane) => lane.status !== "MERGED")
+              .map(
+                (lane) =>
+                  html`<${Paper}
+                    key=${lane.id}
+                    withBorder
+                    p="md"
+                    style=${{ minWidth: 0 }}
+                  >
+                    <${Group} gap="xs"
+                      ><${Badge}
+                        color=${lane.status === "MERGED" ? "green" : lane.status === "OPEN" ? "blue" : "gray"}
+                        >${lane.status}<//
+                      >${lane.number ? html`<${PRLink} number=${lane.number} />` : ""}<//
+                    >
+                    <${Title} order=${3} mt="sm"
+                      >${`${goBatch.lanes.indexOf(lane) + 1}. ${lane.title}`}<//
+                    >
+                    <${Code} block style=${codeStyle}
+                      >${lane.from.join("\n") + "\n→\n" + lane.to.join("\n")}<//
+                    >
+                    <${Text} mt="sm">${lane.preserve}<//
+                    ><${Text} size="sm" mt="xs">${lane.checks}<//>
+                    <${Text} size="sm" c="dimmed" mt="xs">${lane.dependency}<//>
+                    ${lane.number && lane.native_member === false ? html`<${Text} size="sm" c="dimmed">${"Ready PR; awaiting GitHub native-stack registration."}<//>` : ""}
+                    ${lane.head ? html`<${Text} size="xs" c="dimmed" mt="xs">${`Review head: ${lane.head}`}<//>` : ""}
+                    ${lane.ci.length ? html`<${List} size="xs" mt="sm">${lane.ci.map((check) => html`<${List.Item} key=${check.name}>${check.url ? html`<${Anchor} href=${check.url}>${`${check.name}: ${check.state}`}<//>` : `${check.name}: ${check.state}`}<//>`)}<//>` : ""}
+                  <//>`,
+              )}
+          <//>
+          <${Title} order=${3}>${"Adoption and burn-down"}<//>
+          <${List} type="ordered" spacing="sm">
+            <${List.Item}
+              >${"Land path and ownership changes with complete import/BUILD/docs/fixtures closure. Keep authentication, protocols, stored bytes and lifecycle behavior unchanged in these layers."}<//
+            >
+            <${List.Item}
+              >${"Check the exact current head of each native stack layer. A focused test, a pending check, a queued merge and a merged PR are separate states. Record a CI repair separately from a source reshuffle."}<//
+            >
+            <${List.Item}
+              >${"After each merge or restack, refresh this section and the file ledger: completed groups leave the active work queue and retain their PR/check/commit evidence. Re-measure direct production and test files at the new source pin."}<//
+            >
+            <${List.Item}
+              >${"For the larger aggregates below, specify the transaction or lifecycle contract before choosing package boundaries. Then open the smallest useful implementation group; avoid temporary forwarding packages, test-only exports and generic callback layers."}<//
+            >
+          <//>
+          <${Title} order=${3}>${"Larger owners and explicit design gates"}<//>
+          <${Stack} gap="sm"
+            >${goBatch.ownership_gates.map(
+              (gate) =>
+                html`<${Paper} key=${gate.owner} withBorder p="md">
+                  <${Title} order=${4}>${gate.owner}<//
+                  ><${Text} size="sm" c="dimmed"
+                    >${`${gate.counts} · ${gate.state}`}<//
+                  >
+                  <${Text} mt="xs">${gate.target}<//
+                  ><${Text} size="sm" mt="xs">${gate.next}<//>
+                <//>`,
+            )}<//
+          >
+          <${Title} order=${3}>${"Next sampler ownership sequence"}<//>
+          <${Text}
+            >${"Source review mapped all 51 root production files to their intended responsibilities. The complete file ledger includes conditional future destinations. These four substantive PRs follow the leaf cleanup; each must preserve the contracts and existing recovery tests named in the downloadable plan."}<//
+          >
+          <${List} type="ordered" spacing="sm"
+            >${goBatch.sampler_sequence.filter((step) => step.step > 0).map((step) => html`<${List.Item} key=${step.step}><${Text} fw=${600}>${step.pr}<//><${Code} style=${codeStyle}>${step.package_path}<//><${Text} size="sm" mt="xs">${step.contract_to_choose}<//><${Text} size="sm" c="dimmed" mt="xs">${step.leave_together}<//><//>`)}<//
+          >
+          <${Blockquote} color="yellow"
+            >${goBatch.auth_design}<br />${goBatch.proto_design}<//
+          >
+          <${Accordion} variant="contained"
+            ><${Accordion.Item} value="retain-decisions">
+              <${Accordion.Control}>${"Why other areas stay together"}<//
+              ><${Accordion.Panel}
+                ><${Stack} gap="sm"
+                  >${goBatch.retain_decisions.map((decision) => html`<${Paper} key=${decision.area} withBorder p="sm"><${Title} order=${4}>${decision.area}<//><${Text} size="sm">${decision.decision}<//><${List} size="sm">${decision.evidence.map((fact) => html`<${List.Item} key=${fact}>${fact}<//>`)}<//><//>`)}<//
+                ><//
+              > <//
+            ><${Accordion.Item} value="directory-ledger">
+              <${Accordion.Control}
+                >${`Browse all ${goBatch.counts.directories} Go directories`}<//
+              >
+              <${Accordion.Panel}
+                ><${Text} size="sm" mb="sm"
+                  >${"Counts are direct files at the pinned source. 'Retain this batch' keeps a directory eligible for later work; it is not a permanent exemption or a claim that every internal design is final. The linked JSON maps all individual files to their planned paths and extraction groups."}<//
+                >
+                <${Box} style=${{ overflowX: "auto" }}
+                  ><${Table} miw=${700} striped withTableBorder>
+                    <thead>
+                      <tr>
+                        <th>Directory</th>
+                        <th>Production</th>
+                        <th>Tests</th>
+                        <th>Selected ownership groups</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${goBatch.directories.map(
+                        (dir) =>
+                          html`<tr key=${dir.path}>
+                            <td>
+                              <${Source}
+                                path=${dir.path + "/"}
+                                revision=${goBatch.source_sha}
+                              />
+                            </td>
+                            <td>${dir.production}</td>
+                            <td>${dir.tests}</td>
+                            <td>
+                              ${dir.move_plan.join(", ") || "Retain this batch"}
+                            </td>
+                          </tr>`,
+                      )}
+                    </tbody>
+                  <//><//
+                >
+              <//>
+            <//><//
+          >
+          <${Text} size="sm"
+            >${"Conventions: "}<${Anchor}
+              href="https://go.dev/doc/modules/layout"
+              >${"Go module layout (internal and commands)"}<//
+            >${"; "}<${Anchor}
+              href="https://go.dev/doc/effective_go#package-names"
+              >${"Go package naming"}<//
+            >${". These support the privacy and naming choices; the responsibility boundaries above are project-specific judgments backed by the file inventory and existing tests."}<//
+          >
+        <//>`;
+      }
       function Report() {
         return html`<${Container}
           component="main"
@@ -5686,7 +8461,8 @@
             >
           </header>
           <${Group} component="nav" gap="sm" my="md" aria-label="Contents"
-            ><${Anchor} href=${"#thesis"}>${"Start with ownership"}<//
+            ><${Anchor} href="#go-plan">${"Whole Go-tree plan"}<//>
+            <${Anchor} href=${"#thesis"}>${"Start with ownership"}<//
             ><${Anchor} href=${"#model"}>${"A small core model"}<//
             ><${Anchor} href=${"#ownership"}>${"Give each decision an owner"}<//
             ><${Anchor} href=${"#flows"}
@@ -5708,6 +8484,7 @@
               >${"Sources and design judgment"}<//
             ><//
           >
+          <${GoPlan} />
           <${Stack} component="section" id=${"thesis"} gap="sm" my="xl"
             ><${Box}>${"01 / Design thesis"}<//
             ><${Title} order=${2} mt="lg" mb="xs">${"Start with ownership"}<//
@@ -6460,11 +9237,11 @@
               <tr><td>${"1 · Mechanical batch complete"}</td><td>${"All nineteen implementation move groups are merged with their callers and existing tests. Retain their file maps and validation as completed history. The next work starts at stage 2."}</td><td>${"Approve each incremental diff; required checks pass on its current head. Resolve test-reliability repairs separately and carry them into the stack."}</td></tr>
               <tr><td>${"2 · Re-inventory flat owners"}</td><td>${"Measure direct files again after the moves. Whole-owner relocation enforces privacy without reducing that owner's file count. Extract the next cohesive responsibility only after identifying its state and transaction owner."}</td><td>${"A smaller navigable package with a meaningful contract, preserved integration coverage and no callback cycle or imitation Store interface."}</td></tr>
               <tr><td>${"3 · Simplify one lifecycle path"}</td><td>${"Map Runtime shutdown and reconciliation, admission fences, journal sealing and final History acknowledgement. Choose one bounded path and simplify its ownership."}</td><td>${"Race tests retain active-work, restart, no-replay and subsequent-input guarantees. Keep Notification GitHub transaction and advisory-lock ordering intact."}</td></tr>
-              <tr><td>${"4 · Resolve deferred design"}</td><td>${"Choose the transport owner and destination; review Action/MCP admission sharing; align protobuf namespaces and go_package declarations with filesystem directories as an explicit later migration; decide service/database topology separately."}</td><td>${"Reviewed wire, authorization and data-preservation consequences. The mechanical moves leave protocol namespaces and stored bytes unchanged."}</td></tr>
+              <tr><td>${"4 · Resolve deferred design"}</td><td>${"Transport destination is selected as net/peertls; defer privileged-auth mechanism design and review Action/MCP admission sharing; align protobuf namespaces and go_package declarations with filesystem directories as an explicit later migration; decide service/database topology separately."}</td><td>${"Reviewed wire, authorization and data-preservation consequences. The mechanical moves leave protocol namespaces and stored bytes unchanged."}</td></tr>
             </tbody><//><//>
 
             <${Title} order=${3} mt="lg" mb="xs">${"Deferred and design-gated work"}<//
-            ><${Blockquote} color="yellow" my="md">${"Shared transport remains at its existing package path. The operator rejected the assumed identity/transport destination, so it is excluded from these nineteen lanes. The mutable sampler Store/Executor split, Notification transaction split, and Runtime lifecycle simplification remain separate ownership and race-test design gates."}<//>
+            ><${Blockquote} color="yellow" my="md">${"The completed nineteen-lane batch excluded shared transport after the operator rejected identity/transport. The new whole-Go-tree plan above records the later accepted net/peertls destination and its PR. The mutable sampler Store/Executor split, Notification transaction split, and Runtime lifecycle simplification remain separate ownership and race-test design gates."}<//>
             <${Text} component="p" my="sm">${"Navigation counts are pinned baseline measurements, not target package sizes. Moving whole owners relocates their files; it does not reduce the number of files inside those owners. "}<${Anchor} href="evidence.json">${"Evidence and exact file moves"}<//><//>
           <//>
           ><${Stack} component="section" id=${"sources"} gap="sm" my="xl"
