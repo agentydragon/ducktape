@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "scope": "Agentplane test architecture: initial pilot, iteration2 recovery profiles, iteration3 Pod service closure/concurrency and Secret-projection cadence spike. Experimental branch only; complete required-CI and reliability improvement not established.",
+  "scope": "Agentplane test architecture: initial pilot and iterations 2-3 retained as historical evidence; iteration 4 adds native recovery contracts, an MCP/central deployment candidate, and the accepted single-PR staged plan. Complete required-feedback improvement is not established.",
   "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
-  "observed_at_utc": "2026-11-13T07:32:12.560466+00:00",
+  "observed_at_utc": "2026-11-13T08:58:32Z",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
   "current_static_graph": {
     "static_required_eligible_k3s_suite_count": 13,
@@ -559,6 +559,23 @@
     "minimum_fresh_contract_executions": 100,
     "minimum_busy_windows": 3,
     "concurrent_pr_burst": 4,
+    "desired_routine_backend_mean_seconds": 240,
+    "desired_routine_backend_p90_seconds": 480,
+    "measurement_scope": "Rerun-inclusive required-feedback distribution; the values are a first target, not a floor or a forecast.",
+    "source_work_policy": "Keep all source work on the existing agent/test-architecture-pivot branch and draft PR #16102. Milestones are commits and measurement checkpoints within that PR; do not split source work into additional PRs.",
+    "retained_contracts": "Routine owner/native service contracts remain required, alongside focused real-deployment acceptance and app/browser/MCP user journeys.",
+    "frequency_policy": "Repetitive fault x harness x platform combinations may move to devel/nightly only after proof that the moved coverage remains effective. Keep unknown or sensitive changes on the broad gate.",
+    "continue_rule": "Continue dedicated work while the best remaining candidate can repay implementation, review, and maintenance within about one quarter.",
+    "stop_rule": "Stop dedicated work only when the best remaining candidate cannot repay implementation, review, and maintenance within about one quarter and the two best remaining probes fail to show worthwhile gain.",
+    "time_accounting": "Do not treat all saved CI wall time as saved developer work. Estimate developer waiting and iteration separately from total CI duration.",
+    "qualification_status": "Pending: 30 pinned PR base/head pairs, three busy windows, a four-PR burst, selected candidate graph comparison, and complete rerun-inclusive PR feedback. The native repeat supplies 100 balanced case exposures, not 100 independent failure trials or whole-PR evidence.",
+    "limits": "The devel merge gate and test frequency remain unchanged until the required coverage and end-to-end evidence support a reviewed decision."
+  },
+  "previous_adoption_protocol": {
+    "minimum_pinned_base_head_pairs": 30,
+    "minimum_fresh_contract_executions": 100,
+    "minimum_busy_windows": 3,
+    "concurrent_pr_burst": 4,
     "initial_screen_median_feedback_improvement_percent": 25,
     "initial_screen_max_p90_regression_percent": 5,
     "desired_routine_backend_mean_seconds": 240,
@@ -587,7 +604,7 @@
     "source_merge_parent": "73c214534dc211f8460fb233d3a63e4808947399",
     "source_branch": "agent/test-architecture-pivot",
     "source_pr": "https://github.com/agentydragon/ducktape/pull/16102",
-    "source_note": "Draft PR #16102 remains on agent/test-architecture-pivot at e81dd61bc9. All three required checks passed (Bazel finished 06:08:35 UTC). GitHub CI tested synthetic merge a7e97ab of that head with devel ca8e6f4; separate pinned benchmarks/manual validation tested the literal head. This head needed 10m39s from workflow creation to last required check. No complete-CI saving is established.",
+    "source_note": "Draft PR #16102 remains on agent/test-architecture-pivot at e81dd61bc9. All three required checks passed (Bazel finished 06:08:35 UTC). GitHub CI tested synthetic merge a7e97ab of that head with devel ca8e6f4; separate pinned benchmarks/manual validation tested the literal head. That iteration 2 head needed 10m39s from workflow creation to last required check; it is historical, not the current PR-head measurement. No complete-CI saving is established.",
     "complete_ci_saving_established": false,
     "remaining": [
       "P2 reusable fixtures and more native fault contracts",
@@ -4433,7 +4450,7 @@
         ]
       }
     },
-    "next_step": "Keep this source PR experimental. MCP services418.667s is now the last fresh ordinary-CI test, with VM391.875s and Pod382.481s behind it. Next map those seven MCP cases to backend contracts versus OAuth/app journeys, compose the smallest real-service fixture for the backend cases and retain actual deployment/app acceptance. Complete native active-work/History-gap/fencing seeded-defect controls and the planned 30-pair/100-execution graph replay before reducing required selection. Continue counterbalanced cadence/concurrency exposure; current 9m49s feedback does not meet the <4-minute objective.",
+    "next_step": "Keep this source PR experimental. MCP services418.667s is now the last fresh ordinary-CI test, with VM391.875s and Pod382.481s behind it. Next map those seven MCP cases to backend contracts versus OAuth/app journeys, compose the smallest real-service fixture for the backend cases and retain actual deployment/app acceptance. Complete native active-work/History-gap/fencing seeded-defect controls and the planned 30-pair/100-execution graph replay before reducing required selection. Continue counterbalanced cadence/concurrency exposure; that stage's 9m49s feedback did not meet the <4-minute objective.",
     "ordinary_ci": {
       "finding": "All three required checks passed on implementation head 33cc6df6c7. Observed required-check feedback was 9m49s; the routine <4-minute objective remains unmet. MCP services finished last, followed by VM and Pod acceptance.",
       "pr_head": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
@@ -4471,6 +4488,750 @@
       "docs_status": "PASSED",
       "docs_workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43385199997",
       "docs_invocation_url": "https://app.buildbuddy.io/invocation/9298e005-0cd1-5ad3-a1a7-a820c21bbc62"
+    }
+  },
+  "iteration4": {
+    "status": "NATIVE100_CASES_PASSED; ABBA_FAILURES_RETAINED; PVC_CONTROLS_AND_FULL_VM_PASSED; REQUIRED_CI_GREEN; QUALIFICATION_OPEN",
+    "observed_at_utc": "2026-11-13T09:30:14.659355+00:00",
+    "finding": "Four manual native contracts pass 25 fresh actions (100 correlated case exposures,25 per contract). The four-launch selected-graph screen retains one physical infrastructure re-execution and one VM teardown timeout; no causal whole-CI saving is established. Nested-outcome and bounded read-only PVC recovery controls pass; the full VM scenario and all required d717 checks pass. Latest workflow-created required feedback is12m01s. Independent devel backports are being sent; direct guest boot is the next bounded structural probe.",
+    "source_provenance": {
+      "source_branch": "agent/test-architecture-pivot",
+      "source_pr": "https://github.com/agentydragon/ducktape/pull/16102",
+      "pr_status": "Draft architecture PR; applicable independent fixes may be backported separately.",
+      "devel_base_commit": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+      "merge_from_devel_commit": "2d2088855bfa6e7ce377cfc2e8885a211fd46816",
+      "native_contract_commit": "d2508cbdd86b1be1ec186cb2e4656857c2be4129",
+      "mcp_candidate_commit": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+      "latest_source_head": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+      "latest_head_change": "Bounded read-only PVC LIST recovery after A2 teardown failure; independent devel backports authorized.",
+      "latest_head_ci_status": "All three required checks SUCCESS; workflow-created to last required12m01s. A single head, no causal saving."
+    },
+    "accepted_plan": {
+      "one_pr": "Architecture work stays on PR #16102. Independently useful bugfixes or clear improvements already applicable to devel may be backported through separate PRs; keep experimental architecture and adoption together.",
+      "required_acceptance": "Keep routine owner/native contracts, focused real-deployment checks, and real app/browser/MCP journeys required.",
+      "frequency": "Repetitive fault x harness x platform combinations may move to devel/nightly only after proof. Unknown and sensitive changes remain on the broad gate.",
+      "first_feedback_target": {
+        "mean_seconds": 240,
+        "p90_seconds": 480,
+        "population": "Rerun-inclusive required backend feedback.",
+        "qualification": "First target, not a floor or forecast; no expected two-minute result is asserted."
+      },
+      "continue": "Continue while the best remaining candidate can repay implementation, review, and maintenance within about one quarter.",
+      "stop": "Stop dedicated work when the best remaining candidate cannot pay back within about one quarter and the two best probes fail to show worthwhile gain.",
+      "time_accounting": "Count developer waiting and iteration separately; do not equate all saved CI wall time with developer time saved.",
+      "qualification": {
+        "pinned_pr_pairs_required": 30,
+        "fresh_contract_executions_required": 100,
+        "busy_windows_required": 3,
+        "concurrent_pr_burst": 4,
+        "status": "PENDING: 30 pinned PR base/head pairs, three busy windows, a four-PR burst, final ABBA selected-graph timings, and current-head rerun-inclusive feedback. The 100 native case exposures are 25 per contract, not 100 independent failure trials."
+      }
+    },
+    "native_contracts": {
+      "fixture": "Production Gateway, Dispatcher and History services; PostgreSQL; Kubernetes envtest API; real Runtime PID1 container and real CLI with a scripted model.",
+      "cases": [
+        {
+          "contract": "Completed-turn transport outage",
+          "exercise": "After a completed turn, exercise Gateway/transport outage, verify the completed turn remains in History, then send and complete the next input."
+        },
+        {
+          "contract": "Runtime admission idempotency across restart",
+          "exercise": "Repeat direct Runtime admission before and after restart. Ordinary client identity is denied; Gateway service identity is allowed. Reject a changed payload or operation for the same admission key."
+        },
+        {
+          "contract": "Active Runtime process crash",
+          "exercise": "SIGKILL the actual native Runtime PID; verify fencing, retained History prefix, reconciliation, and the next input in the same Session without duplicate turn submission."
+        },
+        {
+          "contract": "History outage and cursor resume",
+          "exercise": "SIGSTOP History while Runtime completes a turn, resume History, reconcile the Runtime journal, and resume the reader at a contiguous cursor."
+        }
+      ],
+      "repeat_run": {
+        "label": "25-run exact-head native repeat",
+        "invocation": "3fdecfa7-65a5-42a4-93d5-da9bc9e49036",
+        "url": "https://app.buildbuddy.io/invocation/3fdecfa7-65a5-42a4-93d5-da9bc9e49036",
+        "source_commit": "d2508cbdd86b1be1ec186cb2e4656857c2be4129",
+        "physical_actions": 25,
+        "test_runner_attempts": 25,
+        "test_runner_attempt_number": 1,
+        "test_results": 25,
+        "first_attempt_passes": 25,
+        "skips": 0,
+        "tests_per_action": 4,
+        "case_exposures": 100,
+        "per_case_exposures": {
+          "test_runtime_transport_outage_retains_history_and_accepts_next_input": 25,
+          "test_runtime_admission_is_idempotent_after_restart_without_dispatcher_replay": 25,
+          "test_active_runtime_crash_preserves_history_and_does_not_resubmit_the_turn": 25,
+          "test_history_outage_replays_the_runtime_journal_and_resumes_the_reader_cursor": 25
+        },
+        "process_seconds": {
+          "min": 70.095087,
+          "median": 95.647942,
+          "mean": 95.56540804,
+          "p90": 111.419124,
+          "max": 120.674801
+        },
+        "total_cpu_seconds": 3715.019681,
+        "distinct_workers": 24,
+        "bazel_wall_seconds": 676.752,
+        "bazel_wall_scope": "Bounded four-way 25-run repeat job; not per-PR CI time.",
+        "sample_limit": "n=25 exposures per contract. The four tests share each action/fixture environment, so 100 case exposures are not 100 independent failure trials and do not establish a reliability rate."
+      },
+      "prior_four_case_pass": {
+        "invocation": "d36e147d-7623-4d04-acc7-34036a34f2b5",
+        "url": "https://app.buildbuddy.io/invocation/d36e147d-7623-4d04-acc7-34036a34f2b5",
+        "process_seconds": 81.093,
+        "bazel_wall_seconds": 87.893,
+        "pytest_seconds": 63.57,
+        "qualification": "Four-case pass on a pre-commit patched tree; retain as historical fixture evidence, not a matched timing comparison."
+      },
+      "negative_controls": [
+        {
+          "label": "Discarded Runtime journal",
+          "invocation": "8d8188ad-12a7-42f7-96fa-0409fbaf2236",
+          "url": "https://app.buildbuddy.io/invocation/8d8188ad-12a7-42f7-96fa-0409fbaf2236",
+          "outcome": "Failed at the first case retained-Session inventory assertion when the case-owned Runtime journal was discarded.",
+          "interpretation": "The seeded loss was detected before later receipt assertions; this is a fault-sensitivity observation, not a complete mutant campaign."
+        },
+        {
+          "label": "Temporary journal command/payload collision guard mutation",
+          "invocation": "740efe9c-93d1-433b-b7e1-fafe5c40da75",
+          "url": "https://app.buildbuddy.io/invocation/740efe9c-93d1-433b-b7e1-fafe5c40da75",
+          "outcome": "Disabling the journal collision guard caused DID NOT RAISE ServiceError at the existing ALREADY_EXISTS assertion: the contract detected the seeded missing guard.",
+          "disposition": "Mutation was automatically restored and never committed; the original Go journal file has zero diff."
+        }
+      ],
+      "case_batch_reliability": {
+        "failure_invocation": "0b745d32-8c64-4e41-8272-cb3a57023d2f",
+        "failure_url": "https://app.buildbuddy.io/invocation/0b745d32-8c64-4e41-8272-cb3a57023d2f",
+        "failure": "Nested pytest BaseExceptionGroups wedged result waiters.",
+        "fixed_full_pass_invocation": "7d522bb2-34bb-491a-bd9d-7f2dd0110991",
+        "stronger_fatal_cancel_pass_invocation": "d140d2e6-d2be-4a01-990a-d66ccd5d189f",
+        "interpretation": "The failure mechanism and cleanup paths were exercised and repaired. No recurrence-rate improvement has been measured."
+      }
+    },
+    "mcp_candidate": {
+      "source_commit": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+      "profile_split": {
+        "mcp_target": "//agentplane/system_tests/suites/mcp:test_services_mcp_candidate",
+        "central_target": "//agentplane/system_tests/suites/mcp:test_services_central_candidate",
+        "mcp_cases": 3,
+        "central_recovery_cases": 4,
+        "retained_central_services": "Real App, Actions, Gateway, History, sampler, controllers, PKI and required central recovery behavior remain.",
+        "profile_removals": "The central-services profile removes only the MCP-edge service image, Dex, MCP Everything and the OAuth fixture. This is a candidate split, not a devel selector or a whole-suite coverage replacement."
+      },
+      "configured_graph_query": {
+        "control": {
+          "invocation": "aff9fdf1-e96b-4638-b6c3-6459f23409e0",
+          "url": "https://app.buildbuddy.io/invocation/aff9fdf1-e96b-4638-b6c3-6459f23409e0",
+          "outcome": "On literal source 220, configured control path is test_services \u2192 test_services_image_manifest \u2192 mcp_edge:service_image (three nodes)."
+        },
+        "candidate": {
+          "invocation": "a38fb697-316d-42cb-b61e-1036769dc1c8",
+          "url": "https://app.buildbuddy.io/invocation/a38fb697-316d-42cb-b61e-1036769dc1c8",
+          "outcome": "Passed: configured candidate closure has no MCP-edge service image."
+        },
+        "interpretation": "The configured dependency edge removal is verified. No transferred-byte or whole-CI saving is established."
+      },
+      "case_collections": {
+        "invocation": "b3c1bfab-c98d-4225-a76a-2b5ab424a19f",
+        "url": "https://app.buildbuddy.io/invocation/b3c1bfab-c98d-4225-a76a-2b5ab424a19f",
+        "outcome": "Passed: seven cases total, split as three MCP cases and four central recovery cases."
+      },
+      "selected_graph_control": {
+        "invocation": "3a80aeab-436c-4722-b3b7-5c1f88e2470d",
+        "url": "https://app.buildbuddy.io/invocation/3a80aeab-436c-4722-b3b7-5c1f88e2470d",
+        "targets": "MCP, Pod and VM selected-target control graph at the full 220e6a5 candidate source.",
+        "outcome": "A1 control selected graph passed all three targets in 577.324s. Its physical VM TestRunner execution wall was 529.287s; this was one run under its recorded workload context."
+      },
+      "selected_graph_candidate": {
+        "status": "B1_PASSED; B2_FINAL_PASSED_WITH_PHYSICAL_INFRA_INTERRUPTION; A2_CONTROL_TEARDOWN_ERROR",
+        "targets": "MCP split, Pod and VM selected-target candidate graph at the same 220e6a5 source; only the MCP split differs from the control graph.",
+        "outcome": "B1 candidate selected graph passed all four targets in 564.211s. Its physical VM TestRunner execution wall was 524.129s. This was one run under a different unrelated-load context; no causal timing comparison follows.",
+        "invocation": "58400d80-c37c-42b1-be89-1b4ae905f562",
+        "url": "https://app.buildbuddy.io/invocation/58400d80-c37c-42b1-be89-1b4ae905f562"
+      },
+      "whole_pr_ci": {
+        "status": "PASSED_ON_220; FINAL_HEAD_CI_PENDING",
+        "pr_status": "Draft",
+        "tested_source_commit": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+        "latest_source_head": "7d46adc2b16dfaefdb462f3529af1b41324ad5f4",
+        "latest_head_ci_status": "Pending",
+        "workflow_run_id": "43393156805",
+        "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43393156805",
+        "workflow_created_at_utc": "2026-11-13T08:25:51Z",
+        "last_required_check_completed_at_utc": "2026-11-13T08:34:55Z",
+        "workflow_created_to_last_required_seconds": 544,
+        "reruns_on_observed_attempt": 0,
+        "bazel_job": {
+          "started_at_utc": "2026-11-13T08:25:54Z",
+          "completed_at_utc": "2026-11-13T08:34:55Z"
+        },
+        "buildbuddy_invocation": "ab7094c9-df08-54b7-b87a-2db5c64fdc8d",
+        "buildbuddy_url": "https://app.buildbuddy.io/invocation/ab7094c9-df08-54b7-b87a-2db5c64fdc8d",
+        "synthetic_merge_commit": "0960f2846befc05a647ff5b2478a29b37b534719",
+        "synthetic_merge_base": "afc1dac75b727088d99eddd593736a4e73f47b34",
+        "literal_selected_graph_commit": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+        "literal_selected_graph_base": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+        "source_resolution_note": "GitHub ordinary PR CI used the synthetic merge tree; job logs resolved the tested PR source to head 220. Selected graph A1/B1 are separate literal-head runs at 220 and base 6c5f.",
+        "checks": [
+          {
+            "name": "Bazel CI",
+            "workflow_run_id": "43393156805",
+            "conclusion": "SUCCESS",
+            "started_at_utc": "2026-11-13T08:25:54Z",
+            "completed_at_utc": "2026-11-13T08:34:55Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43393156805"
+          },
+          {
+            "name": "Build artifacts + imports",
+            "workflow_run_id": "43393156850",
+            "conclusion": "SUCCESS",
+            "started_at_utc": "2026-11-13T08:25:53Z",
+            "completed_at_utc": "2026-11-13T08:27:03Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43393156850"
+          },
+          {
+            "name": "Pre-commit checks",
+            "workflow_run_id": "43393157199",
+            "conclusion": "SUCCESS",
+            "started_at_utc": "2026-11-13T08:25:53Z",
+            "completed_at_utc": "2026-11-13T08:27:02Z",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43393157199"
+          }
+        ],
+        "interpretation": "One exact-head CI observation, with no reruns in that attempt. 9m04s is not a matched before/after result or a causal CI saving. Later source-head results are separate.",
+        "latest_head_status": "d717 required checks SUCCESS; see final_source_ci for exact clocks/provenance."
+      },
+      "vm_boot_candidate": "Manual real-VM readiness, issued SVID and typed app/Gateway/Runtime status contract passed on literal9bce source in invocation af44c062-1628-424d-bc69-fdeb73bb0243. No harness turn; not a replacement for full VM acceptance.",
+      "gate_frequency_code": "No gate/frequency change or static remapping CLI is enabled. Actual selection labels are archived through the existing CI diagnostic path.",
+      "selected_graph_abba": {
+        "source_commit": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+        "A1_control": {
+          "invocation": "3a80aeab-436c-4722-b3b7-5c1f88e2470d",
+          "status": "PASSED",
+          "targets": 3,
+          "selected_graph_elapsed_seconds": 577.324,
+          "physical_test_runner_execution_wall_seconds": {
+            "mcp_services": 356.719,
+            "pod": 369.147,
+            "vm": 529.287
+          }
+        },
+        "B1_candidate": {
+          "invocation": "58400d80-c37c-42b1-be89-1b4ae905f562",
+          "status": "PASSED",
+          "targets": 4,
+          "selected_graph_elapsed_seconds": 564.211,
+          "physical_test_runner_execution_wall_seconds": {
+            "central_candidate": 296.008,
+            "mcp_candidate": 230.302,
+            "pod": 449.964,
+            "vm": 524.129
+          }
+        },
+        "B1_minus_A1_observed_seconds": -13.113,
+        "MCP_case_coverage": {
+          "control_cases": 7,
+          "candidate_cases": 7,
+          "candidate_case_ids_disjoint": true,
+          "candidate_union_matches_control_case_ids": true,
+          "candidate_split": "3 MCP/OAuth/consent/approval cases plus 4 central-recovery cases; all passed."
+        },
+        "unchanged_targets": {
+          "pod_cases": 21,
+          "vm_cases": 1,
+          "case_ids_and_statuses_identical_across_arms": true,
+          "all_passed_in_both_arms": true
+        },
+        "physical_execution_qualification": "Every selected TestRunner action was physically executed once, marked doNotCache=true, and had no retries. All selected targets passed; no cases were skipped.",
+        "mcp_slice_action_wall_sum": {
+          "control_single_mcp_action_seconds": 356.719,
+          "candidate_two_mcp_actions_sum_seconds": 526.31,
+          "qualification": "Sum of TestRunner action wall times, not selected-graph wall. The split creates two action-level fixture/setup opportunities; one pair cannot isolate setup or teardown cost."
+        },
+        "workload_context": "A1 overlapped the native 25-repeat and ordinary-CI workload. B1 ran with less unrelated test load. The differing context prevents causal attribution of the 13.113-second observed elapsed difference.",
+        "B2_and_A2": {
+          "status": "COMPLETE_WITH_RECORDED_FAILURES",
+          "addendum": "iteration4.selected_graph_final"
+        },
+        "observed_bottleneck": "The VM TestRunner remained the slowest action in both first runs, at 529.287s and 524.129s.",
+        "interpretation": "First pair and reversed-order launches are a selected-cohort screen under differing load/cache conditions, with an infrastructure interruption and a control teardown error. No causal speedup or reliability rate is established.",
+        "mcp_cpu_seconds": {
+          "control": 839.653,
+          "candidate_sum": 1421.899,
+          "interpretation": "Aggregate MCP CPU rises in this pair; duplicated fixture setup must earn its cost through actual change-class selectivity. No runtime adoption is justified by this sample."
+        }
+      },
+      "case_batch_full_integration": {
+        "invocation": "7d522bb2-34bb-491a-bd9d-7f2dd0110991",
+        "url": "https://app.buildbuddy.io/invocation/7d522bb2-34bb-491a-bd9d-7f2dd0110991",
+        "targets": [
+          "//agentplane/system_tests/driver:test_case_batch",
+          "//agentplane/system_tests/deployment:test_render",
+          "//agentplane/system_tests/deployment:test_render_determinism"
+        ],
+        "status": "All three passed.",
+        "source_qualification": "Run on 220 plus the staged patch, matching 9bce except formatting."
+      },
+      "vm_profile": {
+        "source_commit": "4c7731b1be578c9833c570a0d6c029f3b8bcc7f9",
+        "change": "Existing VM profile removes only unused MCP-edge objects/image; every retained rendered object and full scenario body unchanged. Internal profile NO_MCP_EDGE is shared explicitly by Pod, central-services and VM.",
+        "render_invocation": "96cac951-2484-4a4b-9b76-e45a68ae3917",
+        "render_status": "Render equivalence and determinism passed after correcting the test fixture parameter name.",
+        "configured_closure_invocation": "f6a8625f-1a9f-4aa4-873d-242855c7565c",
+        "configured_closure_status": "Successful empty configured path to mcp_edge:service_image.",
+        "full_vm_invocation": "4aec403d-812b-4367-8122-7c2385f0c068",
+        "full_vm_status": "PASSED on literal4c7731b1: unchanged full VM scenario;395.411s JUnit,430.558s selected invocation; not a matched timing improvement.",
+        "coverage": "Full existing Claude/Codex turns, supervision, cgroups, egress, notifications and SVID continuity remain required. This fixture does not exercise external Connections; default/MCP/Firecracker compositions are unchanged.",
+        "initial_lint_failure_invocation": "b6c16326-b8ac-4f78-a3d5-0c0e578dd2cc",
+        "root_phases_seconds": {
+          "setup": 172.15,
+          "case": 164.251,
+          "diagnostics": 2.522,
+          "cleanup": 31.867,
+          "manifest_load": 1.256
+        }
+      },
+      "selection_artifact": {
+        "source_commit": "7d46adc2b16dfaefdb462f3529af1b41324ad5f4",
+        "focused_invocation": "d001cab9-8712-4313-9d03-a960df4b1f21",
+        "change": "Existing query output, before runtime tag filtering, retained with source/base/merge and invocation identity in existing best-effort probe archive. No additional query or selection change.",
+        "verdict_checks": "Snapshot-write and upload failures preserve passing and failing gate verdicts.",
+        "limits": "No-affected-target early exit has no snapshot. GitHub run ID/attempt not forwarded to runner; deterministic invocation IDs identify it. Raw runner diagnostics stay private.",
+        "actual_ci_archive_round_trip": "Verified selected-test-labels.json downloaded from final CI probe archive.2223 pre-runtime-tag-filter labels, full sweep; source merge488adf369a932ae05457808dd0498083f5ce31a1, actual base6787057f85d482979f7c3af5464a401b110dc7d2, PR head7d46adc2b16dfaefdb462f3529af1b41324ad5f4; invocation IDs match.",
+        "snapshot_sha256": "a17066775c388e8ecb26871c612c67467355866b1121dc13f5ffbf8940a78d36",
+        "latest_round_trip": {
+          "source": {
+            "base_sha": "a8f15395e09d8d2edac60ca810d17bef7cc2e225",
+            "commit_sha": "c22d0c4e37d9abe82de088c94e835466a3dd117d",
+            "event_base_sha": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+            "merge_sha": "c22d0c4e37d9abe82de088c94e835466a3dd117d",
+            "pr_head_sha": "d717b4256d63c540179e61b5b90ed8c7d25f64d4"
+          },
+          "workflow": {
+            "build_invocation_id": "f4287c7e-20fc-5a80-aa6f-f9acb644071a",
+            "event_name": "pull_request",
+            "name": "Bazel CI",
+            "test_invocation_id": "d91c70d4-3460-54bc-94a0-164f963b0882"
+          },
+          "label_count": 2223,
+          "stage": "bazel-query-before-runtime-tag-filter",
+          "full_sweep": true,
+          "sha256": "d40ca2b3e2a4055514a8aadf8d8557397d6573f7a3388dba7fa65f50241058e1",
+          "limit": "Actual archive retrieved; pre-runtime-tag-filter labels, not executed TestRunners. Raw diagnostics remain private.",
+          "hash_scope": "Exact selected-test-labels.json member bytes in the retrieved archive."
+        }
+      }
+    },
+    "limits": "No production gate, suite frequency or devel selector has changed. The MCP and selected-graph work is a candidate comparison; no complete-CI saving, independent failure-rate claim, or full VM equivalence is established.",
+    "pending": [
+      "Finish independent CaseBatch/PVC devel PR validation and collect recurrence after merge; do not infer a rate improvement from seeded controls.",
+      "Run the bounded direct guest-boot feasibility probe; retain real platform, authenticated service and App journeys separately.",
+      "Assign remaining composed coverage, including actual Dispatcher loss/retry of a real Runtime admission reply.",
+      "Complete 30 pinned PR replay pairs, three busy windows and four-PR burst before gate adoption;100 native case exposures alone do not qualify."
+    ],
+    "selected_graph_final": {
+      "abba": {
+        "A1": {
+          "invocation_id": "3a80aeab-436c-4722-b3b7-5c1f88e2470d",
+          "physical_test_runner_actions": 3,
+          "selected_graph_elapsed_seconds": 577.324,
+          "target_result": "all selected targets passed",
+          "workload_context": "overlapped native25 and ordinary CI workload"
+        },
+        "A2": {
+          "case_counts": {
+            "MCP required": 7,
+            "Pod": 21,
+            "full VM": 1
+          },
+          "invocation_cache_counters": "Not included in this curated addendum; do not infer per-target cache behavior. A1/B1 and B2 counters are invocation-wide only.",
+          "invocation_id": "d4f6afa5-68e5-480b-b923-486ef3004ed8",
+          "physical_test_runner_actions": 3,
+          "selected_graph_elapsed_seconds": 606.716,
+          "target_result": "MCP and Pod passed; full VM target failed its one pytest case during fixture teardown",
+          "vm_failure": {
+            "cause_limit": "The client waited for the Kubernetes PVC-list response and hit its configured 10-second timeout. Available process spans do not instrument that client request, so the API server, connection, or response-path cause is not established.",
+            "completed_before_error": [
+              "both VM sandbox readiness spans",
+              "both harness session setup and turn spans",
+              "both scenario spans",
+              "both sandbox cleanup spans",
+              "pytest test body and assertions"
+            ],
+            "junit_case": "agentplane.system_tests.suites.test_vm::test_vm_scenarios",
+            "not_failure_phase": [
+              "VM readiness",
+              "harness turns",
+              "Runtime/Gateway scenario behavior",
+              "scenario cleanup",
+              "scenario trace assertion"
+            ],
+            "operation": "CoreV1Api.list_namespaced_persistent_volume_claim(namespace, _request_timeout=10)",
+            "phase": "deployment fixture stack teardown / VM block-storage provisioner cleanup",
+            "prior_same_signature": "agentplane/system_tests/debug/vm_shutdown_stalls/five_run_full_suite_control.md records the same fixture teardown TimeoutError while listing PVCs in run 2 of invocation f2fb8959-2613-400e-a49e-4be88782db1f; that run had orderly guest shutdown. This is a repeated teardown signature, not a diagnosed root cause or a harmlessness/flakiness claim.",
+            "pytest_body": "PASSED",
+            "recorded_spans_utc": {
+              "case": [
+                "2026-11-13T09:08:12.474995Z",
+                "2026-11-13T09:12:47.198210Z"
+              ],
+              "resources_close_error": [
+                "2026-11-13T09:12:49.607742Z",
+                "2026-11-13T09:12:54.361597Z"
+              ],
+              "scenario": [
+                "2026-11-13T09:08:13.352010Z",
+                "2026-11-13T09:12:47.168483Z"
+              ],
+              "stack_cleanup_error": [
+                "2026-11-13T09:12:49.607581Z",
+                "2026-11-13T09:12:54.364754Z"
+              ],
+              "stack_diagnostics": [
+                "2026-11-13T09:12:47.199083Z",
+                "2026-11-13T09:12:49.607169Z"
+              ]
+            },
+            "stack": "running_stack context exit -> _certify_baseline -> resources.close -> block_storage.provisioning worker -> _serve -> PVC list -> aiohttp response read -> asyncio.TimeoutError",
+            "teardown": "ERROR: TimeoutError"
+          }
+        },
+        "B1": {
+          "invocation_id": "58400d80-c37c-42b1-be89-1b4ae905f562",
+          "physical_test_runner_actions": 4,
+          "selected_graph_elapsed_seconds": 564.211,
+          "target_result": "all selected targets passed",
+          "workload_context": "less unrelated load than A1; not a matched load trial"
+        },
+        "B2": {
+          "case_counts": {
+            "MCP candidate slices": 7,
+            "Pod": 21,
+            "full VM": 1
+          },
+          "infra_reexecution": {
+            "attribution_limit": "BES contained no explicit event attributing the remote action failure to worker loss, runner drain, or transport. Code 14 alone does not establish mechanism; cause below the recorded Firecracker socket refusal is unknown.",
+            "final_junit_attempts": 1,
+            "first_action": {
+              "cpu_seconds": 754.843,
+              "execution_stage": "COMPLETED",
+              "execution_wall_seconds": 199.912,
+              "exit_code": -2,
+              "first_to_second_worker_intervals_utc": [
+                "2026-11-13T08:50:17.548494244Z",
+                "2026-11-13T08:53:39.155643790Z"
+              ],
+              "reapi_status_code": 14,
+              "recorded_message": "error pausing VM: PATCH http://localhost/vm failed; dial unix /buildbuddy/remotebuilds/firecracker/<redacted>/root/run/fc.sock: connect: connection refused",
+              "test_output": "test.exited_prematurely marker; zero declared output files in that failed action"
+            },
+            "physical_actions_for_target": 2,
+            "same_action_digest": true,
+            "second_action": {
+              "cpu_seconds": 2100.281,
+              "execution_wall_seconds": 541.131,
+              "target_junit_result": "PASSED"
+            },
+            "target": "//agentplane/system_tests/suites:test_vm"
+          },
+          "invocation_cache_counters": {
+            "action_cache_hits": 3607,
+            "advertised_download_bytes": 46521727308,
+            "cas_cache_hits": 14740,
+            "scope": "invocation-wide; not attributable to target",
+            "transferred_download_bytes": 8211879173
+          },
+          "invocation_id": "e9849ed3-da32-4372-b983-89269ab2ec4f",
+          "physical_test_runner_actions": 5,
+          "selected_graph_elapsed_seconds": 789.035,
+          "target_result": "all four selected target summaries passed"
+        }
+      },
+      "final_state": {
+        "all_recorded_invocations_completed": true,
+        "all_selected_targets_passed": false,
+        "failed_target_observed": "A2 //agentplane/system_tests/suites:test_vm",
+        "infra_action_interruption_observed": "B2 VM TestRunner action; final target summary passed after a same-digest physical action completed",
+        "additional_manual_reruns_after_failures": 0,
+        "automatic_physical_reexecutions": 1
+      },
+      "physical_test_runner_metrics_seconds": {
+        "A1": [
+          {
+            "cpu": 839.653,
+            "execution_wall": 356.719,
+            "target": "//agentplane/system_tests/suites/mcp:test_services"
+          },
+          {
+            "cpu": 1124.837,
+            "execution_wall": 369.147,
+            "target": "//agentplane/system_tests/suites:test_pod"
+          },
+          {
+            "cpu": 2090.103,
+            "execution_wall": 529.287,
+            "target": "//agentplane/system_tests/suites:test_vm"
+          }
+        ],
+        "A2": [
+          {
+            "cpu": 748.626,
+            "execution_wall": 304.591,
+            "target": "//agentplane/system_tests/suites/mcp:test_services"
+          },
+          {
+            "cpu": 1060.041,
+            "execution_wall": 342.457,
+            "target": "//agentplane/system_tests/suites:test_pod"
+          },
+          {
+            "cpu": 2431.708,
+            "execution_wall": 566.431,
+            "pytest_failure_kind": "fixture teardown PVC-list TimeoutError",
+            "target": "//agentplane/system_tests/suites:test_vm",
+            "test_runner_exit_code": 1
+          }
+        ],
+        "B1": [
+          {
+            "cpu": 737.744,
+            "execution_wall": 296.008,
+            "target": "//agentplane/system_tests/suites/mcp:test_services_central_candidate"
+          },
+          {
+            "cpu": 684.155,
+            "execution_wall": 230.302,
+            "target": "//agentplane/system_tests/suites/mcp:test_services_mcp_candidate"
+          },
+          {
+            "cpu": 1431.53,
+            "execution_wall": 449.964,
+            "target": "//agentplane/system_tests/suites:test_pod"
+          },
+          {
+            "cpu": 2235.405,
+            "execution_wall": 524.129,
+            "target": "//agentplane/system_tests/suites:test_vm"
+          }
+        ],
+        "B2": [
+          {
+            "cpu": 445.164,
+            "execution_wall": 150.653,
+            "target": "//agentplane/system_tests/suites/mcp:test_services_mcp_candidate"
+          },
+          {
+            "cpu": 536.524,
+            "execution_wall": 240.633,
+            "target": "//agentplane/system_tests/suites/mcp:test_services_central_candidate"
+          },
+          {
+            "cpu": 1128.31,
+            "execution_wall": 363.34,
+            "target": "//agentplane/system_tests/suites:test_pod"
+          },
+          {
+            "cpu": 754.843,
+            "execution_wall": 199.912,
+            "physical_attempt": "infrastructure-failed action, then same-digest action completed",
+            "reapi_status_code": 14,
+            "target": "//agentplane/system_tests/suites:test_vm"
+          },
+          {
+            "cpu": 2100.281,
+            "execution_wall": 541.131,
+            "physical_attempt": "final action",
+            "target": "//agentplane/system_tests/suites:test_vm"
+          }
+        ],
+        "metric_sources": "REAPI ExecutedActionMetadata; execution wall from execution start/completed timestamps and CPU from cpuNanos. TestRunner actions were configured doNotCache=true. Action times overlap and must not be summed as selected graph wall."
+      },
+      "provenance": {
+        "abba_source_sha": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+        "branch": "agent/test-architecture-pivot",
+        "repository": "https://github.com/agentydragon/ducktape",
+        "source": "BuildBuddy HTTPS bbapi invocation status, target summaries, REAPI execution metadata, JUnit XML, and selected graph elapsed tool-log; private raw records remain in per-invocation scratch dirs."
+      },
+      "schema_version": 1,
+      "scope_and_limits": [
+        "A1/B1/B2/A2 are one selected graph cohort on one source SHA, not whole-PR CI or repeated matched trials.",
+        "A1 overlapped native25 and ordinary CI; B1 had less unrelated load. The selected graph wall differences are not causal speedup estimates.",
+        "Candidate MCP JUnit IDs are disjoint and cover the same seven MCP test cases in A1/B1/B2; A1 required target behavior is unchanged. Pod remains the same 21 cases. Full VM remains the same one case, with A2\u2019s teardown error retained.",
+        "B2 includes a physical infra interruption even though its final test target summary is PASSED. BuildBuddy event data did not identify whether a worker loss, runner drain, or transport caused the Firecracker socket refusal.",
+        "A2\u2019s scenario body passed; the failure is a separate fixture teardown request timeout. The API-side cause is not visible in the available client spans.",
+        "The selected cohort and candidate witnesses do not establish end-to-end CI time savings. They support graph selectivity and preserve coverage facts only."
+      ],
+      "vm_witnesses": {
+        "boot_candidate": {
+          "coverage": "real VM/image boot, Runtime/Gateway readiness, valid workload credential/SVID, typed Runtime lifecycle; no scripted native turn",
+          "invocation_id": "af44c062-1628-424d-bc69-fdeb73bb0243",
+          "junit_seconds": 289.542,
+          "recorded_root_phases_seconds": {
+            "case": 80.019,
+            "manifest_load": 0.793,
+            "stack_cleanup": 30.878,
+            "stack_diagnostics": 2.104,
+            "stack_setup": 142.137
+          },
+          "result": "passed",
+          "root_phase_union_seconds": 255.932,
+          "source_sha": "9bce0a401dc57dba1d98be472462c20e50a1ea91",
+          "test_runner_cpu_seconds": 975.046,
+          "unattributed_junit_seconds": 33.61
+        },
+        "full_vm_no_edge_profile": {
+          "coverage": "unchanged full VM scenario assertions under no-MCP-edge deployment profile",
+          "invocation_id": "4aec403d-812b-4367-8122-7c2385f0c068",
+          "junit_seconds": 395.411,
+          "result": "passed",
+          "selected_graph_elapsed_seconds": 430.558,
+          "source_sha": "4c7731b1be578c9833c570a0d6c029f3b8bcc7f9",
+          "target": "//agentplane/system_tests/suites:test_vm",
+          "test_runner_cpu_seconds": 1494.586
+        },
+        "interpretation": "The boot-only candidate omits the full suite guarantees (real concurrent Claude and Codex turns, native cgroups/systemd assertions, denied systemctl, setup supervision, egress, notifications, and SVID continuity under workload). It is a separate boot/transport witness, not full acceptance equivalence. The later full no-edge pass does not erase A2\u2019s earlier control failure."
+      }
+    },
+    "last_green_source_ci": {
+      "source_head": "7d46adc2b16dfaefdb462f3529af1b41324ad5f4",
+      "status": "SUCCESS",
+      "workflow_run_id": 43398508201,
+      "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43398508201",
+      "created_at_utc": "2026-11-13T09:06:11Z",
+      "last_required_completed_at_utc": "2026-11-13T09:16:32Z",
+      "workflow_created_to_last_required_seconds": 621,
+      "synthetic_merge_commit": "488adf369a932ae05457808dd0498083f5ce31a1",
+      "synthetic_merge_base": "6787057f85d482979f7c3af5464a401b110dc7d2",
+      "test_invocation": "b7b8ce57-ac69-568b-991f-a0ac2fd154b2",
+      "build_invocation": "ff41ae13-b9a2-5ae4-a30a-5efa7271ae42",
+      "new_physical_test_runner_records": 44,
+      "failed_physical_test_runner_records": 0,
+      "checks": [
+        {
+          "name": "bazel-ci / Test & Build",
+          "startedAt": "2026-11-13T09:06:13Z",
+          "completedAt": "2026-11-13T09:16:32Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43398508201/job/131795216639"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "startedAt": "2026-11-13T09:06:13Z",
+          "completedAt": "2026-11-13T09:07:35Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43398508283/job/131795217050"
+        },
+        {
+          "name": "Pre-commit checks",
+          "startedAt": "2026-11-13T09:06:13Z",
+          "completedAt": "2026-11-13T09:07:21Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43398508109/job/131795216558"
+        }
+      ],
+      "limit": "One exact-head ordinary CI observation; no push timestamp, matched counterfactual or independently measured recurrence-rate improvement."
+    },
+    "pvc_list_repair": {
+      "source_commit": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+      "read_only_operation": "CoreV1Api.list_namespaced_persistent_volume_claim",
+      "attempts": 3,
+      "request_timeout_seconds_unchanged": 10,
+      "backoff_seconds": 0.1,
+      "mutation_policy": "StorageClass/PV create and loop attach stay outside retry. Active persistent failure,403 and cancellation still propagate; stop prevents further LISTs.",
+      "red_control_invocation": "66f569aa-3cf9-4ba7-a0c1-93bd0a4d7806",
+      "focused_green_invocation": "1409556f-0f88-4737-af71-6fd49980b525",
+      "full_control_target_invocation": "0ba70772-164b-45d4-9821-f994a8857836",
+      "full_control_cases_passed": 6,
+      "controls": "Two-claim real-apiserver recovery for deadline and connection failures; exactly one StorageClass, two PV creates and two loop attaches. Exhaustion preserves exact final error; stop before/after read failure, cancellation and403 are checked.",
+      "full_vm_validation_invocation": "1249aacf-2eab-492c-97a2-eb27403ef13e",
+      "full_vm_validation_status": "PASSED",
+      "explicit_library_build_invocation": "20664856-5322-4cc6-be89-f8ab667c3494",
+      "explicit_library_build_status": "PASSED",
+      "limit": "Deterministic fault/control behavior is proved; real API delay cause and recurrence-rate improvement remain unknown.",
+      "full_vm_validation": {
+        "invocation": "1249aacf-2eab-492c-97a2-eb27403ef13e",
+        "source": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+        "status": "PASSED",
+        "invocation_elapsed_seconds": 440.888,
+        "physical_test_runner_actions": 1,
+        "reapi_status": {},
+        "stage": "COMPLETED",
+        "exit_code": 0,
+        "process_seconds": 379.284269,
+        "cpu_seconds": 1441.334936,
+        "junit_suite_seconds": 359.159,
+        "junit_case_seconds": 358.851,
+        "junit_cases": 1,
+        "junit_errors": 0,
+        "junit_failures": 0,
+        "junit_skips": 0,
+        "limit": "One fresh complete VM run validates retained behavior; not a recurrence-rate or matched latency comparison."
+      }
+    },
+    "final_source_ci": {
+      "source_head": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+      "status": "SUCCESS",
+      "workflow_run_id": 43403429849,
+      "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43403429849",
+      "created_at_utc": "2026-11-13T09:41:34Z",
+      "last_required_completed_at_utc": "2026-11-13T09:53:35Z",
+      "workflow_created_to_last_required_seconds": 721.0,
+      "synthetic_merge_commit": "c22d0c4e37d9abe82de088c94e835466a3dd117d",
+      "synthetic_merge_base": "a8f15395e09d8d2edac60ca810d17bef7cc2e225",
+      "test_invocation": "d91c70d4-3460-54bc-94a0-164f963b0882",
+      "build_invocation": "f4287c7e-20fc-5a80-aa6f-f9acb644071a",
+      "new_physical_test_runner_records": 87,
+      "failed_physical_test_runner_records": 0,
+      "checks": [
+        {
+          "name": "bazel-ci / Test & Build",
+          "startedAt": "2026-11-13T09:41:36Z",
+          "completedAt": "2026-11-13T09:53:35Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43403429849/job/131811731565"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "startedAt": "2026-11-13T09:41:36Z",
+          "completedAt": "2026-11-13T09:43:11Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43403429764/job/131811730508"
+        },
+        {
+          "name": "Pre-commit checks",
+          "startedAt": "2026-11-13T09:41:36Z",
+          "completedAt": "2026-11-13T09:42:47Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43403429778/job/131811730850"
+        }
+      ],
+      "limit": "One exact-head ordinary CI observation. Workflow creation is the available start proxy; this is not push-to-ready, a matched counterfactual or evidence of speed/reliability improvement."
+    },
+    "independent_devel_backports": [
+      {
+        "pr": "https://github.com/agentydragon/ducktape/pull/16198",
+        "head": "aa7779415839e067eeee57f119f1b84a46e2364c",
+        "scope": "CaseBatch nested pytest outcomes, fatal group wakeup and cancellation/cleanup semantics",
+        "state": "OPEN, ready for review, not merged",
+        "focused_test_invocation": "0e720bc7-6cde-462e-92e6-a7aeef2f47c7",
+        "library_build_invocation": "7c48e5fc-f4da-47f8-b43c-270f7b0a3ec7",
+        "check_status": "Focused uncached test, explicit library build and hooks passed; publication-time exact CI is tracked by the PR."
+      },
+      {
+        "scope": "Bounded read-only PVC LIST transport recovery",
+        "state": "Preparing independent devel PR; no merge or deployment claimed."
+      }
+    ],
+    "next_structural_probe": {
+      "status": "Manual feasibility/implementation spike; no acceptance replacement or saving established",
+      "hypothesis": "Run the current guest kernel/initramfs/root/Runtime artifacts directly under declared QEMU, bypassing K3s/KubeVirt control-plane setup for generic guest boot/systemd packaging guarantees. Real controllers/PKI/RBAC/storage/platform acceptance stay required.",
+      "app_free_vm_disposition": "Do not prioritize App removal alone for speed: one boot trace has only 2.207s App import versus 28.284s guest-root and 14.782s virt-launcher imports. Setup children overlap; these are not additive causal savings.",
+      "constraints": "No host QEMU dependency is declared; reuse the pinned virt-launcher tool image if feasible. Existing guest virtiofs/config/credential and networking assumptions must be handled explicitly. A generic direct boot cannot claim controller-issued SVID or KubeVirt equivalence.",
+      "measured_trace": "af44c062-1628-424d-bc69-fdeb73bb0243, source 9bce, cold fingerprint-mismatch baseline; not d717 or a matched trial."
     }
   }
 }
