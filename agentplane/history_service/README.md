@@ -374,8 +374,8 @@ number of retained entities. A malformed row aborts and rolls back the entire co
 query. It is independent of the public `ReadNativeFrames` page limit of `200`: storage chunks for one request
 share a repeatable-read snapshot and committed-history watermark.
 
-Bazel targets: `:history-service` and `:service_image`. All non-secret settings come from the required YAML file named
-by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` (`config.go`, `settings.py`). Generic `AGENTPLANE_HISTORY_SERVICE_*`
+Bazel targets: `//agentplane/history_service/cmd:history-service` and `//agentplane/history_service:service_image`. All non-secret settings come from the required YAML file named
+by `AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE` ([`cmd/config.go`](cmd/config.go), `settings.py`). Generic `AGENTPLANE_HISTORY_SERVICE_*`
 environment variables do not override it. The database URL remains an explicit Secret input in
 `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`.
 The read API and journal ingress share `rpc.listen_address`, where `grpc.health.v1.Health` reports process liveness only.
