@@ -19,12 +19,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
-	"github.com/agentydragon/ducktape/agentplane/history_service/api"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/ingress"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
@@ -217,7 +217,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 
 	// The read store never appends, so it settles nothing.
 	history := storage.NewStore(readDB, storage.Options{})
-	service := api.NewService(api.Options{
+	service := rpc.NewService(rpc.Options{
 		Reader:         &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
 		ReaderAccounts: c.ReaderAccounts,
 		Wakeups:        hub,
@@ -225,7 +225,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	})
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
-	historyMethods := api.Methods(readerAuth)
+	historyMethods := rpc.Methods(readerAuth)
 	var identityReader auth.IdentityUIDReader
 	if c.Delegation != nil || c.Ingress.SamplerIdentityCallers {
 		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
@@ -236,7 +236,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 		delegator := auth.Delegator{
 			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
 		}
-		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, identityReader, c.Delegation.Methods)
+		historyMethods, err = rpc.MethodsWithDelegation(readerAuth, delegator, identityReader, c.Delegation.Methods)
 		if err != nil {
 			return fmt.Errorf("configure History delegation: %w", err)
 		}

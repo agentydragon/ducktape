@@ -1,73 +1,49 @@
 # Successful sampler audit deduplication
 
-Status: implementation under validation; staging has not been rewritten. Sampler is at migration
-13 and History at 16. The new data migrations are sampler 14 and History 17. After application and
-live verification, replace both chains with current-schema baselines and remove the converter.
+The writer change in [PR #16148](https://github.com/agentydragon/ducktape/pull/16148) merged and its
+staging rewrite and `VACUUM FULL` completed on 2026-11-13. Sampler migration 14 rewrote 38 successful
+audits across 3 Sessions; History migration 17 rewrote 1,623 audits across 26 Sessions. Every removed
+array matched the separately retained ordered provider stream under the same Session/correlation ID.
+Raw transport, terminal content/metadata, signed continuation and failure diagnostics remain.
 
-## Retained data and verification
+## Integrity and live checks
 
-Successful sampling and compaction results drop their top-level `events` arrays. Terminal JSON,
-usage, HTTP metadata, Anthropic replacement contexts, individual provider events, raw transport,
-failure diagnostics and semantic observations remain. The migration requires a complete ordered
-provider stream with the same Session/correlation ID and verifies every removed event using
-standard JSON decoding with exact numbers. Hashes are transient equality checks, never stored IDs.
+- All 3,337 overlapping sampler/History EventEntry records matched after decoding source compression.
+  Only hashes left the PostgreSQL container for this check.
+- Event counts, Session counts, packed blocks and cursor-watermark digests were unchanged. Result
+  fragments kept their cursors, origin, record ID, indices/count, parent/correlation ID and source links.
+- Fresh OpenAI and Anthropic turns, tool calls, compaction and post-compaction continuation passed.
+  Afterwards all 48 successful audits retained responses without embedded `events`; all three
+  sampler Sessions' History export checkpoints matched their source cursors.
+- Both services returned to two Ready replicas. Flux reconciliation and its original annotations,
+  Deployment pause states and `max_slot_wal_keep_size=512MB` were restored. Physical and logical
+  replication slots stayed active and valid.
 
-Every result keeps its original EventEntry cursor/origin, protobuf unknown fields and boundary
-record ID, fragment index/count, parent/correlation IDs and media type. Smaller JSON is distributed
-across the original fragment slots. No entries or source references are deleted, no checkpoints are
-reset, and no projection rebuild is required. Sampler intent JSON and its boundary fragments change
-in one transaction. History uses ordinary kind-31 rows; packed delta/native blocks are untouched.
+## Physical reclamation
 
-This is an explicit maintenance rewrite of otherwise immutable evidence. The matching source and
-History copies must change together before exporters resume; ordinary ingress conflict checks
-remain strict. Interrupted progress is safe to rerun: committed records already lack `events` and
-incomplete record transactions roll back. Unknown shapes or missing/mismatched evidence fail
-migration instead of deleting the only retained copy. Do not discard that error or mark Goose
-completion manually. Output counts and integrity results, not raw provider payloads.
+Decimal bytes, measured before new canary traffic:
 
-## Cutover
+| Database/relation |        Before | After rewrite and full vacuum |
+| ----------------- | ------------: | ----------------------------: |
+| `central_sampler` |    16,209,599 |                    14,440,127 |
+| `sampler_intent`  |     1,712,128 |                       557,056 |
+| `sampler_event`   |     5,545,984 |                     4,931,584 |
+| `sandbox_service` | 2,718,668,479 |                 2,693,904,063 |
+| `session_event`   | 1,009,467,392 |                   984,694,784 |
 
-1. Publish and validate both service images from the implementation PR. Before allowing automatic
-   rollout of those images, pause the `central-sampler` and `history-service` Deployments. Record
-   original replica counts, images, pause states, database sizes and CNPG/Flux settings.
-2. For the maintenance window, suspend the owning `agentplane-staging` Flux Kustomization. Confirm
-   sampler has no unresolved effects/live operations and every current Session's History export
-   checkpoint covers its source cursor. Gracefully scale sampler to zero, then History to zero.
-   Native harnesses retain their journals and queue ingress during the History outage.
-3. Create one-off Jobs from each service's existing Pod template, using the validated new image,
-   existing service account/settings/Secret mounts and `args: ["--migrate-only"]`. These are the
-   serving binaries and normal embedded Goose lifecycle, not separate migrator images. Run sampler
-   migration 14 then History 17; keep both services stopped on any error. Verify completion in
-   the existing Goose tables and matching compact records for every overlapping source/History ID.
-4. Before vacuum, verify healthy physical/logical replication and at least 4 GiB free on each
-   PostgreSQL volume. Temporarily set CNPG `max_slot_wal_keep_size` to the previously tested 8 GB.
-   Monitor free space, retained WAL, replica lag and slot status; cancel maintenance if free space
-   falls below 4 GiB, retained WAL exceeds 6 GiB, or a slot is lost/the retention setting reverts.
-5. Run these statements individually on the discovered primary, outside a transaction:
+This reclaimed about 26.5 MB across the two databases. It removes the successful audit arrays;
+other response encodings and projection copies remain separate work in the storage plan.
 
-   ```sql
-   -- central_sampler
-   VACUUM (FULL, ANALYZE) sampler_intent;
-   VACUUM (FULL, ANALYZE) sampler_event;
-   -- sandbox_service
-   VACUUM (FULL, ANALYZE) session_event;
-   ```
+## Baseline adoption
 
-6. Wait for replication to catch up; restore the recorded CNPG settings. Restore replicas with
-   the compact-audit writer images, resume Deployment rollouts and restore the original Flux state.
-   Verify direct sampler follows, History pagination, export reconnection and exact duplicate
-   replays, Electric, and fresh sampling/tool use/compaction for both providers. Record logical
-   payload removal and physical table/database sizes separately.
+The cleanup baselines are sampler 15 and History 18. They create the final schema on empty
+databases and adopt only the completed rewrite predecessors (14 and 17), preserving deployed
+Goose history and advisory-lock identities. Earlier databases must run the preceding image's
+rewrite before adoption. The converter, superseded migrations, staging reset path and old
+compatibility fixtures are retired; startup does not scan or normalize legacy audit JSON.
 
-## Contraction and rollback
-
-Only after verification: publish the baseline/converter-removal PR. Preserve deployed Goose history
-and advisory-lock identities. Fresh databases build the final schema; adoption accepts only the
-completed rewritten predecessor, not older inline/reset schemas. Delete superseded migrations,
-converter code, obsolete fixtures and otherwise-unused Go-migration plumbing.
-
-The data rewrite has no down migration: deleting its history marker cannot restore removed arrays.
-After success, use an image containing compact success writers and both data migrations if a serving
-rollback is needed. Never roll back to writers that recreate full successful audit arrays. On a
-failed rewrite, keep the cutover held, repair the reported evidence inconsistency and rerun; do not
-resume one side against a differently rewritten copy.
+For maintenance requiring temporary Flux holds, disabling direct Deployment rollouts alone is
+insufficient because Flux restores declared pause settings. Suspend the owning Kustomization and
+protect that hold from its parent with the documented
+[resource reconciliation annotation](https://fluxcd.io/flux/components/kustomize/kustomizations/#suspending-and-resuming),
+then restore both settings after maintenance. This cutover used `ducktape-flux/agentplane-staging`.

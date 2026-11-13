@@ -258,6 +258,40 @@ async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str)
         }
 
 
+async def test_library_class(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Library } = await import('./main/packages/excalidraw/data/library.js');
+                const notifications = [];
+                const library = new Library({props: {onLibraryChange: items => notifications.push(items)}});
+                const original = [{id: 'library-item', elements: []}];
+                await library.setLibrary(original);
+                const latest = await library.getLatestLibrary();
+                await library.resetLibrary();
+                const afterReset = await library.getLatestLibrary();
+                library.destroy();
+                return {
+                    cloned: [latest !== original, latest[0] !== original[0]],
+                    latest: latest.map(item => item.id),
+                    afterReset: afterReset.map(item => item.id),
+                    notifications: notifications.map(items => items.map(item => item.id)),
+                };
+            }"""
+        )
+        assert result == {
+            "cloned": [True, True],
+            "latest": ["library-item"],
+            "afterReset": [],
+            "notifications": [["library-item"], []],
+        }
+
+
 async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
@@ -592,6 +626,56 @@ async def test_font_face_class(playwright_driver: Playwright, origin: str) -> No
         }
 
 
+async def test_renderer_filters_and_memoizes_elements(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Renderer } = await import('./main/packages/excalidraw/scene/Renderer.js');
+                const create = await import('./editor/packages/excalidraw/element/newElement.js');
+                const elements = [
+                    create.newElement({id: 'visible', type: 'rectangle', x: 10, y: 20, width: 30, height: 40}),
+                    create.newElement({id: 'offscreen', type: 'rectangle', x: 2000, y: 2000, width: 30, height: 40}),
+                    create.newElement({id: 'pending-image', type: 'image', x: 20, y: 20, width: 30, height: 30}),
+                    create.newElement({id: 'new-rectangle', type: 'rectangle', x: 40, y: 50, width: 30, height: 40}),
+                    create.newTextElement({id: 'editing-text', x: 100, y: 200, text: 'editing',
+                        fontFamily: 3, fontSize: 20, lineHeight: 1.2,
+                        textAlign: 'left', verticalAlign: 'top'}),
+                ];
+                const renderer = new Renderer({getNonDeletedElements: () => elements});
+                const input = {zoom: {value: 1}, offsetLeft: 0, offsetTop: 0, scrollX: 0, scrollY: 0,
+                    height: 800, width: 1280, editingTextElement: {id: 'editing-text', type: 'text'},
+                    newElementId: 'new-rectangle', pendingImageElementId: 'pending-image', sceneNonce: 1};
+                const first = renderer.getRenderableElements(input);
+                const second = renderer.getRenderableElements(input);
+                elements.push(create.newElement({id: 'added', type: 'rectangle',
+                    x: 100, y: 100, width: 30, height: 40}));
+                const changedInput = {...input, sceneNonce: 2};
+                const refreshed = renderer.getRenderableElements(changedInput);
+                renderer.destroy();
+                const afterDestroy = renderer.getRenderableElements(changedInput);
+                return {
+                    elements: [...first.elementsMap.keys()],
+                    visible: first.visibleElements.map(element => element.id),
+                    memoized: first === second,
+                    refreshed: refreshed.visibleElements.map(element => element.id),
+                    invalidated: refreshed !== first && afterDestroy !== refreshed,
+                };
+            }"""
+        )
+        assert result == {
+            "elements": ["visible", "offscreen"],
+            "visible": ["visible"],
+            "memoized": True,
+            "refreshed": ["visible", "added"],
+            "invalidated": True,
+        }
+
+
 async def test_element_construction(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
@@ -604,11 +688,18 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
                 const create = await import('./editor/packages/excalidraw/element/newElement.js');
                 const rectangle = create.newElement({id: 'constructed-rectangle', type: 'rectangle',
                     x: 10, y: 20, width: 30, height: 40, seed: 4, version: 3, versionNonce: 9, locked: true});
-                const ellipse = create._newElementBase('ellipse', {id: 'constructed-ellipse', x: 1, y: 2});
+                const ellipse = create.newElement({type: 'ellipse', id: 'constructed-ellipse', x: 1, y: 2});
+                const embeddable = create.newEmbeddableElement({id: 'constructed-embeddable', x: 3, y: 4});
+                const iframe = create.newIframeElement({id: 'constructed-iframe', x: 5, y: 6});
+                const frame = create.newFrameElement({id: 'constructed-frame', name: 'Frame', x: 7, y: 8});
+                const magicFrame = create.newMagicFrameElement({id: 'constructed-magic-frame',
+                    name: 'Magic frame', x: 9, y: 10});
                 const text = create.newTextElement({id: 'constructed-text', x: 100, y: 200,
                     text: 'hello\tworld\r\n界', fontFamily: 3, fontSize: 20, lineHeight: 1.2,
                     textAlign: 'center', verticalAlign: 'middle'});
                 return {
+                    constructors: [embeddable, iframe, frame, magicFrame].map(
+                        ({id, type, x, y, name}) => [id, type, x, y, name ?? null]),
                     rectangle: [rectangle.id, rectangle.type, rectangle.x, rectangle.y,
                                 rectangle.width, rectangle.height, rectangle.seed, rectangle.version,
                                 rectangle.versionNonce, rectangle.locked, rectangle.isDeleted],
@@ -623,10 +714,145 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
             }"""
         )
         assert result == {
+            "constructors": [
+                ["constructed-embeddable", "embeddable", 3, 4, None],
+                ["constructed-iframe", "iframe", 5, 6, None],
+                ["constructed-frame", "frame", 7, 8, "Frame"],
+                ["constructed-magic-frame", "magicframe", 9, 10, "Magic frame"],
+            ],
             "rectangle": ["constructed-rectangle", "rectangle", 10, 20, 30, 40, 4, 3, 9, True, False],
             "defaults": ["ellipse", 0, 0, [], None, None, 1, 0],
             "text": ["text", "hello        world\n界", "hello        world\n界", 3, 20, 1.2, None, True],
             "metrics": [True, True, True, True],
+        }
+
+
+async def test_element_copying_and_specialized_construction(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const create = await import('./editor/packages/excalidraw/element/newElement.js');
+                const opts = {x: 10, y: 20, width: 40, height: 30};
+                const free = create.newFreeDrawElement({...opts, type: 'freedraw',
+                    points: [[0, 0], [10, 5]], pressures: [0.2, 0.8], simulatePressure: false});
+                const line = create.newLinearElement({...opts, type: 'line'});
+                const arrow = create.newArrowElement({...opts, type: 'arrow', endArrowhead: 'triangle'});
+                const elbow = create.newArrowElement({...opts, type: 'arrow', elbowed: true,
+                    fixedSegments: [{index: 1, start: [0, 0], end: [10, 0]}]});
+                const image = create.newImageElement({...opts, strokeColor: 'red'});
+                const original = create.newElement({...opts, id: 'copy-source', type: 'rectangle', seed: 7,
+                    customData: {values: [1, {nested: true}], shape: {keep: true}}});
+                original.shape = {cache: true};
+                original.canvas = {cache: true};
+                const copied = create.deepCopyElement(original);
+                copied.customData.values[1].nested = false;
+                const single = create.duplicateElement(null, new Map(), original, {x: 100});
+                const frame = create.newFrameElement({...opts, id: 'source-frame'});
+                const box = create.newElement({...opts, type: 'rectangle', id: 'source-box',
+                    groupIds: ['source-group'], frameId: frame.id,
+                    boundElements: [{type: 'text', id: 'source-text'}, {type: 'arrow', id: 'missing'}]});
+                const text = create.newTextElement({...opts, id: 'source-text', text: 'bound',
+                    fontFamily: 3, fontSize: 20, lineHeight: 1.2, containerId: box.id,
+                    groupIds: ['source-group']});
+                const boundArrow = create.newArrowElement({...opts, type: 'arrow', id: 'source-arrow'});
+                boundArrow.startBinding = {elementId: box.id, focus: 0, gap: 1};
+                boundArrow.endBinding = {elementId: 'missing', focus: 0, gap: 1};
+                const originals = [frame, box, text, boundArrow];
+                const clones = create.duplicateElements(originals);
+                const resizedText = create.newTextElement({...opts, text: 'short', fontFamily: 3,
+                    fontSize: 20, lineHeight: 1.2, textAlign: 'center', verticalAlign: 'middle'});
+                const dimensions = create.refreshTextDimensions(resizedText, null, new Map(), 'a longer line');
+                return {
+                    free: [free.type, free.points, free.pressures, free.simulatePressure, free.lastCommittedPoint],
+                    line: [line.type, line.points, line.startBinding, line.endBinding, line.startArrowhead, line.endArrowhead],
+                    arrows: [arrow.elbowed, arrow.endArrowhead, elbow.elbowed, elbow.fixedSegments.length,
+                             elbow.startIsSpecial, elbow.endIsSpecial],
+                    image: [image.type, image.strokeColor, image.status, image.fileId, image.scale, image.crop],
+                    copied: [copied !== original, copied.id === original.id, copied.seed === original.seed,
+                             !('shape' in copied), !('canvas' in copied), copied.customData.shape.keep,
+                             original.customData.values[1].nested],
+                    single: [single.id !== original.id, single.x, single.boundElements, original.x],
+                    clones: [clones.every((element, index) => element.id !== originals[index].id),
+                             clones[1].frameId === clones[0].id, clones[2].containerId === clones[1].id,
+                             clones[1].boundElements.length === 1 && clones[1].boundElements[0].id === clones[2].id,
+                             clones[3].startBinding.elementId === clones[1].id, clones[3].endBinding,
+                             clones[1].groupIds[0] === clones[2].groupIds[0], clones[1].groupIds[0] !== 'source-group'],
+                    text: [dimensions.text, dimensions.width > resizedText.width,
+                           Math.abs(dimensions.x + dimensions.width / 2 - resizedText.x - resizedText.width / 2) < 1e-9,
+                           Math.abs(dimensions.y + dimensions.height / 2 - resizedText.y - resizedText.height / 2) < 1e-9,
+                           create.refreshTextDimensions({...resizedText, isDeleted: true}, null, new Map()) === undefined]
+                };
+            }"""
+        )
+        assert result == {
+            "free": ["freedraw", [[0, 0], [10, 5]], [0.2, 0.8], False, None],
+            "line": ["line", [], None, None, None, None],
+            "arrows": [False, "triangle", True, 1, False, False],
+            "image": ["image", "transparent", "pending", None, [1, 1], None],
+            "copied": [True, True, True, True, True, True, True],
+            "single": [True, 100, None, 10],
+            "clones": [True, True, True, True, True, None, True, True],
+            "text": ["a longer line", True, True, True, True],
+        }
+
+
+async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const restore = await import('./editor/packages/excalidraw/data/restore.js');
+                const rectangle = {id: 'restored-rectangle', type: 'rectangle', x: 10, y: 20,
+                    width: 80, height: 60, version: 0, frameId: 'missing-frame',
+                    boundElements: [{id: 'restored-text', type: 'text'},
+                                    {id: 'restored-text', type: 'text'}, {id: 'missing', type: 'text'}]};
+                const text = {id: 'restored-text', type: 'text', x: 10, y: 20, width: 40, height: 20,
+                    text: 'Legacy', font: '20 Virgil', lineHeight: 1.25, containerId: rectangle.id};
+                const elements = restore.restoreElements([
+                    {id: 'legacy-selection', type: 'selection', x: 0, y: 0, width: 40, height: 40},
+                    rectangle, text
+                ], [{...rectangle, version: 8}], {repairBindings: true});
+                const duplicates = restore.restoreElements([rectangle, rectangle], null);
+                const appState = restore.restore({appState: {zoom: 100, activeTool: {type: 'eraser'},
+                    viewBackgroundColor: '#abcdef'}}, {cursorButton: 'down', scrollX: 45}, null).appState;
+                const library = restore.restoreLibraryItems([[rectangle]], 'unpublished');
+                const files = {example: {id: 'example'}};
+                const restored = restore.restore({elements: [rectangle], files}, null, null);
+                return {
+                    ids: elements.map(element => element.id),
+                    rectangle: [elements[0].version > 8, elements[0].frameId, elements[0].boundElements],
+                    text: [elements[1].text, elements[1].fontSize, elements[1].fontFamily,
+                           elements[1].containerId, elements[1].lineHeight],
+                    untouched: [rectangle.version, rectangle.frameId, rectangle.boundElements.length],
+                    uniqueIds: duplicates.length === 2 && new Set(duplicates.map(element => element.id)).size === 2,
+                    appState: [appState.zoom.value, appState.activeTool.type, appState.cursorButton,
+                               appState.scrollX, appState.viewBackgroundColor, appState.editingFrame],
+                    library: [library.length, library[0].status, library[0].elements.length,
+                              Boolean(library[0].id), library[0].created > 0],
+                    restored: [restored.elements.length, restored.files === files],
+                    empty: restore.restore(null, null, null).elements
+                };
+            }"""
+        )
+        assert result == {
+            "ids": ["restored-rectangle", "restored-text"],
+            "rectangle": [True, None, [{"id": "restored-text", "type": "text"}]],
+            "text": ["Legacy", 20, 1, "restored-rectangle", 1.25],
+            "untouched": [0, "missing-frame", 3],
+            "uniqueIds": True,
+            "appState": [30, "selection", "down", 45, "#abcdef", None],
+            "library": [1, "unpublished", 1, True, True],
+            "restored": [1, True],
+            "empty": [],
         }
 
 

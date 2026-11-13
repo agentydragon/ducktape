@@ -88,7 +88,7 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
 PROXY_MTLS_SECRET = "agentplane-egress-proxy-tls"
 # The health service whose verdict is "the process answers", whatever the index says; keep equal to
-# `LivenessService` in agentplane/egress/admin/grpc_health.go.
+# `LivenessService` in agentplane/egress/internal/admin/grpc_health.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
 # Only the app's authenticated admin gRPC caller receives this audience.
 ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"

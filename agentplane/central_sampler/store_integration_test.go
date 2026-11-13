@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -219,7 +220,8 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); err != nil {
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
@@ -235,6 +237,9 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if newOwner.Generation != owner.Generation+1 {
 		t.Fatalf("generation=%d old=%d", newOwner.Generation, owner.Generation)
 	}
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late bytes")}); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("stale generation recorded provider evidence: %v", err)
+	}
 	if err := store.AppendInput(t.Context(), owner, "stale input"); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("stale generation mutated conversation: %v", err)
 	}
@@ -243,6 +248,116 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	}
 	if err := store.Renew(t.Context(), newOwner, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
 		t.Fatalf("released owner was not reported as stale: %v", err)
+	}
+}
+
+func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cursor uint64
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&cursor); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.HTTPResponseHead{
+		ContentType: "text/event-stream", HTTPStatus: 200, ProviderRequestID: "compaction-response",
+	}, &eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "compaction-output", Text: "summary"}}}); err != nil {
+		t.Fatalf("open compaction evidence was rejected: %v", err)
+	}
+
+	rows, err := store.DB().QueryContext(t.Context(), `SELECT sequence,entry FROM sampler_event WHERE session_id=$1 AND sequence>$2 ORDER BY sequence`, session.ID, cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var boundarySequence, observationSource uint64
+	for rows.Next() {
+		var sequence uint64
+		var wire []byte
+		if err := rows.Scan(&sequence, &wire); err != nil {
+			t.Fatal(err)
+		}
+		entry := &eventlogpb.EventEntry{}
+		if err := proto.Unmarshal(wire, entry); err != nil {
+			t.Fatal(err)
+		}
+		event := entry.GetEvent()
+		if boundary := event.GetBoundaryRecord(); boundary != nil && boundary.GetCorrelationId() == intentID {
+			boundarySequence = sequence
+		}
+		if event.GetTextDelta().GetItemId() == "compaction-output" && len(event.GetSourceSequences()) == 1 {
+			observationSource = event.GetSourceSequences()[0]
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if boundarySequence == 0 || observationSource != boundarySequence {
+		t.Fatalf("compaction observation source=%d, boundary sequence=%d", observationSource, boundarySequence)
+	}
+}
+
+func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
+	for _, scenario := range []string{"finished", "abandoned-with-successor"} {
+		t.Run(scenario, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "abandoned-with-successor" {
+				if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scenario {
+			case "finished":
+				if err := store.Finish(t.Context(), owner, intentID, map[string]any{"response": "complete"}, nil, nil); err != nil {
+					t.Fatal(err)
+				}
+			case "abandoned-with-successor":
+				changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, uuid.NewString(), protocol.ExecEncodingFreeform)
+				if err != nil || !changed {
+					t.Fatalf("same-owner code host loss was not reconciled: changed=%v err=%v", changed, err)
+				}
+				if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); err != nil {
+					t.Fatalf("new sampling intent after abandonment: %v", err)
+				}
+			}
+
+			var before uint64
+			if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&before); err != nil {
+				t.Fatal(err)
+			}
+			err = (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late provider bytes")},
+				&eventpb.Event{Observation: &eventpb.Event_TextDelta{TextDelta: &eventpb.TextDelta{ItemId: "late-output", Text: "must not be committed"}}})
+			if !errors.Is(err, protocol.ErrPrecondition) {
+				t.Fatalf("late evidence for %s intent error=%v, want ErrPrecondition", scenario, err)
+			}
+			var after uint64
+			if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&after); err != nil {
+				t.Fatal(err)
+			}
+			if after != before {
+				t.Fatalf("late evidence changed event cursor from %d to %d", before, after)
+			}
+		})
 	}
 }
 

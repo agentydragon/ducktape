@@ -1,0 +1,18 @@
+# Original home: packages/excalidraw/data/library.ts
+source_matches:
+  - match: |
+      var Library = class {
+        constructor(app) {
+          ANYTHING(this, "currLibraryItems", []),
+          ANYTHING(this, "prevLibraryItems", EXPR(this.currLibraryItems)),
+          ANYTHING(this, "app"),
+          ANYTHING(this, "updateQueue", []),
+          SEQ_EXPRS,
+          ANYTHING(this, "getLatestLibrary", EXPR),
+          ANYTHING(this, "updateLibrary", EXPR),
+          ANYTHING(this, "setLibrary", EXPR),
+          this.app = app;
+        }
+      };
+    bindings:
+      - Library

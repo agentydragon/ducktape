@@ -513,7 +513,7 @@ coordinated database restore.
 
 The Go `mcpexec.Executor` keeps one MCP session for each configured group. Its
 `catalog.MCPBinding.config` accepts a stdio launch (`command`, optional `args`, `env`, `cwd`, and
-`transport: stdio`) or a streamable-HTTP endpoint ([configuration](mcpexec/config.go)):
+`transport: stdio`) or a streamable-HTTP endpoint ([configuration](internal/mcpexec/config.go)):
 
 ```yaml
 transport: streamable-http

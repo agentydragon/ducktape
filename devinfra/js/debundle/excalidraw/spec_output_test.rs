@@ -35,6 +35,10 @@ fn claimed_modules_export_their_entry_points() {
             ],
         ),
         (
+            "editor/packages/excalidraw/data/restore.js",
+            &["restore", "restoreElements", "restoreLibraryItems"],
+        ),
+        (
             "editor/packages/excalidraw/element/textWrapping.js",
             &["containsCJK", "wrapText"],
         ),
@@ -42,7 +46,22 @@ fn claimed_modules_export_their_entry_points() {
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
             "editor/packages/excalidraw/element/newElement.js",
-            &["_newElementBase", "newElement", "newTextElement"],
+            &[
+                "newElement",
+                "newEmbeddableElement",
+                "newIframeElement",
+                "newFrameElement",
+                "newMagicFrameElement",
+                "newTextElement",
+                "newFreeDrawElement",
+                "newLinearElement",
+                "newArrowElement",
+                "newImageElement",
+                "deepCopyElement",
+                "duplicateElement",
+                "duplicateElements",
+                "refreshTextDimensions",
+            ],
         ),
         ("editor/packages/excalidraw/fonts/Fonts.js", &["Fonts"]),
         (

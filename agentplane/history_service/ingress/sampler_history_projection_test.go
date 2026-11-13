@@ -67,6 +67,12 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
+				if err := priorEvidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("unrelated")},
+					&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
+						ItemId: "unrelated", Kind: eventpb.ItemKind_ITEM_KIND_REASONING,
+					}}}); err != nil {
+					t.Fatal(err)
+				}
 				if err := store.Finish(t.Context(), owner, priorIntent, prior.Audit, prior.Records, prior.ContextTokens); err != nil {
 					t.Fatal(err)
 				}
@@ -105,12 +111,6 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				evidence := &centralsampler.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}
 				if _, err := sampleRecoveryFixture(t, api, "pending", cut, evidence); err == nil {
 					t.Fatal("truncated stream completed")
-				}
-				if err := priorEvidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("unrelated")},
-					&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
-						ItemId: "unrelated", Kind: eventpb.ItemKind_ITEM_KIND_REASONING,
-					}}}); err != nil {
-					t.Fatal(err)
 				}
 				if api == protocol.APIStyleResponses && cut == "before_terminal" {
 					// More than one reverse page must be read before reaching the item evidence.

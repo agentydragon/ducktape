@@ -3,13 +3,13 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
 go_library(
-    name = "api",
+    name = "rpc",
     srcs = [
         "follow.go",
         "service.go",
         "watch.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/api",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/rpc",
     deps = [
         "//agentplane/grpc/streaming",
         "//agentplane/history_service/api/history:history_service_go_proto",
@@ -36,7 +36,7 @@ go_test(
         "service_test.go",
         "watch_test.go",
     ],
-    embed = [":api"],
+    embed = [":rpc"],
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",

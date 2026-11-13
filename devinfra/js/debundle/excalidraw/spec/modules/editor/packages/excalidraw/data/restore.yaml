@@ -1,0 +1,192 @@
+# Original home: packages/excalidraw/data/restore.ts
+source_matches:
+  - match: |
+      var selected = {
+        selection: !0, text: !0, rectangle: !0, diamond: !0, ellipse: !0,
+        line: !0, image: !0, arrow: !0, freedraw: !0, eraser: !1,
+        custom: !0, frame: !0, embeddable: !0, hand: !0, laser: !1, magicframe: !1
+      };
+    bindings:
+      - local: selected
+        name: AllowedExcalidrawActiveTools
+  - match: |
+      var selected = (fontFamilyName) =>
+        Object.keys(fontFamilies).includes(fontFamilyName)
+          ? fontFamilies[fontFamilyName] : defaultFamily;
+    bindings:
+      - local: selected
+        name: getFontFamilyByName
+  - match: |
+      var selected = (element, binding) => {
+        if (!binding) return null;
+        let focus = binding.focus || 0;
+        return isElbowArrow(element) ? isFixedPointBinding(binding)
+          ? { ...binding, focus: focus, fixedPoint: EXPR(binding.fixedPoint ?? [0, 0]) }
+          : null : { ...binding, focus: focus };
+      };
+    bindings:
+      - local: selected
+        name: repairBinding
+  - match: |
+      var selected = (element, extra) => {
+        let base = {
+          type: extra.type || element.type,
+          version: element.version || 1,
+          versionNonce: element.versionNonce ?? 0,
+          index: element.index ?? null,
+          ANYTHING,
+          boundElements: EXPR,
+          updated: EXPR,
+          link: EXPR,
+          locked: element.locked ?? !1
+        };
+        STMT_LIST;
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: restoreElementWithProperties
+  - match: |
+      var selected = (element) => {
+        switch (element = { ...element }, element.type) {
+          case CASE_REST:
+          case "freedraw":
+            return restoreElementWithProperties(element, {
+              points: element.points,
+              lastCommittedPoint: null,
+              simulatePressure: element.simulatePressure,
+              pressures: element.pressures
+            });
+          case "image":
+            return restoreElementWithProperties(element, {
+              status: element.status || "pending",
+              fileId: element.fileId,
+              scale: element.scale || [1, 1],
+              crop: element.crop ?? null
+            });
+          case CASE_REST:
+        }
+        return null;
+      };
+    bindings:
+      - local: selected
+        name: restoreElement
+  - match: |
+      var selected = (element, elementsMap) => {
+        if (element.boundElements) {
+          let boundElements = element.boundElements.slice(), seen = new Set();
+          element.boundElements = boundElements.reduce((accumulator, boundElement) => {
+            let bound = elementsMap.get(boundElement.id);
+            if (bound && !seen.has(boundElement.id)) {
+              if (seen.add(boundElement.id), bound.isDeleted) return accumulator;
+              accumulator.push(boundElement), isTextElement(bound) && !bound.containerId && (bound.containerId = element.id);
+            }
+            return accumulator;
+          }, []);
+        }
+      };
+    bindings:
+      - local: selected
+        name: repairContainerElement
+  - match: |
+      var selected = (element, elementsMap) => {
+        let container = element.containerId ? elementsMap.get(element.containerId) : null;
+        if (!container) {
+          element.containerId = null;
+          return;
+        }
+        if (!element.isDeleted && container.boundElements && !container.boundElements.find((bound) => bound.id === element.id)) {
+          let boundElements = (container.boundElements || (container.boundElements = [])).slice();
+          boundElements.push({ type: "text", id: element.id }), container.boundElements = boundElements;
+        }
+      };
+    bindings:
+      - local: selected
+        name: repairBoundElement
+  - match: |
+      var selected = (element, elementsMap) => {
+        element.frameId && (elementsMap.get(element.frameId) || (element.frameId = null));
+      };
+    bindings:
+      - local: selected
+        name: repairFrameMembership
+  - match: |
+      var selected = AST_CONTAINS_STRING("Fixing self-bound elbow arrow");
+    bindings:
+      - local: selected
+        name: restoreElements
+  - match: |
+      var selected = (key, appState, defaultAppState) => {
+        let value = appState[key];
+        return value !== void 0 ? value : defaultAppState[key];
+      };
+    bindings:
+      - local: selected
+        name: coalesceAppStateValue
+  - match: |
+      var selected = {
+        isSidebarDocked: (appState, defaultAppState) => [
+          "defaultSidebarDockedPreference",
+          appState.isSidebarDocked ?? coalesceAppStateValue("defaultSidebarDockedPreference", appState, defaultAppState)
+        ]
+      };
+    bindings:
+      - local: selected
+        name: LegacyAppStateMigrations
+  - match: |
+      var selected = (appState, localAppState) => {
+        appState = appState || {};
+        let defaultAppState = getDefaultAppState(), nextAppState = {};
+        STMT_LIST;
+        return {
+          ...nextAppState,
+          cursorButton: localAppState?.cursorButton || "up",
+          penDetected: EXPR,
+          activeTool: EXPR,
+          zoom: EXPR,
+          openSidebar: EXPR,
+          gridSize: EXPR,
+          gridStep: EXPR,
+          editingFrame: null
+        };
+      };
+    bindings:
+      - local: selected
+        name: restoreAppState
+  - match: |
+      var selected = (data, localAppState, localElements, elementsConfig) => ({
+        elements: restoreElements(data?.elements, localElements, elementsConfig),
+        appState: restoreAppState(data?.appState, localAppState || null),
+        files: data?.files || {}
+      });
+    bindings:
+      - local: selected
+        name: restore
+  - match: |
+      var selected = (libraryItem) => {
+        let elements = restoreElements(EXPR(libraryItem.elements), null);
+        return elements.length ? { ...libraryItem, elements: elements } : null;
+      };
+    bindings:
+      - local: selected
+        name: restoreLibraryItem
+  - match: |
+      var selected = (libraryItems = [], defaultStatus) => {
+        let restoredItems = [];
+        for (let item of libraryItems) if (Array.isArray(item)) {
+          let restored = restoreLibraryItem({
+            status: defaultStatus, elements: item, id: EXPR(), created: Date.now()
+          });
+          restored && restoredItems.push(restored);
+        } else {
+          let current = item, restored = restoreLibraryItem({
+            ...current, id: current.id || EXPR(), status: current.status || defaultStatus,
+            created: current.created || Date.now()
+          });
+          restored && restoredItems.push(restored);
+        }
+        return restoredItems;
+      };
+    bindings:
+      - local: selected
+        name: restoreLibraryItems
