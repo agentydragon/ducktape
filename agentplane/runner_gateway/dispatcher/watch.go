@@ -2,34 +2,20 @@ package dispatcher
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/notification"
-	"github.com/google/uuid"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
 	"github.com/lib/pq"
-	"google.golang.org/protobuf/proto"
 )
 
 type watchSubscription struct {
 	changed chan struct{}
 	// Nil for a subscriber that only needs invalidations. A bounded terminal buffer nobody drains
 	// would overflow and fail the subscriber after its capacity of terminal events.
-	terminal chan TerminalEvent
+	terminal chan terminalnotice.Event
 	failure  chan string
-}
-
-type terminalAssembly struct {
-	started      time.Time
-	count        int
-	parts        map[int][]byte
-	identityName string
-	identityUID  string
 }
 
 // WatchHub transports committed PostgreSQL invalidations and terminal
@@ -39,14 +25,14 @@ type WatchHub struct {
 	listener    *pq.Listener
 	mu          sync.Mutex
 	subscribers map[*watchSubscription]struct{}
-	pending     map[string]*terminalAssembly
+	pending     terminalnotice.Assembler
 	connected   bool
 	subscribed  bool
 }
 
 func NewWatchHub(dsn string) *WatchHub {
 	hub := &WatchHub{
-		subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{},
+		subscribers: map[*watchSubscription]struct{}{},
 	}
 	hub.listener = pq.NewListener(dsn, time.Second, 30*time.Second, hub.connectionEvent)
 	return hub
@@ -70,7 +56,7 @@ func (h *WatchHub) connectionEvent(event pq.ListenerEventType, err error) {
 
 // subscribe is a WatchDispatches stream's subscription: invalidations and terminal snapshots.
 func (h *WatchHub) subscribe() (*watchSubscription, func(), error) {
-	return h.add(&watchSubscription{make(chan struct{}, 1), make(chan TerminalEvent, 32), make(chan string, 1)})
+	return h.add(&watchSubscription{make(chan struct{}, 1), make(chan terminalnotice.Event, 32), make(chan string, 1)})
 }
 
 // subscribeChanges receives invalidations and listener failures but no terminal snapshots.
@@ -97,7 +83,7 @@ func (h *WatchHub) Connected() bool {
 }
 
 func (h *WatchHub) failAllLocked(message string) {
-	h.pending = map[string]*terminalAssembly{}
+	h.pending.Reset()
 	for sub := range h.subscribers {
 		select {
 		case sub.failure <- message:
@@ -117,7 +103,7 @@ func (h *WatchHub) notifyChanged() {
 	}
 }
 
-func (h *WatchHub) notifyTerminal(event TerminalEvent) {
+func (h *WatchHub) notifyTerminal(event terminalnotice.Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for sub := range h.subscribers {
@@ -173,91 +159,22 @@ func (h *WatchHub) Run(ctx context.Context) error {
 				}
 			}
 		case now := <-ticker.C:
-			h.mu.Lock()
-			for _, assembly := range h.pending {
-				if now.Sub(assembly.started) > 10*time.Second {
-					h.failAllLocked("terminal event parts were incomplete; reconnect this WatchDispatches stream")
-					break
-				}
+			if h.pending.HasExpired(now, 10*time.Second) {
+				h.mu.Lock()
+				h.failAllLocked("terminal event parts were incomplete; reconnect this WatchDispatches stream")
+				h.mu.Unlock()
 			}
-			h.mu.Unlock()
 		}
 	}
 }
 
 func (h *WatchHub) terminalPart(payload string) error {
-	encoded, err := base64.StdEncoding.Strict().DecodeString(payload)
+	event, err := h.pending.Add(payload)
 	if err != nil {
-		return fmt.Errorf("invalid terminal envelope: %w", err)
-	}
-	item := &notification.TerminalNotificationPart{}
-	if err := proto.Unmarshal(encoded, item); err != nil {
 		return err
 	}
-	if _, err := uuid.Parse(item.GetEventId()); err != nil {
-		return err
+	if event != nil {
+		h.notifyTerminal(*event)
 	}
-	if item.GetPartCount() < 1 || item.GetPartCount() > terminalMaxParts || item.GetPart() >= item.GetPartCount() {
-		return fmt.Errorf("invalid terminal part")
-	}
-	data := item.GetData()
-	if len(data) > terminalChunkBytes {
-		return errors.New("terminal part is too large")
-	}
-	identityName, identityUID := item.GetExecutionIdentityName(), item.GetExecutionIdentityUid()
-	if (identityName == "") != (identityUID == "") {
-		return errors.New("terminal notification has an incomplete Session Identity")
-	}
-	h.mu.Lock()
-	assembly := h.pending[item.GetEventId()]
-	if assembly == nil {
-		if len(h.pending) >= 32 {
-			h.mu.Unlock()
-			return errors.New("too many pending terminal events")
-		}
-		assembly = &terminalAssembly{
-			started: time.Now(), count: int(item.GetPartCount()), parts: map[int][]byte{},
-			identityName: identityName, identityUID: identityUID,
-		}
-		h.pending[item.GetEventId()] = assembly
-	}
-	if assembly.count != int(item.GetPartCount()) ||
-		assembly.identityName != identityName || assembly.identityUID != identityUID {
-		h.mu.Unlock()
-		return errors.New("terminal part count changed")
-	}
-	part := int(item.GetPart())
-	if previous, ok := assembly.parts[part]; ok && string(previous) != string(data) {
-		h.mu.Unlock()
-		return errors.New("terminal part changed")
-	}
-	assembly.parts[part] = data
-	if len(assembly.parts) < assembly.count {
-		h.mu.Unlock()
-		return nil
-	}
-	delete(h.pending, item.GetEventId())
-	h.mu.Unlock()
-	serialized := make([]byte, 0, assembly.count*terminalChunkBytes)
-	for i := 0; i < assembly.count; i++ {
-		chunk, ok := assembly.parts[i]
-		if !ok || (i < assembly.count-1 && len(chunk) != terminalChunkBytes) {
-			return errors.New("terminal part missing or short")
-		}
-		serialized = append(serialized, chunk...)
-	}
-	dispatch := &dispatcherpb.Dispatch{}
-	if err := proto.Unmarshal(serialized, dispatch); err != nil {
-		return err
-	}
-	if dispatch.GetCommandId() == "" || dispatch.GetReason() != "sandbox_deleted" ||
-		(dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED && dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN) {
-		return errors.New("terminal snapshot did not describe Sandbox deletion")
-	}
-	event := TerminalEvent{ID: item.GetEventId(), Dispatch: dispatch}
-	if assembly.identityName != "" {
-		event.OwnerIdentity = &identitypb.Identity{Name: assembly.identityName, Uid: assembly.identityUID}
-	}
-	h.notifyTerminal(event)
 	return nil
 }

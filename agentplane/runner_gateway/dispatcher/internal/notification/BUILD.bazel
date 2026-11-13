@@ -4,12 +4,12 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 proto_library(
     name = "dispatcher_notification_proto",
     srcs = ["dispatcher_notification.proto"],
-    visibility = ["//agentplane/runner_gateway/dispatcher:__pkg__"],
+    visibility = ["//agentplane/runner_gateway/dispatcher/internal/terminalnotice:__pkg__"],
 )
 
 go_proto_library(
     name = "dispatcher_notification_go_proto",
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/notification",
     proto = ":dispatcher_notification_proto",
-    visibility = ["//agentplane/runner_gateway/dispatcher:__pkg__"],
+    visibility = ["//agentplane/runner_gateway/dispatcher/internal/terminalnotice:__pkg__"],
 )

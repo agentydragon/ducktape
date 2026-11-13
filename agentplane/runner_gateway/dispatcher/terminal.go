@@ -3,74 +3,21 @@ package dispatcher
 import (
 	"context"
 	"database/sql"
-	"encoding/base64"
-	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/notification"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"google.golang.org/protobuf/proto"
 )
 
-const (
-	TerminalChannel        = "agentplane_dispatcher_terminal"
-	terminalChunkBytes     = 4000
-	terminalMaxParts       = 2048
-	terminalMaxNotifyBytes = 7900
-)
-
-type TerminalEvent struct {
-	ID       string
-	Dispatch *dispatcherpb.Dispatch
-	// OwnerIdentity is the Session's execution Identity, nil when it has none.
-	OwnerIdentity *identitypb.Identity
-}
-
-func terminalPayloads(event TerminalEvent) ([]string, error) {
-	serialized, err := wire(event.Dispatch)
-	if err != nil {
-		return nil, err
-	}
-	partCount := (len(serialized) + terminalChunkBytes - 1) / terminalChunkBytes
-	if partCount == 0 {
-		partCount = 1
-	}
-	if partCount > terminalMaxParts {
-		return nil, fmt.Errorf("terminal snapshot needs %d parts", partCount)
-	}
-	result := make([]string, 0, partCount)
-	for i := 0; i < partCount; i++ {
-		start := i * terminalChunkBytes
-		end := start + terminalChunkBytes
-		if end > len(serialized) {
-			end = len(serialized)
-		}
-		body, err := proto.Marshal(&notification.TerminalNotificationPart{
-			EventId: event.ID, Part: uint32(i), PartCount: uint32(partCount), Data: serialized[start:end],
-			ExecutionIdentityName: event.OwnerIdentity.GetName(),
-			ExecutionIdentityUid:  event.OwnerIdentity.GetUid(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		payload := base64.StdEncoding.EncodeToString(body)
-		if len(payload) > terminalMaxNotifyBytes {
-			return nil, fmt.Errorf("terminal notify part exceeds %d bytes", terminalMaxNotifyBytes)
-		}
-		result = append(result, payload)
-	}
-	return result, nil
-}
+const TerminalChannel = "agentplane_dispatcher_terminal"
 
 // EndSandbox makes terminal snapshots visible to active Watch streams in the
 // same transaction that removes the deleted Sandbox work. The Session stays as
 // a durable record with its exact placement, while the tombstone prevents later
 // admission against stale inventory or a same-name replacement.
-func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEvent, error) {
-	var events []TerminalEvent
+func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalnotice.Event, error) {
+	var events []terminalnotice.Event
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "sandbox:"+sandboxUID); err != nil {
 			return err
@@ -128,7 +75,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 					rows.Close()
 					return err
 				}
-				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, OwnerIdentity: ownerIdentity})
+				events = append(events, terminalnotice.Event{ID: uuid.NewString(), Dispatch: snapshot, OwnerIdentity: ownerIdentity})
 			}
 			err = rows.Err()
 			rows.Close()
@@ -137,7 +84,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 			}
 		}
 		for _, event := range events {
-			payloads, err := terminalPayloads(event)
+			payloads, err := terminalnotice.Encode(event)
 			if err != nil {
 				return err
 			}
