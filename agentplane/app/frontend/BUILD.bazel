@@ -780,7 +780,7 @@ ts_library(
         "//agentplane/action_service:action_service_pb",
         "//agentplane/app/frontend/threads:thread_notices",
         "//agentplane/history_service/api/history:history_service_pb",
-        "//agentplane/notification_service:notifications_pb",
+        "//agentplane/notification_service/api/notifications:notifications_pb",
     ],
 )
 
@@ -972,7 +972,7 @@ ts_library(
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",
-        "//agentplane/notification_service:notifications_pb",
+        "//agentplane/notification_service/api/notifications:notifications_pb",
         "//agentplane/policy/api/v1alpha1:policy_types_pb",
         "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:command_pb",

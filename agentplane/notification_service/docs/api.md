@@ -1,6 +1,6 @@
 # Notification Service API
 
-The API is defined by [`notifications.proto`](../notifications.proto). Its HTTP annotations generate the App
+The API is defined by [`notifications.proto`](../api/notifications/notifications.proto). Its HTTP annotations generate the App
 browser facade under `/upstream/notifications`; the Notification Service itself serves workload calls over gRPC only.
 The App facade rejects request fields absent from the protobuf contract. Setup and configuration belong in the
 [service README](../README.md); internal delivery and storage design is in [architecture](architecture.md).

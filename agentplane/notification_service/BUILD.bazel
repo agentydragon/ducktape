@@ -1,12 +1,9 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
 
@@ -42,65 +39,8 @@ py_test(
 )
 
 proto_library(
-    name = "notifications_proto",
-    srcs = ["notifications.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/action_service:action_service_proto",
-        "//agentplane/proto:identity_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:struct_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-proto_library(
     name = "storage_proto",
     srcs = ["storage.proto"],
-)
-
-ts_proto_library(
-    name = "notifications_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":notifications_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/action_service:action_service_pb",
-        "//agentplane/proto:identity_pb",
-        "//google/api:annotations_pb",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "notifications_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":notifications_proto"],
-)
-
-py_grpc_service_library(
-    name = "notifications_pb2_grpc",
-    proto = ":notifications_proto",
-    py_proto = ":notifications_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
-go_proto_library(
-    name = "notifications_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb",
-    proto = ":notifications_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
 )
 
 go_proto_library(
@@ -118,7 +58,6 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service",
     deps = [
-        ":notifications_go_proto",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
@@ -131,6 +70,7 @@ go_library(
         "//agentplane/net/listener",
         "//agentplane/notification_service/actions",
         "//agentplane/notification_service/api",
+        "//agentplane/notification_service/api/notifications:notifications_go_proto",
         "//agentplane/notification_service/github",
         "//agentplane/notification_service/github/client",
         "//agentplane/notification_service/github/settings",
@@ -213,7 +153,6 @@ go_test(
     embed = [":main_lib"],
     tags = ["requires_docker"],
     deps = [
-        ":notifications_go_proto",
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
@@ -223,6 +162,7 @@ go_test(
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",
         "//agentplane/notification_service/actions",
+        "//agentplane/notification_service/api/notifications:notifications_go_proto",
         "//agentplane/notification_service/github/testing",
         "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/migrations",

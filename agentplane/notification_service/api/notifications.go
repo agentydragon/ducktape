@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"

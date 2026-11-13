@@ -115,7 +115,7 @@ import {
   WatchInboxResponseSchema,
   WatchInboxEntriesResponseSchema,
   WatchSubscriptionsResponseSchema,
-} from "../../../notification_service/notifications_pb";
+} from "../../../notification_service/api/notifications/notifications_pb";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus, type Event } from "../../../proto/event_pb";
 import { CommandSchema, Operation } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";

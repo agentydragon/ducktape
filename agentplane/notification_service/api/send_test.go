@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	pb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

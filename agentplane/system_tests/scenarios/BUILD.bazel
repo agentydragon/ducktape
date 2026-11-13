@@ -36,7 +36,7 @@ py_library(
     srcs = ["agent_messaging.py"],
     deps = [
         "//agentplane/app/testing:client",
-        "//agentplane/notification_service:notifications_pb2",
+        "//agentplane/notification_service/api/notifications:notifications_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests/deployment:send_grant",

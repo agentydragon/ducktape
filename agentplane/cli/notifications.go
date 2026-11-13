@@ -20,8 +20,8 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	notificationdocs "github.com/agentydragon/ducktape/agentplane/notification_service/docs"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 )
 
 const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_GRPC_URL; optional AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL bearer).

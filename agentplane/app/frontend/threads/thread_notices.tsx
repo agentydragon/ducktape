@@ -6,7 +6,7 @@ import { useEffect, useState, type JSX } from "react";
 
 import { clockTime } from "../format_time";
 import { followWatch } from "../watch_stream";
-import { WatchInboxResponseSchema, type Inbox } from "../../../notification_service/notifications_pb";
+import { WatchInboxResponseSchema, type Inbox } from "../../../notification_service/api/notifications/notifications_pb";
 
 export interface ThreadNotices {
   bySession: Map<string, Inbox>;

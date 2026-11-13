@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 )
 
 const subscriptionID = "00000000-0000-0000-0000-0000000000b1"

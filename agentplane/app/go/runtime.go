@@ -39,7 +39,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"

@@ -15,7 +15,7 @@ import (
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	notificationtesting "github.com/agentydragon/ducktape/agentplane/notification_service/testing" // Shared gRPC fixtures; avoids colliding with Go testing.
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
