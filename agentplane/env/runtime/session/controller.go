@@ -6,8 +6,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

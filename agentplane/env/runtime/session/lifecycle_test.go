@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"

@@ -310,7 +310,7 @@ map, whose `shell_environment_policy.set` gives a thread's tools its Session's n
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
 [`session/`](../env/runtime/session), [`supervision/`](../env/runtime/supervision/),
-[`retained/`](../env/runtime/retained), and the adapters ([Claude](../env/runtime/claude/adapter.go),
+[`retained/`](../env/runtime/internal/retained), and the adapters ([Claude](../env/runtime/claude/adapter.go),
 [Codex](../env/runtime/codex/adapter.go)).
 
 The shared app-server starts when a Codex Session first needs a harness and stays up until the

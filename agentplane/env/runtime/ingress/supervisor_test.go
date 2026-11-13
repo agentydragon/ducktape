@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 )
 
 func TestSupervisorStartsOneWorkerPerUnsealedSessionAndJoinsOnCancel(t *testing.T) {

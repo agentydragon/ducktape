@@ -3,11 +3,11 @@ package session
 import (
 	"context"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

@@ -9,7 +9,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 
 	"github.com/agentydragon/ducktape/agentplane/env/cosi"
-	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 )
 
 func (r *Runtime) admissionCount(ctx context.Context) (int, error) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
 	"github.com/cosi-project/runtime/pkg/state"
 )
 

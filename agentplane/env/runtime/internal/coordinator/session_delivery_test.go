@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"

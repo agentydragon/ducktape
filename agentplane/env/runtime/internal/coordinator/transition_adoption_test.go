@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 

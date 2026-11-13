@@ -12,8 +12,8 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/ingress",
     deps = [
+        "//agentplane/env/runtime/internal/retained",
         "//agentplane/env/runtime/journal",
-        "//agentplane/env/runtime/retained",
         "//agentplane/env/runtime/stream",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -33,8 +33,8 @@ go_test(
     embed = [":ingress"],
     race = "on",
     deps = [
+        "//agentplane/env/runtime/internal/retained",
         "//agentplane/env/runtime/journal",
-        "//agentplane/env/runtime/retained",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",

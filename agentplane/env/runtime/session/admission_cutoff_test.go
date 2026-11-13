@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"google.golang.org/grpc/codes"

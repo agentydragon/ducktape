@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"

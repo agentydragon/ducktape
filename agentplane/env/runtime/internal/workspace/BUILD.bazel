@@ -6,8 +6,8 @@ package(default_visibility = ["//visibility:private"])
 go_library(
     name = "workspace",
     srcs = ["workspace.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/workspace",
-    visibility = ["//agentplane/env:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace",
+    visibility = ["//agentplane/env/runtime:__subpackages__"],
     deps = [
         "//agentplane/env/runtime/supervision",
         "@org_golang_x_sys//unix",

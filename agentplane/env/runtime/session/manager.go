@@ -9,10 +9,10 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
 	"github.com/cosi-project/runtime/pkg/safe"
