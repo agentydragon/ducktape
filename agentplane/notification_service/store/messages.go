@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/store/internal/entry"
 	"github.com/google/uuid"
 )
 
@@ -231,7 +232,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}
-		if err := insertEntry(ctx, tx, inbox.ID, cursor, event, json.RawMessage(payload), accepted); err != nil {
+		if err := entrystorage.Insert(ctx, tx, inbox.ID, cursor, event, json.RawMessage(payload), accepted); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `

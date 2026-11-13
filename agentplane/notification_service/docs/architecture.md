@@ -8,7 +8,9 @@ coordinates source reads and notice delivery. The integration app is only a clie
 
 `model` owns subscription definitions, source-event identities, GitHub facts, selection rules and their
 JSON encoding. It has no database, transport or worker dependency. `store` owns PostgreSQL transactions,
-claims, refresh leases and durable recording; it consumes these types without defining their vocabulary.
+claims, refresh leases and durable recording; `store/internal/entry` maps event identities to relational
+entry rows inside a transaction supplied by its caller. The store consumes model types without defining their
+vocabulary.
 
 `github/client` owns authenticated REST reads, pagination, response normalization and typed request
 errors. It depends on `model` and the shared `github/settings`, not on persistence or scheduling.

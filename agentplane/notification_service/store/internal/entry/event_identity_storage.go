@@ -1,4 +1,4 @@
-package store
+package entry
 
 import (
 	"context"
@@ -36,13 +36,14 @@ type eventIdentityStorage struct {
 	messageSenderIdentityUID   *string
 }
 
-const eventIdentityReadColumns = `identity_provider, actions_request_id::text, actions_sequence,
+// ReadColumns lists the relational event identity columns in scan order.
+const ReadColumns = `identity_provider, actions_request_id::text, actions_sequence,
 	github_app_id, github_delivery_id::text, github_repository_id, github_event, github_action,
 	github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
 	message_id::text, message_sender_namespace, message_sender_name, message_sender_identity_name, message_sender_identity_uid`
 
-// eventIdentityRead is one relational source key read from entry.
-type eventIdentityRead struct {
+// IdentityRow decodes one relational source key read from entry.
+type IdentityRow struct {
 	provider                   sql.NullString
 	actionsRequestID           sql.NullString
 	actionsSequence            sql.NullInt64
@@ -62,7 +63,8 @@ type eventIdentityRead struct {
 	messageSenderIdentityUID   sql.NullString
 }
 
-func (r *eventIdentityRead) destinations() []any {
+// Destinations returns the scan targets for the relational event identity columns.
+func (r *IdentityRow) Destinations() []any {
 	return []any{
 		&r.provider, &r.actionsRequestID, &r.actionsSequence,
 		&r.githubAppID, &r.githubDeliveryID, &r.githubRepositoryID, &r.githubEvent, &r.githubAction,
@@ -71,7 +73,8 @@ func (r *eventIdentityRead) destinations() []any {
 	}
 }
 
-func (r eventIdentityRead) event() (model.EventIdentity, error) {
+// Event returns the event identity represented by the scanned columns.
+func (r IdentityRow) Event() (model.EventIdentity, error) {
 	if !r.provider.Valid {
 		return nil, errors.New("entry has no relational event identity")
 	}
@@ -204,7 +207,8 @@ func requiredIdentityInt64(field string, value sql.NullInt64) (int64, error) {
 	return value.Int64, nil
 }
 
-func insertEntry(
+// Insert stores an entry row in the caller's transaction.
+func Insert(
 	ctx context.Context,
 	tx *sql.Tx,
 	inboxID uuid.UUID,
