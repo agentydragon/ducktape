@@ -145,25 +145,44 @@ pub struct BlockingSccEntry {
 
 /// Wire projection of [`SccRejection`] for `cycles.json` and the bail
 /// summary.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Serialize,
+    Deserialize,
+    strum::IntoStaticStr,
+    strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockingRejection {
     /// Pass 1: a cycle of constraining edges. The root cause whenever
     /// present.
-    #[strum(serialize = "  [pass 1: mutual constraining cycle]")]
+    #[strum(
+        serialize = "  [pass 1: mutual constraining cycle]",
+        message = " [Pass 1: mutual constraining cycle]"
+    )]
     MutualConstrainingCycle,
     /// Pass 2 under the linker order: an independent blocker.
-    #[strum(serialize = "  [pass 2: ESM evaluation TDZ]")]
+    #[strum(
+        serialize = "  [pass 2: ESM evaluation TDZ]",
+        message = " [Pass 2: ESM evaluation TDZ]"
+    )]
     EsmEvaluationTdz,
     /// Reported only alongside Pass-1 cycles, which leave no linker order
     /// for Pass 2. Pass 2 run on the same assignment with each Pass-1 SCC
     /// collapsed into one module: what still blocks once those cycles are
     /// resolved by co-location. Conditional, not a verdict of its own.
-    #[strum(serialize = "  [pass 2, conditional: after collapsing the pass-1 SCCs]")]
+    #[strum(
+        serialize = "  [pass 2, conditional: after collapsing the pass-1 SCCs]",
+        message = " [Pass 2, conditional: after collapsing the Pass-1 SCCs]"
+    )]
     TdzAfterCollapsingPassOne,
     /// Written by a newer engine; readers treat it as a blocker.
     #[serde(other)]
-    #[strum(serialize = "  [unrecognized rejection kind]")]
+    #[strum(serialize = "  [unrecognized rejection kind]", message = "")]
     Unrecognized,
 }
 
@@ -430,13 +449,7 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     for (i, cycle) in cycles.iter().enumerate() {
         out.push_str(&format!(
             "Cycle #{i}{}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
-            match cycle.rejection {
-                BlockingRejection::MutualConstrainingCycle => " [Pass 1: mutual constraining cycle]",
-                BlockingRejection::EsmEvaluationTdz => " [Pass 2: ESM evaluation TDZ]",
-                BlockingRejection::TdzAfterCollapsingPassOne =>
-                    " [Pass 2, conditional: after collapsing the Pass-1 SCCs]",
-                BlockingRejection::Unrecognized => "",
-            },
+            strum::EnumMessage::get_message(&cycle.rejection).unwrap_or_default(),
             cycle.modules.len(),
             cycle.cut.len(),
             cut_pairs_count(&cycle.cut),

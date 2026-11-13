@@ -173,15 +173,19 @@ fn source_unit_location(
 }
 
 /// Why a `commuting_statements` entry inerts nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
 pub enum UnusedPremiseReason {
     /// No `sequenced` edge joins the two source units.
+    #[strum(to_string = "are already unordered")]
     NoSequencedEdge,
     /// Every `sequenced` edge between them orders two summarized effects on
     /// disjoint cells (the strict S-chain's adjacency): the analysis already
     /// knows the pair commutes and `dataflow_aware_s_chain` drops the edge
     /// without any premise.
+    #[strum(
+        to_string = "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` already leaves unordered"
+    )]
     SummarizedEndpoints,
 }
 
@@ -196,12 +200,7 @@ pub enum UnusedPremiseReason {
      removable — delete it in a reviewed spec edit and revalidate",
     .a,
     .b,
-    match .reason {
-        UnusedPremiseReason::NoSequencedEdge => "are already unordered",
-        UnusedPremiseReason::SummarizedEndpoints =>
-            "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` \
-             already leaves unordered",
-    }
+    .reason
 )]
 pub struct CommutingStatementsUnused {
     /// `<spec path>:chunk_analysis_options.<chunk>.commuting_statements[<i>]`.

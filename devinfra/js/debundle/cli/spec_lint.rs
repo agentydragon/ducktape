@@ -556,29 +556,9 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                     reason
                 ),
             ),
-            InferenceVerdict::Inconclusive { reason } => (
-                "note",
-                format!(
-                    "inconclusive ({})",
-                    match reason {
-                        InconclusiveReason::PurityClassification { .. } =>
-                            "the binding classifies without the hint; other consumers of the \
-                             hint were not probed"
-                                .to_owned(),
-                        InconclusiveReason::BaselineNotAccepted { error } =>
-                            format!("the probe baseline was not accepted: {error}"),
-                        InconclusiveReason::ProbeFailed { error } =>
-                            format!("the withheld run failed to run: {error}"),
-                        InconclusiveReason::NotProbed =>
-                            "not probed: --max-probes reached".to_owned(),
-                        InconclusiveReason::Consumed =>
-                            "consumed by the analysis; --probe-analysis decides whether it is needed"
-                                .to_owned(),
-                        InconclusiveReason::UnlintedChunks =>
-                            "some chunk was not linted, so its uses are unknown".to_owned(),
-                    }
-                ),
-            ),
+            InferenceVerdict::Inconclusive { reason } => {
+                ("note", format!("inconclusive ({})", reason))
+            }
         };
         let subject = match &finding.annotation {
             LintedAnnotation::PurityHint {

@@ -173,27 +173,35 @@ pub enum InferableReason {
     NeverConsumed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "probe", rename_all = "snake_case")]
 pub enum InconclusiveReason {
     /// The binding classifies without the hint, but other analysis consumers
     /// of the hint were not rerun.
+    #[strum(
+        to_string = "the binding classifies without the hint; other consumers of the hint were not probed"
+    )]
     PurityClassification {
         classification: RedundantPurityReason,
         proof_basis: RedundantPurityProofBasis,
     },
     /// The baseline run of `--probe-analysis` was not accepted, so no
     /// withheld run can be compared with it.
+    #[strum(to_string = "the probe baseline was not accepted: {error}")]
     BaselineNotAccepted { error: String },
     /// The withheld run could not run (an invalid edited spec, an I/O error).
+    #[strum(to_string = "the withheld run failed to run: {error}")]
     ProbeFailed { error: String },
     /// `--max-probes` was reached before this annotation was probed.
+    #[strum(to_string = "not probed: --max-probes reached")]
     NotProbed,
     /// Some analysis recorded a use. The fact it supported may have another
     /// derivation; `--probe-analysis` decides.
+    #[strum(to_string = "consumed by the analysis; --probe-analysis decides whether it is needed")]
     Consumed,
     /// A program-wide annotation, but some chunk was not linted, so its uses
     /// are unknown.
+    #[strum(to_string = "some chunk was not linted, so its uses are unknown")]
     UnlintedChunks,
 }
 
