@@ -4,8 +4,10 @@ How `bb remote` works end-to-end, from CLI invocation to Bazel execution on the
 runner. Bare source paths refer to the
 [BuildBuddy source](https://github.com/buildbuddy-io/buildbuddy).
 
-Configuration behavior checked on 2026-10-30 against the repo-pinned CLI
-**5.0.466** (`nix/packages/bb.nix`) and upstream commit
+Configuration behavior was checked on 2026-10-30 against CLI **5.0.466**, the
+repo pin at the time. The repo now pins **5.0.500** (`nix/packages/bb.nix`);
+version-specific checks below have not been repeated on that release. The
+upstream source was checked at commit
 [`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11).
 CLI behavior and hosted-service behavior have separate versions; upstream server
 source does not establish which revision the hosted service runs.
@@ -42,7 +44,7 @@ If observing the run fails, treat its outcome as unknown and inspect the outer
 runner and child Bazel invocation IDs before manually resubmitting. This option
 does not change Bazel's RBE action retries or remote cache. See the
 [observed replay](../debug/ci_remote_cancellation/vm_shutdown_retry.md).
-The explicit `=true` is required by the pinned CLI: its remote-flag removal
+The explicit `=true` was required by CLI 5.0.466: its remote-flag removal
 does not strip a bare boolean `--disable_retry` before forwarding Bazel startup
 options.
 
@@ -563,7 +565,7 @@ options go before the Bazel verb, e.g. `bbr --timeout=10m test //target`.
 Its dry-run prints the forwarded command; native `.bbrc` expansion happens
 only when `bb` executes.
 
-Validation with pinned 5.0.466: an explicit `.bbrc` containing
+Validation on 5.0.466 (the 2026-10-30 pin): an explicit `.bbrc` containing
 `remote --timeout=cli-doc-audit-invalid-duration` caused the remote parser to
 reject that exact duration before submitting a remote run.
 

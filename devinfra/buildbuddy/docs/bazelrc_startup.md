@@ -1,10 +1,12 @@
 # Local `bb` and Bazel startup directives
 
-The repo-pinned **bb 5.0.466** forwards startup directives from Bazel rc files.
-The earlier observation that local `bb build` / `bb test` silently dropped them
-was made with **5.0.339** and no longer describes the pinned CLI.
+Startup forwarding was verified on **bb 5.0.466**, the repo pin at the time.
+The repo now pins **bb 5.0.500** (`nix/packages/bb.nix`); the probe below has
+not been repeated on that release. The earlier observation that local
+`bb build` / `bb test` silently dropped startup directives was made with
+**5.0.339** and was superseded by the 5.0.466 probe.
 
-Checked 2026-10-30 against the pinned binary and upstream
+Checked 2026-10-30 against bb 5.0.466 and upstream
 [`d84e5dfd`](https://github.com/buildbuddy-io/buildbuddy/tree/d84e5dfd97439eeefbbf247681de47f3960adc11),
 particularly `cli/parser/parser.go` (`ParseConfig`, `consumeAndParseRCFiles`,
 `expandBazelRC`). The current parser expands rc files, including startup
