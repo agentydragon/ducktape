@@ -1,5 +1,5 @@
 {
-  "source_sha": "d9b2064b76c69ebd9332342e5e95e11dc192717a",
+  "source_sha": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
   "scope": "Every tracked .go file under agentplane, including tests, experiments and generated files. No directory or filename exclusions.",
   "counts": {
     "files": 1227,
@@ -3409,7 +3409,7 @@
         "OperatorVerifier",
         "expiringKeys"
       ],
-      "move_plan": ["operator-verifier", "action-private-rpc"],
+      "move_plan": ["operator-verifier"],
       "planned_path": "agentplane/identity/operator/verifier.go",
       "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
@@ -3423,9 +3423,9 @@
       "lines": 58,
       "sha256": "e95b394758b373224587806e75c415f93211082c13d15f310547de295fe999aa",
       "receiver_types": [],
-      "move_plan": ["operator-verifier", "action-private-rpc"],
+      "move_plan": ["operator-verifier"],
       "planned_path": null,
-      "disposition": "Split into owner-local tests in the published stack",
+      "disposition": "Responsibilities split into concrete owners in the published stack",
       "later_plan": [],
       "proposed_destinations": [
         "agentplane/identity/operator/verifier_test.go",
@@ -6450,11 +6450,11 @@
       "lines": 355,
       "sha256": "440032c3a550e31cf7f352b01424a33f646875d0c1b378f95de87fa51d195fe3",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/anthropic_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/anthropic_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/anthropic_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/anthropic_test.go"
     },
     {
       "path": "agentplane/central_sampler/baseline_migration_test.go",
@@ -6464,11 +6464,11 @@
       "lines": 129,
       "sha256": "1506af1340101d0373bd41882a54c7ee66ffddcf04ebbd61d34daba5cf9b48e0",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/baseline_migration_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/baseline_migration_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go"
     },
     {
       "path": "agentplane/central_sampler/cmd/main.go",
@@ -6506,18 +6506,18 @@
       "lines": 212,
       "sha256": "6b8a9ea952c31be3125f6ebfc6dd73ad980398afc99e6afcf2e5ad8fb2ffeee5",
       "receiver_types": ["CodeMode"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/codemode.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/codemode.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/codemode.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Code-mode tool request parsing, host operation dispatch, observation/result conversion, notification-independent cell result handling."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/codemode.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/codemode.go"
     },
     {
       "path": "agentplane/central_sampler/codemode_host.go",
@@ -6527,18 +6527,18 @@
       "lines": 135,
       "sha256": "7bf7509bdab4d127b4b039faa903bcca3d3112630fea0f4c5595be772797a829",
       "receiver_types": ["CodeMode", "CodeModeHost", "codeJournal"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/codemode_host.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/codemode_host.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/codemode_host.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Bind a logical code-mode session to shared host, lease owner, durable JS journal, executor tool delegation, and notification/nested-intent persistence."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/codemode_host.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/codemode_host.go"
     },
     {
       "path": "agentplane/central_sampler/codemode_test.go",
@@ -6548,11 +6548,11 @@
       "lines": 1391,
       "sha256": "706729b1c1ac26b577dc12b6b0452f34a6aa2d8a1510ce66590747fce01620b7",
       "receiver_types": ["blockingStampJournal", "fakeCodeModePeer"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/codemode_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/codemode_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/codemode_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/codemode_test.go"
     },
     {
       "path": "agentplane/central_sampler/content_request.go",
@@ -6562,18 +6562,18 @@
       "lines": 113,
       "sha256": "8ff90b4a5de946aa28757873634f6e965d0d31a3cf04fbe7fe420a53b83a6078",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/content_request.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/content_request.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/content_request.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Persist provider request references; reconstruct authenticated request body from stored content in the DB transaction."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/content_request.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/content_request.go"
     },
     {
       "path": "agentplane/central_sampler/content_store.go",
@@ -6583,18 +6583,18 @@
       "lines": 444,
       "sha256": "30851bd5642b5142ef770c71bcf56a2932d5d191ab8f12dd595aab3f3a6c3169",
       "receiver_types": ["Conversation", "contentStore"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/content_store.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/content_store.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/content_store.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Transaction-scoped content graph, context heads/checkpoints, native context restore, and execution-snapshot control payloads."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/content_store.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/content_store.go"
     },
     {
       "path": "agentplane/central_sampler/content_store_integration_test.go",
@@ -6604,11 +6604,11 @@
       "lines": 339,
       "sha256": "d90dffe92e843a42a57ff09c02d3f2ebcbd77434fbd92b4fdb43d83359543e61",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/content_store_integration_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/content_store_integration_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go"
     },
     {
       "path": "agentplane/central_sampler/environment_context.go",
@@ -6618,18 +6618,18 @@
       "lines": 68,
       "sha256": "2132a55b1c360f05528690b3d5b4f6597325886f3c5f625fbae0bbbaffeae660",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/environment_context.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/environment_context.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/environment_context.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Persisted model-visible cwd/shell snapshot and delta formatting."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/environment_context.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/environment_context.go"
     },
     {
       "path": "agentplane/central_sampler/environment_context_test.go",
@@ -6639,11 +6639,11 @@
       "lines": 194,
       "sha256": "480247942b3ef46adb4ebb17b8c6d5c74d0286716aa9457d3f3e46f2bea91604",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/environment_context_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/environment_context_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/environment_context_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/environment_context_test.go"
     },
     {
       "path": "agentplane/central_sampler/evidence.go",
@@ -6653,18 +6653,18 @@
       "lines": 194,
       "sha256": "5209b239b86da006d912d1243d9b19bbafead3d4152ca4cc70d59eeac6533783",
       "receiver_types": ["IntentKind", "Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/evidence.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/evidence.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/evidence.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Lease-fenced evidence/event transactions, BoundaryRecord fragmentation, progress mapping, and event-parent selection."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/evidence.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/evidence.go"
     },
     {
       "path": "agentplane/central_sampler/evidence_test.go",
@@ -6674,11 +6674,11 @@
       "lines": 22,
       "sha256": "6268fa8098d634c7b795685634206305de99fd7fe329be1f82cfa517919264c7",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/evidence_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/executor_evidence_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/evidence_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/executor_evidence_test.go"
     },
     {
       "path": "agentplane/central_sampler/exec_incarnation_fence.go",
@@ -6688,18 +6688,18 @@
       "lines": 170,
       "sha256": "7f42c5a76300795427c4038f1e94488f0d0026215e701e79dbb09de4ad14f7d0",
       "receiver_types": ["Executor", "executorIncarnationFenceError"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/exec_incarnation_fence.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/incarnation_fence.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/exec_incarnation_fence.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Executor expected-incarnation/scope snapshots, rebind context markers, and incarnation-fence error evidence."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/exec_incarnation_fence.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/incarnation_fence.go"
     },
     {
       "path": "agentplane/central_sampler/execution_context.go",
@@ -6709,18 +6709,18 @@
       "lines": 64,
       "sha256": "e32696224aa24d5f1f6afcc03579355ae3df81dea93feab47ff1f30c2de3b96b",
       "receiver_types": ["Conversation"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/execution_context.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/execution_context.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/execution_context.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Conversation native-context execution snapshot append/restore state."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/execution_context.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/execution_context.go"
     },
     {
       "path": "agentplane/central_sampler/executor.go",
@@ -6730,18 +6730,18 @@
       "lines": 393,
       "sha256": "6763ae3c11ac694f4cecbd8e5e83f102c8d521ee955f5aed816e36cac945d747",
       "receiver_types": ["Executor"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/executor.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/executor.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Typed executor construction, tool routing, error settlement, shell command and patch dispatch."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/executor.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/executor.go"
     },
     {
       "path": "agentplane/central_sampler/executor_failure.go",
@@ -6754,18 +6754,18 @@
         "executionFailureRecord",
         "executorNotDispatchedError"
       ],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor_failure.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/failure.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/executor_failure.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Typed remote outcome, failure classification, and serialized tool/journal evidence."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/executor_failure.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/failure.go"
     },
     {
       "path": "agentplane/central_sampler/executor_operations.go",
@@ -6783,18 +6783,18 @@
         "executorSessionReplacedError",
         "executorTransportError"
       ],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor_operations.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/operations.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/executor_operations.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Typed Runner RPC request/result encoding, operation dispatch, per-attempt deadlines, and transport/rejection errors."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/executor_operations.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/operations.go"
     },
     {
       "path": "agentplane/central_sampler/executor_processes.go",
@@ -6804,18 +6804,18 @@
       "lines": 564,
       "sha256": "de6304d00fbcd1c1b47611b46b90639a5513d8ae68cbfbd9347d49c1a2fffbf7",
       "receiver_types": ["Executor"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor_processes.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/processes.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/executor_processes.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Start/read/write/reconcile/interrupt process handles, output cursor tracking, and process-change wakeups."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/executor_processes.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/processes.go"
     },
     {
       "path": "agentplane/central_sampler/executor_resume_test.go",
@@ -6825,11 +6825,11 @@
       "lines": 728,
       "sha256": "99a9d44e6d1b59f66690b91b0bc0014b090204fbd8a447390d32518a3a4ca100",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor_resume_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/executor_resume_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/executor_resume_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/executor_resume_test.go"
     },
     {
       "path": "agentplane/central_sampler/executor_session.go",
@@ -6839,18 +6839,18 @@
       "lines": 585,
       "sha256": "41498368a20f11671a9c98b08cebbfbcaa25b5b226d555d9f3760eb38be7629a",
       "receiver_types": ["Executor", "typedExecutorClient"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor_session.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/session.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/executor_session.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Open/resume/watch/replace Runner session stream, handshake, incarnation rebind, native frames, and definitive-loss handling."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/executor_session.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/session.go"
     },
     {
       "path": "agentplane/central_sampler/executor_test.go",
@@ -6868,11 +6868,11 @@
         "lateSuccessExecutorStream",
         "notificationExecutorStream"
       ],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/executor_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/executor_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/executor_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/executor_test.go"
     },
     {
       "path": "agentplane/central_sampler/exporter_outbox.go",
@@ -6882,18 +6882,18 @@
       "lines": 27,
       "sha256": "a7660afcdf7d263992bb0195039a73df9bf1e1c7080b849c1b3a432b79c868a9",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/exporter_outbox.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/exporter_outbox.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/exporter_outbox.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Store-backed implementation of the historyexport.Outbox read/checkpoint contract."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/exporter_outbox.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/exporter_outbox.go"
     },
     {
       "path": "agentplane/central_sampler/exporter_test.go",
@@ -6903,11 +6903,11 @@
       "lines": 389,
       "sha256": "a6330aef7bd49bb65a8e0653a5cdeb74fa1d23c462282044c1385b3ca4241881",
       "receiver_types": ["fixtureHistory"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/exporter_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/exporter_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/exporter_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/exporter_test.go"
     },
     {
       "path": "agentplane/central_sampler/historyexport/exporter.go",
@@ -6945,11 +6945,21 @@
       "lines": 127,
       "sha256": "e69ffc09d1d3894a0c4a36cdb5ce76a38499d31ff52862feb89a7029c6eafc15",
       "receiver_types": ["logCapture"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/integration_testmain_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": [
+        "sampler-sessionstore",
+        "sampler-executor",
+        "sampler-runtime",
+        "sampler-rpc"
+      ],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/integration_testmain_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/integration_testmain_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/integration_testmain_test.go",
+      "extracted_destinations": [
+        "agentplane/central_sampler/internal/executor/integration_testmain_test.go",
+        "agentplane/central_sampler/internal/residentruntime/integration_testmain_test.go",
+        "agentplane/central_sampler/internal/rpc/request_read_service_test.go"
+      ]
     },
     {
       "path": "agentplane/central_sampler/internal/codemode/journal.go",
@@ -7337,18 +7347,18 @@
       "lines": 35,
       "sha256": "1c021960a65d2a72047f3e8e1cbc7e9e1ea77047dfbccc7118b9db6f7dc07639",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/native_context.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/native_context.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/native_context.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Native provider context construction, record decoding, and cloning."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/native_context.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/native_context.go"
     },
     {
       "path": "agentplane/central_sampler/native_context_test.go",
@@ -7358,11 +7368,11 @@
       "lines": 121,
       "sha256": "c1aa30f6c84b0ae34133253545584e131cff108a7d936e472d7c41e6e8ed87ad",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/native_context_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/native_context_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/native_context_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/native_context_test.go"
     },
     {
       "path": "agentplane/central_sampler/native_store.go",
@@ -7372,18 +7382,18 @@
       "lines": 47,
       "sha256": "e4c46ca0835710bb165e39b1b81456904d667bba7e68d9271c81fe40fedaa000",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/native_store.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/native_store.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/native_store.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Store-backed sampling context preparation and session lookup for a leased conversation."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/native_store.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/native_store.go"
     },
     {
       "path": "agentplane/central_sampler/notification.go",
@@ -7393,18 +7403,18 @@
       "lines": 129,
       "sha256": "feda3550999225689ef88e7e07255d9c52e663d0551ad2afdd31cb07ced700cc",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/notification.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/notification.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/notification.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Durable cell notification queue, drain, and atomic event settlement."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/notification.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/notification.go"
     },
     {
       "path": "agentplane/central_sampler/notification_test.go",
@@ -7414,11 +7424,11 @@
       "lines": 330,
       "sha256": "96b58943f14cca5539f8d924064cd2affe1dd9201631896dbc52131e0e9d3d93",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/notification_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/notification_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/notification_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/notification_test.go"
     },
     {
       "path": "agentplane/central_sampler/protocol/content.go",
@@ -7606,18 +7616,25 @@
       "lines": 242,
       "sha256": "19dd23e3ebc9cd8772f9a2abf6ffc6bb90614296eb94e81c8fd5524cd4562fd6",
       "receiver_types": ["anthropicAdapter", "responsesAdapter"],
-      "move_plan": ["sampler-sessionstore"],
-      "planned_path": "agentplane/central_sampler/protocol_adapter.go",
-      "disposition": "Selected move/extraction",
+      "move_plan": ["sampler-sessionstore", "sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/protocol_adapter.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
-          "owner": "split boundary; retain until API decision",
+          "owner": "split responsibilities",
           "candidate_path": null,
-          "state": "Contract review required; current batch does not move this file",
-          "responsibility": "Mixed file: provider request projection/preparation closes over private contentStore/Conversation state; Sample performs network/provider streaming. Split only after a transaction-owned request-preparation API is chosen."
+          "state": "Implemented in published stack; Store owns preparation and resident runtime owns provider I/O",
+          "responsibility": "Mixed file: provider request projection/preparation closes over private contentStore/Conversation state; Sample performs network/provider streaming. Split only after a transaction-owned request-preparation API is chosen.",
+          "candidate_paths": [
+            "agentplane/central_sampler/internal/residentruntime/protocol_adapter.go",
+            "agentplane/central_sampler/internal/sessionstore/provider_request.go"
+          ]
         }
       ],
-      "proposed_path": "agentplane/central_sampler/protocol_adapter.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/protocol_adapter.go",
+      "extracted_destinations": [
+        "agentplane/central_sampler/internal/sessionstore/provider_request.go"
+      ]
     },
     {
       "path": "agentplane/central_sampler/provider_attempt.go",
@@ -7627,18 +7644,18 @@
       "lines": 466,
       "sha256": "ede4ecab6ecfc8c95d5fc1d8e2a8f6ea25e67ceabd01a4762dca68a3dbc46a46",
       "receiver_types": ["ProviderAttemptPolicy", "Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_attempt.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/provider_attempt.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/provider_attempt.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Transactional provider-attempt lease/frontier persistence, retry lineage, evidence, and retry-intent creation."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/provider_attempt.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/provider_attempt.go"
     },
     {
       "path": "agentplane/central_sampler/provider_attempt_test.go",
@@ -7648,11 +7665,11 @@
       "lines": 829,
       "sha256": "4d9b8f8a1d462ee7f81da8ab3d73174edb20b770c92b12c761a9afbe4568622b",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_attempt_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/provider_attempt_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_attempt_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/provider_attempt_test.go"
     },
     {
       "path": "agentplane/central_sampler/provider_authorization_test.go",
@@ -7662,11 +7679,11 @@
       "lines": 70,
       "sha256": "7e445560c1716495ea423fcfccdbc46081125fe8a90011e2dfe915c5cdba99db",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_authorization_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_authorization_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_authorization_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_authorization_test.go"
     },
     {
       "path": "agentplane/central_sampler/provider_compaction_control_test.go",
@@ -7676,11 +7693,11 @@
       "lines": 91,
       "sha256": "04bcb968002f0b58cec3b6b24fe59e661115383ef675efdc2c51bd72c80bc277",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_compaction_control_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_compaction_control_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_compaction_control_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_compaction_control_test.go"
     },
     {
       "path": "agentplane/central_sampler/provider_compaction_recovery_test.go",
@@ -7690,11 +7707,11 @@
       "lines": 332,
       "sha256": "e16e654b7101bfaa0c4e4b195437e9005c3fea8b538da06d97535cdd8ee87ffc",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_compaction_recovery_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_compaction_recovery_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_compaction_recovery_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_compaction_recovery_test.go"
     },
     {
       "path": "agentplane/central_sampler/provider_dispatch.go",
@@ -7704,18 +7721,25 @@
       "lines": 66,
       "sha256": "5da35dca68544cb7c78745ba0a13d2a42426a5fda69e3b9cebc979a91d52ac37",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_dispatch.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": null,
+      "disposition": "Responsibilities split into concrete owners in the published stack",
       "later_plan": [
         {
-          "owner": "residentruntime",
-          "candidate_path": "agentplane/central_sampler/internal/residentruntime/provider_dispatch.go",
-          "state": "Contract review required; current batch does not move this file",
-          "responsibility": "Build model tool surface and runtime provider-intent/request route metadata."
+          "owner": "split responsibilities",
+          "candidate_path": null,
+          "state": "Implemented in published stack; merge state tracked by ownership group",
+          "responsibility": "Build model tool surface and runtime provider-intent/request route metadata.",
+          "candidate_paths": [
+            "agentplane/central_sampler/internal/sessionstore/provider_request.go",
+            "agentplane/central_sampler/internal/toolcontract/sampler_tools.go"
+          ]
         }
       ],
-      "proposed_path": "agentplane/central_sampler/provider_dispatch.go"
+      "proposed_destinations": [
+        "agentplane/central_sampler/internal/sessionstore/provider_request.go",
+        "agentplane/central_sampler/internal/toolcontract/sampler_tools.go"
+      ]
     },
     {
       "path": "agentplane/central_sampler/provider_evidence.go",
@@ -7725,18 +7749,18 @@
       "lines": 57,
       "sha256": "d5532ac5e2dcc73df9d870357de4cd33a44c17104b79d13f118562a625d24f8d",
       "receiver_types": ["ResponseEvidence"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_evidence.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/provider_evidence.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/provider_evidence.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Provider evidence sink that appends response observations through Store transactions."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/provider_evidence.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/provider_evidence.go"
     },
     {
       "path": "agentplane/central_sampler/provider_finish_runtime_test.go",
@@ -7746,11 +7770,11 @@
       "lines": 86,
       "sha256": "93f1d6c22395d1a7fb3ebaf67dc95c6e3f08269f25b5dbfb61c4295e41d4976a",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_finish_runtime_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_finish_runtime_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_finish_runtime_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_finish_runtime_test.go"
     },
     {
       "path": "agentplane/central_sampler/provider_recovery_runtime.go",
@@ -7760,18 +7784,18 @@
       "lines": 244,
       "sha256": "07c62e128d2353ca1a586bdff0c70dea00987c5947ed73a80d22f44eef5a7f99",
       "receiver_types": ["Runtime", "deferredProviderError"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_recovery_runtime.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Interpret provider failures/frontiers, coordinate bounded retry/backoff, preserve completed responses on persistence retry, and release execution permits."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/provider_recovery_runtime.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime.go"
     },
     {
       "path": "agentplane/central_sampler/provider_recovery_runtime_test.go",
@@ -7781,11 +7805,11 @@
       "lines": 640,
       "sha256": "cebada35642edd6522460da7c1e16c0a6a55637528d8132c383e55ff6ea68b3c",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_recovery_runtime_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_recovery_runtime_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime_test.go"
     },
     {
       "path": "agentplane/central_sampler/provider_request_read.go",
@@ -7795,18 +7819,21 @@
       "lines": 17,
       "sha256": "672227d8d9e19b91d4e6a3bd10b7dedd387bccf2df4ab31302971cf14316514c",
       "receiver_types": [],
-      "move_plan": ["sampler-rpc"],
-      "planned_path": "agentplane/central_sampler/provider_request_read.go",
-      "disposition": "Selected move/extraction",
+      "move_plan": ["sampler-rpc", "sampler-sessionstore"],
+      "planned_path": null,
+      "disposition": "Responsibilities split into concrete owners in the published stack",
       "later_plan": [
         {
           "owner": "rpc",
           "candidate_path": "agentplane/central_sampler/internal/rpc/provider_request_read.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Strip authorization material from request metadata and define streamed request chunk size for ReadProviderRequest."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/provider_request_read.go"
+      "proposed_destinations": [
+        "agentplane/central_sampler/internal/sessionstore/provider_request.go",
+        "agentplane/central_sampler/internal/rpc/provider_request_read.go"
+      ]
     },
     {
       "path": "agentplane/central_sampler/provider_turn_progress_test.go",
@@ -7816,11 +7843,11 @@
       "lines": 300,
       "sha256": "cc298b9b678da4499bcce997e735d7df42af6a5f1a049faba7f19126e502564f",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/provider_turn_progress_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/provider_turn_progress_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/provider_turn_progress_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/provider_turn_progress_test.go"
     },
     {
       "path": "agentplane/central_sampler/providers/anthropic/anthropic.go",
@@ -8082,18 +8109,18 @@
       "lines": 203,
       "sha256": "f2de1731a44646f01ca8be4fb26964725547cc0d78ee0c0c8f329afadf4383e0",
       "receiver_types": ["contentStore"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/request_plan.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/request_plan.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/request_plan.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Transaction-scoped provider projection and request-profile freezing, context ancestry, stored-prefix/suffix selection, and render preparation."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/request_plan.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/request_plan.go"
     },
     {
       "path": "agentplane/central_sampler/request_plan_test.go",
@@ -8103,11 +8130,11 @@
       "lines": 263,
       "sha256": "157061f4db71b397769644a28f66a45537481d9613abb9e57cd192e3d62668a3",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/request_plan_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/request_plan_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/request_plan_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/request_plan_test.go"
     },
     {
       "path": "agentplane/central_sampler/request_read_service_test.go",
@@ -8118,10 +8145,10 @@
       "sha256": "8a0a9c51fb5fe21341503c35f527f5b25a8a386584055b18808c6786bca06ae7",
       "receiver_types": ["requestReadStream"],
       "move_plan": ["sampler-rpc"],
-      "planned_path": "agentplane/central_sampler/request_read_service_test.go",
-      "disposition": "Selected move/extraction",
+      "planned_path": "agentplane/central_sampler/internal/rpc/request_read_service_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/request_read_service_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/rpc/request_read_service_test.go"
     },
     {
       "path": "agentplane/central_sampler/runtime.go",
@@ -8131,18 +8158,18 @@
       "lines": 54,
       "sha256": "b59f9dc07a82596ba22ac1c37e88c59293d962b812f34cb696c0722189f35d8a",
       "receiver_types": ["residentSession"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/runtime.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/runtime.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/runtime.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Resident owner task state, scheduler/permit state, shutdown lifecycle, and concrete Store/CodeModeHost/Executor wiring."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/runtime.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/runtime.go"
     },
     {
       "path": "agentplane/central_sampler/runtime_lifecycle_test.go",
@@ -8152,11 +8179,11 @@
       "lines": 529,
       "sha256": "3cdfb4cc7e23bd00e78b06a008e64d32c0d4a1d38467002c925ec7168c9291f7",
       "receiver_types": ["drainFixture"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/runtime_lifecycle_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/runtime_lifecycle_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/runtime_lifecycle_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/runtime_lifecycle_test.go"
     },
     {
       "path": "agentplane/central_sampler/runtime_replica.go",
@@ -8166,18 +8193,18 @@
       "lines": 196,
       "sha256": "55457442bfc026a3a5942319bd2ea7df2c9aa5e4e21c447444540a7710506bcf",
       "receiver_types": ["Runtime"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/runtime_replica.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/runtime_replica.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/runtime_replica.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Replica wake/recovery loop, lease scans, resident driver launch, and active-execution permit accounting."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/runtime_replica.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/runtime_replica.go"
     },
     {
       "path": "agentplane/central_sampler/sampling_recovery.go",
@@ -8187,18 +8214,18 @@
       "lines": 95,
       "sha256": "78a30e75b46fdcd9b7f7afef40aa247fb587497f0be85c9a53b9bf040382b82c",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/sampling_recovery.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Persisted sampling reconciliation event and retained event-prefix reconstruction."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/sampling_recovery.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go"
     },
     {
       "path": "agentplane/central_sampler/service.go",
@@ -8209,17 +8236,17 @@
       "sha256": "692138c70d891518616f6560884470f8d1742224206c0f7e49d08ed1a4bedb36",
       "receiver_types": ["Sampler"],
       "move_plan": ["sampler-rpc"],
-      "planned_path": "agentplane/central_sampler/service.go",
-      "disposition": "Selected move/extraction",
+      "planned_path": "agentplane/central_sampler/internal/rpc/service.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "rpc",
           "candidate_path": "agentplane/central_sampler/internal/rpc/service.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Authenticated gRPC admission, request validation, commands, recovery/status reads, provider-request streaming, and event following."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/service.go"
+      "proposed_path": "agentplane/central_sampler/internal/rpc/service.go"
     },
     {
       "path": "agentplane/central_sampler/service_test.go",
@@ -8230,10 +8257,10 @@
       "sha256": "caafd9d15c820a51189ae5723b52e56facc9c5cd22b42482a4811d3f01248f8d",
       "receiver_types": ["fixtureReviews"],
       "move_plan": ["sampler-rpc"],
-      "planned_path": "agentplane/central_sampler/service_test.go",
-      "disposition": "Selected move/extraction",
+      "planned_path": "agentplane/central_sampler/internal/rpc/service_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/service_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/rpc/service_test.go"
     },
     {
       "path": "agentplane/central_sampler/session_compaction.go",
@@ -8243,18 +8270,18 @@
       "lines": 88,
       "sha256": "9270544dd4813d86a7fce61eb3af769ef863675202646f94db42168bb7986ec3",
       "receiver_types": ["Runtime"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/session_compaction.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/session_compaction.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/session_compaction.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Coordinate provider-specific compaction with context, environment, intent, retry-frontier, and persisted completion."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/session_compaction.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/session_compaction.go"
     },
     {
       "path": "agentplane/central_sampler/session_driver.go",
@@ -8264,18 +8291,18 @@
       "lines": 590,
       "sha256": "e9c9c41ff289c74748bad83f79dbb9dcf897290c0ae4274783723d02869e9e03",
       "receiver_types": ["Runtime"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/session_driver.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/session_driver.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/session_driver.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Acquire/renew/release owner lease, drive session work, setup, drain, failure settlement, recovery, and provider-command expiry."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/session_driver.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/session_driver.go"
     },
     {
       "path": "agentplane/central_sampler/session_host.go",
@@ -8285,18 +8312,18 @@
       "lines": 57,
       "sha256": "98a6bd6a61ef8ed60beb82bc0f1dd980d7b007da5730ac303faf3fe4e18f1c1e",
       "receiver_types": ["Runtime", "liveHost"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/session_host.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/session_host.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/session_host.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Bind shared code-mode Session to one Executor connection and detach/close in the required order."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/session_host.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/session_host.go"
     },
     {
       "path": "agentplane/central_sampler/session_interrupt.go",
@@ -8306,18 +8333,18 @@
       "lines": 75,
       "sha256": "524558ca0f3d3710286139db35efc65ab409840fc615177194e10784760e7433",
       "receiver_types": ["Runtime"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/session_interrupt.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/session_interrupt.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/session_interrupt.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Apply interrupt across active host/executor handles, preserve uncertain outcomes, and acknowledge durable interrupt state."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/session_interrupt.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/session_interrupt.go"
     },
     {
       "path": "agentplane/central_sampler/session_setup.go",
@@ -8327,18 +8354,18 @@
       "lines": 68,
       "sha256": "4001116b311dd6ce4cee633f6612c7dd359cddd862c088dd4b6363ccd243de91",
       "receiver_types": ["Runtime"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/session_setup.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/session_setup.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/session_setup.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Coordinate idempotent setup state with the Executor and Store."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/session_setup.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/session_setup.go"
     },
     {
       "path": "agentplane/central_sampler/session_turn.go",
@@ -8348,18 +8375,18 @@
       "lines": 289,
       "sha256": "4868b18d3ae858027f5b6c200ebf37af9795b2a42fb4903426c581814278e054",
       "receiver_types": ["Runtime"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/session_turn.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/session_turn.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/session_turn.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Command turn/steering/input orchestration, tool effects, sampling/compaction intent dispatch and durable provider result finish."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/session_turn.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/session_turn.go"
     },
     {
       "path": "agentplane/central_sampler/settings_fixture_test.go",
@@ -8369,11 +8396,11 @@
       "lines": 16,
       "sha256": "abd7468b13894711ee6d56450d635562e7b331c87bf98109382a167518decc6c",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/settings_fixture_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/settings_fixture_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/settings_fixture_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/settings_fixture_test.go"
     },
     {
       "path": "agentplane/central_sampler/store.go",
@@ -8383,18 +8410,18 @@
       "lines": 341,
       "sha256": "6d7da81f6777b18acfc4cecca714cbcfddf1f6d51354d8a9cedfe0dab9afd943",
       "receiver_types": ["Owner", "Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/store.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Store ownership, operation timeout/transaction helper, lease fencing, scans, row locking, and event append primitive."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/store.go"
     },
     {
       "path": "agentplane/central_sampler/store_admission.go",
@@ -8404,18 +8431,18 @@
       "lines": 197,
       "sha256": "aa7306eca816dcdc7fa4319de38d6ba0f6553ab3eb8cb0dba2ce9f501133cb89",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_admission.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/admission.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_admission.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Atomic/idempotent command admission, accepted-command projection validation, event append, and payloadless work notification."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_admission.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/admission.go"
     },
     {
       "path": "agentplane/central_sampler/store_commands.go",
@@ -8425,18 +8452,18 @@
       "lines": 709,
       "sha256": "fcc0993267960c9cddc3139b4e52e56950274d138843cff4436bfaa3a4b4e757",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_commands.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/commands.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_commands.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Command queue ordering, interrupt settlement, completion/failure outcomes, blocked state, and atomic turn finishing."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_commands.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/commands.go"
     },
     {
       "path": "agentplane/central_sampler/store_conversations.go",
@@ -8446,18 +8473,18 @@
       "lines": 136,
       "sha256": "24b8bcbc47d380bfcb7a9519fc28de9d853e276bbdc857b0802ece1674bb6b73",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_conversations.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/conversations.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_conversations.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Conversation reads/creation, ownership-bound metadata and conversation updates."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_conversations.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/conversations.go"
     },
     {
       "path": "agentplane/central_sampler/store_execution.go",
@@ -8467,18 +8494,18 @@
       "lines": 205,
       "sha256": "539d8a3e9d691aab44dcdfc77f7c622da3f5dd107e471646a5f3b1b1ddbd1747",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_execution.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/execution.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_execution.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Durable workspace/setup transitions, executor session shell/context, and execution progress."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_execution.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/execution.go"
     },
     {
       "path": "agentplane/central_sampler/store_integration_test.go",
@@ -8488,11 +8515,11 @@
       "lines": 2440,
       "sha256": "9008f55f1e31e574f1e7fb9d69474e6755acdef62fbf9b1d1898bb74e03514e9",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_integration_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/integration_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/store_integration_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/integration_test.go"
     },
     {
       "path": "agentplane/central_sampler/store_intents.go",
@@ -8502,18 +8529,18 @@
       "lines": 585,
       "sha256": "be68145eba1e345a150ef2f5239b678e4ce5fbf78af9a96ed54b4aa0409a7e89",
       "receiver_types": ["Store", "storedIntentPayload"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_intents.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/intents.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_intents.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Atomic pending/nested effect journaling, provider/tool completion, context append, and compaction settlement."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_intents.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/intents.go"
     },
     {
       "path": "agentplane/central_sampler/store_leases.go",
@@ -8523,18 +8550,18 @@
       "lines": 173,
       "sha256": "6f4f3462b840646807feb57723c4e7a5a3007e861c32cf7be1d8e49ef9154772",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_leases.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/leases.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_leases.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Pending/recoverable/owned-work scans and lease claim/renew/release."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_leases.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/leases.go"
     },
     {
       "path": "agentplane/central_sampler/store_lifecycle_integration_test.go",
@@ -8544,11 +8571,11 @@
       "lines": 172,
       "sha256": "866f356eeb7acaba3c6fe7e46f93d331d4c9dc37fdaf30865c39ea681931810b",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_lifecycle_integration_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/lifecycle_integration_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/store_lifecycle_integration_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/lifecycle_integration_test.go"
     },
     {
       "path": "agentplane/central_sampler/store_processes.go",
@@ -8558,18 +8585,18 @@
       "lines": 607,
       "sha256": "c482b65ee3d772e7f7053ad3175e53471e606d71244dd4204753b52a3d662dfd",
       "receiver_types": ["LiveWork", "Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_processes.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/processes.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_processes.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Durable process/cell/interrupt state, retained output, live-work/drain classification, and process-handle projection."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_processes.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/processes.go"
     },
     {
       "path": "agentplane/central_sampler/store_provider_command.go",
@@ -8579,18 +8606,18 @@
       "lines": 129,
       "sha256": "1ff45bdcec8a03ede4ddc29ea1771cad6eb81500d2d5707c7a47fecbbf9ea372",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_provider_command.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/provider_command.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_provider_command.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Transactional provider-command failure settlement."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_provider_command.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/provider_command.go"
     },
     {
       "path": "agentplane/central_sampler/store_provider_recovery.go",
@@ -8600,18 +8627,18 @@
       "lines": 180,
       "sha256": "9be389a1dbab20e1be3e5b6e6c514e6ebf23dfd1230d23df7dcc006edf345b26",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_provider_recovery.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/provider_recovery.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_provider_recovery.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Read completed provider finish state and create host-loss sampling/compaction successors in transactions."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_provider_recovery.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/provider_recovery.go"
     },
     {
       "path": "agentplane/central_sampler/store_recovery.go",
@@ -8621,18 +8648,18 @@
       "lines": 771,
       "sha256": "9a92d56201b8a52d732700dbd39973a19ac2f1aefb39b050c32a0bb053dbe07d",
       "receiver_types": ["Store", "lostIntent"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_recovery.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/recovery.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_recovery.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Reconcile host loss, recover blocked sessions, retire lost native executor sessions, and rebind authenticated incarnations."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_recovery.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/recovery.go"
     },
     {
       "path": "agentplane/central_sampler/store_sessions.go",
@@ -8642,18 +8669,18 @@
       "lines": 271,
       "sha256": "851d711ce325c01de380aa3544ead48d84c146c10246875e52ff2701f146470d",
       "receiver_types": ["Store"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/store_sessions.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/sessions.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/store_sessions.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Create/get/list Session records and build API Session description/Identity clone."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/store_sessions.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/sessions.go"
     },
     {
       "path": "agentplane/central_sampler/tool_invocation.go",
@@ -8663,18 +8690,18 @@
       "lines": 10,
       "sha256": "1f958a2ce7fc89afafd11042dc2f807e8b2b77a8952de3389a2de8bcfb7485e1",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/tool_invocation.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-runtime"],
+      "planned_path": "agentplane/central_sampler/internal/residentruntime/tool_invocation.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "residentruntime",
           "candidate_path": "agentplane/central_sampler/internal/residentruntime/tool_invocation.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Model-facing error text for unsupported tool invocations."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/tool_invocation.go"
+      "proposed_path": "agentplane/central_sampler/internal/residentruntime/tool_invocation.go"
     },
     {
       "path": "agentplane/central_sampler/types.go",
@@ -8693,18 +8720,18 @@
         "PendingIntentKind",
         "TurnResult"
       ],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/types.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-sessionstore"],
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/types.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "sessionstore",
           "candidate_path": "agentplane/central_sampler/internal/sessionstore/types.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Owner/Conversation/Session and durable intent/provider/retry/process/command types shared by Store, Executor, and resident runtime. Move with storage; ProjectionKey and other private/package-bound fields need resolution before independently partitioning these types."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/types.go"
+      "proposed_path": "agentplane/central_sampler/internal/sessionstore/types.go"
     },
     {
       "path": "agentplane/central_sampler/unified_exec.go",
@@ -8719,18 +8746,21 @@
         "toolError",
         "toolOutcomeError"
       ],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/unified_exec.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/unified_exec.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/unified_exec.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Typed exec/writeStdin tool schema, input parser/planner, and process observation result mapping."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/unified_exec.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/unified_exec.go",
+      "extracted_destinations": [
+        "agentplane/central_sampler/internal/toolcontract/sampler_tools.go"
+      ]
     },
     {
       "path": "agentplane/central_sampler/unified_exec_test.go",
@@ -8740,11 +8770,11 @@
       "lines": 147,
       "sha256": "a49376059dce1b98a00b16c228feb619d78522201f99bdb7e399ca984f290f8e",
       "receiver_types": [],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/unified_exec_test.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/unified_exec_test.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [],
-      "proposed_path": "agentplane/central_sampler/unified_exec_test.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/unified_exec_test.go"
     },
     {
       "path": "agentplane/central_sampler/view_image.go",
@@ -8754,18 +8784,21 @@
       "lines": 174,
       "sha256": "b018ce3af7806db4bb1101dfcb1879078dfd688d7fba2284d42e91eec87d0c13",
       "receiver_types": ["Executor", "viewImageResult"],
-      "move_plan": [],
-      "planned_path": "agentplane/central_sampler/view_image.go",
-      "disposition": "Retain location in this batch; remains in audit scope",
+      "move_plan": ["sampler-executor"],
+      "planned_path": "agentplane/central_sampler/internal/executor/view_image.go",
+      "disposition": "Implemented in published stack; merge state is tracked per group",
       "later_plan": [
         {
           "owner": "executor",
           "candidate_path": "agentplane/central_sampler/internal/executor/view_image.go",
-          "state": "Contract review required; current batch does not move this file",
+          "state": "Implemented in published stack; merge state tracked by ownership group",
           "responsibility": "Executor-backed file reads, image validation, bounded data URL, and image result evidence."
         }
       ],
-      "proposed_path": "agentplane/central_sampler/view_image.go"
+      "proposed_path": "agentplane/central_sampler/internal/executor/view_image.go",
+      "extracted_destinations": [
+        "agentplane/central_sampler/internal/toolcontract/sampler_tools.go"
+      ]
     },
     {
       "path": "agentplane/cli/actions.go",
@@ -21206,12 +21239,20 @@
     }
   ],
   "published_tree": {
-    "head": "6f7511ea5539bee2e843ba89c6409c7e7f42468b",
-    "pr": 16227,
-    "files": 1235,
-    "directories": 213,
-    "moved_baseline_files": 112,
+    "head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+    "pr": 16232,
+    "files": 1241,
+    "directories": 217,
+    "moved_baseline_files": 187,
     "new_file_paths": [
+      "agentplane/central_sampler/internal/executor/integration_testmain_test.go",
+      "agentplane/central_sampler/internal/residentruntime/integration_testmain_test.go",
+      "agentplane/central_sampler/internal/rpc/provider_request_read.go",
+      "agentplane/central_sampler/internal/rpc/test_helpers_test.go",
+      "agentplane/central_sampler/internal/sessionstore/provider_request.go",
+      "agentplane/central_sampler/internal/toolcontract/rejection.go",
+      "agentplane/central_sampler/internal/toolcontract/sampler_tools.go",
+      "agentplane/central_sampler/testing/exportfixture/source.go",
       "agentplane/identity/credentials/workloadid/workloadid.go",
       "agentplane/identity/credentials/workloadid/workloadid_test.go",
       "agentplane/identity/operator/issuer_test.go",
@@ -21223,7 +21264,9 @@
       "agentplane/sandbox_controller/internal/runnercontrol/suspender.go"
     ],
     "removed_or_split_baseline_paths": [
-      "agentplane/action_service/api/operator_oidc_test.go"
+      "agentplane/action_service/api/operator_oidc_test.go",
+      "agentplane/central_sampler/provider_dispatch.go",
+      "agentplane/central_sampler/provider_request_read.go"
     ],
     "note": "Published proposed source tree; these counts do not imply merge or deployment. Full baseline and proposed manifests include test-only support, generated code, and experiments."
   },
@@ -22555,20 +22598,8 @@
       "baseline_path": "agentplane/app/go/threads/store_integration_test.go"
     },
     {
-      "path": "agentplane/central_sampler/anthropic_test.go",
-      "sha256": "440032c3a550e31cf7f352b01424a33f646875d0c1b378f95de87fa51d195fe3",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/anthropic_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/baseline_migration_test.go",
-      "sha256": "dca77f7a19d76295a6bbf3879052b167528c56ee7854ced7b3af12a593b3d814",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/baseline_migration_test.go"
-    },
-    {
       "path": "agentplane/central_sampler/cmd/main.go",
-      "sha256": "ba84f126c615692ae2677fd05094191110b1b98dbde639903035a882edb733e6",
+      "sha256": "5f6a6211723eb9dc12e8d81f2b5d32d9de714d8e37a72e1c2a53f402e1d800fb",
       "test": false,
       "baseline_path": "agentplane/central_sampler/cmd/main.go"
     },
@@ -22577,132 +22608,6 @@
       "sha256": "c2189c26673fef166e53f2f93033c5a8d7de8e5e2ebf70312df2c52979a35b1e",
       "test": true,
       "baseline_path": "agentplane/central_sampler/cmd/main_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/codemode.go",
-      "sha256": "6b8a9ea952c31be3125f6ebfc6dd73ad980398afc99e6afcf2e5ad8fb2ffeee5",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/codemode.go"
-    },
-    {
-      "path": "agentplane/central_sampler/codemode_host.go",
-      "sha256": "7bf7509bdab4d127b4b039faa903bcca3d3112630fea0f4c5595be772797a829",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/codemode_host.go"
-    },
-    {
-      "path": "agentplane/central_sampler/codemode_test.go",
-      "sha256": "706729b1c1ac26b577dc12b6b0452f34a6aa2d8a1510ce66590747fce01620b7",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/codemode_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/content_request.go",
-      "sha256": "c7cd067366af9dd949b8b8854fba1b2f9c4df963e2d0e392b008a2541f0bb37c",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/content_request.go"
-    },
-    {
-      "path": "agentplane/central_sampler/content_store.go",
-      "sha256": "4ee020cdbd74bbce93dab55f763ee47ff84b5ba30445debfbb6292f64e783ada",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/content_store.go"
-    },
-    {
-      "path": "agentplane/central_sampler/content_store_integration_test.go",
-      "sha256": "89f92c21625a223b26b2d4c7f9b424dea1fb28908c79c8f40479f12907e21b28",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/content_store_integration_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/environment_context.go",
-      "sha256": "2132a55b1c360f05528690b3d5b4f6597325886f3c5f625fbae0bbbaffeae660",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/environment_context.go"
-    },
-    {
-      "path": "agentplane/central_sampler/environment_context_test.go",
-      "sha256": "480247942b3ef46adb4ebb17b8c6d5c74d0286716aa9457d3f3e46f2bea91604",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/environment_context_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/evidence.go",
-      "sha256": "5209b239b86da006d912d1243d9b19bbafead3d4152ca4cc70d59eeac6533783",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/evidence.go"
-    },
-    {
-      "path": "agentplane/central_sampler/evidence_test.go",
-      "sha256": "6268fa8098d634c7b795685634206305de99fd7fe329be1f82cfa517919264c7",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/evidence_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/exec_incarnation_fence.go",
-      "sha256": "7f42c5a76300795427c4038f1e94488f0d0026215e701e79dbb09de4ad14f7d0",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/exec_incarnation_fence.go"
-    },
-    {
-      "path": "agentplane/central_sampler/execution_context.go",
-      "sha256": "e32696224aa24d5f1f6afcc03579355ae3df81dea93feab47ff1f30c2de3b96b",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/execution_context.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor.go",
-      "sha256": "6763ae3c11ac694f4cecbd8e5e83f102c8d521ee955f5aed816e36cac945d747",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/executor.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor_failure.go",
-      "sha256": "7bfd23b397d68dfc1eeee03e1c597fd53678186146c5f0ac8776673419726317",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/executor_failure.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor_operations.go",
-      "sha256": "a9fb5a7d60335118aa5a387e167e518d15f174b2338f3121edad8ca676f709ef",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/executor_operations.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor_processes.go",
-      "sha256": "de6304d00fbcd1c1b47611b46b90639a5513d8ae68cbfbd9347d49c1a2fffbf7",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/executor_processes.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor_resume_test.go",
-      "sha256": "99a9d44e6d1b59f66690b91b0bc0014b090204fbd8a447390d32518a3a4ca100",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/executor_resume_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor_session.go",
-      "sha256": "41498368a20f11671a9c98b08cebbfbcaa25b5b226d555d9f3760eb38be7629a",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/executor_session.go"
-    },
-    {
-      "path": "agentplane/central_sampler/executor_test.go",
-      "sha256": "37741a46b0692841d3acfac2c9c5bc8870de6769a1c64958331847c007dbc148",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/executor_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/exporter_outbox.go",
-      "sha256": "a7660afcdf7d263992bb0195039a73df9bf1e1c7080b849c1b3a432b79c868a9",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/exporter_outbox.go"
-    },
-    {
-      "path": "agentplane/central_sampler/exporter_test.go",
-      "sha256": "adb238bdefe792919a77dde168256f11feb3510e543b24172e9ab645aa843fe4",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/exporter_test.go"
     },
     {
       "path": "agentplane/central_sampler/historyexport/exporter.go",
@@ -22715,12 +22620,6 @@
       "sha256": "533f509f6187007e7e3240a7725d0eb3659b2822cb6f877b2405bc96955a9c66",
       "test": true,
       "baseline_path": "agentplane/central_sampler/historyexport/exporter_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/integration_testmain_test.go",
-      "sha256": "f2bdaf1de1f978df7416bf66b1320d1a32ab6c0e32109aa1ba3bfc1161674007",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/integration_testmain_test.go"
     },
     {
       "path": "agentplane/central_sampler/internal/codemode/journal.go",
@@ -22777,6 +22676,84 @@
       "baseline_path": "agentplane/central_sampler/internal/eventcodec/event_storage.go"
     },
     {
+      "path": "agentplane/central_sampler/internal/executor/executor.go",
+      "sha256": "a1e0d32f8ec33f04047ead198e10d85ddb6a2bec7e16d2e2ecac385895a30f27",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/executor.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/executor_evidence_test.go",
+      "sha256": "eec52d54777bb47c4a5171b01024c32526525cebd2cda5394f2a6946559ebe57",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/evidence_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/executor_resume_test.go",
+      "sha256": "a72ccaf313444d1d57d47add565a9529bbeb488fdd10673afe6df61f2e5b0146",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/executor_resume_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/executor_test.go",
+      "sha256": "085477403b2ba5c46522c65d52cbfa00f06ee1a4c5db156dd3d25e61ec984d35",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/executor_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/failure.go",
+      "sha256": "934c21f719631244a4f08207c5d87d0a7bcc2ef950269ddb9b671bf74f9b8588",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/executor_failure.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/incarnation_fence.go",
+      "sha256": "9d884d388878f6204d433befd1e2e0ce0bd5beca6f762647716adea702fae654",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/exec_incarnation_fence.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/integration_testmain_test.go",
+      "sha256": "52083d3e0ec9f0a18772fafcd2e26ac475797c505361169949ae185ddd6c0ea6",
+      "test": true,
+      "baseline_path": null
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/operations.go",
+      "sha256": "2d91e34c5bcf8095aba17085f8aa88f89ba51b6a377107f217244a090b9994a4",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/executor_operations.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/processes.go",
+      "sha256": "7860fd95fffd3f58fda4a0030e6f625f8cb0c01117678f45fc166d22e931c682",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/executor_processes.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/session.go",
+      "sha256": "07bb27baedfe2194c69ceccb438c3327e31c04d9a61aa09b6071b302d70c9985",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/executor_session.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/unified_exec.go",
+      "sha256": "636da10c84ebdb1ce506b528f7863366fdb4475f4899e36877e0598ad5b2ca03",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/unified_exec.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/unified_exec_test.go",
+      "sha256": "288fb95c6109935bd702f8f2206f11b83063a12e23ea9581a17d76e2f1119187",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/unified_exec_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executor/view_image.go",
+      "sha256": "023f1410b1c3e168307db1d69461816a0464568cb7c9177c21232dfe3db849ae",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/view_image.go"
+    },
+    {
       "path": "agentplane/central_sampler/internal/outputbuffer/buffer.go",
       "sha256": "3372ef230b4dc4f6d91e78eb999f5dd1724c6cef68c0da9c8fd1b2f80a21062c",
       "test": false,
@@ -22799,6 +22776,408 @@
       "sha256": "7b77011a27d52ba8bfc87830421fce258ad46e4e6ecb959436f92bfdb02b0b6d",
       "test": true,
       "baseline_path": "agentplane/central_sampler/internal/promptimage/image_preparation_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/anthropic_test.go",
+      "sha256": "476a82afdd2f486662bb789c4dc734729c59017c8930c62fcf6810bda3721110",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/anthropic_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/codemode.go",
+      "sha256": "46a158a6605a68bdf9bb1303a87ed46afa36260949bd922a490a525857253dfa",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/codemode.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/codemode_host.go",
+      "sha256": "782de21f59d0dc511d452cfbea0c1536021bd009f976b03ab1a3f4e1c3d12e16",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/codemode_host.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/codemode_test.go",
+      "sha256": "6fab79239563f56fd1a0b9dbb138d6293b0d31a3e772bf7ff64e870700755098",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/codemode_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/integration_testmain_test.go",
+      "sha256": "15fe2def3ffad430fb7ed84b2677cde08bffe9bdfdd71bec9d56ac4ef02dec76",
+      "test": true,
+      "baseline_path": null
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/notification_test.go",
+      "sha256": "0dd6045f60079ace92d8c4bd73906f8470399e31c2d134d5ba522e835999a173",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/notification_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/protocol_adapter.go",
+      "sha256": "c00c8a482796790cbdd5c1fa43d26f65b5b22df708904a1d27dc4eb75c0bf56c",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/protocol_adapter.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_authorization_test.go",
+      "sha256": "77c69076ed0be96c531a71a7c3832f51241b73865f6530b8e7d1fe74eac1af99",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_authorization_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_compaction_control_test.go",
+      "sha256": "911883488cafc8daee1614bea24070b4d557e52d828baf8ce01cc126cb0a95d6",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_compaction_control_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_compaction_recovery_test.go",
+      "sha256": "65e854d1a23244d816d12eb7ee145ad6b07a06cc866f177d28b39dfed3d3dc0d",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_compaction_recovery_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_finish_runtime_test.go",
+      "sha256": "e59f15889ac8672d26ba72387309c1ea69b82df282445e6b489095a33cfa4293",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_finish_runtime_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime.go",
+      "sha256": "7f2a1bddf4412a7bb0dcd726471f3f782af65805eaa8d3d8d9a789c4cdf4fbd3",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/provider_recovery_runtime.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_recovery_runtime_test.go",
+      "sha256": "4276be771cf8d624db27be7010f9d8038d40277abfd5596d42b4ff786447da7f",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_recovery_runtime_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/provider_turn_progress_test.go",
+      "sha256": "1202bc81501152512e3f819a7830ae1a7a9ba2030bef046ddf11a2251bcfc7af",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_turn_progress_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/runtime.go",
+      "sha256": "16caedce6f63bd69b2a8ada001d0d3dc051d2ec53606a5c876a58992e592d1c2",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/runtime.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/runtime_lifecycle_test.go",
+      "sha256": "d99c399a2c7b5a2ff9182fe8829a921b04869210246aeb3aec8a8040394c5bbd",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/runtime_lifecycle_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/runtime_replica.go",
+      "sha256": "c251a3037bf2e07520d29b9dd21088ad3950b9aaa6944ff0c4aac6d22b8eeefc",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/runtime_replica.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/session_compaction.go",
+      "sha256": "e7ae831c8110ccde82913a0c534755686eafa82af490f05e0a2a0ca33ccfbd96",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/session_compaction.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/session_driver.go",
+      "sha256": "ba57180e2dcd6d1b797ea25216a816e62168bf3fc783690a1363a659b7c15975",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/session_driver.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/session_host.go",
+      "sha256": "5076139de473f7efe1dcec14cdddb7563332425baa32ae946a4978e34b78ae20",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/session_host.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/session_interrupt.go",
+      "sha256": "d9feddfce0cc76a63a2fa1aa5a4871ec5a98a5d829ffe83e4e19c446d8924bc9",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/session_interrupt.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/session_setup.go",
+      "sha256": "070e35e49264a84c2f649ae1576ad929208a4d69b7245720cf044945bb49815a",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/session_setup.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/session_turn.go",
+      "sha256": "dcbc2fe2abe800e618743996ee7640368a32c5956518d683304cc7345895542a",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/session_turn.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/settings_fixture_test.go",
+      "sha256": "9303f84359bf6b807058ec3eca9982c865a369444b77ff447ee51f09136cd85f",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/settings_fixture_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/residentruntime/tool_invocation.go",
+      "sha256": "dfb96e15b437bd213a980b41ebdfbb4eebb05e74991a1817a1da9127d3c9e840",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/tool_invocation.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/rpc/provider_request_read.go",
+      "sha256": "5487fb57c14cedb3fc8471525b4d7799d24fd4fb766712fec9aa645e82ce5d15",
+      "test": false,
+      "baseline_path": null
+    },
+    {
+      "path": "agentplane/central_sampler/internal/rpc/request_read_service_test.go",
+      "sha256": "77217da730fedc83a405c88cea31ed75ada5623cfc38703f9401a9bd678db162",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/request_read_service_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/rpc/service.go",
+      "sha256": "54224a6ed242b33ae6d00235b8a2c9e6faffbfbda284d36ccefe4a7cae6b833a",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/service.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/rpc/service_test.go",
+      "sha256": "c98561ccdae5622925a9206b44fe82be34da687594d8dd0d6e745fcdf4aa60df",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/service_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/rpc/test_helpers_test.go",
+      "sha256": "9565eb8e2644e098c76d74a9605757d7df1a658583161e32270e2d6608f654f4",
+      "test": true,
+      "baseline_path": null
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/admission.go",
+      "sha256": "dd7a5322f7550838c1beca496b302641892d72fb80ce2ebea405aba1597f6945",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_admission.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go",
+      "sha256": "c9af13b9cdd3e871927736f66f52418114cc9e8c125dfcbcaffc7cfdccd55372",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/baseline_migration_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/commands.go",
+      "sha256": "328aa7d1e0ea45bc39c54dd5ad7a3eec265fb940b355657edf5a7fb5c41351b2",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_commands.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/content_request.go",
+      "sha256": "1609165c10e4266c7ddcb6f4404525dabca447706acc7a6f5a0788f29d611c0f",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/content_request.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/content_store.go",
+      "sha256": "181c4d5962cbb77085f545895809637e93da0ad7f0fa014bf15b93d876d72826",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/content_store.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go",
+      "sha256": "84e7bd0321807c4beddf6bcbcbbd38bc7b291519a478c493ac98db52038093cd",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/content_store_integration_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/conversations.go",
+      "sha256": "de6b6bd6affc19914d44100a7a5fbcc05584db85c5d59a2124a2cd1f7e863f97",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_conversations.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/environment_context.go",
+      "sha256": "c19dbb53cd57060cffb0f072f7da83d4dd3e8265678bd93d6e32a93484d49a1e",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/environment_context.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/environment_context_test.go",
+      "sha256": "df715b68808849e91b07865a8fa08afe6d4a82d1cb859544081fd6b180d7e3f8",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/environment_context_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/evidence.go",
+      "sha256": "ad663c39a7150d56d931b8eae67e1fcc4c84e7b11614b2e0a2639360a02ab80f",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/evidence.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/execution.go",
+      "sha256": "a2e3a53856fcaa1a13e4275cdf3ac0c4ef9ea0a3ea1fbcd31af52d4a4e1bb8c0",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_execution.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/execution_context.go",
+      "sha256": "bd48cdec8c95d7a9da6bc627b87548b4b3becea5f15a1a4044e4997d091dfd4b",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/execution_context.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/exporter_outbox.go",
+      "sha256": "9db261227cd3776d7974fe81be381da2cee38262d0c02e9a5e52eb659b61bc6f",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/exporter_outbox.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/exporter_test.go",
+      "sha256": "dfcd9d29bfe7975211444280ce486d445f2437cf2f82f94004a10b2a7e1f82f7",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/exporter_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/integration_test.go",
+      "sha256": "6fc5e5617ac0d0e94c04db15100973d213d025e789248358b4ae4dc6fad4a20d",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/store_integration_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/integration_testmain_test.go",
+      "sha256": "ff9eda260264fae43f87f42d13c8d279513ecd7b3e6004660fc47cbccb5e45cf",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/integration_testmain_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/intents.go",
+      "sha256": "dc83a214d3f8936952b03b2190ccdf5118dcadeb9475d3426f50c1768352fc3f",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_intents.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/leases.go",
+      "sha256": "a1a05aea2cd6e9006039ef70473508d6a78d2cbd0e0e71666dc7972d211eafc9",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_leases.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/lifecycle_integration_test.go",
+      "sha256": "31f3db6cf22727e1bbef97f70873a9dc899c0373c9b0f87a0524a8098f8e4a32",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/store_lifecycle_integration_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/native_context.go",
+      "sha256": "6512f4d1ae8dfae30dbe8ee981221f3dcdc479f7b797b75713bce16d2add9e89",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/native_context.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/native_context_test.go",
+      "sha256": "0c9a920f4dca3ee828fb68180dd028f75586ae54a334754ee333c04aa105c91a",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/native_context_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/native_store.go",
+      "sha256": "71eaf124a47243ea7211d4acbb8d071a6f80b87d8d191eca2bfaf471d2346181",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/native_store.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/notification.go",
+      "sha256": "029f36350d58ea1856a6b95149bc33c6ddf1d3ff580465f07cd45962d65ced0d",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/notification.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/processes.go",
+      "sha256": "83b9dad310bc1f00ab38995ef6280ec4756deb6d7573904ad4ba3e9e06df6539",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_processes.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/provider_attempt.go",
+      "sha256": "2323703fdbded5a1be73ddf73e8533a828c4b715c885717a8077332575c66c83",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/provider_attempt.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/provider_attempt_test.go",
+      "sha256": "4ae28285e7fda511715ec2f7e509745e52a53356d7c8f2197d75e02f4ad51748",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/provider_attempt_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/provider_command.go",
+      "sha256": "7cf11b1aa121604d2c2b19b61eaa75e077098188e3f9f918d4cd121057e161c9",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_provider_command.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/provider_evidence.go",
+      "sha256": "6de0742a163c5d29d557d7261e1d7784b8c0a1557d48dcf77e6bf90a26c8b2c2",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/provider_evidence.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/provider_recovery.go",
+      "sha256": "eb1bda350ff6b17b1e14ec3e025dcbad16dc337eacfe05d92c07fc629fe59de4",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_provider_recovery.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/provider_request.go",
+      "sha256": "d4f37eddcd69acb256d4d9e8ad3775ce8daca8ed39ac665a0ff6b98a72f1ab09",
+      "test": false,
+      "baseline_path": null
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/recovery.go",
+      "sha256": "1ba58ce05065fc9fc2148cb87887d7c985d29ae9fb95bfb06f07f86dd5f9d476",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_recovery.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/request_plan.go",
+      "sha256": "e5f9e4557dd38dc6fb65b7b6b29b9d1acfc93d58273e090d0ac7cdca00555678",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/request_plan.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/request_plan_test.go",
+      "sha256": "526180a50f2918e75d42b6fce8cd1478f71f0841e93c1198b36334b38c9ffdb5",
+      "test": true,
+      "baseline_path": "agentplane/central_sampler/request_plan_test.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go",
+      "sha256": "2ed4ce7608020c269825e6b0c1f74cb275414e8d11c8b0ae0a370e4b26444823",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/sampling_recovery.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/sessions.go",
+      "sha256": "98a200b2af229c185d9c40080e803dabc70a105420c0aa183c11ecc93ede4913",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store_sessions.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/store.go",
+      "sha256": "3b67900563bd3af753a29ec0603cd16c811e7413d026b4fe9be015a5f5650eb4",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/store.go"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/types.go",
+      "sha256": "3a39bfd874766ffbf9c665e00dd39f6fb6d95c4348459cc6fbbdd2a71068f8e0",
+      "test": false,
+      "baseline_path": "agentplane/central_sampler/types.go"
     },
     {
       "path": "agentplane/central_sampler/internal/settings/model.go",
@@ -22843,6 +23222,18 @@
       "baseline_path": "agentplane/central_sampler/internal/toolcontract/description_test.go"
     },
     {
+      "path": "agentplane/central_sampler/internal/toolcontract/rejection.go",
+      "sha256": "c2a537d770bf96e93423f79fe459ca75e88b77719bbbc4fe2f5238f96d5dfab3",
+      "test": false,
+      "baseline_path": null
+    },
+    {
+      "path": "agentplane/central_sampler/internal/toolcontract/sampler_tools.go",
+      "sha256": "b7bf606d1d03f29b4234cc3163cd210e493425ba494929bca30dfbc36aeeec3f",
+      "test": false,
+      "baseline_path": null
+    },
+    {
       "path": "agentplane/central_sampler/internal/toolcontract/tool_protocol.go",
       "sha256": "e772ed886f69b32b24c319a34f3d6b2c1baa2706f0bea171de8b56aa45a623a1",
       "test": false,
@@ -22883,36 +23274,6 @@
       "sha256": "f4ef3cc38e937bcf9b7012fdc99ad5255d0fdbbbd285870d8c63859076f0dae9",
       "test": false,
       "baseline_path": "agentplane/central_sampler/migration.go"
-    },
-    {
-      "path": "agentplane/central_sampler/native_context.go",
-      "sha256": "1c021960a65d2a72047f3e8e1cbc7e9e1ea77047dfbccc7118b9db6f7dc07639",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/native_context.go"
-    },
-    {
-      "path": "agentplane/central_sampler/native_context_test.go",
-      "sha256": "c1aa30f6c84b0ae34133253545584e131cff108a7d936e472d7c41e6e8ed87ad",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/native_context_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/native_store.go",
-      "sha256": "e4c46ca0835710bb165e39b1b81456904d667bba7e68d9271c81fe40fedaa000",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/native_store.go"
-    },
-    {
-      "path": "agentplane/central_sampler/notification.go",
-      "sha256": "feda3550999225689ef88e7e07255d9c52e663d0551ad2afdd31cb07ced700cc",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/notification.go"
-    },
-    {
-      "path": "agentplane/central_sampler/notification_test.go",
-      "sha256": "96b58943f14cca5539f8d924064cd2affe1dd9201631896dbc52131e0e9d3d93",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/notification_test.go"
     },
     {
       "path": "agentplane/central_sampler/protocol/content.go",
@@ -22985,84 +23346,6 @@
       "sha256": "0ad544b8d6af379683e7c6318928c67e10fc83f7ffb3352c04ab709df13df677",
       "test": false,
       "baseline_path": "agentplane/central_sampler/protocol/tool_surface.go"
-    },
-    {
-      "path": "agentplane/central_sampler/protocol_adapter.go",
-      "sha256": "9bb4f0e0759c9509ef9a5e2a7880f1278b0278917bc10f47552d85582e716874",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/protocol_adapter.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_attempt.go",
-      "sha256": "ede4ecab6ecfc8c95d5fc1d8e2a8f6ea25e67ceabd01a4762dca68a3dbc46a46",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/provider_attempt.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_attempt_test.go",
-      "sha256": "b32efd6f88f70618e7d189d98c6ddc7a8de07e7568328b13c7ac3fad4074adb8",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_attempt_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_authorization_test.go",
-      "sha256": "fedb36f0a3a1ec22f41a578aedc49f2419ba07d88bf4a70ddf5238a801fe1fea",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_authorization_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_compaction_control_test.go",
-      "sha256": "04bcb968002f0b58cec3b6b24fe59e661115383ef675efdc2c51bd72c80bc277",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_compaction_control_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_compaction_recovery_test.go",
-      "sha256": "e16e654b7101bfaa0c4e4b195437e9005c3fea8b538da06d97535cdd8ee87ffc",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_compaction_recovery_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_dispatch.go",
-      "sha256": "5da35dca68544cb7c78745ba0a13d2a42426a5fda69e3b9cebc979a91d52ac37",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/provider_dispatch.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_evidence.go",
-      "sha256": "d5532ac5e2dcc73df9d870357de4cd33a44c17104b79d13f118562a625d24f8d",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/provider_evidence.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_finish_runtime_test.go",
-      "sha256": "93f1d6c22395d1a7fb3ebaf67dc95c6e3f08269f25b5dbfb61c4295e41d4976a",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_finish_runtime_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_recovery_runtime.go",
-      "sha256": "07c62e128d2353ca1a586bdff0c70dea00987c5947ed73a80d22f44eef5a7f99",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/provider_recovery_runtime.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_recovery_runtime_test.go",
-      "sha256": "cebada35642edd6522460da7c1e16c0a6a55637528d8132c383e55ff6ea68b3c",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_recovery_runtime_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_request_read.go",
-      "sha256": "672227d8d9e19b91d4e6a3bd10b7dedd387bccf2df4ab31302971cf14316514c",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/provider_request_read.go"
-    },
-    {
-      "path": "agentplane/central_sampler/provider_turn_progress_test.go",
-      "sha256": "cc298b9b678da4499bcce997e735d7df42af6a5f1a049faba7f19126e502564f",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/provider_turn_progress_test.go"
     },
     {
       "path": "agentplane/central_sampler/providers/anthropic/anthropic.go",
@@ -23173,214 +23456,10 @@
       "baseline_path": "agentplane/central_sampler/providers/responses/stored_test.go"
     },
     {
-      "path": "agentplane/central_sampler/request_plan.go",
-      "sha256": "89efed2e5d3067b966f4684b6810b0cc958ed5cf00643200d73e696dd7b41c0d",
+      "path": "agentplane/central_sampler/testing/exportfixture/source.go",
+      "sha256": "5131beb2351e6dcc140da623366771f53446b59eaeb8898e0df24685124ad047",
       "test": false,
-      "baseline_path": "agentplane/central_sampler/request_plan.go"
-    },
-    {
-      "path": "agentplane/central_sampler/request_plan_test.go",
-      "sha256": "157061f4db71b397769644a28f66a45537481d9613abb9e57cd192e3d62668a3",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/request_plan_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/request_read_service_test.go",
-      "sha256": "60e5f5c48d80767db9762dce116958dad9efd1fd95b76f250a94b20b93a9c3bd",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/request_read_service_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/runtime.go",
-      "sha256": "b59f9dc07a82596ba22ac1c37e88c59293d962b812f34cb696c0722189f35d8a",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/runtime.go"
-    },
-    {
-      "path": "agentplane/central_sampler/runtime_lifecycle_test.go",
-      "sha256": "3cdfb4cc7e23bd00e78b06a008e64d32c0d4a1d38467002c925ec7168c9291f7",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/runtime_lifecycle_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/runtime_replica.go",
-      "sha256": "55457442bfc026a3a5942319bd2ea7df2c9aa5e4e21c447444540a7710506bcf",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/runtime_replica.go"
-    },
-    {
-      "path": "agentplane/central_sampler/sampling_recovery.go",
-      "sha256": "78a30e75b46fdcd9b7f7afef40aa247fb587497f0be85c9a53b9bf040382b82c",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/sampling_recovery.go"
-    },
-    {
-      "path": "agentplane/central_sampler/service.go",
-      "sha256": "5d73582fcc1313265805499cbd9b5ba029b6b832e854372df97ec499113c1d4c",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/service.go"
-    },
-    {
-      "path": "agentplane/central_sampler/service_test.go",
-      "sha256": "fa4d9fab8b14dac479e75aa61639705e023cd456deb503eb3a5f081bfe3b3a57",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/service_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/session_compaction.go",
-      "sha256": "9270544dd4813d86a7fce61eb3af769ef863675202646f94db42168bb7986ec3",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/session_compaction.go"
-    },
-    {
-      "path": "agentplane/central_sampler/session_driver.go",
-      "sha256": "e9c9c41ff289c74748bad83f79dbb9dcf897290c0ae4274783723d02869e9e03",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/session_driver.go"
-    },
-    {
-      "path": "agentplane/central_sampler/session_host.go",
-      "sha256": "98a6bd6a61ef8ed60beb82bc0f1dd980d7b007da5730ac303faf3fe4e18f1c1e",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/session_host.go"
-    },
-    {
-      "path": "agentplane/central_sampler/session_interrupt.go",
-      "sha256": "524558ca0f3d3710286139db35efc65ab409840fc615177194e10784760e7433",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/session_interrupt.go"
-    },
-    {
-      "path": "agentplane/central_sampler/session_setup.go",
-      "sha256": "4001116b311dd6ce4cee633f6612c7dd359cddd862c088dd4b6363ccd243de91",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/session_setup.go"
-    },
-    {
-      "path": "agentplane/central_sampler/session_turn.go",
-      "sha256": "4868b18d3ae858027f5b6c200ebf37af9795b2a42fb4903426c581814278e054",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/session_turn.go"
-    },
-    {
-      "path": "agentplane/central_sampler/settings_fixture_test.go",
-      "sha256": "abd7468b13894711ee6d56450d635562e7b331c87bf98109382a167518decc6c",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/settings_fixture_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store.go",
-      "sha256": "6d7da81f6777b18acfc4cecca714cbcfddf1f6d51354d8a9cedfe0dab9afd943",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_admission.go",
-      "sha256": "aa7306eca816dcdc7fa4319de38d6ba0f6553ab3eb8cb0dba2ce9f501133cb89",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_admission.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_commands.go",
-      "sha256": "fcc0993267960c9cddc3139b4e52e56950274d138843cff4436bfaa3a4b4e757",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_commands.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_conversations.go",
-      "sha256": "24b8bcbc47d380bfcb7a9519fc28de9d853e276bbdc857b0802ece1674bb6b73",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_conversations.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_execution.go",
-      "sha256": "539d8a3e9d691aab44dcdfc77f7c622da3f5dd107e471646a5f3b1b1ddbd1747",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_execution.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_integration_test.go",
-      "sha256": "1149dee9742d94ed7c1c84ba6e215c5b663c2b8ed3bc58c74c2bd9319323d660",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/store_integration_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_intents.go",
-      "sha256": "be68145eba1e345a150ef2f5239b678e4ce5fbf78af9a96ed54b4aa0409a7e89",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_intents.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_leases.go",
-      "sha256": "6f4f3462b840646807feb57723c4e7a5a3007e861c32cf7be1d8e49ef9154772",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_leases.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_lifecycle_integration_test.go",
-      "sha256": "866f356eeb7acaba3c6fe7e46f93d331d4c9dc37fdaf30865c39ea681931810b",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/store_lifecycle_integration_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_processes.go",
-      "sha256": "c482b65ee3d772e7f7053ad3175e53471e606d71244dd4204753b52a3d662dfd",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_processes.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_provider_command.go",
-      "sha256": "1ff45bdcec8a03ede4ddc29ea1771cad6eb81500d2d5707c7a47fecbbf9ea372",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_provider_command.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_provider_recovery.go",
-      "sha256": "9be389a1dbab20e1be3e5b6e6c514e6ebf23dfd1230d23df7dcc006edf345b26",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_provider_recovery.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_recovery.go",
-      "sha256": "9a92d56201b8a52d732700dbd39973a19ac2f1aefb39b050c32a0bb053dbe07d",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_recovery.go"
-    },
-    {
-      "path": "agentplane/central_sampler/store_sessions.go",
-      "sha256": "851d711ce325c01de380aa3544ead48d84c146c10246875e52ff2701f146470d",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/store_sessions.go"
-    },
-    {
-      "path": "agentplane/central_sampler/tool_invocation.go",
-      "sha256": "1f958a2ce7fc89afafd11042dc2f807e8b2b77a8952de3389a2de8bcfb7485e1",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/tool_invocation.go"
-    },
-    {
-      "path": "agentplane/central_sampler/types.go",
-      "sha256": "88bd177cdd464e710574315c39798653a7c8c92357db215dc8ae2590df9114c9",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/types.go"
-    },
-    {
-      "path": "agentplane/central_sampler/unified_exec.go",
-      "sha256": "49602a4341331edfb53bd6dc30c299d19bd0be4ad5bbdbb893ceac9b0ee7eaa1",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/unified_exec.go"
-    },
-    {
-      "path": "agentplane/central_sampler/unified_exec_test.go",
-      "sha256": "a49376059dce1b98a00b16c228feb619d78522201f99bdb7e399ca984f290f8e",
-      "test": true,
-      "baseline_path": "agentplane/central_sampler/unified_exec_test.go"
-    },
-    {
-      "path": "agentplane/central_sampler/view_image.go",
-      "sha256": "b018ce3af7806db4bb1101dfcb1879078dfd688d7fba2284d42e91eec87d0c13",
-      "test": false,
-      "baseline_path": "agentplane/central_sampler/view_image.go"
+      "baseline_path": null
     },
     {
       "path": "agentplane/cli/actions.go",
@@ -25448,7 +25527,7 @@
     },
     {
       "path": "agentplane/history_service/internal/ingress/delegated_export_test.go",
-      "sha256": "b5e2533ad608e854938a13becd297b6198be37f65ab8b2f187d50630c9aca0d1",
+      "sha256": "bb7e5fd0c47001b7dc3f4336ab2645afb26fc6aea6fd59c6c87b6d1ad39452ae",
       "test": true,
       "baseline_path": "agentplane/history_service/internal/ingress/delegated_export_test.go"
     },
@@ -25478,13 +25557,13 @@
     },
     {
       "path": "agentplane/history_service/internal/ingress/sampler_export_test.go",
-      "sha256": "b55efa11b3c9e0789f63edf3f1e947fc7acf9cb9c0ad171cc2c0b6c5992601ee",
+      "sha256": "95c6cafcd8e4777d621e9c39bd92be3b6403bc2dc5c2c83ff1dec5e25135fda0",
       "test": true,
       "baseline_path": "agentplane/history_service/internal/ingress/sampler_export_test.go"
     },
     {
       "path": "agentplane/history_service/internal/ingress/sampler_history_projection_test.go",
-      "sha256": "2bee40a92c265b3f3c50c47336a8e80042d1be74a4043702bd78cc6abab13dce",
+      "sha256": "2cf2e2f9f2183aff0e8a15f11bdedc1be41499a1fb27fc63ab96ea4a625fd121",
       "test": true,
       "baseline_path": "agentplane/history_service/internal/ingress/sampler_history_projection_test.go"
     },
