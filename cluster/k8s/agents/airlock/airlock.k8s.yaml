@@ -91,6 +91,8 @@ spec:
               value: unset
             - name: CONFIG_PATH
               value: /etc/airlock/config.yaml
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: AIRLOCK_OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -176,6 +178,9 @@ spec:
             - mountPath: /etc/airlock
               name: config
               readOnly: true
+            - mountPath: /var/run/public-web-pki
+              name: public-web-pki
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       securityContext:
@@ -187,6 +192,9 @@ spec:
         - configMap:
             name: airlock-config
           name: config
+        - configMap:
+            name: public-web-pki
+          name: public-web-pki
 ---
 apiVersion: v1
 kind: ServiceAccount
