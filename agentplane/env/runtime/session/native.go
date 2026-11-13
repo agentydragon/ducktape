@@ -9,10 +9,10 @@ import (
 	"maps"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/claude"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	harness "github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/claude"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/observability"

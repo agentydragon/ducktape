@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	codexadapter "github.com/agentydragon/ducktape/agentplane/env/runtime/codex"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/bootstrap"
+	codexadapter "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace"

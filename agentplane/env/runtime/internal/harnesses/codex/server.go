@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/codex/protocol"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/harnesses/codex/protocol"
 )
 
 // InitializeRequestID names the handshake request the Runner sends once per shared app-server.

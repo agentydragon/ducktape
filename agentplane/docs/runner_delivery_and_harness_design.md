@@ -310,13 +310,13 @@ map, whose `shell_environment_policy.set` gives a thread's tools its Session's n
 destination. The Session record stores one Claude session ID or Codex thread ID, and a runner restart
 creates a new process and resumes the native conversation from that store. See
 [`session/`](../env/runtime/session), [`supervision/`](../env/runtime/supervision/),
-[`retained/`](../env/runtime/internal/retained), and the adapters ([Claude](../env/runtime/claude/adapter.go),
-[Codex](../env/runtime/codex/adapter.go)).
+[`retained/`](../env/runtime/internal/retained), and the adapters ([Claude](../env/runtime/internal/harnesses/claude/adapter.go),
+[Codex](../env/runtime/internal/harnesses/codex/adapter.go)).
 
 The shared app-server starts when a Codex Session first needs a harness and stays up until the
 Runner stops or quiesces; it is not reaped when idle. Stopping is phased: every Session halts first
 (its active turn interrupted), each Claude process stops, then the app-server stops once. Its frames
-are assigned by thread ([`codex/router.go`](../env/runtime/codex/router.go)): a response to the Session
+are assigned by thread ([`codex/router.go`](../env/runtime/internal/harnesses/codex/router.go)): a response to the Session
 whose request it answers, a frame naming a thread to that thread's Session or, for a sub-agent, its
 root's, and a frame naming none, like stderr, to every hosted Session. Thread creation is serialized,
 so a thread naming itself before its `thread/start` response belongs to the one Session creating it.
@@ -427,8 +427,8 @@ commit resolves by the same public ID. Claude's current adapter chooses a native
 that narrower path does not solve the harness-chosen-ID crash window in general. Specify the
 reservation/mapping format, native reconciliation proof, and failure status before implementation.
 Today [`Session.startHarness`](../env/runtime/session/native.go) writes the native ID only after adapter handshake;
-[`CodexAdapter`](../env/runtime/codex/adapter.go) starts a native thread during that handshake, and
-[`ClaudeAdapter`](../env/runtime/claude/adapter.go) selects an ID before launch but also persists it afterward.
+[`CodexAdapter`](../env/runtime/internal/harnesses/codex/adapter.go) starts a native thread during that handshake, and
+[`ClaudeAdapter`](../env/runtime/internal/harnesses/claude/adapter.go) selects an ID before launch but also persists it afterward.
 Persisting Claude's chosen ID before launch can narrow its case; Codex still needs a proven recovery
 path for an ID assigned by the harness.
 

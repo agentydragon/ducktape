@@ -8,7 +8,7 @@ package defaults to test-only in Bazel.
 
 ## Tests
 
-`//agentplane/env/runtime/internal/coordinator:coordinator_test` and `//agentplane/env/runtime/codex:codex_test` run with Go's race detector. The
+`//agentplane/env/runtime/internal/coordinator:coordinator_test` and `//agentplane/env/runtime/internal/harnesses/codex:codex_test` run with Go's race detector. The
 Codex router test drives parallel sessions through shared host, request, and thread routing state. The
 journal suite (`//agentplane/env/runtime/journal:journal_test`) also runs with the race detector;
 the runner suite covers process and Session integration. The VM fixture runs the separate

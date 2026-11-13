@@ -1234,7 +1234,7 @@ does not block current thread work or authorize implementation.
 **Unscheduled; operator, 2026-10-21 07:11 UTC: "fidelity improvements like images for Claude let's put on task
 dag".** Tool results become ordered parts (text, image) in the harness-neutral vocabulary instead of one string.
 Today `event.proto` carries `ToolResult.output`, `ToolOutputDelta.text` and `RecoveredContent.output` as strings,
-the Claude adapter's `resultText()` (`env/runtime/claude/protocol.go`) joins text blocks and drops images, and the
+the Claude adapter's `resultText()` (`env/runtime/internal/harnesses/claude/protocol.go`) joins text blocks and drops images, and the
 History fold's `THREAD_PAYLOAD_FIELD_OUTPUT` is one text field that deltas append to. Scope: the proto, both
 runner adapters, the History fold with its storage and reads, the app API, the frontend tool cards, and the fold,
 span and visual fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the
