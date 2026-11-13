@@ -190,7 +190,7 @@ lock alone does not prove that boundary. Linux's
 kills and joins remaining tasks.
 
 Sandbox Controller waits for the prior Pod's deletion event before creating its successor
-(`converge` in `sandbox_controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
+(`converge` in `sandbox_controller/internal/controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
 supply the outer fence. An API deletion event after force deletion or node loss does not prove the
 old container stopped. Container teardown or an external node/storage fence must precede
 replacement. Node-local storage and the COSI database's fixed inode lock remain part of the supported contract;

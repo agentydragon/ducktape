@@ -24,7 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
+	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/controller"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 

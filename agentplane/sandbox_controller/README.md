@@ -38,20 +38,20 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   generates the controller-gen deep-copy methods; build `//agentplane/sandboxes/api:deepcopy` to
   check them directly. The pinned upstream `controller-gen` binary and Go SDK run with declared
   Bazel inputs, so no generated Go file is committed.
-- [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its ConfigMap,
+- [`controller.go`](internal/controller/controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its ConfigMap,
   Service and WorkloadCredential, its Pods, VMI and state PVC (by the Sandbox label), and the
   templates and Identity it names (by a field index) map back to it.
-- [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
+- [`vm.go`](internal/controller/vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
-- [`environment_runtime_credential.go`](environment_runtime_credential.go): the WorkloadCredential
+- [`environment_runtime_credential.go`](internal/controller/environment_runtime_credential.go): the WorkloadCredential
   request, incarnation binding and credential mounts.
-- [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
-- [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
-- [`identity.go`](identity.go): the live `Identity` gate and the required credential subject each
+- [`state_volume.go`](internal/controller/state_volume.go): the state layout contract, PVC creation record and identity binding.
+- [`workspace.go`](internal/controller/workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
+- [`identity.go`](internal/controller/identity.go): the live `Identity` gate and the required credential subject each
   workload incarnation keeps. A retained legacy credential without an Identity is revoked before
   the next start; a running incarnation with one is replaced.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
-- [`cache.go`](cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
+- [`cache.go`](internal/controller/cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
   Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the
   namespace, Pod Events and the Gateway's connection Leases. RBAC cannot select by label, so the Role
   still grants `list`/`watch` on those kinds.

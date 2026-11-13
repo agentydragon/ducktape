@@ -75,7 +75,7 @@ virtiofs containers, not to a named filesystem or an existing launcher. The live
 no override. Its declarative owner is
 [`cluster/cdk8s/kubevirt/app.py`](../../cluster/cdk8s/kubevirt/app.py), then the generated
 `cluster/generated/kubevirt/app/` manifests. Agentplane's
-[`sandbox_controller/vm.go`](../sandbox_controller/vm.go) adds filesystem attachments; it does not
+[`sandbox_controller/internal/controller/vm.go`](../sandbox_controller/internal/controller/vm.go) adds filesystem attachments; it does not
 choose the daemon resources or arguments. No admission policy currently owns those settings.
 
 `FilesystemVirtiofs` is an empty API type in this release: neither the VM spec nor the KubeVirt CR

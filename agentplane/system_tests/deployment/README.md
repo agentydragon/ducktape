@@ -222,7 +222,7 @@ resumes it with its state and workspace volumes unchanged, and deletes it until 
 The controller gates Ready on workload readiness, runner connection and bootstrap success.
 
 Exact bootstrap and seal-before-stop ordering belongs in deterministic
-[controller tests](../../sandbox_controller/controller_test.go), including
+[controller tests](../../sandbox_controller/internal/controller/controller_test.go), including
 `TestReadyWaitsForTheBootstrapAndStopsOnItsFailure` and
 `TestSuspensionWaitsForTheRunnerToQuiesce`.
 

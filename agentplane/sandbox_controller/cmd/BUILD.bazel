@@ -14,7 +14,7 @@ go_library(
         "//agentplane/identity/credentials/requester",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
-        "//agentplane/sandbox_controller",
+        "//agentplane/sandbox_controller/internal/controller",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@in_gopkg_yaml_v3//:yaml_v3",
