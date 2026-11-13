@@ -36,12 +36,33 @@ Bazel emits package features in `Build.Rule.default_setting`, which
 [v47's rule digest](https://github.com/Tinder/bazel-diff/blob/57ca4c9bc2009f452dbdc34ce758415da494d73e/cli/src/main/kotlin/com/bazel_diff/bazel/BazelRule.kt)
 does not hash. [Upstream issue #441](https://github.com/Tinder/bazel-diff/issues/441)
 discusses loaded-package state and configurable-attribute gaps; it does not
-establish that package features are covered. A source review of v74.0.2 found
-that its Rust implementation also clears `default_setting` in `compact_target`;
-that release was not behaviorally tested here. An upgrade alone is not a verified
-repair.
+establish that package features are covered. The Rust implementation in v74.0.2
+also clears `default_setting` in `compact_target`; the follow-up behavior probe
+below confirms that an upgrade alone retains this omission.
 
-Before narrowing the `.bzl` fallback, add upstream coverage for the demonstrated
+## Prepared package-feature repair
+
+On current upstream v74.0.2, changing a loaded package feature changed the actual
+built `ctx.features` output from `probe_before` to `probe_after`, while bazel-diff
+selected neither the rule nor its dependent. Reversing the order of the same
+features left the built output unchanged.
+[Stock upstream probe](https://app.buildbuddy.io/invocation/47f5c5ed-bbab-4be7-965b-04dd71b10e1a).
+
+The [prepared patch and pinned source](../../../third_party/bazel_diff/README.md)
+retain package features through compaction, hash their sorted, deduplicated,
+length-framed set, then release them after streaming prehash. Cache fingerprints
+and partial-recipe versions change with these semantics.
+
+The patched binary selects the affected rule and dependent both with default query
+options and with `--proto:include_synthetic_attribute_hash`. An unrelated target
+in a separate package remains unselected.
+[Patched behavior probe](https://app.buildbuddy.io/invocation/4664cc44-6fda-48f6-97b1-db6c7dcb9270).
+Both [Rust test targets](https://app.buildbuddy.io/invocation/2a433b02-1e94-4648-bb27-c402d925ccc0)
+and the [binary build](https://app.buildbuddy.io/invocation/0cf34868-6236-4aea-bf48-f72fc4e8b5df)
+passed on RBE. The tested patch is retained for review; Ducktape's installed v47
+package has not adopted it, and no upstream PR has been opened.
+
+Before narrowing the `.bzl` fallback, adopt a repair for the demonstrated
 package-default omission and rerun these behavioral cases with the installed tool.
 Audit globally applied aspects, module/repository extensions and selected
 toolchains separately: the probes do not establish coverage of those inputs.
