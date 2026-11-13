@@ -42,22 +42,35 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   journal, History outage/cursor and authority contracts. Avoid the inherited
   `system_tests/conftest` app dependency. Start with named callers rather than a
   general fixture framework.
-  Split the reused launch helper's runtime artifacts by harness: this Claude-only
-  pilot currently brings both pinned Claude and Codex bundles. Aggregate artifact
-  metrics are not transferred bytes, but this is a concrete remaining dependency.
+  The reused launch helper now leaves CLI artifacts to its callers. The Claude-only
+  pilot retains Claude and has zero Codex input paths (previously 86); the Codex
+  companion declares its own bundle. These counts are not transferred bytes.
+  Representative Claude/Codex consumers and the discarded-journal control were
+  exercised; this does not finish reusable fixture extraction or the contract matrix.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
   Inspect the configured closure and run retained real packaged-image acceptance.
-  First candidate: a central-only profile for MCP Gateway crash, retry-budget,
-  sampler-roll and History-outage targets. Keep all four fault contracts separate;
-  omit Dex/MCP OAuth workloads only after the rendered object/image closure proves
-  they are unused. This retains actual Kubernetes faults while reducing setup.
+  The branch now selects a central recovery profile for MCP Gateway crash,
+  retry-budget, sampler-roll and History-outage targets. All four fault contracts
+  remain separate with unchanged scenario assertions. The rendered closure omits
+  only Dex, MCP Everything and the OAuth fixture: 175 to 162 objects and 15 to 12
+  Deployments. Real packaged services, Kubernetes faults and Pod-bound client
+  credentials remain. Other MCP/OAuth and app/browser targets keep their profiles.
+  Broader per-contract ownership of the common service image graph remains open.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
   acceptance and existing controller fake-clock matrix. Trace producer/watch timing
   for wrong-issuer to valid mounted Secret recovery before changing waits. Measure
   setup amortization, slowest action and CPU when regrouping cases.
+  A Pod annotation spike did not improve the observed wrong-issuer recovery pair
+  and was withdrawn. The retry-budget case now uses a separate 45-second
+  reconnect deadline; ordinary production and the other recovery cases retain the
+  120-second default. This trades default-duration exposure for a shorter real
+  exhaustion test, without dropping unknown-effect, no-replay, retained-session or
+  next-input assertions. A five-second trial failed real post-roll recovery and
+  remains recorded as a failed experiment, not a passing retry. The 45-second
+  candidate passed the unchanged real recovery scenario and rendering checks.
 - **P5, shadow/replay:** compose the candidate graph, replay >=30 pinned base/head
   pairs spanning Runtime/app/MCP/platform and three busy windows; collect >=100
   fresh contract executions. Include cold/warm and four-PR burst exposure. Pin both
@@ -69,6 +82,8 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
 
 P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
 graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.
+Iteration evidence and the remaining coverage boundaries are recorded in
+[`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
 
 ## Admission evidence for a smaller gate
 
