@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agentplane fast CI architecture plan</title>
+
+    <meta name="color-scheme" content="light dark" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      integrity="sha384-i9tDmARQSxqmzSCjbU/VkZGPbv8PjopI///D0KBD2i8+Y/wjaqYR8TDcV69RytF8"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.3.0?target=es2022",
+          "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+          "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+          "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
+        }
+      }
+    </script>
+    <script>
+      document.documentElement.dataset.mantineColorScheme = matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches
+        ? "dark"
+        : "light";
+    </script>
+  </head>
+  <body>
+    <div id="report-content"></div>
+    <noscript>This plan uses JavaScript for Mantine components.</noscript>
+    <script type="module">
+      import { useEffect, useState } from "react";
+      import {
+        Accordion,
+        Alert,
+        Anchor,
+        Badge,
+        Box,
+        Code,
+        Container,
+        Group,
+        List,
+        Paper,
+        SegmentedControl,
+        SimpleGrid,
+        Stack,
+        Table,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+
+      const source = "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf";
+      const repo = "https://github.com/agentydragon/ducktape";
+      const src = (path) => `${repo}/blob/${source}/${path}`;
+      const issue = `${repo}/issues/16099`;
+      const p = (text) => html`<${Text} component="p" my="sm">${text}<//>`;
+      const code = (text) =>
+        html`<${Code}
+          style=${{ whiteSpace: "normal", overflowWrap: "anywhere" }}
+          >${text}<//
+        >`;
+      function Section({ id, title, children }) {
+        return html`<${Box} component="section" id=${id} my="xl">
+          <${Title} order=${2} mb="md">${title}<//>${children}<//
+        >`;
+      }
+      function Rows({ headers, rows }) {
+        return html`<${Table.ScrollContainer} minWidth=${680}>
+          <${Table}
+            striped
+            withTableBorder
+            withColumnBorders
+            verticalSpacing="sm"
+          >
+            <${Table.Thead}
+              ><${Table.Tr}
+                >${headers.map((s) => html`<${Table.Th} key=${s}>${s}<//>`)}<//
+              ><//
+            >
+            <${Table.Tbody}
+              >${rows.map((r, i) => html`<${Table.Tr} key=${i}>${r.map((v, j) => html`<${Table.Td} key=${j}>${v}<//>`)}<//>`)}<//
+            >
+          <//><//
+        >`;
+      }
+      function Node({ label, detail, color = "blue" }) {
+        return html`<${Paper} withBorder radius="md" p="md">
+          <${Badge} color=${color} variant="light" mb="xs">${label}<//>
+          <${Text} size="sm">${detail}<//><//
+        >`;
+      }
+      const classes = {
+        Runtime: {
+          contract:
+            "Real Gateway → Runtime → History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process.",
+          deployment:
+            "A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change.",
+          narrowing:
+            "Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture.",
+        },
+        App: {
+          contract:
+            "App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary.",
+          deployment:
+            "Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest.",
+          narrowing:
+            "Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
+        },
+        Platform: {
+          contract:
+            "Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets.",
+          deployment:
+            "Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate.",
+          narrowing:
+            "Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
+        },
+      };
+      const lanes = [
+        [
+          "P1 · Recovery pilot · this branch",
+          "Run the new manual native-contract target without K3s or the app. Real Gateway and History processes, real Runtime PID1 and PostgreSQL containers, envtest API. Prove first turn, outage, retained History, same-journal restart, receipt replay and a new turn. The seeded lost-journal control was rejected at retained Session inventory; receipt assertions were not reached in that control. This is a feasibility spike; the ordinary merge gate stays intact.",
+        ],
+        [
+          "P2 · Owned contract fixtures",
+          "Extract narrow process/auth/database helpers from app-owned test support and avoid the inherited system_tests conftest dependency. Give each target explicit service binaries and external-model scripting. Split the reused launch helper by harness: this Claude-only pilot still declares both Claude and Codex bundles. Add Gateway fencing/reconnect, History outage/cursor settlement and Runtime crash/journal contracts with positive controls. PRs for independent contracts can run in parallel; no generic fixture framework first.",
+        ],
+        [
+          "P3 · Deployment slices and image ownership",
+          "Replace the unconditional common image map with explicit backend, app, MCP and platform stack compositions. Split reusable backend fixtures from app client fixtures. First candidate: a central-only profile for Gateway crash, retry-budget, sampler-roll and History-outage tests; retain all four distinct Kubernetes faults and omit Dex/MCP OAuth workloads only after their rendered object/image closure proves them unused. For each removed dependency, map the actual assertion and inspect the configured Bazel closure; run the retained deployment acceptance using the real packaged image. This is different work from held image split #15214, which still needs its own measured saving.",
+        ],
+        [
+          "P4 · Shorten compound scenarios",
+          "Split the Pod idle case's authorization, failed-turn retention, timer, operator resume and identity assertions into owner contracts plus one real idle/resume acceptance. Keep the one-minute production timer where it is the guarantee; controller fake-clock tests already exist. Investigate the wrong-issuer → valid mounted Secret case using producer/watch traces before changing its wait. Evaluate action grouping after reducing work: amortize setup without one 21-case action becoming the long pole.",
+        ],
+        [
+          "P5 · Shadow the entire candidate gate",
+          "Replay at least 30 pinned base/head pairs spanning Runtime, app, MCP and platform changes, plus three busy windows and a four-PR burst. Accumulate at least 100 fresh contract executions. Counterbalance control/candidate order and separate warm/cold fixtures, source/CAS, queues, CPU, retries, cancellations and missing results. Include the remaining required pre-commit and artifact/import gates; a faster isolated test is insufficient.",
+        ],
+        [
+          "P6 · Adopt one proven boundary",
+          "Review every unique assertion and fault witness, then change one selection/fixture boundary per PR. Initial screen: at least 25% lower median complete required feedback, p90 no more than 5% worse, no escaped reviewed fault, no new unexplained failure or cleanup signature. Publish all outcomes and sample intervals. Keep full current coverage for unknown mappings and revert that selection change on an escape. Only then evaluate larger architecture, resource and frequency changes.",
+        ],
+      ];
+      function Report() {
+        const [selected, setSelected] = useState("Runtime");
+        const [data, setData] = useState(null);
+        const [manifest, setManifest] = useState(null);
+        const [error, setError] = useState(null);
+        useEffect(() => {
+          const controller = new AbortController();
+          Promise.all(
+            ["evidence.json", "manifest.json"].map(async (path) => {
+              const response = await fetch(path, { signal: controller.signal });
+              if (!response.ok)
+                throw new Error(`${path}: HTTP ${response.status}`);
+              return response.json();
+            }),
+          )
+            .then(([e, m]) => {
+              setData(e);
+              setManifest(m);
+            })
+            .catch((e) => {
+              if (e.name !== "AbortError") setError(String(e));
+            });
+          return () => controller.abort();
+        }, []);
+        const choice = classes[selected];
+        return html`<${Container}
+          component="main"
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <${Anchor} href="../">← Ducktape reports<//>
+          <${Title} order=${1} mt="lg" mb="sm"
+            >Fast CI through smaller real contracts<//
+          >
+          ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
+          <${Group} gap="xs" my="md"
+            ><${Badge} color="blue">Concrete proposal + native pilot<//
+            ><${Badge} color="orange">Merge gate unchanged<//
+            ><${Badge} color="gray">Speedup not yet established<//><//
+          >
+          <${Text} size="sm" c="dimmed"
+            >${manifest ? `Source audit ${source} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
+          >
+          <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
+            ${[
+              ["architecture", "Architecture"],
+              ["change-selector", "PR selection"],
+              ["coverage", "Coverage"],
+              ["spike", "Measured spike"],
+              ["rollout", "Six steps"],
+              ["acceptance", "Adoption gate"],
+            ].map(
+              ([id, label]) =>
+                html`<${Anchor} key=${id} href=${`#${id}`}>${label}<//>`,
+            )}
+          <//>
+          <${Alert} color="blue" title="Decision to make">
+            Start with narrow production-service contracts and explicit
+            deployment slices. Keep the current gate while shadowing. The
+            long-term target is routine backend required-feedback mean below 4
+            minutes and p90 below 8 minutes, including reruns; these are design
+            targets, not results.
+          <//>
+          <${Section} id="why" title="The remaining opportunity is structural">
+            ${p("The latest published baseline has 124 successful production-backend heads: mean 13m36s, median 11m27s, p90 23m38s. Window: 10 November 00:00 to 13 November 03:03:35 UTC. Four failed and one cancelled head are outside those successful percentiles. All 24 repeated successful heads had earlier failed Bazel checks and account for 43.1% of summed head feedback; this is not an all-push flake rate.")}
+            <${Anchor} href="../latency/#backend-current"
+              >Baseline, denominators and collection limits<//
+            >
+            ${p("CI already computes affected targets with bazel-diff. However, all 13 ordinary CI-eligible K3s suites receive the same 12 service-image entries before their platform-specific images. This is declared dependency fanout, not 13 fresh executions on every PR. Narrowing fixtures and image ownership lets the existing selector make a better decision.")}
+            <${Group} gap="md"
+              ><${Anchor} href=${src("devinfra/ci/bazel_ci.py#L212")}
+                >Existing target selection<//
+              ><${Anchor}
+                href=${src("agentplane/system_tests/k3s/defs.bzl#L86")}
+                >Common image map<//
+              ><//
+            >
+            ${p("In one earlier physical Pod action, the process took 451.423s and setup 66.910s; its case envelope was 322.816s. The idle/resume case took 113.323s and the wrong-issuer runner case 101.861s. Cases overlap, so their durations cannot be added to infer feedback savings. This single burst is context for the redesign, not a matched control for the native pilot.")}
+          <//>
+          <${Section}
+            id="architecture"
+            title="How the improved architecture works"
+          >
+            <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
+              <${Paper}
+                withBorder
+                p="lg"
+                radius="md"
+                data-architecture="current"
+              >
+                <${Title} order=${3} mb="md">Current broad path<//>
+                <${Stack} gap="sm">
+                  <${Node}
+                    label="Changed backend library"
+                    detail="bazel-diff follows real transitive dependencies."
+                  />
+                  <${Text} ta="center" aria-hidden="true">↓<//>
+                  <${Node}
+                    label="Shared fixture + common image map"
+                    detail="App/service OCI assembly, runtime artifacts, inherited test support and platform images may enter the selected closure."
+                    color="orange"
+                  />
+                  <${Text} ta="center" aria-hidden="true">↓<//>
+                  <${Node}
+                    label="K3s fixture + bundled scenarios"
+                    detail="Retained infrastructure is already enabled; each action still creates fresh namespaces, database, credentials and application state."
+                    color="orange"
+                  />
+                  <${Text} ta="center" aria-hidden="true">↓<//>
+                  <${Node}
+                    label="Last required check finishes"
+                    detail="A narrow behavioral change can wait on broad setup, image work, platform readiness and the longest scenario bundle."
+                  />
+                <//>
+              <//>
+              <${Paper}
+                withBorder
+                p="lg"
+                radius="md"
+                data-architecture="proposed"
+              >
+                <${Title} order=${3} mb="md">Proposed contract graph<//>
+                <${Stack} gap="sm">
+                  <${Node}
+                    label="Owner tests"
+                    detail="State machine, injected-clock timing and authorization logic stay beside the owning code."
+                    color="teal"
+                  />
+                  <${Text} ta="center" aria-hidden="true"
+                    >↓ dependent targets run in parallel<//
+                  >
+                  <${Node}
+                    label="Real service contracts"
+                    detail="Production binaries + real database + mTLS + real Runtime where needed. Script only external behavior. No app or K3s for a contract that does not require them."
+                    color="teal"
+                  />
+                  <${Node}
+                    label="Focused deployment acceptance"
+                    detail="Explicit images; real Pod/VM/Firecracker, controllers, PKI, RBAC, volumes and boot checks for the guarantees that require deployment."
+                    color="teal"
+                  />
+                  <${Node}
+                    label="App / browser / MCP journeys"
+                    detail="Retain real client, login, projection, approval and end-to-end routing contracts. Select by actual dependencies and reviewed contract ownership."
+                    color="teal"
+                  />
+                <//>
+              <//>
+            <//>
+            ${p("Each contract target owns an ExitStack-scoped fixture: fresh PostgreSQL database, Sandbox UID, workload identity, credentials, Runtime home/journal and model script. Restart within a case preserves only that case's journal. No writable fixture or credential state crosses cases or PRs. Read-only binaries and safe infrastructure baselines may be reused under explicit compatibility keys. Cleanup and fault-path cleanup are asserted and recorded.")}
+            ${p("The native pilot uses envtest for Kubernetes API behavior and authors the controller-produced status needed to reach Gateway. It therefore cannot prove real controller reconciliation, scheduling, Secret projection, service discovery, image packaging, network policy, VM boot or app behavior. Those remain deployment/user-journey contracts.")}
+            ${p("The Runtime stays in its real PID1 container because supervision is part of its execution environment. Gateway and History run as production processes. PostgreSQL is a real container. Removing K3s and a dozen service-image dependencies is useful even though the fixture still uses containers.")}
+          <//>
+          <${Section} id="change-selector" title="What a PR would run">
+            ${p("This is the intended selection policy after proof, not the policy currently installed. Unknown mappings retain today's broader tests. Schemas, CRDs, auth, egress and platform wiring select their real deployment contracts; graph-wide changes still trigger a full sweep.")}
+            <${SegmentedControl}
+              value=${selected}
+              onChange=${setSelected}
+              data=${["Runtime", "App", "Platform"]}
+              aria-label="PR change class"
+              fullWidth
+            />
+            <${Paper}
+              id="selected-contracts"
+              data-change-class=${selected}
+              withBorder
+              p="lg"
+              radius="md"
+              mt="md"
+              aria-live="polite"
+            >
+              <${Title} order=${3}>${selected} change<//>
+              <${Text} fw=${600} mt="md">Behavioral contract<//
+              >${p(choice.contract)}
+              <${Text} fw=${600}>Retained real acceptance<//
+              >${p(choice.deployment)}
+              <${Text} fw=${600}>Dependency change<//>${p(choice.narrowing)}
+            <//>
+            ${p("Bazel deps/data must encode these relationships. Do not replace them with a path-name allowlist or a new wrapper that guesses policy. A contract target may not import app-owned fixtures merely for convenience; the pilot already found system_tests/conftest pulling the app into otherwise narrow tests and lives under agentplane/x/native_contracts to avoid that inherited dependency.")}
+          <//>
+          <${Section} id="coverage" title="Which guarantees stay where">
+            <${Rows}
+              headers=${["Contract family", "Smaller real fixture", "Acceptance retained before merge"]}
+              rows=${[
+                [
+                  "Runtime / Gateway recovery",
+                  "Native Gateway + History; Runtime PID1 + PostgreSQL; real journal, gRPC and mTLS. Test outage, receipt identity, retained History, next input.",
+                  "Pod identity and replacement; image boot; platform-specific Runtime behavior. Native restart is not Pod eviction or VM suspend.",
+                ],
+                [
+                  "History / sampler / outage",
+                  "Real History and database with controlled transport loss; actual cursor/settlement clients. Add owning sampler/notification services where the assertion requires them.",
+                  "MCP history outage, sampler roll and browser projection/settlement until every unique cross-service assertion is assigned.",
+                ],
+                [
+                  "Dispatcher / Actions / delegation",
+                  "Real authority + database + envtest API; actual identities and negative grants. Compose real adjacent services only when testing their wire contract.",
+                  "MCP OAuth, launcher scope, parent/delegated identity, budget and action routing. Existing recordingDispatcher/fakeHistory fixtures are not equivalent coverage.",
+                ],
+                [
+                  "Idle / resume / lifecycle",
+                  "Existing controller fake-clock timing matrix + real API ownership tests; focused Runtime retained-turn contract.",
+                  "Real >=60s idle suspension, lifecycle denial, operator resume, changed Pod UID, retained Sandbox UID and failed turn. Keep unique integration assertions until mapped.",
+                ],
+                [
+                  "PKI / Secret / platform",
+                  "Native TLS negatives + real controller/API checks for issuer and ownership logic.",
+                  "Actual projected Secret rotation and positive ready control, cert-manager issuance, RBAC, Pod/VM/Firecracker boot, storage and isolation.",
+                ],
+                [
+                  "App / browser / user journey",
+                  "App owns route and projection fixtures with real database/service contracts; narrow browser targets with explicit assets.",
+                  "OIDC redirects, browser fetch/stream lifecycle, projections, drafts, approvals and real app-to-backend behavior. Direct gRPC cannot stand in for this.",
+                ],
+              ]}
+            />
+            ${p("The detailed 13-suite inventory and source pointers are in evidence.json. The matrix is a migration proposal: no existing assertion has been declared redundant merely because the pilot passes. Each migration PR must enumerate its removed duplicate assertions and retained unique witnesses.")}
+            <${Anchor} href="evidence.json"
+              >Reviewed source and contract inventory<//
+            >
+          <//>
+          <${Section} id="spike" title="The bounded spike and what it proves">
+            ${error ? html`<${Alert} color="red">${error}<//>` : null}
+            ${
+              data
+                ? html`<${Paper} withBorder p="lg" radius="md">
+                    <${Badge}
+                      color=${data.pilot.status === "passed" ? "teal" : "orange"}
+                      >${data.pilot.label}<//
+                    >
+                    ${p(data.pilot.summary)}
+                    <${Rows}
+                      headers=${["Run / control", "Native outcome", "Physical test time", "Evidence"]}
+                      rows=${data.pilot.runs.map((r) => [r.label, r.outcome, r.process_seconds == null ? "Not available" : `${r.process_seconds.toFixed(3)}s`, html`<${Anchor} href=${r.url}>${r.invocation}<//>`])}
+                    />
+                    ${p(data.pilot.limits)}
+                    <${Group} gap="md"
+                      ><${Anchor} href=${data.pilot.branch_url}
+                        >Pivot source branch<//
+                      ><${Anchor}
+                        href=${data.pilot.pr_url || data.pilot.branch_url}
+                        >${data.pilot.pr_url ? "Source PR" : "Experimental target"}<//
+                      ><${Anchor} href=${issue}
+                        >Measurement tracker #16099<//
+                      ><//
+                    >
+                  <//>`
+                : p("Loading reviewed native spike evidence…")
+            }
+            ${p("A passing recovery test establishes that this fixture can exercise a production service boundary without the full cluster. Repeated physical passes test feasibility, not a low flake rate. An injected outage exercises an error path; the discarded-journal control was rejected at the retained Session inventory assertion. The outage starts after a completed turn and is a graceful listener stop, so active-turn recovery and abrupt crash remain untested. Neither is a complete historical-regression or mutant campaign.")}
+            ${p("There is no valid subtraction between this small pilot's action time and the earlier 21-case Pod suite. The candidate gate still needs its other contracts and real acceptance. Complete feedback savings remain unmeasured until the shadow/replay phase.")}
+          <//>
+          <${Section} id="rollout" title="Six concrete implementation steps">
+            ${p("P1 exists on the pivot branch. P2, P3 and the diagnosis portion of P4 can proceed independently as small PRs. P5 composes their candidate graph. P6 is an explicit coverage and gate-policy decision after that evidence; waiting for unrelated seven-day recurrence windows does not block the architecture work.")}
+            <${Accordion} multiple variant="separated"
+              >${lanes.map(([title, detail], i) => html`<${Accordion.Item} key=${i} value=${`p${i + 1}`}><${Accordion.Control}>${title}<//><${Accordion.Panel}>${p(detail)}<//><//>`)}<//
+            >
+            <${Anchor} href=${issue}
+              >#16099 tracks the deliverables and future measurements<//
+            >
+          <//>
+          <${Section}
+            id="acceptance"
+            title="What would justify adopting the new gate"
+          >
+            <${Rows}
+              headers=${["Proof", "Experiment / required observation", "Stop or retain current gate if…"]}
+              rows=${[
+                [
+                  "Regression sensitivity",
+                  "Inventory each unique assertion. Add known fixes and reviewed seeded defects: lost journal, duplicate admission, stale incarnation, wrong issuer, History cursor gap, unauthorized delegation and browser reconnect. Healthy positive controls must pass.",
+                  "Any reviewed defect escapes, a negative is vacuous, or a deployment/app assertion lacks an owner.",
+                ],
+                [
+                  "Physical feasibility",
+                  "Fresh repeats, fault-path cleanup, same-journal restart, independent case identities; cold and retained baselines recorded. Inspect dependency closure, generated inputs and actual service processes.",
+                  "State leaks, a hidden app/K3s dependency returns, a substituted service changes the guarantee, or setup shifts to an unmeasured layer.",
+                ],
+                [
+                  "Whole-gate speed",
+                  "30 pinned base/head pairs and >=100 fresh contract executions, warm/cold strata, busy windows and four-PR bursts. Keep all three required contexts, reruns and failed/cancelled outcomes. Initial screen: median >=25% shorter; p90 <=5% worse.",
+                  "Only a phase is faster, the next gate becomes dominant, sample exposure is unmatched, or capacity merely moves the queue.",
+                ],
+                [
+                  "Reliability",
+                  "Record fresh physical failures separately from result-stream false reds and cached results. Publish denominators, attempt counts, signatures, rerun delay and intervals. No blanket retry or raised timeout.",
+                  "A new unexplained failure/cleanup signature appears. Zero failures in 100 runs still permits about a 3% one-sided 95% upper failure bound.",
+                ],
+                [
+                  "Longer-term target",
+                  "Routine backend mean <4m, p90 <8m, timed from exact-head workflow creation to all required successful checks; push timestamps where available. Report first-pass and rerun-inclusive distributions.",
+                  "The data do not meet the target; continue reducing physical work or identify the remaining gate/capacity limit. Do not label a plan a speedup.",
+                ],
+              ]}
+            />
+            ${p("For a matched gate replay, pin original base/head pairs and both architecture trees, preserve their merge-tree provenance, counterbalance candidate/control order, and retain all outcomes. Replays estimate graph behavior; live shadow PRs establish actual GitHub required-feedback clocks. Queue, worker preparation, execution, CPU and artifact gates remain separate lanes. Requested compute units are not observed capacity.")}
+          <//>
+          <${Section}
+            id="prior-work"
+            title="Disposition of the earlier ten lanes"
+          >
+            ${p("Keep the usable-image import candidate as a separate setup improvement: its warm same-worker ABBA result was 14.776s shorter setup, without a proved complete-CI saving. Keep browser/VM/auth and execution-stream recurrence tracking in #16034. Those investigations complement this pivot and do not need to finish before its fixtures can be built.")}
+            ${p("MCP overlap shortened a case envelope but increased whole-action time; harness mounts barely changed declared bytes. The KVM burst exhausted three registered slots and Pod remained the long pole. These results reject those particular arrangements as established CI wins; they do not rule out a smaller graph, different grouping or adequately provisioned capacity. Infrastructure snapshots and Pod runner pooling already exist. The parked persistent shared-cluster spike is not an operational fixture to assume.")}
+            <${Group} gap="md"
+              ><${Anchor} href="../latency/#ten-lane-followups"
+                >Latency experiments<//
+              ><${Anchor} href="../reliability/#ten-lane-followups"
+                >Reliability follow-ups<//
+              ><${Anchor} href=${`${repo}/issues/16034`}
+                >Existing exposure tracker<//
+              ><${Anchor} href=${`${repo}/pull/15214`}
+                >Held image split #15214<//
+              ><//
+            >
+          <//>
+          <${Text} size="sm" c="dimmed" mt="xl"
+            >Proposed architecture and observed pilot are distinct from merged
+            policy, production rollout and measured feedback improvement.
+            Publication goes through a PR to gh-pages; this page redeploys after
+            that PR merges.<//
+          >
+          <${Group} gap="md" mt="md"
+            ><${Anchor} href="evidence.json">Evidence JSON<//
+            ><${Anchor} href="manifest.json">Source manifest<//
+            ><${Anchor} href="visual-validation.json">RBE visual proof<//><//
+          >
+        <//>`;
+      }
+      mount(Report);
+    </script>
+  </body>
+</html>

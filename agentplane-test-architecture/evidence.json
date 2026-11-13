@@ -1,0 +1,584 @@
+{
+  "schema_version": 1,
+  "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+  "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+  "observed_at_utc": "2026-11-13T05:01:20.727796+00:00",
+  "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+  "current_static_graph": {
+    "static_required_eligible_k3s_suite_count": 13,
+    "suites": [
+      {
+        "label": "//agentplane/system_tests/suites:test_firecracker",
+        "stack": "firecracker"
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_pod",
+        "stack": "pod"
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_dispatcher",
+        "stack": "pod"
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_vm",
+        "stack": "vm"
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_session_deletion",
+        "stack": "deletion"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_actions",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_services",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_delegation",
+        "stack": "mcp"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+        "stack": "mcp"
+      }
+    ],
+    "common_service_images": {
+      "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+      "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+      "//agentplane/egress/cmd:image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+      "//agentplane/egress:sidecar_image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+      "//agentplane/history_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+      "//agentplane/llm_ingress:image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+      "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
+      "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+      "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+      "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
+      "//agentplane/sandbox_controller:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+      "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset"
+    },
+    "selection_note": "CI already computes impacted Bazel targets; these are declared transitive suite inputs, not observed fresh execution counts for every PR. Ordinary CI excludes manual and live_openai_api tags."
+  },
+  "contract_audit": {
+    "ci_selection": {
+      "ordinary_ci_k3s_suite_declarations": 13,
+      "total_k3s_suite_declarations": 21,
+      "excluded_manual": 7,
+      "excluded_live_openai_api": 1,
+      "source": [
+        ".bazelrc:154-158",
+        "devinfra/ci/bazel_ci.py:242-305",
+        "agentplane/system_tests/k3s/defs.bzl:258-260",
+        "agentplane/system_tests/suites/BUILD.bazel",
+        "agentplane/system_tests/suites/mcp/BUILD.bazel"
+      ],
+      "selector_design_implication": "Retain bazel-diff impacted-target selection; optimize dependency closure and physical work instead of adding blind path filters."
+    },
+    "suites": [
+      {
+        "target": "//agentplane/system_tests/suites:test_firecracker",
+        "contract": "Live Firecracker guest and wrong-Gateway-certificate rejection.",
+        "boundary": "Production launcher/guest on KVM; K3s/PKI plus guest device path.",
+        "smaller_fixture_candidate": "None identified for guest/KVM boundary; reduce only unrelated images.",
+        "retain_premerge_acceptance": [
+          "KVM",
+          "real guest",
+          "bad certificate refusal"
+        ],
+        "uncertain_unique_assertions": "Scenario helper internals not exhaustively enumerated.",
+        "citations": [
+          "agentplane/system_tests/suites/BUILD.bazel:35-75",
+          "agentplane/system_tests/suites/test_firecracker.py:18-38"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_pod",
+        "contract": "21 Pod cases across scheduling, identity, trust, storage, replacement, suspend/resume, history and messaging.",
+        "boundary": "Real K3s Sandbox controller, kubelet/Pods, Gateway, certificate issuance, app path.",
+        "smaller_fixture_candidate": "Native Runtime/Gateway/History only for specifically duplicated transport/durability assertions; not a Pod suite replacement.",
+        "retain_premerge_acceptance": [
+          "app and Kubernetes workflow",
+          "wrong issuer then same Secret positive recovery",
+          "60 second idle suspend"
+        ],
+        "uncertain_unique_assertions": "Full 21-case assertion mapping needed before any moves; storage ordering and bounded runner capacity constrain concurrency.",
+        "citations": [
+          "agentplane/system_tests/suites/BUILD.bazel:92-111",
+          "agentplane/system_tests/suites/pod_cases.py:271-310",
+          "agentplane/system_tests/scenarios/workload_trust.py:283-289,357-374",
+          "agentplane/system_tests/scenarios/suspend_resume.py:136-149",
+          "agentplane/system_tests/debug/setup_and_case_shortening_2026_11_12.md:36-43"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_dispatcher",
+        "contract": "Queue/replica failover, runner admission and opted-in wake for app/notification sends.",
+        "boundary": "Deployed Dispatcher, controller Pod deletion and live K3s services.",
+        "smaller_fixture_candidate": "Unit coverage can supplement queue/DB code, not replace deployed behavior.",
+        "retain_premerge_acceptance": [
+          "deployed dispatcher",
+          "Kubernetes Pod deletion",
+          "replica failover"
+        ],
+        "uncertain_unique_assertions": "Confirm safe fixture sharing between parameterized queue and replica variants.",
+        "citations": [
+          "agentplane/system_tests/suites/BUILD.bazel:150-164",
+          "agentplane/system_tests/suites/test_dispatcher.py:18-34"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_vm",
+        "contract": "Claude/Codex VM guest scenarios plus process trace contract.",
+        "boundary": "KubeVirt guest on software-emulated VM stack.",
+        "smaller_fixture_candidate": "No current equivalent; prune non-VM image dependencies.",
+        "retain_premerge_acceptance": [
+          "real VM guests",
+          "process trace contract"
+        ],
+        "uncertain_unique_assertions": "Review helper-level details before changing parallel boot/cleanup.",
+        "citations": [
+          "agentplane/system_tests/suites/BUILD.bazel:166-191",
+          "agentplane/system_tests/suites/test_vm.py:52-81"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites:test_session_deletion",
+        "contract": "Commands cannot cross Session deletion; managed CLI reads retained History under identity UID scope.",
+        "boundary": "Deployed Session deletion and History identity.",
+        "smaller_fixture_candidate": "Native store UID tests as support only; no deployed deletion equivalent identified.",
+        "retain_premerge_acceptance": [
+          "Kubernetes deletion/replacement",
+          "retained History identity scope"
+        ],
+        "uncertain_unique_assertions": "Compare helper assertions before any migration.",
+        "citations": [
+          "agentplane/system_tests/suites/BUILD.bazel:356-370",
+          "agentplane/system_tests/suites/test_session_deletion.py:15-29"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_actions",
+        "contract": "Deployed MCP action, BFF decision, launcher ownership, Claude/Codex OAuth linkage.",
+        "boundary": "Real MCP server plus OAuth callback/Dex path.",
+        "smaller_fixture_candidate": "Split non-OAuth and OAuth fixture setup only after exact case/image mapping.",
+        "retain_premerge_acceptance": [
+          "actual action server",
+          "OAuth callback and linkage",
+          "two-slot bounded execution"
+        ],
+        "uncertain_unique_assertions": "Validate actual MCP image and five-Sandbox capacity requirements per case.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:11-42",
+          "agentplane/system_tests/suites/mcp/test_actions.py:196-203,275-307,298-300",
+          "agentplane/action_service/testing/README.md:5-24"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_services",
+        "contract": "DCR, consented identity, policy approval, central setup/answer, suspend resume, Gateway roll and executor loss notification.",
+        "boundary": "Deployed MCP APIs, app policy and live central sampler/Gateway/History.",
+        "smaller_fixture_candidate": "Split central cases from MCP registration/identity cases if fixture mutation permits.",
+        "retain_premerge_acceptance": [
+          "deployed identity and policy APIs",
+          "central sampler live recovery and roll"
+        ],
+        "uncertain_unique_assertions": "Need exact per-case fixture and helper assertion graph.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:44-72",
+          "agentplane/system_tests/suites/mcp/test_services.py:27-114"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+        "contract": "Abrupt Gateway loss during active central executor read, settlement, then next input.",
+        "boundary": "Real K3s Gateway deployment and recovery/Lease behavior.",
+        "smaller_fixture_candidate": "Central-only MCP K3s profile, excluding unrelated Dex/MCP Everything/OAuth workloads if rendered closure confirms.",
+        "retain_premerge_acceptance": [
+          "Gateway process kill",
+          "Lease/recovery",
+          "active read settlement"
+        ],
+        "uncertain_unique_assertions": "Prove chart object/image closure; do not replace with native Runtime restart.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:74-93",
+          "agentplane/system_tests/suites/mcp/test_gateway_crash.py:1-27",
+          "agentplane/system_tests/k3s/defs.bzl:103-108,157-163"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+        "contract": "Reconnect retry exhaustion yields unknown/no replay and accepts next input.",
+        "boundary": "Real Gateway failure budget in deployed central-sampler flow.",
+        "smaller_fixture_candidate": "Same central-only K3s profile as crash.",
+        "retain_premerge_acceptance": [
+          "budget exhaustion",
+          "unknown result/no replay",
+          "next input"
+        ],
+        "uncertain_unique_assertions": "Do not conflate with crash scenario.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:95-111",
+          "agentplane/system_tests/suites/mcp/test_gateway_budget.py:1-23"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+        "contract": "Sampler Pod replacement while live executor work is active; preserve turn/History and accept next input.",
+        "boundary": "Real Kubernetes Pod replacement plus central reconciliation.",
+        "smaller_fixture_candidate": "Same central-only K3s profile as crash.",
+        "retain_premerge_acceptance": [
+          "force sampler Pod replacement",
+          "active turn reconciliation"
+        ],
+        "uncertain_unique_assertions": "Native process restart is not equivalent to Pod deletion/replacement.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:113-130",
+          "agentplane/system_tests/suites/mcp/test_sampler_roll.py:1-23"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_history_outage",
+        "contract": "History outage during a confirmed turn followed by backfill and recovery.",
+        "boundary": "Deployed History service down/up and cursor settlement.",
+        "smaller_fixture_candidate": "Same central-only K3s profile; native store checks can support only.",
+        "retain_premerge_acceptance": [
+          "History outage",
+          "cursor/backfill recovery"
+        ],
+        "uncertain_unique_assertions": "Review exact cursor and settlement assertions in helper before equivalence claim.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:132-149",
+          "agentplane/system_tests/suites/mcp/test_history_outage.py:1-23"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_delegation",
+        "contract": "External OAuth MCP connection cannot control identity Sandbox after app is scaled to zero.",
+        "boundary": "Consented external identity and app-unavailable backend path.",
+        "smaller_fixture_candidate": "No equivalent smaller fixture identified.",
+        "retain_premerge_acceptance": [
+          "OAuth consent",
+          "external MCP identity",
+          "app down"
+        ],
+        "uncertain_unique_assertions": "Full helper assertion map required for any change.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:151-181",
+          "agentplane/system_tests/suites/mcp/test_delegation.py:106-212",
+          "agentplane/system_tests/README.md:26-29"
+        ]
+      },
+      {
+        "target": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+        "contract": "Parent-to-child Session delegation through actual action CLI.",
+        "boundary": "Actual CLI/session/action integration.",
+        "smaller_fixture_candidate": "Unit authorization tests supplement only.",
+        "retain_premerge_acceptance": [
+          "parent-child CLI flow",
+          "Session/action integration"
+        ],
+        "uncertain_unique_assertions": "Review helper assertions before split/move.",
+        "citations": [
+          "agentplane/system_tests/suites/mcp/BUILD.bazel:183-208",
+          "agentplane/system_tests/suites/mcp/test_parent_delegation.py:171-403"
+        ]
+      }
+    ],
+    "image_graph": {
+      "common_service_oci_targets_unconditionally_in_every_k3s_suite": [
+        "agentplane/action_service:service_image",
+        "agentplane/app:image",
+        "agentplane/egress/cmd:image",
+        "agentplane/egress:sidecar_image",
+        "agentplane/history_service:service_image",
+        "agentplane/llm_ingress:image",
+        "agentplane/mcp_edge:service_image",
+        "agentplane/notification_service:service_image",
+        "agentplane/policy_controller:image",
+        "agentplane/runner_gateway:image",
+        "agentplane/sandbox_controller:image",
+        "@postgres_18_minimal_linux_amd64"
+      ],
+      "all_profile_baseline": [
+        "four PKI OCI images",
+        "K3s binary",
+        "CRDs",
+        "cert-manager/trust-manager install artifacts"
+      ],
+      "pod_deletion_mcp_real_model_add": [
+        "environment-tools harness",
+        "runner disk"
+      ],
+      "mcp_add": [
+        "central sampler",
+        "Dex",
+        "MCP Everything",
+        "OAuth MCP fixture"
+      ],
+      "vm_add": [
+        "seven KubeVirt/Kyverno OCI images",
+        "guest boot image",
+        "guest root image",
+        "VM runner disk"
+      ],
+      "firecracker_add": [
+        "generic device plugin",
+        "Firecracker launcher",
+        "guest boot image",
+        "runner disk"
+      ],
+      "citations": [
+        "agentplane/system_tests/k3s/defs.bzl:82-146,157-166,193-256",
+        "agentplane/system_tests/k3s/defs.bzl:168-190",
+        "agentplane/system_tests/deployment/README.md:29-69"
+      ],
+      "reduction_candidate": "Generate per-profile image lists from actual rendered fixture workload closure; validate OCI manifest and import spans on representative profiles before removing declared images.",
+      "parked_alternative": "Persistent shared-cluster spike is parked; do not lead with another shared-cluster proposal (agentplane/system_tests/x/shared_cluster/README.md:1-8)."
+    },
+    "special_contracts": [
+      {
+        "name": "Pod idle suspension floor",
+        "source": "60 second idle threshold is set in system test and one-minute case is observed in timing note; controller unit test has fake clock.",
+        "citations": [
+          "agentplane/system_tests/scenarios/suspend_resume.py:136-149",
+          "agentplane/system_tests/debug/setup_and_case_shortening_2026_11_12.md:36-43",
+          "agentplane/sandbox_controller/idle_test.go:106-148"
+        ],
+        "decision": "Do not lower or move the end-to-end minimum; fake-clock unit test is supporting coverage only."
+      },
+      {
+        "name": "Wrong issuer then positive same Secret recovery",
+        "source": "Sandbox first serves cluster-CA impostor and stays unready; replacing content with its own credential in same Secret permits Ready.",
+        "citations": [
+          "agentplane/system_tests/scenarios/workload_trust.py:283-289,357-374"
+        ],
+        "decision": "Retain both negative and positive recovery in the deployed K3s acceptance."
+      }
+    ],
+    "existing_env_e2e_distinction": {
+      "gateway": "Test double / direct test Gateway",
+      "runtime_history": "Production Runtime binary and Go History are used.",
+      "citations": [
+        "agentplane/env/e2e/testing/gateway.py:46-47,218-236",
+        "agentplane/env/e2e/BUILD.bazel:94-129"
+      ]
+    },
+    "recommended_independent_pr_scopes": [
+      "Correct README suite inventory, CI eligibility and explicit coverage matrix.",
+      "Derive image manifests from actual rendered fixture workloads; retain explicit PKI/runner/VM/guest groups and validate closure/import evidence.",
+      "Add central-only fixture for Gateway crash/budget, sampler roll and History outage while preserving each target and fault injection.",
+      "Promote native recovery as scoped impacted-target CI after repeatability/resource fit; add coverage first, do not delete overlapping K3s tests yet.",
+      "Split Actions fixture setup by non-OAuth versus OAuth needs while retaining actual MCP and callback acceptance."
+    ],
+    "admission_and_fault_controls": [
+      "Production API-server admission and Sandbox/Pod controller behavior must remain covered where assertions depend on them.",
+      "Gateway process crash/Lease recovery.",
+      "Gateway retry-budget exhaustion and no-replay/unknown result.",
+      "Sampler Pod replacement with active executor work.",
+      "History outage and cursor/backfill recovery.",
+      "Dispatcher queue/replica failure and Pod deletion.",
+      "Pod wrong-issuer rejection followed by same-Secret positive recovery.",
+      "60 second idle suspend floor, with controller fake-clock test only as support.",
+      "VM guest and KVM Firecracker acceptance."
+    ]
+  },
+  "pilot": {
+    "status": "passed",
+    "label": "Feasibility passed; lost-state fault rejected",
+    "summary": "Three fresh positive executions exercised production Gateway/Dispatcher, Runtime and History with real PostgreSQL and envtest authentication. The final rebased-head run took 42.475s of physical test execution (46.600s Bazel wall). Discarding the case-owned Runtime journal was rejected at the retained Session inventory assertion. This is a smaller contract fixture, not a proved whole-CI speedup.",
+    "runs": [
+      {
+        "label": "Initial positive",
+        "outcome": "1 case passed",
+        "process_seconds": 84.463662,
+        "invocation": "52539a85-e926-4a8d-8649-34ac8e868f25",
+        "url": "https://app.buildbuddy.io/invocation/52539a85-e926-4a8d-8649-34ac8e868f25",
+        "queue_seconds": 0.063048,
+        "cpu_seconds": 148.261449,
+        "reported_peak_memory_bytes": 1073786880,
+        "bazel_wall_seconds": 99.513,
+        "source_qualification": "Initial bdb8 source with evolving pilot patch; positive cases precede final env flag. Not a matched timing comparison.",
+        "cleanup": "Completed normal or assertion-failure teardown with no reported cleanup error; setup-failure cleanup was tightened after initial pass."
+      },
+      {
+        "label": "Scoped-cleanup positive",
+        "outcome": "1 case passed",
+        "process_seconds": 66.921065,
+        "invocation": "3ba4228c-4f94-4994-872b-7ffc3154c660",
+        "url": "https://app.buildbuddy.io/invocation/3ba4228c-4f94-4994-872b-7ffc3154c660",
+        "queue_seconds": 0.064738,
+        "cpu_seconds": 85.881119,
+        "reported_peak_memory_bytes": 1085972480,
+        "bazel_wall_seconds": 79.287,
+        "source_qualification": "Initial bdb8 source with evolving pilot patch; positive cases precede final env flag. Not a matched timing comparison.",
+        "cleanup": "Completed normal or assertion-failure teardown with no reported cleanup error; setup-failure cleanup was tightened after initial pass."
+      },
+      {
+        "label": "Discarded-journal fault control",
+        "outcome": "Rejected at missing retained Session (expected failure)",
+        "process_seconds": 43.122379,
+        "invocation": "30ba77b8-379f-4e5c-8521-bb76f3a415d2",
+        "url": "https://app.buildbuddy.io/invocation/30ba77b8-379f-4e5c-8521-bb76f3a415d2",
+        "queue_seconds": 0.063936,
+        "cpu_seconds": 50.082256,
+        "reported_peak_memory_bytes": 1065480192,
+        "bazel_wall_seconds": 50.602,
+        "source_qualification": "Initial bdb8 source with evolving pilot patch; positive cases precede final env flag. Not a matched timing comparison.",
+        "cleanup": "Completed normal or assertion-failure teardown with no reported cleanup error; setup-failure cleanup was tightened after initial pass."
+      },
+      {
+        "label": "Final rebased source + fixture library",
+        "outcome": "1 case passed; fixture library built with lint/type checks",
+        "process_seconds": 42.475092,
+        "invocation": "aca27e60-8737-4291-bf21-f564a6a299e9",
+        "url": "https://app.buildbuddy.io/invocation/aca27e60-8737-4291-bf21-f564a6a299e9",
+        "queue_seconds": 0.062379,
+        "cpu_seconds": 47.350791,
+        "reported_peak_memory_bytes": 1067728896,
+        "physical_execution_id": "/uploads/d993d605-2886-47b0-92d8-7cc8ca75e114/blobs/be64577ebde7ca674f818a8000028c1026287b33f2d4f2ef6c95be0213c04197/581",
+        "action_digest": {
+          "hash": "be64577ebde7ca674f818a8000028c1026287b33f2d4f2ef6c95be0213c04197",
+          "sizeBytes": "581"
+        },
+        "source_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+        "bazel_wall_seconds": 46.6,
+        "pytest_seconds": 26.05,
+        "fresh": "--nocache_test_results; native execution NEW, doNotCache true",
+        "cleanup": "AsyncExitStack-scoped resources; successful teardown with no cleanup error"
+      }
+    ],
+    "limits": "Single Claude scenario, warm/cache-exposed infrastructure; source patches and worker exposure differ between runs. No matched current-suite or whole-gate control. Outage occurs after a completed turn and uses graceful Runtime stop; active-work crash recovery is untested. Dispatcher receipt replay does not isolate Runtime deduplication. Lost-journal control fails before receipt assertions. Real controllers, kubelet, packaging, VM/Firecracker, app and browser are absent. Scripted model/config provider and authored controller status remain test seams. Aggregate artifact metrics are not downloaded bytes; launch helpers still include both native CLI bundles.",
+    "target": "//agentplane/x/native_contracts:test_recovery",
+    "positive_command": "bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results --test_output=errors",
+    "negative_command": "bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results --test_env=NATIVE_CONTRACT_DISCARD_RUNTIME_JOURNAL=1 --test_output=errors",
+    "branch_url": "https://github.com/agentydragon/ducktape/tree/agent/test-architecture-pivot",
+    "pr_url": "https://github.com/agentydragon/ducktape/pull/16102",
+    "final_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+    "final_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+    "initial_source_provenance": {
+      "base_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "pilot_commit": "724a6db2e54655d223580cc2c90b7b43d0a3c446",
+      "pilot_diff_sha256": "a3dd783b5076d34ded732ca078b3a4975464478ede67bdccfecba99a0e985aba",
+      "remote_recorded_checkout_sha": "5f93101ce3fcad76baab69187cbabea719cf3a84",
+      "provenance_caveat": "bbr fetched current remote checkout then applied tracked reverse diff and pilot patches; metadata checkout SHA alone is not the tested source. Positive source snapshots preceded final opt-in control env flag; exact final/rebased-head positive validation remains required.",
+      "files": {
+        "agentplane/x/native_contracts/conftest.py": "5d05c684070c2465efa3bae8bac055155fec45075c75fc0d8e4c3bf5629eeae6",
+        "agentplane/x/native_contracts/BUILD.bazel": "fad83606a5cc85453d444ae417695b7359c47fa237bac7b8dacdc2af38937c83",
+        "agentplane/x/native_contracts/README.md": "8cc8744acc65a8c4ef12af8a9151782cdc46d05da2b057e6d0eab42dd7d6cb21",
+        "agentplane/x/native_contracts/test_recovery.py": "152ab954c515080b8dfee8981459d3d68e96cd8576fdd328e6690ce67aa7fee1"
+      }
+    },
+    "final_remote_checkout_recorded_commit": "5f74a560cd0d57840f5f2443ada702b5e3adb30e",
+    "final_source_provenance": "bbr applies the committed local tree delta to its fetched devel checkout; recorded remote metadata SHA is not alone the tested source. The local final tree was clean at invocation submission.",
+    "graph_query": {
+      "invocation": "e7051ad7-4976-41a1-8968-b9ac91374765",
+      "url": "https://app.buildbuddy.io/invocation/e7051ad7-4976-41a1-8968-b9ac91374765",
+      "kind": "unconfigured deps query on initial bdb8 + pilot overlay",
+      "label_count": 16999,
+      "agentplane_app_labels": 0,
+      "agentplane_service_image_targets": 0,
+      "retained_oci_inputs": [
+        "Debian Runtime PID1 base",
+        "PostgreSQL",
+        "testcontainers Ryuk"
+      ],
+      "note": "Two k3s strings inside testcontainers wheel files are unused library modules, not a K3s binary or running cluster. No tiny-input claim: reused launches data includes both native CLI bundles."
+    },
+    "initial_analysis_failure": {
+      "invocation": "8f42cf2e-28b7-4f26-9389-1217f6cc243b",
+      "outcome": "Visibility analysis failure; no test ran; explicit package visibility repaired"
+    },
+    "initial_negative_parse_failure": {
+      "invocation": "4bbf79ed-5b30-4ce4-9634-fa820e74b0b4",
+      "outcome": "Pytest nested conftest CLI option was not registered; no seeded fault executed. Replaced with opt-in test environment variable; only corrected native control counts."
+    },
+    "fixture_library_build": {
+      "invocation": "38f75d1b-c2bb-48c6-90d3-d7f2ffee6ea0",
+      "outcome": "Passed explicit lint/type aspect build"
+    },
+    "scope": "No CI policy, test frequency or production code change."
+  },
+  "retained_baseline": {
+    "report_commit": "18e895691ea30093e69b125669b36b9af62d154a",
+    "evidence_url": "https://github.com/agentydragon/ducktape/blob/18e895691ea30093e69b125669b36b9af62d154a/latency/evidence.json",
+    "window_start_utc": "2026-11-10T00:00:00Z",
+    "window_end_utc": "2026-11-13T03:03:35Z",
+    "successful_production_backend_heads": 124,
+    "failed_production_heads": 4,
+    "cancelled_production_heads": 1,
+    "mean_required_feedback_seconds": 816,
+    "median_required_feedback_seconds": 687,
+    "p90_required_feedback_display": "23m38s",
+    "repeated_successful_heads": 24,
+    "preceding_failed_bazel_checks": 27,
+    "repeat_heads_share_summed_feedback_percent": 43.1,
+    "limits": "Retained latest-head cohort, not recollected. Successful percentiles exclude failed/cancelled heads. Workflow creation proxies unavailable push timestamps; superseded heads excluded. Not an all-push flake rate."
+  },
+  "retained_pod_action": {
+    "source_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+    "source_qualification": "plus temporary matched-resource patch recorded in prior ten-lane experiment; not the pilot source",
+    "invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+    "url": "https://app.buildbuddy.io/invocation/b2fe7d70-e305-4bf1-a933-bca60f59405b",
+    "physical_execution_id": "/uploads/066cb59b-6eb6-44c5-a0df-b9bf47b1ae1f/blobs/6e5888952288c5bd5337346d0035766f09a6e761ab8b162585eb83c59a49a12c/1218",
+    "process_seconds": 451.423192,
+    "setup_seconds": 66.910387,
+    "case_envelope_seconds": 322.816339,
+    "case_count": 21,
+    "cpu_seconds": 1206.921874,
+    "selected_case_seconds": [
+      {
+        "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+        "seconds": 113.323427
+      },
+      {
+        "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+        "seconds": 101.861036
+      }
+    ],
+    "limits": "One earlier physical action/load; cases overlap. The native pilot covers fewer guarantees and is not a matched control. No subtraction yields CI savings."
+  },
+  "adoption_protocol": {
+    "minimum_pinned_base_head_pairs": 30,
+    "minimum_fresh_contract_executions": 100,
+    "minimum_busy_windows": 3,
+    "concurrent_pr_burst": 4,
+    "initial_screen_median_feedback_improvement_percent": 25,
+    "initial_screen_max_p90_regression_percent": 5,
+    "desired_routine_backend_mean_seconds": 240,
+    "desired_routine_backend_p90_seconds": 480,
+    "budgets_are_targets_not_observations": true,
+    "clock": "Exact-head workflow creation until all three required checks complete successfully, push timestamps when available; record first-pass and rerun-inclusive outcomes separately. Failed/cancelled/missing outcomes retained.",
+    "coverage_stop": "Any unique assertion without a retained owner, reviewed fault escape, vacuous negative, unexplained new failure/cleanup signature or state leak retains current gate.",
+    "frequency_tradeoff": "No gate/frequency change in pilot. Any later removal of duplicate full-stack coverage requires its own explicit reviewed coverage decision and acceptance evidence.",
+    "limits": "Screening thresholds are proposed. Sparse strata and uncertainty must be published. Zero failures in 100 independent executions still permits about a 3 percent one-sided 95 percent upper failure bound."
+  },
+  "prior_work_disposition": {
+    "tracker": "https://github.com/agentydragon/ducktape/issues/16034",
+    "source_snapshot_observed_at_utc": "2026-11-13T03:47:21.763839+00:00",
+    "scope": "Historical experiment conclusions retained; open/merged labels are not refreshed here.",
+    "usable_import": "14.776 seconds shorter same-worker warm setup; no established whole-CI saving. Continue separately via #16028.",
+    "mcp_overlap": "Case envelope shorter but whole action and CPU higher in the tested ABBA; no whole-action/CI win.",
+    "harness_mounts": "Real native mounts feasible, declared bytes nearly identical; no causal CI saving.",
+    "kvm": "Four actions shared three slots; fourth queued 215.314 seconds, Pod remained last. Not a universal rejection of capacity/graph alternatives.",
+    "reliability": "Browser/VM/auth/result-stream natural exposure and recurrence tasks remain in existing tracker; no lower natural failure rate inferred.",
+    "image_split_15214": "Held pending its own actual saving.",
+    "shared_cluster": "Parked spike, not an operational assumed fixture."
+  }
+}

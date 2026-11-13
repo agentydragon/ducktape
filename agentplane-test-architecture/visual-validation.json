@@ -1,0 +1,1017 @@
+{
+  "schema_version": 1,
+  "scope": "Final architecture report and modified root navigation; desktop/mobile light/dark, real pinned CDN loading, live preference changes, all selector states, coverage and six expanded implementation steps.",
+  "verified_at_utc": "2026-11-13T05:10:16.439690+00:00",
+  "invocation_url": "https://app.buildbuddy.io/invocation/999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+  "target": "//x/ci_reports_preview:visual_test",
+  "native_result": {
+    "status": "PASSED",
+    "pytest_passed_cases": 8,
+    "pytest_duration_seconds": 28.45,
+    "bazel_wall_seconds": 41.993,
+    "test_duration_seconds": 35.483,
+    "fresh_test_executions": 1,
+    "physical_execution_id": "/uploads/08c6a230-2512-44b2-82ab-1a30e16f4a3c/blobs/b2321652c5d992568720e6061ab77f0adbe75027aed13ce02cc170147635d633/501",
+    "runs": 1,
+    "attempts": 1,
+    "test_result_status": "PASSED",
+    "command": "bbr test //x/ci_reports_preview:visual_test --nocache_test_results",
+    "preliminary_attempt": "4b96b84f-dfb7-4e55-9807-48aeaa25afc6 failed preview-harness PT018 lint before browser execution; localized assertion repair, then all eight cases passed"
+  },
+  "final_asset_sha256": {
+    "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+    "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+    "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+    "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+    "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+    "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+    "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+  },
+  "cases": [
+    {
+      "console_errors": [],
+      "coverage_table_rows": 6,
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "evidence_keys": [
+        "adoption_protocol",
+        "contract_audit",
+        "current_static_graph",
+        "observed_at_utc",
+        "pilot",
+        "prior_work_disposition",
+        "retained_baseline",
+        "retained_pod_action",
+        "schema_version",
+        "scope",
+        "source_devel_commit",
+        "tracking_issue"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata": {
+        "attribution": "Complete required-CI improvement not measured",
+        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "pilot_branch": "agent/test-architecture-pivot",
+        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
+        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+        "visual_validation": "visual-validation.json"
+      },
+      "packaged_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "report": "agentplane-test-architecture/index.html",
+      "rollout_expanded_panel_ids": [
+        "mantine-1nyg60y6l-panel-p1",
+        "mantine-1nyg60y6l-panel-p2",
+        "mantine-1nyg60y6l-panel-p3",
+        "mantine-1nyg60y6l-panel-p4",
+        "mantine-1nyg60y6l-panel-p5",
+        "mantine-1nyg60y6l-panel-p6"
+      ],
+      "rollout_item_count": 6,
+      "selected_contract_panels": {
+        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
+        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
+        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
+      },
+      "status": "passed",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "console_errors": [],
+      "coverage_table_rows": 6,
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "evidence_keys": [
+        "adoption_protocol",
+        "contract_audit",
+        "current_static_graph",
+        "observed_at_utc",
+        "pilot",
+        "prior_work_disposition",
+        "retained_baseline",
+        "retained_pod_action",
+        "schema_version",
+        "scope",
+        "source_devel_commit",
+        "tracking_issue"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata": {
+        "attribution": "Complete required-CI improvement not measured",
+        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "pilot_branch": "agent/test-architecture-pivot",
+        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
+        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+        "visual_validation": "visual-validation.json"
+      },
+      "packaged_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "report": "agentplane-test-architecture/index.html",
+      "rollout_expanded_panel_ids": [
+        "mantine-awxzi0cti-panel-p1",
+        "mantine-awxzi0cti-panel-p2",
+        "mantine-awxzi0cti-panel-p3",
+        "mantine-awxzi0cti-panel-p4",
+        "mantine-awxzi0cti-panel-p5",
+        "mantine-awxzi0cti-panel-p6"
+      ],
+      "rollout_item_count": 6,
+      "selected_contract_panels": {
+        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
+        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
+        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
+      },
+      "status": "passed",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "console_errors": [],
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "packaged_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "report_link_href": "agentplane-test-architecture/",
+      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "status": "passed",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-mobile]",
+      "report": "index.html",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "console_errors": [],
+      "coverage_table_rows": 6,
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "evidence_keys": [
+        "adoption_protocol",
+        "contract_audit",
+        "current_static_graph",
+        "observed_at_utc",
+        "pilot",
+        "prior_work_disposition",
+        "retained_baseline",
+        "retained_pod_action",
+        "schema_version",
+        "scope",
+        "source_devel_commit",
+        "tracking_issue"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata": {
+        "attribution": "Complete required-CI improvement not measured",
+        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "pilot_branch": "agent/test-architecture-pivot",
+        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
+        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+        "visual_validation": "visual-validation.json"
+      },
+      "packaged_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "report": "agentplane-test-architecture/index.html",
+      "rollout_expanded_panel_ids": [
+        "mantine-5moorw695-panel-p1",
+        "mantine-5moorw695-panel-p2",
+        "mantine-5moorw695-panel-p3",
+        "mantine-5moorw695-panel-p4",
+        "mantine-5moorw695-panel-p5",
+        "mantine-5moorw695-panel-p6"
+      ],
+      "rollout_item_count": 6,
+      "selected_contract_panels": {
+        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
+        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
+        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
+      },
+      "status": "passed",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "console_errors": [],
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "packaged_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "report_link_href": "agentplane-test-architecture/",
+      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "status": "passed",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-mobile]",
+      "report": "index.html",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "console_errors": [],
+      "coverage_table_rows": 6,
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "evidence_keys": [
+        "adoption_protocol",
+        "contract_audit",
+        "current_static_graph",
+        "observed_at_utc",
+        "pilot",
+        "prior_work_disposition",
+        "retained_baseline",
+        "retained_pod_action",
+        "schema_version",
+        "scope",
+        "source_devel_commit",
+        "tracking_issue"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata": {
+        "attribution": "Complete required-CI improvement not measured",
+        "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "evidence_sha256": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
+        "pilot_branch": "agent/test-architecture-pivot",
+        "pilot_head_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+        "previous_gh_pages_commit": "18e895691ea30093e69b125669b36b9af62d154a",
+        "published_at_utc": "2026-11-13T05:01:20.727796+00:00",
+        "report_sha256": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+        "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+        "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+        "visual_validation": "visual-validation.json"
+      },
+      "packaged_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_asset_sha256": {
+        "agentplane-test-architecture/evidence.json": "4391dde443ab70af80fa7eaf1dcf0540f4bbf92700a74b925e936716de9f503a",
+        "agentplane-test-architecture/index.html": "7f910b1b7c4aa9fbf74a5dbaf3c059c8c1bcd9e39ee6cceb067148632ee28737",
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+      },
+      "report": "agentplane-test-architecture/index.html",
+      "rollout_expanded_panel_ids": [
+        "mantine-du05r8y15-panel-p1",
+        "mantine-du05r8y15-panel-p2",
+        "mantine-du05r8y15-panel-p3",
+        "mantine-du05r8y15-panel-p4",
+        "mantine-du05r8y15-panel-p5",
+        "mantine-du05r8y15-panel-p6"
+      ],
+      "rollout_item_count": 6,
+      "selected_contract_panels": {
+        "App": "App change Behavioral contract App routes and projections use real owning services and databases. Exercise browser reconnect, History projection, OIDC login and approval presentation at the app boundary. Retained real acceptance Keep real app/OAuth/browser journeys and one backend integration path. A pure UI change should not require VM guest construction when no selected contract consumes that guest. Dependency change Separate app image/assets from backend contract support. App-dependent acceptance remains app-dependent: replacing its client with direct gRPC would remove the guarantee being tested.",
+        "Platform": "Platform change Behavioral contract Controller reconcile logic uses the existing injected clock and real API semantics where needed; real database and authorization contracts remain in their owner targets. Retained real acceptance Retain affected K3s/PKI/RBAC, packaged image boot, Pod, VM, Firecracker, suspend/resume, Secret rotation and workload isolation acceptance before merge. Broad infrastructure/schema changes expand the selected gate. Dependency change Declare service/image/runtime dependencies by guarantee. Graph-wide changes still use CI's full sweep. Unknown coverage mappings keep the current broad test selected.",
+        "Runtime": "Runtime change Behavioral contract Real Gateway \u2192 Runtime \u2192 History recovery, journal admission, command receipts and stream/cursor settlement. PostgreSQL and a real Runtime PID1 container; no app process. Retained real acceptance A focused real Pod journey checks the packaged runner, workload identity and cluster wiring. VM/Firecracker checks remain selected when their compiled or deployment inputs depend on the change. Dependency change Native contract targets depend on their binaries, schemas, libraries and explicit runtime artifacts. Deployment slices keep exact images; changing unrelated app UI assets should stop invalidating the native recovery fixture."
+      },
+      "status": "passed",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "console_errors": [],
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "packaged_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "report_link_href": "agentplane-test-architecture/",
+      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "status": "passed",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-desktop]",
+      "report": "index.html",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    },
+    {
+      "audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
+      "console_errors": [],
+      "document_overflow": false,
+      "esm_module_urls": [
+        "https://esm.sh/@mantine/core@9.6.1/X-ZXJlYWN0LHJlYWN0LWRvbQ/es2022/core.bundle.mjs",
+        "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+        "https://esm.sh/@mantine/hooks@9.6.1/X-ZXJlYWN0/es2022/hooks.mjs",
+        "https://esm.sh/htm@3.1.1/es2022/htm.mjs",
+        "https://esm.sh/htm@3.1.1?target=es2022",
+        "https://esm.sh/node/async_hooks.mjs",
+        "https://esm.sh/node/events.mjs",
+        "https://esm.sh/node/process.mjs",
+        "https://esm.sh/node/tty.mjs",
+        "https://esm.sh/react-dom?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/client.mjs",
+        "https://esm.sh/react-dom@19.3.0/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+        "https://esm.sh/react-dom@19.3.1/X-ZXJlYWN0/es2022/react-dom.mjs",
+        "https://esm.sh/react@19.3.0/es2022/jsx-runtime.mjs",
+        "https://esm.sh/react@19.3.0/es2022/react.mjs",
+        "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+        "https://esm.sh/react@19.3.0?target=es2022",
+        "https://esm.sh/scheduler@%5E0.28.0?target=es2022",
+        "https://esm.sh/scheduler@0.28.0/es2022/scheduler.mjs"
+      ],
+      "failed_requests": [],
+      "live_theme_change": true,
+      "manifest_metadata_text": "Reviewed 2026-11-13T05:01:20.727796+00:00 \u00b7 devel bdb8adf0a8",
+      "packaged_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "page_errors": [],
+      "pinned_css_urls": [
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css",
+        "https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      ],
+      "rendered_root_sha256": {
+        "agentplane-test-architecture/manifest.json": "b160d291f242b72ac0e0cbdc9794d91f2cfb303b48b7c69092357d4e2830cda3",
+        "index.html": "93d0c86653aae392a63aaaf62d04b5052b557dfc5e164dd766bcd8354016f2b7",
+        "latency/manifest.json": "44fd6441bac12d4bd7d643ea96692585f433f7c538c57551f283237f2ee7f297",
+        "reliability/manifest.json": "6ebe2225e965c6f8009e47e0780cb195ca0e10e8b65cbe405dd575c84e9e1912",
+        "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+        "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+        "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+        "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
+      },
+      "report_link_href": "agentplane-test-architecture/",
+      "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
+      "status": "passed",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-desktop]",
+      "report": "index.html",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7"
+    }
+  ],
+  "screenshots": [
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "rollout-expanded",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/398bcc246ec1ad463499be16dc0c1d23806e6169a037e782e57d3d39d27dd4dd.png",
+      "width": 1152,
+      "height": 1362,
+      "sha256": "9beb42268846a86881e2bfaf9832c47f8915ae5539a2ed75ac08a86be9a897cc"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "coverage",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/7c5eeda1fae2807e03464fe066acebf6823e84701b1a05fe920e5320dc5055f3.png",
+      "width": 358,
+      "height": 1082,
+      "sha256": "929a9676e2bd7c3ad56f3eddf5976296784f1c498aa1c6875572e28e19dfb0d1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "coverage",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/94261bdea4e83fe66771c9a8802462b66e92ce115a3b5053ecf90bd19bd57093.png",
+      "width": 1152,
+      "height": 728,
+      "sha256": "a5fc5efba4cc0455e4c87c8215cae97f6b1d7c971da011cefdad8d6f7b0ea83e"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "selected-app",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/a11f4ba0efa0db40fb396babb78077a136681acb7d75e00ab8e5b77713d31184.png",
+      "width": 1152,
+      "height": 635,
+      "sha256": "20d65a566e946e103143eec30a8a9a79c3552787d8efa2a098e63cc989128365"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "selected-runtime",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/053703e8e341a6a9c685621deb19007b7bd488138afc9f353d33fef42b0f13e7.png",
+      "width": 1152,
+      "height": 635,
+      "sha256": "e0c12ae0d225036033b19209e654bb0bdf32a68e9dbec014dcecb5537bfb6d46"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "selected-platform",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/00b08b65f77d82a7761d1a3da8ae4542ae9b78485d92d9622723b2fcbdc83279.png",
+      "width": 1152,
+      "height": 635,
+      "sha256": "ab8fc151fed3643847875a386b384a1f81787662d6c0de563ee617966f8203f0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "selected-runtime",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/ccb051176a21f2d2a5bc0781b892aace6b456bf9c00b0b4510211a6a9ee3347b.png",
+      "width": 1152,
+      "height": 635,
+      "sha256": "0b1a6005f82933a81368d39e07da609d20efa7da8497db129a8d32a1b0db3c7a"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "coverage",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/342be99de53c5ffa0371766cfe1dd21ae02aaeb64beceb629b55594ba750ab16.png",
+      "width": 358,
+      "height": 1082,
+      "sha256": "9ae00085d35bf621f4e78668fd6889317d395d99601107a7e9af808e52ab5d47"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "rollout-expanded",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/f948a1ecf921cbd2c160c95186ee452a35894b7f0b4006954c8a980c62422c20.png",
+      "width": 358,
+      "height": 2885,
+      "sha256": "1b5aa80d07374b57a4d15efe102cef4ac936803c4b97e189e88a731ff0819ec1"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "selected-app",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/c261eb7d5b3ed0aafb00fbe15a9311f01617990bb6c564444c9e1740a2924b17.png",
+      "width": 358,
+      "height": 1106,
+      "sha256": "726c4e5705ea0782d80a5e2eec16b4d1cba346f18647f456f6cbe07ebb72057f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-desktop]",
+      "checkpoint": "root-architecture-link",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/18016815ffd0f2b826cc7a3f3b1d2fc268edd5fee8de0c884d1043af2d43be15.png",
+      "width": 373,
+      "height": 339,
+      "sha256": "5b4c0cb2a481a1afd058a3e8d71cfbd6977861eec7bf8ee3d177daf68aeabf8a"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "architecture",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/38e12653e74bc4d45c421a21c441c4d42d651677f9becba61e27850d7eb2ffce.png",
+      "width": 1152,
+      "height": 930,
+      "sha256": "8992e6b3e7b27a0e9f60d21d505854c0b762c297309e034addc679321ba1ff99"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "overview",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/b70bcf070a3fd4545850857bb50d26ca6957686e05183dcbb34a56d2ba440282.png",
+      "width": 1280,
+      "height": 900,
+      "sha256": "789c9af5a3e7a520d27100eb780e9f9e526a059ef1f515dbc1efa248a4d5d739"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "architecture",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/82ef7d46a7e615985471875b300c1a9a2067c39f4fe07227b4d3ed3ccd62a3de.png",
+      "width": 1152,
+      "height": 930,
+      "sha256": "888c192b2aed16e349faf5ef1f94332c1c09abd06eb58d993f233bbe36662f95"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "overview",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/40df4201fd541a8da8fa6d6e68af3a1c9c698af96d97ceec115d740ff79c0565.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "f914b8f38709705090381ae8e486d6078c07cf9427d79b3a31d8183a9492f5b5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "architecture",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/915d8bfc0cf854257856c4536593c6cab558a4482589fdb8d350b5d77bdfde81.png",
+      "width": 358,
+      "height": 2218,
+      "sha256": "7fb4624b368e92143252dc91ff92d0c486be7f9b590b1974cb9d800e37b3beca"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "architecture",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/04802cb2ebbc61dd96fac1376599f9dff39ec8f7848e4f2c593e26178ca5f3c3.png",
+      "width": 358,
+      "height": 2218,
+      "sha256": "9833daf47a6b858690e34e4aefd399e7252a532f4078c6d96bb4803ddadb09e5"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "selected-platform",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/eebfcd6f11f09e82a13f5032376fa82ef80b626f8d54505f96ec79c5753f6e38.png",
+      "width": 358,
+      "height": 1106,
+      "sha256": "5bcc153770fdcd76b14340a3bef3ccdf095aa245ef57f029d7d64e8e341a70d0"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-desktop]",
+      "checkpoint": "root-architecture-link",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/2c4d64183c39b870198e423b3e34dae43cb19d3097fa33847df46123bf65ce4a.png",
+      "width": 373,
+      "height": 339,
+      "sha256": "0e9d6e000fe8587e899a8c860507ab3b2f895f449acbe2a1b286f4c944c73287"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "overview",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/f0db531260540a56e7e79152a14d7075e07148a294631b4f80b9f243ac09b276.png",
+      "width": 390,
+      "height": 844,
+      "sha256": "128db7580e47fa422ddc2c3c79e1e9ac9ce17045c8053a1b226c80bb7092cc97"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "rollout-expanded",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/d286c34a9a4820cb6e9a796530df47440da39a6ce728f4f911152607d6a2b884.png",
+      "width": 358,
+      "height": 2885,
+      "sha256": "354bce99ec240da8d525f2e262fdf1685f3a669ad0e09f5952135a84c125441f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "selected-app",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/bc0341953fce4c26fba4afdde0f1234318f39177ab2ba04ee0b8ef9ac2677469.png",
+      "width": 358,
+      "height": 1106,
+      "sha256": "8815666a416c0dc3ed5ddb253f7b87e5b09cff801559bd5b85135333ba57a445"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "overview",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/feae4ed8b21861c36f2984c1c99b0e0173cbe9a0cb9395ea80d66ececd77584a.png",
+      "width": 1280,
+      "height": 900,
+      "sha256": "eb497fd30eb92b258b53baa3be8c0396faafdba6c00c414281e41428abd7a41f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "selected-app",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/a87d7589cc15e2f0019e8082c9b7160d560cb9314358d0aa2e8268ced8e31a8a.png",
+      "width": 1152,
+      "height": 635,
+      "sha256": "81d576f44a1e301a68dd510c56dc02b13952cdbaf0412a4001042f101a4cc8c3"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "coverage",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/affe05e26873f99928eda8c1636382fa7b5e2bf71621d3ac680680777572e3f4.png",
+      "width": 1152,
+      "height": 728,
+      "sha256": "255bd95323065fd80d3af254432f22a101626748e0d3f92a38cd8e4d2d3d2bb8"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-desktop]",
+      "checkpoint": "selected-platform",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/d56f2239dccd49d1d617970a325542999ae1146a350a871c1b5b724ad06c4cea.png",
+      "width": 1152,
+      "height": 635,
+      "sha256": "0d1f6271b62f6f547e75f9b440f724cf6eac14bfedc9cbe1a163567a2ce40b23"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[dark-mobile]",
+      "checkpoint": "root-architecture-link",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/2935093af7a04b03c7d737bc3a65a334b031e22848984314e7339a58aae2a09f.png",
+      "width": 358,
+      "height": 289,
+      "sha256": "6eb9d1b35ba123648d27004f3917e2bf8f3cfc9b01cc15425bc375bbe073f006"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "selected-runtime",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/4cc0d75a7bb33518212be09d2bb91b9db91813ff561c7ed1606ac46b6772b785.png",
+      "width": 358,
+      "height": 1131,
+      "sha256": "1fb5d1fc6c16a24b82f7c9eed996a21bf04b6966106e71c1861e07261468c462"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_root_architecture_link_and_metadata[light-mobile]",
+      "checkpoint": "root-architecture-link",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/c8a2e4c441247db89b5ef336dfb78a98890390b2e5cc2d68f7a2be27515ac149.png",
+      "width": 358,
+      "height": 289,
+      "sha256": "5e18dd176cf1b6083e3e8561b1ba36d549af3597e3a78787bda5283f11a4e7f2"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-desktop]",
+      "checkpoint": "rollout-expanded",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/b9fbf710267645a22b36ee44f117ac5bc98bfdeb58a876d05256f633aba3af03.png",
+      "width": 1152,
+      "height": 1361,
+      "sha256": "ec20b26c7c4ff3b434a58050381777d04cedf0e04dcd2fc94bc6bbb7f6265e9f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[light-mobile]",
+      "checkpoint": "selected-runtime",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/39ae73c8bba6bc8dd4a5215e5acaf5c955183eb08e79bb8f96636d92cc4afb5a.png",
+      "width": 358,
+      "height": 1131,
+      "sha256": "db6a4f0937020616c9d11a132067202b5425505a42d8d8397a69ccd8b38f121f"
+    },
+    {
+      "case_id": "x/ci_reports_preview/test_reports.py::test_architecture_plan_visual[dark-mobile]",
+      "checkpoint": "selected-platform",
+      "invocation_id": "999b8b3a-b5e5-4e49-b851-0b954463fbb7",
+      "artifact_path": "files/5085dc106452123215c6346e8daefd72d324d4acadad6890f747e93205a39032.png",
+      "width": 358,
+      "height": 1106,
+      "sha256": "12f50dda9106f90e3e0f39628319fbdb06866b5dac284bfd4c6e7e5597a0b02f"
+    }
+  ],
+  "screenshot_review": "Representative desktop/mobile, light/dark captures visually reviewed for populated architecture panels, readable labels/tables, selector states, root navigation and expanded rollout. Horizontal tables scroll within their containers.",
+  "limits": "Visual proof checks rendering and controls, not architecture correctness, deployment or CI saving. Its own JSON is excluded from rendered asset hashes to avoid self-reference."
+}
