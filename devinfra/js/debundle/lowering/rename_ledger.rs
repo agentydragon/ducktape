@@ -289,14 +289,17 @@ impl fmt::Display for RenameScope {
 
 /// Which kind of contributor proposed a rename. Carries the contributor
 /// name so seal-time conflicts can name both sides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::Display)]
 pub enum RenameOrigin {
     /// Spec-author decision (chunk_renames member, plan `export_name`).
+    #[strum(to_string = "explicit({contributor})")]
     Explicit { contributor: &'static str },
     /// Mechanical rename required to emit valid imports (fresh-local
     /// minting, cross-module import aliases).
+    #[strum(to_string = "import-induced({contributor})")]
     ImportInduced { contributor: &'static str },
     /// Cosmetic readability rename inferred from the AST.
+    #[strum(to_string = "heuristic({contributor})")]
     Heuristic { contributor: &'static str },
 }
 
@@ -314,18 +317,6 @@ impl RenameOrigin {
             RenameOrigin::Explicit { contributor }
             | RenameOrigin::ImportInduced { contributor }
             | RenameOrigin::Heuristic { contributor } => contributor,
-        }
-    }
-}
-
-impl fmt::Display for RenameOrigin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RenameOrigin::Explicit { contributor } => write!(f, "explicit({contributor})"),
-            RenameOrigin::ImportInduced { contributor } => {
-                write!(f, "import-induced({contributor})")
-            }
-            RenameOrigin::Heuristic { contributor } => write!(f, "heuristic({contributor})"),
         }
     }
 }

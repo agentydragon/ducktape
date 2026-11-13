@@ -436,12 +436,11 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
 }
 
 fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mut String) {
-    let strategy = match report.strategy {
-        ModuleDecompositionStrategy::Seed => "seed",
-        ModuleDecompositionStrategy::Atomic => "atomic",
-        ModuleDecompositionStrategy::AtomicIncludingResidual => "atomic_including_residual",
-    };
-    out.push_str(&format!("strategy: {strategy}\n"));
+    out.push_str(&format!(
+        "strategy: {}
+",
+        report.strategy
+    ));
     if report.preserve_selector_anchors {
         let relation_count = report
             .selector_anchor_relations

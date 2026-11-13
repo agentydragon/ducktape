@@ -145,21 +145,25 @@ pub struct BlockingSccEntry {
 
 /// Wire projection of [`SccRejection`] for `cycles.json` and the bail
 /// summary.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::IntoStaticStr)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockingRejection {
     /// Pass 1: a cycle of constraining edges. The root cause whenever
     /// present.
+    #[strum(serialize = "  [pass 1: mutual constraining cycle]")]
     MutualConstrainingCycle,
     /// Pass 2 under the linker order: an independent blocker.
+    #[strum(serialize = "  [pass 2: ESM evaluation TDZ]")]
     EsmEvaluationTdz,
     /// Reported only alongside Pass-1 cycles, which leave no linker order
     /// for Pass 2. Pass 2 run on the same assignment with each Pass-1 SCC
     /// collapsed into one module: what still blocks once those cycles are
     /// resolved by co-location. Conditional, not a verdict of its own.
+    #[strum(serialize = "  [pass 2, conditional: after collapsing the pass-1 SCCs]")]
     TdzAfterCollapsingPassOne,
     /// Written by a newer engine; readers treat it as a blocker.
     #[serde(other)]
+    #[strum(serialize = "  [unrecognized rejection kind]")]
     Unrecognized,
 }
 

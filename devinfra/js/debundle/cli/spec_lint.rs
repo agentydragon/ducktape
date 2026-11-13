@@ -553,16 +553,7 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 "warning",
                 format!(
                     "inferable ({}); remove it in a reviewed spec edit and revalidate",
-                    match reason {
-                        InferableReason::NoSequencedEdge => "no sequenced edge joins the endpoints",
-                        InferableReason::SummarizedEndpoints =>
-                            "the endpoints' summarized effects touch disjoint cells",
-                        InferableReason::NoAdmissionViolation =>
-                            "the chunk has no violation to override",
-                        InferableReason::WithheldRunUnchanged =>
-                            "withholding it alone leaves every report unchanged",
-                        InferableReason::NeverConsumed => "no analysis consumed it",
-                    }
+                    reason
                 ),
             ),
             InferenceVerdict::Inconclusive { reason } => (
@@ -610,18 +601,14 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 format!("`host_behavior` loader key {}", snake(key))
             }
             LintedAnnotation::LoaderProgramPremise { key } => {
-                format!("`program_premises` loader key {}", snake(key))
+                format!("`program_premises` loader key \"{key}\"")
             }
             LintedAnnotation::TrustedDataflowSummaries { spec_location } => {
                 format!("`trusted_dataflow_summaries` at {spec_location}")
             }
-            LintedAnnotation::ReentryFreeOperation { operation } => format!(
-                "`host_behavior.reentry_free_operations` entry `{}`",
-                serde_json::to_value(operation)
-                    .ok()
-                    .and_then(|value| value.as_str().map(str::to_owned))
-                    .unwrap_or_default()
-            ),
+            LintedAnnotation::ReentryFreeOperation { operation } => {
+                format!("`host_behavior.reentry_free_operations` entry `{operation}`")
+            }
             LintedAnnotation::CommutingStatements {
                 spec_location,
                 a,

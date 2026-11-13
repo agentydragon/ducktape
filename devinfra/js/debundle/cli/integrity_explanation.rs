@@ -193,8 +193,9 @@ struct WitnessExplanation {
 }
 
 /// An author premise or host key that could remove a census witness.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 enum PossibleDischarge {
     /// `host_behavior.predefined_globals: standard`, under which the value of
     /// a bundle-owned global property reaches no intrinsic slot (SPEC.md §
@@ -603,15 +604,8 @@ fn render_location(location: Option<&SourceLocation>) -> String {
     )
 }
 
-fn snake<T: Serialize>(value: &T) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "?".to_owned())
-}
-
-fn snake_set<T: Serialize>(values: impl IntoIterator<Item = T>) -> String {
-    let names: Vec<_> = values.into_iter().map(|value| snake(&value)).collect();
+fn snake_set<T: std::fmt::Display>(values: impl IntoIterator<Item = T>) -> String {
+    let names: Vec<_> = values.into_iter().map(|value| value.to_string()).collect();
     if names.is_empty() {
         "none".to_owned()
     } else {
@@ -637,7 +631,7 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
             let _ = writeln!(
                 out,
                 "  loss {} at {}{}",
-                snake_tag(&loss.reason),
+                loss.reason.as_ref(),
                 render_location(loss.source_location.as_ref()),
                 loss.excerpt
                     .as_ref()
@@ -664,7 +658,7 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
             let _ = writeln!(
                 out,
                 "  failed {} (affected roots: {})",
-                snake(&guard.guard),
+                guard.guard,
                 snake_set(&guard.affected_roots)
             );
             for slot in &guard.slots {
@@ -690,7 +684,7 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
         let counts: Vec<_> = slot
             .reach_counts
             .iter()
-            .map(|(reach, count)| format!("{}={count}", snake(reach)))
+            .map(|(reach, count)| format!("{}={count}", reach))
             .collect();
         let verdict = format!(
             "{} (affected roots: {}); {} witness(es): {}",
@@ -708,8 +702,8 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
             let _ = writeln!(
                 block,
                 "  {} {} {}{}",
-                snake(&witness.reach),
-                snake(&witness.operation),
+                witness.reach,
+                witness.operation,
                 render_location(witness.site.source_location.as_ref()),
                 witness
                     .site
@@ -752,12 +746,4 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
         );
         out.push_str(&block);
     }
-}
-
-/// The `code` tag of an internally tagged enum.
-fn snake_tag<T: Serialize>(value: &T) -> String {
-    serde_json::to_value(value)
-        .ok()
-        .and_then(|value| value.get("code")?.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "?".to_owned())
 }

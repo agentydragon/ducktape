@@ -338,8 +338,11 @@ pub enum SynchronousLoadDrainsMicrotasks {
 
 /// Exact zero-argument host operations recognized by the synchronous-effect
 /// interpreter (SPEC.md § Host behavior).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ReentryFreeOperation {
     AsyncLocalStorageConstruct,
     PromiseResolve,

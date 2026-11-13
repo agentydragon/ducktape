@@ -149,22 +149,27 @@ pub enum InferenceVerdict {
     Inconclusive { reason: InconclusiveReason },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
 pub enum InferableReason {
     /// No `sequenced` edge joins the entry's endpoints.
+    #[strum(to_string = "no sequenced edge joins the endpoints")]
     NoSequencedEdge,
     /// Every `sequenced` edge between the endpoints orders two summarized
     /// effects on disjoint cells.
+    #[strum(to_string = "the endpoints' summarized effects touch disjoint cells")]
     SummarizedEndpoints,
     /// The chunk has no violation of the overridden check.
+    #[strum(to_string = "the chunk has no violation to override")]
     NoAdmissionViolation,
     /// `spec lint --probe-analysis` reran the program with this one
     /// annotation withheld: it was accepted with identical reports (dependency
     /// graphs, atomic groups, precision losses, module contents).
+    #[strum(to_string = "withholding it alone leaves every report unchanged")]
     WithheldRunUnchanged,
     /// No analysis consumed the annotation: every read of it records the use,
     /// and none was recorded (docs/premise_provenance.md).
+    #[strum(to_string = "no analysis consumed it")]
     NeverConsumed,
 }
 

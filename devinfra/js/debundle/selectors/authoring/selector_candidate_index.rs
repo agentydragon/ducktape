@@ -26,51 +26,42 @@ pub enum TopLevelKind {
     ModuleDeclaration,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum VarKind {
     Var,
     Let,
     Const,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display)]
 pub enum SelectorFeature {
+    #[strum(to_string = "top-level kind {0:?}")]
     TopLevelKind(TopLevelKind),
+    #[strum(to_string = "`{0}` declaration")]
     VarKind(VarKind),
+    #[strum(to_string = "function arity {0}")]
     FunctionArity(usize),
+    #[strum(to_string = "string literal {0:?}")]
     StringLiteral(String),
     /// A numeric literal, keyed by its canonical `f64::to_string` form so the
     /// index and matcher agree on identity (the matcher compares via
     /// `eq_ignore_span`, which is value equality). BigInt literals reuse this
     /// variant keyed by their decimal string.
+    #[strum(to_string = "number literal {0}")]
     NumberLiteral(String),
+    #[strum(to_string = "boolean literal {0}")]
     BoolLiteral(bool),
+    #[strum(to_string = "object key `{0}`")]
     ObjectKey(String),
+    #[strum(to_string = "class member `{0}`")]
     ClassMember(String),
+    #[strum(to_string = "property access `.{0}`")]
     MemberProperty(String),
+    #[strum(to_string = "call of `{0}(...)`")]
     CallCallee(String),
+    #[strum(to_string = "import source {0:?}")]
     ImportSource(String),
-}
-
-/// How a diagnostic names the feature to a spec author.
-impl std::fmt::Display for SelectorFeature {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TopLevelKind(kind) => write!(f, "top-level kind {kind:?}"),
-            Self::VarKind(VarKind::Var) => f.write_str("`var` declaration"),
-            Self::VarKind(VarKind::Let) => f.write_str("`let` declaration"),
-            Self::VarKind(VarKind::Const) => f.write_str("`const` declaration"),
-            Self::FunctionArity(arity) => write!(f, "function arity {arity}"),
-            Self::StringLiteral(value) => write!(f, "string literal {value:?}"),
-            Self::NumberLiteral(value) => write!(f, "number literal {value}"),
-            Self::BoolLiteral(value) => write!(f, "boolean literal {value}"),
-            Self::ObjectKey(key) => write!(f, "object key `{key}`"),
-            Self::ClassMember(name) => write!(f, "class member `{name}`"),
-            Self::MemberProperty(name) => write!(f, "property access `.{name}`"),
-            Self::CallCallee(callee) => write!(f, "call of `{callee}(...)`"),
-            Self::ImportSource(source) => write!(f, "import source {source:?}"),
-        }
-    }
 }
 
 /// A set of top-level body indices, backed by a [`RoaringBitmap`]. Body indices

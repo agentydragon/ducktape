@@ -100,40 +100,28 @@ pub struct DuplicateTopLevelDeclaration {
 }
 
 /// A derived source fact an author `commuting_statements` premise contradicts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum KnownConflict {
     /// The retained cause of a `Sequenced` edge derived from both
     /// endpoints' recorded effects (a cell relation, a binding timeline, a
     /// shared `var`, an uninitialized observation).
+    #[strum(to_string = "{0}")]
     Sequenced(SequencedCause),
     /// The two summaries have overlapping cell footprints with at least one write, whatever
     /// rule emitted the edge between them.
+    #[strum(to_string = "both summaries have an overlapping cell effect: {overlap}")]
     SharedCell {
         cell: EffectCellReport,
         overlap: CellOverlapReport,
     },
     /// Both source units declare the shared `var` `binding`.
+    #[strum(to_string = "both declare shared `var` `{binding}`")]
     CoDeclaration { binding: swc_atoms::Atom },
     /// A `Sequenced` edge without a retained cause (never produced by this
     /// builder); treated as a conflict so the premise never widens silently.
+    #[strum(to_string = "side-effect ordering of unclassified cause")]
     Unclassified,
-}
-
-impl fmt::Display for KnownConflict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Sequenced(cause) => cause.fmt(f),
-            Self::SharedCell { overlap, .. } => write!(
-                f,
-                "both summaries have an overlapping cell effect: {overlap}"
-            ),
-            Self::CoDeclaration { binding } => {
-                write!(f, "both declare shared `var` `{binding}`")
-            }
-            Self::Unclassified => f.write_str("side-effect ordering of unclassified cause"),
-        }
-    }
 }
 
 /// One dependency edge `from -> to` between the premise's endpoints whose
@@ -281,20 +269,13 @@ impl fmt::Display for UnusedCommutingEndpoint {
 
 /// The typed diagnostic of a `commuting_statements` entry the graph build
 /// rejected, as `spec validate` reports it beside the selector outcomes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommutingStatementsDiagnostic {
+    #[strum(to_string = "{0}")]
     Contradicted(CommutingStatementsContradiction),
+    #[strum(to_string = "{0}")]
     Unused(Box<CommutingStatementsUnused>),
-}
-
-impl fmt::Display for CommutingStatementsDiagnostic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Contradicted(diagnostic) => diagnostic.fmt(f),
-            Self::Unused(diagnostic) => diagnostic.fmt(f),
-        }
-    }
 }
 
 /// Graph construction is intentionally source-free. Captured value and native
