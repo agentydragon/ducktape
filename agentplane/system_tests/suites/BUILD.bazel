@@ -147,11 +147,11 @@ k3s_suite(
     deps = _POD_DEPS,
 )
 
-# This suite scales the Dispatcher and deletes controller Pods; it needs its own stack.
+# This suite scales the Dispatcher and deletes controller Pods; it needs its own no-MCP stack.
 k3s_suite(
     name = "test_dispatcher",
     srcs = ["test_dispatcher.py"],
-    stack = "pod",
+    stack = "pod_scenarios",
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
