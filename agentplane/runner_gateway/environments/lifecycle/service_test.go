@@ -371,13 +371,60 @@ func TestDirectPodBoundOperatorCanResumeRequestedStopWithoutToken(t *testing.T) 
 	}
 }
 
+func TestIncompleteCurrentGenerationIdleSuspensionIsStillStopping(t *testing.T) {
+	t.Run("current generation is still stopping", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4)
+		sandbox.Status.StopStage = ""
+		objects := testObjects(t, sandbox, executionUID)
+		h := newHarness(t, objects, []auth.Account{operatorAccount})
+		response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			directContext(t, "operator"), resumeRequest(testSandboxUID, 4),
+		)
+		if status.Code(err) != codes.FailedPrecondition || response != nil {
+			t.Fatalf("resume before idle stop completed = %+v, %v; want FailedPrecondition", response, err)
+		}
+		st, ok := status.FromError(err)
+		if !ok || len(st.Details()) != 1 {
+			t.Fatalf("resume assessment details = %v", st.Details())
+		}
+		assessment, ok := st.Details()[0].(*environmentlifecyclepb.WakeAssessment)
+		if !ok || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_FAILED ||
+			assessment.GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_QUIESCING || assessment.GetTargetGeneration() != 4 {
+			t.Fatalf("resume assessment = %v; want failed quiescing at generation 4", st.Details()[0])
+		}
+		var current sandboxapi.Sandbox
+		if err := objects.Get(t.Context(), types.NamespacedName{Namespace: testNamespace, Name: testSandbox}, &current); err != nil {
+			t.Fatal(err)
+		}
+		if !current.Spec.Running || current.Spec.WakeGeneration != 4 || len(h.budget.calls) != 0 {
+			t.Fatalf("incomplete idle resume mutated state or reserved budget: spec=%+v calls=%+v", current.Spec, h.budget.calls)
+		}
+	})
+	t.Run("stale idle marker after an accepted wake is not blocking", func(t *testing.T) {
+		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4)
+		sandbox.Spec.WakeGeneration = 5
+		sandbox.Status.StopStage = ""
+		objects := testObjects(t, sandbox, executionUID)
+		h := newHarness(t, objects, []auth.Account{operatorAccount})
+		response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
+			directContext(t, "operator"), resumeRequest(testSandboxUID, 5),
+		)
+		if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_ALREADY_RUNNING || response.GetWakeGeneration() != 5 {
+			t.Fatalf("resume after wake generation advanced = %+v, %v; want ALREADY_RUNNING at generation 5", response, err)
+		}
+		if len(h.budget.calls) != 0 {
+			t.Fatalf("stale idle marker reserved wake budget: %+v", h.budget.calls)
+		}
+	})
+}
+
 func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *testing.T) {
 	t.Run("old token is state changed", func(t *testing.T) {
 		objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 3), executionUID)
 		h := newHarness(t, objects, []auth.Account{operatorAccount})
 		client := environmentpb.NewEnvironmentServiceClient(h.conn)
 		first, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 3))
-		if err != nil || first.GetWakeGeneration() != 4 {
+		if err != nil || first.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || first.GetWakeGeneration() != 4 {
 			t.Fatalf("first resume = %+v, %v", first, err)
 		}
 		second, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 3))

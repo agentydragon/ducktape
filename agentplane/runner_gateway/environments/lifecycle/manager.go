@@ -247,10 +247,7 @@ func (s *Manager) applyResume(
 			return stopping, nil
 		}
 
-		idleSuspended := view.Spec.Running && view.Status.OperatingMode == sandboxapi.OperatingModeSuspended &&
-			view.Status.StopStage == sandboxapi.StopStageStopped && view.Status.SuspendedBy != nil &&
-			*view.Status.SuspendedBy == sandboxapi.SuspendedByIdle && view.Status.SuspendedAtWakeGeneration != nil &&
-			*view.Status.SuspendedAtWakeGeneration == view.Spec.WakeGeneration
+		idleSuspended := view.Status.StopStage == sandboxapi.StopStageStopped && idleSuspensionAtCurrentGeneration(view)
 		if !idleSuspended {
 			if view.Spec.Running {
 				return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_NOT_NEEDED, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, view.Spec.WakeGeneration), nil
@@ -316,7 +313,16 @@ func stoppingAssessment(view *sandboxapi.Sandbox) *environmentlifecyclepb.WakeAs
 	if view.Status.StopStage == sandboxapi.StopStageQuiescing {
 		return failureAssessment(codes.FailedPrecondition, "Sandbox is quiescing", environmentlifecyclepb.WakeReason_WAKE_REASON_QUIESCING, generation)
 	}
+	if idleSuspensionAtCurrentGeneration(view) && view.Status.StopStage != sandboxapi.StopStageStopped {
+		return failureAssessment(codes.FailedPrecondition, "Sandbox has not completed its idle suspension", environmentlifecyclepb.WakeReason_WAKE_REASON_QUIESCING, generation)
+	}
 	return nil
+}
+
+func idleSuspensionAtCurrentGeneration(view *sandboxapi.Sandbox) bool {
+	return view.Spec.Running && view.Status.OperatingMode == sandboxapi.OperatingModeSuspended &&
+		view.Status.SuspendedBy != nil && *view.Status.SuspendedBy == sandboxapi.SuspendedByIdle &&
+		view.Status.SuspendedAtWakeGeneration != nil && *view.Status.SuspendedAtWakeGeneration == view.Spec.WakeGeneration
 }
 
 func (s *Manager) accountWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, bool) {
