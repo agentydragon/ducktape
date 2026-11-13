@@ -622,7 +622,7 @@ atom was split. Splitting the residual across destinations or extracting a
 coherent batch can change that quotient and may pass; each resulting assignment
 still needs its own gate verdict. Passing one ownership subset does not imply
 that adding or removing claims will pass, because that changes the destinations
-and their quotient. See [the design distinction](design.md#two-classes-of-atom)
+and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
 for structural atoms, conservative effects, and the accepted lazy-cycle case.
 
 ### Other full reports
