@@ -468,5 +468,37 @@ async def test_action_manager(playwright_driver: Playwright, origin: str) -> Non
         }
 
 
+async def test_fonts_class(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Fonts } = await import('./editor/packages/excalidraw/fonts/Fonts.js');
+                const elements = [
+                    {id: 'font-one', type: 'text', fontFamily: 1, fontSize: 16, containerId: null},
+                    {id: 'font-two', type: 'text', fontFamily: 3, fontSize: 16, containerId: null},
+                    {id: 'font-three', type: 'text', fontFamily: 1, fontSize: 16, containerId: null},
+                    {id: 'not-text', type: 'rectangle', fontFamily: 2}
+                ];
+                let updates = 0;
+                const scene = {getNonDeletedElements: () => elements,
+                    getNonDeletedElementsMap: () => new Map(elements.map(element => [element.id, element])),
+                    triggerUpdate: () => updates++};
+                const fonts = new Fonts(scene);
+                const face = {family: 'debundle-font-probe', style: 'normal', weight: '400', unicodeRange: 'U+0000-00FF'};
+                fonts.onLoaded([face]);
+                const afterFirstLoad = updates;
+                fonts.onLoaded([face]);
+                return {families: fonts.getSceneFamilies(), updates: [afterFirstLoad, updates],
+                        sharedRegistration: fonts.registered === Fonts.registered};
+            }"""
+        )
+        assert result == {"families": [1, 3], "updates": [1, 1], "sharedRegistration": True}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

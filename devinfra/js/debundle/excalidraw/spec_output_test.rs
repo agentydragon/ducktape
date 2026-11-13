@@ -40,6 +40,7 @@ fn claimed_modules_export_their_entry_points() {
         ),
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
+        ("editor/packages/excalidraw/fonts/Fonts.js", &["Fonts"]),
         (
             "editor/packages/excalidraw/element/linearElementEditor.js",
             &["LinearElementEditor"],
