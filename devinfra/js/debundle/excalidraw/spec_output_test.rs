@@ -119,7 +119,7 @@ console.log(JSON.stringify([
   utils.roundToStep(1.25, 0.5),
   utils.isFiniteNumber(Infinity),
   utils.isCloseTo(1, 1.00001),
-  bounds.getVisibleSceneBounds({scrollX: 10, scrollY: -20, width: 800, height: 600, zoom: {value: 2}}),
+  bounds.getVisibleSceneBounds({{scrollX: 10, scrollY: -20, width: 800, height: 600, zoom: {{value: 2}}}}),
   bounds.doBoundsIntersect([0, 0, 10, 10], [5, 5, 15, 15]),
   bounds.doBoundsIntersect([0, 0, 10, 10], [10, 0, 20, 10]),
   bounds.doBoundsIntersect(null, [0, 0, 10, 10]),
