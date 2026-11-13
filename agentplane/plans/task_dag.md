@@ -3722,6 +3722,7 @@ flowchart LR
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
     TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
+    PROTO_PACKAGE_ALIGNMENT[Future: align protobuf packages with their directories]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     HISTORY_SERVICE_RENAME[Decision, section 8] -. takes its name .-> HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
 ```
@@ -3971,6 +3972,18 @@ and boots in seconds under emulation, and point the k3s VM scenarios at that gue
 ### Future
 
 The gate is a decision not yet made or a track not started; nothing here is dispatchable.
+
+#### `PROTO_PACKAGE_ALIGNMENT` — align protobuf packages with their directories
+
+**Future; operator, 2026-11-12: revisit after the source moves.** Inventory Agentplane-owned
+`.proto` package declarations against their filesystem locations, including the History read API
+and the sampler's retained `agentplane.x.central_sampler` namespace. Decide a consistent naming
+scheme and document deliberate exceptions; moving a file does not by itself require a wire rename.
+A package rename changes fully qualified message and service names, including gRPC method paths and
+`Any` type URLs, even if field numbers stay the same. Before each proposed migration, inventory
+clients, persisted or queued payloads, descriptors, reflection, authorization rules and mixed-version
+rollouts; define compatibility, data handling and rollback, with tests for old/new interoperability.
+Dispatch reviewed migrations separately, rather than coupling them to package-directory moves.
 
 #### Decisions and tracks
 
