@@ -296,7 +296,8 @@ async def test_launcher_drives_only_the_sandbox_it_launched(
 
 
 # Each harness owns its server linkage and Sandbox. The same two case slots bound
-# all five cases; the launcher may briefly hold a parent and child (three total).
+# all five cases. A launcher with three Sandboxes and a BFF case with two
+# can fill the fixture's five-Sandbox cap; keep the two-slot bound.
 @pytest.mark.scripted_model
 @pytest.mark.case_batch
 @pytest.mark.asyncio(loop_scope="module")
