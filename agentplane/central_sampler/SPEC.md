@@ -284,6 +284,8 @@ records. The shared runtime owns effect intents, execution, leases, interruption
 The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
 stream event and its derived History observations commit atomically before parsing continues;
 evidence failure stops the stream without acknowledging the pending effect.
+Each provider-evidence write also requires its sampling or compaction intent to remain the current
+open intent under the owner fence, so late stream evidence from a settled or superseded intent is rejected.
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.
