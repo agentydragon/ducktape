@@ -116,7 +116,7 @@ pid1_go_test(
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
         "//agentplane/firecracker/workloadidentity",
-        "//agentplane/history_service:session_ingress_go_proto",
+        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/llm_ingress/v1:model_config_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:environment_runtime_state_go_proto",

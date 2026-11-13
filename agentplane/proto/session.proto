@@ -1,6 +1,7 @@
 // Session and Sandbox lifecycle messages, carried by the Environment Runtime control stream
-// (environment_runtime.proto) and its Event ingress (session_ingress.proto), and retained by the services
-// that read them.
+// (`environment_runtime.proto`) and its Event ingress (see
+// `agentplane/history_service/api/ingress/session_ingress.proto`), and retained by services that
+// read them.
 
 syntax = "proto3";
 

@@ -15,7 +15,7 @@ go_library(
         "//agentplane/env/runtime/journal",
         "//agentplane/env/runtime/retained",
         "//agentplane/env/runtime/stream",
-        "//agentplane/history_service:session_ingress_go_proto",
+        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/proto:session_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
@@ -35,7 +35,7 @@ go_test(
     deps = [
         "//agentplane/env/runtime/journal",
         "//agentplane/env/runtime/retained",
-        "//agentplane/history_service:session_ingress_go_proto",
+        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:session_go_proto",

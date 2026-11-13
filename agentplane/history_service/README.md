@@ -50,8 +50,9 @@ not call it.
 
 ## Runner ingress
 
-`ingress/` serves `SessionJournalIngress.Push`, the
-[runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
+`ingress/` serves `SessionJournalIngress.Push`, defined in the
+[public protobuf API](api/ingress/session_ingress.proto), with behavior described by the [runner
+ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
 journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS through the sidecar
 and central proxy's exact-authority CONNECT passthrough to `rpc.listen_address`.
 History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the

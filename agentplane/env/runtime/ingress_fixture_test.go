@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )

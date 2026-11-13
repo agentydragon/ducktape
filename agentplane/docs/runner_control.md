@@ -89,7 +89,7 @@ Service, which makes a historyless client unlike any other and couples live deli
 database.
 
 ```protobuf
-// agentplane/history_service/session_ingress.proto
+// agentplane/history_service/api/ingress/session_ingress.proto
 service SessionJournalIngress {
   rpc Push(stream PushFrame) returns (stream Acknowledgement);
 }
