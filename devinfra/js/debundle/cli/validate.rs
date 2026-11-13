@@ -20,11 +20,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 use transform_command::TransformArgs;
 
-use crate::print_section;
+use crate::write_section;
 use analysis::CommutingStatementsDiagnostic;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
-use command_output::print_report;
+use command_output::write_report;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::OutputFormat;
 use pipeline::{RunOutput, TransformRunOptions, TransformSpecSource, run_transform};
@@ -107,7 +107,7 @@ impl ValidateReport {
     }
 }
 
-pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
+pub fn run_validate_cmd(args: ValidateArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     let report_only = args.report_only;
     let report = if args.source_only_requested() {
@@ -119,10 +119,13 @@ pub fn run_validate_cmd(args: ValidateArgs) -> Result<()> {
         run_spec_validate(args)?
     };
     if format == OutputFormat::Ndjson {
-        emit_validate_ndjson(&report)?;
+        emit_validate_ndjson(&report, output)?;
     } else {
-        print_report(&report, format, |report, buf| report.render_text(buf))
-            .context("writing validate output")?;
+        write_report(&report, format, output, |report, buf| {
+            report.render_text(buf);
+            Ok(())
+        })
+        .context("writing validate output")?;
     }
     if !report_only
         && report
@@ -543,7 +546,7 @@ fn report_chunk_id(root: &Path, report_path: &Path) -> Result<String> {
 /// One JSON object per outcome, one per listed template, then a final
 /// `summary` line with the counts — the streaming shape `jq -c` consumers
 /// dispatch on.
-fn emit_validate_ndjson(report: &ValidateReport) -> Result<()> {
+fn emit_validate_ndjson(report: &ValidateReport, output: &mut dyn std::io::Write) -> Result<()> {
     #[derive(Serialize)]
     struct Summary<T> {
         counts: T,
@@ -551,15 +554,16 @@ fn emit_validate_ndjson(report: &ValidateReport) -> Result<()> {
         validation: Option<selector_outcome::SelectorValidationSummary>,
     }
     for outcome in &report.selectors.outcomes {
-        print_section("outcome", outcome)?;
+        write_section(output, "outcome", outcome)?;
     }
     for template in &report.selectors.templates {
-        print_section("template", template)?;
+        write_section(output, "template", template)?;
     }
     for diagnostic in &report.commuting_statements_diagnostics {
-        print_section("commuting_statements_diagnostic", diagnostic)?;
+        write_section(output, "commuting_statements_diagnostic", diagnostic)?;
     }
-    print_section(
+    write_section(
+        output,
         "summary",
         &Summary {
             counts: report.selectors.counts(),

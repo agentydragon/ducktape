@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use spec::{ChunkExportPurity, RetainedCallbackSignature};
 use tempfile::NamedTempFile;
 
-use crate::{emit_report, print_section};
+use crate::{emit_report, write_section};
 
 #[derive(Debug, Args)]
 pub(super) struct AuditContractsArgs {
@@ -307,7 +307,7 @@ impl CheckpointSession {
     }
 }
 
-pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
+pub(super) fn run(args: AuditContractsArgs, output: &mut dyn std::io::Write) -> Result<()> {
     ensure!(args.max_probes > 0, "--max-probes must be positive");
     ensure!(
         !args.transform.dry_run && !args.transform.fail_fast,
@@ -435,13 +435,19 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         results,
     };
     if OutputFormat::resolve(args.format) == OutputFormat::Ndjson {
-        print_section("audit", &report)
+        write_section(output, "audit", &report)
     } else {
-        emit_report(args.format, &report, render_text, "writing contract audit")
+        emit_report(
+            output,
+            args.format,
+            &report,
+            render_text,
+            "writing contract audit",
+        )
     }
 }
 
-fn render_text(report: &AuditReport, out: &mut String) {
+fn render_text(report: &AuditReport, out: &mut String) -> Result<()> {
     out.push_str("baseline: passed\n");
     out.push_str(report.scope);
     out.push('\n');
@@ -451,6 +457,7 @@ fn render_text(report: &AuditReport, out: &mut String) {
             out.push_str(&format!("  {error}\n"));
         }
     }
+    Ok(())
 }
 
 fn select_targets(

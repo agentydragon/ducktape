@@ -255,6 +255,13 @@ If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
 in a pipeline), the default flips to `json`. So
 `debundle modules propose | jq …` works without an explicit `--format json`.
 
+Report rendering, serialization, stdout writes, and the final flush are
+fallible. A report write or flush failure exits nonzero; if stdout returns
+`BrokenPipe` while a report is being emitted, the CLI exits successfully so
+downstream consumers can stop reading early. Text rendering completes before
+its bytes are written, so a rendering failure does not leave a partial text
+report.
+
 ### Runtime failures from top-level queries
 
 After Clap has accepted the command line, `describe`, `inspect-source`,

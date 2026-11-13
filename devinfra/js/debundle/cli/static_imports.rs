@@ -12,6 +12,7 @@ use peel::OutputFormat;
 use pipeline::load_transform_spec_source;
 use prepare_chunks::prepare_js_chunks;
 use serde::Serialize;
+use std::io::Write;
 
 use crate::emit_report;
 
@@ -162,7 +163,7 @@ struct RequestGraph {
     issues: Vec<Vec<RequestIssue>>,
 }
 
-pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
+pub(super) fn run(args: StaticImportsArgs, output: &mut dyn Write) -> Result<()> {
     let format = args.format;
     let from_name = args.from;
     let target_names = args.target;
@@ -229,6 +230,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
             .transpose()?,
     };
     emit_report(
+        output,
         format,
         &report,
         |report, out| {
@@ -300,11 +302,10 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                     census.sites.len()
                 ));
                 for chunk in &census.chunks {
+                    let kinds = serde_json::to_string(&chunk.kinds)?;
                     out.push_str(&format!(
                         "  {}: {} sites {}\n",
-                        chunk.chunk,
-                        chunk.site_count,
-                        serde_json::to_string(&chunk.kinds).expect("typed census keys serialize")
+                        chunk.chunk, chunk.site_count, kinds
                     ));
                 }
                 for site in &census.sites {
@@ -328,6 +329,7 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                     ));
                 }
             }
+            Ok(())
         },
         "writing static-imports output",
     )

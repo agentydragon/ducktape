@@ -255,10 +255,15 @@ fn possible_discharges(
     possible_discharges
 }
 
-pub(super) fn run(args: ExplainIntegrityArgs, roots: CurrentRoots) -> Result<()> {
+pub(super) fn run(
+    args: ExplainIntegrityArgs,
+    roots: CurrentRoots,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     let limit = args.limit.filter(|_| !args.all);
     let report = explain(&args, limit, &roots)?;
     emit_report(
+        output,
         args.format,
         &report,
         render_text,
@@ -613,7 +618,7 @@ fn snake_set<T: std::fmt::Display>(values: impl IntoIterator<Item = T>) -> Strin
     }
 }
 
-fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
+fn render_text(report: &IntegrityExplanationReport, out: &mut String) -> Result<()> {
     use std::fmt::Write;
     for unit in &report.source_units {
         let _ = writeln!(
@@ -746,4 +751,5 @@ fn render_text(report: &IntegrityExplanationReport, out: &mut String) {
         );
         out.push_str(&block);
     }
+    Ok(())
 }

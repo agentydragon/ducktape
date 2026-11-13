@@ -75,6 +75,11 @@ Project-analysis performs selector resolution and reports its selector warnings,
 but does not compute purity-hint facts. Progress and analysis telemetry have
 independent instrumentation owners.
 
+Report output is fallible through text rendering, JSON serialization, stdout
+writes, and the final flush. Text is fully rendered before its first write.
+The process adapter treats `BrokenPipe` from a report write or flush as
+successful early termination; other report output failures are command errors.
+
 ## Read-only query failures
 
 Once Clap accepts the command line, runtime failures from `describe`,

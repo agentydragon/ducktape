@@ -365,6 +365,7 @@ impl BlockingReason {
 pub(super) fn run(
     args: ProposeCommutationsArgs,
     context: &VerifiedGraphSourceContext,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let cycles_path = args.resolved_cycles_path();
     let sccs = crate::gate::load_blocking_sccs(&cycles_path)?;
@@ -403,7 +404,7 @@ pub(super) fn run(
         }
         None => None,
     };
-    let output = ProposeCommutationsReport {
+    let report = ProposeCommutationsReport {
         chunk: report.chunk_id.clone(),
         graph: args.graph.clone(),
         cycles: cycles_path,
@@ -416,8 +417,9 @@ pub(super) fn run(
         draft_written,
     };
     emit_report(
+        output,
         args.format,
-        &output,
+        &report,
         render_text,
         "writing propose-commutations output",
     )
@@ -1536,7 +1538,7 @@ fn render_draft(chunk: &str, proposals: &[CommutationProposal]) -> Result<String
     Ok(out)
 }
 
-fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
+fn render_text(report: &ProposeCommutationsReport, out: &mut String) -> Result<()> {
     out.push_str(&format!(
         "chunk {}: {} of {} proposal(s), {} of {} cut edge(s) needing co-location, {} of {} rejected candidate(s) shown\n",
         report.chunk,
@@ -1642,6 +1644,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
     }
     out.push_str("---\n");
     out.push_str(&report.draft_yaml);
+    Ok(())
 }
 
 impl RejectionReason {

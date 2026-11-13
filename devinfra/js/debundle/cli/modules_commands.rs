@@ -370,7 +370,7 @@ struct ModulesListReport {
     pub modules: Vec<ModuleListEntry>,
 }
 
-fn run_modules_list(args: ModulesListArgs) -> Result<()> {
+fn run_modules_list(args: ModulesListArgs, output: &mut dyn std::io::Write) -> Result<()> {
     use spec::is_residual_namespace_path;
     use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
     let files = collect_module_files(&args.modules_root)
@@ -407,9 +407,13 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
     let report = ModulesListReport { modules: entries };
     let with_anonymous = args.with_anonymous;
     emit_report(
+        output,
         args.format,
         &report,
-        |report, out| render_modules_list_text(report, out, with_anonymous),
+        |report, out| {
+            render_modules_list_text(report, out, with_anonymous);
+            Ok(())
+        },
         "writing modules list output",
     )
 }
@@ -586,6 +590,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
 fn run_module_decompose(
     args: ModuleDecomposeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     anyhow::ensure!(
         !args.include_residual || args.atomic,
@@ -627,9 +632,13 @@ fn run_module_decompose(
         )
     })?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_module_decomposition_text,
+        |report, out| {
+            render_module_decomposition_text(report, out);
+            Ok(())
+        },
         "writing module decomposition output",
     )
 }
@@ -742,6 +751,7 @@ pub(super) fn run(
     args: ModulesNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
@@ -750,19 +760,23 @@ pub(super) fn run(
         ModulesNsCommand::Propose(p) => {
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(
+                output,
                 p.format,
                 &report,
-                render_plan_work_text,
+                |report, out| {
+                    render_plan_work_text(report, out);
+                    Ok(())
+                },
                 "writing propose output",
             )
         }
-        ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context),
+        ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context, output),
         ModulesNsCommand::Apply(args) => {
             run_modules_apply(args, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::Refine(args) => {
             run_modules_refine(args, source_context, analysis_engine_sha256)
         }
-        ModulesNsCommand::List(args) => run_modules_list(args),
+        ModulesNsCommand::List(args) => run_modules_list(args, output),
     }
 }

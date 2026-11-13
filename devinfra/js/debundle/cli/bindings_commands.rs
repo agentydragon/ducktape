@@ -225,7 +225,7 @@ struct BindingsAssignArgs {
     pub batch: Option<String>,
 }
 
-fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
+fn run_bindings_list_cmd(args: BindingsListNsArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let filters = BindingsListFilters {
         in_module: args.in_module,
         unrenamed: args.unrenamed,
@@ -233,9 +233,13 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
     };
     let report = run_bindings_list(&args.modules_root, &filters)?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_bindings_list_text,
+        |report, out| {
+            render_bindings_list_text(report, out);
+            Ok(())
+        },
         "writing bindings list output",
     )
 }
@@ -444,10 +448,11 @@ pub(super) fn run(
     args: BindingsNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     match args.command {
         BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
-        BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
+        BindingsNsCommand::List(l) => run_bindings_list_cmd(l, output),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
         BindingsNsCommand::Assign(a) => {
             run_bindings_assign_cmd(*a, source_context, analysis_engine_sha256)

@@ -392,6 +392,7 @@ pub(super) fn run_describe(
     args: DescribeArgs,
     source_context: Option<VerifiedGraphSourceContext>,
     validated: ValidatedDescribeQuery,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let ValidatedDescribeQuery { ids } = validated;
     let mut session = ExplainSession::load(
@@ -437,17 +438,19 @@ pub(super) fn run_describe(
         .collect::<Result<Vec<_>>>()?;
     if args.batch_file.is_none() {
         return emit_report(
+            output,
             args.format,
             &results[0],
-            render_explain_text,
+            |result, out| {
+                render_explain_text(result, out);
+                Ok(())
+            },
             "writing describe output",
         );
     }
     let format = OutputFormat::resolve(args.format);
     if format == OutputFormat::Ndjson {
-        for result in results {
-            println!("{}", serde_json::to_string(&result)?);
-        }
+        command_output::write_ndjson_list(&results, format, output)?;
         return Ok(());
     }
     #[derive(Serialize)]
@@ -455,12 +458,14 @@ pub(super) fn run_describe(
         results: Vec<peel::ExplainReport>,
     }
     emit_report(
+        output,
         Some(format),
         &BatchReport { results },
         |batch, out| {
             for result in &batch.results {
                 render_explain_text(result, out);
             }
+            Ok(())
         },
         "writing describe batch output",
     )
@@ -469,6 +474,7 @@ pub(super) fn run_describe(
 pub(super) fn run_inspect_source(
     args: InspectSourceArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let mut report = InspectSourceReport {
         query: None,
@@ -624,9 +630,13 @@ pub(super) fn run_inspect_source(
     let format = OutputFormat::resolve(args.format);
     bound_report(&mut report, format, args.max_output_bytes)?;
     emit_report(
+        output,
         Some(format),
         &report,
-        render_inspect_source_text,
+        |report, out| {
+            render_inspect_source_text(report, out);
+            Ok(())
+        },
         "writing inspect-source output",
     )
 }
@@ -1029,12 +1039,16 @@ fn render_edge_census(rows: &[peel::plan::EdgeCensusRow]) -> String {
         .join(", ")
 }
 
-pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
+pub(super) fn run_atoms(args: AtomicGroupsArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let report = run_atomic_groups_report(&args)?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_atomic_groups_text,
+        |report, out| {
+            render_atomic_groups_text(report, out);
+            Ok(())
+        },
         "writing atoms output",
     )
 }
@@ -1042,14 +1056,19 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs) -> Result<()> {
 pub(super) fn run_coverage(
     args: PatchPlanArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let report = command_diagnostics::run(|diagnostics| {
         run_patch_plan_report(&args, source_context, diagnostics)
     })?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_patch_plan_text,
+        |report, out| {
+            render_patch_plan_text(report, out);
+            Ok(())
+        },
         "writing coverage output",
     )
 }
@@ -1057,12 +1076,17 @@ pub(super) fn run_coverage(
 pub(super) fn run_graph_summary(
     args: GraphSummaryArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let report = run_graph_summary_report(&args, source_context)?;
     emit_report(
+        output,
         args.format,
         &report,
-        render_graph_summary_text,
+        |report, out| {
+            render_graph_summary_text(report, out);
+            Ok(())
+        },
         "writing graph-summary output",
     )
 }

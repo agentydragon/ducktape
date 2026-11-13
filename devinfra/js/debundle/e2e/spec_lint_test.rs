@@ -154,6 +154,30 @@ fn lint_reports_each_inferable_annotation_kind_by_authored_identity() {
     assert_same_tree(&run_fixture(fixture(false)).out_root, &annotated.out_root);
 }
 
+#[test]
+fn text_output_renders_the_report_through_the_cli() {
+    let fixture = write_validate_fixture_spec(fixture(true));
+    let output = run_debundle(&[
+        "spec",
+        "lint",
+        "--spec",
+        fixture.spec_path.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    assert!(
+        output.status.success(),
+        "spec lint exited non-zero: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).expect("CLI text output is UTF-8");
+    assert!(text.contains("inferable_annotation"), "{text}");
+    assert!(
+        text.ends_with('\n'),
+        "text output should end with a newline: {text:?}"
+    );
+}
+
 /// Annotations the run consumes are not findings: a commutation that inerts an
 /// edge and an override that suppresses a violation.
 #[test]
