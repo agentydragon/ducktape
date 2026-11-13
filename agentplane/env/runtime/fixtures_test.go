@@ -135,6 +135,7 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 			case <-r.lifecycleDone:
 			default:
 				_ = r.stopSessions(closeCtx)
+				_ = r.waitSessionsClosed(closeCtx)
 			}
 			_ = r.stopIngress(closeCtx)
 			r.lifecycleCancel()
