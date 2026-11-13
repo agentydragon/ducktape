@@ -5,7 +5,7 @@ go_library(
     srcs = [
         "grpc.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/rules",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/rules",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/api/rules:egress_rules_go_proto",
