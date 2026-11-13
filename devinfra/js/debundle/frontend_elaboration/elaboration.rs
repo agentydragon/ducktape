@@ -942,7 +942,7 @@ fn prepare_chunk<'a>(
         .collect::<Vec<_>>();
     for request in &explicit_requests {
         spec_resolution::reject_duplicate_member_bindings(
-            "logical_module",
+            selector_outcome::ClaimOperation::LogicalModule,
             &request.id,
             &request.members,
         )?;

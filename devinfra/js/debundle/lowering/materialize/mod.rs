@@ -1340,7 +1340,7 @@ fn write_selector_diagnostics(
             report_out_dir,
             chunk_id,
             SELECTOR_DIAGNOSTICS_REPORT,
-            &report,
+            &report.to_report(),
         )?;
     }
     Ok(())

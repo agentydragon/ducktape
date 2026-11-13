@@ -371,7 +371,11 @@ impl ChunkPlanBuilder {
         imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
         imported_from_by_src: &mut BTreeMap<String, String>,
     ) -> Result<()> {
-        reject_duplicate_member_bindings("logical_module", &request.id, &request.members)?;
+        reject_duplicate_member_bindings(
+            selector_outcome::ClaimOperation::LogicalModule,
+            &request.id,
+            &request.members,
+        )?;
         let mut bindings = HashMap::<String, String>::new();
         let dest_target_file = target_file_for_request(ctx.target_dir, &request.target_path)?;
         let module_id = ModuleId(index);

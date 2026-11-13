@@ -266,7 +266,7 @@ pub fn fact_source_match_body_debt(
         request_id,
         format!("<source_match debt in {request_id}>"),
         &selector.match_source,
-        "source_match",
+        SelectorField::SourceMatch,
     )?;
     let mode = selector_mode(selector);
     let needle_indices = item_indices(&parsed.body);
@@ -417,7 +417,7 @@ pub(crate) fn fact_first_mismatch_reason(
     };
     // The fact matcher is the non-match oracle; a match means no near-miss row.
     if selector_match::matches_indexed(needle_index, candidate_index, mode, free)
-        .map_err(unsupported_error("fact near-miss"))?
+        .map_err(unsupported_error)?
         .is_some()
     {
         return Ok(None);
@@ -639,7 +639,7 @@ fn first_var_decl_divergence(
         &[],
         &free_identifiers([needle_index]),
     )
-    .map_err(unsupported_error("fact near-miss"))?
+    .map_err(unsupported_error)?
     .is_some();
     if aligns {
         return Ok(MismatchReason::VariableShape);
@@ -704,7 +704,7 @@ fn first_aligned_var_declarator_divergence(
             mode,
             &free,
         )
-        .map_err(unsupported_error("fact near-miss"))?
+        .map_err(unsupported_error)?
         {
             return Ok(Some(MismatchReason::VariableDeclarator {
                 index,
@@ -740,7 +740,7 @@ fn first_pinned_var_declarator_divergence(
         mode,
         &free_identifiers([needle_index]),
     )
-    .map_err(unsupported_error("fact near-miss"))?;
+    .map_err(unsupported_error)?;
     let pinned_indices = needle_var
         .decls
         .iter()
@@ -816,7 +816,7 @@ fn first_class_divergence(
                 mode,
                 &free,
             )
-            .map_err(unsupported_error("fact near-miss"))?
+            .map_err(unsupported_error)?
             {
                 return Ok(MismatchReason::ClassMemberBody {
                     member: needle_label,

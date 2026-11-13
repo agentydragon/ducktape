@@ -925,8 +925,11 @@ fn import_specifier_match_is_invalid() {
         assert_all_commands_agree(&case),
         json!({
             "kind": "invalid",
-            "error": "projection_source_unit_mapping_error: source_match candidate at body index 0 \
-                      binding `dep` does not map to a dependency graph node",
+            "error": {
+                "message": "source_match candidate at body index 0 binding `dep` does not map to a dependency graph node",
+                "cause": "projection",
+                "problem": {"kind": "binding_source_unit_missing", "body_index": 0, "binding": "dep"},
+            },
         })
     );
 }

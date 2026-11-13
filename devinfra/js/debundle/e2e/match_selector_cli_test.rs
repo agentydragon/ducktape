@@ -482,8 +482,9 @@ fn seq_exprs_outside_a_sequence_is_an_invalid_probe() {
         &["--target-binding", "w", "--no-slack"],
     );
     assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
+    assert_eq!(outcome(&report)["error"]["cause"], "unsupported");
     assert!(
-        outcome(&report)["error"]
+        outcome(&report)["error"]["reason"]
             .as_str()
             .unwrap()
             .contains("run-hole keyword outside a list position"),
@@ -564,7 +565,10 @@ fn invalid_regex_predicate_is_not_a_no_match() {
             "{selector}: {report:#}"
         );
         assert!(
-            outcome(&report)["error"].as_str().unwrap().contains(error),
+            outcome(&report)["error"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains(error),
             "{report:#}"
         );
     }
@@ -591,4 +595,115 @@ fn ast_contains_string_matches_an_exact_descendant_literal() {
         &["--target-binding", "Selected", "--no-slack"],
     );
     assert_eq!(outcome(&malformed)["kind"], "invalid", "{malformed:#}");
+}
+
+#[test]
+fn invalid_selector_reports_keep_native_parser_diagnostics_and_source_context() {
+    let (_dir, source) = fixture();
+    for (selector, minimum_diagnostics) in [
+        ("with (first) {} with (second) {}", 2),
+        ("42 = 1;", 1),
+        ("const selected =", 1),
+    ] {
+        let report = run_match_selector(&source, selector, &["--no-slack"]);
+        let invalid = &outcome(&report)["error"];
+        assert_eq!(outcome(&report)["kind"], "invalid", "{report:#}");
+        assert_eq!(invalid["cause"], "parse", "{report:#}");
+        assert_eq!(invalid["match_source"], selector);
+        assert_eq!(invalid["field"], "source_match");
+        let diagnostics = invalid["diagnostics"].as_array().unwrap();
+        assert!(diagnostics.len() >= minimum_diagnostics, "{report:#}");
+        for diagnostic in diagnostics {
+            assert!(
+                !diagnostic["message"].as_str().unwrap().is_empty(),
+                "{report:#}"
+            );
+            if let Some(range) = diagnostic["range"].as_object() {
+                assert!(range["start"].as_u64().unwrap() <= range["end"].as_u64().unwrap());
+                assert!(range["end"].as_u64().unwrap() <= selector.len() as u64);
+            }
+        }
+        let text = Command::new(debundler_path())
+            .args(["spec", "match-selector", "--source-file"])
+            .arg(&source)
+            .args(["--match", selector, "--no-slack", "--format", "text"])
+            .output()
+            .unwrap();
+        assert!(
+            text.status.success(),
+            "{}",
+            String::from_utf8_lossy(&text.stderr)
+        );
+        let text = String::from_utf8(text.stdout).unwrap();
+        assert!(text.contains(selector), "{text}");
+        for diagnostic in diagnostics {
+            assert!(
+                text.contains(diagnostic["message"].as_str().unwrap()),
+                "{text}"
+            );
+        }
+    }
+    let valid = run_match_selector(
+        &source,
+        "const selected = makeWidget(\"widget\", 3, theme);",
+        &["--target-binding", "selected", "--no-slack"],
+    );
+    assert_eq!(outcome(&valid)["kind"], "resolved", "{valid:#}");
+    assert_eq!(outcome(&valid)["binding"], "widgetConfig");
+}
+
+#[test]
+fn solver_stop_and_operational_settings_failure_remain_distinct() {
+    let (dir, source) = fixture();
+    let modules = dir.path().join("modules");
+    write_text_file(
+        &modules.join("probe.yaml"),
+        "source_matches:\n  - match: 'const first = renderPanel(EXPR);'\n    bindings: [first]\n  - match: 'const second = renderPanel(EXPR);'\n    bindings: [second]\n",
+    );
+    let run = |limit: &str, format: &str| {
+        Command::new(debundler_path())
+            .args(["spec", "validate", "--modules"])
+            .arg(&modules)
+            .arg("--source-file")
+            .arg(&source)
+            .args(["--report-only", "--format", format])
+            .env("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS", limit)
+            .output()
+            .unwrap()
+    };
+    // Smaller than the clock's resolution: CP-SAT stops before its initial
+    // search. No assertion depends on elapsed time or machine performance.
+    let stopped = run("1e-300", "json");
+    assert!(
+        stopped.status.success(),
+        "{}",
+        String::from_utf8_lossy(&stopped.stderr)
+    );
+    let report: Value = serde_json::from_slice(&stopped.stdout).unwrap();
+    let outcomes = report["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), 2, "{report:#}");
+    for outcome in outcomes {
+        assert_eq!(
+            outcome["outcome"],
+            json!({"kind": "undecided", "reason": "cp_sat_unknown"})
+        );
+    }
+    let text = run("1e-300", "text");
+    assert!(String::from_utf8_lossy(&text.stdout).contains("CP-SAT returned UNKNOWN"));
+    let operational = run("invalid", "json");
+    assert!(!operational.status.success());
+    assert!(
+        operational.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&operational.stdout)
+    );
+    assert!(String::from_utf8_lossy(&operational.stderr).contains("must be a positive number"));
+    let control = run("", "json");
+    assert!(
+        control.status.success(),
+        "{}",
+        String::from_utf8_lossy(&control.stderr)
+    );
+    let control: Value = serde_json::from_slice(&control.stdout).unwrap();
+    assert_eq!(control["counts"]["ambiguous"], 2, "{control:#}");
 }

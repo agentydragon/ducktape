@@ -212,6 +212,7 @@ rust_library(
         "@crates//:strum",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:thiserror",
     ],
 )
 
@@ -332,15 +333,23 @@ rust_library(
 
 rust_library(
     name = "selector_outcome",
-    srcs = ["selectors/resolution/selector_outcome.rs"],
+    srcs = [
+        "selectors/resolution/selector_invalid.rs",
+        "selectors/resolution/selector_outcome.rs",
+    ],
     crate_root = "selectors/resolution/selector_outcome.rs",
     edition = "2024",
     deps = [
         ":selector_candidate_index",
+        ":selector_ir",
+        ":source_match",
         ":source_mismatch",
         ":spec",
+        "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:strum",
+        "@crates//:swc_common",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1578,6 +1587,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":source_identity",
+        "@crates//:serde",
         "@crates//:thiserror",
     ],
 )
@@ -1740,6 +1750,7 @@ rust_library(
         ":ortools_cpsat_ffi",
         ":sat_parameters_rust_proto",
         ":selector_constraint_backend",
+        ":selector_ir",
         ":selector_ortools_cpsat_model",
         ":source_identity",
         "@crates//:thiserror",

@@ -629,7 +629,7 @@ annotations:
             "--batch",
             rejected_batch.path().join("refine.json").to_str().unwrap(),
         ],
-        &["ambiguous_reference", "applyDecorators"],
+        &["template identifier", "applyDecorators"],
     );
 
     let source_path = fixture.source_path();

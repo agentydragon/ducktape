@@ -10,6 +10,12 @@
 //! resolved-by-elimination warnings; `match-selector` reports its one
 //! entity's outcome, resolved or not.
 
+mod selector_invalid;
+pub use selector_invalid::{
+    AnnotationField, BindingClaimant, ClaimOperation, ClaimValidationError, DuplicateBinding,
+    InvalidSelectorError, InvalidSelectorReport, ProjectionError,
+};
+
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -27,8 +33,8 @@ pub const MAX_CANDIDATES_PER_SELECTOR: usize = 100;
 /// enumerating alternatives at the same bound.
 pub const MAX_LISTED_CANDIDATES: usize = 5;
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-pub struct SelectorOutcome {
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SelectorOutcome<E = InvalidSelectorError> {
     /// Chunk id (`run`, keep-going `validate`) or the chunk path the command
     /// was given (source-only `validate`, `match-selector`).
     pub chunk: String,
@@ -45,7 +51,7 @@ pub struct SelectorOutcome {
     /// entity has no parsed selector.
     #[serde(default)]
     pub selector_preview: Option<String>,
-    pub outcome: Outcome,
+    pub outcome: Outcome<E>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -221,7 +227,7 @@ pub struct ConflictSourceUnit {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Outcome {
+pub enum Outcome<E = InvalidSelectorError> {
     Resolved {
         body_index: usize,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -270,12 +276,12 @@ pub enum Outcome {
     /// The selector could not be evaluated: it does not parse, uses an
     /// unsupported construct, or its matches do not map to source units.
     Invalid {
-        error: String,
+        error: E,
     },
     /// The solver stopped (a time limit) before proving the entity unique or
     /// listing its alternatives.
     Undecided {
-        reason: String,
+        reason: selector_ir::SolverStopReason,
     },
 }
 
@@ -326,7 +332,7 @@ pub enum Severity {
     Error,
 }
 
-impl Outcome {
+impl<E: std::fmt::Display> Outcome<E> {
     pub fn no_match() -> Self {
         Self::NoMatch {
             nearest_unclaimed: Vec::new(),
@@ -522,7 +528,7 @@ impl Outcome {
                     _ => "<unnamed>",
                 },
             ),
-            Self::Invalid { error } => error.clone(),
+            Self::Invalid { error } => error.to_string(),
             Self::Undecided { reason } => {
                 format!("was not decided: the solver stopped before deciding it ({reason})")
             }
@@ -588,7 +594,7 @@ impl SelectorKind {
     }
 }
 
-impl SelectorOutcome {
+impl<E: std::fmt::Display> SelectorOutcome<E> {
     pub fn severity(&self) -> Severity {
         self.outcome.severity()
     }
@@ -640,7 +646,7 @@ impl SelectorOutcome {
 }
 
 /// Serialized with its derived `severity` alongside the stored fields.
-impl Serialize for SelectorOutcome {
+impl<E: Serialize + std::fmt::Display> Serialize for SelectorOutcome<E> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut record = serializer.serialize_struct("SelectorOutcome", 6)?;
         record.serialize_field("chunk", &self.chunk)?;
@@ -728,9 +734,9 @@ impl TemplateIdentifiers {
 
 /// A list of outcomes, serialized with a count per [`OutcomeKind`], and
 /// optionally what each matched template's free identifiers mean.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-pub struct SelectorOutcomeReport {
-    pub outcomes: Vec<SelectorOutcome>,
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SelectorOutcomeReport<E = InvalidSelectorError> {
+    pub outcomes: Vec<SelectorOutcome<E>>,
     /// Filled only by `spec validate`.
     #[serde(default)]
     pub templates: Vec<TemplateIdentifiers>,
@@ -775,7 +781,7 @@ pub struct SelectorValidationSummary {
     pub matched: usize,
 }
 
-impl SelectorOutcomeReport {
+impl<E: std::fmt::Display> SelectorOutcomeReport<E> {
     pub fn counts(&self) -> BTreeMap<OutcomeKind, usize> {
         let mut counts = BTreeMap::new();
         for outcome in &self.outcomes {
@@ -873,7 +879,7 @@ impl SelectorOutcomeReport {
     }
 }
 
-impl Serialize for SelectorOutcomeReport {
+impl<E: Serialize + std::fmt::Display> Serialize for SelectorOutcomeReport<E> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut report = serializer.serialize_struct("SelectorOutcomeReport", 4)?;
         report.serialize_field("counts", &self.counts())?;
@@ -916,3 +922,107 @@ impl std::fmt::Display for SelectorFailure {
 }
 
 impl std::error::Error for SelectorFailure {}
+
+impl<E> Default for SelectorOutcomeReport<E> {
+    fn default() -> Self {
+        Self {
+            outcomes: Vec::new(),
+            templates: Vec::new(),
+            validation: None,
+        }
+    }
+}
+
+pub type SelectorIdentity<'a> = (
+    &'a str,
+    &'a Option<Placement>,
+    &'a Option<String>,
+    &'a Option<String>,
+);
+
+impl<E> SelectorOutcome<E> {
+    pub fn identity(&self) -> SelectorIdentity<'_> {
+        (
+            &self.chunk,
+            &self.placement,
+            &self.target_binding,
+            &self.selector_preview,
+        )
+    }
+}
+
+impl SelectorOutcome {
+    pub fn to_report(&self) -> SelectorOutcome<InvalidSelectorReport> {
+        SelectorOutcome {
+            chunk: self.chunk.clone(),
+            placement: self.placement.clone(),
+            target_binding: self.target_binding.clone(),
+            selector_preview: self.selector_preview.clone(),
+            outcome: self.outcome.to_report(),
+        }
+    }
+}
+
+impl SelectorOutcomeReport {
+    pub fn to_report(&self) -> SelectorOutcomeReport<InvalidSelectorReport> {
+        SelectorOutcomeReport {
+            outcomes: self
+                .outcomes
+                .iter()
+                .map(SelectorOutcome::to_report)
+                .collect(),
+            templates: self.templates.clone(),
+            validation: self.validation,
+        }
+    }
+}
+
+impl Outcome {
+    pub fn to_report(&self) -> Outcome<InvalidSelectorReport> {
+        match self {
+            Self::Resolved {
+                body_index,
+                binding,
+                resolved_by,
+            } => Outcome::Resolved {
+                body_index: *body_index,
+                binding: binding.clone(),
+                resolved_by: resolved_by.clone(),
+            },
+            Self::NoMatch { nearest_unclaimed } => Outcome::NoMatch {
+                nearest_unclaimed: nearest_unclaimed.clone(),
+            },
+            Self::Unsatisfiable { group, witness } => Outcome::Unsatisfiable {
+                group: group.clone(),
+                witness: witness.clone(),
+            },
+            Self::Ambiguous {
+                candidates,
+                truncated,
+                differentiators,
+            } => Outcome::Ambiguous {
+                candidates: candidates.clone(),
+                truncated: *truncated,
+                differentiators: differentiators.clone(),
+            },
+            Self::Conflict { with } => Outcome::Conflict { with: with.clone() },
+            Self::TooBroad { count, limit } => Outcome::TooBroad {
+                count: *count,
+                limit: *limit,
+            },
+            Self::DuplicateClaim {
+                binding,
+                declaration,
+                claimed_by,
+            } => Outcome::DuplicateClaim {
+                binding: binding.clone(),
+                declaration: *declaration,
+                claimed_by: claimed_by.clone(),
+            },
+            Self::Invalid { error } => Outcome::Invalid {
+                error: error.to_report(),
+            },
+            Self::Undecided { reason } => Outcome::Undecided { reason: *reason },
+        }
+    }
+}

@@ -494,7 +494,7 @@ pub enum EndpointSelectorFailure {
         expected: Option<usize>,
     },
     Synthesis {
-        reason: SynthesisSkipReason,
+        reason: SynthesisSkipReason<selector_outcome::InvalidSelectorReport>,
     },
 }
 
@@ -1172,7 +1172,9 @@ impl<'a> Analysis<'a> {
                     })
                 }
                 SourceUnitSelectorSynthesis::Skipped { reason } => {
-                    Err(EndpointSelectorFailure::Synthesis { reason })
+                    Err(EndpointSelectorFailure::Synthesis {
+                        reason: reason.to_report(),
+                    })
                 }
             },
         };

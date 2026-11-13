@@ -2,9 +2,9 @@ use super::*;
 
 fn parsed_source_match(
     request_id: &str,
-    selector_label: &'static str,
+    selector_label: SelectorField,
     source_match: &SourceMatch,
-) -> Result<ParsedSourceMatchSelector> {
+) -> MatchResult<ParsedSourceMatchSelector> {
     ParsedSourceMatchSelector::parse(
         request_id,
         format!("<source_match in {request_id}>"),
@@ -16,13 +16,16 @@ fn parsed_source_match(
 pub fn source_match_claim_member_selectors(
     request_id: &str,
     claim: &SourceMatchClaim,
-) -> Result<Vec<BindingGroupMemberSelector>> {
+) -> MatchResult<Vec<BindingGroupMemberSelector>> {
     if claim.bindings.is_empty() {
-        bail!("logical_module {request_id}: source_matches[] must include non-empty `bindings`");
+        return Err(SourceMatchError::claim(
+            request_id,
+            ClaimProblem::EmptyBindings,
+        ));
     }
 
     let source_match = claim.source_match();
-    let parsed = parsed_source_match(request_id, "source_matches[]", &source_match)?;
+    let parsed = parsed_source_match(request_id, SelectorField::SourceMatches, &source_match)?;
     let declared = parsed.declared_binding_names();
     let mut declared_set = BTreeSet::new();
     let mut duplicate_declared = BTreeSet::new();
@@ -32,14 +35,12 @@ pub fn source_match_claim_member_selectors(
         }
     }
     if !duplicate_declared.is_empty() {
-        bail!(
-            "logical_module {request_id}: source_matches[] declares duplicate \
-             selector-local binding names: {}",
-            duplicate_declared
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        return Err(SourceMatchError::claim(
+            request_id,
+            ClaimProblem::DuplicateDeclarations {
+                names: duplicate_declared.into_iter().collect(),
+            },
+        ));
     }
 
     let free = template_free_identifiers(&parsed);
@@ -49,22 +50,31 @@ pub fn source_match_claim_member_selectors(
     for binding in &claim.bindings {
         let local = binding.local();
         if !seen_locals.insert(local.to_string()) {
-            bail!("logical_module {request_id}: source_matches[].bindings repeats `{local}`");
+            return Err(SourceMatchError::claim(
+                request_id,
+                ClaimProblem::DuplicateLocal {
+                    local: local.to_string(),
+                },
+            ));
         }
         let name = binding.name();
         if !seen_names.insert(name.to_string()) {
-            bail!(
-                "logical_module {request_id}: source_matches[].bindings repeats readable name \
-                 `{name}`"
-            );
+            return Err(SourceMatchError::claim(
+                request_id,
+                ClaimProblem::DuplicateName {
+                    name: name.to_string(),
+                },
+            ));
         }
         // A free identifier pins the declaration it binds to: pinning by use
         // site.
         if !declared_set.contains(local) && !free.contains(local) {
-            bail!(
-                "logical_module {request_id}: source_matches[].bindings entry `{local}` is \
-                 neither declared nor used by source_matches[].match"
-            );
+            return Err(SourceMatchError::claim(
+                request_id,
+                ClaimProblem::UnknownLocal {
+                    local: local.to_string(),
+                },
+            ));
         }
         out.push(BindingGroupMemberSelector {
             export_name: name.to_string(),

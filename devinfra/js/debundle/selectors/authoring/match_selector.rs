@@ -68,7 +68,7 @@ pub struct SlackRelaxation {
 pub struct MatchSelectorReport {
     /// The probe's one outcome; `resolved` means the selector is a valid pin.
     #[serde(flatten)]
-    pub outcomes: SelectorOutcomeReport,
+    pub outcomes: SelectorOutcomeReport<selector_outcome::InvalidSelectorReport>,
     /// Looser variants that still pin the same unique target — a non-empty list
     /// flags a likely over-pin. `None` when the selector is not unique (slack is
     /// undefined) or `--no-slack` skipped it.
@@ -104,12 +104,21 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
             path: "<match-selector>".to_string(),
             members: vec![Member {
                 export_name: "<match-selector>".to_string(),
-                selector: MemberSelector::SourceMatch(ParsedSourceMatchSelector::parse(
-                    "<match-selector>",
-                    "<source_match needle in <match-selector>>".to_string(),
-                    &selector,
-                    "source_match",
-                )?),
+                selector: MemberSelector::SourceMatch(
+                    match ParsedSourceMatchSelector::parse(
+                        "<match-selector>",
+                        "<source_match needle in <match-selector>>".to_string(),
+                        &selector,
+                        source_match::SelectorField::SourceMatch,
+                    ) {
+                        Ok(parsed) => parsed,
+                        Err(error) => {
+                            return Ok(Outcome::Invalid {
+                                error: error.into(),
+                            });
+                        }
+                    },
+                ),
             }],
             anonymous_statements: Vec::new(),
         };
@@ -145,7 +154,8 @@ fn run_match_selector_impl(config: &MatchSelectorConfig) -> Result<MatchSelector
             }],
             templates: Vec::new(),
             validation: None,
-        },
+        }
+        .to_report(),
         slack,
     })
 }
@@ -172,7 +182,11 @@ fn compute_slack(
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
             return Ok(false);
         }
-        if resolve(relaxed_match.clone())? == *resolved {
+        if matches!((&resolve(relaxed_match.clone())?, resolved),
+            (Outcome::Resolved { body_index: candidate_index, binding: candidate_binding, resolved_by: candidate_by },
+             Outcome::Resolved { body_index, binding, resolved_by })
+                if (candidate_index, candidate_binding, candidate_by) == (body_index, binding, resolved_by)
+        ) {
             slack.push(SlackRelaxation { relaxed_match });
         }
         Ok(false)

@@ -1484,7 +1484,7 @@ pub struct BackendSolveResult {
     pub status: BackendSolveStatus,
     pub assignment_coverage: BackendAssignmentCoverage,
     pub assignments: Vec<BackendAssignment>,
-    pub diagnostic: Option<String>,
+    pub stop_reason: Option<selector_ir::SolverStopReason>,
     /// Only with [`BackendSolveStatus::Unknown`]: the projected variables
     /// proven to take one value before the backend stopped; each takes the
     /// value it has in every assignment. Every other variable is undecided.

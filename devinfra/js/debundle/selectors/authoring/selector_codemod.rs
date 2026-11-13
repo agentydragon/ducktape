@@ -122,7 +122,7 @@ pub struct SelectorCodemodCandidate {
     /// Extra ranked candidates beyond the primary, when `--candidates N > 1`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub alternatives: Vec<SelectorAlternative>,
-    pub reason: Option<SynthesisSkipReason>,
+    pub reason: Option<SynthesisSkipReason<selector_outcome::InvalidSelectorReport>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -243,7 +243,7 @@ pub struct SynthesizedSourceUnitSelector {
 }
 
 /// Outcome of one [`SourceUnitSelectorRequest`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum SourceUnitSelectorSynthesis {
     Synthesized(SynthesizedSourceUnitSelector),
     /// No uniquely proven selector; `reason` is the nearest miss (the
@@ -364,7 +364,7 @@ fn synthesize_anonymous_statement_selector(
         SYNTHESIS_MODULE,
         format!("<anonymous source_match in {SYNTHESIS_MODULE}>"),
         &selector,
-        "source_match",
+        source_match::SelectorField::SourceMatch,
     )?;
     let resolution = index.chunk.resolve(&[SpecModule {
         path: SYNTHESIS_MODULE.to_string(),
@@ -1552,7 +1552,7 @@ fn parse_member_selector(
     export_name: &str,
     match_source: &str,
 ) -> Result<ParsedSourceMatchSelector> {
-    ParsedSourceMatchSelector::parse(
+    Ok(ParsedSourceMatchSelector::parse(
         SYNTHESIS_MODULE,
         format!("<source_match needle in {SYNTHESIS_MODULE}>"),
         &SourceMatch {
@@ -1561,8 +1561,8 @@ fn parse_member_selector(
             target_binding: Some(export_name.to_string()),
         }
         .selector(),
-        "source_match",
-    )
+        source_match::SelectorField::SourceMatch,
+    )?)
 }
 
 /// Every place `match_source`, projected onto `export_name`, matches in the
@@ -1572,10 +1572,10 @@ fn match_single_member_selector(
     export_name: &str,
     match_source: &str,
 ) -> Result<Vec<MemberBindingMatch>> {
-    index.chunk.matcher().member_candidates(
+    Ok(index.chunk.matcher().member_candidates(
         SYNTHESIS_MODULE,
         &parse_member_selector(export_name, match_source)?,
-    )
+    )?)
 }
 
 /// The proof gate: `match_source`, claiming every target by its export name,
@@ -1816,7 +1816,7 @@ fn skipped_candidate(
         rewritten_holes: Vec::new(),
         replacement_count: 0,
         alternatives: Vec::new(),
-        reason: Some(reason),
+        reason: Some(reason.to_report()),
     }
 }
 

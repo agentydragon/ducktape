@@ -190,6 +190,14 @@ pub struct Unsupported {
     pub context: &'static str,
 }
 
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.context)
+    }
+}
+
+impl std::error::Error for Unsupported {}
+
 fn unsupported<T>(context: &'static str) -> Result<T, Unsupported> {
     Err(Unsupported { context })
 }

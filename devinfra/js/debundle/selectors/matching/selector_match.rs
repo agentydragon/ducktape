@@ -45,6 +45,14 @@ pub struct Unsupported {
     pub reason: &'static str,
 }
 
+impl std::fmt::Display for Unsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.reason)
+    }
+}
+
+impl std::error::Error for Unsupported {}
+
 /// One successful match: where it landed (`site`: an alignment, a window start,
 /// a declarator) and what each of the needle's free identifiers bound to.
 #[derive(Debug, Clone, PartialEq, Eq)]

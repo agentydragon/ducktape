@@ -25,11 +25,6 @@ use selector_ir::{
 };
 use source_identity::SourceUnitId;
 
-/// What every target of a program that admits no assignment reports.
-const UNSATISFIABLE_REASON: &str = "selectors that interact with this one admit no joint \
-    assignment: two or more claim the same place or contradict a relation, and which ones is \
-    not determined";
-
 pub fn solve_with_backend<B>(
     program: &SelectorProgram,
     facts: &SelectorFactStore,
@@ -107,7 +102,7 @@ fn singleton_no_constraint_backend_result(
         status: BackendSolveStatus::Satisfiable,
         assignment_coverage: BackendAssignmentCoverage::TargetSupportComplete,
         assignments: vec![BackendAssignment { values }],
-        diagnostic: None,
+        stop_reason: None,
         fixed_variables: BTreeSet::new(),
     })
 }
@@ -125,7 +120,7 @@ pub enum SelectorBackendSolveError<E> {
     },
     DecodedAssignmentDomainMismatch {
         variable: ConstraintVariableId,
-        expected: &'static str,
+        expected: selector_ir::VariableDomain,
         actual: ConstraintValue,
     },
     MissingSourceUnitFact {
@@ -168,7 +163,7 @@ impl<E: fmt::Display> fmt::Display for SelectorBackendSolveError<E> {
                 actual,
             } => write!(
                 f,
-                "selector backend assignment gave variable {variable:?} a {actual:?} value, expected {expected}"
+                "selector backend assignment gave variable {variable:?} a {actual:?} value, expected {expected:?}"
             ),
             Self::MissingSourceUnitFact { source_unit } => {
                 write!(
@@ -275,8 +270,8 @@ fn decode_unknown_result<E>(
         });
     }
     let reason = result
-        .diagnostic
-        .unwrap_or_else(|| "the selector backend stopped before deciding".to_string());
+        .stop_reason
+        .unwrap_or(selector_ir::SolverStopReason::BackendStopped);
     let mut undecided = BTreeMap::new();
     for projection in &problem.target_projections {
         let fixed = result
@@ -289,12 +284,7 @@ fn decode_unknown_result<E>(
                 Some(TargetBindingProjection::Const(_)) | None => true,
             };
         if !fixed {
-            undecided.insert(
-                projection.target,
-                ClaimOutcome::Undecided {
-                    reason: reason.clone(),
-                },
-            );
+            undecided.insert(projection.target, ClaimOutcome::Undecided { reason });
         }
     }
     decode_satisfying_assignments(
@@ -396,7 +386,7 @@ fn assigned_source_unit<E>(
         Some(ConstraintValue::SourceUnit(source_unit)) => Ok(*source_unit),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
-            expected: "source unit",
+            expected: selector_ir::VariableDomain::SourceUnit,
             actual: value.clone(),
         }),
         None => Err(SelectorBackendSolveError::MissingAssignmentVariable { variable }),
@@ -411,7 +401,7 @@ fn assigned_string<E>(
         Some(ConstraintValue::String(value)) => Ok(value.clone()),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
-            expected: "string",
+            expected: selector_ir::VariableDomain::String,
             actual: value.clone(),
         }),
         None => Err(SelectorBackendSolveError::MissingAssignmentVariable { variable }),
@@ -440,9 +430,7 @@ fn unsatisfiable_result(program: &SelectorProgram) -> SolverResult {
             .iter()
             .map(|target| SolverClaim {
                 target: target.id,
-                outcome: ClaimOutcome::Unsatisfiable {
-                    reason: UNSATISFIABLE_REASON.to_string(),
-                },
+                outcome: ClaimOutcome::Unsatisfiable,
             })
             .collect(),
     }
@@ -536,7 +524,7 @@ mod tests {
                 status: self.status.clone(),
                 assignment_coverage: self.coverage,
                 assignments,
-                diagnostic: None,
+                stop_reason: None,
                 fixed_variables: BTreeSet::new(),
             })
         }
@@ -750,7 +738,7 @@ mod tests {
             assert!(
                 matches!(
                     result.outcome_for(*target),
-                    Some(ClaimOutcome::Unsatisfiable { .. })
+                    Some(ClaimOutcome::Unsatisfiable)
                 ),
                 "{target:?}: {result:?}"
             );
@@ -915,7 +903,7 @@ mod tests {
                 })
                 .collect(),
         };
-        let reason = "CP-SAT stopped before proving complete target support";
+        let reason = selector_ir::SolverStopReason::IncompleteTargetSupport;
 
         let result = decode_backend_result::<Infallible>(
             &program,
@@ -926,7 +914,7 @@ mod tests {
                 assignment_coverage: BackendAssignmentCoverage::Sample,
                 // Both rows agree on `unproven`, but nothing proved it fixed.
                 assignments: vec![row.clone(), row],
-                diagnostic: Some(reason.to_string()),
+                stop_reason: Some(reason),
                 fixed_variables: BTreeSet::from([source_unit_variable(fixed)]),
             },
         )
@@ -935,9 +923,7 @@ mod tests {
         assert_eq!(result.outcome_for(fixed), Some(&min_a_outcome()));
         assert_eq!(
             result.outcome_for(unproven),
-            Some(&ClaimOutcome::Undecided {
-                reason: reason.to_string()
-            })
+            Some(&ClaimOutcome::Undecided { reason })
         );
     }
 

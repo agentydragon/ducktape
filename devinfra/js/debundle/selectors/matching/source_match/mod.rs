@@ -22,7 +22,7 @@
 
 pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) use anyhow::{Context, Result, bail};
+pub(crate) use anyhow::Result;
 pub(crate) use js_ast::item_var_decl;
 pub(crate) use serde::Serialize;
 pub(crate) use spec::{
@@ -51,13 +51,18 @@ pub(crate) fn selector_mode(selector: &AnonymousStatementSelector) -> selector_m
     }
 }
 
-/// `map_err` adapter turning a matcher [`selector_match::Unsupported`] into an
-/// error prefixed with the `stage` that hit it.
-pub(crate) fn unsupported_error(
-    stage: &'static str,
-) -> impl Fn(selector_match::Unsupported) -> anyhow::Error {
-    move |unsupported| anyhow::anyhow!("{stage}: {}", unsupported.reason)
+/// Keep the matcher's native unsupported cause intact.
+pub(crate) fn unsupported_error(source: selector_match::Unsupported) -> SourceMatchError {
+    SourceMatchError::Unsupported { source }
 }
+
+mod error;
+pub use error::{
+    AnonymousProblem, AnythingPosition, BindingProblem, ClaimProblem, MatcherError,
+    MatcherInvariant, ProjectionHole, ProjectionIndexKind, SelectorField, SourceMatchError,
+};
+
+pub(crate) type MatchResult<T> = std::result::Result<T, SourceMatchError>;
 
 mod anonymous_statement;
 mod binding_resolution;
