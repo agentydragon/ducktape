@@ -38,9 +38,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   stay authenticated while it quiesces and seals final Session history. Revocation takes effect when
   the record is removed, with its Sandbox or on stop, or its binding is cleared or replaced.
   Replaced or stale credentials fail before policy evaluation. There is no cached identity.
-- The resulting policy subject is exactly the record's subject: a ServiceAccount, for a Sandbox its
-  own at `Sandbox.namespace/Sandbox.name`, read live for its UID; or an `Identity` in the proxy's
-  policy namespace (`rules_namespace`), read live and fenced on the UID the record names. Neither a
+- The resulting policy subject is exactly the record's Identity in the proxy's policy namespace
+  (`rules_namespace`), read live and fenced on the UID the record names. Neither a
   certificate subject DN nor a caller-supplied header selects the subject, and the proxy does not
   read Pods or Sandboxes for it. A bound record that names no Pod yet does not authenticate. An
   Identity's Pod is provenance, never its subject. A subject no binding names reaches no rule.

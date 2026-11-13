@@ -150,7 +150,7 @@ func newLab(t *testing.T) *lab {
 	intercept, interceptRoot := makeCA(t, "interception")
 	upstreamCA, upstreamRoot := makeCA(t, "upstream")
 	name := "runner-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-	workload := workloadauthtesting.NewWorkload(t, kube, runner.Namespace, name)
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, runner.Namespace, name, policyNamespace).Workload
 	runner = workload.Principal.Account
 	runnerPod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: runner.Namespace, Name: workload.Principal.PodName, UID: types.UID(workload.Principal.PodUID),
@@ -187,6 +187,7 @@ func newLab(t *testing.T) *lab {
 		lookup:         func(string) []netip.Addr { return []netip.Addr{netip.MustParseAddr("127.0.0.1")} },
 	}
 	l.index.Health.MarkSynced()
+	l.index.Rules.PutIdentity(workload.Identity)
 	l.index.PutCredential(keyCredential)
 	l.index.PutSecret(resources.NewSecret("keys", map[string]string{"key": "real-secret"}))
 	l.allow(policyapi.Rule{
@@ -226,7 +227,7 @@ func (l *lab) allow(rules ...policyapi.Rule) {
 	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: policyNamespace},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.Subject{Namespace: runner.Namespace, Name: runner.Name}, PolicySets: []string{"egress"},
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: l.workload.Identity.Name}}, PolicySets: []string{"egress"},
 		},
 	})
 }

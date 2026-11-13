@@ -75,6 +75,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	if !record.DeletionTimestamp.IsZero() {
 		return ctrl.Result{}, nil
 	}
+	if record.Spec.Subject.Identity == nil || record.Spec.Subject.Identity.Name == "" {
+		status := *record.Status.DeepCopy()
+		status.ObservedGeneration = record.Generation
+		meta.SetStatusCondition(&status.Conditions, condition(&record, outcome{
+			reason: "IdentityRequired", message: "WorkloadCredential has no Identity subject",
+		}))
+		return r.writeStatus(ctx, &record, status, ctrl.Result{})
+	}
 
 	status := *record.Status.DeepCopy()
 	// A credential ID lives exactly as long as the binding it was accepted for.

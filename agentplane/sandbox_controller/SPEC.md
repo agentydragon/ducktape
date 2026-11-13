@@ -220,10 +220,11 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - Its Pods run as the namespace's `default` ServiceAccount with `automountServiceAccountToken: false`,
   whatever the template names. A VM's launcher runs the same way; the launcher admission
   authenticates it through the VM's owner chain and the Sandbox's `WorkloadCredential`.
-- Its `WorkloadCredential`'s subject is the Identity by name and UID, read live before each start.
+- Its `WorkloadCredential`'s required subject is the Identity by name and UID, read live before
+  each start.
 - A Sandbox-owned `WorkloadCredential` without an Identity subject is revoked before the next start;
   a running Pod with such a record is replaced, and a running VM is halted. The controller never
-  falls back to a ServiceAccount subject.
+  falls back to a ServiceAccount subject, including one with the Sandbox's name.
 - A Sandbox naming no Identity, or one that does not exist or is being deleted, starts nothing and
   has no `WorkloadCredential`: `Running` is False with `IdentityMissing`, and with no workload
   `status.stopStage` is `Stopped`, so admission lets it be bound. An Identity appearing retries it.

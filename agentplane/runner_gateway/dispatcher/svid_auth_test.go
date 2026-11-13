@@ -33,19 +33,20 @@ const workloadTestNamespace = "workload-test"
 
 type svidAdmissionProbe struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	t         *testing.T
-	principal auth.Principal
-	calls     int
+	t        *testing.T
+	identity auth.IdentityPrincipal
+	calls    int
 }
 
 func (p *svidAdmissionProbe) check(ctx context.Context) error {
 	p.t.Helper()
-	caller, err := auth.Caller(ctx)
+	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return err
 	}
-	if caller != p.principal {
-		p.t.Errorf("admitted caller = %+v, want Sandbox principal %+v", caller, p.principal)
+	identity, ok := admission.(auth.IdentityAdmission)
+	if !ok || identity.Caller != p.identity {
+		p.t.Errorf("admitted caller = %+v, want Identity subject %+v", admission, p.identity)
 	}
 	p.calls++
 	return nil
@@ -83,7 +84,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	workload := workloadauthtesting.NewWorkload(t, api, workloadTestNamespace, "sandbox-a")
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, workloadTestNamespace, "sandbox-a", workloadTestNamespace).Workload
 	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +111,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe := &svidAdmissionProbe{t: t, principal: workload.Principal}
+	probe := &svidAdmissionProbe{t: t, identity: workload.Subject}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, probe)
 	httpServer := &http.Server{
@@ -178,26 +179,39 @@ type mixedAdmissionProbe struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	t        *testing.T
 	expected map[auth.Account]auth.Principal
+	identity auth.IdentityPrincipal
 	calls    atomic.Int32
 }
 
 func (p *mixedAdmissionProbe) ListSessions(ctx context.Context, _ *dispatcherpb.ListSessionsRequest) (*dispatcherpb.ListSessionsResponse, error) {
 	p.t.Helper()
-	caller, err := auth.AdmittedReviewedCaller(ctx)
+	admission, err := auth.Admitted(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if caller.ServiceAccount == nil || caller.ServiceAccount.GetAccount() == nil || caller.Pod == nil {
-		p.t.Errorf("admitted caller lacks account or Pod proof: %+v", caller)
-		return nil, status.Error(codes.PermissionDenied, "caller proof is incomplete")
-	}
-	account := auth.Account{
-		Namespace: caller.ServiceAccount.GetAccount().GetNamespace(),
-		Name:      caller.ServiceAccount.GetAccount().GetName(),
-	}
-	expected, ok := p.expected[account]
-	if !ok || caller.ServiceAccount.GetUid() != expected.ServiceAccountUID || *caller.Pod != expected {
-		p.t.Errorf("admitted caller = %+v, want account proof %+v", caller, expected)
+	switch caller := admission.(type) {
+	case auth.IdentityAdmission:
+		if caller.Caller != p.identity {
+			p.t.Errorf("admitted Identity = %+v, want %+v", caller.Caller, p.identity)
+			return nil, status.Error(codes.PermissionDenied, "unexpected Identity")
+		}
+	case auth.DirectAdmission:
+		reviewed, err := auth.AdmittedReviewedCaller(ctx)
+		if err != nil || reviewed.ServiceAccount == nil || reviewed.ServiceAccount.GetAccount() == nil || reviewed.Pod == nil {
+			p.t.Errorf("admitted caller lacks account or Pod proof: %+v, %v", reviewed, err)
+			return nil, status.Error(codes.PermissionDenied, "caller proof is incomplete")
+		}
+		account := auth.Account{
+			Namespace: reviewed.ServiceAccount.GetAccount().GetNamespace(),
+			Name:      reviewed.ServiceAccount.GetAccount().GetName(),
+		}
+		expected, ok := p.expected[account]
+		if !ok || reviewed.ServiceAccount.GetUid() != expected.ServiceAccountUID || *reviewed.Pod != expected {
+			p.t.Errorf("admitted caller = %+v, want account proof %+v", reviewed, expected)
+			return nil, status.Error(codes.PermissionDenied, "unexpected caller")
+		}
+	default:
+		p.t.Errorf("unexpected admission type %T", admission)
 		return nil, status.Error(codes.PermissionDenied, "unexpected caller")
 	}
 	p.calls.Add(1)
@@ -214,7 +228,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 			t.Error(err)
 		}
 	})
-	workload := workloadauthtesting.NewWorkload(t, api, workloadTestNamespace, "sandbox-a")
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, workloadTestNamespace, "sandbox-a", workloadTestNamespace).Workload
 	svids, err := auth.NewSVIDResolver(workload.Objects, []string{workloadTestNamespace}, &resolver.Identities{PolicyNamespace: workloadTestNamespace})
 	if err != nil {
 		t.Fatal(err)
@@ -262,13 +276,14 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(auth.ReviewedServiceAccount(workloadAuth))
+	methods := Methods(auth.ReviewedServiceAccountOrIdentity(workloadAuth))
 	probe := &mixedAdmissionProbe{
 		t: t,
 		expected: map[auth.Account]auth.Principal{
 			workload.Principal.Account: workload.Principal,
 			bearerAccount:              bearerPrincipal,
 		},
+		identity: workload.Subject,
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, probe)

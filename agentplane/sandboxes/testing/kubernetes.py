@@ -107,6 +107,20 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
     core = k8s_client.CoreV1Api(server.api)
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
     await core.create_namespace(k8s_client.V1Namespace(metadata=k8s_client.V1ObjectMeta(name=namespace)))
+    identity = await custom.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        namespace,
+        "identities",
+        {
+            "apiVersion": f"{GROUP}/{VERSION}",
+            "kind": "Identity",
+            "metadata": {"name": f"{name}-identity"},
+            "spec": {"description": "Sandbox fixture execution Identity"},
+        },
+    )
+    identity_name = identity["metadata"]["name"]
+    identity_uid = identity["metadata"]["uid"]
     created = await custom.create_namespaced_custom_object(
         GROUP,
         VERSION,
@@ -116,7 +130,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
             "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
             "kind": sandbox_resource.SANDBOX_KIND,
             "metadata": {"name": name},
-            "spec": {"template": "test-template", "running": True},
+            "spec": {"template": "test-template", "running": True, "identity": {"name": identity_name}},
         },
     )
     uid = created["metadata"]["uid"]
@@ -188,7 +202,7 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
                 ],
             },
             "spec": {
-                "subject": {"serviceAccount": name},
+                "subject": {"identity": {"name": identity_name, "uid": identity_uid}},
                 "binding": {"podUID": pod.metadata.uid},
                 "pod": {"name": name, "uid": pod.metadata.uid},
             },

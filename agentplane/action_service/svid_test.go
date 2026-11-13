@@ -33,11 +33,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
-	owner := workloadauthtesting.NewWorkload(t, kube, policyNamespace, "svid-"+uuid.NewString())
-	other := workloadauthtesting.NewWorkload(t, kube, policyNamespace, "svid-"+uuid.NewString())
+func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
+	owner := workloadauthtesting.NewIdentityWorkload(t, kube, policyNamespace, "svid-"+uuid.NewString(), policyNamespace).Workload
+	other := workloadauthtesting.NewIdentityWorkload(t, kube, policyNamespace, "svid-"+uuid.NewString(), policyNamespace).Workload
+	set := "test-identity-set-" + uuid.NewString()
+	if err := owner.Objects.Create(t.Context(), &policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: set},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: policies.RuleType, Policy: &policyapi.ActionPolicy{
+			Type: string(store.PolicyExactActions), Actions: map[string]policyapi.ActionNames{"test-group": {"test-action"}},
+		}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	for _, workload := range []workloadauthtesting.Workload{owner, other} {
 		setCallerLabel(t, workload.Principal.Account, true)
+		binding := &policyapi.PolicyBinding{
+			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-identity-binding-" + uuid.NewString()},
+			Spec: policyapi.PolicyBindingSpec{
+				Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: workload.Identity.Name}}, PolicySets: []string{set},
+			},
+		}
+		if err := workload.Objects.Create(t.Context(), binding); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ca := transporttesting.NewCA(t)
 	serving := ca.IssueWithUsage(t, environment_runtime_transport.ActionsURI, x509.ExtKeyUsageServerAuth)
@@ -91,8 +109,8 @@ func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 		defer cancel()
 		response, err := action_servicepb.NewActionServiceClient(conn).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
-		if err != nil || len(response.GetActionRequests()) != 1-i {
-			t.Fatalf("SVID caller %s reads %v, error %v", workload.Sandbox.Name, response, err)
+		if err != nil || len(response.GetActionRequests()) != 0 {
+			t.Fatalf("Identity caller %s claimed a same-named ServiceAccount request: %v, %v", workload.Identity.Name, response, err)
 		}
 		if i == 0 {
 			mixed := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
@@ -126,14 +144,6 @@ func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
 			}
 			if _, err := watch.Recv(); status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("deleted Sandbox on existing watch: %v", err)
-			}
-		} else {
-			setCallerLabel(t, workload.Principal.Account, false)
-			if err := wait.PollUntilContextTimeout(ctx, 20*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
-				_, err := action_servicepb.NewActionServiceClient(conn).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
-				return status.Code(err) == codes.Unauthenticated, nil
-			}); err != nil {
-				t.Fatal("SVID caller retained access after caller-label removal", err)
 			}
 		}
 	}

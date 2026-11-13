@@ -25,7 +25,7 @@ import (
 )
 
 func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
-	workload := workloadauthtesting.NewWorkload(t, api, testNamespace, "llm-svid")
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-svid", testPolicyNamespace).Workload
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
@@ -60,11 +60,11 @@ func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
 	if err := json.Unmarshal([]byte(forwarded.Get("x-litellm-spend-logs-metadata")), &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata["agentplane.namespace"] != workload.Principal.Account.Namespace ||
-		metadata["agentplane.service_account"] != workload.Principal.Account.Name ||
-		metadata["agentplane.pod_name"] != workload.Principal.PodName ||
-		metadata["agentplane.pod_uid"] != workload.Principal.PodUID {
-		t.Fatalf("forwarded identity metadata = %#v, want live Sandbox principal %#v", metadata, workload.Principal)
+	if metadata["agentplane.identity"] != workload.Identity.Name ||
+		metadata["agentplane.identity_uid"] != string(workload.Identity.UID) ||
+		metadata["agentplane.pod_name"] != workload.Subject.PodName ||
+		metadata["agentplane.pod_uid"] != workload.Subject.PodUID {
+		t.Fatalf("forwarded Identity metadata = %#v, want live Sandbox Identity %#v", metadata, workload.Subject)
 	}
 	if forwarded.Get("x-agentplane-subject") != "" {
 		t.Fatalf("forwarded caller identity header = %q, want stripped", forwarded.Get("x-agentplane-subject"))
@@ -108,7 +108,7 @@ func TestWorkloadListenerAttributesAnIdentityCallerByItsIdentity(t *testing.T) {
 }
 
 func TestWorkloadListenerDoesNotFallBackToValidBearerForStaleSVID(t *testing.T) {
-	workload := workloadauthtesting.NewWorkload(t, api, testNamespace, "llm-stale-svid")
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-stale-svid", testPolicyNamespace).Workload
 	backend := newFakeLiteLLM()
 	backendServer := newBackendServer(t, backend)
 	reviews := &countingTokenReviews{delegate: api.TokenReviews()}

@@ -254,8 +254,8 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	}
 	defer secured.Close()
 	response, err := egressrulespb.NewEgressRulesClient(secured).GetRules(context.Background(), &egressrulespb.GetRulesRequest{})
-	if err != nil || response.GetSubject().GetNamespace() != "test-ns" || response.GetSubject().GetName() != "test-sandbox" ||
-		len(response.GetPolicies()) != 0 {
+	if err != nil || response.GetIdentity().GetName() != testAgent.Name || response.GetSubject() != nil ||
+		len(response.GetPolicies()) != 1 || response.GetPolicies()[0].GetName() != "test-agent-egress" {
 		t.Fatalf("SVID Rules response: %v, %v", response, err)
 	}
 	// An Identity caller is answered with the rules of the bindings naming that Identity.
@@ -353,7 +353,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 			APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: "test-sandbox", UID: "00000000-0000-4000-8000-000000000002", Controller: new(true),
 		}}},
 		Spec: workloadapi.WorkloadCredentialSpec{
-			Subject: workloadapi.Subject{ServiceAccount: "test-sandbox"}, Binding: pod,
+			Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: testAgent.Name, UID: testAgent.UID}}, Binding: pod,
 			Pod: &workloadapi.PodRef{Name: "runner", UID: pod.PodUID},
 		},
 		Status: workloadapi.WorkloadCredentialStatus{CredentialID: runnerCredentialID, URI: uri, AcceptedBinding: pod},

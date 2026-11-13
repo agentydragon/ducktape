@@ -21,18 +21,23 @@ import (
 )
 
 type Workload struct {
-	Objects client.Client
-	Sandbox *sandboxapi.Sandbox
+	Objects  client.Client
+	Sandbox  *sandboxapi.Sandbox
+	Identity *policyapi.Identity
 	// Record is the Sandbox's WorkloadCredential, issued and accepted for the Pod.
 	Record    *workloadapi.WorkloadCredential
 	Principal auth.Principal
+	Subject   auth.IdentityPrincipal
 	URI       string
 }
 
-// NewWorkload records a Sandbox, its ServiceAccount, a Pod running as it, and the WorkloadCredential
-// the Sandbox Controller requests and the issuer accepts for that Pod, which a service's resolver must
-// verify. No controller, issuer or kubelet runs.
+// NewWorkload records a Sandbox, its Pod and Identity credential. Principal is the separate
+// ServiceAccount identity a TokenReview of that Pod proves. No controller, issuer or kubelet runs.
 func NewWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name string) Workload {
+	return newWorkload(t, api, namespace, name, namespace)
+}
+
+func newWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, policyNamespace string) Workload {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
@@ -63,13 +68,23 @@ func NewWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name string
 	if err := objects.Get(t.Context(), client.ObjectKeyFromObject(sandbox), &account); err != nil {
 		t.Fatal(err)
 	}
+	if err := objects.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: policyNamespace}}); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatal(err)
+	}
+	identity := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
+		Spec:       policyapi.IdentitySpec{Description: "test workload identity " + name},
+	}
+	if err := objects.Create(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
 	record := &workloadapi.WorkloadCredential{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace, Name: name,
 			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind))},
 		},
 		Spec: workloadapi.WorkloadCredentialSpec{
-			Subject: workloadapi.Subject{ServiceAccount: name},
+			Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: identity.Name, UID: identity.UID}},
 			Binding: &workloadapi.Binding{PodUID: pod.UID},
 			Pod:     &workloadapi.PodRef{Name: pod.Name, UID: pod.UID},
 		},
@@ -77,9 +92,10 @@ func NewWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name string
 	if err := objects.Create(t.Context(), record); err != nil {
 		t.Fatal(err)
 	}
-	workload := Workload{Objects: objects, Sandbox: sandbox, Record: record}
+	workload := Workload{Objects: objects, Sandbox: sandbox, Identity: identity, Record: record}
 	workload.URI = workload.Issue(t, strings.ReplaceAll(uuid.NewString(), "-", ""))
 	workload.Principal = auth.Principal{Account: auth.Account{Namespace: namespace, Name: name}, ServiceAccountUID: string(account.UID), PodName: pod.Name, PodUID: string(pod.UID)}
+	workload.Subject = identitySubject(workload, identity)
 	return workload
 }
 
@@ -127,30 +143,13 @@ func (w Workload) Delete(t *testing.T) {
 
 // IdentityWorkload is a Workload whose record names an Identity in the policy namespace. Its
 // Principal is still what a TokenReview of its Pod's token proves.
-type IdentityWorkload struct {
-	Workload
-	Identity *policyapi.Identity
-	// Subject is what a verifier given the policy namespace resolves its SVID to.
-	Subject auth.IdentityPrincipal
-}
+type IdentityWorkload struct{ Workload }
 
 // NewIdentityWorkload is NewWorkload with the record naming a new Identity in policyNamespace,
 // which it creates if missing.
 func NewIdentityWorkload(t *testing.T, api *kubeapiserver.Server, namespace, name, policyNamespace string) IdentityWorkload {
 	t.Helper()
-	workload := NewWorkload(t, api, namespace, name)
-	ctx := t.Context()
-	if err := workload.Objects.Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: policyNamespace}}); err != nil && !apierrors.IsAlreadyExists(err) {
-		t.Fatal(err)
-	}
-	identity := &policyapi.Identity{
-		ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: name},
-		Spec:       policyapi.IdentitySpec{Description: "test agent " + name},
-	}
-	if err := workload.Objects.Create(ctx, identity); err != nil {
-		t.Fatal(err)
-	}
-	return RunAs(t, workload, identity)
+	return IdentityWorkload{Workload: newWorkload(t, api, namespace, name, policyNamespace)}
 }
 
 // RunAs replaces workload's record with one naming identity, an existing Identity, as a Sandbox
@@ -171,17 +170,19 @@ func RunAs(t *testing.T, workload Workload, identity *policyapi.Identity) Identi
 	if err := workload.Objects.Create(ctx, workload.Record); err != nil {
 		t.Fatal(err)
 	}
+	workload.Identity = identity
 	workload.URI = workload.Issue(t, strings.ReplaceAll(uuid.NewString(), "-", ""))
-	return IdentityWorkload{
-		Workload: workload,
-		Identity: identity,
-		Subject: auth.IdentityPrincipal{
-			Identity: auth.Identity{Name: identity.Name, UID: string(identity.UID)},
-			Workload: auth.Workload{Namespace: record.Namespace, Name: record.Name, Owner: auth.ControllerOwner{
-				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
-				Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID),
-			}},
-			PodName: workload.Principal.PodName, PodUID: workload.Principal.PodUID,
-		},
+	workload.Subject = identitySubject(workload, identity)
+	return IdentityWorkload{Workload: workload}
+}
+
+func identitySubject(workload Workload, identity *policyapi.Identity) auth.IdentityPrincipal {
+	return auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: identity.Name, UID: string(identity.UID)},
+		Workload: auth.Workload{Namespace: workload.Record.Namespace, Name: workload.Record.Name, Owner: auth.ControllerOwner{
+			APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind,
+			Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID),
+		}},
+		PodName: workload.Principal.PodName, PodUID: workload.Principal.PodUID,
 	}
 }

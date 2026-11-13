@@ -22,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
@@ -143,7 +144,7 @@ func newResolver(t *testing.T, reader client.Reader) *resolver.Resolver {
 
 func podSpec(uid types.UID) workloadapi.WorkloadCredentialSpec {
 	return workloadapi.WorkloadCredentialSpec{
-		Subject: workloadapi.Subject{ServiceAccount: subjectAccount}, Binding: &workloadapi.Binding{PodUID: uid},
+		Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: subjectIdentity}}, Binding: &workloadapi.Binding{PodUID: uid},
 		Pod: &workloadapi.PodRef{Name: "test-pod", UID: uid},
 	}
 }
@@ -163,15 +164,6 @@ func identityUID(t *testing.T, namespace string) types.UID {
 	return identity.UID
 }
 
-func subjectUID(t *testing.T, namespace string) types.UID {
-	t.Helper()
-	var account corev1.ServiceAccount
-	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: namespace, Name: subjectAccount}, &account); err != nil {
-		t.Fatal(err)
-	}
-	return account.UID
-}
-
 func requireRefused(t *testing.T, resolves *resolver.Resolver, leaf *x509.Certificate) {
 	t.Helper()
 	if peer, err := resolves.Resolve(t.Context(), leaf); !errors.Is(err, resolver.ErrRefused) {
@@ -179,7 +171,7 @@ func requireRefused(t *testing.T, resolves *resolver.Resolver, leaf *x509.Certif
 	}
 }
 
-func TestAnAcceptedIncarnationResolvesToItsSubject(t *testing.T) {
+func TestAnAcceptedIncarnationResolvesToItsIdentity(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	pod := types.UID("11111111-1111-4111-8111-111111111111")
 	owned := issue(t, ca, servedNamespace, "test-accepted", sandboxOwner("test-accepted"), podSpec(pod), &workloadapi.Binding{PodUID: pod}, credentialIDs[0])
@@ -187,10 +179,39 @@ func TestAnAcceptedIncarnationResolvesToItsSubject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var want resolver.Subject = resolver.ServiceAccount{Namespace: servedNamespace, Name: subjectAccount, UID: subjectUID(t, servedNamespace)}
+	want := resolver.Identity{Name: subjectIdentity, UID: identityUID(t, policyNamespace)}
 	if peer.Subject != want || peer.Binding == nil || peer.Binding.PodUID != pod || peer.Owner == nil || peer.Owner.Kind != "Sandbox" ||
 		peer.Workload != (transport.WorkloadID{Namespace: servedNamespace, Name: "test-accepted", CredentialID: credentialIDs[0]}) {
 		t.Fatalf("resolved %+v", peer)
+	}
+}
+
+func TestLegacyCredentialWithoutIdentityIsRefusedAndPreserved(t *testing.T) {
+	ca := transporttesting.NewCA(t)
+	pod := types.UID("15151515-1515-4151-8151-151515151515")
+	accepted := &workloadapi.Binding{PodUID: pod}
+	issuedRecord := issue(t, ca, servedNamespace, "test-legacy-subject", sandboxOwner("test-legacy-subject"),
+		identityPodSpec(pod, identityUID(t, policyNamespace)), accepted, credentialIDs[0])
+
+	// A stored ServiceAccount-subject record has no Identity after the current typed API drops the
+	// retired field. It remains stored, but it can no longer resolve to an authenticated subject.
+	legacy := issuedRecord.record.DeepCopy()
+	legacy.Spec.Subject.Identity = nil
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{workloadapi.AddToScheme, policyapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reader := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy).Build()
+	resolves, err := resolver.New(reader, []string{servedNamespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireRefused(t, resolves, issuedRecord.leaf)
+	var retained workloadapi.WorkloadCredential
+	if err := reader.Get(t.Context(), types.NamespacedName{Namespace: servedNamespace, Name: legacy.Name}, &retained); err != nil || retained.Spec.Subject.Identity != nil {
+		t.Fatalf("legacy record = %+v, %v; want retained without an Identity", retained.Spec.Subject, err)
 	}
 }
 
@@ -281,9 +302,11 @@ func TestARecordNamingNoUIDFollowsTheLiveIdentity(t *testing.T) {
 // A standing workload has no owner and no binding; its record alone is its incarnation.
 func TestAStandingWorkloadNeedsNoBinding(t *testing.T) {
 	ca := transporttesting.NewCA(t)
-	standing := issue(t, ca, servedNamespace, "test-standing", nil, workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: subjectAccount}}, nil, credentialIDs[0])
+	standing := issue(t, ca, servedNamespace, "test-standing", nil, workloadapi.WorkloadCredentialSpec{
+		Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: subjectIdentity}},
+	}, nil, credentialIDs[0])
 	peer, err := newResolver(t, objects).Resolve(t.Context(), standing.leaf)
-	if subject, ok := peer.Subject.(resolver.ServiceAccount); err != nil || peer.Binding != nil || peer.Owner != nil || !ok || subject.UID != subjectUID(t, servedNamespace) {
+	if err != nil || peer.Binding != nil || peer.Owner != nil || peer.Subject != (resolver.Identity{Name: subjectIdentity, UID: identityUID(t, policyNamespace)}) {
 		t.Fatalf("resolved %+v, %v", peer, err)
 	}
 }
@@ -340,11 +363,13 @@ func TestRefusals(t *testing.T) {
 			return issue(t, ca, servedNamespace, "test-unaccepted", sandboxOwner("test-unaccepted"), podSpec(pod), nil, credentialIDs[0]).leaf
 		},
 		"an owned record before its incarnation exists": func(t *testing.T) *x509.Certificate {
-			spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: subjectAccount}}
+			spec := podSpec(pod)
+			spec.Binding, spec.Pod = nil, nil
 			return issue(t, ca, servedNamespace, "test-unbound", sandboxOwner("test-unbound"), spec, nil, credentialIDs[0]).leaf
 		},
 		"a binding the owner cleared": func(t *testing.T) *x509.Certificate {
-			spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: subjectAccount}}
+			spec := podSpec(pod)
+			spec.Binding, spec.Pod = nil, nil
 			return issue(t, ca, servedNamespace, "test-cleared", sandboxOwner("test-cleared"), spec, accepted, credentialIDs[0]).leaf
 		},
 		"a binding the owner replaced": func(t *testing.T) *x509.Certificate {
@@ -352,11 +377,6 @@ func TestRefusals(t *testing.T) {
 		},
 		"an ownerless record with a binding but no acceptance": func(t *testing.T) *x509.Certificate {
 			return issue(t, ca, servedNamespace, "test-ownerless", nil, podSpec(pod), nil, credentialIDs[0]).leaf
-		},
-		"a subject ServiceAccount that does not exist": func(t *testing.T) *x509.Certificate {
-			spec := podSpec(pod)
-			spec.Subject.ServiceAccount = "test-missing-account"
-			return issue(t, ca, servedNamespace, "test-no-account", sandboxOwner("test-no-account"), spec, accepted, credentialIDs[0]).leaf
 		},
 		"an Identity subject with another UID": func(t *testing.T) *x509.Certificate {
 			return issue(t, ca, servedNamespace, "test-identity-uid", sandboxOwner("test-identity-uid"), identityPodSpec(pod, other), accepted, credentialIDs[0]).leaf
@@ -462,7 +482,7 @@ func TestAForwardedPodTokenMustComeFromTheAcceptedPod(t *testing.T) {
 
 	// A VMI's tokens come from its virt-launcher Pod, once its owner has named it.
 	vmi := &workloadapi.Binding{VMIUID: "77777777-7777-4777-8777-777777777777"}
-	spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: subjectAccount}, Binding: vmi}
+	spec := workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: subjectIdentity}}, Binding: vmi}
 	unnamed := issue(t, ca, servedNamespace, "test-vmi-unnamed", sandboxOwner("test-vmi-unnamed"), spec, vmi, credentialIDs[0])
 	if peer, err = resolves.Resolve(ctx, unnamed.leaf); err != nil || peer.Pod != nil {
 		t.Fatalf("resolved %+v, %v", peer, err)

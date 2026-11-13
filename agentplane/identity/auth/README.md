@@ -22,15 +22,15 @@ may take that long to affect a cached token. Rejections and review failures are 
 `SVIDResolver` accepts a leaf already verified by the shared workload TLS listener, requires its
 validity and explicit clientAuth EKU, and resolves it through the live `WorkloadCredential` it names
 ([how a verifier resolves a peer](../../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)).
-It returns the same `Principal` shape: the record's ServiceAccount subject with its canonical UID and,
-when the record's owner accepted one, the Pod name/UID. A record naming an `Identity` subject is
-refused until `Principal` has an Identity form. There is no identity reference or caller header.
-Deleting the record or replacing its credential ID revokes the certificate. `Resolver.WithListenerAuthentication` selects this path only when the
-listener allows SPIFFE. Listener credential selection does not grant method authorization, and
-delegated calls still require their explicit per-method grant. A TLS peer cannot be combined with a
-bearer or delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
-`SVIDResolver.IdentitySubjectsOnly` refuses records naming a ServiceAccount, for a listener whose
-ServiceAccount callers keep presenting bearers (History's read API).
+Every record names an Identity in the verifier's policy namespace; the returned `IdentityPrincipal`
+contains that Identity's live UID and, when the record's owner accepted one, the Pod name/UID. A
+legacy record without an Identity is retained but refused; it is never reinterpreted as a
+same-named ServiceAccount. ServiceAccount principals come only from TokenReview. Deleting the
+record or replacing its credential ID revokes the certificate. `Resolver.WithListenerAuthentication`
+selects this path only when the listener allows SPIFFE. Listener credential selection does not grant
+method authorization, and delegated calls still require their explicit per-method grant. A TLS peer
+cannot be combined with a bearer or delegation envelope. Stream revalidation repeats the live lookup
+and leaf validity checks.
 
 History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
 terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without

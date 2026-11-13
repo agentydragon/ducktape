@@ -14,6 +14,7 @@ import (
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/go-logr/logr"
@@ -24,9 +25,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
@@ -82,7 +85,7 @@ func run(m *testing.M) int {
 
 func startIssuer(ctx context.Context, server *kubeapiserver.Server) (<-chan error, error) {
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			return nil, err
 		}
@@ -95,6 +98,12 @@ func startIssuer(ctx context.Context, server *kubeapiserver.Server) (<-chan erro
 		return nil, err
 	}
 	if err := objects.Create(ctx, &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: subjectAccount}}); err != nil {
+		return nil, err
+	}
+	if err := objects.Create(ctx, &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: subjectAccount},
+		Spec:       policyapi.IdentitySpec{Description: "test workload identity"},
+	}); err != nil {
 		return nil, err
 	}
 	mgr, err := ctrl.NewManager(server.Config, ctrl.Options{
@@ -165,6 +174,198 @@ func certificate(t *testing.T, name string) (*unstructured.Unstructured, error) 
 	t.Helper()
 	certificate := NewCertificate()
 	return certificate, objects.Get(t.Context(), types.NamespacedName{Namespace: testNamespace, Name: name}, certificate)
+}
+
+func TestIssuerLeavesLegacyCredentialWithoutIdentityUnissued(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	legacy := &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-legacy-without-identity"},
+		Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{}},
+	}
+	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy).
+		WithStatusSubresource(&workloadapi.WorkloadCredential{}).Build()
+	reconciler := &Reconciler{Client: objects, APIReader: objects, Issuer: testIssuer}
+	if _, err := reconciler.Reconcile(t.Context(), ctrl.Request{NamespacedName: types.NamespacedName{
+		Namespace: testNamespace, Name: legacy.Name,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	var retained workloadapi.WorkloadCredential
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: testNamespace, Name: legacy.Name}, &retained); err != nil {
+		t.Fatalf("legacy record was removed: %v", err)
+	}
+	if retained.Status.CredentialID != "" || retained.Status.ObservedGeneration != retained.Generation {
+		t.Fatalf("legacy record status = %+v; want observed but unissued", retained.Status)
+	}
+	var ready *metav1.Condition
+	for i := range retained.Status.Conditions {
+		if retained.Status.Conditions[i].Type == workloadapi.ConditionReady {
+			ready = &retained.Status.Conditions[i]
+		}
+	}
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "IdentityRequired" {
+		t.Fatalf("Ready condition = %+v; want IdentityRequired", ready)
+	}
+	var certificates unstructured.UnstructuredList
+	certificates.SetGroupVersionKind(schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "CertificateList"})
+	if err := objects.List(t.Context(), &certificates, client.InNamespace(testNamespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(certificates.Items) != 0 {
+		t.Fatalf("legacy record created Certificates: %v", certificates.Items)
+	}
+}
+
+func TestIssuerHandlesStoredLegacyRecordAfterIdentitySchemaTightens(t *testing.T) {
+	certificateCRD, err := runfiles.Rlocation(os.Getenv("CERT_MANAGER_CERTIFICATE_CRD"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := kubeapiserver.Start(kubeapiserver.WithCRDs(certificateCRD))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := server.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx := t.Context()
+	dynamicClient, err := dynamic.NewForConfig(server.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crds := dynamicClient.Resource(schema.GroupVersionResource{
+		Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions",
+	})
+	crdName := "workloadcredentials.agentplane.allegedly.works"
+	currentCRD, err := crds.Get(ctx, crdName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyCRD := currentCRD.DeepCopy()
+	spec, _, err := unstructured.NestedMap(legacyCRD.Object, "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, _, err := unstructured.NestedSlice(spec, "versions")
+	if err != nil || len(versions) != 1 {
+		t.Fatalf("CRD versions = %v, %v", versions, err)
+	}
+	version, ok := versions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("CRD version has type %T", versions[0])
+	}
+	versionSchema, _, err := unstructured.NestedMap(version, "schema", "openAPIV3Schema", "properties", "spec", "properties", "subject")
+	if err != nil {
+		t.Fatal(err)
+	}
+	properties, _, err := unstructured.NestedMap(versionSchema, "properties")
+	if err != nil {
+		t.Fatal(err)
+	}
+	properties["serviceAccount"] = map[string]any{"minLength": int64(1), "type": "string"}
+	versionSchema["properties"] = properties
+	delete(versionSchema, "required")
+	versionSpec, _, err := unstructured.NestedMap(version, "schema", "openAPIV3Schema", "properties", "spec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	specProperties, _, err := unstructured.NestedMap(versionSpec, "properties")
+	if err != nil {
+		t.Fatal(err)
+	}
+	specProperties["subject"] = versionSchema
+	versionSpec["properties"] = specProperties
+	openAPISchema, _, err := unstructured.NestedMap(version, "schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootSchema, _, err := unstructured.NestedMap(openAPISchema, "openAPIV3Schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootProperties, _, err := unstructured.NestedMap(rootSchema, "properties")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootProperties["spec"] = versionSpec
+	rootSchema["properties"] = rootProperties
+	openAPISchema["openAPIV3Schema"] = rootSchema
+	version["schema"] = openAPISchema
+	versions[0] = version
+	spec["versions"] = versions
+	legacyCRD.Object["spec"] = spec
+	if _, err := crds.Update(ctx, legacyCRD, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := server.Clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	legacy := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": workloadapi.SchemeGroupVersion.String(), "kind": "WorkloadCredential",
+		"metadata": map[string]any{"namespace": testNamespace, "name": "test-schema-upgrade-legacy"},
+		"spec":     map[string]any{"subject": map[string]any{"serviceAccount": subjectAccount}},
+	}}
+	resource := dynamicClient.Resource(schema.GroupVersionResource{
+		Group: workloadapi.SchemeGroupVersion.Group, Version: workloadapi.SchemeGroupVersion.Version, Resource: "workloadcredentials",
+	}).Namespace(testNamespace)
+	if _, err := resource.Create(ctx, legacy, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	latestCRD, err := crds.Get(ctx, crdName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latestCRD.Object["spec"] = currentCRD.Object["spec"]
+	if _, err := crds.Update(ctx, latestCRD, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	objects, err := client.New(server.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconciler := &Reconciler{Client: objects, APIReader: objects, Issuer: testIssuer}
+	for attempt := range 2 {
+		if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{
+			Namespace: testNamespace, Name: legacy.GetName(),
+		}}); err != nil {
+			t.Fatalf("reconcile attempt %d after schema tightening: %v", attempt+1, err)
+		}
+	}
+	var retained workloadapi.WorkloadCredential
+	if err := objects.Get(ctx, types.NamespacedName{Namespace: testNamespace, Name: legacy.GetName()}, &retained); err != nil {
+		t.Fatalf("stored legacy record was removed: %v", err)
+	}
+	if retained.Spec.Subject.Identity != nil {
+		t.Fatalf("stored legacy subject was backfilled: %+v", retained.Spec.Subject)
+	}
+	var ready *metav1.Condition
+	for i := range retained.Status.Conditions {
+		if retained.Status.Conditions[i].Type == workloadapi.ConditionReady {
+			ready = &retained.Status.Conditions[i]
+		}
+	}
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "IdentityRequired" {
+		t.Fatalf("legacy record Ready condition = %+v; want IdentityRequired", ready)
+	}
+	var certificates unstructured.UnstructuredList
+	certificates.SetGroupVersionKind(schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "CertificateList"})
+	if err := objects.List(ctx, &certificates, client.InNamespace(testNamespace)); err != nil {
+		t.Fatal(err)
+	}
+	if len(certificates.Items) != 0 {
+		t.Fatalf("legacy record created Certificates: %v", certificates.Items)
+	}
 }
 
 // issue does what cert-manager would for the Certificate named in the record's status: marks it
@@ -259,7 +460,7 @@ func newResolver(t *testing.T) *resolver.Resolver {
 func TestARequestIsIssued(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	requests := newRequester(t)
-	request := requester.Request{Owner: owner("test-issued"), Subject: requester.ServiceAccount{Name: subjectAccount}}
+	request := requester.Request{Owner: owner("test-issued"), Subject: requester.Identity{Name: subjectAccount}}
 	if _, err := requests.Ensure(t.Context(), request); err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +497,7 @@ func TestAFreshIDOnlyWhenTheBindingChanges(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	requests := newRequester(t)
 	resolves := newResolver(t)
-	request := requester.Request{Owner: owner("test-rotation"), Subject: requester.ServiceAccount{Name: subjectAccount}}
+	request := requester.Request{Owner: owner("test-rotation"), Subject: requester.Identity{Name: subjectAccount}}
 	if _, err := requests.Ensure(ctx, request); err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +570,7 @@ func TestAnOwnerlessBoxKeepsItsMountedSecretUntilTheBindingChanges(t *testing.T)
 	resolves := newResolver(t)
 	request := requester.Request{
 		Owner:   requester.Owner{Namespace: testNamespace, Name: "test-ownerless-box", Holder: requester.Unowned{Labels: map[string]string{"test-caller": "first"}}},
-		Subject: requester.ServiceAccount{Name: subjectAccount},
+		Subject: requester.Identity{Name: subjectAccount},
 	}
 	if _, err := requests.Ensure(ctx, request); err != nil {
 		t.Fatal(err)
@@ -442,7 +643,7 @@ func TestAStandingWorkloadKeepsItsCredential(t *testing.T) {
 	ca := transporttesting.NewCA(t)
 	record := &workloadapi.WorkloadCredential{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "test-standing"},
-		Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: subjectAccount}},
+		Spec:       workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: subjectAccount}}},
 	}
 	if err := objects.Create(ctx, record); err != nil {
 		t.Fatal(err)
@@ -469,7 +670,7 @@ func TestRevokingDeletesTheRecordAndItsSecret(t *testing.T) {
 	ctx := t.Context()
 	ca := transporttesting.NewCA(t)
 	requests := newRequester(t)
-	request := requester.Request{Owner: owner("test-revoked"), Subject: requester.ServiceAccount{Name: subjectAccount}}
+	request := requester.Request{Owner: owner("test-revoked"), Subject: requester.Identity{Name: subjectAccount}}
 	if _, err := requests.Ensure(ctx, request); err != nil {
 		t.Fatal(err)
 	}

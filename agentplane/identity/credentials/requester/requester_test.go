@@ -98,13 +98,13 @@ const (
 
 func TestARequestIsPendingUntilIssuedForItsCurrentSpec(t *testing.T) {
 	requester := newRequester(t)
-	request := Request{Owner: owner("test-lifecycle", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), Subject: ServiceAccount{Name: "test-agent"}}
+	request := Request{Owner: owner("test-lifecycle", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"), Subject: Identity{Name: "test-agent"}}
 	if credential := ensure(t, requester, request); credential != (Pending{Reason: "Requested", Message: "WorkloadCredential test-requests/test-lifecycle is waiting for issuance"}) {
 		t.Fatalf("first Ensure = %+v", credential)
 	}
 	created := record(t, "test-lifecycle")
 	if controller := metav1.GetControllerOf(created); controller == nil || controller.UID != controllerUID(request.Owner) || controller.Kind != "Sandbox" ||
-		created.Spec.Subject.ServiceAccount != "test-agent" || created.Spec.Binding != nil {
+		created.Spec.Subject.Identity == nil || created.Spec.Subject.Identity.Name != "test-agent" || created.Spec.Binding != nil {
 		t.Fatalf("created %+v", created)
 	}
 
@@ -137,7 +137,7 @@ func TestARequestIsPendingUntilIssuedForItsCurrentSpec(t *testing.T) {
 	}
 
 	// The subject never moves under the same incarnation; the CRD refuses it.
-	request.Subject = ServiceAccount{Name: "test-other-agent"}
+	request.Subject = Identity{Name: "test-other-agent"}
 	if _, err := requester.Ensure(t.Context(), request); !apierrors.IsInvalid(err) {
 		t.Fatalf("re-pointing a running incarnation: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestARequestIsPendingUntilIssuedForItsCurrentSpec(t *testing.T) {
 
 func TestAnEarlierOwnersRecordIsReplacedAndAForeignOneKept(t *testing.T) {
 	requester := newRequester(t)
-	earlier := Request{Owner: owner("test-reused", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), Subject: ServiceAccount{Name: "test-agent"}}
+	earlier := Request{Owner: owner("test-reused", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), Subject: Identity{Name: "test-agent"}}
 	ensure(t, requester, earlier)
 	later := earlier
 	later.Owner = owner("test-reused", "cccccccc-cccc-4ccc-8ccc-cccccccccccc")
@@ -168,7 +168,7 @@ func TestAnEarlierOwnersRecordIsReplacedAndAForeignOneKept(t *testing.T) {
 
 	foreign := Request{
 		Owner:   OwnedBy(&metav1.ObjectMeta{Namespace: testNamespace, Name: "test-reused", UID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd"}, corev1.SchemeGroupVersion.WithKind("Pod")),
-		Subject: ServiceAccount{Name: "test-agent"},
+		Subject: Identity{Name: "test-agent"},
 	}
 	if credential, ok := ensure(t, requester, foreign).(Pending); !ok || credential.Reason != "RecordConflict" {
 		t.Fatalf("another kind's record = %+v", credential)
@@ -201,7 +201,7 @@ func TestAnOwnerHoldsARecordPerWorkloadName(t *testing.T) {
 	first, second := account, account
 	first.Name, second.Name = "test-box-caller-first", "test-box-caller-second"
 	for _, box := range []Owner{first, second} {
-		ensure(t, requester, Request{Owner: box, Subject: ServiceAccount{Name: "test-box-caller"}})
+		ensure(t, requester, Request{Owner: box, Subject: Identity{Name: "test-box-caller"}})
 		if controller := metav1.GetControllerOf(record(t, box.Name)); controller == nil || controller.UID != controllerUID(account) {
 			t.Fatalf("record %s is not the account's: %+v", box.Name, controller)
 		}
@@ -243,7 +243,7 @@ func TestAnUnownedRecordIsKnownByItsLabels(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if kept := record(t, "test-unowned"); kept.UID != created.UID || kept.Spec.Subject.Identity.UID != first.Subject.(Identity).UID {
+	if kept := record(t, "test-unowned"); kept.UID != created.UID || kept.Spec.Subject.Identity.UID != first.Subject.UID {
 		t.Fatalf("another holder changed the record: %+v", kept)
 	}
 
@@ -258,7 +258,7 @@ func TestAnUnownedRecordIsKnownByItsLabels(t *testing.T) {
 // A record a controller owns is not an unowned owner's, even with its labels.
 func TestAControlledRecordIsNotAnUnownedOnes(t *testing.T) {
 	requester := newRequester(t)
-	controlled := Request{Owner: owner("test-controlled", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"), Subject: ServiceAccount{Name: "test-agent"}}
+	controlled := Request{Owner: owner("test-controlled", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"), Subject: Identity{Name: "test-agent"}}
 	ensure(t, requester, controlled)
 	existing := record(t, "test-controlled")
 	labels := map[string]string{"test.example/owner-uid": "first"}
@@ -266,7 +266,7 @@ func TestAControlledRecordIsNotAnUnownedOnes(t *testing.T) {
 	if err := objects.Update(t.Context(), existing); err != nil {
 		t.Fatal(err)
 	}
-	unowned := Request{Owner: Owner{Namespace: testNamespace, Name: "test-controlled", Holder: Unowned{Labels: labels}}, Subject: ServiceAccount{Name: "test-agent"}}
+	unowned := Request{Owner: Owner{Namespace: testNamespace, Name: "test-controlled", Holder: Unowned{Labels: labels}}, Subject: Identity{Name: "test-agent"}}
 	if credential, ok := ensure(t, requester, unowned).(Pending); !ok || credential.Reason != "RecordConflict" {
 		t.Fatalf("a controlled record = %+v, want RecordConflict", credential)
 	}

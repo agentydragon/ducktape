@@ -164,7 +164,7 @@ func TestASandboxActingAsALiveIdentityRunsOnTheDefaultAccountWithItsCredential(t
 	}
 }
 
-func TestSandboxRevokesAServiceAccountCredentialBeforeIdentityStart(t *testing.T) {
+func TestSandboxRevokesALegacyCredentialWithoutIdentityBeforeStart(t *testing.T) {
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace,
 		Name:      sandboxName,
@@ -178,7 +178,7 @@ func TestSandboxRevokesAServiceAccountCredentialBeforeIdentityStart(t *testing.T
 				sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind),
 			)},
 		},
-		Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{ServiceAccount: sandboxName}},
+		Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{}},
 	}
 	r, c := newIdentityReconciler(t, "test-agent", legacy)
 
@@ -194,7 +194,7 @@ func TestSandboxRevokesAServiceAccountCredentialBeforeIdentityStart(t *testing.T
 	}
 }
 
-func TestRunningSandboxReplacesLegacyServiceAccountCredentialWithoutRetargeting(t *testing.T) {
+func TestRunningSandboxReplacesLegacyCredentialWithoutIdentityWithoutRetargeting(t *testing.T) {
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace,
 		Name:      sandboxName,
@@ -209,7 +209,7 @@ func TestRunningSandboxReplacesLegacyServiceAccountCredentialWithoutRetargeting(
 			)},
 		},
 		Spec: workloadapi.WorkloadCredentialSpec{
-			Subject: workloadapi.Subject{ServiceAccount: sandboxName},
+			Subject: workloadapi.Subject{},
 			Binding: &workloadapi.Binding{PodUID: "legacy-pod-uid"},
 			Pod:     &workloadapi.PodRef{Name: sandboxName, UID: "legacy-pod-uid"},
 		},

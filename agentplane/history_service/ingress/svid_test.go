@@ -26,10 +26,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
+func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 	namespace := "history-svid-" + uuid.NewString()
-	first := workloadauthtesting.NewWorkload(t, kube, namespace, "first-writer")
-	other := workloadauthtesting.NewWorkload(t, kube, namespace, "other-writer")
+	first := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "first-writer", testPolicyNamespace).Workload
+	other := workloadauthtesting.NewIdentityWorkload(t, kube, namespace, "other-writer", testPolicyNamespace).Workload
 	ca := transporttesting.NewCA(t)
 	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
@@ -310,11 +310,11 @@ func TestAnIdentityRunnerWritesAsItsIdentityPinnedToItsSandbox(t *testing.T) {
 	for name, workload := range map[string]workloadauthtesting.Workload{
 		"the same Identity in another Sandbox": sibling.Workload,
 		"another Identity":                     other.Workload,
-		"a ServiceAccount":                     account,
+		"an Identity without writer authority": account,
 	} {
 		refused := connect(workload.URI).open(t, "")
 		refused.send(announce(session, 1, ""))
-		if code := refused.refused(); code != codes.PermissionDenied {
+		if code := refused.refused(); code != codes.PermissionDenied && code != codes.Unauthenticated {
 			t.Fatalf("%s pushed the Session: %v", name, code)
 		}
 	}
