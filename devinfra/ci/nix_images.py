@@ -255,7 +255,15 @@ def already_published(local: tuple[str | None, str], repository: str) -> bool:
     `latest` is moved only by `publish`, onto what it just pushed (as devinfra/ci/image_registry.py
     does for Bazel images), so this needs no knowledge of how Flux orders pinned tags.
     """
-    if "latest" not in _skopeo_json("list-tags", f"docker://{repository}")["Tags"]:
+    try:
+        tags = _skopeo_json("list-tags", f"docker://{repository}")["Tags"]
+    except subprocess.CalledProcessError as error:
+        # containers/image renders the registry's 404 NAME_UNKNOWN as this Skopeo error. Treat an
+        # unpublished repository as empty, but preserve auth, network, and other registry failures.
+        if "fetching tags list: name unknown:" not in (error.stderr or ""):
+            raise
+        return False
+    if "latest" not in tags:
         return False
     label, digest = _identity(f"docker://{repository}:latest")
     return (local[0] is not None and local[0] == label) or local[1] == digest

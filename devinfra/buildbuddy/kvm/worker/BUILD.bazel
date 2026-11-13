@@ -1,3 +1,5 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
 filegroup(
     name = "config",
     srcs = [
@@ -14,4 +16,9 @@ filegroup(
         "sysctl.conf",
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
+py_library(
+    name = "root_disk_boot_check",
+    srcs = ["root_disk_boot_check.py"],
 )
