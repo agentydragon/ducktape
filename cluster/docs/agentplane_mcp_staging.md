@@ -4,10 +4,11 @@ The public MCP origin is `https://agentplane-actions-staging.allegedly.works`; t
 edge serves `/mcp` and external OAuth there. The integration app at
 `https://agentplane-staging.allegedly.works` owns operator login, Connection management, consent,
 and Action review. The edge owns external Connections, grants, OAuth tokens, and ConnectionService.
-Consent binds an external client to a labeled caller ServiceAccount; staging's `claude.ai`
-Connection acts as `system:serviceaccount:agentplane-staging:claude-ai`. Action Service records
-that ServiceAccount as request identity and retains upstream MCP linkage and CIMD. This describes
-the declared staging deployment contract.
+Consent and rebind bind a Connection to a live policy-namespace Identity by name and exact Kubernetes
+UID. The edge resolves each external bearer against its active grant and current Connection binding,
+then presents its own projected Action-audience bearer with typed Connection, grant, and effective
+Identity provenance. Action Service authenticates the configured `mcp-edge` actor, records the
+effective Identity on the request, and retains upstream MCP linkage and CIMD.
 
 ## Ownership and boundaries
 
@@ -27,15 +28,17 @@ the declared staging deployment contract.
   provider-owned OAuth settings file plus client secret from the reflected Secret read-only. It
   validates the settings file once during startup. The Action Service has no external OAuth
   configuration or credential mount. Reloader restarts the edge when the Secret changes.
-- The MCP edge database owns Connection, grant, enrollment, and external OAuth state. The edge
-  stores local opaque token values only as hashes; recoverable upstream refresh tokens remain
-  plaintext in PostgreSQL, which the operator accepts for this rollout. Legacy Action Service
-  tables remain preserved until a separately verified data handoff and retention decision.
+- External Connection, grant, enrollment, and OAuth state belong only to the MCP edge database;
+  Actions retains upstream MCP server linkage and OAuth token state. The edge stores local opaque
+  tokens only as hashes; recoverable upstream refresh tokens remain plaintext in PostgreSQL, which
+  the operator accepts for this rollout.
 - The Gateway exposes only exact OAuth/MCP paths publicly. REST, operator methods, health, and API
   docs remain off the public route. Cilium admits the Gateway's `ingress` identity to the edge;
-  it does not admit arbitrary in-cluster clients. The edge authenticates the external bearer and
-  forwards requests under the currently bound ServiceAccount identity, which Action Service
-  independently validates.
+  it does not admit arbitrary in-cluster clients. For Action calls, the edge presents its projected
+  Action-audience bearer and delegates the effective Identity with typed Connection/grant provenance.
+  The edge checks the live grant, binding, and exact Identity UID before dispatch; Action Service
+  authenticates the configured `mcp-edge` actor and validates the effective Identity through its
+  method-scoped delegation rule.
 - Authentik discovery/JWKS/token traffic uses the existing TLS-SNI-bounded egress to
   `auth.allegedly.works`. No forward-auth outpost is inserted into MCP streaming. The public
   hostname uses the existing wildcard DNS record and Gateway wildcard certificate.
@@ -59,13 +62,16 @@ Use these deployment acceptance checks after the image and route changes reconci
    image revisions, successful startup migrations and Secret references without printing Secret contents. Confirm
    the public route resolves to the edge and private REST/operator paths are not routed publicly.
 2. Add the MCP URL in Claude.ai. Complete DCR, log into the integration app, name the Connection,
-   choose `agentplane-staging/claude-ai`, and authorize. Confirm upstream login returns through the
+   select the intended live Identity, and authorize. Confirm upstream login returns through the
    edge's `/auth/callback` and then to the client's registered callback. Denial creates no active
    grant.
-3. Submit a harmless Action from the external client. Inspect its arguments and submitting
-   ServiceAccount in the integration app, allow it, and recover the same request's safe result.
-   Confirm exactly one Execution. Connection and grant state remain visible in ConnectionService;
-   Action request provenance records the account only. Deny another request and confirm no execution.
+3. Submit a harmless Action from the external client. Inspect its effective Identity in the
+   integration app and verify its UID matches the Connection's current bound Identity; independently
+   verify an active grant belongs to that Connection in ConnectionService. A rebind can make the
+   grant's original consent Identity differ from the current binding. Allow the request and recover
+   the same safe result. Confirm exactly one Execution. The edge sends typed Connection/grant
+   provenance with each Action RPC; the request records the effective Identity. Deny another request
+   and confirm no execution.
 4. Test token refresh, edge restart with the retained database, same-key submission replay, and
    recovery of existing receipts. Unbind the Connection and confirm old access/refresh credentials
    no longer authorize new work; immutable history remains and already-claimed execution is not

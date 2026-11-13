@@ -42,25 +42,26 @@ unavailable, deleted or replaced Identity refuses the request. The operator-faci
 requires a current Identity watch.
 
 For each admitted Action RPC, the edge sends its own projected `agentplane-egress` audience token
-plus typed Connection ID, grant ID and effective Identity provenance. Action middleware reviews the
-edge token and checks the live grant and Connection binding. Only the explicitly configured Action
-methods accept this provenance; it is not a general actor impersonation path. The edge does not
-request or cache tokens for other ServiceAccounts. It rechecks the grant, binding and Identity on
-each call and every five seconds while a stream is active; revocation latency is bounded by that
-interval plus the direct UID lookup. The operator watch bounds waiting for each stream write to clear
-transport backpressure at five seconds; an exceeded bound ends `DEADLINE_EXCEEDED`. An idle drain
-sends `reconnect_required`; a drain during a write ends that stream without another frame. This
-bound does not guarantee when a queued frame reaches the peer. Tool arguments never name the caller
-Identity.
+plus typed Connection ID, grant ID and effective Identity provenance. The edge resolves the external
+bearer against its live grant and Connection binding and checks the exact Identity UID before
+dispatch. Action middleware separately admits the configured edge actor, accepts typed Connection
+provenance only on explicitly configured methods, and validates the effective Identity; it does not
+re-resolve the edge's grant or Connection. The delegation IDs do not grant authority by themselves.
+The edge does not request or cache tokens for other ServiceAccounts. It rechecks the grant, binding
+and Identity on each call and every five seconds while a stream is active; revocation latency is
+bounded by that interval plus the direct UID lookup. The operator watch bounds waiting for each
+stream write to clear transport backpressure at five seconds; an exceeded bound ends
+`DEADLINE_EXCEEDED`. An idle drain sends `reconnect_required`; a drain during a write ends that
+stream without another frame. This bound does not guarantee when a queued frame reaches the peer.
+Tool arguments never name the caller Identity.
 
 Existing Connections bound to a ServiceAccount are retained for history but paused by the schema
 migration. No same-name Identity is inferred and no old bearer resolves until an operator explicitly
 rebinds the Connection to a live Identity. The migration retains Connection and grant IDs, consent
-and audit facts, revocation status, and the original ServiceAccount attribution. One existing
-external Connection is expected to pause until that operator action. Rolling back to an old image
-does not restore its authority: the retained `bound_caller` column is NULL and constrained against
-old-writer updates. Recovery after rollback requires a reviewed forward migration/rebind; there is
-no ServiceAccount fallback.
+and audit facts, revocation status, and the original ServiceAccount attribution. A rollback to an
+old image does not restore authority: the retained `bound_caller` column is NULL and constrained
+against old-writer updates. Recovery after rollback requires a reviewed forward migration/rebind;
+there is no ServiceAccount fallback.
 
 ## Deployment contract
 
