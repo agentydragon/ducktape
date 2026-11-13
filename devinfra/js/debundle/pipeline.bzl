@@ -183,8 +183,8 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
     if ctx.attr.full_report_chunks and not ctx.attr.full_reports:
         fail("full_report_chunks requires full_reports")
     for report in ctx.attr.full_reports if include_full_streams else []:
-        if report not in ["translation-validation", "export-reentry"]:
-            fail("unknown full_reports entry {}: expected translation-validation or export-reentry".format(report))
+        if report not in ["translation-validation", "export-reentry", "residual-atomic-groups"]:
+            fail("unknown full_reports entry {}: expected translation-validation, export-reentry, or residual-atomic-groups".format(report))
         run_flags += ["--full-report", shell.quote(report)]
     for chunk in ctx.attr.full_report_chunks if include_full_streams else []:
         run_flags += ["--full-report-chunk", shell.quote(chunk)]
@@ -387,7 +387,7 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         ),
     ),
     "full_reports": attr.string_list(
-        doc = "Complete diagnostic sinks to export (translation-validation, export-reentry). Independent of full graphs; only Pipeline inputs change.",
+        doc = "Complete diagnostic sinks to export (translation-validation, export-reentry, residual-atomic-groups). Independent of full graphs; only Pipeline inputs change.",
     ),
     "full_report_chunks": attr.string_list(
         doc = "Select only these full-report sinks; checks and bounded summaries still cover every configured chunk. Requires full_reports.",

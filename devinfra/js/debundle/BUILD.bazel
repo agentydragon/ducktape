@@ -1223,6 +1223,7 @@ rust_library(
         "lowering/materialize/mod.rs",
         "lowering/materialize/outcome_sink.rs",
         "lowering/materialize/plan_builder.rs",
+        "lowering/materialize/residual_atomic_report.rs",
         "lowering/mod.rs",
         "lowering/module_output.rs",
         "lowering/naturalize.rs",

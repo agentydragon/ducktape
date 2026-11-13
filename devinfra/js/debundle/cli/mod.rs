@@ -366,7 +366,8 @@ pub(crate) struct RunArgs {
     /// and bounded reports still cover the full configured input.
     #[arg(long = "effect-conflicts-chunk", requires = "effect_conflicts_jsonl", value_parser = artifact::paths::normalize_module_path)]
     pub(crate) effect_conflicts_chunks: Vec<String>,
-    /// Stream complete diagnostic evidence independently of full graphs (repeatable).
+    /// Emit diagnostic evidence independently of full graphs (repeatable):
+    /// translation-validation, export-reentry, or residual-atomic-groups.
     #[arg(long = "full-report", value_name = "KIND")]
     pub(crate) full_reports: Vec<FullReportKind>,
     /// Select only these full-report sinks; all summaries and checks stay exact.

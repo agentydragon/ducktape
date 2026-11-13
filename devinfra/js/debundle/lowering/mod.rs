@@ -168,6 +168,7 @@ pub struct RequestedLogicalModule {
 pub enum FullReportKind {
     TranslationValidation,
     ExportReentry,
+    ResidualAtomicGroups,
 }
 
 impl FullReportKind {
@@ -175,6 +176,7 @@ impl FullReportKind {
         match self {
             Self::TranslationValidation => "translation-validation",
             Self::ExportReentry => "export-reentry",
+            Self::ResidualAtomicGroups => "residual-atomic-groups",
         }
     }
 }
@@ -185,8 +187,9 @@ impl std::str::FromStr for FullReportKind {
         match value {
             "translation-validation" => Ok(Self::TranslationValidation),
             "export-reentry" => Ok(Self::ExportReentry),
+            "residual-atomic-groups" => Ok(Self::ResidualAtomicGroups),
             _ => Err(format!(
-                "unknown full report {value:?}; expected translation-validation or export-reentry"
+                "unknown full report {value:?}; expected translation-validation, export-reentry, or residual-atomic-groups"
             )),
         }
     }

@@ -101,6 +101,15 @@ list for older provenance records.
 
 ## Atomic graph reports
 
+The opt-in `residual_atomic_groups.json` reports the actual run assignment,
+including ownership subsets, without exporting a full graph. Each group has
+source-unit rows (including anonymous statements with empty `bindings`), current
+destinations and `fully_residual`. `incoming` and `outgoing` are keyed by edge
+kind and contain exact edge totals, up to four examples, and `truncated`.
+Each example identifies both endpoint units, the other atomic group and endpoint
+destination, the binding when present, and whether it constrains initialization.
+Examples are bounded evidence, not an exhaustive dependency closure.
+
 `dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
 `source_unit_ids` and `members` identify the source units in that group.

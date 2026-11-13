@@ -169,6 +169,14 @@ Ownership filtering precedes residual routing for every supported residual
 policy. An omitted explicit claim at the catchall path loses its authored
 renames and annotations; ordinary residual routing can recreate that destination.
 Full graph export remains unsupported with this option.
+`run --full-report residual-atomic-groups` instead reports atomic groups that
+have at least one residual-assigned source unit, using the exact assignment
+being validated. It identifies each source unit, including non-binding
+statements, its destination and source location. Incoming and outgoing edge
+counts are exact graph-edge counts; each kind and direction has at most four
+examples and a truncation flag. Groups spanning selected and residual
+destinations remain visible. The report is diagnostic and does not assert that
+moving any group is realizable; full-report chunk selection applies normally.
 Each chunk's graph summary and module report records its retained module paths
 and optional `bindings` and `anonymous_statements` selector-index lists in
 `ownership_subset`, preserving omitted fields versus empty lists. Named and

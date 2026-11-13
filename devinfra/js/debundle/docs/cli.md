@@ -573,6 +573,20 @@ exits 1. The contract is
 `translation_validation.json` keeps exact gate/TV verdicts and category totals,
 with at most twenty deterministic examples per category. Each evidence field
 has `total`, `examples` and `truncated`; use totals for comparisons.
+To inspect the atomic units that remain under the current assignment, including
+an ownership subset, request `debundle run --full-report residual-atomic-groups`.
+The per-chunk `residual_atomic_groups.json` lists every group containing a
+residual source unit. Each source unit has its source location, statement kind,
+bindings (empty for anonymous statements), and actual destination. Groups also
+include incoming and outgoing edge counts by kind and up to four examples per
+kind and direction; `truncated` marks incomplete examples. Edge totals count
+graph edges, not distinct dependencies. `fully_residual: false` means a group
+spans residual and selected destinations; the gate verdict remains authoritative.
+This report works with `--ownership-subset` without `--graphs`; it is a planning
+aid, not proof that extracting a group or batch passes the gate. Select chunks
+with `--full-report-chunk` or Bazel `full_report_chunks`, and request it through
+Bazel with `full_reports = ["residual-atomic-groups"]`.
+
 `debundle run --full-report export-reentry` writes the original complete
 export-reentry schema as compact `export_reentry.full.json`. The default
 `export_reentry.json` has exact collection and site counts, at most twenty

@@ -93,6 +93,15 @@ fn full_report_filter_changes_only_sinks_and_keeps_staged_facts() {
 }
 
 #[test]
+fn residual_atomic_report_matches_staged_run_and_filters_chunks() {
+    assert_export_filter_changes_only_sinks(
+        &["--full-report", "residual-atomic-groups"],
+        "--full-report-chunk",
+        "residual_atomic_groups.json",
+    );
+}
+
+#[test]
 fn full_translation_report_matches_direct_and_staged_runs() {
     assert_staged_run_matches(
         rejected_split(),
