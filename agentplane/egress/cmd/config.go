@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/history"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"

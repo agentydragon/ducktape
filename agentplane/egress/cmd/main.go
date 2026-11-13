@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/history"
-	historymigrations "github.com/agentydragon/ducktape/agentplane/egress/history_migrations"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/admin"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
+	historymigrations "github.com/agentydragon/ducktape/agentplane/egress/internal/history/migrations"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/informer"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"

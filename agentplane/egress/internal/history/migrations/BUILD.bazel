@@ -4,7 +4,7 @@ go_library(
     name = "history_migrations",
     srcs = ["migrations.go"],
     embedsrcs = glob(["history/*.sql"]),
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/history_migrations",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/history/migrations",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = ["//agentplane/postgres/migrate"],
 )

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
-	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/google/uuid"
 )
 
