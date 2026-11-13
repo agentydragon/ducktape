@@ -53,7 +53,13 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
             "state_dir": "/data/session/blueshield",
             "poll_interval_seconds": 300,
         },
-        {"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform", "poll_interval_seconds": 300},
+        {
+            "id": "quest-scheduler",
+            "type": "quest-scheduler",
+            "state_dir": "/data/session/quest-platform",
+            "poll_interval_seconds": 300,
+        },
+        {"id": "myquest", "type": "myquest", "state_dir": "/data/session/myquest", "poll_interval_seconds": 300},
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
 }
@@ -69,6 +75,15 @@ BEARERS: dict[str, BearerConfig] = {
                 {"instance": "blueshield", "method": "POST", "path": BLUE_SHIELD_GATEWAY + path}
                 for path in BLUE_SHIELD_READ_PATHS
             ],
+        ],
+    },
+    "myquest-read": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/myquest-read",
+        "allow": [
+            {"instance": "myquest", "method": "POST", "path": "/api/getHistoricResults"},
+            {"instance": "myquest", "method": "POST", "path": "/api/retrieveRecentResults"},
+            {"instance": "myquest", "method": "GET", "path": "/api/getLabDetail/*"},
         ],
     },
     "chatgpt-read": {
@@ -103,19 +118,19 @@ BEARERS: dict[str, BearerConfig] = {
         "role": "routes",
         "token_file": "/var/run/platform-sessions/quest",
         "allow": [
-            {"instance": "quest", "method": "GET", "path": "/guest/getReasons/*"},
-            {"instance": "quest", "method": "GET", "path": "/guest/getPscDetails/*"},
-            {"instance": "quest", "method": "GET", "path": "/api/getInsuranceProfile"},
-            {"instance": "quest", "method": "GET", "path": "/guest/getTokenBasicInfoAPI/*"},
-            {"instance": "quest", "method": "GET", "path": "/guest/getEncounterInfo/*"},
-            {"instance": "quest", "method": "GET", "path": "/guest/getPayorList/*"},
-            {"instance": "quest", "method": "GET", "path": "/guest/getAppointment/*"},
-            {"instance": "quest", "method": "POST", "path": "/guest/getPscsWithAvailability"},
-            {"instance": "quest", "method": "POST", "path": "/api/getOpenEorders"},
-            {"instance": "quest", "method": "POST", "path": "/api/getUserDemographics"},
-            {"instance": "quest", "method": "POST", "path": "/guest/examoneEligibility"},
-            {"instance": "quest", "method": "POST", "path": "/guest/verifyInsurance/V2"},
-            {"instance": "quest", "method": "POST", "path": "/guest/getPricing"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getReasons/*"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getPscDetails/*"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/api/getInsuranceProfile"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getTokenBasicInfoAPI/*"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getEncounterInfo/*"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getPayorList/*"},
+            {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getAppointment/*"},
+            {"instance": "quest-scheduler", "method": "POST", "path": "/guest/getPscsWithAvailability"},
+            {"instance": "quest-scheduler", "method": "POST", "path": "/api/getOpenEorders"},
+            {"instance": "quest-scheduler", "method": "POST", "path": "/api/getUserDemographics"},
+            {"instance": "quest-scheduler", "method": "POST", "path": "/guest/examoneEligibility"},
+            {"instance": "quest-scheduler", "method": "POST", "path": "/guest/verifyInsurance/V2"},
+            {"instance": "quest-scheduler", "method": "POST", "path": "/guest/getPricing"},
         ],
     },
 }

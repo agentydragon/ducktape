@@ -54,6 +54,7 @@ def chart(app: App) -> Chart:
         ("blueshield-read", None),
         ("aiquota", "cli-proxy-api"),
         ("quest", "agentplane-staging-egress-credentials"),
+        ("myquest-read", None),
         ("thrive-scraper", "thrive-scraper"),
         ("thrive-read", "agentplane-staging-egress-credentials"),
     ):

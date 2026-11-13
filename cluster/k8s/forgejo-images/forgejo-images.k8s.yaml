@@ -403,6 +403,11 @@ spec:
       name: platform-sessions-chatgpt
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions-myquest'
+      kind: ImageRepository
+      name: platform-sessions-myquest
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'platform-sessions-providers'
       kind: ImageRepository
       name: platform-sessions-providers

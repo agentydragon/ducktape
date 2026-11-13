@@ -33,7 +33,9 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert json.loads(remote.CONFIG.data["bearers.json"]) == config.BEARERS
     assert {
-        resource("Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
+        resource("Deployment", remote._resource_instance(instance))["spec"]["template"]["spec"]["containers"][0][
+            "image"
+        ]
         for instance in ("openai", "anthropic", "thrive")
     } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
     assert (
@@ -44,8 +46,8 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         == 1
     )
     for instance, connection in connections.items():
-        name = f"platform-sessions-{instance}"
-        provider = resource("Deployment", instance)["spec"]
+        name = remote._provider_name(instance)
+        provider = resource("Deployment", remote._resource_instance(instance))["spec"]
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
         expected_image = remote._provider_image(instance)
@@ -63,18 +65,34 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         assert json.loads(remote.CONFIG.data[f"{instance}-integration.json"])["integrations"][0]["id"] == instance
 
         host = urlsplit(connection["origin"]).hostname
-        service = resource("Service", instance)["spec"]
+        service = resource("Service", remote._resource_instance(instance))["spec"]
         assert service["selector"] == provider["template"]["metadata"]["labels"]
         assert {p["name"]: p["port"] for p in service["ports"]} == {"https": 8443, "grpc": 8444}
         assert connection["control_target"] == f"{host}:8444"
-        assert resource("Certificate", instance)["spec"]["dnsNames"] == [host]
-        monitor = resource("PodMonitor", instance)["spec"]
+        assert resource("Certificate", remote._resource_instance(instance))["spec"]["dnsNames"] == [host]
+        monitor = resource("PodMonitor", remote._resource_instance(instance))["spec"]
         assert monitor["selector"]["matchLabels"] == service["selector"]
         assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
-        if instance == "quest":
+        if instance == "quest-scheduler":
             assert monitor["selector"]["matchLabels"] == {"app": "platform-sessions-quest"}
             assert {endpoint["port"] for endpoint in monitor["podMetricsEndpoints"]} == {"metrics", "quest-metrics"}
         assert "metrics" in {p["name"] for p in provider_pod["containers"][0]["ports"]}
+
+
+def test_scheduler_rename_keeps_one_owner_of_existing_state(scratch_app: App) -> None:
+    objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
+    deployments = [item for item in objects if item["kind"] == "Deployment"]
+    owners = [
+        item
+        for item in deployments
+        if any(
+            volume.get("persistentVolumeClaim", {}).get("claimName") == "platform-sessions-quest-piraeus"
+            for volume in item["spec"]["template"]["spec"]["volumes"]
+        )
+    ]
+    assert [item["metadata"]["name"] for item in owners] == ["quest"]
+    integration = json.loads(remote.CONFIG.data["quest-scheduler-integration.json"])["integrations"][0]
+    assert integration["state_dir"] == "/data/session/quest-platform"
 
 
 def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: App) -> None:
@@ -85,8 +103,8 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
 
     assert config.RECORD_UPSTREAM_TRAFFIC
     for instance in remote.PROVIDERS:
-        name = f"platform-sessions-{instance}"
-        pod = resource("Deployment", instance)["spec"]["template"]["spec"]
+        name = remote._provider_name(instance)
+        pod = resource("Deployment", remote._resource_instance(instance))["spec"]["template"]["spec"]
         containers = {container["name"]: container for container in pod["containers"]}
         assert set(containers) == {"provider"}
         init = pod["initContainers"]
@@ -111,10 +129,12 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
 def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App) -> None:
     objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
     for instance in remote.PROVIDERS:
-        name = f"platform-sessions-{instance}"
-        pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == instance)[
-            "spec"
-        ]["template"]["spec"]
+        name = remote._provider_name(instance)
+        pod = next(
+            item
+            for item in objects
+            if item["kind"] == "Deployment" and item["metadata"]["name"] == remote._resource_instance(instance)
+        )["spec"]["template"]["spec"]
         assert [item["name"] for item in pod["containers"]] == ["provider"]
         assert not any(item["name"] == "HTTPS_PROXY" for item in pod["containers"][0]["env"])
         assert any(
