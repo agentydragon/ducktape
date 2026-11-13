@@ -126,6 +126,29 @@ py_library(
 )
 
 py_library(
+    name = "native_service_fixtures",
+    testonly = True,
+    srcs = ["native_service_fixtures.py"],
+    deps = [
+        ":kubernetes_apiserver",
+        ":kubernetes_apiserver_fixtures",
+        "//agentplane:subjects",
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:history_tunnel",
+        "//agentplane/net/peertls:config",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
     name = "kubernetes_apiserver_fixtures",
     srcs = ["kubernetes_apiserver_fixtures.py"],
     visibility = [
