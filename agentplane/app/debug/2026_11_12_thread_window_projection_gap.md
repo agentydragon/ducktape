@@ -106,3 +106,24 @@ passed at code commit `0c3306453e`, with one uncached remote test execution in
 61.100 seconds. That verifies the final fixture's normal lifetime separately from
 the deliberately failing diagnostic probe. PR #15913's final-head CI is separate
 from these focused executions.
+
+On 2026-11-13 UTC, a [five-run repetition](https://app.buildbuddy.io/invocation/17344c27-a61c-429e-8195-3f5613e47c75)
+of only `test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place`
+passed on `devel` commit `93f2ba8eeff36265d6e7887836b615c39b4ad985`.
+The invocation used `--noremote_accept_cached --runs_per_test=5` with a pytest `-k`
+filter. The target summary records five runs and five passes; all five result
+events have `strategy=remote`, and their test logs each report one passed and five
+deselected tests. The five TestRunner execution IDs are distinct. The Bazel
+invocation completed successfully. No projection failure occurred, so the new
+failure artifacts did not fire and this sample supplies no new delivery-boundary
+evidence or runtime repair.
+
+The canonical-repository BuildBuddy target-history index queried over the preceding
+168 hours returned 760 `PASSED`, 15 `FAILED_TO_BUILD`, and one `FAILED` entry; the
+failure is the 2026-11-07 invocation above. This index includes cached outcomes
+and excludes some PR/manual runs, and its build failures are not test verdicts.
+These counts therefore do not measure the scenario's physical failure rate. The
+next discriminating observation is still a naturally failing run with the direct
+view, fresh Electric snapshot, Chromium entity-stream metadata, and browser cursor
+captured together. Only then can we distinguish replication, stream delivery, and
+client application before changing the runtime path.
