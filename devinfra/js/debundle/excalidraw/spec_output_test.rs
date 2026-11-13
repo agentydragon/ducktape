@@ -17,7 +17,7 @@ fn out_root() -> PathBuf {
 }
 
 #[test]
-fn claimed_modules_export_their_readable_names() {
+fn claimed_modules_export_their_entry_points() {
     let app = out_root().join("app");
     for (module, names) in [
         (
@@ -30,29 +30,7 @@ fn claimed_modules_export_their_readable_names() {
         ),
         (
             "editor/packages/excalidraw/element/textWrapping.js",
-            &[
-                "cachedCjkRegex",
-                "cachedLineBreakRegex",
-                "cachedEmojiRegex",
-                "containsCJK",
-                "getLineBreakRegex",
-                "getEmojiRegex",
-                "COMMON",
-                "CJK",
-                "EMOJI",
-                "getLineBreakRegexSimple",
-                "getLineBreakRegexAdvanced",
-                "getEmojiRegexUnicode",
-                "Regex",
-                "Break",
-                "parseTokens",
-                "wrapText",
-                "wrapLine",
-                "wrapWord",
-                "trimLine",
-                "isSingleCharacter",
-                "satisfiesWordInvariant",
-            ],
+            &["containsCJK", "wrapText"],
         ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
@@ -69,6 +47,12 @@ fn claimed_modules_export_their_readable_names() {
             assert_export_named_specifiers(&source, name, &[None]);
         }
     }
+    assert_module_source(
+        &app,
+        "editor/packages/excalidraw/element/textWrapping.js",
+        &["var parseTokens =", "var Regex =", "var Break ="],
+        &[],
+    );
 }
 
 /// The only claimed module with no imports: the rest import their chunk

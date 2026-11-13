@@ -120,24 +120,24 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
 
         text_wrapping = await page.evaluate(
             """async () => {
-                const { parseTokens, containsCJK, wrapText } = await import(
+                const { containsCJK, wrapText } = await import(
                     './editor/packages/excalidraw/element/textWrapping.js'
                 );
                 const context = document.createElement('canvas').getContext('2d');
                 context.font = '20px monospace';
                 return {
-                    latin: parseTokens('hello-world'),
-                    emoji: parseTokens('👨‍👩‍👧‍👦🇨🇿'),
-                    composed: parseTokens('c\\u030cて\\u3099'),
+                    latin: wrapText('hello-world', context.font, context.measureText('hello-').width + 0.1),
+                    emoji: wrapText('👨‍👩‍👧‍👦🇨🇿', context.font, 0),
+                    composed: wrapText('c\\u030cて\\u3099', context.font, 0),
                     cjk: [containsCJK('hello'), containsCJK('hello界')],
                     wrapped: wrapText('ab cd', context.font, context.measureText('ab').width + 0.1),
                 };
             }"""
         )
         assert text_wrapping == {
-            "latin": ["hello-", "world"],
-            "emoji": ["👨‍👩‍👧‍👦", "🇨🇿"],
-            "composed": ["č", "で"],
+            "latin": "hello-\nworld",
+            "emoji": "👨‍👩‍👧‍👦\n🇨🇿",
+            "composed": "č\nで",
             "cjk": [False, True],
             "wrapped": "ab\ncd",
         }
