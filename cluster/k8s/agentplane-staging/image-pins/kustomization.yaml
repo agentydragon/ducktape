@@ -12,7 +12,7 @@ images:
     newTag: devel-20261113051520-2d6f09d # {"$imagepolicy": "flux-system:agentplane-llm-ingress:tag"}
   # Bootstrap only: Flux selects the published Go images before the separate workload cutover.
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-proxy
-    newTag: devel-20261113082656-1f7caaa # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
+    newTag: devel-20261113100959-2fc5f52 # {"$imagepolicy": "flux-system:agentplane-egress-proxy:tag"}
   # CI publishes the first sampler image after merge; Flux selects its devel tag.
   - name: git.allegedly.works/ducktape-ci/agentplane-central-sampler
     newTag: devel-20261113093512-5214af2 # {"$imagepolicy": "flux-system:agentplane-central-sampler:tag"}
@@ -33,11 +33,11 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-mcp-edge
     newTag: devel-20261113100948-2fc5f52 # {"$imagepolicy": "flux-system:agentplane-mcp-edge:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service
-    newTag: devel-20261113093118-f5237c1 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
+    newTag: devel-20261113100953-2fc5f52 # {"$imagepolicy": "flux-system:agentplane-action-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-notification-service
-    newTag: devel-20261113082329-1516de8 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
+    newTag: devel-20261113100952-2fc5f52 # {"$imagepolicy": "flux-system:agentplane-notification-service:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-history-service
-    newTag: devel-20261113082657-1f7caaa # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
+    newTag: devel-20261113100958-2fc5f52 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
     newTag: devel-20261112104149-61a1079 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
