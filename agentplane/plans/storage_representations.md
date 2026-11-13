@@ -71,6 +71,26 @@ history. Use existing typed configuration for capture/retention policy, consider
 capture when needed. Preserve malformed/partial-response diagnosis and the existing rule that
 failed evidence persistence stops processing. An unknown provider outcome must not trigger replay.
 
+The bounded source probe found a narrower first change: successful sampling and compaction audits
+copy `Response.Events` into both `sampler_intent.result` and result-phase boundary evidence. No
+serving consumer was found that deserializes those successful audit arrays for continuation or
+recovery. Compaction validates native output records; its audit is diagnostic, with Anthropic also
+recording the replacement context. Recovery checks unresolved intents and rejection metadata.
+
+Propose a compact successful audit without `events`, retaining the terminal response, usage and
+provider HTTP metadata. Keep transient event collections needed by failure diagnostics, per-event
+evidence and the atomic evidence/observation commit unchanged. Test both ordinary sampling and
+compaction, evidence-write failure, partial/malformed streams and restart recovery. This changes
+new successful diagnostic summaries; it does not rewrite existing events. Raw wire capture remains
+a separate policy decision because the current SPEC promises received bytes, including incomplete
+SSE tails. The 33 MB result-payload group is the measured target, not a guaranteed saving; replacing
+it does not remove the other response representations.
+
+`FollowEvents` and History export expose the result boundary records unchanged, so the new summary
+shape is an externally visible evidence-contract change even without a serving decoder for its
+`events` field. Preserve the correlated provider boundaries and source links used by partial-item
+reconciliation, and cover both export and direct event reads in the consumer checks.
+
 ### Share bodies across events and projections
 
 Inventory the paths from native harness/provider observations to semantic completions,
