@@ -579,5 +579,29 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
         }
 
 
+async def test_resize_handle_devices(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const handles = await import('./editor/packages/excalidraw/element/transformHandles.js');
+                const desktop = {viewport: {isMobile: false}, isTouchScreen: false};
+                const mobile = {viewport: {isMobile: true}, isTouchScreen: true};
+                const touch = {viewport: {isMobile: false}, isTouchScreen: true};
+                return {
+                    desktop: [handles.canResizeFromSides(desktop), handles.getOmitSidesForDevice(desktop)],
+                    mobile: [handles.canResizeFromSides(mobile), handles.getOmitSidesForDevice(mobile)],
+                    touch: [handles.canResizeFromSides(touch), handles.getOmitSidesForDevice(touch)],
+                };
+            }"""
+        )
+        default_sides = {"e": True, "s": True, "n": True, "w": True}
+        assert result == {"desktop": [True, default_sides], "mobile": [False, {}], "touch": [True, default_sides]}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
