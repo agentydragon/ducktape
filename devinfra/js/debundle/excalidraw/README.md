@@ -52,6 +52,10 @@ module it bundles. Every other chunk is `inline_in_entry`.
     source helpers remain in the entry at their original initialization positions.
   - `editor`: `packages/excalidraw/emitter` restores the complete `Emitter`
     class used by history and other editor subscriptions.
+  - `editor`: `packages/excalidraw/fonts/Fonts` restores the `Fonts` class,
+    including lazy font registration, scene-family discovery, font-load cache
+    invalidation and font-face CSS generation. Its generated static-field
+    initialization stays in the entry.
   - `editor`: `packages/excalidraw/store` restores `Store`, `Snapshot`,
     `StoreIncrementEvent`, capture actions and observed-state helpers;
     `packages/excalidraw/change` restores `Delta`, `AppStateChange` and
@@ -104,6 +108,8 @@ The linear-editor probe checks constructor state, static initialization,
 element lookup, rotation and global coordinates, and point normalization.
 The action-manager probe checks registration, synchronous/asynchronous results,
 keyboard dispatch, view-only and configured-disabled actions, and predicates.
+The Fonts probe checks family deduplication, shared registration, and the
+one-time scene invalidation for newly loaded font faces.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the

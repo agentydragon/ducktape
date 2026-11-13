@@ -1,0 +1,14 @@
+# Original home: packages/excalidraw/fonts/Fonts.ts
+source_matches:
+  - match: |
+      var fontsImplementation = class fontsClass {
+        ANYTHING;
+        static get registered() { STMT_LIST; }
+        get registered() { STMT_LIST; }
+        ANYTHING;
+        static async generateFontFaceDeclarations(ANYTHING) { STMT_LIST; }
+        ANYTHING;
+      };
+    bindings:
+      - local: fontsImplementation
+        name: Fonts
