@@ -2179,7 +2179,7 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 `HarnessUserMessageConfirmed` and later `CommandFailed` name the same command. The
 [Thread fold](../history_service/threadfold/fold.go) narrowly tolerates that sequence for a
 `SubmitInput` only when the failure reason is `session blocked by unresolved effects`; other
-contradictory settlements still fail the fold. The [History append](../history_service/storage/store.go)
+contradictory settlements still fail the fold. The [History append](../history_service/internal/storage/store.go)
 accepts exact cursor replays and commits new cursor-valid entries without checking command outcomes,
 so other contradictions can remain in raw history while that Session's Thread projection stalls.
 Consider whether ingress should enforce one-time settlement invariants, and whether item completion
@@ -3935,7 +3935,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   one `executor` attachment. The plan file `central_session_contract.md` burns down with its three decisions.
 - **`SESSION_IDENTITY_AUTHZ` (design, not started):** the Sandbox-anchored ownership checks at the
   `TODO(SESSION_IDENTITY_AUTHZ)` sites (`notification_service/api/messages.go`,
-  `notification_service/internal/store/store.go`, `history_service/storage/store.go`) are replaced by
+  `notification_service/internal/store/store.go`, `history_service/internal/storage/store.go`) are replaced by
   Identity-keyed ones.
 - **`HISTORY_DATABASE_RENAME`** (below): deferred by the operator, and takes the name
   `HISTORY_SERVICE_RENAME` (section 8) decides.

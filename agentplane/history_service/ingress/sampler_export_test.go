@@ -19,7 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"

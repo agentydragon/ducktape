@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/postgres"

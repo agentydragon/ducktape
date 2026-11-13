@@ -12,7 +12,7 @@ go_library(
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
-        "//agentplane/history_service/storage",
+        "//agentplane/history_service/internal/storage",
         "//agentplane/identity/auth/auth",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -54,8 +54,8 @@ go_test(
         "//agentplane/environment_runtime_transport/testing",
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
+        "//agentplane/history_service/internal/storage",
         "//agentplane/history_service/projection",
-        "//agentplane/history_service/storage",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/identity/auth/auth",
         "//agentplane/identity/auth/listener",

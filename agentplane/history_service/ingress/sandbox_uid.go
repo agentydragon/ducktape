@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

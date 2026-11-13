@@ -10,7 +10,7 @@ import (
 	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"golang.org/x/sync/errgroup"

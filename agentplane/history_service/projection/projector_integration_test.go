@@ -13,7 +13,7 @@ import (
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
