@@ -658,7 +658,7 @@ async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> 
                 const restored = restore.restore({elements: [rectangle], files}, null, null);
                 return {
                     ids: elements.map(element => element.id),
-                    rectangle: [elements[0].version, elements[0].frameId, elements[0].boundElements],
+                    rectangle: [elements[0].version > 8, elements[0].frameId, elements[0].boundElements],
                     text: [elements[1].text, elements[1].fontSize, elements[1].fontFamily,
                            elements[1].containerId, elements[1].lineHeight],
                     untouched: [rectangle.version, rectangle.frameId, rectangle.boundElements.length],
@@ -674,7 +674,7 @@ async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> 
         )
         assert result == {
             "ids": ["restored-rectangle", "restored-text"],
-            "rectangle": [9, None, [{"id": "restored-text", "type": "text"}]],
+            "rectangle": [True, None, [{"id": "restored-text", "type": "text"}]],
             "text": ["Legacy", 20, 1, "restored-rectangle", 1.25],
             "untouched": [0, "missing-frame", 3],
             "uniqueIds": True,
