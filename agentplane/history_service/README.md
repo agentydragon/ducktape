@@ -140,7 +140,8 @@ when `through_cursor` does not advance. Raw cursors survive a projection epoch r
 neither resets nor follows the fold's epoch.
 
 Each entries frame holds at most 128 entries or 1 MiB of encoded response, with an oversized entry
-sent alone. Filtering and byte bounds are applied in the database before payloads are transferred.
+sent alone. Indexed cursor/kind/size metadata selects entries and applies byte bounds before their
+payloads are loaded; packed blocks are decompressed only for selected entries.
 The server reads a bounded entries/settlements page, waits for its frames to finish sending, then
 reads the next; it holds no database transaction while sending. It reads all intersecting removal
 ranges once per catch-up. Backend reads and waiting for each stream `Send` to clear transport
@@ -184,6 +185,17 @@ An Identity writer's Sandbox is the controller owner of its WorkloadCredential.
 
 A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. A nullable retained execution Identity (`Attached.execution_identity`, the Identity incarnation the Dispatcher recorded) is retained from an Identity runner running as it or a configured central sampler relaying it, never from a ServiceAccount runner, which cannot vouch for it; it is immutable like the execution principal, and a read scoped to an Identity incarnation lists exactly the Sessions retained as executing as it, whether or not their Sandbox still exists. The read API admits an Identity SVID (with `policy_namespace` set) and scopes it to that Identity incarnation. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 
+## Incremental storage compaction
+
+`ingress.compact_deltas: true` losslessly packs native frames and streamed deltas into bounded
+compressed blocks during ingress, before an item completes. The default is false. Original events,
+native JSON, cursors and evidence references are reconstructed by every reader, including after the
+flag is disabled. Existing completion-based settlement applies independently to both storage forms.
+The [read contract](api/history/README.md) defines pagination, replay, atomicity and rollout requirements.
+
+This packs retained events; it does not share bodies across raw history and projection tables or
+backfill old Sessions. Ordinary insertion/deletion still generates WAL.
+
 ## Delta settlement
 
 Each `Store.Append` batch that completes an item drops that
@@ -210,8 +222,8 @@ Each Session is scanned in pages of at most 128 entries / 1 MiB, with an oversiz
 The scan retains completion cursors and the last observation referencing each source cursor, not
 event bodies. Memory grows with the number of source references in one Session. Each eligible
 completion uses the ordinary settlement checks, including the 20,000-entry span limit. A later
-observation citing a chunk keeps that item's deltas. Dry runs use read-only transactions and log
-eligible rows and `pg_column_size(payload)` bytes; those exclude row/index overhead and unused space.
+observation citing a chunk keeps that item's deltas. Dry runs use read-only transactions and log eligible logical entries and uncompressed protobuf
+payload bytes, including packed entries; these are not physical storage savings estimates.
 
 Apply commits one completion per transaction, with a 30-second deadline and a 1-second lock timeout.
 It checks eligibility in a read-only transaction before taking any write lease; ineligible or

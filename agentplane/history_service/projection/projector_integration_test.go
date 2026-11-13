@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,7 +80,7 @@ type projectorFixture struct {
 func newProjectorFixture(t *testing.T) projectorFixture {
 	t.Helper()
 	db := testDB(t)
-	history := storage.NewStore(db, false)
+	history := storage.NewStore(db, storage.Options{})
 	return projectorFixture{db, history, &Projector{DB: db, History: history, Epoch: testEpoch, PageSize: testPageSize}}
 }
 
@@ -202,6 +203,39 @@ func TestProjectBatchFoldsAPageAtATimeUntilCaughtUp(t *testing.T) {
 		!sameTime(summary.firstEventAt, sql.NullTime{Time: at(1), Valid: true}) ||
 		!sameTime(summary.lastEventAt, sql.NullTime{Time: at(total), Valid: true}) {
 		t.Fatalf("summary = %+v", summary)
+	}
+}
+
+func TestProjectorResumesInsideCompactedActiveItem(t *testing.T) {
+	f := newProjectorFixture(t)
+	writer := storage.NewStore(f.db, storage.Options{CompactDeltas: true})
+	chunks := make([]string, 96)
+	for index := range chunks {
+		chunks[index] = "hello "
+	}
+	span := spans.ClaudeText(chunks, spans.TextOptions{})
+	id := f.retained(t, writer, span.Entries[:34]...)
+	held := f.acquire(t, id)
+	for f.fold(t, id, held).ThroughCursor < 34 {
+	}
+	// Packing now moves frames both before and after the projector's retained cursor.
+	f.appendTo(t, writer, id, span.Entries[34:len(span.Entries)-2]...)
+	last := uint64(len(span.Entries) - 2)
+	for f.fold(t, id, held).ThroughCursor < last {
+	}
+	var text string
+	if err := f.db.QueryRowContext(t.Context(), `SELECT string_agg(text::jsonb #>> '{}','' ORDER BY chunk_index)
+		FROM thread_payload_chunk WHERE thread_id=$1 AND field='text'`, id).Scan(&text); err != nil {
+		t.Fatal(err)
+	}
+	if text != strings.Join(chunks, "") {
+		t.Fatalf("folded text differs: %d bytes", len(text))
+	}
+	f.appendTo(t, writer, id, span.Entries[len(span.Entries)-2:]...)
+	for f.fold(t, id, held).ThroughCursor < uint64(len(span.Entries)) {
+	}
+	if _, through := checkpointOf(t, f.db, id); through != uint64(len(span.Entries)) {
+		t.Fatalf("folded through %d", through)
 	}
 }
 
@@ -533,7 +567,7 @@ func TestSettledHistoryFoldsToTheRowsOfTheFullLog(t *testing.T) {
 	span := spans.ClaudeText([]string{"Hel", "lo"}, spans.TextOptions{}).Entries
 	full := f.retained(t, f.history, span...)
 	settledSpan := spans.ClaudeText([]string{"Hel", "lo"}, spans.TextOptions{}).Entries
-	settled := f.retained(t, storage.NewStore(f.db, true), settledSpan...)
+	settled := f.retained(t, storage.NewStore(f.db, storage.Options{SettleDeltas: true}), settledSpan...)
 
 	for _, sessionID := range []uuid.UUID{full, settled} {
 		lease := f.acquire(t, sessionID)
@@ -559,7 +593,7 @@ func TestSettledHistoryFoldsToTheRowsOfTheFullLog(t *testing.T) {
 
 func TestSettlementAfterALiveFoldDropsTheChunksEvidence(t *testing.T) {
 	f := newProjectorFixture(t)
-	settling := storage.NewStore(f.db, true)
+	settling := storage.NewStore(f.db, storage.Options{SettleDeltas: true})
 	span := spans.ClaudeText([]string{"Hel", "lo"}, spans.TextOptions{}).Entries
 	sessionID := f.retained(t, settling, span[:6]...)
 	lease := f.acquire(t, sessionID)
@@ -595,7 +629,9 @@ func appendRaw(t *testing.T, db *sql.DB, sessionID uuid.UUID, raw *eventlogpb.Ev
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec("INSERT INTO session_event (session_id, cursor, payload, kind) VALUES ($1, $2, $3, 0)", sessionID, raw.Cursor, payload); err != nil {
+	observation := raw.Event.ProtoReflect()
+	kind := observation.WhichOneof(observation.Descriptor().Oneofs().ByName("observation")).Number()
+	if _, err := db.Exec("INSERT INTO session_event (session_id, cursor, payload, kind) VALUES ($1, $2, $3, $4)", sessionID, raw.Cursor, payload, int32(kind)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("UPDATE session_history SET last_cursor = $2 WHERE id = $1", sessionID, raw.Cursor); err != nil {

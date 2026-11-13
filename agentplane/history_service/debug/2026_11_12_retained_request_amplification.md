@@ -190,3 +190,70 @@ The projections still represent some message/tool content already present in raw
 their rows/indexes cost space. No equivalent full-context snapshot accumulation was established
 in this path. Any cleanup or cross-service deduplication needs separate replay, evidence,
 authorization and retention decisions; this investigation changed no History data.
+
+## After compaction: remaining amplification
+
+Read-only replica measurements at approximately 01:03–01:19 UTC on 2026-11-13, after
+operator-approved `VACUUM FULL`, find 4,173,159 retained events. `session_event` occupies
+4,208.8 MiB including indexes and TOAST; its compressed payload values sum to 3,579,683,813 bytes.
+The largest payload groups are boundary evidence (1,750.8 MiB), native harness frames
+(1,196.9 MiB), semantic completions (214.2 MiB), and text deltas (82.6 MiB).
+
+The sampling/dispatch prefix cohort contains 3,159 fragments and 1,535,756,111 stored payload
+bytes (1.43 GiB). The previously measured largest sampler Session still has exactly 1,586 such
+fragments and 984,351,175 stored bytes. All 115 saved sample-event payload hashes match live
+History. Reassembling the six sampled requests proves that each contains equal structured
+`body` and parsed `wire_request` values. Their contexts grow through 2, 215, 418, 635, 822 and
+1,026 items; each later sample retains the entire previous sample as an equal prefix.
+
+### Large completed items bypass settlement
+
+The [settlement reader](../storage/store.go) returns no settlement when its backward scan would
+exceed `settlementSpanLimit = 20_000`. This also governs the historical backfill. The cap counts
+both native and semantic events, rather than text bytes.
+
+In Session `91e0ad22-4ae2-45b0-a499-f617d54eb9ca`, reasoning item `rs_78038`, cursors
+1,343,675–1,381,152, contains 18,737 native/text-delta pairs, one native/semantic start pair and
+one native/semantic completion pair: **37,478 rows and 7,524,907 stored payload bytes**.
+Its 71,336-byte semantic completion exactly matches the concatenated text deltas by SHA-256.
+The native and semantic completion payloads occupy only 32,472 and 32,036 bytes respectively.
+The span exceeds the reader's cap before the complete settlement proof can run. This is over
+100 times the text size in stored event payloads, before row/index overhead.
+
+A generated-protobuf scan of that Session and `58e5d7cc-8e45-46e8-bf7b-8e8a79b28d12`
+finds 734,385 retained semantic text-delta rows carrying 2,894,970 text bytes, while their
+payloads occupy 65,377,879 bytes. Fifty-four items have at least 10,000 text deltas each,
+totaling 679,698 deltas before their native counterparts. Fifty-three items across the scan
+have exactly one completion whose text equals all their retained deltas, accounting for
+666,910 deltas. Text equality alone does not establish every other settlement precondition.
+The fix should validate large spans incrementally while retaining the existing identity,
+native-frame, anomaly and external-source-reference checks.
+
+### Completed bodies and projection overhead
+
+A fresh generated-protobuf/content scan of 3,263,454 event/projection rows confirms the same
+1,629,022-byte tool output in native completion, semantic completion and projected output.
+The previously measured 455,262-byte output still appears in 20 rows across five Sessions:
+seven native completions, seven semantic completions and six projected chunks. Identical
+results from distinct calls remain distinct observations; their bodies could share storage.
+
+Projection chunk storage is 454.1 MiB, with approximately 282.7 MiB of stored JSON-text values;
+output text accounts for 190.1 MiB of those values. Manifests occupy another 171.8 MiB.
+The append path still shares prefix chunks, so summing manifest `content_bytes` overstates
+actual retained body bytes.
+
+`thread_evidence` and `thread_native_link` occupy 200.1 and 220.9 MiB. All 1,431,194 native-link
+rows join an evidence row on their four shared key columns; evidence has 1,452,984 rows total.
+Their [writer](../projection/recording.go) inserts both representations for observations with
+native sources. These are metadata/reference costs, separate from repeated body content.
+
+## Stopgap decision
+
+The operator accepted [event-block packing](https://github.com/agentydragon/ducktape/pull/16009)
+as a stopgap. It compresses original events together while retaining every delta's envelope and
+the native/derived representations.
+
+TODO: revisit the item-level representation and content sharing, including whether every tiny
+delta needs its own retained identity. Coordinate this with the
+[authored-conversation and evidence ownership design](../../plans/task_dag.md#agent_authored_conversations_design--conversations-agents-act-on-through-tools).
+The block-packing change selects no longer-term representation.

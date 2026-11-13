@@ -32,7 +32,7 @@ func upBaseline(t *testing.T, db *sql.DB) error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = provider.Up(t.Context())
+	_, err = provider.UpTo(t.Context(), 15)
 	return err
 }
 
@@ -142,7 +142,7 @@ func commandBridgeCount(t *testing.T, db *sql.DB) int {
 	return count
 }
 
-func TestBaselineCreatesCurrentHistorySchema(t *testing.T) {
+func TestBaselineCreatesVersion15HistorySchema(t *testing.T) {
 	db := baselineDB(t)
 	if err := upBaseline(t, db); err != nil {
 		t.Fatal(err)

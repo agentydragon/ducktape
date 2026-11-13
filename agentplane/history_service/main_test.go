@@ -36,6 +36,7 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -246,6 +247,86 @@ func TestTheIngressSettlesDeltasOnlyWhenConfigured(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("settled %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestIncrementalCompactionFlagPreservesPublicReadsAndNativeEvidence(t *testing.T) {
+	for _, compact := range []bool{false, true} {
+		t.Run(strconv.FormatBool(compact), func(t *testing.T) {
+			service := start(t, func(c *config) {
+				c.Ingress.CompactDeltas, c.Ingress.SettleDeltas = compact, false
+			})
+			watch, err := service.reads.WatchSessionSummaries(bearing(t, readerToken), &historypb.WatchSessionSummariesRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := watch.Recv(); err != nil {
+				t.Fatal(err)
+			}
+			chunks := make([]string, 96)
+			for index := range chunks {
+				chunks[index] = "hello "
+			}
+			span := spans.CodexReasoning([][]string{chunks})
+			prefix := span.Entries[:len(span.Entries)-2]
+			sessionID := uuid.New()
+			pushJournal(t, service, sessionID, prefix...)
+			page, err := service.reads.ReadSessionEvents(bearing(t, readerToken), &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 1000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Entries) != len(prefix) {
+				t.Fatalf("read %d events, want %d", len(page.Entries), len(prefix))
+			}
+			for index, entry := range page.Entries {
+				if !proto.Equal(entry, prefix[index]) {
+					t.Fatalf("event %d differs", index)
+				}
+			}
+			db, err := sql.Open("postgres", integrationDatabase.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			var blocks int
+			if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event_block WHERE session_id=$1", sessionID).Scan(&blocks); err != nil {
+				t.Fatal(err)
+			}
+			if (blocks > 0) != compact {
+				t.Fatalf("compact=%t created %d blocks", compact, blocks)
+			}
+			for {
+				summary, err := service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if summary.GetFoldedThrough() == uint64(len(prefix)) {
+					break
+				}
+				if _, err := watch.Recv(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var delta *eventlogpb.EventEntry
+			for _, entry := range prefix {
+				if entry.Event.GetTextDelta() != nil {
+					delta = entry
+					break
+				}
+			}
+			key := &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: delta.Event.GetTextDelta().GetItemId()}
+			entities, err := service.reads.ReadThreadEntities(bearing(t, readerToken), &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: &historypb.ReadThreadEntitiesRequest_Keys{Keys: &historypb.EntityKeys{Keys: []*historypb.EntityKey{key}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			frames, err := service.reads.ReadNativeFrames(bearing(t, readerToken), &historypb.ReadNativeFramesRequest{SessionId: sessionID.String(), ProjectionEpoch: entities.ProjectionEpoch, Entity: key, ObservationCursor: delta.Cursor, Limit: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(frames.Frames) != 1 || !proto.Equal(frames.Frames[0].Entry, prefix[delta.Event.SourceSequences[0]-1]) {
+				t.Fatalf("native evidence differs: %v", frames)
 			}
 		})
 	}

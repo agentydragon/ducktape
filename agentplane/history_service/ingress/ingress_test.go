@@ -116,7 +116,7 @@ func serveIngressAdmitting(t *testing.T, service *Service, pushRule func(*auth.R
 func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
-	return &Service{History: storage.NewStore(db, true), Timing: timing}, db
+	return &Service{History: storage.NewStore(db, storage.Options{SettleDeltas: true}), Timing: timing}, db
 }
 
 // call is a runner's Push call: frames go out as the test sends them, and acknowledgements are read back.

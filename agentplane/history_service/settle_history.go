@@ -59,13 +59,13 @@ func runSettleHistory(ctx context.Context, args []string) error {
 	run := func(id uuid.UUID) error {
 		result, err := backfill.RunSession(ctx, db, id, options.apply)
 		slog.InfoContext(ctx, "historical settlement Session", "session_id", id, "apply", options.apply,
-			"items", result.Items, "rows", result.Rows, "stored_payload_bytes", result.StoredBytes)
+			"items", result.Items, "rows", result.Rows, "logical_payload_bytes", result.PayloadBytes)
 		return err
 	}
 	if !options.all {
 		return run(options.session)
 	}
-	history := storage.NewStore(db, false)
+	history := storage.NewStore(db, storage.Options{})
 	var retry error
 	for position := uint64(0); ; {
 		sessions, err := history.RecordedSessions(ctx, position, 100)

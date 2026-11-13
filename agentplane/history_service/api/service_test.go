@@ -96,7 +96,7 @@ func newServerWithDelegation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := storage.NewStore(db, true)
+	history := storage.NewStore(db, storage.Options{SettleDeltas: true})
 	service := NewService(Options{
 		Reader:         &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
 		ReaderAccounts: []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},

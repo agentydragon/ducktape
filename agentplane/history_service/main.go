@@ -216,7 +216,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	defer hub.Close()
 
 	// The read store never appends, so it settles nothing.
-	history := storage.NewStore(readDB, false)
+	history := storage.NewStore(readDB, storage.Options{})
 	service := api.NewService(api.Options{
 		Reader:         &reads.Reader{DB: readDB, History: history, NativeFrameReadBatchSize: c.NativeFrameReadBatchSize},
 		ReaderAccounts: c.ReaderAccounts,
@@ -270,8 +270,10 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, &ingress.Service{
-		SandboxUIDs:     ingress.NewServiceAccountSandboxUIDResolver(kube),
-		History:         storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
+		SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
+		History: storage.NewStore(ingressDB, storage.Options{
+			SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas,
+		}),
 		SamplerAccounts: c.Ingress.SamplerAccounts,
 		Timing:          ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})

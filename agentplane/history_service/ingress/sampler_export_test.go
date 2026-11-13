@@ -170,7 +170,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = historyDB.Close() })
-	history := storage.NewStore(historyDB, true)
+	history := storage.NewStore(historyDB, storage.Options{SettleDeltas: true})
 
 	// The package fixture is migrated for History. Give Sampler its own clone and remove that clone's
 	// public schema so its clean-database migration does not mistake History relations for old Sampler data.

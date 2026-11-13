@@ -205,6 +205,7 @@ class Environment:
     # Whether the History Service's writers remove an item's streamed delta entries once its
     # completion provably holds them (agentplane/history_service/README.md#delta-settlement).
     settle_deltas: bool
+    compact_deltas: bool
     llm_ingress: LlmIngressProps
     egress: EgressProps
     app: AppProps

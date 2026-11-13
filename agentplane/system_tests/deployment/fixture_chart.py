@@ -284,6 +284,7 @@ def environment(
             routes, templates=(POD_TEMPLATE,), central_sampler_enabled=central_sampler
         ),
         settle_deltas=True,
+        compact_deltas=True,
         central_sampler=central_sampler_props,
         llm_ingress=LlmIngressProps(
             litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(routes), codex_routes=routes.codex
