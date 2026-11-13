@@ -339,12 +339,7 @@ def test_generate_3d_border():
 def test_generate_rd_rejects_unsupported_sweep_axes_even_at_default(
     axis_name: str, param: CutParam, default_value: float
 ):
-    axes = {
-        "x": AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
-        "y": AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
-    }
-    axes[axis_name] = AxisConfig(param=param, values=[default_value])
-    config = GridConfig(**axes)
+    config = _minimal_config(**{axis_name: AxisConfig(param=param, values=[default_value])})
 
     with pytest.raises(ValueError, match=f"{axis_name}.*{param.value}"):
         generate_rd(config)
@@ -357,20 +352,17 @@ def test_generate_rd_rejects_nonzero_constant_kerf():
 
 
 @pytest.mark.parametrize(
-    ("section", "kwargs"),
+    ("config", "unsupported_field"),
     [
-        ("cut", {"num_passes": 2}),
-        ("cut", {"z_offset_mm": 0.1}),
-        ("cut", {"z_per_pass_mm": -0.1}),
-        ("border", {"enabled": True, "num_passes": 2}),
+        (_minimal_config(cut=CutConfig(num_passes=2)), "num_passes"),
+        (_minimal_config(cut=CutConfig(z_offset_mm=0.1)), "z_offset_mm"),
+        (_minimal_config(cut=CutConfig(z_per_pass_mm=-0.1)), "z_per_pass_mm"),
+        (_minimal_config(border=BorderConfig(enabled=True, num_passes=2)), "num_passes"),
     ],
     ids=["cut-passes", "cut-z-offset", "cut-z-per-pass", "border-passes"],
 )
-def test_generate_rd_rejects_unsupported_constant_and_border_settings(section: str, kwargs: dict[str, object]):
-    section_config = CutConfig(**kwargs) if section == "cut" else BorderConfig(**kwargs)
-    config = _minimal_config(**{section: section_config})
-
-    with pytest.raises(ValueError, match=r"num_passes|z_offset_mm|z_per_pass_mm"):
+def test_generate_rd_rejects_unsupported_constant_and_border_settings(config: GridConfig, unsupported_field: str):
+    with pytest.raises(ValueError, match=unsupported_field):
         generate_rd(config).to_bytes()
 
 
