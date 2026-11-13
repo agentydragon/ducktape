@@ -3,6 +3,7 @@ package gateway
 import (
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -82,7 +83,7 @@ func testVMRunnerOwnership(t *testing.T, mode peertls.SecurityMode) {
 			g := &Gateway{
 				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: peertls.Security{Mode: mode}}, objects: objects,
 			}
-			uri, err := peertls.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: "current-credential"}.URI()
+			uri, err := workloadid.ID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: "current-credential"}.URI()
 			if err != nil {
 				t.Fatal(err)
 			}

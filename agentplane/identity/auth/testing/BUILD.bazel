@@ -9,7 +9,7 @@ go_library(
     deps = [
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
-        "//agentplane/net/peertls",
+        "//agentplane/identity/credentials/workloadid",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",

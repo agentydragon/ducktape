@@ -19,6 +19,7 @@ go_library(
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/grpc/streaming",
         "//agentplane/identity/auth",
+        "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/proto:identity_go_proto",
@@ -73,6 +74,7 @@ go_test(
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/identity/auth",
+        "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
         "//agentplane/proto:environment_runtime_state_go_proto",
@@ -122,6 +124,7 @@ go_test(
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/identity/auth",
+        "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
         "//agentplane/proto:command_go_proto",

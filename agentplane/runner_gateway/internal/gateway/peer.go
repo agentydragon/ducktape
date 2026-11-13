@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -74,7 +75,7 @@ func (g *Gateway) runnerDestination(ctx context.Context, sandbox *sandboxapi.San
 	var uri string
 	if g.config.RunnerSecurity.Mode == peertls.MutualTLS {
 		var err error
-		uri, err = peertls.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: credentialID}.URI()
+		uri, err = workloadid.ID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: credentialID}.URI()
 		if err != nil {
 			return runnerDestination{}, err
 		}

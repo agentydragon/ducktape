@@ -17,6 +17,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/net/peertls",
     deps = [
+        "//agentplane/identity/credentials/workloadid",
         "@com_github_spiffe_go_spiffe_v2//bundle/x509bundle",
         "@com_github_spiffe_go_spiffe_v2//spiffeid",
         "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
@@ -41,6 +42,7 @@ go_test(
     embed = [":peertls"],
     race = "on",
     deps = [
+        "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls/testing",
         "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
         "@org_golang_google_grpc//:grpc",

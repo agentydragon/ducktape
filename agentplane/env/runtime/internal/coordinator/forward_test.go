@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
@@ -47,7 +48,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	if mode == environmentruntimetransport.MutualTLS {
 		ca := environmentruntimetransporttesting.NewCA(t)
 		var err error
-		runnerURI, err = environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
+		runnerURI, err = workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +169,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 
 func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	wrongURI, err := environmentruntimetransport.WorkloadID{Namespace: "another-namespace", Name: "another-sandbox", CredentialID: "credential-id"}.URI()
+	wrongURI, err := workloadid.ID{Namespace: "another-namespace", Name: "another-sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +190,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +318,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 
 func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

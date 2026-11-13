@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
@@ -24,13 +25,13 @@ import (
 
 func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	initial := ca.Issue(t, runnerURI)
 	rotated := ca.Issue(t, runnerURI)
-	otherURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-credential"}.URI()
+	otherURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

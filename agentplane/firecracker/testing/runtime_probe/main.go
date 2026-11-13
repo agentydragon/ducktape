@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -82,7 +83,7 @@ func run() error {
 	if *processID == "" {
 		return fmt.Errorf("--process-id cannot be empty")
 	}
-	uri, err := transport.WorkloadID{Namespace: *namespace, Name: *sandboxName, CredentialID: *credential}.URI()
+	uri, err := workloadid.ID{Namespace: *namespace, Name: *sandboxName, CredentialID: *credential}.URI()
 	if err != nil {
 		return err
 	}

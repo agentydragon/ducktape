@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
@@ -63,7 +64,7 @@ func startTestCentralProxy(t *testing.T) *testCentralProxy {
 		t.Fatal(err)
 	}
 	security.Certificates = []tls.Certificate{certificate}
-	peer, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	peer, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +408,7 @@ func TestMTLSHopRemovesCallerCredentials(t *testing.T) {
 
 func TestMTLSFailureRefusesWithoutSendingTheRequest(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

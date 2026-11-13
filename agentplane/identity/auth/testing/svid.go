@@ -7,7 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -109,7 +109,7 @@ func (w Workload) Issue(t *testing.T, id string) string {
 	if err := w.Objects.Get(t.Context(), client.ObjectKeyFromObject(record), record); err != nil {
 		t.Fatal(err)
 	}
-	uri, err := transport.WorkloadID{Namespace: record.Namespace, Name: record.Name, CredentialID: id}.URI()
+	uri, err := workloadid.ID{Namespace: record.Namespace, Name: record.Name, CredentialID: id}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
