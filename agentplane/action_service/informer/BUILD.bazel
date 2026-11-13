@@ -30,8 +30,8 @@ go_test(
     embed = [":informer"],
     deps = [
         "//agentplane/action_service/callers",
+        "//agentplane/action_service/internal/store",
         "//agentplane/action_service/policies",
-        "//agentplane/action_service/store",
         "//agentplane/identity/auth/auth",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",

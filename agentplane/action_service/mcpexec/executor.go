@@ -16,7 +16,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sethvargo/go-retry"

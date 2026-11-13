@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/identity/credentials/testing"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"

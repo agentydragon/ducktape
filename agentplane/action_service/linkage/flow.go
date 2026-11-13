@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"

@@ -11,7 +11,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"

@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policyview"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc"

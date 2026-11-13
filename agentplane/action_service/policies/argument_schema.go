@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 

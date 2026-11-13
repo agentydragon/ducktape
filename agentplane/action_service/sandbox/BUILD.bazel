@@ -26,8 +26,8 @@ go_library(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/store",
         "//agentplane/action_service/sandbox/contract",
-        "//agentplane/action_service/store",
         "//agentplane/action_service/worker",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
@@ -60,8 +60,8 @@ go_test(
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/store",
         "//agentplane/action_service/sandbox/contract",
-        "//agentplane/action_service/store",
         "//agentplane/environment_runtime_transport/testing",
         "//agentplane/identity/auth/auth",
         "//agentplane/identity/credentials/api/v1alpha1",

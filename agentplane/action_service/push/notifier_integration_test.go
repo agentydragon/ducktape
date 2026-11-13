@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"

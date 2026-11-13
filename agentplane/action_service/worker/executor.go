@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 )
 
 // Executor runs Executions on one backend.

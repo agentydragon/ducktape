@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/cases"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 )
 
 // The GitHub kinds decide over the one repository a call to the upstream GitHub MCP server targets. Both resist the

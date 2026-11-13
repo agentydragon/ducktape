@@ -13,8 +13,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"

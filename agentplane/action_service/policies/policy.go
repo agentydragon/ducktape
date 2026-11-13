@@ -13,7 +13,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 

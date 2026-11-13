@@ -7,8 +7,8 @@ import (
 	"slices"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"google.golang.org/grpc"
