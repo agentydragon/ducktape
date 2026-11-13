@@ -933,8 +933,15 @@ impl<E> Default for SelectorOutcomeReport<E> {
     }
 }
 
+pub type SelectorIdentity<'a> = (
+    &'a str,
+    &'a Option<Placement>,
+    &'a Option<String>,
+    &'a Option<String>,
+);
+
 impl<E> SelectorOutcome<E> {
-    pub fn identity(&self) -> (&str, &Option<Placement>, &Option<String>, &Option<String>) {
+    pub fn identity(&self) -> SelectorIdentity<'_> {
         (
             &self.chunk,
             &self.placement,

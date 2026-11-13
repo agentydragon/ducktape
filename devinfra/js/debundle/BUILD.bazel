@@ -1744,6 +1744,7 @@ rust_library(
         ":ortools_cpsat_ffi",
         ":sat_parameters_rust_proto",
         ":selector_constraint_backend",
+        ":selector_ir",
         ":selector_ortools_cpsat_model",
         ":source_identity",
         "@crates//:thiserror",

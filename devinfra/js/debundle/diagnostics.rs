@@ -79,7 +79,7 @@ impl Diagnostics {
 enum DiagnosticOrder<'a> {
     OpaqueEntry,
     DanglingExportContract(ExportContract, &'a str),
-    Selector(&'a selector_outcome::SelectorOutcome),
+    Selector(selector_outcome::SelectorIdentity<'a>),
     RedundantPurityHint(&'a str),
     RedundantPureMemberHint(&'a str, &'a str),
     AdmissionOverride(&'a AdmissionShape, &'a [usize]),
@@ -94,7 +94,7 @@ impl ChunkDiagnostic {
             Self::DanglingExportContract { contract, export } => {
                 DiagnosticOrder::DanglingExportContract(*contract, export)
             }
-            Self::Selector(outcome) => DiagnosticOrder::Selector(outcome),
+            Self::Selector(outcome) => DiagnosticOrder::Selector(outcome.identity()),
             Self::RedundantPurityHint(hint) => {
                 DiagnosticOrder::RedundantPurityHint(&hint.binding_name)
             }

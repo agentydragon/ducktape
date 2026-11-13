@@ -182,7 +182,11 @@ fn compute_slack(
         if relaxed_match == baseline_emit || !seen.insert(relaxed_match.clone()) {
             return Ok(false);
         }
-        if resolve(relaxed_match.clone())? == *resolved {
+        if matches!((&resolve(relaxed_match.clone())?, resolved),
+            (Outcome::Resolved { body_index: candidate_index, binding: candidate_binding, resolved_by: candidate_by },
+             Outcome::Resolved { body_index, binding, resolved_by })
+                if (candidate_index, candidate_binding, candidate_by) == (body_index, binding, resolved_by)
+        ) {
             slack.push(SlackRelaxation { relaxed_match });
         }
         Ok(false)

@@ -1572,10 +1572,10 @@ fn match_single_member_selector(
     export_name: &str,
     match_source: &str,
 ) -> Result<Vec<MemberBindingMatch>> {
-    index.chunk.matcher().member_candidates(
+    Ok(index.chunk.matcher().member_candidates(
         SYNTHESIS_MODULE,
         &parse_member_selector(export_name, match_source)?,
-    )
+    )?)
 }
 
 /// The proof gate: `match_source`, claiming every target by its export name,
