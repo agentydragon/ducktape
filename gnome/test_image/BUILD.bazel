@@ -18,12 +18,7 @@ pkg_tar(
     srcs = [":boot_script"],
 )
 
-# Headless gnome-shell + Xvfb + dbus + scrot, plus a single helper:
-#
-#   /usr/local/bin/boot.sh  — one-shot: postinst-equivalent setup, starts
-#                             Xvfb, forks a long-lived session bus,
-#                             writes its address to /tmp/dbus.env, blocks.
-#                             The test driver runs this once per container.
+# Headless gnome-shell + Xvfb + dbus + scrot.
 #
 # Per-fixture orchestration (start gnome-shell, poll for ready/active,
 # screenshot, kill) lives in the Python test driver — clearer error

@@ -14,7 +14,7 @@
 #   docker exec <container> /usr/local/bin/boot.sh
 #
 # Env (optional):
-#   RENDER_WIDTH, RENDER_HEIGHT — Xvfb dims (default 1920x40).
+#   RENDER_WIDTH, RENDER_HEIGHT — Xvfb dims (default 1920x500).
 set -euo pipefail
 
 # Sized tall enough for the open popup menu to fit below the panel — the
