@@ -104,7 +104,7 @@ def _render_anchors_yaml(anchors: tuple[PublicMarketCdfAnchor, ...]) -> str:
     )
 
 
-async def _run(argv: list[str] | None) -> int:
+async def _run(argv: list[str] | None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("catalog", type=Path, help="Path to a MarketCatalog YAML.")
@@ -114,12 +114,11 @@ async def _run(argv: list[str] | None) -> int:
     client = EvidenceMarketReader(platform=Platform.MANIFOLD, evidence_dir=ensure_checkout())
     anchors = await derive_public_market_anchors(catalog, price_client=client)
     print(_render_anchors_yaml(anchors))
-    return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    return asyncio.run(_run(argv))
+def main(argv: list[str] | None = None) -> None:
+    asyncio.run(_run(argv))
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
