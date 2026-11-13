@@ -135,11 +135,11 @@ pub fn run_source_unit_refine(
         resolve_source_claims(
             anonymous_resolution::SourceClaimsContext {
                 graph: dependency_graph,
-                dependency_graph_path: dependency_graph_path,
-                modules_root: modules_root,
+                dependency_graph_path,
+                modules_root,
                 source_root: Some(source_root),
-                source_context: source_context,
-                diagnostics: diagnostics,
+                source_context,
+                diagnostics,
             },
             &claim_sets,
         )

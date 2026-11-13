@@ -738,12 +738,12 @@ fn resolve_decomposition_claims(
         .collect::<Vec<_>>();
     let resolved = resolve_source_claims(
         anonymous_resolution::SourceClaimsContext {
-            graph: graph,
+            graph,
             dependency_graph_path: &options.dependency_graph_path,
             modules_root: &options.modules_root,
             source_root: Some(source_root),
             source_context: options.source_context.as_ref(),
-            diagnostics: diagnostics,
+            diagnostics,
         },
         &claim_sets,
     )?;

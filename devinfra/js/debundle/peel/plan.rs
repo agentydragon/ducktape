@@ -1402,12 +1402,12 @@ fn patch_plan_rows(
     // resolver parses each claimed source file once per call.
     let resolved_by_set = resolve_source_claims(
         anonymous_resolution::SourceClaimsContext {
-            graph: graph,
-            dependency_graph_path: dependency_graph_path,
-            modules_root: modules_root,
-            source_root: source_root,
-            source_context: source_context,
-            diagnostics: diagnostics,
+            graph,
+            dependency_graph_path,
+            modules_root,
+            source_root,
+            source_context,
+            diagnostics,
         },
         &patch_sets
             .iter()
@@ -1845,12 +1845,12 @@ fn resolve_module_path_source_unit_ids(
         .with_context(|| format!("module {module_path:?} is not in the modules tree"))?;
     let resolved = resolve_source_claims_of(
         anonymous_resolution::SourceClaimsContext {
-            graph: graph,
+            graph,
             dependency_graph_path: &common.dependency_graph_path,
             modules_root: &common.modules_root,
-            source_root: source_root,
-            source_context: source_context,
-            diagnostics: diagnostics,
+            source_root,
+            source_context,
+            diagnostics,
         },
         &module_files
             .iter()

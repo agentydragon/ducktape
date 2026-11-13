@@ -856,11 +856,11 @@ fn gate_post_edit_assignment_with_expected(
         resolve_source_claims(
             anonymous_resolution::SourceClaimsContext {
                 graph: dependency_graph_report,
-                dependency_graph_path: dependency_graph_path,
-                modules_root: modules_root,
+                dependency_graph_path,
+                modules_root,
                 source_root: source_lookup.root,
                 source_context: source_lookup.verified,
-                diagnostics: diagnostics,
+                diagnostics,
             },
             &claim_sets,
         )
