@@ -8,7 +8,7 @@ import {
   ActionRequestSchema,
   ActionState,
   type ActionRequest,
-} from "../../../../action_service/action_service_pb";
+} from "../../../../action_service/api/contracts/action_service_pb";
 import { formatActionNotification } from "./index";
 
 function actionRequest(fields: {

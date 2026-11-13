@@ -73,7 +73,7 @@ py_proto_library_with_mypy_stubs(
     deps = [":app_service_proto"],
 )
 
-# gazelle:resolve py agentplane.action_service.action_service_pb2 //agentplane/action_service:action_service_pb2
+# gazelle:resolve py agentplane.action_service.api.contracts.action_service_pb2 //agentplane/action_service/api/contracts:action_service_pb2
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
 
 # No test here is small, and none of that is about the tests being slow: on the CI executor image
@@ -110,7 +110,7 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agentplane/action_service:action_service_pb2",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
         "//agentplane/app:integration_fixtures",
         "//agentplane/app/testing:fake_action_service",
         "//agentplane/app/testing:replication_process",

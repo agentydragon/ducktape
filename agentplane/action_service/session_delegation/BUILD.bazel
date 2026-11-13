@@ -18,7 +18,7 @@ go_library(
     srcs = ["executor.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/session_delegation",
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/session_delegation/contract",
@@ -50,7 +50,7 @@ go_test(
     ],
     embed = [":session_delegation"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/worker",
@@ -87,7 +87,7 @@ go_test(
     embed = [":session_delegation"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/session_delegation/contract",

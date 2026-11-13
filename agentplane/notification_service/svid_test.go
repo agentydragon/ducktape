@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"

@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
 // structuredResult answers a view as structured content, with the same JSON as its one text block.

@@ -5,8 +5,10 @@ schema and ActionRequest lifecycle; the Agentplane integration app, Haku Console
 external harnesses remain clients rather than state owners.
 
 Agent entry point: `agentplane actions guide` ([source](docs/agents/llms.txt)), with lifecycle,
-recovery and Kubernetes/grant workflows. The service API is defined by its protobuf contracts;
-the integration app exposes its own generated HTTP/JSON facade for browser clients.
+recovery and Kubernetes/grant workflows. The Action, operator decision, and linkage APIs are
+defined by their [protobuf contracts](api/contracts/README.md); the Web Push schema remains in
+[web_push_service.proto](web_push_service.proto). The integration app exposes its own generated
+HTTP/JSON facade for browser clients.
 The `/v1/` HTTP examples below describe that facade (mounted under `/upstream/actions` in the app),
 not routes on the Action Service listener.
 

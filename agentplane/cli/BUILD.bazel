@@ -22,7 +22,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/cli",
     visibility = ["//visibility:private"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/docs",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/docs",
@@ -82,7 +82,7 @@ go_test(
     ],
     embed = [":cli"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service/api/history:history_service_go_proto",

@@ -10,12 +10,12 @@ import {
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   type McpServerLinkage,
-} from "../../../action_service/operator_action_service_pb";
+} from "../../../action_service/api/contracts/operator_action_service_pb";
 import { followActionGroups, type ActionGroupWatchFrame } from "../actions/client";
 import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../actions/presentation";
 import { TimeAgo } from "../time_ago";

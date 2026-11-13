@@ -13,7 +13,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/notification_service:storage_go_proto",
         "//agentplane/notification_service/model",
         "//agentplane/proto:identity_go_proto",

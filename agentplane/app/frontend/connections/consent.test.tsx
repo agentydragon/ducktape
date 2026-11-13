@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { create, toJson } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
-import { Verdict } from "../../../action_service/action_service_pb";
+import { Verdict } from "../../../action_service/api/contracts/action_service_pb";
 import {
   DecideConnectionEnrollmentResponseSchema,
   ListConnectionIdentitiesResponseSchema,

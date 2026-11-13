@@ -47,7 +47,7 @@ go_test(
     embed = [":store"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
         "//agentplane/proto:event_log_go_proto",
@@ -98,7 +98,7 @@ go_test(
     embedsrcs = ["golden.json"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/internal/store/internal/entry",
         "//agentplane/notification_service/migrations",

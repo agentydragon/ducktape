@@ -1,4 +1,4 @@
-import type { ActionRequest } from "../../../../../action_service/action_service_pb";
+import type { ActionRequest } from "../../../../../action_service/api/contracts/action_service_pb";
 import { actionArguments } from "../../presentation";
 import { pullRequestOptions, zCreatePullRequestArguments } from "../../schemas/github/create_pull_request";
 import type { ActionNotificationParts } from "../types";

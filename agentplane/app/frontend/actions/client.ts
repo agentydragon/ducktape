@@ -25,11 +25,11 @@ import {
   type Execution,
   type ListActionRequestHistoryResponse,
   type PolicyEvidence,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import {
   DecideActionRequestRequestSchema,
   DecideActionRequestResponseSchema,
-} from "../../../action_service/operator_action_service_pb";
+} from "../../../action_service/api/contracts/operator_action_service_pb";
 
 const ACTIONS_PATH = "/upstream/actions";
 

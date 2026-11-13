@@ -12,7 +12,7 @@ import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
-from agentplane.action_service import action_service_pb2, action_service_pb2_grpc
+from agentplane.action_service.api.contracts import action_service_pb2, action_service_pb2_grpc
 from agentplane.grpc.serving import serving
 
 

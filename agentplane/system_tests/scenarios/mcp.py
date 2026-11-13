@@ -22,7 +22,7 @@ from google.protobuf.struct_pb2 import Value
 from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.action_service import action_service_pb2, operator_action_service_pb2
+from agentplane.action_service.api.contracts import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION

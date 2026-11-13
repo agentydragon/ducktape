@@ -30,13 +30,13 @@ import {
   Verdict,
   type ActionGroup,
   type ActionRequest,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   McpServerLinkageSchema,
   type McpServerLinkage,
-} from "../../../action_service/operator_action_service_pb";
+} from "../../../action_service/api/contracts/operator_action_service_pb";
 import {
   IdentitySchema,
   PolicyBindingSchema,

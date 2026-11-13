@@ -24,7 +24,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/sandbox",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/sandbox/contract",
@@ -58,7 +58,7 @@ go_test(
     embed = [":sandbox"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/action_service:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/sandbox/contract",

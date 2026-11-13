@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from "react-router";
 import { actionGroupsQuery, actionRequestQuery, ActionRequestsContext, PendingActionCard } from "./requests";
 import { displayableError } from "../client";
 import { ActionHistoryCard } from "./history";
-import { ActionState, ExecutorKind } from "../../../action_service/action_service_pb";
+import { ActionState, ExecutorKind } from "../../../action_service/api/contracts/action_service_pb";
 import { actionIdentity } from "./presentation";
 
 type InAppReturnTo = string | { pathname: string; search?: string; hash?: string };

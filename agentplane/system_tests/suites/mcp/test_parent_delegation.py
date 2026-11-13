@@ -14,7 +14,7 @@ import pytest_bazel
 from google.protobuf import json_format
 from more_itertools import one
 
-from agentplane.action_service import action_service_pb2
+from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient

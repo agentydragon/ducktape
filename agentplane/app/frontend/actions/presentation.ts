@@ -8,7 +8,7 @@ import {
   type ActionIdentity,
   type ActionRequest,
   type Execution,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 
 /** The tool renderers and notification text consume the argument JSON the caller submitted. */
 export function actionArguments(request: ActionRequest): JsonObject {

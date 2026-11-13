@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"

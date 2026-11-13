@@ -5,7 +5,7 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { CallerActionPolicySchema } from "../../../action_service/action_service_pb";
+import { CallerActionPolicySchema } from "../../../action_service/api/contracts/action_service_pb";
 import { ActionPolicySection, ActionPolicyWatch } from "./policy";
 import type { WatchHandlers } from "../watch_stream";
 

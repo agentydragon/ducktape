@@ -23,7 +23,7 @@ import {
   type ListActionRequestHistoryResponse,
   type ActionGroup,
   type ActionRequest,
-} from "../../../action_service/action_service_pb";
+} from "../../../action_service/api/contracts/action_service_pb";
 import { TestIntersectionObserver } from "../../../../util/frontend/test_intersection_observer.js";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";

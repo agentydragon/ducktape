@@ -5,7 +5,7 @@ syntax = "proto3";
 
 package agentplane.action_service;
 
-import "agentplane/action_service/action_service.proto";
+import "agentplane/action_service/api/contracts/action_service.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";

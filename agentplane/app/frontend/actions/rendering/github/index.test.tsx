@@ -2,7 +2,7 @@
 import { act } from "react";
 import { create } from "@bufbuild/protobuf";
 
-import { ActionIdentitySchema } from "../../../../../action_service/action_service_pb";
+import { ActionIdentitySchema } from "../../../../../action_service/api/contracts/action_service_pb";
 import { describe, expect, it } from "vitest";
 
 import { mount } from "../../testing/harness";

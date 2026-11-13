@@ -13,7 +13,7 @@ import {
   McpLinkageStatus,
   McpRefreshAction,
   McpServerLinkageSchema,
-} from "../../action_service/operator_action_service_pb";
+} from "../../action_service/api/contracts/operator_action_service_pb";
 import { create } from "@bufbuild/protobuf";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;

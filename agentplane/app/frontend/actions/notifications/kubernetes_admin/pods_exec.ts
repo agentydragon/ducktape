@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { actionArguments } from "../../presentation";
 
-import type { ActionRequest } from "../../../../../action_service/action_service_pb";
+import type { ActionRequest } from "../../../../../action_service/api/contracts/action_service_pb";
 import { argvText } from "../../../argv_text";
 import { commandNotificationText } from "../command";
 import type { ActionNotificationParts } from "../types";

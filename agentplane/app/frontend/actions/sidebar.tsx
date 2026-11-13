@@ -13,7 +13,7 @@ import {
   renderPaneOpened,
   shouldRenderPaneRequestTitle,
 } from "./rendering/index";
-import { ActionState, type ActionRequest } from "../../../action_service/action_service_pb";
+import { ActionState, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
 import { actionArguments, actionIdentity } from "./presentation";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
 import "./sidebar.css";

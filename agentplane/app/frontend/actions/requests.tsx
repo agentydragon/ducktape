@@ -8,7 +8,12 @@ import type { StreamConnection } from "../stream_reader";
 import { useOptionalStreamStatus } from "../stream_status";
 import { createAppQueryClient } from "../query";
 import { ActionCall } from "./call";
-import { ActionState, Verdict, type ActionGroup, type ActionRequest } from "../../../action_service/action_service_pb";
+import {
+  ActionState,
+  Verdict,
+  type ActionGroup,
+  type ActionRequest,
+} from "../../../action_service/api/contracts/action_service_pb";
 import { timestampText } from "./presentation";
 import { decideActionById, followActionRequests, getAction, listActionGroups } from "./client";
 
