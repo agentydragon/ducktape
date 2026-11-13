@@ -38,7 +38,7 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/central_sampler/internal/settings",
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
     ],
 )
 
