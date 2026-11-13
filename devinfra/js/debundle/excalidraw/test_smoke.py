@@ -156,6 +156,56 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         assert failed_requests == []
 
 
+async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        geometry = await page.evaluate(
+            """async () => {
+                const [resize, crop] = await Promise.all([
+                    import('./editor/packages/excalidraw/element/resizeElements.js'),
+                    import('./editor/packages/excalidraw/element/cropElement.js'),
+                ]);
+                const original = {
+                    id: 'resize-smoke', type: 'rectangle', x: 10, y: 20,
+                    width: 100, height: 50, angle: 0, version: 1,
+                    versionNonce: 1, updated: 0, boundElements: null,
+                    groupIds: [], isDeleted: false,
+                };
+                const latest = { ...original };
+                const elements = new Map([[original.id, latest]]);
+                const originals = new Map([[original.id, original]]);
+                resize.resizeSingleElement(150, 75, latest, original, elements, originals, 'se');
+                const resized = [latest.x, latest.y, latest.width, latest.height];
+                Object.assign(latest, original);
+                resize.resizeSingleElement(150, 75, latest, original, elements, originals, 'se', {
+                    shouldResizeFromCenter: true});
+
+                const image = {
+                    id: 'crop-smoke', type: 'image', x: 0, y: 0,
+                    width: 100, height: 50, angle: 0, scale: [1, 1], crop: null,
+                };
+                const cropped = crop.cropElement(image, 'e', 200, 100, 75, 25);
+                return {
+                    resized,
+                    centered: [latest.x, latest.y, latest.width, latest.height],
+                    cropped: [cropped.x, cropped.y, cropped.width, cropped.height,
+                        cropped.crop.x, cropped.crop.y, cropped.crop.width, cropped.crop.height],
+                    uncropped: crop.getUncroppedWidthAndHeight(cropped),
+                };
+            }"""
+        )
+        assert geometry == {
+            "resized": [10, 20, 150, 75],
+            "centered": [-15, 7.5, 150, 75],
+            "cropped": [0, 0, 75, 50, 0, 0, 150, 100],
+            "uncropped": {"width": 100, "height": 50},
+        }
+
+
 async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
@@ -209,6 +259,49 @@ async def test_element_type_checks(playwright_driver: Playwright, origin: str) -
             "roundness": [{"type": 3}, {"type": 2}, None],
             "fixedBindings": [False, True],
             "elements": [False, True],
+        }
+
+
+async def test_group_selection_and_membership(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const groups = await import('./editor/packages/excalidraw/groups.js');
+                const appState = {
+                    editingGroupId: 'inner',
+                    selectedGroupIds: {outer: true, inner: true, inactive: false},
+                };
+                const element = {id: 'element', groupIds: ['outer', 'inner', 'other']};
+                const editingOnly = {
+                    editingGroupId: 'inner', selectedGroupIds: {inner: true},
+                };
+                const edited = groups.editGroupForSelectedElement(appState,
+                    {id: 'child', groupIds: ['parent', 'child-group']});
+                return {
+                    selection: [groups.isSelectedViaGroup(appState, element),
+                                groups.getSelectedGroupForElement(appState, element),
+                                groups.getSelectedGroupIds(appState),
+                                groups.getSelectedGroupForElement(editingOnly, element)],
+                    membership: [groups.getSelectedGroupIdForElement(element, appState.selectedGroupIds),
+                                 groups.isInGroup(element), groups.isInGroup({groupIds: []})],
+                    edit: [edited.editingGroupId, edited.selectedGroupIds, edited.selectedElementIds],
+                    updates: [groups.addToGroup(['outer', 'inner'], 'new', 'inner'),
+                              groups.addToGroup(['outer'], 'new', null),
+                              groups.removeFromSelectedGroups(['outer', 'inner', 'other'],
+                                  {inner: true, other: false})],
+                };
+            }"""
+        )
+        assert result == {
+            "selection": [True, "outer", ["outer", "inner"], None],
+            "membership": ["outer", True, False],
+            "edit": ["parent", {}, {"child": True}],
+            "updates": [["outer", "new", "inner"], ["outer", "new"], ["outer", "other"]],
         }
 
 
@@ -289,6 +382,47 @@ async def test_library_class(playwright_driver: Playwright, origin: str) -> None
             "latest": ["library-item"],
             "afterReset": [],
             "notifications": [["library-item"], []],
+        }
+
+
+async def test_library_algorithms(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Library, distributeLibraryItemsOnSquareGrid } =
+                    await import('./main/packages/excalidraw/data/library.js');
+                const rectangle = (id, x, y, width, height) => ({
+                    id, type: 'rectangle', index: 'a0', x, y, width, height, angle: 0,
+                    isDeleted: false, groupIds: [], boundElements: null, frameId: null,
+                    version: 1, versionNonce: 1, seed: 1, updated: 1, locked: false, link: null,
+                });
+                const positioned = distributeLibraryItemsOnSquareGrid([
+                    {id: 'first', elements: [rectangle('first-shape', 10, 20, 20, 10)]},
+                    {id: 'second', elements: [rectangle('second-shape', 100, 200, 40, 30)]},
+                ]);
+
+                const library = new Library({props: {onLibraryChange: () => {}}});
+                const local = {id: 'local-item', elements: [rectangle('same-shape', 0, 0, 10, 10)]};
+                const duplicate = {id: 'duplicate-item', elements: [rectangle('same-shape', 50, 50, 10, 10)]};
+                const unique = {id: 'new-item', elements: [rectangle('new-shape', 100, 100, 10, 10)]};
+                await library.setLibrary([local]);
+                await library.updateLibrary({libraryItems: [duplicate, unique], merge: true});
+                const merged = (await library.getLatestLibrary()).map(item => item.id);
+                library.destroy();
+                return {
+                    positioned: positioned.map(element => [element.id, element.x, element.y]),
+                    merged,
+                };
+            }"""
+        )
+        assert result == {
+            "positioned": [["first-shape", 0, 10], ["second-shape", 70, 0]],
+            "merged": ["new-item", "local-item"],
         }
 
 
@@ -878,6 +1012,187 @@ async def test_resize_handle_devices(playwright_driver: Playwright, origin: str)
         )
         default_sides = {"e": True, "s": True, "n": True, "w": True}
         assert result == {"desktop": [True, default_sides], "mobile": [False, {}], "touch": [True, default_sides]}
+
+
+async def test_library_and_icon_picker(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        page.set_default_timeout(5_000)
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar")).to_be_visible()
+
+        # Opening the library exercises the extracted menu's empty-library branch.
+        library = page.get_by_role("checkbox", name="Library", exact=True)
+        await page.locator("label", has=library).click()
+        await expect(library).to_be_checked()
+        await expect(page.locator(".library-menu-items__no-items")).to_be_visible()
+        await page.get_by_test_id("sidebar-close").click()
+        await expect(library).not_to_be_checked()
+        await expect(page.locator(".library-menu-items__no-items")).to_be_hidden()
+
+        # Arrow properties use both IconPicker and its private Picker implementation.
+        arrow = page.get_by_test_id("toolbar-arrow")
+        await page.locator("label", has=arrow).click()
+        picker = page.get_by_role("button", name="arrowhead_end", exact=True)
+        await picker.click()
+        options = page.get_by_role("dialog", name="arrowhead_end", exact=True)
+        await options.get_by_text("More options", exact=True).click()
+        bar = options.get_by_role("button", name="Bar", exact=True)
+        await bar.click()
+        await expect(bar).to_have_class("picker-option active")
+        await bar.press("Escape")
+        await expect(options).to_be_hidden()
+        await picker.click()
+        await expect(options.get_by_role("button", name="Bar", exact=True)).to_have_class("picker-option active")
+        await page.keyboard.press("Escape")
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
+async def test_clipboard_parsing_and_system_round_trip(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        await context.grant_permissions(["clipboard-read", "clipboard-write"])
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await page.bring_to_front()
+        result = await page.evaluate(
+            """async () => {
+                const clipboard = await import('./editor/packages/excalidraw/clipboard.js');
+                const {newElement} = await import('./editor/packages/excalidraw/element/newElement.js');
+                const event = types => clipboard.createPasteEvent({types});
+                const plain = await clipboard.parseClipboard(event({'text/plain': '  hello  '}));
+                const mixedTypes = {'text/plain': 'fallback', 'text/html':
+                    '<div>hello<img src="https://example.com/image.png">world</div>'};
+                const mixed = await clipboard.parseClipboard(event(mixedTypes));
+                const plainPaste = await clipboard.parseClipboard(event(mixedTypes), true);
+                const sheet = await clipboard.parseClipboard(event({
+                    'text/plain': 'Name\\tCount\\nA\\t10\\nB\\t20'}));
+                const file = new File(['content'], 'example.txt', {type: 'text/plain'});
+                const fileEvent = clipboard.createPasteEvent({files: [file]});
+                const rectangle = newElement({type: 'rectangle', x: 10, y: 20, width: 30, height: 40});
+                await clipboard.copyToClipboard([rectangle], {});
+                const contents = await clipboard.readSystemClipboard();
+                const parsed = await clipboard.parseClipboard(event(contents));
+                return {plain, mixed, plainPaste, sheet,
+                    files: [...fileEvent.clipboardData.files].map(file => [file.name, file.type]),
+                    copied: parsed.elements.map(element => [element.id === rectangle.id, element.x,
+                        element.y, element.width, element.height]), programmaticAPI: parsed.programmaticAPI};
+            }"""
+        )
+        assert result == {
+            "plain": {"text": "hello"},
+            "mixed": {
+                "mixedContent": [
+                    {"type": "text", "value": "hello"},
+                    {"type": "imageUrl", "value": "https://example.com/image.png"},
+                    {"type": "text", "value": "world"},
+                ]
+            },
+            "plainPaste": {"text": "fallback"},
+            "sheet": {"spreadsheet": {"title": "Count", "labels": ["A", "B"], "values": [10, 20]}},
+            "files": [["example.txt", "text/plain"]],
+            "copied": [[True, 10, 20, 30, 40]],
+            "programmaticAPI": False,
+        }
+
+
+async def test_snapping_reference_geometry_and_pointer_offsets(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const snap = await import('./editor/packages/excalidraw/snapping.js');
+                const {newElement} = await import('./editor/packages/excalidraw/element/newElement.js');
+                const {getDefaultAppState} = await import('./editor/packages/excalidraw/appState.js');
+                const left = newElement({type: 'rectangle', x: 100, y: 100, width: 100, height: 100});
+                const right = newElement({type: 'rectangle', x: 300, y: 100, width: 100, height: 100});
+                const elements = [left, right];
+                const map = new Map(elements.map(element => [element.id, element]));
+                const app = {props: {}, state: {...getDefaultAppState(), width: 1280, height: 800,
+                    offsetLeft: 0, offsetTop: 0,
+                    objectsSnapModeEnabled: true, gridModeEnabled: false}};
+                const points = snap.getReferenceSnapPoints(elements, [left], app.state, map);
+                const gaps = snap.getVisibleGaps(elements, [], app.state, map);
+                const pointer = snap.getSnapLinesAtPointer(elements, app, {x: 102, y: 103}, {}, map);
+                const enabled = options => snap.isSnappingEnabled({app, selectedElements: [], ...options});
+                const modes = [enabled({event: {ctrlKey: false}}), enabled({event: {ctrlKey: true}}),
+                    enabled({event: null, selectedElements: [{type: 'arrow'}]})];
+                app.state.objectsSnapModeEnabled = false;
+                modes.push(enabled({event: {ctrlKey: true}}));
+                app.props.gridModeEnabled = true;
+                modes.push(enabled({event: {ctrlKey: true}}));
+                return {points, gaps: {horizontal: gaps.horizontalGaps.map(gap => ({
+                    length: gap.length, overlap: gap.overlap})), vertical: gaps.verticalGaps},
+                    pointer: {offset: pointer.originOffset,
+                        directions: [...new Set(pointer.snapLines.map(line => line.direction))].sort(),
+                        types: [...new Set(pointer.snapLines.map(line => line.type))]},
+                    modes, snappableTools: ['rectangle', 'text', 'arrow', 'freedraw'].map(
+                        snap.isActiveToolNonLinearSnappable), rounded: snap.round(1.23456789)};
+            }"""
+        )
+        assert result == {
+            "points": [[300, 100], [400, 100], [300, 200], [400, 200], [350, 150]],
+            "gaps": {"horizontal": [{"length": 100, "overlap": [100, 200]}], "vertical": []},
+            "pointer": {"offset": {"x": -2, "y": -3}, "directions": ["horizontal", "vertical"], "types": ["pointer"]},
+            "modes": [True, False, False, True, False],
+            "snappableTools": [True, True, False, False],
+            "rounded": 1.234568,
+        }
+
+
+async def test_shape_deconstruction_preserves_edges_and_curves(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const shape = await import('./editor/packages/excalidraw/element/utils.js');
+                const rectangle = {x: 10, y: 20, width: 100, height: 60, roundness: null};
+                const [edges, curves] = shape.deconstructRectanguloidElement(rectangle, 5);
+                const [diamondEdges, diamondCurves] = shape.deconstructDiamondElement(rectangle);
+                const rounded = {...rectangle, roundness: {type: 3, value: 8}};
+                const summarizeRounded = deconstruct => {
+                    const [sides, corners] = deconstruct(rounded);
+                    return {sideCount: sides.length, curveCount: corners.length,
+                        controlPointCounts: corners.map(corner => corner.length),
+                        joined: sides.every((side, index) =>
+                            corners.some(corner => JSON.stringify(corner[3]) === JSON.stringify(side[0])) &&
+                            corners.some(corner => JSON.stringify(corner[0]) === JSON.stringify(side[1])))};
+                };
+                return {edges, curves, diamondEdges, diamondCurves,
+                    rounded: [shape.deconstructRectanguloidElement, shape.deconstructDiamondElement].map(
+                        summarizeRounded)};
+            }"""
+        )
+        assert result["edges"] == [
+            [[5, 15], [115, 15]],
+            [[115, 15], [115, 85]],
+            [[5, 85], [115, 85]],
+            [[5, 85], [5, 15]],
+        ]
+        assert result["curves"] == result["diamondCurves"] == []
+        assert result["diamondEdges"] == [
+            [[61, 20], [110, 51]],
+            [[110, 51], [61, 80]],
+            [[61, 80], [10, 51]],
+            [[10, 51], [61, 20]],
+        ]
+        assert (
+            result["rounded"]
+            == [{"sideCount": 4, "curveCount": 4, "controlPointCounts": [4, 4, 4, 4], "joined": True}] * 2
+        )
 
 
 if __name__ == "__main__":

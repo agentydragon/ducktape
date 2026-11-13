@@ -1,0 +1,20 @@
+# Original home: packages/excalidraw/components/LibraryMenuItems.tsx
+source_matches:
+  - match: |
+      function selected({
+        isLoading: isLoading,
+        libraryItems: libraryItems,
+        onAddToLibrary: onAddToLibrary,
+        onInsertLibraryItems: onInsertLibraryItems,
+        pendingElements: pendingElements,
+        theme: theme,
+        id: id,
+        libraryReturnUrl: libraryReturnUrl,
+        onSelectItems: onSelectItems,
+        selectedItems: selectedItems
+      }) {
+        STMT_LIST;
+      }
+    bindings:
+      - local: selected
+        name: LibraryMenuItems

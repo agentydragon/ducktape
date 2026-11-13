@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
@@ -318,7 +319,7 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	if err != nil {
 		return nil, err
 	}
-	wire, err = encodeStoredEvent(wire)
+	wire, err = eventcodec.Encode(wire)
 	if err != nil {
 		return nil, err
 	}

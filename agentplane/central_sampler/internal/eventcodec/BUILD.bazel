@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
+
+go_library(
+    name = "eventcodec",
+    srcs = ["event_storage.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/eventcodec",
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

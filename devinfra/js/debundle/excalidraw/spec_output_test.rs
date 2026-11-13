@@ -43,7 +43,28 @@ fn claimed_modules_export_their_entry_points() {
             &["containsCJK", "wrapText"],
         ),
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
+        (
+            "editor/packages/excalidraw/snapping.js",
+            &[
+                "getReferenceSnapPoints",
+                "getSnapLinesAtPointer",
+                "getVisibleGaps",
+                "isSnappingEnabled",
+                "snapDraggedElements",
+                "snapNewElement",
+                "snapResizingElements",
+            ],
+        ),
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
+        (
+            "editor/packages/excalidraw/clipboard.js",
+            &[
+                "copyToClipboard",
+                "createPasteEvent",
+                "parseClipboard",
+                "readSystemClipboard",
+            ],
+        ),
         (
             "editor/packages/excalidraw/element/newElement.js",
             &[
@@ -85,10 +106,42 @@ fn claimed_modules_export_their_entry_points() {
             &["getVisibleSceneBounds", "doBoundsIntersect"],
         ),
         (
+            "editor/packages/excalidraw/element/utils.js",
+            &[
+                "deconstructRectanguloidElement",
+                "deconstructDiamondElement",
+            ],
+        ),
+        (
             "editor/packages/excalidraw/element/transformHandles.js",
             &["canResizeFromSides", "getOmitSidesForDevice"],
         ),
+        (
+            "editor/packages/excalidraw/element/resizeElements.js",
+            &[
+                "resizeMultipleElements",
+                "resizeSingleElement",
+                "resizeSingleTextElement",
+                "getNextMultipleWidthAndHeightFromPointer",
+            ],
+        ),
+        (
+            "editor/packages/excalidraw/element/cropElement.js",
+            &["cropElement", "getUncroppedWidthAndHeight"],
+        ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
+        (
+            "main/packages/excalidraw/components/CommandPalette/CommandPalette.js",
+            &["CommandPaletteInner"],
+        ),
+        (
+            "main/packages/excalidraw/components/LibraryMenuItems.js",
+            &["LibraryMenuItems"],
+        ),
+        (
+            "main/packages/excalidraw/components/IconPicker.js",
+            &["IconPicker"],
+        ),
         (
             "main/packages/excalidraw/actions/manager.js",
             &["ActionManager"],
@@ -225,7 +278,11 @@ console.log(JSON.stringify(events));
 #[test]
 fn clsx_consumers_import_the_package() {
     let app = out_root().join("app");
-    for entry in ["main/entry.js", "editor/entry.js"] {
+    for entry in [
+        "main/entry.js",
+        "editor/entry.js",
+        "main/packages/excalidraw/components/IconPicker.js",
+    ] {
         assert_module_source(
             &app,
             entry,
@@ -255,6 +312,6 @@ fn vendor_swap_report_lists_every_mark() {
     assert_eq!(keys("partial"), ["vendor/clsx_lib.js"]);
     assert_eq!(
         report["partial"]["vendor/clsx_lib.js"]["symbols"]["a"]["references_rewritten"],
-        2
+        3
     );
 }

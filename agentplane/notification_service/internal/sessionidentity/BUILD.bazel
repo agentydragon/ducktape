@@ -5,7 +5,7 @@ package(default_visibility = ["//agentplane/notification_service:__subpackages__
 go_library(
     name = "sessionidentity",
     srcs = ["session.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity",
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity",
     deps = [
         "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/model",

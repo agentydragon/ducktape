@@ -1,4 +1,4 @@
-package centralsampler
+package eventcodec
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 // Historical journal bytes also exist in History, whose duplicate checks compare
 // exact records. Compress their physical representation without rewriting events.
 // A gzip header cannot begin a valid protobuf message (wire type 7 is invalid).
-func encodeStoredEvent(wire []byte) ([]byte, error) {
+func Encode(wire []byte) ([]byte, error) {
 	if len(wire) < 4096 {
 		return wire, nil
 	}
@@ -33,7 +33,7 @@ func encodeStoredEvent(wire []byte) ([]byte, error) {
 	return compressed.Bytes(), nil
 }
 
-func decodeStoredEvent(wire []byte, entry *eventlogpb.EventEntry) error {
+func Decode(wire []byte, entry *eventlogpb.EventEntry) error {
 	if len(wire) >= 2 && wire[0] == 0x1f && wire[1] == 0x8b {
 		reader, err := gzip.NewReader(bytes.NewReader(wire))
 		if err != nil {

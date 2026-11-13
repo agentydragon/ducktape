@@ -14,8 +14,8 @@ go_library(
         "waits.go",
     ],
     embedsrcs = ["tools.json"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver",
-    visibility = ["//agentplane:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver",
+    visibility = ["//agentplane/mcp_edge:__subpackages__"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/docs",
