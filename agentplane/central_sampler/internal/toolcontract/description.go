@@ -1,4 +1,4 @@
-package centralsampler
+package toolcontract
 
 import (
 	"cmp"
@@ -26,7 +26,7 @@ var (
 )
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/execute_spec.rs CODE_MODE_FREEFORM_GRAMMAR.
-const execFreeformGrammar = `
+const ExecFreeformGrammar = `
 start: pragma_source | plain_source
 pragma_source: PRAGMA_LINE NEWLINE SOURCE
 plain_source: SOURCE
@@ -42,9 +42,6 @@ const (
 	defaultExecYieldTimeMS = 30_000
 	// Codex rust-v0.162.1 code-mode-protocol/src/runtime.rs DEFAULT_WAIT_YIELD_TIME_MS.
 	defaultWaitYieldTimeMS = 10_000
-	// Codex rust-v0.162.1 core/src/unified_exec/mod.rs DEFAULT_MAX_OUTPUT_TOKENS, the
-	// resolve_max_tokens fallback for both exec max_output_tokens and wait max_tokens.
-	defaultCodeModeMaxOutputTokens = 10_000
 	// Codex rust-v0.162.1 code-mode-protocol/src/json_schema_types.rs DEFAULT_INPUT_SCHEMA_MAX_BYTES.
 	defaultInputSchemaMaxBytes = 16_000
 	// Codex rust-v0.162.1 code-mode-protocol/src/description.rs MAX_JS_SAFE_INTEGER.
@@ -59,7 +56,7 @@ func templateText(text string) string { return strings.TrimSuffix(text, "\n") }
 // Mode Only with freeform exec, the default
 // `unified_image_budget = false` (legacy image helper) and no model message overrides.
 // The sampler-owned exec template adapts the upstream description to the selected contract.
-func execToolDescription(definitions []protocol.CodeToolDefinition, encoding protocol.ExecEncoding) (string, error) {
+func ExecToolDescription(definitions []protocol.CodeToolDefinition, encoding protocol.ExecEncoding) (string, error) {
 	inputContract := "- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n" +
 		"- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`."
 	if encoding == protocol.ExecEncodingJSON {
@@ -103,18 +100,18 @@ func execToolDescription(definitions []protocol.CodeToolDefinition, encoding pro
 	return strings.Join(sections, "\n\n"), nil
 }
 
-func jsonExecToolParameters() (json.RawMessage, error) {
+func JSONExecToolParameters() (json.RawMessage, error) {
 	reflector := &jsonschema.Reflector{Anonymous: true, ExpandedStruct: true}
 	return json.Marshal(reflector.Reflect(jsonExecInput{}))
 }
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/wait_spec.rs create_wait_tool.
-func waitToolDescription() string {
+func WaitToolDescription() string {
 	return "Waits on a yielded `exec` cell and returns new output or completion.\n" + strings.TrimSpace(waitDescriptionTemplate)
 }
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/wait_spec.rs create_wait_tool parameters.
-func waitToolParameters() json.RawMessage {
+func WaitToolParameters() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{` +
 		`"cell_id":{"type":"string","description":"Identifier of the running exec cell."},` +
 		`"max_tokens":{"type":"number","description":"Output token budget for this wait call. Defaults to 10000 tokens."},` +
@@ -126,7 +123,7 @@ func waitToolParameters() json.RawMessage {
 // hostToolDefinitions mirrors Codex rust-v0.162.1 core/src/tools/code_mode/tool_definitions.rs
 // prepare_code_mode_tool_definitions: the host receives each description augmented with its
 // TypeScript declaration (exposed through ALL_TOOLS) and no schemas.
-func hostToolDefinitions(definitions []protocol.CodeToolDefinition) ([]protocol.CodeToolDefinition, error) {
+func HostToolDefinitions(definitions []protocol.CodeToolDefinition) ([]protocol.CodeToolDefinition, error) {
 	result := make([]protocol.CodeToolDefinition, 0, len(definitions))
 	for _, definition := range definitions {
 		sample, err := codeModeSample(definition)

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 )
@@ -19,15 +20,15 @@ func toolDefinitions() []protocol.CodeToolDefinition {
 }
 
 func modelToolSurface(encoding protocol.ExecEncoding) (protocol.ToolSurface, error) {
-	description, err := execToolDescription(toolDefinitions(), encoding)
+	description, err := toolcontract.ExecToolDescription(toolDefinitions(), encoding)
 	if err != nil {
 		return protocol.ToolSurface{}, err
 	}
-	parameters, err := jsonExecToolParameters()
+	parameters, err := toolcontract.JSONExecToolParameters()
 	if err != nil {
 		return protocol.ToolSurface{}, err
 	}
-	return protocol.ToolSurface{Description: description, Parameters: parameters, FreeformGrammar: execFreeformGrammar, WaitDescription: waitToolDescription(), WaitParameters: waitToolParameters()}, nil
+	return protocol.ToolSurface{Description: description, Parameters: parameters, FreeformGrammar: toolcontract.ExecFreeformGrammar, WaitDescription: toolcontract.WaitToolDescription(), WaitParameters: toolcontract.WaitToolParameters()}, nil
 }
 
 func providerRequestIntent(kind PendingIntentKind, connection ConnectionConfig, config ModelConfig) IntentRequest {
