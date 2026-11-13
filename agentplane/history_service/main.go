@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
-	"github.com/agentydragon/ducktape/agentplane/history_service/ingress"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/ingress"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/rpc"

@@ -8,7 +8,7 @@ go_library(
         "ingress.go",
         "sandbox_uid.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/ingress",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/ingress",
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",

@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = [
     "//agentplane/central_sampler:__pkg__",
-    "//agentplane/history_service/ingress:__pkg__",
+    "//agentplane/history_service/internal/ingress:__pkg__",
 ])
 
 go_library(
@@ -20,7 +20,7 @@ go_library(
     visibility = [
         "//agentplane/central_sampler:__pkg__",
         "//agentplane/central_sampler/settings:__pkg__",
-        "//agentplane/history_service/ingress:__pkg__",
+        "//agentplane/history_service/internal/ingress:__pkg__",
     ],
     deps = [
         "//agentplane/central_sampler/internal/storage",

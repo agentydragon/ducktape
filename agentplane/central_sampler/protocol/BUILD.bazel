@@ -20,7 +20,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/protocol",
     visibility = [
         "//agentplane/central_sampler:__subpackages__",
-        "//agentplane/history_service/ingress:__pkg__",  # real ingress exporter integration test
+        "//agentplane/history_service/internal/ingress:__pkg__",  # real ingress exporter integration test
     ],
     deps = [
         "//agentplane/proto:event_go_proto",
