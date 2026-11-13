@@ -57,7 +57,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 		`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}`,
 		`{"type":"message_stop"}`,
 	)
-	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false)
+	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false, protocol.ProviderHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	defer release.Do(func() { close(resume) })
 	finished := make(chan error, 1)
 	go func() {
-		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *anthropicTestConfig().AnthropicMessages, []byte(`{}`), &ResponseEvidence{Store: store, Owner: owner, IntentID: intent}, false)
+		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *anthropicTestConfig().AnthropicMessages, []byte(`{}`), &ResponseEvidence{Store: store, Owner: owner, IntentID: intent}, false, protocol.ProviderHooks{})
 		if response != nil {
 			finished <- errors.New("response completed after evidence failure")
 			return
@@ -305,7 +305,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 		`{"type":"message_start","message":{"id":"msg_invalid","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		invalidStart,
 	)
-	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false)
+	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false, protocol.ProviderHooks{})
 	var known *protocol.KnownFailureError
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("invalid block start outcome=%+v err=%v; want known rejection", response, err)

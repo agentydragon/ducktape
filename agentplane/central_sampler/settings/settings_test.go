@@ -157,6 +157,45 @@ func TestExecutorReconnectTimeoutDefaultsIndependentlyAndCanBeConfigured(t *test
 	}
 }
 
+func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *testing.T) {
+	settings := fixtureSettings()
+	if got := settings.ProviderResponseHeaderTimeout(); got != 120*time.Second {
+		t.Fatalf("default provider response-header timeout=%s, want 120s", got)
+	}
+	if got := settings.ProviderIdleTimeout(); got != 600*time.Second {
+		t.Fatalf("default provider semantic-idle timeout=%s, want 600s", got)
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	header, idle := 45, 180
+	settings.ProviderResponseHeaderTimeoutSeconds = &header
+	settings.ProviderIdleTimeoutSeconds = &idle
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if settings.ProviderResponseHeaderTimeout() != 45*time.Second || settings.ProviderIdleTimeout() != 180*time.Second {
+		t.Fatal("configured provider phase budgets were not applied independently")
+	}
+
+	for name, configure := range map[string]func(*Settings, *int){
+		"provider_response_header_timeout_seconds": func(s *Settings, seconds *int) { s.ProviderResponseHeaderTimeoutSeconds = seconds },
+		"provider_idle_timeout_seconds":            func(s *Settings, seconds *int) { s.ProviderIdleTimeoutSeconds = seconds },
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, invalid := range []int{0, -1, int(maxExecutorInitializeTimeoutSeconds) + 1} {
+				copy := fixtureSettings()
+				value := invalid
+				configure(&copy, &value)
+				if err := copy.Validate(); err == nil {
+					t.Fatalf("accepted %s=%d", name, invalid)
+				}
+			}
+		})
+	}
+}
+
 func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
 		"missing connection":           {ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},

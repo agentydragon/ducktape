@@ -92,6 +92,16 @@ needs the working directory. Restoring live process handles retains their exact 
 a new executor binding with no live remote handles may start a fresh native session. Live JS cells
 alone do not require a native executor session.
 
+Provider requests have independent `provider_response_header_timeout_seconds` and
+`provider_idle_timeout_seconds` budgets, defaulting to 120 and 600 seconds. The header budget
+covers request transmission through response headers while preserving the connection's configured
+transport and TLS behavior. The semantic-idle budget starts after the response head is durably
+recorded. Only a validated semantic event that is durably recorded resets it: nonempty content,
+function-argument, and custom-tool-input deltas; first valid item-added/item-done transitions for a
+real item identity; and valid message start or finish transitions. SSE comments, keep-alives, ping
+events, empty deltas, duplicate item transitions and unknown event types do not. Sampling and
+compaction use the same budgets. These phase budgets do not replace the whole-turn timeout.
+
 An attempted executor-session initialization or reconnect is recorded as its own intent. If it fails,
 the requested nested operation is returned as a catchable JavaScript tool error when it was not
 dispatched; an unknown initialization result remains unknown in the journal. It does not by itself

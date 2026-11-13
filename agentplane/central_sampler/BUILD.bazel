@@ -286,6 +286,20 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_settings",
+    size = "small",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "testing_store",
     testonly = True,

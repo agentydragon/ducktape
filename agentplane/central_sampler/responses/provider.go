@@ -161,7 +161,7 @@ func Headers(config Config, compaction bool) map[string]string {
 
 // Sample posts body with the given Authorization value and attribution headers.
 func Sample(ctx context.Context, client *http.Client, baseURL, authorization string, encoded []byte, config Config,
-	evidence protocol.EvidenceSink, attribution map[string]string, compaction bool,
+	evidence protocol.EvidenceSink, attribution map[string]string, compaction bool, hooks protocol.ProviderHooks,
 ) (*Response, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/responses", bytes.NewReader(encoded))
 	if err != nil {
@@ -179,39 +179,43 @@ func Sample(ctx context.Context, client *http.Client, baseURL, authorization str
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, protocol.ProviderContextError(ctx, err)
 	}
 	defer response.Body.Close()
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
 	providerRequestID := response.Header.Get("x-request-id")
 	if evidence != nil {
-		if err := evidence.Record(ctx, protocol.HTTPResponseHead{
+		if err := protocol.RecordProviderEvidence(ctx, evidence, protocol.HTTPResponseHead{
 			HTTPStatus: response.StatusCode, ProviderRequestID: providerRequestID, ContentType: response.Header.Get("content-type"),
 		}); err != nil {
 			return nil, err
+		}
+		if hooks.ResponseHeadRecorded != nil {
+			hooks.ResponseHeadRecorded()
 		}
 	}
 	if response.StatusCode >= http.StatusBadRequest {
 		body, readErr := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
 		if readErr != nil {
-			return nil, readErr
+			return nil, protocol.ProviderContextError(ctx, readErr)
 		}
 		if len(body) > maxProviderErrorBytes {
 			body = append(body[:maxProviderErrorBytes], []byte("[truncated]")...)
 		}
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"http_status": response.StatusCode, "body": string(body)}}
 	}
-	result, err := readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence)
+	result, err := readStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, hooks)
 	if err != nil {
-		return nil, err
+		return nil, protocol.ProviderContextError(ctx, err)
 	}
 	return result, nil
 }
 
-func readStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink) (*Response, error) {
+func readStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, hooks protocol.ProviderHooks) (*Response, error) {
 	result := &Response{}
 	lineReader := bufio.NewReader(reader)
 	var dataLines []string
+	seenItemTransitions := map[string]struct{}{}
 	dispatch := func() error {
 		if len(dataLines) == 0 {
 			return nil
@@ -221,17 +225,35 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		if err != nil {
 			return err
 		}
+		var observations []*eventpb.Event
 		if evidence != nil {
+			observations, err = Observations(event)
+			if err != nil {
+				return err
+			}
 			payload, err := eventPayload(event)
 			if err != nil {
 				return err
 			}
-			observations, err := Observations(event)
-			if err != nil {
+			if err := protocol.RecordProviderEvidence(ctx, evidence, payload, observations...); err != nil {
 				return err
 			}
-			if err := evidence.Record(ctx, payload, observations...); err != nil {
-				return err
+		}
+		semanticProgress := false
+		switch event.Type {
+		case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			semanticProgress = event.ItemID != "" && event.Delta != nil && *event.Delta != ""
+		case EventFunctionCallArgumentsDelta, EventCustomToolCallInputDelta:
+			semanticProgress = event.ItemID != "" && event.Delta != nil && *event.Delta != ""
+		case EventOutputItemAdded, EventOutputItemDone:
+			if event.Item != nil && len(observations) > 0 {
+				if identity := providerItemIdentity(*event.Item); identity != "" {
+					key := string(event.Type) + "\x00" + identity
+					if _, seen := seenItemTransitions[key]; !seen {
+						seenItemTransitions[key] = struct{}{}
+						semanticProgress = true
+					}
+				}
 			}
 		}
 		result.Events = append(result.Events, event)
@@ -251,10 +273,21 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			// Like Codex, consume output_item.done items. Antigravity through LiteLLM can
 			// rewrite reasoning and add items only in terminal output.
 			result.Terminal = event.Response
+			semanticProgress = true
+			if evidence != nil && semanticProgress && hooks.Progress != nil {
+				if err := hooks.Progress(ctx); err != nil {
+					return err
+				}
+			}
 			return errProviderComplete
 		}
 		if event.Type == EventFailed || event.Type == EventIncomplete || event.Type == EventError {
 			return &protocol.KnownFailureError{Evidence: map[string]any{"terminal": event, "events": result.Events}}
+		}
+		if evidence != nil && semanticProgress && hooks.Progress != nil {
+			if err := hooks.Progress(ctx); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -277,10 +310,17 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, err
+			return nil, protocol.ProviderContextError(ctx, err)
 		}
 	}
 	return nil, errors.New("provider stream ended without response.completed; sampling outcome unknown")
+}
+
+func providerItemIdentity(item Item) string {
+	if item.ID == "" && item.CallID == "" {
+		return ""
+	}
+	return string(item.Type) + "\x00" + item.ID + "\x00" + item.CallID
 }
 
 var errProviderComplete = errors.New("provider response complete")

@@ -191,7 +191,7 @@ func (r Response) Audit() *Audit {
 	return &Audit{Response: r.Message, ContextTokens: r.ContextTokens, HTTPStatus: r.HTTPStatus, ProviderRequestID: r.ProviderRequestID}
 }
 
-func Sample(ctx context.Context, client *http.Client, baseURL, credential string, config Config, wire []byte, evidence protocol.EvidenceSink, compaction bool) (*Response, error) {
+func Sample(ctx context.Context, client *http.Client, baseURL, credential string, config Config, wire []byte, evidence protocol.EvidenceSink, compaction bool, hooks protocol.ProviderHooks) (*Response, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/messages", bytes.NewReader(wire))
 	if err != nil {
 		return nil, err
@@ -202,26 +202,32 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	request.Header.Set("x-api-key", credential)
 	response, err := client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, protocol.ProviderContextError(ctx, err)
 	}
 	defer response.Body.Close()
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
 	head := protocol.HTTPResponseHead{HTTPStatus: response.StatusCode, ProviderRequestID: response.Header.Get("request-id"), ContentType: response.Header.Get("content-type")}
 	if evidence != nil {
-		if err := evidence.Record(ctx, head); err != nil {
+		if err := protocol.RecordProviderEvidence(ctx, evidence, head); err != nil {
 			return nil, err
+		}
+		if hooks.ResponseHeadRecorded != nil {
+			hooks.ResponseHeadRecorded()
 		}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, err := io.ReadAll(io.LimitReader(reader, protocol.MaxProviderStreamBytes))
 		if err != nil {
-			return nil, err
+			return nil, protocol.ProviderContextError(ctx, err)
 		}
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{
 			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
 		}}
 	}
-	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction)
+	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
+	if err != nil {
+		err = protocol.ProviderContextError(ctx, err)
+	}
 	if result != nil {
 		result.HTTPStatus = response.StatusCode
 		result.ProviderRequestID = response.Header.Get("request-id")
@@ -281,7 +287,7 @@ func validateAnthropicOutputBlock(fields map[string]json.RawMessage) error {
 	}
 }
 
-func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, compaction bool) (*Response, error) {
+func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.EvidenceSink, compaction bool, hooks protocol.ProviderHooks) (*Response, error) {
 	result := &Response{}
 	message := map[string]json.RawMessage{}
 	var blocks []*anthropicBlock
@@ -292,6 +298,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 	}
 	dispatch := func(data string) (eventErr error) {
 		var observations []*eventpb.Event
+		semanticProgress := false
 		var event struct {
 			Type         string                     `json:"type"`
 			Index        *int                       `json:"index"`
@@ -303,7 +310,12 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		// Even malformed/unsupported events are durable before the parser returns to the runtime.
 		defer func() {
 			if evidence != nil {
-				if err := evidence.Record(ctx, streamEvent{WireEvent: data}, observations...); err != nil {
+				if err := protocol.RecordProviderEvidence(ctx, evidence, streamEvent{WireEvent: data}, observations...); err != nil {
+					eventErr = err
+				}
+			}
+			if evidence != nil && semanticProgress && hooks.Progress != nil && (eventErr == nil || errors.Is(eventErr, errProviderComplete)) {
+				if err := hooks.Progress(ctx); err != nil {
 					eventErr = err
 				}
 			}
@@ -335,6 +347,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if err := json.Unmarshal(message["content"], &initial); err != nil || initial == nil || len(initial) != 0 {
 				return fail("message_start must have empty content")
 			}
+			semanticProgress = true
 		case "content_block_start":
 			if !started || deltaSeen || event.Index == nil || *event.Index != len(blocks) || event.ContentBlock == nil {
 				return fail("invalid content block ordering")
@@ -350,6 +363,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if observation := anthropicItemStarted(message, *event.Index, block.fields); observation != nil {
 				observations = append(observations, observation)
 			}
+			semanticProgress = true
 		case "content_block_delta":
 			if event.Index == nil || *event.Index < 0 || *event.Index >= len(blocks) || blocks[*event.Index].stopped || deltaSeen {
 				return fail("invalid content delta ordering")
@@ -403,6 +417,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			if observation := anthropicBlockDelta(message, *event.Index, block.fields, kind, delta); observation != nil {
 				observations = append(observations, observation)
 			}
+			semanticProgress = delta != ""
 		case "content_block_stop":
 			if event.Index == nil || *event.Index < 0 || *event.Index >= len(blocks) || blocks[*event.Index].stopped || deltaSeen {
 				return fail("invalid content stop ordering")
@@ -423,6 +438,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			} else if observation := anthropicBlockCompleted(message, *event.Index, block.fields); observation != nil {
 				observations = append(observations, observation)
 			}
+			semanticProgress = true
 		case "message_delta":
 			if !started || deltaSeen {
 				return fail("invalid message_delta ordering")
@@ -435,6 +451,10 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			deltaSeen = true
 			maps.Copy(message, event.Delta)
 			maps.Copy(usage, event.Usage)
+			switch StopReason(rawString(event.Delta, "stop_reason")) {
+			case StopEndTurn, StopToolUse, StopCompaction:
+				semanticProgress = true
+			}
 		case "message_stop":
 			if !started || !deltaSeen {
 				return fail("message_stop without message delta")
@@ -500,6 +520,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 				}
 			}
 			result.ContextTokens = &total
+			semanticProgress = true
 			return errProviderComplete
 		default:
 			return fail("unsupported Anthropic stream event " + event.Type)
@@ -528,7 +549,7 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 		if readErr != nil {
 			if !errors.Is(readErr, io.EOF) {
-				return nil, readErr
+				return nil, protocol.ProviderContextError(ctx, readErr)
 			}
 			return nil, &protocol.UnknownEffectError{Reason: "Anthropic stream ended before message_stop; sampling outcome unknown"}
 		}

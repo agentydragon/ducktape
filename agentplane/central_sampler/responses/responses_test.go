@@ -5,13 +5,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
 func testToolSurface(encoding protocol.ExecEncoding) protocol.ToolSurface {
@@ -58,7 +62,7 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 		"",
 		"",
 	}, "\n")
-	response, err := readStream(context.Background(), strings.NewReader(stream), nil)
+	response, err := readStream(context.Background(), strings.NewReader(stream), nil, protocol.ProviderHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +86,7 @@ func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
 		"",
 		"",
 	}, "\n")
-	response, err := readStream(context.Background(), strings.NewReader(stream), nil)
+	response, err := readStream(context.Background(), strings.NewReader(stream), nil, protocol.ProviderHooks{})
 	var known *protocol.KnownFailureError
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("failed provider response=%+v err=%v; want a known failure", response, err)
@@ -104,7 +108,7 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 		"",
 		"",
 	}, "\n")
-	response, err := readStream(context.Background(), strings.NewReader(stream), nil)
+	response, err := readStream(context.Background(), strings.NewReader(stream), nil, protocol.ProviderHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +135,182 @@ func TestProviderAcceptsAntigravityLiteLLMTerminalOutputDifferences(t *testing.T
 	if len(terminal.Output) != 3 || terminal.Output[0].EncryptedContent != "fixture-opaque-reasoning" {
 		t.Fatalf("terminal evidence was not retained: %s", protocol.CanonicalJSON(response.Terminal))
 	}
+}
+
+func TestProviderSemanticProgressResetsIdleBudgetForSamplingAndCompaction(t *testing.T) {
+	for _, compaction := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sampling", true: "compaction"}[compaction], func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("x-codex-beta-features"); (got == "remote_compaction_v2") != compaction {
+					t.Errorf("compaction header=%q, compaction=%t", got, compaction)
+				}
+				w.Header().Set("content-type", "text/event-stream")
+				flusher := w.(http.Flusher)
+				write := func(payload string) {
+					_, _ = io.WriteString(w, "data: "+payload+"\n\n")
+					flusher.Flush()
+				}
+				write(`{"type":"response.created"}`)
+				for range 5 {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(20 * time.Millisecond):
+					}
+					write(`{"type":"response.output_text.delta","item_id":"item_fixture","delta":"piece"}`)
+				}
+				write(`{"type":"response.function_call_arguments.delta","item_id":"function_fixture","delta":"{\"code\":"}`)
+				write(`{"type":"response.custom_tool_call_input.delta","item_id":"custom_fixture","delta":"text(1)"}`)
+				write(`{"type":"response.completed","response":{"status":"completed","output":[]}}`)
+			}))
+			defer server.Close()
+
+			var progress atomic.Int32
+			ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
+				progress.Add(1)
+				return nil
+			})
+			defer stop()
+			client := protocol.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond)
+			recorder := &providerEvidenceRecorder{}
+			response, err := Sample(ctx, client, server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, compaction, hooks)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if response == nil || progress.Load() < 7 {
+				t.Fatalf("response=%v, durable semantic progress=%d", response, progress.Load())
+			}
+			if !recorder.headRecorded {
+				t.Fatal("response head was not persisted before streaming")
+			}
+		})
+	}
+}
+
+func TestRepeatedOutputItemTransitionsAndMissingIdentityDoNotRenewIdleBudget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		write := func(payload string) {
+			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
+			flusher.Flush()
+		}
+		write(`{"type":"response.output_item.added","item":{"type":"message","role":"assistant","content":[]}}`)
+		const duplicate = `{"type":"response.output_item.added","item":{"id":"item_fixture","type":"message","role":"assistant","content":[]}}`
+		write(duplicate)
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(8 * time.Millisecond):
+				write(duplicate)
+			}
+		}
+	}))
+	defer server.Close()
+
+	var progress atomic.Int32
+	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 55*time.Millisecond, func(context.Context) error {
+		progress.Add(1)
+		return nil
+	})
+	defer stop()
+	recorder := &providerEvidenceRecorder{}
+	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
+	var timeout *protocol.ProviderPhaseTimeoutError
+	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
+		t.Fatalf("duplicate item transitions error=%v, want semantic-idle timeout", err)
+	}
+	if progress.Load() != 1 {
+		t.Fatalf("missing or duplicate item identity renewed progress %d times, want one valid transition", progress.Load())
+	}
+	if !strings.Contains(string(recorder.wire), `"id":"item_fixture"`) {
+		t.Fatalf("timeout lost retained item evidence: %q", recorder.wire)
+	}
+}
+
+func TestKeepalivesAndEmptyProviderDeltasDoNotResetIdleBudget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		for index := 0; ; index++ {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(8 * time.Millisecond):
+			}
+			switch index % 3 {
+			case 0:
+				_, _ = io.WriteString(w, ": keepalive\n\n")
+			case 1:
+				_, _ = io.WriteString(w, "data: {\"type\":\"response.created\"}\n\n")
+			case 2:
+				_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"item_id\":\"item_fixture\",\"delta\":\"\"}\n\n")
+			}
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	var progress atomic.Int32
+	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
+		progress.Add(1)
+		return nil
+	})
+	defer stop()
+	recorder := &providerEvidenceRecorder{}
+	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
+	var timeout *protocol.ProviderPhaseTimeoutError
+	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
+		t.Fatalf("keepalive-only stream error=%v, want semantic-idle timeout", err)
+	}
+	if progress.Load() != 0 {
+		t.Fatalf("keepalive-only stream reported %d semantic progress events", progress.Load())
+	}
+	if !recorder.headRecorded || !strings.Contains(string(recorder.wire), "keepalive") {
+		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.headRecorded, recorder.wire)
+	}
+}
+
+func TestEvidenceFailureStopsStreamWithoutReportingProgress(t *testing.T) {
+	want := errors.New("fixture evidence write failure")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"item_id\":\"item_fixture\",\"delta\":\"piece\"}\n\n")
+	}))
+	defer server.Close()
+
+	var progress atomic.Int32
+	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 250*time.Millisecond, func(context.Context) error {
+		progress.Add(1)
+		return nil
+	})
+	defer stop()
+	recorder := &providerEvidenceRecorder{failOnProviderEvents: want}
+	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "Bearer fixture", []byte(`{}`), Config{Dialect: DialectLite}, recorder, nil, false, hooks)
+	var persistenceErr *protocol.ProviderEvidencePersistenceError
+	if !errors.As(err, &persistenceErr) || !errors.Is(err, want) || progress.Load() != 0 {
+		t.Fatalf("evidence failure=%v, progress callbacks=%d", err, progress.Load())
+	}
+}
+
+type providerEvidenceRecorder struct {
+	headRecorded         bool
+	wire                 []byte
+	failOnProviderEvents error
+}
+
+func (r *providerEvidenceRecorder) Record(_ context.Context, evidence protocol.ProviderEvidence, _ ...*eventpb.Event) error {
+	if _, ok := evidence.(streamEvent); ok && r.failOnProviderEvents != nil {
+		return r.failOnProviderEvents
+	}
+	switch value := evidence.(type) {
+	case protocol.HTTPResponseHead:
+		r.headRecorded = true
+	case protocol.WireBytes:
+		r.wire = append(r.wire, value.Bytes...)
+	}
+	return nil
 }
 
 func TestResponsesRequestUsesCodexToolsAndPreservesOpaqueContext(t *testing.T) {
@@ -368,7 +548,7 @@ func TestDialectAndExecEncodingAreIndependent(t *testing.T) {
 					_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"))
 				}))
 				defer server.Close()
-				if _, err := Sample(context.Background(), server.Client(), server.URL, "Bearer fixture", encoded, config, nil, nil, false); err != nil {
+				if _, err := Sample(context.Background(), server.Client(), server.URL, "Bearer fixture", encoded, config, nil, nil, false, protocol.ProviderHooks{}); err != nil {
 					t.Fatal(err)
 				}
 			})

@@ -6,8 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -421,7 +426,7 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_partial","name":"exec","input":{}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"code\":\"text(1)\""}}`,
 	)
-	response, err := ReadStream(context.Background(), strings.NewReader(partial), nil, false)
+	response, err := ReadStream(context.Background(), strings.NewReader(partial), nil, false, protocol.ProviderHooks{})
 	var unknown *protocol.UnknownEffectError
 	if response != nil || !errors.As(err, &unknown) {
 		t.Fatalf("partial eager input became executable or lost its uncertain outcome: response=%+v err=%v", response, err)
@@ -436,7 +441,7 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 		`{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}`,
 		`{"type":"message_stop"}`,
 	)
-	response, err = ReadStream(context.Background(), strings.NewReader(complete), nil, false)
+	response, err = ReadStream(context.Background(), strings.NewReader(complete), nil, false, protocol.ProviderHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,11 +457,140 @@ func TestAnthropicFragmentedEagerToolInputIsNotPublishedBeforeTerminalMessage(t 
 
 func TestAnthropicTruncatedStreamHasUnknownEffect(t *testing.T) {
 	stream := anthropicEventStream(`{"type":"message_start","message":{"id":"msg_truncated","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
-	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false)
+	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false, protocol.ProviderHooks{})
 	var unknown *protocol.UnknownEffectError
 	if response != nil || !errors.As(err, &unknown) {
 		t.Fatalf("truncated response outcome=%+v err=%v; want unknown effect", response, err)
 	}
+}
+
+func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		write := func(payload string) {
+			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
+			flusher.Flush()
+		}
+		write(`{"type":"message_start","message":{"id":"msg_progress","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		write(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+		for range 5 {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(20 * time.Millisecond):
+			}
+			write(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"piece"}}`)
+		}
+		write(`{"type":"content_block_stop","index":0}`)
+		write(`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}`)
+		write(`{"type":"message_stop"}`)
+	}))
+	defer server.Close()
+
+	var progress atomic.Int32
+	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
+		progress.Add(1)
+		return nil
+	})
+	defer stop()
+	recorder := &anthropicEvidenceRecorder{}
+	response, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response == nil || progress.Load() < 5 {
+		t.Fatalf("response=%v, durable semantic progress=%d", response, progress.Load())
+	}
+	if !recorder.headRecorded {
+		t.Fatal("response head was not persisted before streaming")
+	}
+}
+
+func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		write := func(payload string) {
+			_, _ = io.WriteString(w, "data: "+payload+"\n\n")
+			flusher.Flush()
+		}
+		write(`{"type":"message_start","message":{"id":"msg_idle","role":"assistant","content":[],"usage":{"input_tokens":1}}}`)
+		write(`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`)
+		for index := 0; ; index++ {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(8 * time.Millisecond):
+			}
+			if index%2 == 0 {
+				write(`{"type":"ping"}`)
+			} else {
+				write(`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}`)
+			}
+		}
+	}))
+	defer server.Close()
+
+	var progress atomic.Int32
+	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
+		progress.Add(1)
+		return nil
+	})
+	defer stop()
+	recorder := &anthropicEvidenceRecorder{}
+	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
+	var timeout *protocol.ProviderPhaseTimeoutError
+	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
+		t.Fatalf("ping-only stream error=%v, want semantic-idle timeout", err)
+	}
+	if progress.Load() != 2 {
+		t.Fatalf("ping/empty-delta stream reported %d semantic progress events, want only message and block start", progress.Load())
+	}
+	if !recorder.headRecorded || !strings.Contains(string(recorder.wire), `"type":"ping"`) {
+		t.Fatalf("timeout lost raw response evidence: head=%t bytes=%q", recorder.headRecorded, recorder.wire)
+	}
+}
+
+func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
+	stream := anthropicEventStream(
+		`{"type":"message_start","message":{"id":"msg_compact","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"compaction","content":"summary","signature":"sig_fixture"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`,
+		`{"type":"message_stop"}`,
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+		_, _ = io.WriteString(w, stream)
+	}))
+	defer server.Close()
+
+	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond, nil)
+	defer stop()
+	recorder := &anthropicEvidenceRecorder{}
+	response, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response == nil || !recorder.headRecorded {
+		t.Fatalf("compaction response=%v, durable response head=%t", response, recorder.headRecorded)
+	}
+}
+
+type anthropicEvidenceRecorder struct {
+	headRecorded bool
+	wire         []byte
+}
+
+func (r *anthropicEvidenceRecorder) Record(_ context.Context, evidence protocol.ProviderEvidence, _ ...*eventpb.Event) error {
+	switch value := evidence.(type) {
+	case protocol.HTTPResponseHead:
+		r.headRecorded = true
+	case protocol.WireBytes:
+		r.wire = append(r.wire, value.Bytes...)
+	}
+	return nil
 }
 
 func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
@@ -464,7 +598,7 @@ func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
 		`{"type":"message_start","message":{"id":"msg_unknown","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		`{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"tool_unknown"}}`,
 	)
-	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false)
+	response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, false, protocol.ProviderHooks{})
 	var known *protocol.KnownFailureError
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("unsupported output block outcome=%+v err=%v; want a known rejection", response, err)
@@ -487,7 +621,7 @@ func TestAnthropicCompactionRequiresContentAndSignature(t *testing.T) {
 				`{"type":"message_delta","delta":{"stop_reason":"compaction"},"usage":{"output_tokens":1}}`,
 				`{"type":"message_stop"}`,
 			)
-			response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, true)
+			response, err := ReadStream(context.Background(), strings.NewReader(stream), nil, true, protocol.ProviderHooks{})
 			var known *protocol.KnownFailureError
 			if response != nil || !errors.As(err, &known) {
 				t.Fatalf("invalid compaction outcome=%+v err=%v; want known rejection", response, err)

@@ -67,8 +67,11 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
+	client = protocol.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
 	defer client.CloseIdleConnections()
-	result, err := adapter.Sample(ctx, client, connection, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
+	providerCtx, providerHooks, stopProviderIdle := protocol.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), nil)
+	defer stopProviderIdle()
+	result, err := adapter.Sample(providerCtx, client, connection, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true, providerHooks)
 	if err != nil {
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}
