@@ -169,3 +169,28 @@ The responses expose requested task sizes and chosen workers, not rejected
 reservations, eligible fleet capacity, account entitlements or hosted routing
 decisions. Provider lease/disconnect logs and reservation/affinity traces for the
 exact execution IDs are needed to close those causal gaps.
+
+## PR #15995 CI stream reset after a passing Firecracker action
+
+The exact-head [CI invocation](https://app.buildbuddy.io/invocation/00947ae1-95ef-594d-9177-f5e4934b63d2)
+for [PR #15995](https://github.com/agentydragon/ducktape/pull/15995) reported
+`INTERNAL: stream terminated by RST_STREAM with error code: INTERNAL_ERROR`
+for `//agentplane/system_tests/suites:test_firecracker`. Bazel published no
+`TestResult` for that target, and the [native CI job](https://github.com/agentydragon/ducktape/actions/runs/43348327584/job/131632971905)
+remains red. `//agentplane/app:test_thread_browser` passed all 16 shards in the
+same invocation; the Go auth unit and session integration targets also passed.
+
+Read-only `bbapi execution wait` and `bb execution get` on this exact operation
+returned a completed result with RPC status zero and action exit code zero:
+
+```text
+/uploads/8d54c921-60a5-4979-8f97-9d15861e8635/blobs/0351ffe6233de0b4721791ae02d435d2cc7833b0d994e7359b8a5f2cbdfb02e7/593
+```
+
+Its retained `test.xml` is
+`bytestream://remote.buildbuddy.io/blobs/70e9943f59ab026ae586dc5a38f2ae5b8f995070323cdae6da49a77014dbe145/548`.
+The JUnit reports two tests, zero failures, errors or skips:
+`test_firecracker_preserves_live_guest` and
+`test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner`.
+The physical action passed, while Bazel lost its response stream and the whole
+gate stayed red. No action was replayed or resubmitted to recover this evidence.
