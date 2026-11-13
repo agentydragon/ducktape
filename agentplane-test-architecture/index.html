@@ -83,9 +83,9 @@
           <${Title} order=${2} mb="md">${title}<//>${children}<//
         >`;
       }
-      function Rows({ headers, rows, minWidth = 680 }) {
+      function Rows({ headers, rows, minWidth = 680, id }) {
         const readableCell = { overflowWrap: "normal", wordBreak: "normal" };
-        return html`<${Table.ScrollContainer} minWidth=${minWidth}>
+        return html`<${Table.ScrollContainer} minWidth=${minWidth} id=${id}>
           <${Table}
             striped
             withTableBorder
@@ -188,6 +188,13 @@
         const choice = classes[selected];
         const comparison = data?.iteration2_comparison;
         const nativeIteration = data?.iteration2_native;
+        const iteration3 = data?.iteration3;
+        const iteration3StatusLabel = (iteration3?.status || "evidence pending")
+          .replaceAll("_", " ")
+          .toLowerCase();
+        const iteration3TopSummary = iteration3
+          ? `Iteration 3 evidence (${iteration3.status || "status pending"}): ${iteration3.finding || "The three source-pinned suite variants are still being reviewed."}`
+          : "Iteration 3 source-pinned comparisons are loading; no result is inferred while evidence is unavailable.";
         const centralTargets = [
           "//agentplane/system_tests/suites/mcp:test_gateway_crash",
           "//agentplane/system_tests/suites/mcp:test_gateway_budget",
@@ -239,6 +246,393 @@
                 "Pending",
               ],
             ];
+        const iteration3Specs = [
+          { key: "control", label: "Control · 6369d22" },
+          { key: "concurrent_only", label: "Concurrent-only · defe54fa" },
+          { key: "combined_profile", label: "Combined profile · 6fc4da6" },
+        ];
+        const iteration3Sources = iteration3?.source_provenance?.variants || [];
+        const iteration3StatusColor = (status) =>
+          /fail|error/i.test(status || "")
+            ? "red"
+            : /pass|complete/i.test(status || "")
+              ? "green"
+              : /pending|running|queued/i.test(status || "")
+                ? "yellow"
+                : "gray";
+        const invocationIdPattern =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const linkInvocationIds = (value) =>
+          String(value)
+            .split(
+              /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi,
+            )
+            .map((part, index) =>
+              invocationIdPattern.test(part)
+                ? html`<${Anchor}
+                    href=${`https://app.buildbuddy.io/invocation/${part}`}
+                    key=${index}
+                    >${part}<//
+                  >`
+                : part,
+            );
+        const iteration3Timing = (value, status) => {
+          if (Number.isFinite(value)) return seconds(value);
+          return /pending|running|queued|accepted|submitted/i.test(status || "")
+            ? "Pending"
+            : "Not measured";
+        };
+        const iteration3SourceCell = (spec, variant, sourceVariant) => {
+          const label = sourceVariant?.label || variant?.label || spec.label;
+          return html`<${Stack} gap="xs">
+            <${Text} fw=${600}>${label}<//>
+            ${
+              sourceVariant?.commit
+                ? html`<${Anchor}
+                    href=${`${repo}/commit/${sourceVariant.commit}`}
+                    >${sourceVariant.commit}<//
+                  >`
+                : "Source commit pending"
+            }
+            ${
+              sourceVariant?.branch
+                ? html`<${Text} size="xs" c="dimmed"
+                    >${sourceVariant.branch}<//
+                  >`
+                : null
+            }
+            ${
+              sourceVariant?.source_note
+                ? html`<${Text} size="xs">${sourceVariant.source_note}<//>`
+                : null
+            }
+          <//>`;
+        };
+        const iteration3VariantRows = iteration3Specs.map((spec) => {
+          const variant = iteration3?.variants?.find(
+            (candidate) => candidate.key === spec.key,
+          );
+          const sourceVariant = iteration3Sources.find(
+            (candidate) => candidate.key === spec.key,
+          );
+          const status = variant?.status || "PENDING";
+          const outcome = variant?.outcome || "Run result pending";
+          const notes = [
+            ...(variant?.failures || []).map(
+              (failure) => `Failure: ${failure}`,
+            ),
+            ...(variant?.pending || []).map((pending) => `Pending: ${pending}`),
+          ];
+          return [
+            iteration3SourceCell(spec, variant, sourceVariant),
+            html`<${Badge} miw=${80} color=${iteration3StatusColor(status)}
+              >${status}<//
+            >`,
+            html`<${Stack} gap="xs">
+              <${Text} size="sm">${outcome}<//>
+              ${notes.map(
+                (note) =>
+                  html`<${Text}
+                    size="sm"
+                    c=${note.startsWith("Pending:") ? "orange" : "red"}
+                    >${note}<//
+                  >`,
+              )}
+            <//>`,
+          ];
+        });
+        const iteration3RunRows = iteration3Specs.flatMap((spec) => {
+          const variant = iteration3?.variants?.find(
+            (candidate) => candidate.key === spec.key,
+          );
+          const sourceVariant = iteration3Sources.find(
+            (candidate) => candidate.key === spec.key,
+          );
+          const label = sourceVariant?.label || variant?.label || spec.label;
+          const runs = variant?.runs?.length ? variant.runs : [null];
+          return runs.map((run, index) => {
+            const status = run?.status || variant?.status || "PENDING";
+            const attemptLink = run?.url
+              ? html`<${Anchor} href=${run.url}
+                  >${run.invocation || "BuildBuddy invocation"}<//
+                >`
+              : run?.invocation
+                ? html`<${Anchor}
+                    href=${`https://app.buildbuddy.io/invocation/${run.invocation}`}
+                    >${run.invocation}<//
+                  >`
+                : "Pending invocation";
+            const notes = [
+              ...(index === 0 ? variant?.failures || [] : []).map(
+                (failure) => `Failure: ${failure}`,
+              ),
+              ...(index === 0 ? variant?.pending || [] : []).map(
+                (pending) => `Pending: ${pending}`,
+              ),
+            ];
+            return [
+              label,
+              iteration3Timing(run?.process_seconds, status),
+              iteration3Timing(run?.setup_seconds, status),
+              iteration3Timing(run?.cpu_seconds, status),
+              iteration3Timing(run?.test_seconds, status),
+              html`<${Badge} miw=${80} color=${iteration3StatusColor(status)}
+                >${status}<//
+              >`,
+              attemptLink,
+              html`<${Stack} gap="xs">
+                <${Text} size="sm"
+                  >${
+                    run?.note ||
+                    (index === 0
+                      ? variant?.outcome || "No run result recorded"
+                      : "")
+                  }<//
+                >
+                ${notes.map(
+                  (note) =>
+                    html`<${Text}
+                      size="sm"
+                      c=${note.startsWith("Pending:") ? "orange" : "red"}
+                      >${note}<//
+                    >`,
+                )}
+              <//>`,
+            ];
+          });
+        });
+        const iteration3ProjectionSpike = iteration3?.projection_spike;
+        const iteration3ProjectionRuns = iteration3ProjectionSpike?.runs?.length
+          ? iteration3ProjectionSpike.runs
+          : [null];
+        const iteration3ProjectionConfigRows = (
+          iteration3ProjectionSpike?.effective_configuration || []
+        ).map((config) => [
+          config.variant || "Variant not recorded",
+          config.run ?? "Not recorded",
+          config.sync_frequency || "Not recorded",
+          config.config_map_and_secret_change_detection_strategy ||
+            "Not recorded",
+          config.invocation
+            ? html`<${Anchor}
+                href=${`https://app.buildbuddy.io/invocation/${config.invocation}`}
+                >${config.invocation}<//
+              >`
+            : "Invocation not recorded",
+          config.artifact_uri
+            ? code(config.artifact_uri)
+            : "Artifact not recorded",
+        ]);
+        const iteration3ProjectionRows = iteration3ProjectionSpike
+          ? iteration3ProjectionRuns.map((run) => {
+              const status =
+                run?.status || iteration3ProjectionSpike.status || "PENDING";
+              const attemptLink = run?.url
+                ? html`<${Anchor} href=${run.url}
+                    >${run.invocation || "BuildBuddy invocation"}<//
+                  >`
+                : run?.invocation
+                  ? html`<${Anchor}
+                      href=${`https://app.buildbuddy.io/invocation/${run.invocation}`}
+                      >${run.invocation}<//
+                    >`
+                  : "Pending invocation";
+              return [
+                run ? `${run.variant} · run ${run.run}` : "Pending variant",
+                iteration3Timing(run?.case_seconds, status),
+                iteration3Timing(run?.process_seconds, status),
+                iteration3Timing(run?.setup_seconds, status),
+                iteration3Timing(run?.cpu_seconds, status),
+                html`<${Badge} miw=${80} color=${iteration3StatusColor(status)}
+                  >${status}<//
+                >`,
+                run?.source_commit
+                  ? html`<${Anchor}
+                      href=${`${repo}/commit/${run.source_commit}`}
+                      >${run.source_commit}<//
+                    >`
+                  : "Source commit pending",
+                attemptLink,
+                run?.note || "No run note recorded",
+              ];
+            })
+          : [];
+        const iteration3ProjectionNotes = [
+          ...(iteration3ProjectionSpike?.failures || []).map(
+            (failure) => `Failure: ${failure}`,
+          ),
+          ...(iteration3ProjectionSpike?.pending || []).map(
+            (pending) => `Pending: ${pending}`,
+          ),
+        ];
+        const iteration3NativeExtraction =
+          iteration3?.native_fixture_extraction;
+        const iteration3ExtractionNotes = [
+          ...(iteration3NativeExtraction?.failures || []).map(
+            (failure) => `Failure: ${failure}`,
+          ),
+          ...(iteration3NativeExtraction?.pending || []).map(
+            (pending) => `Pending: ${pending}`,
+          ),
+        ];
+        const iteration3OrdinaryCi = iteration3?.ordinary_ci;
+        const iteration3CommitLink = (commit) =>
+          commit
+            ? html`<${Anchor} href=${`${repo}/commit/${commit}`}>${commit}<//>`
+            : "Pending";
+        const iteration3ExternalLink = (url, label) =>
+          url ? html`<${Anchor} href=${url}>${label || url}<//>` : "Pending";
+        const iteration3OrdinaryRows = iteration3OrdinaryCi
+          ? [
+              ["PR head", iteration3CommitLink(iteration3OrdinaryCi.pr_head)],
+              [
+                "Observed merge commit",
+                iteration3CommitLink(iteration3OrdinaryCi.merge_commit),
+              ],
+              [
+                "Merge base",
+                iteration3CommitLink(iteration3OrdinaryCi.merge_base_commit),
+              ],
+              [
+                "Synthetic merge tree",
+                iteration3OrdinaryCi.merge_tree || "Not recorded",
+              ],
+              [
+                "Literal PR-head tree",
+                iteration3OrdinaryCi.literal_head_tree || "Not recorded",
+              ],
+              [
+                "Merge tree matches PR-head tree",
+                iteration3OrdinaryCi.tree_matches_literal_head === true
+                  ? "Yes"
+                  : iteration3OrdinaryCi.tree_matches_literal_head === false
+                    ? "No; tested merge tree differs"
+                    : "Not recorded",
+              ],
+              [
+                "Workflow",
+                iteration3ExternalLink(
+                  iteration3OrdinaryCi.workflow_url,
+                  "Open GitHub Actions workflow",
+                ),
+              ],
+              [
+                "BuildBuddy invocation",
+                iteration3ExternalLink(
+                  iteration3OrdinaryCi.invocation_url,
+                  "Open BuildBuddy invocation",
+                ),
+              ],
+              [
+                "Workflow start to last required check",
+                seconds(iteration3OrdinaryCi.required_feedback_seconds),
+              ],
+              ["Bazel wall", seconds(iteration3OrdinaryCi.bazel_seconds)],
+              [
+                "Pod TestRunner process",
+                seconds(iteration3OrdinaryCi.pod_process_seconds),
+              ],
+              [
+                "Pod fixture setup",
+                seconds(iteration3OrdinaryCi.pod_setup_seconds),
+              ],
+              [
+                "Fresh physical test executions",
+                iteration3OrdinaryCi.physical_new_test_execution_count ??
+                  "Not recorded",
+              ],
+              [
+                "Pod suite cases, baseline and cleanup",
+                iteration3OrdinaryCi.pod_cases !== undefined
+                  ? `${iteration3OrdinaryCi.pod_cases} cases; ${iteration3OrdinaryCi.pod_baseline || "baseline not recorded"}; cleanup ${iteration3OrdinaryCi.pod_cleanup || "not recorded"}`
+                  : "Not recorded",
+              ],
+              [
+                "Source and tree note",
+                iteration3OrdinaryCi.source_note || "Not recorded",
+              ],
+              ...(iteration3OrdinaryCi.docs_head
+                ? [
+                    [
+                      "Separate documentation head",
+                      iteration3CommitLink(iteration3OrdinaryCi.docs_head),
+                    ],
+                    [
+                      "Documentation check status",
+                      iteration3OrdinaryCi.docs_status || "Pending",
+                    ],
+                    [
+                      "Documentation workflow",
+                      iteration3ExternalLink(
+                        iteration3OrdinaryCi.docs_workflow_url,
+                        "Open documentation workflow",
+                      ),
+                    ],
+                    [
+                      "Documentation invocation",
+                      iteration3ExternalLink(
+                        iteration3OrdinaryCi.docs_invocation_url,
+                        "Open documentation invocation",
+                      ),
+                    ],
+                  ]
+                : []),
+            ]
+          : [
+              [
+                "Ordinary CI result",
+                "Pending final workflow and required-check read",
+              ],
+            ];
+        const iteration3OrdinaryActionRows = iteration3OrdinaryCi
+          ?.last_test_actions?.length
+          ? iteration3OrdinaryCi.last_test_actions.map((action) => [
+              action.label || "Test action not recorded",
+              seconds(action.process_seconds),
+            ])
+          : [["Pending last K3s TestRunner actions", "Pending"]];
+        const iteration3Coverage = iteration3?.coverage;
+        const iteration3CoverageRows = [
+          [
+            "Retained guarantees",
+            iteration3Coverage?.retained?.length
+              ? iteration3Coverage.retained.join(" ")
+              : "The four shared cases keep separate Claude and Codex Sandboxes and their existing assertions. TaskGroup cancellation waits for peer cleanup; the change adds no Sandboxes. Positive workload-identity, app, PKI, Secret, storage and 60-second idle witnesses remain.",
+          ],
+          [
+            "Profile omission",
+            iteration3Coverage?.omitted?.length
+              ? iteration3Coverage.omitted.join(" ")
+              : "The profile omits only MCP-edge from the 21-case Pod suite and manual variants; Actions remains. The 21 Pod cases are retained.",
+          ],
+          [
+            "Explicit limits",
+            iteration3Coverage?.limitations?.length
+              ? iteration3Coverage.limitations.join(" ")
+              : "App Connection routes and their status endpoint are not used in this profile and remain an explicit coverage limitation. Default, MCP, Dispatcher and VM profiles are unchanged.",
+          ],
+        ];
+        const iteration3ClosureNote = iteration3?.configured_closure
+          ? [
+              "Configured query: " +
+                (iteration3.configured_closure.query || "not recorded"),
+              "Control path: " +
+                (iteration3.configured_closure.control?.path?.join(" → ") ||
+                  "not recorded"),
+              "Control invocation: " +
+                (iteration3.configured_closure.control?.invocation ||
+                  "not recorded"),
+              "Candidate: " +
+                (iteration3.configured_closure.candidate?.result ||
+                  "result pending"),
+              "Candidate invocation: " +
+                (iteration3.configured_closure.candidate?.invocation ||
+                  "not recorded"),
+              iteration3.configured_closure.interpretation || "",
+            ]
+              .filter(Boolean)
+              .join(". ") + "."
+          : null;
         return html`<${Container}
           component="main"
           size="74rem"
@@ -252,14 +646,19 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="blue">Iteration 2 implementation + experiments<//
+            ><${Badge}
+              color=${iteration3?.status === "COMPLETE" ? "green" : "orange"}
+              >Iteration 3 ${iteration3StatusLabel}<//
             ><${Badge} color="orange">devel merge gate unchanged<//
             ><${Badge} color="gray">Complete CI saving not established<//><//
           >
+          <${Text} size="sm" c="dimmed">${iteration3TopSummary}<//>
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${source} · progress head ${manifest.pilot_head_commit?.slice(0, 10)} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · current inspected base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · progress head ${manifest.pilot_head_commit?.slice(0, 10)} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
+              ["iteration3", "Iteration 3"],
               ["progress", "Progress"],
               ["architecture", "Architecture"],
               ["change-selector", "PR selection"],
@@ -278,6 +677,217 @@
             test frequency remain unchanged. The long-term target is routine
             backend required-feedback mean below 4 minutes and p90 below 8
             minutes, including reruns; these are design targets, not results.
+          <//>
+          <${Section}
+            id="iteration3"
+            title="Iteration 3: concurrent cases and MCP-edge profile"
+          >
+            <${Alert}
+              color=${iteration3?.status === "COMPLETE" ? "blue" : "orange"}
+              title=${
+                iteration3?.status === "COMPLETE"
+                  ? "Iteration evidence recorded"
+                  : iteration3
+                    ? "Iteration evidence in progress"
+                    : "Iteration evidence pending"
+              }
+            >
+              ${
+                iteration3?.finding ||
+                "Three full 21-case Pod-suite variants are under comparison: control 6369, concurrent-only defe54, and the combined profile at the next source head. The invocations were accepted; their results are pending. The required devel gate remains unchanged, and no CI saving is claimed from queued or partial evidence."
+              }
+            <//>
+            ${p(iteration3?.comparison_scope_note || "This comparison is source-pinned to the published variant commits below. Keep each run, failure and pending result visible; one execution per variant is an exploratory screen, not a qualified performance delta or a complete-CI measurement.")}
+            ${
+              iteration3?.source_provenance?.base_commit
+                ? html`<${Text} size="sm" c="dimmed">
+                    Common comparison base:
+                    <${Anchor}
+                      href=${`${repo}/commit/${iteration3.source_provenance.base_commit}`}
+                      >${iteration3.source_provenance.base_commit}<//
+                    >
+                  <//>`
+                : null
+            }
+            <${Title} order="3" mt="xl" mb="sm">Source-pinned variants<//>
+            <${Rows}
+              id="iteration3-variants"
+              minWidth=${920}
+              headers=${["Variant and actual source", "Status", "Outcome and recorded failures or pending work"]}
+              rows=${iteration3VariantRows}
+            />
+            <${Title} order="3" mt="xl" mb="sm">Every run and timing field<//>
+            ${p("Bazel wall is the test invocation's wall time; TestRunner process is the physical test action wall time. Fixture setup and CPU are shown separately. Per-case sums are omitted because concurrent case durations can overlap and should not be read as wall time.")}
+            <${Rows}
+              id="iteration3-runs"
+              minWidth=${1320}
+              headers=${[
+                "Variant",
+                "TestRunner process",
+                "Fixture setup",
+                "CPU",
+                "Bazel wall",
+                "Run status",
+                "Invocation",
+                "Outcome and recorded notes",
+              ]}
+              rows=${iteration3RunRows}
+            />
+            <${Title} order="3" mt="xl" mb="sm">Coverage retained and limits<//>
+            <${Rows}
+              headers=${["Scope", "Iteration 3 boundary"]}
+              rows=${iteration3CoverageRows}
+            />
+            ${
+              iteration3ClosureNote
+                ? p(linkInvocationIds(iteration3ClosureNote))
+                : null
+            }
+            ${
+              iteration3ProjectionSpike
+                ? html`<${Box}
+                    component="section"
+                    id="iteration3-projection-spike"
+                    my="xl"
+                  >
+                    <${Group} gap="sm">
+                      <${Title} order=${3}>Secret projection follow-up spike<//>
+                      <${Badge}
+                        color=${iteration3StatusColor(iteration3ProjectionSpike.status)}
+                        >${iteration3ProjectionSpike.status || "PENDING"}<//
+                      >
+                    <//>
+                    ${p(iteration3ProjectionSpike.finding || "Selected-case kubelet fixture-sync trial results pending.")}
+                    ${p(iteration3ProjectionSpike.source_note || "This bounded trial changes the fixture sync interval only; it keeps real same-Pod Secret projection and the existing UID/certificate assertions.")}
+                    <${Rows}
+                      id="iteration3-projection-runs"
+                      minWidth=${1480}
+                      headers=${[
+                        "Variant",
+                        "Selected-case duration",
+                        "TestRunner process",
+                        "Fixture setup",
+                        "CPU",
+                        "Run status",
+                        "Source commit",
+                        "Invocation",
+                        "Run note",
+                      ]}
+                      rows=${iteration3ProjectionRows}
+                    />
+                    <${Title} order=${4} mt="lg" mb="sm"
+                      >Effective kubelet configuration per run<//
+                    >
+                    <${Rows}
+                      id="iteration3-projection-config"
+                      minWidth=${1320}
+                      headers=${[
+                        "Variant",
+                        "Run",
+                        "Sync frequency",
+                        "Change-detection strategy",
+                        "Invocation",
+                        "Configz artifact",
+                      ]}
+                      rows=${iteration3ProjectionConfigRows}
+                    />
+                    ${
+                      iteration3ProjectionSpike.limitations?.length
+                        ? html`<${Stack} gap="xs" mt="sm">
+                            <${Text} fw=${600}>Limitations<//>
+                            <${List} size="sm" spacing="xs">
+                              ${iteration3ProjectionSpike.limitations.map(
+                                (limitation, index) =>
+                                  html`<${List.Item} key=${index}
+                                    >${limitation}<//
+                                  >`,
+                              )}
+                            <//>
+                          <//>`
+                        : null
+                    }
+                    ${iteration3ProjectionNotes.map(
+                      (note) =>
+                        html`<${Text}
+                          size="sm"
+                          c=${note.startsWith("Pending:") ? "orange" : "red"}
+                          >${note}<//
+                        >`,
+                    )}
+                  <//>`
+                : null
+            }
+            ${
+              iteration3NativeExtraction
+                ? html`<${Box}
+                    component="section"
+                    id="iteration3-native-extraction"
+                    my="xl"
+                  >
+                    <${Group} gap="sm">
+                      <${Title} order=${3}>Native fixture extraction check<//>
+                      <${Badge}
+                        color=${iteration3StatusColor(iteration3NativeExtraction.status)}
+                        >${iteration3NativeExtraction.status || "PENDING"}<//
+                      >
+                    <//>
+                    ${p(iteration3NativeExtraction.finding || "Extraction evidence pending.")}
+                    ${p(iteration3NativeExtraction.source_note || "Checks are tied to the recorded source revision; no outcome is inferred from an absent check.")}
+                    ${
+                      iteration3NativeExtraction.checks?.length
+                        ? html`<${List} size="sm" spacing="xs">
+                            ${iteration3NativeExtraction.checks.map(
+                              (check, index) =>
+                                html`<${List.Item} key=${index}
+                                  >${linkInvocationIds(check)}<//
+                                >`,
+                            )}
+                          <//>`
+                        : null
+                    }
+                    ${iteration3ExtractionNotes.map(
+                      (note) =>
+                        html`<${Text}
+                          size="sm"
+                          c=${note.startsWith("Pending:") ? "orange" : "red"}
+                          >${note}<//
+                        >`,
+                    )}
+                  <//>`
+                : null
+            }
+            <${Title} order="3" mt="xl" mb="sm"
+              >Observed ordinary CI workflow<//
+            >
+            <${Alert}
+              color=${iteration3OrdinaryCi ? "blue" : "orange"}
+              title=${
+                iteration3OrdinaryCi
+                  ? "One workflow observation; no causal CI saving claim"
+                  : "Final ordinary-CI result pending"
+              }
+            >
+              ${
+                iteration3OrdinaryCi?.finding ||
+                "The exact-head workflow and last required-check result have not yet been recorded."
+              }
+            <//>
+            <${Rows}
+              id="iteration3-ordinary-ci"
+              headers=${["Observation", "Recorded result"]}
+              rows=${iteration3OrdinaryRows}
+            />
+            <${Title} order="4" mt="lg" mb="sm"
+              >Last fresh K3s TestRunner actions<//
+            >
+            <${Rows}
+              id="iteration3-ordinary-actions"
+              headers=${["Action", "Physical process"]}
+              rows=${iteration3OrdinaryActionRows}
+            />
+            ${p("This is one workflow's observed elapsed time and action breakdown, not a matched whole-PR comparison. The merge tree's relationship to the PR head is shown above; a single ordinary run does not establish a causal saving or routine-feedback distribution.")}
+            ${p(iteration3?.next_step || "Next: review every 21-case run, including failures, retries and cleanup outcomes, against its recorded source commit; then use matched repeats only if the combined profile merits them. Whole-PR shadowing remains separate: at least 30 pinned base/head pairs and 100 fresh contract executions are still required. Do not change devel selection or infer complete-CI savings from this suite experiment.")}
+            ${p("This does not complete P5: at least 30 pinned base/head pairs and 100 fresh contract executions, plus busy-window and four-PR-burst observation, remain before considering any selection change.")}
           <//>
           <${Section} id="progress" title="Iteration 2 implementation status">
             <${Alert}
@@ -355,10 +965,10 @@
               result, whole-PR shadow or complete CI saving.
             <//>
             <${Title} order=${3} mt="xl" mb="sm"
-              >What limits the whole PR now<//
+              >Iteration 2 whole-PR bottleneck (historical)<//
             >
-            ${p(data?.iteration2_status?.next_measured_bottleneck || "See current source PR checks for whole-graph evidence.")}
-            ${p("Next bounded architecture step: split the Pod suite's owner authorization, History and identity contracts into fresh native fixtures, while keeping real idle/resume, Secret projection, Pod replacement, storage and packaged-image witnesses in focused deployment acceptance. Compare setup duplication, longest action and CPU before changing grouping or required selection. The current branch has not finished that split.")}
+            ${p(data?.iteration2_status?.next_measured_bottleneck || "Historical iteration 2 bottleneck detail was not recorded.")}
+            ${p("Historical iteration 2 proposal: split the Pod suite's owner authorization, History and identity contracts into fresh native fixtures, while keeping real idle/resume, Secret projection, Pod replacement, storage and packaged-image witnesses in focused deployment acceptance. This was the prior plan; iteration 3's current next step is recorded above.")}
             <${Title} order=${3} mt="xl" mb="sm">Native helper ABBA timing<//>
             ${p(nativeIteration?.scope_note || "The ordered native ABBA observations are still pending final evidence. Any eventual timing is a small fixture comparison, not whole-CI or whole-PR savings.")}
             <${Rows}
