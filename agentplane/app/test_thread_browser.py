@@ -315,7 +315,9 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         await app.login(page)
         await page.goto(f"{ingress.url}/#/sandboxes/{sandbox.name}?tab=status")
         panel = page.get_by_role("region", name="Environment identity")
-        await expect(panel.get_by_text("At last check, no retained credential named an Identity.")).to_be_visible()
+        initial_identity = f"{sandbox.name}-identity"
+        await expect(panel.get_by_role("link", name=initial_identity)).to_be_visible()
+        await expect(panel.get_by_text(f"Credential at last check: {initial_identity}", exact=True)).to_be_visible()
         await expect(panel.get_by_role("button", name="Change identity")).to_have_count(0)
 
         async def change() -> dict[str, object]:
@@ -336,7 +338,7 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         refused = await change()
         assert refused["status"] == 400
         assert "nothing runs" in str(refused["body"])
-        assert (await sandbox.sandbox())["spec"].get("identity") is None
+        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": initial_identity}
 
         await sandbox.patch_sandbox_status({"status": {"stopStage": "Stopped"}})
         selector = panel.get_by_role("combobox", name="Identity for next start")
