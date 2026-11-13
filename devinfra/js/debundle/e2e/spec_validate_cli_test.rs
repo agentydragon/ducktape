@@ -545,8 +545,8 @@ sideEffect("shared");
             "candidates": [{"body_index": 0}, {"body_index": 1}],
             "truncated": false,
             "differentiators": [
-                {"candidate_body_index": 0, "anchor_body_index": 1, "anchor": "string literal \"shared\""},
-                {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 0, "anchor_body_index": 1, "anchor": {"kind": "string_literal", "value": "shared"}},
+                {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "shared"}},
             ],
         })
     );

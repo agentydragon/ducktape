@@ -518,8 +518,8 @@ export { a, b };
             // Alike in themselves, each is set apart by its neighbor: only
             // `a` is followed, and only `b` preceded, by a `"shared"` function.
             "differentiators": [
-                {"candidate_body_index": 0, "anchor_body_index": 1, "anchor": "string literal \"shared\""},
-                {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": "string literal \"shared\""},
+                {"candidate_body_index": 0, "anchor_body_index": 1, "anchor": {"kind": "string_literal", "value": "shared"}},
+                {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "shared"}},
             ],
         })
     );
@@ -712,8 +712,8 @@ fn resolution_by_elimination_is_shared_by_every_spec_command() {
             "candidates": [{"body_index": 0, "binding": "first"}, {"body_index": 1, "binding": "second"}],
             "truncated": false,
             "differentiators": [
-                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"shared\""},
-                {"candidate_body_index": 1, "anchor_body_index": 1, "anchor": "string literal \"other\""},
+                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "shared"}},
+                {"candidate_body_index": 1, "anchor_body_index": 1, "anchor": {"kind": "string_literal", "value": "other"}},
             ],
         }),
         "spec match-selector"
@@ -950,8 +950,8 @@ function f() { return key + 1; }"#;
         "candidates": [{"body_index": 1, "binding": "a"}, {"body_index": 2, "binding": "b"}],
         "truncated": false,
         "differentiators": [
-            {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": "string literal \"anchor-key\""},
-            {"candidate_body_index": 2, "anchor_body_index": 1, "anchor": "number literal 1"},
+            {"candidate_body_index": 1, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "anchor-key"}},
+            {"candidate_body_index": 2, "anchor_body_index": 1, "anchor": {"kind": "number_literal", "value": "1"}},
         ],
     });
 

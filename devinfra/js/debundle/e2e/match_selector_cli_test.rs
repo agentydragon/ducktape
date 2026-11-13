@@ -238,8 +238,8 @@ fn ambiguous_match_lists_candidates_in_body_order() {
             ],
             "truncated": false,
             "differentiators": [
-                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": "string literal \"left\""},
-                {"candidate_body_index": 2, "anchor_body_index": 2, "anchor": "string literal \"right\""},
+                {"candidate_body_index": 0, "anchor_body_index": 0, "anchor": {"kind": "string_literal", "value": "left"}},
+                {"candidate_body_index": 2, "anchor_body_index": 2, "anchor": {"kind": "string_literal", "value": "right"}},
             ],
         }),
         "{report:#}"
