@@ -592,6 +592,56 @@ async def test_font_face_class(playwright_driver: Playwright, origin: str) -> No
         }
 
 
+async def test_renderer_filters_and_memoizes_elements(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Renderer } = await import('./main/packages/excalidraw/scene/Renderer.js');
+                const create = await import('./editor/packages/excalidraw/element/newElement.js');
+                const elements = [
+                    create.newElement({id: 'visible', type: 'rectangle', x: 10, y: 20, width: 30, height: 40}),
+                    create.newElement({id: 'offscreen', type: 'rectangle', x: 2000, y: 2000, width: 30, height: 40}),
+                    create.newElement({id: 'pending-image', type: 'image', x: 20, y: 20, width: 30, height: 30}),
+                    create.newElement({id: 'new-rectangle', type: 'rectangle', x: 40, y: 50, width: 30, height: 40}),
+                    create.newTextElement({id: 'editing-text', x: 100, y: 200, text: 'editing',
+                        fontFamily: 3, fontSize: 20, lineHeight: 1.2,
+                        textAlign: 'left', verticalAlign: 'top'}),
+                ];
+                const renderer = new Renderer({getNonDeletedElements: () => elements});
+                const input = {zoom: {value: 1}, offsetLeft: 0, offsetTop: 0, scrollX: 0, scrollY: 0,
+                    height: 800, width: 1280, editingTextElement: {id: 'editing-text', type: 'text'},
+                    newElementId: 'new-rectangle', pendingImageElementId: 'pending-image', sceneNonce: 1};
+                const first = renderer.getRenderableElements(input);
+                const second = renderer.getRenderableElements(input);
+                elements.push(create.newElement({id: 'added', type: 'rectangle',
+                    x: 100, y: 100, width: 30, height: 40}));
+                const changedInput = {...input, sceneNonce: 2};
+                const refreshed = renderer.getRenderableElements(changedInput);
+                renderer.destroy();
+                const afterDestroy = renderer.getRenderableElements(changedInput);
+                return {
+                    elements: [...first.elementsMap.keys()],
+                    visible: first.visibleElements.map(element => element.id),
+                    memoized: first === second,
+                    refreshed: refreshed.visibleElements.map(element => element.id),
+                    invalidated: refreshed !== first && afterDestroy !== refreshed,
+                };
+            }"""
+        )
+        assert result == {
+            "elements": ["visible", "offscreen"],
+            "visible": ["visible"],
+            "memoized": True,
+            "refreshed": ["visible", "added"],
+            "invalidated": True,
+        }
+
+
 async def test_element_construction(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
