@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -19,10 +19,10 @@ type policySetNameReader interface {
 	ListPolicySetNames(context.Context, *policypb.ListPolicySetNamesRequest, ...grpc.CallOption) (*policypb.ListPolicySetNamesResponse, error)
 }
 
-// RegisterAppConfigRoutes serves the app-owned browser configuration through generated
+// registerAppConfigRoutes serves the app-owned browser configuration through generated
 // ProtoJSON HTTP routes. The generated gateway and service implementation share this process;
 // there is no separate config service or internal HTTP hop.
-func RegisterAppConfigRoutes(server *HTTPServer, service *appService) error {
+func registerAppConfigRoutes(server *httpServer, service *appService) error {
 	gateway := runtime.NewServeMux()
 	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), gateway, service); err != nil {
 		return err

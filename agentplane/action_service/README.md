@@ -452,7 +452,7 @@ authoring package and its `resources` target remain at their existing path for c
 system-test consumers.
 
 The Go integration app obtains PolicySet names from the Policy Controller's
-`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/go/appconfigapi.go).
+`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/internal/server/appconfigapi.go).
 Its effective action-policy view comes from the Action Service's generated `WatchActionPolicy`
 response. The Python
 `policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic

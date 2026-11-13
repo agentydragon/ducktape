@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -42,13 +42,13 @@ type streamHistoryStore interface {
 	ReadWatermark(context.Context, uuid.UUID) (uint64, error)
 }
 
-// StreamingDependencies are the narrow runtime interfaces used by SSE and raw upstream routes.
-// All route authorization still goes through HTTPServer.RegisterRawRoute.
+// streamingDependencies are the narrow runtime interfaces used by SSE and raw upstream routes.
+// All route authorization still goes through httpServer.RegisterRawRoute.
 type actionFederator interface {
 	Exchange(context.Context, federation.SessionLoginRow) (string, error)
 }
 
-type StreamingDependencies struct {
+type streamingDependencies struct {
 	Auth             *auth.Auth
 	Updates          auth.ChangeSource
 	UpdatesConnected func() bool
@@ -73,9 +73,9 @@ type StreamingDependencies struct {
 	Logger           *slog.Logger
 }
 
-// RegisterStreamingRoutes installs the live snapshots, event/notice/console streams, and
+// registerStreamingRoutes installs the live snapshots, event/notice/console streams, and
 // operator-facing HTTP facades. The server owns the shared auth/session middleware and drain gate.
-func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependencies) {
+func registerStreamingRoutes(server *httpServer, dependencies streamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
 		server.RegisterRawRoute(method+" /upstream/environments/{path...}", http.HandlerFunc(routes.environmentFacade), false)
@@ -100,11 +100,11 @@ func RegisterStreamingRoutes(server *HTTPServer, dependencies StreamingDependenc
 }
 
 type streamingRoutes struct {
-	server *HTTPServer
-	deps   StreamingDependencies
+	server *httpServer
+	deps   streamingDependencies
 }
 
-func newStreamingRoutes(server *HTTPServer, deps StreamingDependencies) *streamingRoutes {
+func newStreamingRoutes(server *httpServer, deps streamingDependencies) *streamingRoutes {
 	return &streamingRoutes{server: server, deps: deps}
 }
 

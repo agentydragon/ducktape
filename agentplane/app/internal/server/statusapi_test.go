@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -41,8 +41,8 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
-	if err := RegisterStatusRoutes(server, &appService{systemStatus: checker}); err != nil {
+	server := newHTTPServer(authentication)
+	if err := registerStatusRoutes(server, &appService{systemStatus: checker}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)

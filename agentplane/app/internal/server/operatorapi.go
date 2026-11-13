@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"encoding/json"
@@ -15,10 +15,10 @@ type operatorRoutes struct {
 	callback linkage_servicepb.LinkageServiceClient
 }
 
-// RegisterOperatorRoutes installs the public MCP OAuth callback bridge. The callback is handled
+// registerOperatorRoutes installs the public MCP OAuth callback bridge. The callback is handled
 // here because it is a third-party redirect endpoint; the app carries it to Action Service over gRPC.
-func RegisterOperatorRoutes(
-	server *HTTPServer,
+func registerOperatorRoutes(
+	server *httpServer,
 	callback linkage_servicepb.LinkageServiceClient,
 ) {
 	routes := &operatorRoutes{callback: callback}

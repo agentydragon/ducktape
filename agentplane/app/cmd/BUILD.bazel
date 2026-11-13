@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+package(default_visibility = [
+    "//agentplane/app:__pkg__",
+    "//agentplane/app:__subpackages__",
+])
+
+go_library(
+    name = "cmd_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/cmd",
+    deps = [
+        "//agentplane/app/internal/migrations",
+        "//agentplane/app/internal/server",
+        "//agentplane/app/internal/settings",
+        "//agentplane/postgres/migrate",
+        "@com_github_go_logr_logr//:logr",
+        "@io_k8s_sigs_controller_runtime//pkg/log",
+    ],
+)
+
+go_binary(
+    name = "agentplane-app",
+    embed = [":cmd_lib"],
+    pure = "on",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+go_binary(
+    name = "export_schema_bin",
+    embed = [":cmd_lib"],
+    pure = "on",
+    visibility = [
+        "//agentplane/app:__pkg__",
+        "//agentplane/app:__subpackages__",
+    ],
+)

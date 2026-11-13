@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -55,9 +55,9 @@ import (
 
 const systemStatusTimeout = 5 * time.Second
 
-// run owns process dependencies and their shutdown. Each API call continues to use the
+// Run owns process dependencies and their shutdown. Each API call continues to use the
 // repository's generated Kubernetes, gRPC, and protobuf APIs; the process adds only composition.
-func run(ctx context.Context, config settings.Config) error {
+func Run(ctx context.Context, config settings.Config) error {
 	logger := slog.Default()
 	shutdownTracing, err := observability.Init(ctx, "agentplane-app")
 	if err != nil {
@@ -304,30 +304,30 @@ func run(ctx context.Context, config settings.Config) error {
 	}
 	defer closeConnections(healthConnections)
 
-	server := NewHTTPServer(appAuth)
+	server := newHTTPServer(appAuth)
 	app := &appService{
 		config: config, systemStatus: serviceStatus, policySetNames: policySetNames, environments: environments, bridge: appBridge, runnerStatus: appBridge,
 		threadWriter: threadStore, threadReader: threadStore, threadHistory: history, threadRuntime: runner,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
-	if err := RegisterAppConfigRoutes(server, app); err != nil {
+	if err := registerAppConfigRoutes(server, app); err != nil {
 		return fmt.Errorf("register app configuration facade: %w", err)
 	}
-	if err := RegisterSessionRoutes(server, app); err != nil {
+	if err := registerSessionRoutes(server, app); err != nil {
 		return fmt.Errorf("register Session facade: %w", err)
 	}
-	if err := RegisterRunnerRoutes(server, app); err != nil {
+	if err := registerRunnerRoutes(server, app); err != nil {
 		return fmt.Errorf("register Runner status facade: %w", err)
 	}
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
 	}
-	RegisterOperatorRoutes(server, linkageClient)
-	if err := RegisterStatusRoutes(server, app); err != nil {
+	registerOperatorRoutes(server, linkageClient)
+	if err := registerStatusRoutes(server, app); err != nil {
 		return fmt.Errorf("register System status facade: %w", err)
 	}
 	server.RegisterRawRoute("POST /telemetry/v1/traces", traceRelayHandler(), true)
-	RegisterStreamingRoutes(server, StreamingDependencies{
+	registerStreamingRoutes(server, streamingDependencies{
 		Auth: appAuth, Updates: wakeupHub, UpdatesConnected: wakeupHub.Connected,
 		SandboxNamespace: config.SandboxNamespace, Sandboxes: environments, Threads: threadStore, History: history, HistoryFollower: historyReaderClient,
 		Federator:      federator,
@@ -469,7 +469,7 @@ type processWorker struct {
 	run  func(context.Context) error
 }
 
-func serve(ctx context.Context, config settings.Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
+func serve(ctx context.Context, config settings.Config, app *httpServer, appAuth *auth.Auth, workers []processWorker) error {
 	listener, err := netlistener.Open(config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)

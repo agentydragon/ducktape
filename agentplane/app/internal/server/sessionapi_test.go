@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -87,8 +87,8 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
-	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
+	server := newHTTPServer(authentication)
+	if err := registerSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
@@ -173,8 +173,8 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 		SandboxPresets:   map[string]settings.SandboxPreset{"work": {ThreadPreset: "default"}},
 		ThreadPresets:    map[string]settings.ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
 	}
-	server := NewHTTPServer(authentication)
-	if err := RegisterSessionRoutes(server, &appService{config: config, environments: peer, bridge: peer, threadWriter: peer}); err != nil {
+	server := newHTTPServer(authentication)
+	if err := registerSessionRoutes(server, &appService{config: config, environments: peer, bridge: peer, threadWriter: peer}); err != nil {
 		t.Fatal(err)
 	}
 	return server.Handler(authentication)
@@ -369,7 +369,7 @@ func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
 		Name string `path:"name"`
 		Body legacyBody
 	}
-	server := NewHTTPServer(nil)
+	server := newHTTPServer(nil)
 	var received *legacyInput
 	huma.Register[legacyInput, struct{}](server.API(), huma.Operation{OperationID: "legacyOpen", Method: http.MethodPost, Path: "/sandboxes/{name}/sessions", DefaultStatus: http.StatusCreated}, func(_ context.Context, input *legacyInput) (*struct{}, error) {
 		received = input

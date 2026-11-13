@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -42,8 +42,8 @@ func TestEnvironmentRuntimeStatusServesLifecycleProgressAndExactCursors(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
-	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
+	server := newHTTPServer(authentication)
+	if err := registerRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{status: &sessionpb.EnvironmentRuntimeStatus{
 		EnvironmentRuntimeBootId: "fixture-boot",
 		Lifecycle: &sessionpb.EnvironmentRuntimeLifecycleStatus{
 			DesiredMode:       sessionpb.EnvironmentRuntimeLifecycleMode_ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_QUIESCING,
@@ -113,8 +113,8 @@ func TestRunnerStatusRoutePreservesSandboxErrorsAndCallerAuthentication(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
-	if err := RegisterRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}}); err != nil {
+	server := newHTTPServer(authentication)
+	if err := registerRunnerRoutes(server, &appService{runnerStatus: runnerStatusFake{err: status.Error(codes.NotFound, "fixture")}}); err != nil {
 		t.Fatal(err)
 	}
 

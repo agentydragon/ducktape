@@ -30,7 +30,7 @@ Electric sits behind one module on each side:
 - **Shared reads:** History's `ReadThreadEntities` already reads a bounded range or explicit keys.
   The non-Electric options also need a delta — rows in a range with `revision_cursor > since`.
   This is a read of the fold rather than a sync protocol, so History should own that contract.
-- **Per implementation:** a package `agentplane/app/go/threadsync/<name>/` owning handlers mounted at
+- **Per implementation:** a package `agentplane/app/internal/server/threadsync/<name>/` owning handlers mounted at
   `/threads/{thread_id}/sync/<name>/…` through the same `HTTPServer.RegisterRawRoute` authorization
   (**C2**), and its own settings. Electric moves there.
   There is no Go interface to implement: each implementation is a set of handlers over the shared stores.

@@ -19,5 +19,5 @@ filegroup(
 
 exports_files(
     ["agentplane-staging.k8s.yaml"],
-    visibility = ["//agentplane/app/go:__pkg__"],
+    visibility = ["//agentplane/app/internal/server:__pkg__"],
 )

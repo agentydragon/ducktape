@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestHTTPServerHealthReadinessAndOpenAPI(t *testing.T) {
-	server := NewHTTPServer(nil)
+	server := newHTTPServer(nil)
 	handler := server.Handler(nil)
 
 	for _, path := range []string{"/healthz", "/readyz"} {
@@ -51,7 +51,7 @@ func TestProtectedAndOperatorGroupsUseTheAuthBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	called := false
 	type emptyInput struct{}
 	type output struct {
@@ -88,7 +88,7 @@ func TestProtectedAndOperatorGroupsUseTheAuthBoundary(t *testing.T) {
 }
 
 func TestHumaResponsesDoNotAddSchemaMetadata(t *testing.T) {
-	server := NewHTTPServer(nil)
+	server := newHTTPServer(nil)
 	type emptyInput struct{}
 	type output struct {
 		Body struct {
@@ -124,11 +124,11 @@ func TestHumaResponsesDoNotAddSchemaMetadata(t *testing.T) {
 }
 
 func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
-	server := NewHTTPServer(nil)
-	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
+	server := newHTTPServer(nil)
+	if err := registerSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
-	RegisterStreamingRoutes(server, StreamingDependencies{})
+	registerStreamingRoutes(server, streamingDependencies{})
 	server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("non-UUID sync route reached its handler")
 	}), false)

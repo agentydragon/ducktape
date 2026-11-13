@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -71,8 +71,8 @@ func TestPublicMCPCallbackUsesLinkageGRPCAndRedirects(t *testing.T) {
 		calls <- callbackCall{request: request, hasDeadline: hasDeadline, hasAuth: hasAuth}
 		return &linkage_servicepb.CompleteCallbackResponse{}, nil
 	}})
-	server := NewHTTPServer(nil)
-	RegisterOperatorRoutes(server, callback)
+	server := newHTTPServer(nil)
+	registerOperatorRoutes(server, callback)
 	values := url.Values{"state": {"state +&"}, "code": {"code/with?chars"}}
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+values.Encode(), nil))
@@ -98,8 +98,8 @@ func TestPublicMCPCallbackRequiresStateAndCode(t *testing.T) {
 		{query: "state=one", want: []string{"code"}},
 		{query: "code=two", want: []string{"state"}},
 	} {
-		server := NewHTTPServer(nil)
-		RegisterOperatorRoutes(server, nil)
+		server := newHTTPServer(nil)
+		registerOperatorRoutes(server, nil)
 		recorder := httptest.NewRecorder()
 		server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?"+test.query, nil))
 		var response struct {
@@ -125,8 +125,8 @@ func TestPublicMCPCallbackRequiresStateAndCode(t *testing.T) {
 }
 
 func TestPublicMCPCallbackReportsMissingLinkageService(t *testing.T) {
-	server := NewHTTPServer(nil)
-	RegisterOperatorRoutes(server, nil)
+	server := newHTTPServer(nil)
+	registerOperatorRoutes(server, nil)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 		"/mcp-linkage/callback?state=one&code=two", nil))
@@ -169,8 +169,8 @@ func TestPublicMCPCallbackMapsLinkageGRPCFailuresWithoutLeakingDetails(t *testin
 				calls++
 				return nil, test.err
 			}})
-			server := NewHTTPServer(nil)
-			RegisterOperatorRoutes(server, callback)
+			server := newHTTPServer(nil)
+			registerOperatorRoutes(server, callback)
 			recorder := httptest.NewRecorder()
 			server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 				"/mcp-linkage/callback?state=capability-secret&code=authorization-secret", nil))
@@ -197,8 +197,8 @@ func TestPublicMCPCallbackSanitizesTransportFailure(t *testing.T) {
 	) (*linkage_servicepb.CompleteCallbackResponse, error) {
 		return nil, status.Error(codes.DeadlineExceeded, "private transport diagnostic")
 	}})
-	server := NewHTTPServer(nil)
-	RegisterOperatorRoutes(server, callback)
+	server := newHTTPServer(nil)
+	registerOperatorRoutes(server, callback)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
 		"/mcp-linkage/callback?state=capability-secret&code=authorization-secret", nil))
@@ -235,8 +235,8 @@ func TestPublicMCPCallbackCancellationReachesLinkageService(t *testing.T) {
 		close(canceled)
 		return nil, status.Error(codes.Canceled, "request canceled")
 	}})
-	server := NewHTTPServer(nil)
-	RegisterOperatorRoutes(server, callback)
+	server := newHTTPServer(nil)
+	registerOperatorRoutes(server, callback)
 	requestContext, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/mcp-linkage/callback?state=one&code=two", nil).WithContext(requestContext)
 	recorder := httptest.NewRecorder()

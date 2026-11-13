@@ -1,6 +1,6 @@
 # Agentplane integration app
 
-The human-facing API is a Go service built from `//agentplane/app/go:agentplane-app` and packaged as
+The human-facing API is a Go service built from `//agentplane/app/cmd:agentplane-app` and packaged as
 `//agentplane/app:image`. It proxies Sandbox management through the Runner Gateway's
 `EnvironmentService` with its Pod-bound service token, creates Sessions and submits commands through
 the Session Dispatcher, and uses the Runner
@@ -86,16 +86,17 @@ get their Threads once it does.
 
 ## Implementation and testing
 
-- `go/`: configuration, Huma REST routes, raw HTTP streams and the service lifecycle. The generated
-  frontend API comes from `//agentplane/app/go:export_schema_bin`.
+- `internal/server/`: Huma REST routes, raw HTTP streams and service composition. The generated
+  frontend API comes from `//agentplane/app/cmd:export_schema_bin`.
+- `cmd/`: process signal handling, CLI selection and the `agentplane-app` executable.
 - `internal/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `internal/historydata/` reads it through gRPC.
 - `internal/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
 - `internal/auth/` and `internal/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
   exchange. Logout, expiry and replica notifications end browser streams.
-- `internal/migrations/` and `runtime.go`: embedded Goose schema and service startup. `runtime.go` uses
-  the shared `agentplane/postgres/migrate` lifecycle before opening the API.
+- `internal/migrations/` and `internal/server/runtime.go`: embedded Goose schema and service startup.
+  The server uses the shared `agentplane/postgres/migrate` lifecycle before opening the API.
 - `settings.py`, `presets.py`, `action_federation_settings.py`, `oidc.py` and
   `sandbox_models.py`: deployment configuration schema used by cdk8s.
 - `agentplane/sandboxes/runtimeconfig`: shared deployment-published model and harness offers read by

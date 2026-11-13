@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -45,7 +45,7 @@ type threadOpener interface {
 
 // The generated unary gateway invokes the app-owned service in process, after RequireCaller
 // authenticates HTTP callers and enforces cookie CSRF. Dispatcher remains a native gRPC call.
-func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
+func registerSessionRoutes(server *httpServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux(
 		gatewayruntime.WithForwardResponseOption(func(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
 			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/CreateSession") {
