@@ -16,8 +16,10 @@ This Terraform module manages branch protection for
   review count is zero.
 
 Crossplane runs this root from the `github-branch-protection` PostgreSQL schema
-and the default workspace. Its Flux Kustomization is nested under the retired
-`github-tf` prune gate. It authenticates with
+and the default workspace. CDK generates a separate
+`crossplane-github-branch-protection` Flux Kustomization for the Workspace; it
+uses the shared `github-tf` `ExternalArtifact` and enables Flux pruning. The
+Workspace has Crossplane `deletionPolicy: Orphan`. It authenticates with
 `flux-system/github-secrets-sync-pat`. That PAT needs GitHub Administration
 read/write because GitHub exposes rulesets under the repository-administration
 API.
