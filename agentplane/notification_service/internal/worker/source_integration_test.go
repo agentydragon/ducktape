@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/status"
 )
 
@@ -99,7 +100,10 @@ func TestAProviderBreakingItsContractIsReturnedAfterTheInboxIsReleased(t *testin
 func TestAProviderWhoseClaimWasLostLeavesTheInboxToItsNewOwner(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
 	subscription := h.subscribe(t, "first")
-	h.actions.returns(store.ErrClaimLost)
+	h.actions.on(func(_ context.Context, claim store.Claim, _ store.DueSubscription) error {
+		h.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, claim.ID, uuid.New())
+		return store.ErrClaimLost
+	})
 
 	worked, err := h.sourceWorker.ProcessOne(t.Context())
 	if err != nil || !worked {
