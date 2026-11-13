@@ -607,7 +607,7 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
         credential=QUEST_READ_POLICY,
         description=(
             "Quest scheduling, account, and insurance lookup API. "
-            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest-scheduler. "
+            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest. "
             "The bearer is substituted only for the listed lookup paths."
         ),
         secret="platform-sessions-quest-bearer",
@@ -625,25 +625,15 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                 method=PolicySetSpecRulesMethods.GET,
                 paths=[
                     "/proxy/quest/guest/getReasons/*",
-                    "/proxy/quest-scheduler/guest/getReasons/*",
                     "/proxy/quest/guest/getPscDetails/*",
-                    "/proxy/quest-scheduler/guest/getPscDetails/*",
                     "/proxy/quest/api/getInsuranceProfile",
-                    "/proxy/quest-scheduler/api/getInsuranceProfile",
                     "/proxy/quest/guest/getTokenBasicInfoAPI/*",
-                    "/proxy/quest-scheduler/guest/getTokenBasicInfoAPI/*",
                     "/proxy/quest/guest/getEncounterInfo/appointment",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/appointment",
                     "/proxy/quest/guest/getEncounterInfo/demographics",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/demographics",
                     "/proxy/quest/guest/getEncounterInfo/insurance",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/insurance",
                     "/proxy/quest/guest/getEncounterInfo/secondaryInsurance",
-                    "/proxy/quest-scheduler/guest/getEncounterInfo/secondaryInsurance",
                     "/proxy/quest/guest/getPayorList/*",
-                    "/proxy/quest-scheduler/guest/getPayorList/*",
                     "/proxy/quest/guest/getAppointment/*",
-                    "/proxy/quest-scheduler/guest/getAppointment/*",
                 ],
             ),
             # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
@@ -653,17 +643,11 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                 method=PolicySetSpecRulesMethods.POST,
                 paths=[
                     "/proxy/quest/guest/getPscsWithAvailability",
-                    "/proxy/quest-scheduler/guest/getPscsWithAvailability",
                     "/proxy/quest/api/getOpenEorders",
-                    "/proxy/quest-scheduler/api/getOpenEorders",
                     "/proxy/quest/api/getUserDemographics",
-                    "/proxy/quest-scheduler/api/getUserDemographics",
                     "/proxy/quest/guest/examoneEligibility",
-                    "/proxy/quest-scheduler/guest/examoneEligibility",
                     "/proxy/quest/guest/verifyInsurance/V2",
-                    "/proxy/quest-scheduler/guest/verifyInsurance/V2",
                     "/proxy/quest/guest/getPricing",
-                    "/proxy/quest-scheduler/guest/getPricing",
                 ],
             ),
         ],
