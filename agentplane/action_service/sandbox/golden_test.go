@@ -9,7 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 )
 
 // golden holds the Sandbox Action roster, argument validation, and object identity contracts.

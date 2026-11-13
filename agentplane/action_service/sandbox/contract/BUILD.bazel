@@ -42,7 +42,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
-        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/admission/catalog",
         "@com_github_invopop_jsonschema//:jsonschema",
     ],
 )

@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"

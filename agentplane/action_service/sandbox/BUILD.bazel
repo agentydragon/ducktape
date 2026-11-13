@@ -25,7 +25,7 @@ go_library(
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/sandbox/contract",
         "//agentplane/action_service/worker",
@@ -59,7 +59,7 @@ go_test(
     embedsrcs = ["golden.json"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/sandbox/contract",
         "//agentplane/environment_runtime_transport/testing",

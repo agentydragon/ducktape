@@ -80,7 +80,7 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 )
 
-// Direct dependencies for agentplane/action_service/policies
+// Direct dependencies for agentplane/action_service/internal/admission/policies
 require github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 
 // Direct dependencies for agentplane/notification_service/github

@@ -16,7 +16,7 @@ go_library(
     deps = [
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
-        "//agentplane/action_service/catalog",
+        "//agentplane/action_service/internal/admission/catalog",
         "//agentplane/action_service/internal/store",
         "//agentplane/observability",
         "//agentplane/postgres",

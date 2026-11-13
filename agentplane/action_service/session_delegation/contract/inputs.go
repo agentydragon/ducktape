@@ -4,7 +4,7 @@ package contract
 import (
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/invopop/jsonschema"
 )
