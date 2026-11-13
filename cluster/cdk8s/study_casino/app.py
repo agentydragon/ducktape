@@ -263,6 +263,9 @@ def _deployment(scope: Construct) -> None:
                     # ordinary application I/O away from etcd disks.
                     tolerations=[node_scheduling.CONTROL_PLANE_TOLERATION],
                     affinity=node_scheduling.PREFER_WORKERS,
+                    volumes=[
+                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki"))
+                    ],
                     containers=[
                         k8s.Container(
                             name="app",
@@ -271,6 +274,7 @@ def _deployment(scope: Construct) -> None:
                             ports=[_SERVICE.port.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="STUDY_CASINO_IMAGE_TAG", value=_PLACEHOLDER_TAG),
+                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
                                 # CNPG's URI selects this role and database; the store selects
                                 # psycopg when it opens SQLAlchemy's generic PostgreSQL URI.
                                 POSTGRES.app_secret.key("uri").env_var("STUDY_CASINO_DATABASE_URL"),
@@ -286,6 +290,11 @@ def _deployment(scope: Construct) -> None:
                                 _OIDC.key("session_secret").env_var("STUDY_CASINO_SESSION_SECRET"),
                                 _OIDC.key("rng_secret").env_var("STUDY_CASINO_RNG_SECRET"),
                                 k8s.EnvVar(name="STUDY_CASINO_RNG_KEY_ID", value="study-casino-rng-v1"),
+                            ],
+                            volume_mounts=[
+                                k8s.VolumeMount(
+                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                )
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
@@ -388,6 +397,7 @@ def study_casino(
     cnpg_operator: Kustomization,
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -396,5 +406,7 @@ def study_casino(
         suspend=False,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(cnpg_operator, external_secrets_operator, seaweedfs_operator),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg_operator, external_secrets_operator, seaweedfs_operator, cert_manager_environment
+        ),
     )

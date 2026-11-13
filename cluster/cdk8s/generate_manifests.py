@@ -1806,6 +1806,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
+        cert_manager_environment_kustomization,
     )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_kustomization = litellm_proxy.litellm(

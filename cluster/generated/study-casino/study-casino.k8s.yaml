@@ -312,6 +312,8 @@ spec:
         - env:
             - name: STUDY_CASINO_IMAGE_TAG
               value: unset
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: STUDY_CASINO_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -365,6 +367,10 @@ spec:
             requests:
               cpu: 25m
               memory: 64Mi
+          volumeMounts:
+            - mountPath: /var/run/public-web-pki
+              name: public-web-pki
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       nodeSelector:
@@ -376,6 +382,10 @@ spec:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
           operator: Exists
+      volumes:
+        - configMap:
+            name: public-web-pki
+          name: public-web-pki
 ---
 apiVersion: v1
 kind: Service
