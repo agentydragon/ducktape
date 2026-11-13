@@ -9,7 +9,6 @@
 //! both the gate's simulator and the emitter lives in
 //! `esm_import_order`.
 
-use std::fmt;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -62,25 +61,14 @@ pub struct UnmatchedSpecClaim {
 }
 
 /// Which realizability-gate check rejected a chunk's assignment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum GateVerdict {
     /// Members of one atomic group were claimed by different modules.
+    #[strum(to_string = "{count} atomic-group conflict(s)")]
     AtomicGroupConflicts { count: usize },
     /// Module-quotient SCCs with at-init / side-effect edges between members.
+    #[strum(to_string = "{count} unrealizable module SCC(s)")]
     UnrealizableCycles { count: usize },
-}
-
-impl fmt::Display for GateVerdict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AtomicGroupConflicts { count } => {
-                write!(f, "{count} atomic-group conflict(s)")
-            }
-            Self::UnrealizableCycles { count } => {
-                write!(f, "{count} unrealizable module SCC(s)")
-            }
-        }
-    }
 }
 
 /// A chunk the realizability gate rejected but lowering continued for, under

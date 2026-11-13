@@ -147,7 +147,7 @@ impl<'a> From<&'a ExportReentryReport> for ExportReentrySummary<'a> {
                 .sum(),
             example_limit: EXAMPLE_LIMIT,
             full_detail_export_available: true,
-            full_detail_export_command: "debundle run --full-report export-reentry",
+            full_detail_export_command: "debundle run --full-report export_reentry",
         }
     }
 }

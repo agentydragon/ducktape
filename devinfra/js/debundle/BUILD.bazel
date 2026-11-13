@@ -196,6 +196,7 @@ rust_library(
         ":spec",
         "@crates//:anyhow",
         "@crates//:serde",
+        "@crates//:strum",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -215,6 +216,7 @@ rust_library(
     deps = [
         ":source_match_holes",
         "@crates//:roaring",
+        "@crates//:strum",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
     ],
@@ -844,6 +846,7 @@ rust_library(
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:strum",
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
         "@crates//:thiserror",
@@ -877,6 +880,7 @@ rust_library(
         ":binding_targets",
         ":spec",
         "@crates//:anyhow",
+        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -1223,6 +1227,7 @@ rust_library(
         "lowering/materialize/mod.rs",
         "lowering/materialize/outcome_sink.rs",
         "lowering/materialize/plan_builder.rs",
+        "lowering/materialize/residual_atomic_report.rs",
         "lowering/mod.rs",
         "lowering/module_output.rs",
         "lowering/naturalize.rs",
@@ -1268,10 +1273,12 @@ rust_library(
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:strum",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1568,6 +1575,7 @@ rust_library(
         ":selector_constraint_backend",
         ":selector_ir",
         ":source_identity",
+        "@crates//:thiserror",
     ],
 )
 
@@ -1656,6 +1664,7 @@ rust_library(
     deps = [
         ":cp_model_rust_proto",
         ":sat_parameters_rust_proto",
+        "@crates//:thiserror",
         "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )

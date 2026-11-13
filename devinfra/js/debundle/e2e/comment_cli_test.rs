@@ -31,6 +31,13 @@ fn binding_and_module_comments_set_read_clear_and_dry_run() {
         assert_eq!(set["comment"], "plugin glue");
         let read = fixture.json(&[namespace, "comment", locator]);
         assert_eq!(read["action"], "read");
+        let key = if namespace == "bindings" {
+            "binding"
+        } else {
+            "module"
+        };
+        assert_eq!(read[key], locator);
+        assert!(read.get("sym").is_none());
         assert_eq!(read["comment"], "plugin glue");
         let saved = fs::read(&file).unwrap();
         assert_eq!(

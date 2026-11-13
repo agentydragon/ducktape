@@ -553,41 +553,12 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 "warning",
                 format!(
                     "inferable ({}); remove it in a reviewed spec edit and revalidate",
-                    match reason {
-                        InferableReason::NoSequencedEdge => "no sequenced edge joins the endpoints",
-                        InferableReason::SummarizedEndpoints =>
-                            "the endpoints' summarized effects touch disjoint cells",
-                        InferableReason::NoAdmissionViolation =>
-                            "the chunk has no violation to override",
-                        InferableReason::WithheldRunUnchanged =>
-                            "withholding it alone leaves every report unchanged",
-                        InferableReason::NeverConsumed => "no analysis consumed it",
-                    }
+                    strum::EnumMessage::get_message(reason).unwrap_or_default()
                 ),
             ),
-            InferenceVerdict::Inconclusive { reason } => (
-                "note",
-                format!(
-                    "inconclusive ({})",
-                    match reason {
-                        InconclusiveReason::PurityClassification { .. } =>
-                            "the binding classifies without the hint; other consumers of the \
-                             hint were not probed"
-                                .to_owned(),
-                        InconclusiveReason::BaselineNotAccepted { error } =>
-                            format!("the probe baseline was not accepted: {error}"),
-                        InconclusiveReason::ProbeFailed { error } =>
-                            format!("the withheld run failed to run: {error}"),
-                        InconclusiveReason::NotProbed =>
-                            "not probed: --max-probes reached".to_owned(),
-                        InconclusiveReason::Consumed =>
-                            "consumed by the analysis; --probe-analysis decides whether it is needed"
-                                .to_owned(),
-                        InconclusiveReason::UnlintedChunks =>
-                            "some chunk was not linted, so its uses are unknown".to_owned(),
-                    }
-                ),
-            ),
+            InferenceVerdict::Inconclusive { reason } => {
+                ("note", format!("inconclusive ({})", reason))
+            }
         };
         let subject = match &finding.annotation {
             LintedAnnotation::PurityHint {
@@ -610,18 +581,14 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 format!("`host_behavior` loader key {}", snake(key))
             }
             LintedAnnotation::LoaderProgramPremise { key } => {
-                format!("`program_premises` loader key {}", snake(key))
+                format!("`program_premises` loader key \"{key}\"")
             }
             LintedAnnotation::TrustedDataflowSummaries { spec_location } => {
                 format!("`trusted_dataflow_summaries` at {spec_location}")
             }
-            LintedAnnotation::ReentryFreeOperation { operation } => format!(
-                "`host_behavior.reentry_free_operations` entry `{}`",
-                serde_json::to_value(operation)
-                    .ok()
-                    .and_then(|value| value.as_str().map(str::to_owned))
-                    .unwrap_or_default()
-            ),
+            LintedAnnotation::ReentryFreeOperation { operation } => {
+                format!("`host_behavior.reentry_free_operations` entry `{operation}`")
+            }
             LintedAnnotation::CommutingStatements {
                 spec_location,
                 a,

@@ -289,14 +289,17 @@ impl fmt::Display for RenameScope {
 
 /// Which kind of contributor proposed a rename. Carries the contributor
 /// name so seal-time conflicts can name both sides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::Display)]
 pub enum RenameOrigin {
     /// Spec-author decision (chunk_renames member, plan `export_name`).
+    #[strum(to_string = "explicit({contributor})")]
     Explicit { contributor: &'static str },
     /// Mechanical rename required to emit valid imports (fresh-local
     /// minting, cross-module import aliases).
+    #[strum(to_string = "import-induced({contributor})")]
     ImportInduced { contributor: &'static str },
     /// Cosmetic readability rename inferred from the AST.
+    #[strum(to_string = "heuristic({contributor})")]
     Heuristic { contributor: &'static str },
 }
 
@@ -314,18 +317,6 @@ impl RenameOrigin {
             RenameOrigin::Explicit { contributor }
             | RenameOrigin::ImportInduced { contributor }
             | RenameOrigin::Heuristic { contributor } => contributor,
-        }
-    }
-}
-
-impl fmt::Display for RenameOrigin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            RenameOrigin::Explicit { contributor } => write!(f, "explicit({contributor})"),
-            RenameOrigin::ImportInduced { contributor } => {
-                write!(f, "import-induced({contributor})")
-            }
-            RenameOrigin::Heuristic { contributor } => write!(f, "heuristic({contributor})"),
         }
     }
 }
@@ -408,14 +399,17 @@ pub struct SealValidation {
 
 /// Why [`RenameLedger::seal`] refused the collected intents. One variant per kind of refusal,
 /// each carrying every violation of its kind; `Display` is the diagnostic an author reads.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SealError {
     /// Same-priority intents disagree on a binding's target: one entry per `(scope, from)` group.
+    #[error("conflicting rename intents:\n  - {}", bulleted(.0))]
     ConflictingIntents(Vec<IntentConflict>),
     /// Explicit `chunk_renames` whose targets the chunk's entry body cannot take.
+    #[error("invalid chunk_renames spec:\n  - {}", bulleted(.0))]
     InvalidChunkRenames(Vec<ChunkRenameViolation>),
     /// Explicit renames whose targets a module body, or the public-export namespace, cannot take.
     /// `label` is the plan id of the module, or the chunk id for the public exports.
+    #[error("invalid renames for module {label}:\n  - {}", bulleted(.violations))]
     InvalidModuleRenames {
         label: String,
         violations: Vec<ModuleRenameViolation>,
@@ -423,18 +417,23 @@ pub enum SealError {
     /// Explicit or import-induced `chunk_renames` that would change
     /// reference resolution in the entry body of `chunk`, as
     /// `(source, target)` pairs.
+    #[error("chunk_renames for chunk {chunk} would change reference resolution: {captured:?}")]
     ChunkRenamesCaptured {
         chunk: String,
         captured: BTreeSet<(String, String)>,
     },
     /// Explicit or import-induced renames that would change reference
     /// resolution in the body `label`, as `(source, target)` pairs.
+    #[error("renames for module {label} would change reference resolution: {captured:?}")]
     ModuleRenamesCaptured {
         label: String,
         captured: BTreeSet<(String, String)>,
     },
     /// A ledger-minted target collides with a name occupied in `scope`: the caller seeded the
     /// wrong occupancy, an internal bug rather than a spec error.
+    #[error(
+        "internal invariant violation: ledger-minted rename target {to} for binding {from} collides with an occupied name in {scope}; minting must claim from the scope's seeded taken set"
+    )]
     MintedTargetOccupied {
         scope: RenameScope,
         from: String,
@@ -459,23 +458,32 @@ pub struct ConflictSide {
 }
 
 /// One explicit `chunk_renames` entry the entry body cannot take.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ChunkRenameViolation {
     /// `to` is not a valid JS identifier.
+    #[error("chunk_renames target {to} for binding {from} is not a valid JS identifier")]
     NotAnIdentifier { from: String, to: String },
     /// `to` is a top-level local of the entry body that is not itself being renamed away.
+    #[error(
+        "chunk_renames target {to} for binding {from} collides with an existing top-level local"
+    )]
     CollidesWithLocal { from: String, to: String },
     /// `to` is already taken: by an earlier rename's target, or by a root binding that is itself
     /// being renamed away.
+    #[error("chunk_renames target {to} for binding {from} duplicates an earlier rename target")]
     DuplicatesTarget { from: String, to: String },
 }
 
 /// One explicit rename a module body cannot take.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ModuleRenameViolation {
     /// `to` is a top-level binding of the module body that is not itself being renamed away.
+    #[error(
+        "rename of binding {from} to {to} collides with another top-level binding in the module body"
+    )]
     CollidesWithBinding { from: String, to: String },
     /// `to` is already the target of another rename in the module.
+    #[error("rename of binding {from} to {to} duplicates another rename target in the module")]
     DuplicatesTarget { from: String, to: String },
 }
 
@@ -486,46 +494,6 @@ fn bulleted<T: fmt::Display>(items: &[T]) -> String {
         .collect::<Vec<_>>()
         .join("\n  - ")
 }
-
-impl fmt::Display for SealError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ConflictingIntents(conflicts) => {
-                write!(
-                    f,
-                    "conflicting rename intents:\n  - {}",
-                    bulleted(conflicts)
-                )
-            }
-            Self::InvalidChunkRenames(violations) => {
-                write!(
-                    f,
-                    "invalid chunk_renames spec:\n  - {}",
-                    bulleted(violations)
-                )
-            }
-            Self::InvalidModuleRenames { label, violations } => write!(
-                f,
-                "invalid renames for module {label}:\n  - {}",
-                bulleted(violations)
-            ),
-            Self::ChunkRenamesCaptured { chunk, captured } => write!(
-                f,
-                "chunk_renames for chunk {chunk} would change reference resolution: {captured:?}"
-            ),
-            Self::ModuleRenamesCaptured { label, captured } => write!(
-                f,
-                "renames for module {label} would change reference resolution: {captured:?}"
-            ),
-            Self::MintedTargetOccupied { scope, from, to } => write!(
-                f,
-                "internal invariant violation: ledger-minted rename target {to} for binding {from} collides with an occupied name in {scope}; minting must claim from the scope's seeded taken set"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SealError {}
 
 impl fmt::Display for IntentConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -548,40 +516,6 @@ impl fmt::Display for IntentConflict {
              same-priority contributors must agree",
             self.scope, self.from,
         )
-    }
-}
-
-impl fmt::Display for ChunkRenameViolation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotAnIdentifier { from, to } => write!(
-                f,
-                "chunk_renames target {to} for binding {from} is not a valid JS identifier"
-            ),
-            Self::CollidesWithLocal { from, to } => write!(
-                f,
-                "chunk_renames target {to} for binding {from} collides with an existing top-level local"
-            ),
-            Self::DuplicatesTarget { from, to } => write!(
-                f,
-                "chunk_renames target {to} for binding {from} duplicates an earlier rename target"
-            ),
-        }
-    }
-}
-
-impl fmt::Display for ModuleRenameViolation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CollidesWithBinding { from, to } => write!(
-                f,
-                "rename of binding {from} to {to} collides with another top-level binding in the module body"
-            ),
-            Self::DuplicatesTarget { from, to } => write!(
-                f,
-                "rename of binding {from} to {to} duplicates another rename target in the module"
-            ),
-        }
     }
 }
 

@@ -80,29 +80,19 @@ pub struct EntityRef {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SelectorKind {
-    #[serde(rename = "source_matches")]
     SourceMatches,
-    #[serde(rename = "anonymous_statements.source_match")]
     AnonymousStatement,
-    #[serde(rename = "members.binding")]
     Binding,
-    #[serde(rename = "members.cross_ref")]
     CrossRef,
-    #[serde(rename = "members.reads_member")]
     ReadsMember,
-    #[serde(rename = "members.member_of_module")]
     MemberOfModule,
-    #[serde(rename = "members.passed_to_call")]
     PassedToCall,
-    #[serde(rename = "members.makes_decorate_call")]
     MakesDecorateCall,
-    #[serde(rename = "members.intrinsic_alias")]
     IntrinsicAlias,
     /// A member whose selector did not parse, so its kind is unknown.
-    #[serde(rename = "members.selector")]
     UnparsedMember,
-    #[serde(rename = "annotations")]
     Annotations,
 }
 

@@ -100,40 +100,28 @@ pub struct DuplicateTopLevelDeclaration {
 }
 
 /// A derived source fact an author `commuting_statements` premise contradicts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum KnownConflict {
     /// The retained cause of a `Sequenced` edge derived from both
     /// endpoints' recorded effects (a cell relation, a binding timeline, a
     /// shared `var`, an uninitialized observation).
+    #[strum(to_string = "{0}")]
     Sequenced(SequencedCause),
     /// The two summaries have overlapping cell footprints with at least one write, whatever
     /// rule emitted the edge between them.
+    #[strum(to_string = "both summaries have an overlapping cell effect: {overlap}")]
     SharedCell {
         cell: EffectCellReport,
         overlap: CellOverlapReport,
     },
     /// Both source units declare the shared `var` `binding`.
+    #[strum(to_string = "both declare shared `var` `{binding}`")]
     CoDeclaration { binding: swc_atoms::Atom },
     /// A `Sequenced` edge without a retained cause (never produced by this
     /// builder); treated as a conflict so the premise never widens silently.
+    #[strum(to_string = "side-effect ordering of unclassified cause")]
     Unclassified,
-}
-
-impl fmt::Display for KnownConflict {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Sequenced(cause) => cause.fmt(f),
-            Self::SharedCell { overlap, .. } => write!(
-                f,
-                "both summaries have an overlapping cell effect: {overlap}"
-            ),
-            Self::CoDeclaration { binding } => {
-                write!(f, "both declare shared `var` `{binding}`")
-            }
-            Self::Unclassified => f.write_str("side-effect ordering of unclassified cause"),
-        }
-    }
 }
 
 /// One dependency edge `from -> to` between the premise's endpoints whose
@@ -185,15 +173,22 @@ fn source_unit_location(
 }
 
 /// Why a `commuting_statements` entry inerts nothing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum UnusedPremiseReason {
     /// No `sequenced` edge joins the two source units.
+    #[strum(message = "are already unordered")]
     NoSequencedEdge,
     /// Every `sequenced` edge between them orders two summarized effects on
     /// disjoint cells (the strict S-chain's adjacency): the analysis already
     /// knows the pair commutes and `dataflow_aware_s_chain` drops the edge
     /// without any premise.
+    #[strum(
+        message = "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` already leaves unordered"
+    )]
     SummarizedEndpoints,
 }
 
@@ -208,12 +203,7 @@ pub enum UnusedPremiseReason {
      removable — delete it in a reviewed spec edit and revalidate",
     .a,
     .b,
-    match .reason {
-        UnusedPremiseReason::NoSequencedEdge => "are already unordered",
-        UnusedPremiseReason::SummarizedEndpoints =>
-            "have summarized effects on disjoint cells, which `dataflow_aware_s_chain` \
-             already leaves unordered",
-    }
+    strum::EnumMessage::get_message(.reason).unwrap_or_default()
 )]
 pub struct CommutingStatementsUnused {
     /// `<spec path>:chunk_analysis_options.<chunk>.commuting_statements[<i>]`.
@@ -281,20 +271,13 @@ impl fmt::Display for UnusedCommutingEndpoint {
 
 /// The typed diagnostic of a `commuting_statements` entry the graph build
 /// rejected, as `spec validate` reports it beside the selector outcomes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommutingStatementsDiagnostic {
+    #[strum(to_string = "{0}")]
     Contradicted(CommutingStatementsContradiction),
+    #[strum(to_string = "{0}")]
     Unused(Box<CommutingStatementsUnused>),
-}
-
-impl fmt::Display for CommutingStatementsDiagnostic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Contradicted(diagnostic) => diagnostic.fmt(f),
-            Self::Unused(diagnostic) => diagnostic.fmt(f),
-        }
-    }
 }
 
 /// Graph construction is intentionally source-free. Captured value and native

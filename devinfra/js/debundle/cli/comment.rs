@@ -131,7 +131,7 @@ pub enum OutcomeKind {
 }
 
 /// JSON wire shape for a comment read/edit outcome. The locator key is
-/// `sym` for bindings and `module` for modules (`#[serde(flatten)]` on a
+/// `binding` for bindings and `module` for modules (`#[serde(flatten)]` on a
 /// `kind`-discriminated locator), matching the per-binding / per-module
 /// verb namespaces.
 #[derive(Debug, Serialize)]
@@ -144,10 +144,9 @@ struct CommentOutcomeJson<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 enum Locator<'a> {
-    #[serde(rename = "sym")]
     Binding(&'a str),
-    #[serde(rename = "module")]
     Module(&'a str),
 }
 

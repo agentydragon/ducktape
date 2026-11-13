@@ -503,7 +503,7 @@ impl TranslationValidationReport {
             placement_splits: keys(verdict.counts.placement_splits, &verdict.placement_splits),
             example_limit: EXAMPLE_LIMIT,
             full_detail_export_available: true,
-            full_detail_export_command: "debundle run --full-report translation-validation",
+            full_detail_export_command: "debundle run --full-report translation_validation",
         }
     }
 }

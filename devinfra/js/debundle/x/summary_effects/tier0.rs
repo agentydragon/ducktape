@@ -38,6 +38,7 @@ use crate::program::ProgramFacts;
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, clap::ValueEnum,
 )]
 #[serde(rename_all = "snake_case")]
+#[value(rename_all = "snake_case")]
 pub enum ImpureCause {
     /// A call whose callee is a top-level binding of this chunk.
     CallLocal,
@@ -87,8 +88,11 @@ pub enum Kind {
 }
 
 /// Why a swapped pair is not proven to commute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum Conflict {
     BothImpure,
     /// The definition's binding is reachable from the impure statement's own

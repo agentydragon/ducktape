@@ -777,13 +777,6 @@ pub struct Tier0Report {
     pub impure_statements: Vec<(usize, ImpureCause, String)>,
 }
 
-fn class_name(class: tier0::Conflict) -> String {
-    serde_json::to_value(class)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_default()
-}
-
 /// Build a Tier 0 report with a reusable derivation index for `options.program`.
 pub fn tier0_report_indexed(
     inputs: Inputs<'_>,
@@ -851,7 +844,7 @@ pub fn tier0_report_indexed(
         for high in low + 1..n {
             if let Some(class) = analysis.conflict(low, high) {
                 all_pairs_conflicting += 1;
-                *all_pairs_by_class.entry(class_name(class)).or_default() += 1;
+                *all_pairs_by_class.entry(class.to_string()).or_default() += 1;
                 degree[low] += 1;
                 degree[high] += 1;
             }
@@ -869,15 +862,15 @@ pub fn tier0_report_indexed(
         cost(
             positions,
             modules.as_ref(),
-            |low, high| analysis.conflict(low, high).map(class_name),
+            |low, high| analysis.conflict(low, high).map(|class| class.to_string()),
             |low, high| {
                 let Some(class) = analysis.conflict(low, high) else {
                     return;
                 };
                 if pairs_out.is_some() {
-                    unproven.push_str(&format!("{low}\t{high}\t{}\n", class_name(class)));
+                    unproven.push_str(&format!("{low}\t{high}\t{class}\n"));
                 }
-                let seen = example_counts.entry(class_name(class)).or_default();
+                let seen = example_counts.entry(class.to_string()).or_default();
                 if with_examples && *seen < EXAMPLE_LIMIT {
                     *seen += 1;
                     examples.push(Tier0Pair {

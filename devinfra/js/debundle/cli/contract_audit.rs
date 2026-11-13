@@ -86,24 +86,14 @@ struct ContractTarget {
     signature: Option<RetainedCallbackSignature>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 enum ProbeVerdict {
     RemovableUnderRemainingAssumptions,
     FailedFullAcceptance,
     Inconclusive,
     BudgetSkipped,
-}
-
-impl ProbeVerdict {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::RemovableUnderRemainingAssumptions => "removable_under_remaining_assumptions",
-            Self::FailedFullAcceptance => "failed_full_acceptance",
-            Self::Inconclusive => "inconclusive",
-            Self::BudgetSkipped => "budget_skipped",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,7 +374,7 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
                 .context("audit inputs changed after baseline")?;
             eprintln!(
                 "audit-progress probe reused ordinal={ordinal}/{eligible} completed={ordinal} verdict={} target={target:?}",
-                saved.verdict.label()
+                saved.verdict
             );
             results.push(saved.clone());
             continue;
@@ -408,8 +398,7 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         };
         eprintln!(
             "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict={} target={target:?}",
-            ordinal,
-            verdict.label()
+            ordinal, verdict
         );
         let result = ProbeResult {
             target,

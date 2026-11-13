@@ -743,8 +743,9 @@ fn slot_mutated_roots(
 }
 
 /// Why one census witness makes a slot unknown (`debundle explain-integrity`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum SlotReach {
     /// The write's receiver and string key name the slot, or it assigns the
     /// slot's global binding.

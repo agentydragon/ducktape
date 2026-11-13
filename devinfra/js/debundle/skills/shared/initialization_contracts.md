@@ -16,7 +16,7 @@ gate cannot establish that an author assertion is true.
    helpers, provider branches, accessors, aliases, and publication paths.
 3. For export-reentry constraints, inspect `export_reentry.json` beside the graph
    and verify the loader/dependency closure. Collection totals are exact;
-   `examples` may be truncated. Request `run --full-report export-reentry` for
+   `examples` may be truncated. Request `run --full-report export_reentry` for
    the complete original-schema evidence when a witness is outside the sample.
    For host operations, establish the
    exact object, descriptor, prototype, and intrinsic-integrity premises.

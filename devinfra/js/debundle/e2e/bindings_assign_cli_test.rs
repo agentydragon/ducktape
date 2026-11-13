@@ -227,7 +227,7 @@ fn list_reports_source_capture_direct_and_structural_identities_separately() {
     assert_eq!(
         structural,
         &json!({
-            "identity": {"kind": "structural_member", "selector": "members.cross_ref"},
+            "identity": {"kind": "structural_member", "selector": "cross_ref"},
             "readable_name": "Helper",
             "module": "helper",
             "orphan": true,
@@ -258,7 +258,7 @@ fn list_reports_source_capture_direct_and_structural_identities_separately() {
 
     let rename = fixture.json(&["bindings", "rename", "Helper", "RenamedHelper"]);
     assert_eq!(rename["identity"]["kind"], "structural_member");
-    assert_eq!(rename["identity"]["selector"], "members.cross_ref");
+    assert_eq!(rename["identity"]["selector"], "cross_ref");
     assert!(rename.get("binding").is_none());
 }
 

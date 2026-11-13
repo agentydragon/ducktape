@@ -186,14 +186,16 @@ pub enum SequencedCause {
 
 /// Whether the engine derived one endpoint's binding effect behind a
 /// binding-ordering edge or only assumed it (SPEC.md § Commuting statements).
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectProvenance {
     /// Direct syntax or precise synchronous execution of code the statement
     /// definitely runs.
+    #[strum(to_string = "observed")]
     Observed,
     /// Contributed only by conservative paths that assume code may run;
     /// `reason` names the first such path that contributed it.
+    #[strum(to_string = "assumed by {reason}")]
     Fallback { reason: AssumedEffectReason },
 }
 
@@ -212,23 +214,30 @@ impl EffectProvenance {
     }
 }
 
-impl fmt::Display for EffectProvenance {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Observed => f.write_str("observed"),
-            Self::Fallback { reason } => write!(f, "assumed by {reason}"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum BindingTimelineOrder {
     /// `to` and `from` both write the binding; later writer last.
+    #[strum(message = "writes after target wrote")]
     WriterAfterWriter,
     /// `from` observes the binding after `to`, its nearest preceding writer.
+    #[strum(message = "observes after target wrote")]
     ReaderAfterWriter,
     /// `from` writes the binding after `to`, a preceding observer, read it.
+    #[strum(message = "writes after target observed")]
     WriterAfterReader,
 }
 
@@ -257,21 +266,38 @@ pub enum CellEffectClass {
 
 /// One disjunct of the heap-content opacity test in
 /// `emit_heap_content_order` (docs/design.md "Emission modes").
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Serialize,
+    Deserialize,
+    strum::Display,
+    strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum HeapBarrierCause {
     /// The array-content collector recorded an opaque at-init effect:
     /// member write, mutating method call, escaped array, key
     /// enumeration, optional call or tagged template.
+    #[strum(message = "array content effects")]
     ArrayContentEffects,
     /// Impure and not dataflow-summarizable (unproven call/`new`,
     /// member write through a binding, dynamic-dispatch shape).
+    #[strum(message = "impure and not summarizable")]
     NonSummarizableImpure,
     /// Synchronous execution analysis reported incomplete effects
     /// (`synchronous_execution.complete = false`).
+    #[strum(message = "incomplete synchronous execution")]
     IncompleteSynchronousExecution,
     /// The body of a callable synchronous execution invoked is itself
     /// heap-opaque.
+    #[strum(message = "heap-opaque callee body")]
     CalleeHeapEffects,
 }
 
@@ -313,14 +339,20 @@ pub enum CellConflict {
 /// Serializable projection of [`EffectCell`]: binding cells carry the
 /// name only (the hygiene context is dropped, as everywhere on the
 /// wire; see docs/wire_format.md).
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectCellReport {
+    #[strum(to_string = "binding `{binding}`")]
     Binding { binding: Atom },
+    #[strum(to_string = "global property `{key}`")]
     GlobalProp { key: String },
+    #[strum(to_string = "array contents #{origin}")]
     ArrayContents { origin: u32 },
+    #[strum(to_string = "Set contents #{origin}")]
     SetContents { origin: u32 },
+    #[strum(to_string = "object shape #{origin}")]
     ObjectShape { origin: u32 },
+    #[strum(to_string = "own property `{property}` of allocation #{origin}")]
     OwnProperty { origin: u32, property: String },
 }
 
@@ -360,21 +392,6 @@ impl From<&EffectCell> for EffectCellReport {
     }
 }
 
-impl fmt::Display for EffectCellReport {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Binding { binding } => write!(f, "binding `{binding}`"),
-            Self::GlobalProp { key } => write!(f, "global property `{key}`"),
-            Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
-            Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
-            Self::ObjectShape { origin } => write!(f, "object shape #{origin}"),
-            Self::OwnProperty { origin, property } => {
-                write!(f, "own property `{property}` of allocation #{origin}")
-            }
-        }
-    }
-}
-
 impl fmt::Display for CellOverlapReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} overlaps {} ({:?})", self.left, self.right, self.law)
@@ -391,14 +408,7 @@ impl fmt::Display for CellEffectClass {
                     if i > 0 {
                         f.write_str(", ")?;
                     }
-                    f.write_str(match cause {
-                        DataflowOpacityCause::MemberWriteOrAlias => "member write or alias",
-                        DataflowOpacityCause::DynamicCellWrites => "dynamic cell writes",
-                        DataflowOpacityCause::GlobalObjectAliasEscape => {
-                            "global-object alias escape"
-                        }
-                        DataflowOpacityCause::OpaqueAtInitCall => "unproven at-init call",
-                    })?;
+                    f.write_str(strum::EnumMessage::get_message(cause).unwrap_or_default())?;
                 }
                 f.write_str(")")
             }
@@ -409,21 +419,10 @@ impl fmt::Display for CellEffectClass {
                     if i > 0 {
                         f.write_str(", ")?;
                     }
-                    f.write_str(cause.label())?;
+                    f.write_str(strum::EnumMessage::get_message(cause).unwrap_or_default())?;
                 }
                 f.write_str(")")
             }
-        }
-    }
-}
-
-impl HeapBarrierCause {
-    fn label(self) -> &'static str {
-        match self {
-            Self::ArrayContentEffects => "array content effects",
-            Self::NonSummarizableImpure => "impure and not summarizable",
-            Self::IncompleteSynchronousExecution => "incomplete synchronous execution",
-            Self::CalleeHeapEffects => "heap-opaque callee body",
         }
     }
 }
@@ -504,12 +503,11 @@ impl fmt::Display for SequencedCause {
                 source,
                 target,
             } => {
-                let order = match order {
-                    BindingTimelineOrder::WriterAfterWriter => "writes after target wrote",
-                    BindingTimelineOrder::ReaderAfterWriter => "observes after target wrote",
-                    BindingTimelineOrder::WriterAfterReader => "writes after target observed",
-                };
-                write!(f, "at-init timeline of `{binding}`: source {order}")?;
+                write!(
+                    f,
+                    "at-init timeline of `{binding}`: source {}",
+                    strum::EnumMessage::get_message(order).unwrap_or_default()
+                )?;
                 write_assumed(f, source, target)
             }
             Self::UninitializedObservation {

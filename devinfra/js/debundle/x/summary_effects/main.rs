@@ -87,6 +87,7 @@ struct Cli {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+#[value(rename_all = "snake_case")]
 enum Mode {
     /// Ordered impure statements plus reference reach, from syntax alone.
     Tier0,

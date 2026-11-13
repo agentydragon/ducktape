@@ -165,8 +165,9 @@ pub struct ModuleDecompositionNamedClaim {
     pub source_unit_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ModuleDecompositionStrategy {
     Seed,
     Atomic,

@@ -13,12 +13,17 @@ pub enum ExplainRangeKind {
     Anonymous,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, strum::Display, strum::EnumMessage)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RangeExplanationStatus {
+    #[strum(message = "matches this range locally")]
     Matched,
+    #[strum(message = "does not match this range")]
     Mismatch,
+    #[strum(message = "comparison unsupported (inconclusive)")]
     Unsupported,
+    #[strum(message = "comparison limit reached (inconclusive)")]
     Limited,
 }
 

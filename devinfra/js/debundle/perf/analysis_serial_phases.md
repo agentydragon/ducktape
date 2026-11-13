@@ -482,7 +482,7 @@ possible-setter path. Narrowing either turns refusals into acceptances, so it
 takes the output-changing review. Design: <../plans/analysis_performance.md>
 § Fewer opaque events.
 
-With `program_premises.intrinsics_never_written: {families: [Object]}` added
+With `program_premises.intrinsics_never_written: {families: [object]}` added
 to the original and v2 configs (`all` is refuted by census writes on `Error`
 and `Array`), all 160 heavy owners still pool (287 s and 289 s). The
 possible-setter and possible-getter paths do not consult the premise today.

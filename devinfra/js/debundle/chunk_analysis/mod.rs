@@ -36,9 +36,6 @@ use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
 };
 use analysis::graph::GraphOptions;
-use analysis::purity::{
-    RedundantPureMemberReason, RedundantPurityProofBasis, RedundantPurityReason,
-};
 use spec::{AdmissionCheck, AdmissionOverrides};
 
 /// Analyze a chunk from its precomputed structural layer: compute its facts,
@@ -141,18 +138,8 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis
             "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
              the analyzer infers {reason} for this binding without this hint. {basis}",
             binding = hint.binding_name,
-            reason = match hint.reason {
-                RedundantPurityReason::InferredPureFunction =>
-                    "pure (the function body classifies Pure by recursive analysis)",
-                RedundantPurityReason::InferredPlainDataBinding =>
-                    "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
-            },
-            basis = match hint.proof_basis {
-                RedundantPurityProofBasis::WithoutPurityHints =>
-                    "This proof uses no `purity: pure` hints. Remove the hint and validate the spec.",
-                RedundantPurityProofBasis::WithOtherPurityHints =>
-                    "This proof requires other `purity: pure` hints. Remove hints individually and revalidate after each edit.",
-            },
+            reason = strum::EnumMessage::get_message(&hint.reason).unwrap_or_default(),
+            basis = strum::EnumMessage::get_message(&hint.proof_basis).unwrap_or_default(),
         );
     }
     for hint in &analysis.redundant_pure_member_hints {
@@ -162,10 +149,7 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis
              Remove the entry from the spec.",
             binding = hint.binding_name,
             property = hint.property,
-            reason = match hint.reason {
-                RedundantPureMemberReason::WhitelistedStaticCall =>
-                    "pure via its builtin summary row",
-            },
+            reason = strum::EnumMessage::get_message(&hint.reason).unwrap_or_default(),
         );
     }
 }

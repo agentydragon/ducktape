@@ -4636,7 +4636,7 @@ The complete `ExportReentryReport` remains the semantic and staged-analysis
 representation. Materialization borrows it through an output-only summary:
 exact collection/site counts, deterministic first twenty examples, explicit
 truncation, and complete existing failure-kind aggregates. The view is never
-deserialized or fed back into policy. Explicit `--full-report export-reentry`
+deserialized or fed back into policy. Explicit `--full-report export_reentry`
 uses the shared compact JSON writer to stream the original complete schema and
 flush before summary completion. Sink filtering and full graph selection are
 independent; all source and proof work remains unchanged. See the

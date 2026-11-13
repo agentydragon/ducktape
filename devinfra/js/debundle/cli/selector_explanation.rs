@@ -8,8 +8,7 @@ use anyhow::{Result, bail};
 use serde::Serialize;
 use source_inspection::{PreparedSource, StatementRange, StatementRow};
 use source_match::{
-    ParsedSourceMatchSelector, RangeExplanation, RangeExplanationStatus, explain_range,
-    template_free_identifiers,
+    ParsedSourceMatchSelector, RangeExplanation, explain_range, template_free_identifiers,
 };
 
 use crate::selector_input::{SelectedSelector, inline_selector, load_selectors};
@@ -139,13 +138,11 @@ pub(super) fn render(report: &ExplanationReport, out: &mut String) {
 }
 
 fn render_result(result: &RangeExplanation, out: &mut String) {
-    let status = match result.status {
-        RangeExplanationStatus::Matched => "matches this range locally",
-        RangeExplanationStatus::Mismatch => "does not match this range",
-        RangeExplanationStatus::Unsupported => "comparison unsupported (inconclusive)",
-        RangeExplanationStatus::Limited => "comparison limit reached (inconclusive)",
-    };
-    let _ = writeln!(out, "Result: {status}");
+    let _ = writeln!(
+        out,
+        "Result: {}",
+        strum::EnumMessage::get_message(&result.status).unwrap_or_default()
+    );
     if let Some(binding) = &result.matched_binding {
         let _ = writeln!(out, "Source binding: {binding}");
     }

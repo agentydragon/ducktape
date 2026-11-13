@@ -405,8 +405,9 @@ pub struct NativeUnreachableBranch {
     pub(crate) callback_span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum NativeMutationOperation {
     PropertyAssignment,
     BindingAssignment,
@@ -415,8 +416,11 @@ pub enum NativeMutationOperation {
     MutationCall,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum NativeIntegrityGuard {
     OrdinaryObjectPrototype,
     ArrayIntrinsics,

@@ -158,8 +158,10 @@ pub(super) struct InspectSourceArgs {
     pub format: Option<OutputFormat>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, Serialize, ValueEnum, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+#[value(rename_all = "snake_case")]
 pub(super) enum SourceView {
     Pretty,
     Raw,
@@ -700,13 +702,7 @@ fn append_declarator_file(
 
 fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
     out.push_str(&format!("Index: {}\n", report.index_basis));
-    out.push_str(&format!(
-        "View: {}\n",
-        match report.view {
-            SourceView::Pretty => "pretty",
-            SourceView::Raw => "raw",
-        }
-    ));
+    out.push_str(&format!("View: {}\n", report.view));
     if let Some(query) = &report.query {
         out.push_str(&format!(
             "Selection: {:?} {:?} ({} source_unit(s))\n",

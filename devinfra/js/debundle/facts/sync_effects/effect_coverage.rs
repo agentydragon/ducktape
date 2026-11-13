@@ -50,6 +50,7 @@ pub(crate) struct RootInitializerIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(super) enum LocalBodyIdentity {
     RootInitializer {
         owner: SourceUnitOrdinal,

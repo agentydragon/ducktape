@@ -14,24 +14,40 @@ pub struct RedundantPurityHint {
     pub proof_basis: RedundantPurityProofBasis,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RedundantPurityProofBasis {
+    #[strum(
+        message = "This proof uses no `purity: pure` hints. Remove the hint and validate the spec."
+    )]
     WithoutPurityHints,
+    #[strum(
+        message = "This proof requires other `purity: pure` hints. Remove hints individually and revalidate after each edit."
+    )]
     WithOtherPurityHints,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RedundantPurityReason {
     /// Chunk-local function/arrow whose body classifies `Pure` by
     /// recursive analysis (with the hint on this binding removed
     /// from `declared_pure`; hints on other bindings still apply).
+    #[strum(message = "pure (the function body classifies Pure by recursive analysis)")]
     InferredPureFunction,
     /// Chunk-local binding that admits as `PlainData`. The
     /// `purity: pure` callsite-override is a no-op because the
     /// binding isn't called as `binding(...)` in any pure-relevant
     /// way that the override would gate.
+    #[strum(
+        message = "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)"
+    )]
     InferredPlainDataBinding,
 }
 
@@ -47,13 +63,17 @@ pub struct RedundantPureMemberHint {
     pub reason: RedundantPureMemberReason,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RedundantPureMemberReason {
     /// `<binding>.<prop>` names an intrinsic whose builtin row admits
     /// any operands (e.g. `Array.isArray`) — the call classifies pure on
     /// its own with no `pure_members` annotation. The hint is a no-op.
     /// The wire name predates the builtin table.
+    #[strum(message = "pure via its builtin summary row")]
     WhitelistedStaticCall,
 }
 

@@ -19,6 +19,7 @@ use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceM
 pub mod saved;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
     TypescriptMetadataDecorateHelper,
@@ -294,8 +295,11 @@ impl CallableSummary {
 }
 
 /// Intrinsic families whose visible writes constrain inferred native operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum NativeIntrinsic {
     GlobalObject,
     /// A global slot may hold any native value; descendants retain this root.
@@ -568,8 +572,11 @@ pub struct ImportedPrimitiveRead {
 
 /// One `program_premises` assertion consumed by a proof (SPEC.md § Program
 /// premises).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ProgramPremiseKey {
     ProcessPrototypeChainAccessors,
     NonLiteralLoaderCalls,

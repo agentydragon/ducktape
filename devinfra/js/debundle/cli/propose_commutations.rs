@@ -172,13 +172,16 @@ pub struct CommutationProposal {
     pub inerted_edges: Vec<InertedEdge>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display, strum::EnumMessage)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum RankReason {
     /// This pair alone breaks the SCC.
+    #[strum(message = "single-pair cut")]
     SinglePairCut,
     /// The SCC stays cyclic; ranked by the parallel edges left on its
     /// module pair.
+    #[strum(message = "partial cut")]
     PartialCut,
 }
 
@@ -315,22 +318,41 @@ pub struct BlockingEdgeCount {
     pub count: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    strum::Display,
+    strum::EnumMessage,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum BlockingReason {
     /// A third-statement ordering survives the proposed pair assertions.
+    #[strum(message = "third-statement ordering survives the proposed pairs")]
     PreservedOrder,
     /// A premise never inerts this kind (`eager_use` and the other
     /// non-`sequenced` kinds); the remedy is co-location.
+    #[strum(message = "no premise inerts this kind; co-locate")]
     KindNotInertable,
     /// The pair's premise would contradict a source fact.
+    #[strum(message = "the pair's premise contradicts a source fact")]
     KnownConflict,
     /// Strict-chain adjacency of two summarized effects; a premise inerts
     /// nothing.
+    #[strum(message = "summarized effects; a premise inerts nothing")]
     Summarized,
     /// The graph predates retained verdicts.
+    #[strum(message = "no retained premise verdict; regenerate the graph")]
     VerdictNotRecorded,
     /// An endpoint of the pair has no unique selector.
+    #[strum(message = "an endpoint has no unique selector")]
     NoUniqueSelector,
 }
 
@@ -1439,10 +1461,7 @@ fn render_draft(chunk: &str, proposals: &[CommutationProposal]) -> Result<String
         let mut comments = vec![format!(
             "rank {} ({}) in SCC {}",
             proposal.rank,
-            match proposal.rank_reason {
-                RankReason::SinglePairCut => "single-pair cut",
-                RankReason::PartialCut => "partial cut",
-            },
+            strum::EnumMessage::get_message(&proposal.rank_reason).unwrap_or_default(),
             proposal.scc_id,
         )];
         for edge in &proposal.inerted_edges {
@@ -1534,7 +1553,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
                         "    {} {} edge(s): {}\n",
                         row.count,
                         row.kind,
-                        blocking_reason_text(row.reason)
+                        strum::EnumMessage::get_message(&row.reason).unwrap_or_default()
                     ));
                 }
             }
@@ -1545,10 +1564,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
             "  #{} SCC {} [{}] remaining module-pair edges: {}\n    a: {}\n    b: {}\n",
             proposal.rank,
             proposal.scc_id,
-            match proposal.rank_reason {
-                RankReason::SinglePairCut => "single-pair cut",
-                RankReason::PartialCut => "partial cut",
-            },
+            strum::EnumMessage::get_message(&proposal.rank_reason).unwrap_or_default(),
             proposal.remaining_module_pair_edges,
             location_text(&proposal.a),
             location_text(&proposal.b),
@@ -1585,17 +1601,6 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
     }
     out.push_str("---\n");
     out.push_str(&report.draft_yaml);
-}
-
-fn blocking_reason_text(reason: BlockingReason) -> &'static str {
-    match reason {
-        BlockingReason::PreservedOrder => "third-statement ordering survives the proposed pairs",
-        BlockingReason::KindNotInertable => "no premise inerts this kind; co-locate",
-        BlockingReason::KnownConflict => "the pair's premise contradicts a source fact",
-        BlockingReason::Summarized => "summarized effects; a premise inerts nothing",
-        BlockingReason::VerdictNotRecorded => "no retained premise verdict; regenerate the graph",
-        BlockingReason::NoUniqueSelector => "an endpoint has no unique selector",
-    }
 }
 
 impl RejectionReason {

@@ -75,8 +75,9 @@ pub enum PossibleGetterPromotion {
 
 /// The first failed condition in the ordered local own-data field guard.
 /// This is diagnostic evidence only and does not affect admission.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum OrderedFieldReadRefusal {
     ReceiverNotSingleton,
     ReceiverNotObject,
@@ -94,8 +95,9 @@ pub enum OrderedFieldReadRefusal {
 /// The first ordered call admission condition that rejected the evaluated
 /// target and receiver. This describes the refusal only; it does not change
 /// target classification or the conservative fallback.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum OrderedCallAdmissionRefusal {
     UnknownTarget,
     MultipleTargets,
@@ -146,8 +148,9 @@ impl ExecutionPrecisionLoss {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::AsRefStr)]
 #[serde(tag = "code", rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ExecutionPrecisionLossReason {
     UnknownCallTarget,
     /// A complete synchronous call proof supplied effects without the value
@@ -220,8 +223,9 @@ pub enum GlobalReachCause {
 }
 
 /// Why a local class construction kept the conservative path.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, strum::AsRefStr)]
 #[serde(tag = "check", rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ConstructionRejection {
     SpreadArguments,
     /// The class has no source-checked constructor summary.
@@ -263,41 +267,17 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
                 ordered_field_read_refusal,
                 ordered_call_admission_refusal,
             } => {
-                let operation = serde_json::to_value(operation)
-                    .expect("execution operations serialize as strings");
-                write!(
-                    f,
-                    "`unsupported_operation` ({})",
-                    operation.as_str().expect("unit variant")
-                )?;
+                write!(f, "`unsupported_operation` ({operation})")?;
                 if let Some(refusal) = ordered_field_read_refusal {
-                    let refusal = serde_json::to_value(refusal)
-                        .expect("ordered field refusals serialize as strings");
-                    write!(
-                        f,
-                        "; ordered_field_read_refusal: {}",
-                        refusal.as_str().expect("unit variant")
-                    )?;
+                    write!(f, "; ordered_field_read_refusal: {refusal}")?;
                 }
                 if let Some(refusal) = ordered_call_admission_refusal {
-                    let refusal = serde_json::to_value(refusal)
-                        .expect("ordered call admission refusals serialize as strings");
-                    write!(
-                        f,
-                        "; ordered_call_admission_refusal: {}",
-                        refusal.as_str().expect("unit variant")
-                    )?;
+                    write!(f, "; ordered_call_admission_refusal: {refusal}")?;
                 }
                 Ok(())
             }
             Self::UnsupportedConstruction { rejection } => {
-                let rejection = serde_json::to_value(rejection)
-                    .expect("construction rejections serialize as tagged objects");
-                write!(
-                    f,
-                    "`unsupported_construction` ({})",
-                    rejection["check"].as_str().expect("tagged by check")
-                )
+                write!(f, "`unsupported_construction` ({})", rejection.as_ref())
             }
             Self::RecursiveInvocation => f.write_str("`recursive_invocation`"),
             Self::InvocationDepthLimit { limit } => {
@@ -378,12 +358,9 @@ impl std::fmt::Display for AssumedEffectReason {
                 }
             }
             Self::WholeBodyPromotion { operation } => {
-                let operation = serde_json::to_value(operation)
-                    .expect("execution operations serialize as strings");
                 write!(
                     f,
-                    "whole-body promotion (`whole_body_promotion`, {})",
-                    operation.as_str().expect("unit variant")
+                    "whole-body promotion (`whole_body_promotion`, {operation})"
                 )
             }
             Self::PrivateConstructorRestore => f.write_str(
@@ -428,8 +405,9 @@ impl AssumedEffectReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum ExecutionOperation {
     MembershipProtocol,
     InstanceOfProtocol,

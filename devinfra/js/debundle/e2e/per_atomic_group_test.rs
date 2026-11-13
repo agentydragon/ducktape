@@ -268,7 +268,7 @@ fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
         assert!(rejected.stderr.contains("duplicate"), "{}", rejected.stderr);
 
         let premise =
-            serde_yaml::from_str("intrinsics_never_written:\n  families: [Map]\n  note: audited\n")
+            serde_yaml::from_str("intrinsics_never_written:\n  families: [map]\n  note: audited\n")
                 .unwrap();
         let contradiction = FixtureOpts::new(
         "function patch(value) { Map.prototype.extra = value; }\nexport const originalName = 1;\n",
