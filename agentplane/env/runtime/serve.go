@@ -194,7 +194,7 @@ func (r *Runtime) stopSessions(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	return r.waitSessionStage(ctx, lifecycle.Closed)
+	return nil
 }
 
 func (r *Runtime) waitSessionsClosed(ctx context.Context) error {

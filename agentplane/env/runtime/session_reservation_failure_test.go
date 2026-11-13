@@ -124,6 +124,7 @@ func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 			// Close deliberately retains the owner when the failed lifecycle cannot
 			// prove cleanup. Simulate process exit after joining the test components.
 			_ = r.stopSessions(t.Context())
+			_ = r.waitSessionsClosed(t.Context())
 			_ = r.stopIngress(t.Context())
 			r.lifecycleCancel()
 			<-r.lifecycleDone
