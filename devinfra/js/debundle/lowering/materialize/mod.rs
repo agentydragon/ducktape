@@ -7,6 +7,7 @@ mod apply;
 mod outcome_sink;
 mod plan_builder;
 mod residual_atomic_report;
+mod residual_extractions_report;
 
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
@@ -87,6 +88,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) effect_conflicts_chunks: &'a BTreeSet<String>,
     pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
     pub(super) full_report_chunks: &'a BTreeSet<String>,
+    pub(super) residual_extraction_atoms: &'a BTreeSet<String>,
     pub(super) gate_rejection: GateRejectionPolicy,
     pub(super) assessment_only: bool,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
@@ -393,6 +395,7 @@ pub(super) fn finish_logical_chunk(
         effect_conflicts_chunks,
         full_reports,
         full_report_chunks,
+        residual_extraction_atoms,
         gate_rejection: gate_rejection_policy,
         assessment_only,
         vendor_import_oracle,
@@ -760,6 +763,8 @@ pub(super) fn finish_logical_chunk(
             full_translation_validation: false,
             full_export_reentry: false,
             full_residual_atomic_groups: false,
+            full_residual_extractions: false,
+            residual_extraction_atoms,
         };
         let (evaluation, _) = evaluate_chunk_candidate(
             report_context,
@@ -791,6 +796,10 @@ pub(super) fn finish_logical_chunk(
         full_residual_atomic_groups: full_reports
             .contains(&super::FullReportKind::ResidualAtomicGroups)
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        full_residual_extractions: full_reports
+            .contains(&super::FullReportKind::ResidualExtractions)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        residual_extraction_atoms,
     };
     let (evaluation, report_out_dir) = evaluate_chunk_candidate(
         report_context,
@@ -1358,6 +1367,8 @@ struct ChunkReportContext<'a> {
     full_translation_validation: bool,
     full_export_reentry: bool,
     full_residual_atomic_groups: bool,
+    full_residual_extractions: bool,
+    residual_extraction_atoms: &'a BTreeSet<String>,
 }
 
 /// Exact counts over the canonical in-memory graph, with no node/edge table.
@@ -1393,6 +1404,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
         graph_reports,
         full_export_reentry,
         full_residual_atomic_groups,
+        full_residual_extractions,
         ..
     } = context;
     let report_out_dir = if preflight.is_rejected() {
@@ -1409,7 +1421,10 @@ fn evaluate_chunk_candidate<'a, 'b>(
         "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
     ensure!(
-        !(full_translation_validation || full_export_reentry || full_residual_atomic_groups)
+        !(full_translation_validation
+            || full_export_reentry
+            || full_residual_atomic_groups
+            || full_residual_extractions)
             || report_out_dir.is_some(),
         "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
@@ -1493,6 +1508,8 @@ fn emit_reports_and_resolve_gate<'a>(
         policy,
         full_export_reentry,
         full_residual_atomic_groups,
+        full_residual_extractions,
+        residual_extraction_atoms,
         ..
     } = context;
     let assignment_analysis = evaluation.assignment_analysis();
@@ -1509,6 +1526,20 @@ fn emit_reports_and_resolve_gate<'a>(
                 chunk_id,
                 output_layout::RESIDUAL_ATOMIC_GROUPS_REPORT,
                 &residual_atomic_report::build(assignment_analysis, ownership_subset, !rejected),
+            )?;
+        }
+        if full_residual_extractions {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                output_layout::RESIDUAL_EXTRACTIONS_REPORT,
+                &residual_extractions_report::build(
+                    assignment_analysis,
+                    ownership_subset,
+                    assignment_report,
+                    !rejected,
+                    residual_extraction_atoms,
+                )?,
             )?;
         }
         let graph = assignment_analysis.inputs().dependency_graph();

@@ -182,10 +182,14 @@ def _debundle_pipeline_plan(ctx, out_root, include_full_streams = True):
         run_flags.append("--emit-on-rejection")
     if ctx.attr.full_report_chunks and not ctx.attr.full_reports:
         fail("full_report_chunks requires full_reports")
+    if ctx.attr.residual_extraction_atoms and "residual_extractions" not in ctx.attr.full_reports:
+        fail("residual_extraction_atoms requires residual_extractions in full_reports")
     for report in ctx.attr.full_reports if include_full_streams else []:
         run_flags += ["--full-report", shell.quote(report)]
     for chunk in ctx.attr.full_report_chunks if include_full_streams else []:
         run_flags += ["--full-report-chunk", shell.quote(chunk)]
+    for atom in ctx.attr.residual_extraction_atoms if include_full_streams else []:
+        run_flags += ["--residual-extraction-atom", shell.quote(atom)]
     if include_full_streams and ctx.attr.effect_conflicts_jsonl:
         run_flags.append("--effect-conflicts-jsonl")
     for chunk in ctx.attr.effect_conflicts_chunks if include_full_streams else []:
@@ -385,10 +389,13 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         ),
     ),
     "full_reports": attr.string_list(
-        doc = "Complete diagnostic sinks to export (translation_validation, export_reentry, residual_atomic_groups). Independent of full graphs; only Pipeline inputs change.",
+        doc = "Complete diagnostic sinks to export (translation_validation, export_reentry, residual_atomic_groups, residual_extractions). Independent of full graphs; only Pipeline inputs change.",
     ),
     "full_report_chunks": attr.string_list(
         doc = "Select only these full-report sinks; checks and bounded summaries still cover every configured chunk. Requires full_reports.",
+    ),
+    "residual_extraction_atoms": attr.string_list(
+        doc = "Probe only these atomic IDs in residual_extractions. Other residual groups are listed as unprobed.",
     ),
     "fail_fast": attr.bool(
         default = False,

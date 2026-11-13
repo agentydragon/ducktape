@@ -111,6 +111,18 @@ Each example identifies both endpoint units, the other atomic group and endpoint
 destination, the binding when present, and whether it constrains initialization.
 Examples are bounded evidence, not an exhaustive dependency closure.
 
+The opt-in `residual_extractions.json` has a separate `baseline` with the
+current assignment's `gate_accepts`, `cycles`, `atomic_group_conflicts`, and
+`cross_rebinds`. Each residual atomic group has `id`, source-unit rows with
+current destinations and source locations, and either `candidate` or
+`unprobed_reason`. A candidate records `proposed_destination`, exact
+`gate_accepts`, complete typed `cycles`, structural conflicts, cross-rebinds,
+and `blocker_source_units` with source locations for the gate's blocking
+dependency edges. `unprobed_reason` is `split_atomic_group`,
+`entry_scaffolding`, or `not_selected`. Candidate verdicts evaluate one whole
+atom moved to a fresh module from the unchanged baseline; they do not
+describe an existing-owner edit or emitted output.
+
 `dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
 `source_unit_ids` and `members` identify the source units in that group.
