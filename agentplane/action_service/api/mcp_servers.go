@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"

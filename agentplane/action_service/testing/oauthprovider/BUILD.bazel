@@ -6,5 +6,5 @@ go_library(
     srcs = ["oauthprovider.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider",
     visibility = ["//agentplane/action_service:__subpackages__"],
-    deps = ["//agentplane/action_service/linkage"],
+    deps = ["//agentplane/action_service/internal/linkage"],
 )

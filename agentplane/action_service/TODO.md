@@ -9,7 +9,7 @@ Document, so linkage cannot register a client at link time via RFC 7591.
 
 ## `client_secret_basic` token-endpoint authentication
 
-`linkage/flow.go` configures `oauth2.AuthStyleInParams`, sending a confidential client's secret in
+`internal/linkage/flow.go` configures `oauth2.AuthStyleInParams`, sending a confidential client's secret in
 the form body (`client_secret_post`), so an authorization server requiring HTTP Basic client
 authentication cannot be linked.
 
