@@ -11,6 +11,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -164,7 +165,7 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 		DROP COLUMN provider_attempt_lease_until, DROP COLUMN provider_retry_not_before,
 		DROP COLUMN previous_provider_intent_id, DROP COLUMN provider_command_id`)
 	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`)
-	if err := Migrate(t.Context(), store.DB()); err != nil {
+	if err := migrations.Up(t.Context(), store.DB()); err != nil {
 		t.Fatalf("apply provider-attempt migration to old unresolved intent: %v", err)
 	}
 

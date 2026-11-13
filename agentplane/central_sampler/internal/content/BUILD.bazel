@@ -3,15 +3,15 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
 
 go_library(
-    name = "storage",
+    name = "content",
     srcs = ["content.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage",
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content",
 )
 
 go_test(
-    name = "storage_test",
+    name = "content_test",
     size = "small",
     srcs = ["content_test.go"],
-    embed = [":storage"],
+    embed = [":content"],
     race = "on",
 )

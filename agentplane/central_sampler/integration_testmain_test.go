@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -22,7 +23,7 @@ func TestMain(m *testing.M) {
 	if runCodeModePeer() {
 		return
 	}
-	migrate := func(ctx context.Context, db *sql.DB) error { return Migrate(ctx, db) }
+	migrate := func(ctx context.Context, db *sql.DB) error { return migrations.Up(ctx, db) }
 	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
 		integrationDatabase = database
 		return m.Run()

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
@@ -20,8 +20,8 @@ func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	ids = append(append(append([]storage.ContentID{}, request.PrefixIDs...), ids...), request.SuffixIDs...)
-	roots := append([]storage.ContentID{request.ProfileID}, ids...)
+	ids = append(append(append([]content.ContentID{}, request.PrefixIDs...), ids...), request.SuffixIDs...)
+	roots := append([]content.ContentID{request.ProfileID}, ids...)
 	if err := store.prefetch(roots); err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte
 	}
 }
 
-func finishStoredRequest(store *contentStore, request ProviderRequest, profile storage.ContentID, ids []storage.ContentID) (ProviderRequest, []byte, error) {
+func finishStoredRequest(store *contentStore, request ProviderRequest, profile content.ContentID, ids []content.ContentID) (ProviderRequest, []byte, error) {
 	contextID, err := store.storeContext(request.API, ids)
 	if err != nil {
 		return ProviderRequest{}, nil, err
@@ -65,7 +65,7 @@ func saveProviderRequest(ctx context.Context, tx *sql.Tx, id, conversationID str
 type StoredProviderRequest struct {
 	RequestID string
 	ContextID string
-	ProfileID storage.ContentID
+	ProfileID content.ContentID
 	Method    string
 	URL       string
 	Headers   map[string]string
@@ -104,7 +104,7 @@ func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, accountUID, 
 	return result, err
 }
 
-func contentIDArray(ids []storage.ContentID) pq.StringArray {
+func contentIDArray(ids []content.ContentID) pq.StringArray {
 	values := make(pq.StringArray, 0, len(ids))
 	for _, id := range ids {
 		values = append(values, string(id))

@@ -12,7 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/lib/pq"
@@ -23,45 +23,45 @@ import (
 type contentStore struct {
 	ctx     context.Context
 	tx      *sql.Tx
-	cache   map[storage.ContentID]storage.StoredContent
-	pending map[storage.ContentID]storage.StoredContent
+	cache   map[content.ContentID]content.StoredContent
+	pending map[content.ContentID]content.StoredContent
 }
 
 func newContentStore(ctx context.Context, tx *sql.Tx) *contentStore {
-	return &contentStore{ctx: ctx, tx: tx, cache: map[storage.ContentID]storage.StoredContent{}, pending: map[storage.ContentID]storage.StoredContent{}}
+	return &contentStore{ctx: ctx, tx: tx, cache: map[content.ContentID]content.StoredContent{}, pending: map[content.ContentID]content.StoredContent{}}
 }
 
-func (s *contentStore) PutContent(kind storage.ContentKind, payload json.RawMessage) (storage.ContentID, error) {
-	content, err := storage.CanonicalContent(kind, payload)
+func (s *contentStore) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
+	stored, err := content.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
-	s.cache[content.ID] = content
-	s.pending[content.ID] = content
-	return content.ID, nil
+	s.cache[stored.ID] = stored
+	s.pending[stored.ID] = stored
+	return stored.ID, nil
 }
 
-func (s *contentStore) GetContent(id storage.ContentID) (storage.StoredContent, error) {
-	if content, ok := s.cache[id]; ok {
-		return content, nil
+func (s *contentStore) GetContent(id content.ContentID) (content.StoredContent, error) {
+	if stored, ok := s.cache[id]; ok {
+		return stored, nil
 	}
-	content := storage.StoredContent{ID: id}
-	if err := s.tx.QueryRowContext(s.ctx, `SELECT kind,payload FROM sampler_content WHERE id=$1`, id).Scan(&content.Kind, &content.Payload); err != nil {
-		return content, err
+	stored := content.StoredContent{ID: id}
+	if err := s.tx.QueryRowContext(s.ctx, `SELECT kind,payload FROM sampler_content WHERE id=$1`, id).Scan(&stored.Kind, &stored.Payload); err != nil {
+		return stored, err
 	}
-	if err := storage.VerifyContent(content); err != nil {
-		return content, err
+	if err := content.VerifyContent(stored); err != nil {
+		return stored, err
 	}
-	s.cache[id] = content
-	return content, nil
+	s.cache[id] = stored
+	return stored, nil
 }
 
 // The provider envelopes have a bounded nesting depth. Resolve each breadth in
 // batches so reading a long context does not make a database roundtrip per block.
-func (s *contentStore) prefetch(ids []storage.ContentID) error {
-	seen := map[storage.ContentID]bool{}
+func (s *contentStore) prefetch(ids []content.ContentID) error {
+	seen := map[content.ContentID]bool{}
 	for len(ids) > 0 {
-		level := make([]storage.ContentID, 0, len(ids))
+		level := make([]content.ContentID, 0, len(ids))
 		missing := []string{}
 		for _, id := range ids {
 			if id == "" || seen[id] {
@@ -80,16 +80,16 @@ func (s *contentStore) prefetch(ids []storage.ContentID) error {
 				return err
 			}
 			for rows.Next() {
-				var content storage.StoredContent
-				if err := rows.Scan(&content.ID, &content.Kind, &content.Payload); err != nil {
+				var stored content.StoredContent
+				if err := rows.Scan(&stored.ID, &stored.Kind, &stored.Payload); err != nil {
 					rows.Close()
 					return err
 				}
-				if err := storage.VerifyContent(content); err != nil {
+				if err := content.VerifyContent(stored); err != nil {
 					rows.Close()
 					return err
 				}
-				s.cache[content.ID] = content
+				s.cache[stored.ID] = stored
 			}
 			err = rows.Err()
 			rows.Close()
@@ -100,17 +100,17 @@ func (s *contentStore) prefetch(ids []storage.ContentID) error {
 		}
 		ids = nil
 		for _, id := range level {
-			content, ok := s.cache[id]
+			stored, ok := s.cache[id]
 			if !ok {
 				return fmt.Errorf("missing provider content %s", id)
 			}
-			var refs []storage.ContentID
+			var refs []content.ContentID
 			var err error
-			switch content.Kind {
+			switch stored.Kind {
 			case responses.ContentOpenAIRequest:
-				refs, err = responses.ContentReferences(content.Kind, content.Payload)
+				refs, err = responses.ContentReferences(stored.Kind, stored.Payload)
 			case anthropic.ContentAnthropicMessage, anthropic.ContentAnthropicRequest:
-				refs, err = anthropic.ContentReferences(content.Kind, content.Payload)
+				refs, err = anthropic.ContentReferences(stored.Kind, stored.Payload)
 			}
 			if err != nil {
 				return err
@@ -122,7 +122,7 @@ func (s *contentStore) prefetch(ids []storage.ContentID) error {
 }
 
 func (s *contentStore) save() error {
-	ids := make([]storage.ContentID, 0, len(s.pending))
+	ids := make([]content.ContentID, 0, len(s.pending))
 	for id := range s.pending {
 		ids = append(ids, id)
 	}
@@ -140,9 +140,9 @@ func (s *contentStore) save() error {
 		if err != nil {
 			return err
 		}
-		known := map[storage.ContentID]bool{}
+		known := map[content.ContentID]bool{}
 		for rows.Next() {
-			var id storage.ContentID
+			var id content.ContentID
 			if err := rows.Scan(&id); err != nil {
 				rows.Close()
 				return err
@@ -181,7 +181,7 @@ func (s *contentStore) save() error {
 type contextItem struct {
 	API     protocol.APIStyle `json:"api"`
 	Parent  string            `json:"parent"`
-	Content storage.ContentID `json:"content"`
+	Content content.ContentID `json:"content"`
 }
 
 func contextItemID(item contextItem) string {
@@ -198,7 +198,7 @@ func nullableContextID(id string) any {
 	return id
 }
 
-func (s *contentStore) storeContext(api protocol.APIStyle, contents []storage.ContentID) (string, error) {
+func (s *contentStore) storeContext(api protocol.APIStyle, contents []content.ContentID) (string, error) {
 	if api != protocol.APIStyleResponses && api != protocol.APIStyleAnthropicMessages {
 		return "", protocol.ErrInvalid
 	}
@@ -271,7 +271,7 @@ func (s *contentStore) storeContext(api protocol.APIStyle, contents []storage.Co
 }
 
 // appendContextIDs stores only newly appended records, sharing the immutable prefix.
-func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, prefixCount int, suffix []storage.ContentID) (string, error) {
+func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, prefixCount int, suffix []content.ContentID) (string, error) {
 	if prefixCount > 0 && root == "" {
 		return "", errors.New("nonempty provider context prefix has no root")
 	}
@@ -294,7 +294,7 @@ func appendContextIDs(store *contentStore, api protocol.APIStyle, root string, p
 	return parent, nil
 }
 
-func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
+func (s *contentStore) loadContext(id string) ([]content.ContentID, error) {
 	if id == "" {
 		return nil, nil
 	}
@@ -306,7 +306,7 @@ func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []storage.ContentID
+	var ids []content.ContentID
 	previous := ""
 	for rows.Next() {
 		var key string
@@ -330,7 +330,7 @@ func (s *contentStore) loadContext(id string) ([]storage.ContentID, error) {
 	return ids, nil
 }
 
-func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage) (storage.ContentID, error) {
+func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage) (content.ContentID, error) {
 	switch api {
 	case protocol.APIStyleResponses:
 		return responses.StoreRecord(s, record)
@@ -341,7 +341,7 @@ func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage
 	}
 }
 
-func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []storage.ContentID) ([]json.RawMessage, error) {
+func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []content.ContentID) ([]json.RawMessage, error) {
 	if err := s.prefetch(ids); err != nil {
 		return nil, err
 	}
@@ -379,7 +379,7 @@ func (s *contentStore) storeConversationContext(conversation *Conversation, nati
 	if err != nil {
 		return "", err
 	}
-	ids := make([]storage.ContentID, 0, len(records))
+	ids := make([]content.ContentID, 0, len(records))
 	for _, record := range records {
 		id, err := s.storeRecord(native.API(), record)
 		if err != nil {

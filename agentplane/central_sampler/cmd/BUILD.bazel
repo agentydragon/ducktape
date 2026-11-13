@@ -16,6 +16,7 @@ go_library(
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/settings",
+        "//agentplane/central_sampler/migrations",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth",
         "//agentplane/net/listener",

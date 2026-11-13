@@ -16,6 +16,7 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -79,7 +80,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		slog.Warn("Agentplane platform guidance is not configured; new Sessions retain caller-only instructions")
 	}
 	databaseURL := strings.Replace(settings.DatabaseURL, "postgresql+asyncpg://", "postgresql://", 1)
-	if err := migrate.Run(ctx, databaseURL, centralsampler.Migrate); err != nil {
+	if err := migrate.Run(ctx, databaseURL, migrations.Up); err != nil {
 		return atStartupStage("database_migrations", err)
 	}
 	// Allow session state writes and lease renewals, eight exporter workers, and sixteen RPCs.
@@ -170,7 +171,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", centralsampler.Migrate); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", migrations.Up); handled {
 		if err != nil {
 			slog.Error("central sampler migration stopped", startupLogAttrs(atStartupStage("migration_only", err))...)
 			os.Exit(1)
