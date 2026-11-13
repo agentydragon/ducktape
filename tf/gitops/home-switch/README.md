@@ -93,10 +93,10 @@ tf/gitops/home-switch/bootstrap.sh            # [admin-user] [switch-address]
 git commit cluster/k8s/home-switch/tofu-password.sops.yaml -m "home-switch: rotate the tofu password"
 ```
 
-Merge that commit, then approve the next plan, which applies the rest. Until then the committed
-password doesn't match the switch, so plans fail at login and nothing is applied. Re-running the
-script rotates the password the same way. After a factory reset the admin login is the
-one on the switch's sticker until you change it.
+Merge that commit and wait for Flux to reconcile the Secret. Until then, the cluster Secret may be
+absent or still have the old password, so plans cannot authenticate. After it updates, approve the
+next plan to apply the rest. Re-running the script rotates the password the same way. After a
+factory reset the admin login is the one on the switch's sticker until you change it.
 
 ## Approving a plan
 
