@@ -195,10 +195,9 @@ func decodeToolInputSchema(parameters json.RawMessage) (toolInputSchema, error) 
 
 // Audit is the stored result of an Anthropic sampling or compaction intent.
 type Audit struct {
-	ContextTokens     *int              `json:"context_tokens"`
-	Events            []json.RawMessage `json:"events"`
-	HTTPStatus        int               `json:"http_status"`
-	ProviderRequestID string            `json:"provider_request_id"`
+	ContextTokens     *int   `json:"context_tokens"`
+	HTTPStatus        int    `json:"http_status"`
+	ProviderRequestID string `json:"provider_request_id"`
 	// Replacement is the validated compacted context; set only on a compaction result.
 	Replacement *Context        `json:"replacement,omitempty"`
 	Response    json.RawMessage `json:"response"`

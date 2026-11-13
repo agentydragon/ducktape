@@ -8,12 +8,16 @@ import (
 
 // ValidateCompaction validates provider records before the caller commits them as the active
 // context. The append-only transcript remains owned by the caller.
-func ValidateCompaction(original *Context, records []json.RawMessage, audit *Audit, environmentText string) (*Context, error) {
+func ValidateCompaction(original *Context, records []json.RawMessage, audit *Audit, events []Event, environmentText string) (*Context, error) {
 	if original == nil {
 		return nil, protocol.ErrInvalid
 	}
 	knownFailure := func(reason string) error {
-		return &protocol.KnownFailureError{Evidence: map[string]any{"reason": reason, "response": audit}}
+		var response any
+		if audit != nil {
+			response = map[string]any{"events": events, "response": audit.Response}
+		}
+		return &protocol.KnownFailureError{Evidence: map[string]any{"reason": reason, "response": response}}
 	}
 	if len(records) != 1 {
 		return nil, knownFailure("compaction must produce exactly one compaction item and no tools")

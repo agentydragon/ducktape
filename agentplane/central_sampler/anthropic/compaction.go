@@ -56,12 +56,23 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	return &CompactionPlan{Body: body, original: originalContext, suffix: cloneRecords(records[cut:]), restoreEffort: restore}, nil
 }
 
-func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit) (*Context, error) {
+func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events []json.RawMessage) (*Context, error) {
 	if p == nil || p.original == nil {
 		return nil, errors.New("Anthropic compaction plan is unavailable")
 	}
 	reject := func(reason string) (*Context, error) {
-		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": reason, "response": audit}}
+		var response any
+		if audit != nil {
+			response = struct {
+				ContextTokens     *int              `json:"context_tokens"`
+				Events            []json.RawMessage `json:"events"`
+				HTTPStatus        int               `json:"http_status"`
+				ProviderRequestID string            `json:"provider_request_id"`
+				Replacement       *Context          `json:"replacement,omitempty"`
+				Response          json.RawMessage   `json:"response"`
+			}{audit.ContextTokens, events, audit.HTTPStatus, audit.ProviderRequestID, audit.Replacement, audit.Response}
+		}
+		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": reason, "response": response}}
 	}
 	if len(records) != 1 {
 		return reject("compaction must produce exactly one signed compaction message")

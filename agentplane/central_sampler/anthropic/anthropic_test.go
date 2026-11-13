@@ -42,6 +42,78 @@ func testBuildRequest(params RequestParams, config Config, previousMessageID str
 	return BuildRequest(params, config, previousMessageID)
 }
 
+func TestAuditOmitsTransientEventsAndKeepsProviderMetadata(t *testing.T) {
+	tokens := 17
+	response := Response{
+		Message:       json.RawMessage(`{"id":"msg_fixture","type":"message","role":"assistant","usage":{"input_tokens":11,"output_tokens":6,"provider_usage":{"cache":3}},"provider_metadata":{"opaque_sequence":9007199254740993}}`),
+		Events:        []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)},
+		ContextTokens: &tokens, HTTPStatus: 200, ProviderRequestID: "req_fixture",
+	}
+	got := protocol.CanonicalJSON(response.Audit())
+	if strings.Contains(got, `"events"`) {
+		t.Fatalf("successful audit retained transient events: %s", got)
+	}
+	for _, marker := range []string{`"context_tokens":17`, `"http_status":200`, `"provider_request_id":"req_fixture"`, `"provider_usage":{"cache":3}`, `"opaque_sequence":9007199254740993`} {
+		if !strings.Contains(got, marker) {
+			t.Fatalf("successful audit lost %s: %s", marker, got)
+		}
+	}
+	if eventJSON := protocol.CanonicalJSON(response.Events); !strings.Contains(eventJSON, `"provider_event_marker":"fixture"`) {
+		t.Fatalf("transient per-event evidence was lost: %s", eventJSON)
+	}
+}
+
+func TestCompactionFailureDiagnosticsKeepTransientEvents(t *testing.T) {
+	tokens := 17
+	audit := &Audit{
+		Response:      json.RawMessage(`{"id":"msg_fixture","provider_terminal_marker":"fixture"}`),
+		ContextTokens: &tokens, HTTPStatus: 200, ProviderRequestID: "req_fixture",
+	}
+	events := []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)}
+	plan := &CompactionPlan{original: &Context{}}
+	_, err := plan.Apply(nil, audit, events)
+	var known *protocol.KnownFailureError
+	if !errors.As(err, &known) {
+		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
+	}
+	got := protocol.CanonicalJSON(known.Evidence["response"])
+	for _, marker := range []string{`"events":[{"type":"message_start"`, `"provider_event_marker":"fixture"`, `"provider_terminal_marker":"fixture"`, `"http_status":200`, `"provider_request_id":"req_fixture"`} {
+		if !strings.Contains(got, marker) {
+			t.Fatalf("compaction failure diagnostics lost %s: %s", marker, got)
+		}
+	}
+}
+
+func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
+	original := &Context{}
+	if err := original.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("original context ", 40)}}); err != nil {
+		t.Fatal(err)
+	}
+	plan := &CompactionPlan{original: original}
+	audit := &Audit{
+		Response:   json.RawMessage(`{"id":"msg_fixture","usage":{"input_tokens":11,"output_tokens":6,"provider_usage":{"cache":3}},"provider_metadata":{"opaque_sequence":9007199254740993}}`),
+		HTTPStatus: 200, ProviderRequestID: "req_fixture",
+	}
+	events := []json.RawMessage{json.RawMessage(`{"type":"message_start","provider_event_marker":"fixture"}`)}
+	records := []json.RawMessage{json.RawMessage(`{"id":"msg_compacted","type":"message","role":"assistant","content":[{"type":"compaction","content":"summary","signature":"sig_fixture"}],"stop_reason":"compaction"}`)}
+	replacement, err := plan.Apply(records, audit, events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if audit.Replacement != replacement {
+		t.Fatal("successful compaction did not retain its replacement context in the audit")
+	}
+	got := protocol.CanonicalJSON(audit)
+	if strings.Contains(got, `"events"`) {
+		t.Fatalf("successful compaction audit retained transient events: %s", got)
+	}
+	for _, marker := range []string{`"http_status":200`, `"provider_request_id":"req_fixture"`, `"provider_usage":{"cache":3}`, `"opaque_sequence":9007199254740993`, `"replacement"`, `"msg_compacted"`} {
+		if !strings.Contains(got, marker) {
+			t.Fatalf("successful compaction audit lost %s: %s", marker, got)
+		}
+	}
+}
+
 func TestBuildAnthropicRequestConvertsImagesAndConfiguresCacheAndEffort(t *testing.T) {
 	config := testConfig()
 	conversation := &Context{}
@@ -396,6 +468,9 @@ func TestAnthropicRejectsUnsupportedOutputBlocks(t *testing.T) {
 	var known *protocol.KnownFailureError
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("unsupported output block outcome=%+v err=%v; want a known rejection", response, err)
+	}
+	if got := protocol.CanonicalJSON(known.Evidence); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"server_tool_use"`) {
+		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 }
 

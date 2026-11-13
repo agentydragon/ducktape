@@ -220,6 +220,8 @@ message BoundaryRecord {
   string direction = 2;
   bytes payload = 3;
   string media_type = 4;
+  // Session-local operation linkage: a sampler intent's dispatch, provider events and result
+  // share this ID. record_id identifies one payload, potentially split across several Events.
   string correlation_id = 5;
   string parent_id = 6;
   // Fragments with the same record_id reconstruct the original payload in fragment_index order.
