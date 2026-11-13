@@ -2900,7 +2900,7 @@ data:
           name: central-sampler
       sampler_identity_callers: true
       settle_deltas: true
-      compact_deltas: false
+      compact_deltas: true
     delegation:
       actor: agentplane-staging/actions
       identity_callers: true

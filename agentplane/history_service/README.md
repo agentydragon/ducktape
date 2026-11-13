@@ -196,6 +196,31 @@ The [read contract](api/history/README.md) defines pagination, replay, atomicity
 This packs retained events; it does not share bodies across raw history and projection tables or
 backfill old Sessions. Ordinary insertion/deletion still generates WAL.
 
+### Historical packing
+
+After every History reader supports event blocks (migration 16), the same service image supports
+`history-service compact-history --session UUID --dry-run` and `--apply`, or `--all` instead of
+`--session`. Both scope and mode are required. It needs only
+`AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`; it does not run migrations or call harnesses/providers.
+The ingress flag independently controls new writes.
+
+Each Session's opening watermark bounds its pass. Apply commits one block per transaction under
+the Session writer lock, with a 30-second deadline, a 1-second lock timeout and a 50 ms pause between
+blocks to pace WAL. Each moved event is read through the production block reader and compared with
+its original protobuf before commit. Event identities, projection state and acknowledged watermarks
+stay unchanged, so there are no settlement/removal notifications or projection write leases.
+
+Existing blocks remain intact and bound each candidate span, preserving the per-kind non-overlap
+invariant. Ordinary entries inside an existing block's span (possible after flag toggles) stay ordinary
+and are reported as `skipped_inside_blocks`. Oversized entries and small tails also stay ordinary.
+Dry runs are read-only and report logical protobuf bytes and encoded block bytes, excluding physical
+row/index costs. Rerunning is safe; cancellation preserves already committed blocks.
+
+Use [the manual Job template](ops/compact-history-job.yaml) with the deployed image containing this
+command. Preview one Session, apply it, then expand to all Sessions. Monitor PostgreSQL free space,
+WAL archiving and replication lag during the apply. Ordinary vacuum makes freed space reusable;
+packing does not itself shrink relation files. Disabling ingress packing keeps all blocks readable.
+
 ## Delta settlement
 
 Each `Store.Append` batch that completes an item drops that

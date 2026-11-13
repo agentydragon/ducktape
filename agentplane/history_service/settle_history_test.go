@@ -2,7 +2,7 @@ package main
 
 import "testing"
 
-func TestSettlementRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
+func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 	const session = "00000000-0000-4000-8000-000000000001"
 	for _, args := range [][]string{
 		nil,
@@ -14,7 +14,7 @@ func TestSettlementRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 		{"--session", "00000000-0000-0000-0000-000000000000", "--apply"},
 		{"--all", "--apply", "extra"},
 	} {
-		if _, err := parseSettlementOptions(args); err == nil {
+		if _, err := parseHistoryMaintenanceOptions("settle-history", args); err == nil {
 			t.Fatalf("accepted %v", args)
 		}
 	}
@@ -23,11 +23,11 @@ func TestSettlementRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 		if apply {
 			mode = "--apply"
 		}
-		one, err := parseSettlementOptions([]string{"--session", session, mode})
+		one, err := parseHistoryMaintenanceOptions("compact-history", []string{"--session", session, mode})
 		if err != nil || one.all || one.session.String() != session || one.apply != apply {
 			t.Fatalf("one Session: %+v %v", one, err)
 		}
-		all, err := parseSettlementOptions([]string{"--all", mode})
+		all, err := parseHistoryMaintenanceOptions("compact-history", []string{"--all", mode})
 		if err != nil || !all.all || all.apply != apply {
 			t.Fatalf("all Sessions: %+v %v", all, err)
 		}
