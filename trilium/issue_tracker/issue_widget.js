@@ -194,11 +194,9 @@ Existing hotlists:
     // sort in order: 1. recommended hotlists in that order, 2. not
     // recommended. click -> add hotlist relation.
     this.$suggestedHotlists.empty();
-    const alreadyDisplayed = new Set();
     for (const hotlistTitle of jsonObject) {
       if (hotlistTitleToIdMap.has(hotlistTitle)) {
         const hotlistId = hotlistTitleToIdMap.get(hotlistTitle);
-        alreadyDisplayed.add(hotlistId);
         const bullet = $("<li>");
         const button = $("<button>");
         button.text("+ ");
