@@ -292,6 +292,47 @@ async def test_library_class(playwright_driver: Playwright, origin: str) -> None
         }
 
 
+async def test_library_algorithms(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Library, distributeLibraryItemsOnSquareGrid } =
+                    await import('./main/packages/excalidraw/data/library.js');
+                const rectangle = (id, x, y, width, height) => ({
+                    id, type: 'rectangle', index: 'a0', x, y, width, height, angle: 0,
+                    isDeleted: false, groupIds: [], boundElements: null, frameId: null,
+                    version: 1, versionNonce: 1, seed: 1, updated: 1, locked: false, link: null,
+                });
+                const positioned = distributeLibraryItemsOnSquareGrid([
+                    {id: 'first', elements: [rectangle('first-shape', 10, 20, 20, 10)]},
+                    {id: 'second', elements: [rectangle('second-shape', 100, 200, 40, 30)]},
+                ]);
+
+                const library = new Library({props: {onLibraryChange: () => {}}});
+                const local = {id: 'local-item', elements: [rectangle('same-shape', 0, 0, 10, 10)]};
+                const duplicate = {id: 'duplicate-item', elements: [rectangle('same-shape', 50, 50, 10, 10)]};
+                const unique = {id: 'new-item', elements: [rectangle('new-shape', 100, 100, 10, 10)]};
+                await library.setLibrary([local]);
+                await library.updateLibrary({libraryItems: [duplicate, unique], merge: true});
+                const merged = (await library.getLatestLibrary()).map(item => item.id);
+                library.destroy();
+                return {
+                    positioned: positioned.map(element => [element.id, element.x, element.y]),
+                    merged,
+                };
+            }"""
+        )
+        assert result == {
+            "positioned": [["first-shape", 0, 10], ["second-shape", 70, 0]],
+            "merged": ["new-item", "local-item"],
+        }
+
+
 async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
