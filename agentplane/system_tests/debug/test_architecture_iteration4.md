@@ -1,9 +1,10 @@
 # Native contracts and deployment graph selectivity
 
-All source work remains on [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102),
+Architecture work remains on [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102),
 branch `agent/test-architecture-pivot`. The reviewed measurements live in the
 [architecture report](https://agentydragon.github.io/ducktape/agentplane-test-architecture/).
 No required scenario or test frequency was removed.
+Independent fixes applicable to devel may be backported separately.
 
 ## Native recovery
 
@@ -76,6 +77,8 @@ used by the VM cases. App/Actions, both real harnesses, systemd, cgroups, egress
 notifications and SVID continuity remain. Default/MCP/Firecracker profiles retain
 their previous image ownership. Verify the full VM scenario and configured closure
 on that exact commit; the report records terminal evidence rather than assuming it.
+The unchanged full VM scenario passed on the literal commit in
+[4aec403d](https://app.buildbuddy.io/invocation/4aec403d-812b-4367-8122-7c2385f0c068).
 
 The separate manual `test_vm_boot_contract_candidate` at
 `9bce0a401dc57dba1d98be472462c20e50a1ea91` passed in
@@ -103,6 +106,41 @@ Download through the logged `CI_VM_PROBE_CAS_DOWNLOAD` command; keep raw runner
 diagnostics private. Snapshot-write and upload failures preserve both passing and
 failing gate verdicts. The no-affected-target early exit has no label snapshot.
 No new query, selector policy, scheduled matrix or gate-frequency code was added.
+The [ordinary CI archive round trip](https://github.com/agentydragon/ducktape/actions/runs/43398508201)
+is verified: the selected-label snapshot matches tested merge
+`488adf369a932ae05457808dd0498083f5ce31a1`, actual base
+`6787057f85d482979f7c3af5464a401b110dc7d2`, PR head
+`7d46adc2b16dfaefdb462f3529af1b41324ad5f4` and test/build invocation identities.
+
+## Failures retained by the reversed-order screen
+
+B2 [e9849ed3](https://app.buildbuddy.io/invocation/e9849ed3-da32-4372-b983-89269ab2ec4f)
+has four green final target summaries but five physical TestRunner executions.
+Its first VM action failed while pausing BuildBuddy's Firecracker VM: the local
+control socket refused the connection (REAPI code 14). A same-digest action then
+passed. The underlying executor failure is not visible in the available artifacts.
+
+A2 [d4f6afa5](https://app.buildbuddy.io/invocation/d4f6afa5-68e5-480b-b923-486ef3004ed8)
+passed both VM scenario bodies, then failed stack teardown. The background
+block-storage worker had died on a read-only PVC LIST deadline; `worker.result()`
+propagated that error from `resources.close()`. The API-side delay is unknown.
+The same teardown signature appears in
+[`vm_shutdown_stalls/five_run_full_suite_control.md`](vm_shutdown_stalls/five_run_full_suite_control.md).
+Neither failure is erased by the later green no-edge VM run or ordinary CI.
+
+The provisioner now retries only its read-only PVC LIST for deadline/connection/
+payload transport failures: three attempts, unchanged 10-second request timeout,
+0.1-second backoff and warning diagnostics. It starts no new LIST after stop;
+cancellation, authorization errors and exhausted retries still propagate.
+StorageClass/PV creation and loop attachment stay outside retry. Baseline
+certification still independently verifies namespace/PV cleanup before reuse.
+The [seeded real-apiserver red control](https://app.buildbuddy.io/invocation/66f569aa-3cf9-4ba7-a0c1-93bd0a4d7806)
+reproduces the worker/teardown failure. The
+[six-case positive/control-flow target](https://app.buildbuddy.io/invocation/0ba70772-164b-45d4-9821-f994a8857836)
+passes with the same two PVs and loop attachments after deadline/connection
+recovery, exact last-error propagation on exhaustion, stop, cancellation and
+403 checks. This proves the injected-failure behavior; the real API delay's
+cause and recurrence rate remain unmeasured.
 
 Follow [#16099](https://github.com/agentydragon/ducktape/issues/16099) for the
 remaining coverage assignments, 30 pinned base/head pairs, busy-window and
