@@ -232,8 +232,8 @@ let
   pyrage = pkgs.callPackage ./pyrage.nix { };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
-    description = "Shared utility library (devinfra.bazel, util.fs, etc.)";
-    importsCheck = [ "util" ];
+    description = "Shared utility library (devinfra.bazel, util.otel, etc.)";
+    importsCheck = [ "util.otel" ];
     propagatedBuildInputs = with python314Packages; [
       opentelemetry-api
       opentelemetry-sdk
@@ -608,12 +608,9 @@ rec {
     mainProgram = "gmail-archiver";
     importsCheck = [ "gmail_archiver.main" ];
     entrypointChecks = [ "gmail-archiver" ];
-    # SYNC: requires in //gmail_archiver:gmail_archiver_wheel.
-    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
-    # requirements once the pinned Gmail wheel no longer imports util.fmt.
+    # SYNC: Requires-Dist in the currently pinned Gmail wheel.
     propagatedBuildInputs = with python314Packages; [
       beautifulsoup4
-      ducktape-util
       google-api-python-client
       google-auth
       openai
@@ -660,10 +657,8 @@ rec {
       mainProgram = "ws";
       importsCheck = [ "devinfra.ws.cli" ];
       entrypointChecks = [ "ws" ];
-      # SYNC: requires in //devinfra/ws:ws_wheel.
-      # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
-      # requirements once the pinned ws wheel no longer imports util.agent_sandbox.
-      propagatedBuildInputs = [ ducktape-util ] ++ (with python314Packages; [ typer ]);
+      # SYNC: Requires-Dist in the currently pinned ws wheel.
+      propagatedBuildInputs = with python314Packages; [ typer ];
     }).overrideAttrs
       (old: {
         makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [

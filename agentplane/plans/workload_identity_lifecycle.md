@@ -1,41 +1,51 @@
 # Workload identity lifecycle
 
-Status: **steps 1 and 2 landed; steps 3 and 4 in flight, 2026-11-09; step 5 follows.** DAG node
-[`WORKLOAD_AUTH_CUTOVER`](task_dag.md#workload_auth_cutover--migrate-workload-callers-and-remove-the-proxy-bearer-hop).
-One issuer for owners' requests, hosted in the Policy
-Controller, is implemented for Sandboxes: the workload CA (#15104, #15113, #15129, #15131), the
-`WorkloadCredential` kind, requester and resolver (#15119), the issuer (#15127) and the Sandbox
-Controller as the first requester (c3771844). The contract, and the constraints that rejected the
-alternatives, are in [workload authentication](../docs/workload_authentication.md#workloadcredentials).
-Firecracker's control listener still trusts the cluster root (`WORKLOAD_CA_CLIENT_TRUST`). This plan covers moving the remaining callers onto it, so the proxy's `kubernetes_bearer` hop and
-the workload bearer projections can be removed.
+Status: **inventory open; the Sandbox Identity rollout is accepted.** This is a 2026-11-10
+inventory with the Sandbox rows updated for #15742 and #15744; revalidate the other rows before
+dispatch. Sandbox live acceptance and owned cleanup passed on 2026-11-12; see the
+[rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md). Decision node
+[`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target).
+The issuer, the `WorkloadCredential` kind, the resolver and every workload requester have landed:
+Sandboxes, Action command/build boxes, and the standing records for Haku (`haku-ui`, `haku-anki`,
+`haku-jupyter`) and the `haku-ci` relay. Their contract is in
+[workload authentication](../docs/workload_authentication.md#workloadcredentials). This plan
+inventories the paths that do not yet resolve to an `Identity` through one of the
+[three credential forms](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms).
 
-## Remaining callers
+## Remaining paths
 
-| Caller                     | Created by                                                                | Proves its incarnation today                                                | Policy subject today          | Its request                                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Action command/build box   | Action Service: a bare Pod from a `PodTemplate`, owned by the caller's SA | Pod-bound `agentplane-egress` bearer, TokenReview                           | the calling Sandbox's own SA  | a `WorkloadCredential` from the Action Service, named after and owned by the box Pod, subject the caller             |
-| Haku UI                    | Haku: a StatefulSet in `haku-state`, applied to `haku-sandbox` by Flux    | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | a `WorkloadCredential` rendered by cdk8s, named after the StatefulSet, with no owner and no binding                  |
-| Anki                       | as Haku UI, a Deployment `haku-anki`                                      | Pod-bound bearer of SA `haku-ui`                                            | `haku-sandbox/haku-ui`        | its own record `haku-anki`, same subject ([below](#standing-workloads))                                              |
-| Central sampler            | Flux Deployment                                                           | Its own bearer; holds no SVID                                               | its own account               | out of scope; nothing acts as a central Session's identity yet (`CENTRAL_SESSION_ACTING_DESIGN` in the task freezer) |
-| OpenClaw, external callers | `public_coder` cdk8s; none yet                                            | None: its Deployment is at 0/0, and its dead relay config selects plaintext | `public-coder-agent/openclaw` | a standing workload once an instance exists; nothing before that                                                     |
+Audited against the code on 2026-11-10. Buckets: **(a)** Kubernetes-API use, kept; **(b)** an
+Agentplane API that moves to SVID mTLS; **(c)** a caller that may need a non-SVID form; **(d)** dead;
+**(o)** MCP edge OAuth, a target form whose binding still ends at a ServiceAccount. **(s)** Agentplane
+services calling each other as themselves, kept on TokenReview (operator, 2026-11-10). Ordered by what
+to do first.
 
-## The remaining records
+| #   | Path                                            | Evidence                                                                                                                                          | Accepts today                                                                                                                     | Callers on the token path                                                                                                 | Bucket  | Next step / blocker                                                                                                                             |
+| --- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | MCP edge to the Action Service                  | `mcp_edge/core_client.go:96`, `mcp_edge/core_client.go:138`, `action_service/api/gate.go:153`                                                     | The edge mints a TokenRequest for the Connection's ServiceAccount and forwards it as `Bearer`; the Action Service TokenReviews it | Every claude.ai Connection, acting as `claude-ai`                                                                         | (o)     | The edge authenticates with its own SVID and delegates the Identity (identity plan § MCP edge), at `IDENTITY_CUTOVER`                           |
+| 2   | MCP edge Connection binding                     | `mcp_edge/authserver/tokens.go:296`, `mcp_edge/connections/service.go:100`, `mcp_edge/connections/authorizations.go:133`, `mcp_edge/config.go:40` | An access token resolves to its Connection's `bound_caller`, a ServiceAccount; `connection_identities` is parsed but not rendered | The same Connections                                                                                                      | (o)     | `bound_caller` and `original_caller` become Identities; `connection_identities` set, at `IDENTITY_CUTOVER`                                      |
+| 3   | Projected Kubernetes token beside the SVID      | Sandbox templates and VM launcher source changed in #15258 and #15742.                                                                            | Sandbox source uses Identity credentials and Kubernetes impersonation; command/build boxes retain separate paths.                 | Command/build boxes; verify the live Sandbox path during acceptance.                                                      | (b)→(a) | Complete Sandbox rollout acceptance at `SANDBOX_IDENTITY_SPEC`; boxes remain at `IDENTITY_CUTOVER`.                                             |
+| 4   | SVIDs and binding subjects                      | `sandbox_controller/identity.go`, `cluster/cdk8s/agentplane/standing_caller.py`, `action_service/api/policy.go`                                   | The merged Sandbox controller issues Identity-subject credentials; other workload paths retain their own migration steps.         | Sandboxes, standing workloads and boxes.                                                                                  | (b)     | Sandbox rollout at `SANDBOX_IDENTITY_SPEC`; standing records at `STANDING_WORKLOAD_IDENTITY`; boxes and catalog bindings at `IDENTITY_CUTOVER`. |
+| 5   | App bearer for `agentplane-agent`               | `app/go/auth/auth.go`, `cluster/cdk8s/agentplane/app_settings.py:212`                                                                             | Operator OIDC session or ID token; a TokenReview bearer naming `agentplane-agent` remains                                         | Staging live suites, shared-cluster allocation, and hand-run scripts                                                      | (c)     | Decide whether remaining callers can use real-issuer ID tokens; test fixtures switched in #15448, but do not remove TokenReview yet             |
+| 6   | Backend callers of the shared service listeners | `history_service.py:194`, `notifications.py:202`, `runner_gateway_workload.py:266`, `llm_ingress.py:212`, `actions.py:382`                        | SVID, or each service's audience by TokenReview                                                                                   | The app, Notification, Action Service, Sandbox Controller, Runner Gateway and central sampler, each as itself             | (s)     | Kept: service-to-service TokenReview (operator, 2026-11-10)                                                                                     |
+| 7   | Bearer-only service listeners                   | `egress/cmd/admin_grpc.go:103`, `policy_controller/cmd/main.go:146`, `central_sampler/cmd/main.go:69`, `runner_gateway/main.go:267`               | TokenReview alone; the Policy Service listens without TLS                                                                         | The app (egress admin, Policy Service, Gateway), Notification and the Sandbox Controller (Gateway), the Gateway (sampler) | (s)     | Kept: service-to-service TokenReview (operator, 2026-11-10)                                                                                     |
+| 8   | Delegated calls                                 | `identity/auth/auth/delegation.go:57`, `runner_gateway/main.go:347`                                                                               | A Pod-bound TokenReview proves the actor; the envelope names a ServiceAccount effective caller                                    | The Action Service toward Dispatcher and History                                                                          | (s)     | Actor stays TokenReview; the envelope gains an Identity effective caller in #15389, and loses the ServiceAccount one at `IDENTITY_CUTOVER`      |
 
-```yaml
-metadata:
-  name: sandbox-agent-123-scratch # the box Pod's name
-  namespace: agentplane-staging
-  ownerReferences: [{ kind: Pod, name: sandbox-agent-123-scratch, uid: <pod-uid>, controller: true }]
-spec: # the caller
-  subject: { serviceAccount: agent-123 }
-  binding: { podUID: <pod-uid> }
-  pod: { name: sandbox-agent-123-scratch, uid: <pod-uid> }
----
-metadata: { name: haku-ui, namespace: haku-sandbox } # rendered by cdk8s; no owner
-spec: { subject: { serviceAccount: haku-ui } } # no binding
-status: { secretName: svid-haku-ui } # stable: a Flux-applied Deployment must name it
-```
+The claude.ai policy view's `subject: {namespace: agentplane-staging, name: claude-ai}` is not a
+rendering artifact: staging's `claude-ai` `PolicyBinding` names the ServiceAccount, since
+`StandingCaller.subject` renders an Identity only with `identity_catalog`, and `GetActionPolicy`
+resolves bindings by `ServiceAccountRef`. The OAuth credential itself (edge-issued access tokens for
+dynamically registered clients) is one of the target forms; rows 1 and 2 are what still ties it to
+an account.
+
+Kept, bucket (a): every controller and service reaching the Kubernetes API as its own account, the
+egress proxy's own token for impersonation (`local_api_server`), Flux and its impersonated appliers.
+The edge's TokenRequest right on `claude-ai` is Kubernetes-API use too, but exists only for row 1
+and goes with it.
+
+The central sampler holds no SVID, so rows 6 to 8 include it. Nothing acts as a central Session's
+identity yet (`CENTRAL_SESSION_ACTING_DESIGN`); its own calls are a backend
+service's.
 
 **Per-incarnation credential IDs: revisit after the plan lands (operator, 2026-11-09).** The
 cluster has no CRL or OCSP, so a fresh ID per accepted binding is what makes replacing an
@@ -47,10 +57,10 @@ on every route, or if reissue latency hurts startup. Nothing in the migration wa
 ## Authorization
 
 **Coarse (operator, 2026-11-09).** RBAC grants `create`, `update` and `delete` on
-`workloadcredentials` to exactly three accounts: the Sandbox Controller (landed), the Action
-Service and Flux's applier. Each may name any subject: a ServiceAccount in the record's namespace
-until the cutover, and after it any `Identity` in the policy namespace. So each of those accounts
-can make a workload act as any identity in its namespace. The real gates stay upstream:
+`workloadcredentials` to exactly three accounts: the Sandbox Controller, the Action Service and
+Flux's applier. Each may name any subject: a ServiceAccount in the record's namespace until the
+cutover, and after it any `Identity` in the policy namespace. So each of those accounts can make a
+workload act as any identity in its namespace. The real gates stay upstream:
 
 - for a Sandbox, who may set `Sandbox.spec.identity`;
 - for a box, the caller the Action Service authenticated;
@@ -62,89 +72,45 @@ not enforce it. Haku cannot author a record, because the `haku-state` Kustomizat
 added later without changing anything here: a `ValidatingAdmissionPolicy` calling the CEL
 `authorizer` for a custom `use` verb on the named identity.
 
-The requesters' grant that remains:
+## After the bearer hop
 
-```yaml
-kind: Role # agentplane-staging; Flux's applier gets the same in haku-sandbox
-rules:
-  - {
-      apiGroups: [agentplane.allegedly.works],
-      resources: [workloadcredentials],
-      verbs: [get, list, watch, create, update, delete],
-    }
-# bound to the Action Service
-```
+The proxy's `forward` listener authenticates SVIDs alone. Its `allowed_service_account_namespaces`
+now serves only projected-token reviews (row 3), which `public-coder-agent` and the standing
+namespaces never send, and the Action Service's `caller_service_account_namespaces` keeps
+`public-coder-agent` for no caller. `kubernetes_bearer` stays on service listeners for rows 1, 6
+and 7 until they move.
 
-## Standing workloads
+## With `IDENTITY_CUTOVER`
 
-Haku UI (a StatefulSet) and Anki (a Deployment) are Haku-authored workloads with replicas, not
-controller-owned incarnations. cdk8s renders one record per workload into `haku-sandbox`
-(`cluster/cdk8s/haku/ui_egress.py`), with no owner and no binding. Haku's deployer Role cannot write
-it. The issuer gives it a stable Secret name, `svid-<name>`, and Haku's manifest mounts that Secret
-into its egress sidecar alone, in place of the token projection. Any Pod Haku creates there could
-mount it, which is the reach the `haku-ui` ServiceAccount already gives. The incarnation is the
-record itself. Every replica presents the same SVID, and no Pod is proven, so the proxy drops any
-Pod token such a caller forwards ([egress SPEC](../egress/SPEC.md)). Neither sidecar forwards one:
-the hop projection is their only token. Revocation is deleting the record, which Flux recreates with
-a fresh ID, or a Flux prune. A running sidecar refuses a reloaded SVID with a different URI
-(`environment_runtime_transport` pins the first), so after a recreate the workload regains egress
-only on a rollout restart.
+The ordering edge and the owner switch were decided by the operator on 2026-11-09. Box creation
+needs the caller's own ServiceAccount: `stamp` in `action_service/sandbox/inventory.go` reads it, runs
+the box as it, names it as the record's subject, and makes its controller, the calling Sandbox, the
+record's owner, which owns the box. The merged `SANDBOX_IDENTITY_SPEC` source stops creating that
+account for Sandboxes; the box migration is still open. A Sandbox
+caller's boxes already hang off the Sandbox, not the account; with `SERVICES_IDENTITY_PRINCIPAL`,
+which gives the Action Service its caller as an Identity, a box names that Identity as its subject
+and runs on the default ServiceAccount; its record has no owner (operator, 2026-11-10: acting as an
+Identity confers no authority over a box), so deleting the Identity revokes the box's credential and
+deletes nothing. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the cutover,
+requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches every
+requester's `subject` to an identity. The standing records moved first
+(`STANDING_WORKLOAD_IDENTITY`): cdk8s renders the `haku-ui` and `haku-ci-egress` `Identity`s and
+the records name them by name alone, since git cannot know a UID; the resolver reads
+`spec.subject.identity` live in the policy namespace rather than the record's own.
 
-Neither workload may lose egress, so step 4 lands in this order:
+## Open questions
 
-1. The proxy accepts standing SVIDs (#15201).
-2. cdk8s renders the records and adds `haku-sandbox` to the issuer's namespaces and the proxy's
-   record grant; it may land in parallel with 1, since the sidecars still use the bearer.
-3. Once both have rolled out and both records are `Ready`, a `haku-state` commit switches each
-   sidecar to `auth.mode: spiffe` with `svid-<name>` mounted, and drops the hop projection.
+1. **The app's `agentplane-agent` bearer (row 5).** Staging live suites, the shared-cluster
+   allocation probe and hand-run scripts still use this TokenReview path through the public route,
+   where TLS ends at the Gateway, so a client certificate cannot reach the app as mTLS. PR #15448
+   moved k3s fixtures to short-lived test-minted OIDC ID tokens and added operator ID-token bearer
+   support to the app; it did not move these staging callers. Decide whether they can obtain ID
+   tokens from the real issuer or should retain the narrow TokenReview exception. Keep the
+   TokenReview configuration until every remaining caller has moved or the exception is accepted.
+2. **Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Recommendation:
+   design delivery when one exists. The record and the resolver stay as they are. External MCP
+   clients use the edge's OAuth form instead.
 
-Decided for now (2026-11-09): no Pod provenance for standing replicas, since decision history and
-LLM ingress metadata name the record and its credential ID; and Anki has its own record with subject
-`haku-ui`, to be split into its own identity when its grants diverge. One shared non-rotating
-credential with no Pod provenance is weaker than the per-incarnation credentials of Sandboxes and
-boxes. To revisit: bring standing workloads up to per-incarnation credentials, or accept the weaker
-guarantee everywhere.
-
-## Migration and rollback
-
-| Step                                                            | Mixed mode                | Proven in k3s before staging                                                                            | Rollback                                             |
-| --------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 3. Action boxes request records; the box sidecar selects SPIFFE | Proxy still allows bearer | Box egress and rules route by SVID; dispose revokes on the next request; caller A's box cannot act as B | Revert the Action Service image and templates        |
-| 4. Standing records; `haku-state` switches its sidecars         | as above                  | A generic standing Deployment with two replicas authenticates, and its prune revokes                    | Revert the `haku-state` commit; the request is inert |
-| 5. Remove the bearer hop                                        | none                      | Nothing projects the `agentplane-egress` hop audience                                                   | Revert; no caller depends on it                      |
-
-Step 5 removes the `CLEANUP(added 2026-11-09)` set from #15065:
-
-- the proxy's `forward.auth` bearer entry (`cluster/cdk8s/agentplane/egress.py`);
-- the command-box hop projection (`command_sandbox.py`);
-- the sidecar's `KubernetesBearerProxyAuth` and plaintext transport (`egress/sidecar_config.py`,
-  `egress/sidecar/config.go`);
-- the forward listener's bearer mode and hop verifier (`egress/identity/authentication.go`).
-
-It also deletes or converts `add_relay_settings` in `cluster/cdk8s/public_coder/egress.py`, which renders both removed
-models. That config is dead: the `public-coder-agent` Deployment is scaled to 0/0, and #15089
-tombstones it. `kubernetes_bearer` stays on service listeners for backend callers.
-
-**With `IDENTITY_CUTOVER`; the ordering edge and the owner switch were decided by the operator on
-2026-11-09.** Box creation needs the caller's own ServiceAccount. `stamp` in
-`action_service/sandbox/inventory.go` reads it, runs the box as it, and sets the box's owner
-reference to it. `SANDBOX_IDENTITY_SPEC` stops creating that account, so step 3 is a technical
-prerequisite of that node, recorded in the DAG. In the same change, the box's owner becomes the
-caller's `Identity`. Its `kubectl` moves to impersonation with `EGRESS_IDENTITY_RULES`. Until the
-cutover, requests name ServiceAccounts and services see unchanged subjects. The cutover PR switches
-every requester's `subject` to an identity, and cdk8s renders `haku-ui` as an `Identity`. The
-resolver then reads `spec.subject.identity` through the shared policy reader, live with its UID, in
-the policy namespace rather than the record's own, which matters for `haku-sandbox` records. Steps 4
-and 5 may land on either side.
-
-## Open question
-
-**Off-cluster workloads presenting SVIDs.** A Secret mount does not reach them. Recommendation:
-design delivery when one exists. The record and the resolver stay as they are. The MCP edge path
-for off-cluster agents is out of this design's scope: an OAuth Connection, forwarded to the Action
-Service with the edge's backend credential. What changes at `IDENTITY_CUTOVER` is how the edge
-binds a Connection to an Identity and proves it (the identity plan's MCP edge section).
-
-When `WORKLOAD_AUTH_CUTOVER` lands, the rest of this content moves into
+When rows 1 to 4 are gone and the open questions are settled, the rest of this content moves into
 `docs/workload_authentication.md` and the SPECs of the Policy Controller, Sandbox Controller, egress
-proxy and Action Service, and this file is deleted.
+proxy, Action Service and MCP edge, and this file is deleted.

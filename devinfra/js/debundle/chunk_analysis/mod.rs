@@ -21,7 +21,7 @@
 mod chunk_admission;
 
 pub use chunk_admission::DynamicImportTarget;
-use chunk_admission::enforce_chunk_admission;
+use chunk_admission::{enforce_chunk_admission, enforce_split_admission};
 
 use anyhow::{Context, Result, bail};
 use swc_ecma_ast::Module;
@@ -39,7 +39,7 @@ use analysis::graph::GraphOptions;
 use analysis::purity::{
     RedundantPureMemberReason, RedundantPurityProofBasis, RedundantPurityReason,
 };
-use spec::AdmissionOverrides;
+use spec::{AdmissionCheck, AdmissionOverrides};
 
 /// Analyze a chunk from its precomputed structural layer: compute its facts,
 /// emit any redundant-purity-hint diagnostics, and fail if the chunk has
@@ -61,30 +61,31 @@ pub fn compute_chunk_facts(
     admission_overrides: AdmissionOverrides,
     export_reentry_policy: &ExportReentryPolicy,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<ChunkFactAnalysis> {
+) -> Result<(ChunkFactAnalysis, Vec<AdmissionCheck>)> {
     let fact_analysis =
         analyze_chunk_with_policy(structural, hints, export_reentry_policy, locator);
-    check_chunk_facts(
+    let redundant_admission_overrides = check_chunk_facts(
         chunk_id,
         module,
         &fact_analysis,
         admission_overrides,
         resolve_dynamic_import,
     )?;
-    Ok(fact_analysis)
+    Ok((fact_analysis, redundant_admission_overrides))
 }
 
 /// What [`compute_chunk_facts`] does once the facts exist: the redundant-hint
 /// warnings, the top-level `await` bail and the admission scan. A run that
 /// takes its facts from an analysis artifact calls it directly, so its
-/// diagnostics and verdict match a run that computes them.
+/// diagnostics and verdict match a run that computes them. Returns the
+/// configured admission overrides that suppressed no violation.
 pub fn check_chunk_facts(
     chunk_id: &str,
     module: &Module,
     fact_analysis: &ChunkFactAnalysis,
     admission_overrides: AdmissionOverrides,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<()> {
+) -> Result<Vec<AdmissionCheck>> {
     report_redundant_hints_to_stderr(chunk_id, fact_analysis);
     if let Some(ord) = fact_analysis.top_level_await {
         bail!(
@@ -101,6 +102,19 @@ pub fn check_chunk_facts(
         admission_overrides,
         resolve_dynamic_import,
     )
+}
+
+/// The admission checks that hold only for a transformed chunk (split across
+/// modules, reordered or renamed): a lazy direct `eval` names bindings at
+/// run time. Run once the chunk's assignment is known; `transformed` says
+/// whether the emitted tree differs from the source.
+pub fn check_transformed_chunk_admission(
+    chunk_id: &str,
+    module: &Module,
+    admission_overrides: AdmissionOverrides,
+    transformed: bool,
+) -> Result<()> {
+    enforce_split_admission(chunk_id, module, admission_overrides, transformed)
 }
 
 /// Build the chunk's dependency graph and structural atomic groups from its

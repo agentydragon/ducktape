@@ -18,6 +18,7 @@ from python.runfiles import Runfiles
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
@@ -28,7 +29,6 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.vm import infrastructure as vm_infrastructure, sandboxes as vm_sandboxes
 from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     central_sampler,
     environment_firecracker,
@@ -71,6 +71,7 @@ def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
         ),
         LocalModel(url="http://scripted-model.k3s-fixture.invalid:4000"),
         _MCP,
+        None,
     )
 
 
@@ -346,12 +347,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['upstream']}"
     assert sidecar_env.get("OTEL_SDK_DISABLED") != "true"
     assert telemetry_route["upstream"] == "alloy.monitoring.svc.cluster.local:4317"
-    runner_pod_spec = template["spec"]["pod"]["spec"]
-    runner_egress_volume = next(v for v in runner_pod_spec["volumes"] if v["name"] == "egress-token")
-    runner_token_sources = runner_egress_volume["projected"]["sources"]
-    assert not any(
-        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress" for source in runner_token_sources
-    )
     rules_route = routes["egress-rules"]
     assert rules_route["transport"] == {"mode": "tls_connect", "server_uri": "spiffe://agentplane/egress-proxy"}
     assert rules_route["upstream"] in egress_config["tls_passthrough_targets"]
@@ -367,16 +362,28 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         workload = command_pod["containers"][0]
         sidecar = one(c for c in command_pod["containers"] if c["name"] == "egress-sidecar")
         projected_volumes = {v["name"] for v in command_pod["volumes"] if "projected" in v}
-        assert projected_volumes
-        assert not projected_volumes.intersection(mount["name"] for mount in workload["volumeMounts"])
-        assert projected_volumes <= {mount["name"] for mount in sidecar["volumeMounts"]}
+        assert not projected_volumes
         settings_volume = one(v for v in command_pod["volumes"] if v["name"] == "egress-sidecar-settings")
+        assert settings_volume["name"] in {mount["name"] for mount in sidecar["volumeMounts"]}
         settings = yaml.safe_load(
             _resource(docs, "ConfigMap", settings_volume["configMap"]["name"])["data"]["settings.yaml"]
         )
         transport = settings["proxy"]["transport"]
+        assert "audience_token_files" not in settings
         assert transport["mode"] == "tls"
-        assert transport["auth"]["mode"] == "kubernetes_bearer"
+        # The Action Service mounts the box's SVID there (agentplane/action_service/sandbox/inventory.go).
+        assert transport["auth"] == {
+            "mode": "spiffe",
+            "cert_file": "/run/agentplane/workload-svid/tls.crt",
+            "key_file": "/run/agentplane/workload-svid/tls.key",
+        }
+        assert settings["platform_routes"]["routes"]["egress-rules"]["transport"]["mode"] == "tls_connect"
+        assert not any(
+            source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress"
+            for volume in command_pod["volumes"]
+            if "projected" in volume
+            for source in volume["projected"]["sources"]
+        )
         assert {"http_proxy", "https_proxy"} <= {entry["name"].lower() for entry in workload["env"]}
         assert all("secret" not in v for v in command_pod["volumes"])
     # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
@@ -431,13 +438,24 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         if doc["kind"] == "ServiceAccount"
     }
     static_account = f"{fixture.namespace}/mcp-edge-test-caller"
-    sandbox_account = f"{fixture.namespace}/systest-delegation-caller"
-    assert set(mintable_accounts) == {static_account, sandbox_account}
-    # The static OAuth fixture caller is chart-owned and must remain labeled for Actions.
-    assert set(mintable_accounts) & chart_service_accounts.keys() == {static_account}
+    assert set(mintable_accounts) == {static_account}
+    # The standing OAuth fixture caller is chart-owned and remains labeled for Actions.
     caller = chart_service_accounts[static_account]
     assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
-    # The Sandbox controller creates and labels this account after chart rendering.
+
+    binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
+    assert binding["spec"] == {
+        "subject": {"namespace": fixture.namespace, "name": "mcp-edge-test-caller"},
+        "policySets": ["mcp-edge-test-caller-session-delegation"],
+    }
+    policy = _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")
+    assert policy["spec"]["rules"] == [
+        {
+            "type": "action_auto_approve",
+            "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
+        }
+    ]
+
     token_rules = [
         rule for rule in _resource(docs, "Role", "mcp-edge")["rules"] if "serviceaccounts/token" in rule["resources"]
     ]
@@ -580,13 +598,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]
     ordinary_resources = config["environment"]["resources"]
-    oom_executor = oom_resources["executor"]
-    ordinary_executor = ordinary_resources["executor"]
-    assert oom_executor["memory_max_bytes"] < ordinary_executor["memory_max_bytes"]
-    assert {
-        **oom_resources,
-        "executor": {**oom_executor, "memory_max_bytes": ordinary_executor["memory_max_bytes"]},
-    } == ordinary_resources
+    assert oom_resources == ordinary_resources
     control = config["control"]
     assert {"port": int(control["listen_address"].rsplit(":", 1)[1])} in interface["ports"]
     assert control["security"] == {

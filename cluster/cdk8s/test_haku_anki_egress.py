@@ -1,4 +1,4 @@
-"""haku-anki's AnkiWeb egress: one PolicySet, carried by the shared haku-ui account."""
+"""haku-anki's AnkiWeb egress: one PolicySet, carried by the shared haku-ui Identity."""
 
 from __future__ import annotations
 
@@ -35,18 +35,23 @@ def test_policy_reaches_ankiweb_only_and_presents_no_credential(resources: list[
         assert absent not in rule, absent
 
 
-def test_the_shared_haku_ui_account_carries_it(resources: list[dict[str, Any]]) -> None:
-    binding = _named(resources, "PolicyBinding", ui_egress.SERVICE_ACCOUNT)
+def test_the_shared_haku_ui_identity_carries_it(resources: list[dict[str, Any]]) -> None:
+    binding = _named(resources, "PolicyBinding", ui_egress.IDENTITY)
 
     assert ANKIWEB_SYNC_POLICY in binding["spec"]["policySets"]
-    assert binding["spec"]["subject"] == {"namespace": ui_egress.NAMESPACE, "name": ui_egress.SERVICE_ACCOUNT}
+    assert binding["spec"]["subject"] == {"identity": {"name": ui_egress.IDENTITY}}
 
 
-def test_haku_anki_has_no_account_or_binding_of_its_own(resources: list[dict[str, Any]]) -> None:
-    """It runs as haku-ui on purpose (actions_staging_policies.py); a separate identity would be a design change."""
-    bound_subjects = {d["spec"]["subject"]["name"] for d in resources if d["kind"] == "PolicyBinding"}
+def test_haku_anki_has_no_identity_or_binding_of_its_own(resources: list[dict[str, Any]]) -> None:
+    """It acts as haku-ui on purpose (actions_staging_policies.py); a separate identity would be a design change."""
+    bound_subjects = {
+        d["spec"]["subject"].get("identity", d["spec"]["subject"])["name"]
+        for d in resources
+        if d["kind"] == "PolicyBinding"
+    }
 
     assert "haku-anki" not in bound_subjects
+    assert "haku-anki" not in {d["metadata"]["name"] for d in resources if d["kind"] == "Identity"}
 
 
 if __name__ == "__main__":

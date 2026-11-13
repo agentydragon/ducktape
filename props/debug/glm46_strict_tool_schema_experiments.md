@@ -113,7 +113,7 @@ for both combinators, measured 2026-06-07) — because the Anthropic wire format
 `tool_use.input` to be a JSON object, so z.ai's Anthropic adapter parses GLM's XML tool call back into
 a structured object instead of leaving the raw string. So routing glm-4.6 through the Anthropic shape
 avoids the bug entirely, without flattening any schema. Canaried live in
-`agent_core/test_zai_chat_adapter_live.py`
+`agent_core/test_zai_provider_live.py`
 (`test_zai_anthropic_shape_union_tool_param_returned_as_object_live` passes).
 
 ### Decision
@@ -128,7 +128,7 @@ Two options for unblocking glm-4.6 tool inputs:
    per-`kind` required fields server-side after validation) — or as flat top-level params. Never
    `anyOf`/`oneOf`.
 
-All shapes above are canaried live in `agent_core/test_zai_chat_adapter_live.py`
+All shapes above are canaried live in `agent_core/test_zai_provider_live.py`
 (`test_zai_object_tool_param_returned_as_object_live` passes; the chat-completions `anyOf`/`oneOf`
 variant is `xfail`; the Anthropic-shape union variant passes). See also
 <../../docs/zai_api.md> "Tool Use / Function Calling".

@@ -8,10 +8,34 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
+# The experimental KVM variant under x/vm_kvm runs this file.
+exports_files(["test_vm.py"])
+
 # Bazel-built Debian guest and production launcher on the dedicated KVM worker.
 k3s_suite(
     name = "test_firecracker",
     srcs = ["test_firecracker.py"],
+    # Sized by measurement on one passing, uncached run, commit 0b00b93f0bc0a8043fb2afee0b59d653f35812b8, BuildBuddy
+    # invocation f6ad2fda-409c-446f-8ade-8ac18f5da377 (2026-11-10):
+    # - Memory: the K3s node working set peaked at 2,942 MiB and resident memory at 1,699 MiB in
+    #   `test.outputs/memory/working-sets.jsonl` (`bbapi artifact cat <invocation> working-sets.jsonl`). The same
+    #   samples' usage including page cache reached 7,861 MiB, which is not need. Guest memory in use, MemTotal less
+    #   MemAvailable, peaked at 2.8 GiB on both workers; that was sampled over the VM console and not retained.
+    #   6GB (BuildBuddy reads it as 6 GiB) is about twice the peak working set.
+    # - CPU: four matches the worker's four vCPUs. Eight were no faster (warm means 251.064 s at four, 268.020 s at
+    #   eight): https://github.com/agentydragon/ducktape/blob/791540fbaa160bde261e469adfdd2fcc84f378ec/devinfra/buildbuddy/debug/2026_11_09_hil_kvm_worker_canary.md
+    # - Disk: the whole work disk held 15 of 79 GB shortly after the run, including the executor's file cache and
+    #   image store, read with `df -B1G /var/lib/k3s-env` in a kvm-vm action; not retained.
+    # Verified at invocation ff1d84df-d048-4872-aa6b-0886c2363230 (2026-11-10): the executor assigned 6.44 GB and 4000
+    # milli-CPU, as `buildbuddy_remote_execution_assigned_ram_bytes` and `..._assigned_milli_cpu` show in Mimir. The
+    # execution platform's default of three compute units still rides along; the explicit values win. Do not clear it
+    # with an empty value: invocation 90e96273-cba5-4176-825b-8af7119ddb5d did, and the executor then assigned only
+    # 1.03 GB and 1000 milli-CPU.
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+    },
     require_kvm = True,
     stack = "firecracker",
     deps = [
@@ -23,6 +47,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:firecracker",
+        "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -71,39 +96,7 @@ k3s_suite(
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
-    boot_evidence = True,
     stack = "vm",
-    deps = [
-        "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:offered_models",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scenario",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
-        "//agentplane/system_tests/vm:configuration",
-        "//agentplane/system_tests/vm:trace_contract",
-        "//devinfra/testing:undeclared_outputs",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# The manual hardware-accelerated lane runs the same scenarios on a KVM-capable worker.
-k3s_suite(
-    name = "test_vm_kvm",
-    srcs = ["test_vm.py"],
-    boot_evidence = True,
-    main = "test_vm.py",
-    require_kvm = True,
-    stack = "vm",
-    tags = ["manual"],
     deps = [
         "//:conftest",
         "//agentplane/app/testing:client",
@@ -174,11 +167,36 @@ k3s_suite(
     ],
 )
 
-# Manual profile variant imports one perf-capable root; only the OOM guest records.
+# Codex exec-server and commands share a memory cgroup, so tool OOM can also kill the
+# server. Revisit this probe if a replacement executor guarantees command isolation.
+k3s_suite(
+    name = "test_vm_oom",
+    srcs = ["test_vm_oom.py"],
+    boot_evidence = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Manual profile variant imports a perf-capable root for the OOM guest.
 k3s_suite(
     name = "test_vm_profile",
-    srcs = ["test_vm.py"],
-    main = "test_vm.py",
+    srcs = ["test_vm_oom.py"],
+    main = "test_vm_oom.py",
     profile_guest = True,
     stack = "vm",
     tags = ["manual"],
@@ -186,17 +204,14 @@ k3s_suite(
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:offered_models",
-        "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:vm_sandbox",
-        "//agentplane/system_tests/vm:configuration",
-        "//agentplane/system_tests/vm:trace_contract",
-        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -242,6 +257,7 @@ py_library(
         "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",
+        "//agentplane/system_tests/scenarios:mcp",
         "//agentplane/system_tests/scenarios:runner_credentials",
         "//agentplane/system_tests/scenarios:session_instructions",
         "//agentplane/system_tests/scenarios:storage",

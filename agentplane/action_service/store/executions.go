@@ -101,16 +101,11 @@ func (s *Store) ClaimExecution(ctx context.Context, id uuid.UUID, executorID str
 			return nil
 		}
 		at := now()
-		started := &ExecutionClaim{
-			RequestID: id,
-			Lease:     Lease{ExecutorID: executorID, Token: uuid.New()},
-			ExpiresAt: at.Add(leaseDuration).Truncate(time.Microsecond),
-		}
+		started := &ExecutionClaim{RequestID: id, Lease: Lease{ExecutorID: executorID, Token: uuid.New()}}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE action_execution
-			SET state = $2, executor_id = $3, lease_token = $4, lease_expires_at = $5, heartbeat_at = $6
+			UPDATE action_execution SET state = $2, executor_id = $3, lease_token = $4, lease_expires_at = $5
 			WHERE request_id = $1`,
-			id, ExecutionDispatching, executorID, started.Token, started.ExpiresAt, at); err != nil {
+			id, ExecutionDispatching, executorID, started.Token, at.Add(leaseDuration).Truncate(time.Microsecond)); err != nil {
 			return err
 		}
 		if err := advance(ctx, tx, &row, action_servicepb.ActionState_ACTION_STATE_DISPATCHING, at, nil); err != nil {
@@ -137,10 +132,8 @@ func (s *Store) HeartbeatExecution(ctx context.Context, id uuid.UUID, lease Leas
 		if !execution.ownedBy(lease) || execution.State != ExecutionDispatching && execution.State != ExecutionRunning {
 			return nil
 		}
-		at := now()
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE action_execution SET lease_expires_at = $2, heartbeat_at = $3 WHERE request_id = $1`,
-			id, at.Add(leaseDuration).Truncate(time.Microsecond), at); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE action_execution SET lease_expires_at = $2 WHERE request_id = $1`,
+			id, now().Add(leaseDuration).Truncate(time.Microsecond)); err != nil {
 			return err
 		}
 		renewed = true
@@ -179,7 +172,7 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 		}
 		payload = ExecutionRequest{
 			RequestID: row.ID, ExecutionID: execution.ID, Action: row.Action, Arguments: row.Arguments,
-			Caller: row.Caller, CallerUID: row.CallerUID,
+			Caller: row.Caller,
 		}
 		return nil
 	})
@@ -193,6 +186,10 @@ func (s *Store) MarkRunning(ctx context.Context, id uuid.UUID) (ExecutionRequest
 // one attempt made.
 func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, outcome ExecutionOutcome) error {
 	if err := outcome.Validate(); err != nil {
+		return err
+	}
+	failure, err := encodeExecutionError(outcome.Error)
+	if err != nil {
 		return err
 	}
 	return s.transaction(ctx, func(tx *sql.Tx) error {
@@ -225,7 +222,7 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 			SET state = $2, result = $3::jsonb, error = $4::jsonb, completed_at = COALESCE($5, completed_at),
 				reconciled_at = COALESCE($6, reconciled_at)
 			WHERE request_id = $1`,
-			id, outcome.State, jsonParam(jsonValue(outcome.Result)), jsonParam(jsonValue(outcome.Error)), completedAt,
+			id, outcome.State, jsonParam(jsonValue(outcome.Result)), jsonParam(failure), completedAt,
 			reconciledAt); err != nil {
 			return err
 		}
@@ -236,8 +233,8 @@ func (s *Store) FinishExecution(ctx context.Context, id uuid.UUID, lease Lease, 
 // ExpireStaleLeases ends the Executions in flight whose lease lapsed as unknown, and returns their requests in ID
 // order. It never replays them: the effect may have happened.
 //
-// The recorded reason tells an operator whether the executor is gone (UnknownExecutorLost: its own health heartbeat
-// is also older than executorHealthTimeout) or only this attempt stopped renewing (UnknownLeaseExpired). Both are
+// The recorded reason tells an operator whether the executor is gone (EXECUTOR_LOST: its own health heartbeat
+// is also older than executorHealthTimeout) or only this attempt stopped renewing (LEASE_EXPIRED). Both are
 // equally final.
 func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout time.Duration) ([]uuid.UUID, error) {
 	var expired []uuid.UUID
@@ -274,9 +271,9 @@ func (s *Store) ExpireStaleLeases(ctx context.Context, executorHealthTimeout tim
 			if err != nil {
 				return err
 			}
-			reason := UnknownLeaseExpired
+			reason := action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED
 			if silent {
-				reason = UnknownExecutorLost
+				reason = action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST
 			}
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE action_execution SET state = $2, error = $3::jsonb, completed_at = $4 WHERE request_id = $1`,

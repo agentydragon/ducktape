@@ -26,8 +26,9 @@ controller checks this instead. Such an object reports `KubernetesReady` `False`
 - A `PolicyBinding` in the controller's policy namespace grants by existing: creating one allows,
   deleting one takes that back. It names one ServiceAccount, which must live in one of
   the controller's subject namespaces, or one `Identity`, and `PolicySet` names in its own
-  namespace. The controller applies no Kubernetes rule for an Identity subject
-  (`SubjectNotServiceAccount`): an identity reaches Kubernetes only by acting as an account a
+  namespace. An Identity binding selecting no Kubernetes rules reports `KubernetesReady=True`
+  with zero native bindings. Selecting Kubernetes rules for an Identity reports
+  `SubjectNotServiceAccount`: an identity reaches Kubernetes only by acting as an account a
   `ServiceAccountGrant` provisions.
 - A `kubernetes_role_binding` rule binds an existing Role or ClusterRole in each namespace it names;
   `kubernetes_cluster_role_binding` binds an existing ClusterRole cluster-wide. Namespaces are named,
@@ -59,13 +60,34 @@ UID in a non-controller owner reference. Revoke requires the caller's Sandbox UI
 PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes
 UID and resourceVersion preconditions.
 
+`PolicyService.CreateIdentity`, behind the same writer allowlist, creates an Identity of the
+requested name and description in the policy namespace, with no owner: its creator deletes it.
+`ALREADY_EXISTS` if the name is taken. A launch creates the Identity, grants it PolicySets, then
+creates the environment naming it, as three operations
+([identity plan](../plans/identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits),
+question 11).
+
+`PolicyService.GrantIdentityPolicyBinding`, behind the same allowlist, binds known PolicySets to one
+exact Identity incarnation (name and UID, `NOT_FOUND` for another or a deleting one). The binding's
+subject is the Identity and it carries a non-controller owner reference to the Identity's UID, so
+`DeleteIdentity` does not count it and garbage collection removes it with the Identity; a later
+Identity of the same name inherits none of its grants. The shared policy reader checks the
+Identity owner UID as well as the caller UID, so this remains true before garbage collection
+and when another owner retains the binding. A declarative binding without an Identity owner
+continues to follow its subject name.
+
 `PolicyService.DeleteIdentity`, behind the same writer allowlist, deletes one Identity by name and
 observed UID with UID and resourceVersion preconditions; garbage collection then removes what the
 Identity owns. It refuses an Identity carrying Flux's `kustomize.toolkit.fluxcd.io/name` label,
 which Flux would recreate, and an Identity named by a PolicyBinding with no owner reference to that
 Identity's UID: such a binding names a subject by name only, so it would grant a later Identity of
-the same name. That refusal is `FAILED_PRECONDITION` with a `PreconditionFailure` violation per
-binding. The check is advisory; a binding created between the read and the delete is not fenced.
+the same name. It also refuses while a `WorkloadCredential` in a namespace the workload-identity
+issuer serves has an Identity subject with the same name and either no UID or the current UID,
+since that workload acts as it. A credential pinned to a different UID does not block deletion.
+That refusal is `FAILED_PRECONDITION` with a `PreconditionFailure` violation per binding
+(type `PolicyBinding`, subject its name) and per credential (type `WorkloadCredential`, subject
+`namespace/name`). The check is advisory; a reference created between the read and the delete is
+not fenced.
 
 Kubernetes does not transact a Sandbox read with a PolicyBinding create. Grant checks the exact
 Sandbox and ServiceAccount before and after creation, and attempts UID/resourceVersion-guarded
@@ -133,7 +155,7 @@ precondition prevents deleting a binding edited or replaced after its read.
 ## Workload credentials
 
 With `workload_issuer` and `workload_namespaces` set, the controller hosts the
-[workload-identity issuer](../workload_identity/README.md) for the `WorkloadCredential`s of those
+[workload-identity issuer](../identity/credentials/README.md) for the `WorkloadCredential`s of those
 namespaces. It is their status's only writer, and the only creator of Certificates for
 three-segment workload URIs:
 
@@ -142,8 +164,10 @@ three-segment workload URIs:
 - The first binding the controller sees for an ID becomes `status.acceptedBinding`. When
   `spec.binding` later differs from it, cleared or replaced, a fresh ID is minted; nothing else
   rotates an ID.
-- A record with a controller owner or a binding gets one Secret per ID, `svid-<name>-<id>`. A
-  standing record, with neither, keeps `svid-<name>`.
+- A new record with a controller owner or a binding gets `svid-<name>-<id>`. An initially
+  ownerless, unbound record gets `svid-<name>` so a standing Deployment can name it. The Secret name
+  stays fixed for that credential ID, including its first Pod binding. A later ID rotation always
+  gets `svid-<name>-<id>`, including when an accepted binding is cleared.
 - `Ready` turns True once the Certificate for the current ID is Ready and its Secret holds the key
   pair. Superseded generations' Certificates are then deleted, and their Secrets once those
   Certificates are gone. A deleted record's Secrets go once the garbage collector removes its
@@ -159,7 +183,7 @@ binding as absent, but its native bindings keep granting: nothing in the API ser
 
 Each `PolicyBinding` carries a `KubernetesReady` condition, applied under the controller's own field
 manager so other readers' conditions stay. It is `Applied`, or `False` with reason
-`SubjectNotWatched`, `SubjectNotServiceAccount` (an identity subject, whose Kubernetes access is a grant instead), `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
+`SubjectNotWatched`, `SubjectNotServiceAccount` (Kubernetes rules selected for an identity subject), `SubjectMissing`, `RoleMissing`, `PolicySetUnavailable`, `ConflictingExpiry` or `ApplyFailed` and a
 message naming what is wrong. Reasons are informational. With it the controller applies
 `status.missingRoles`: each Role (with its namespace) or ClusterRole the binding's rules name that does
 not exist. It is checked once the subject resolves and holds even when applying the rest fails

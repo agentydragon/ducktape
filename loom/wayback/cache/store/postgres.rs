@@ -77,26 +77,6 @@ mod metadata_record {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-mod fill_lease {
-    use sea_orm::entity::prelude::*;
-
-    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-    #[sea_orm(table_name = "wayback_fill_leases")]
-    pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub endpoint: String,
-        #[sea_orm(primary_key, auto_increment = false)]
-        pub lease_key: String,
-        pub owner: String,
-        pub expires_at_ms: i64,
-    }
-
-    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-    pub enum Relation {}
-
-    impl ActiveModelBehavior for ActiveModel {}
-}
-
 mod fill_queue {
     use sea_orm::entity::prelude::*;
 
@@ -152,11 +132,6 @@ impl PostgresArchiveStore {
         self.db.execute(&create_table).await?;
         let create_table = schema
             .create_table_from_entity(metadata_record::Entity)
-            .if_not_exists()
-            .to_owned();
-        self.db.execute(&create_table).await?;
-        let create_table = schema
-            .create_table_from_entity(fill_lease::Entity)
             .if_not_exists()
             .to_owned();
         self.db.execute(&create_table).await?;

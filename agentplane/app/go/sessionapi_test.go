@@ -23,6 +23,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
@@ -89,7 +90,6 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	handler := server.Handler(authentication)
 	for _, test := range []struct {
 		method string
@@ -176,7 +176,6 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 	if err := RegisterSessionRoutes(server, &appService{config: config, environments: peer, bridge: peer, threadWriter: peer}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	return server.Handler(authentication)
 }
 
@@ -279,6 +278,15 @@ func TestSessionGatewayRejectsBeforeEffects(t *testing.T) {
 			t.Fatalf("status %d effects %v: %s", response.Code, peer.calls, response.Body.String())
 		}
 	}
+	for _, name := range []string{"Upper", "a-", strings.Repeat("a", sandboxapi.MaxSandboxNameLength+1)} {
+		peer := &sessionTestPeer{}
+		path := "/sandboxes/" + name + "/sessions"
+		body := `{"spec":{},"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`
+		response := sessionTestRequest(sessionTestGateway(t, peer), http.MethodPost, path, body)
+		if response.Code != http.StatusUnprocessableEntity || len(peer.calls) != 0 {
+			t.Fatalf("invalid Sandbox name %q: status %d effects %v: %s", name, response.Code, peer.calls, response.Body.String())
+		}
+	}
 }
 
 func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
@@ -361,7 +369,6 @@ func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
 		Body legacyBody
 	}
 	server := NewHTTPServer(nil)
-	t.Cleanup(server.Close)
 	var received *legacyInput
 	huma.Register[legacyInput, struct{}](server.API(), huma.Operation{OperationID: "legacyOpen", Method: http.MethodPost, Path: "/sandboxes/{name}/sessions", DefaultStatus: http.StatusCreated}, func(_ context.Context, input *legacyInput) (*struct{}, error) {
 		received = input

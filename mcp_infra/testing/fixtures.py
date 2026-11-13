@@ -6,20 +6,15 @@ Register in downstream packages via:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
+from typing import Final
 
 import aiodocker
 import pytest
-from fastmcp.mcp_config import StdioMCPServer
 
-from devinfra.bazel.subprocess import python_env
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
-from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
 
-# The stdio transport fixture launches `-m mcp_infra.testing.stdio_app`; the module
-# is referenced only as a string, so gazelle cannot see the dependency.
-# gazelle:include_dep //mcp_infra/testing:stdio_app
+WORKING_DIR: Final[Path] = Path("/workspace")
 
 
 def make_container_opts(image: str, *, working_dir: Path = Path("/test/workspace")) -> ContainerExecServerConfig:
@@ -39,16 +34,3 @@ async def async_docker_client():
         yield client
     finally:
         await client.close()
-
-
-@pytest.fixture
-def make_simple_mcp():
-    return _make_simple_mcp()
-
-
-@pytest.fixture
-def stdio_echo_spec() -> StdioMCPServer:
-    """Launch packaged echo server module via -m as a stdio spec."""
-    return StdioMCPServer(
-        command=sys.executable, args=["-m", "mcp_infra.testing.stdio_app"], env=python_env(inherit=False)
-    )

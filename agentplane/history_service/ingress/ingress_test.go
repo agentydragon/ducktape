@@ -14,12 +14,12 @@ import (
 
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -77,6 +77,21 @@ func newIngressPacedBy(t *testing.T, timing Timing) testIngress {
 
 func serveIngress(t *testing.T, service *Service) testIngress {
 	t.Helper()
+	accounts := []auth.Account{
+		{Namespace: testNamespace, Name: "test-sandbox-a"},
+		{Namespace: testNamespace, Name: "test-first-writer"},
+		{Namespace: testNamespace, Name: "test-sandbox-b"},
+	}
+	accounts = append(accounts, service.SamplerAccounts...)
+	return serveIngressAdmitting(t, service, func(principals *auth.Resolver) auth.Rule {
+		return auth.Accounts(principals, accounts)
+	})
+}
+
+// serveIngressAdmitting serves the ingress with the Push rule pushRule builds over the test API
+// server's TokenReview resolver.
+func serveIngressAdmitting(t *testing.T, service *Service, pushRule func(*auth.Resolver) auth.Rule) testIngress {
+	t.Helper()
 	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +100,7 @@ func serveIngress(t *testing.T, service *Service) testIngress {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(principals)}
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: pushRule(principals)}
 	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()

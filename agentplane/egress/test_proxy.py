@@ -38,14 +38,14 @@ from agentplane.egress.platform_routes import (
     PLATFORM_ROUTES_LISTEN_ADDRESS,
     PlatformRoute,
     PlatformRoutes,
-    TLSBearerConnectRouteTransport,
     TLSConnectRouteTransport,
 )
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.settings import Settings
-from agentplane.egress.sidecar_config import KubernetesBearerProxyAuth, Proxy, SpiffeProxyAuth, TLSProxyTransport
+from agentplane.egress.sidecar_config import Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
+from agentplane.identity.auth import listener
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
@@ -60,8 +60,6 @@ from agentplane.testing.tls import (
     workload_uri,
     write_ca,
 )
-from agentplane.workload_auth import listener
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from util.net import Listener
 
 # Three namespaces, all different, so that a proxy reading one from the wrong one fails.
@@ -74,11 +72,11 @@ SANDBOX_B = "sb-b"
 RUNNER_CREDENTIAL_ID = "a" * 32
 WORKLOAD_CREDENTIALS_PLURAL = "workloadcredentials"
 ROTATED_RUNNER_CREDENTIAL_ID = "b" * 32
-PROJECTED_AUDIENCE = "agentplane-egress-test-projected"
 BINDING_B = f"{SANDBOX_B}-private-policy"
 EGRESS_PROXY_URI = "spiffe://agentplane/egress-proxy"
-# Every sandbox runs as a ServiceAccount of its own, named after it: that account is the subject.
-SUBJECT_A = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_A)
+# Workload Identities have distinct names from the Pod ServiceAccounts they run beside.
+SUBJECT_A = f"{SANDBOX_A}-identity"
+SUBJECT_B = f"{SANDBOX_B}-identity"
 
 
 @dataclass
@@ -123,10 +121,9 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 
 @dataclass(frozen=True)
 class SeededSandbox:
-    projected_token: str
     sandbox_uid: str
     pod_uid: str
-    mismatched_pod_token: str
+    identity_uid: str
 
 
 def replica_settings(
@@ -147,15 +144,11 @@ def replica_settings(
         log_levels={},
         ca_cert=cert,
         ca_key=key,
-        projected_token_audiences=frozenset({PROJECTED_AUDIENCE}),
         upstream_ca_file=upstream_ca_file,
         forward=listener.Listener(
             listen_address="0.0.0.0:8888",
             tls=listener.TLS(cert_file=svid_cert[0], key_file=svid_cert[1]),
-            auth=[
-                listener.SPIFFEAuth(ca_file=svid_ca_file),
-                listener.KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-            ],
+            auth=[listener.SPIFFEAuth(ca_file=svid_ca_file)],
         ),
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
@@ -190,16 +183,6 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
             ),
         ),
     )
-    await core.create_namespaced_pod(
-        SANDBOX_NAMESPACE,
-        k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(name=f"{SANDBOX_A}-other-pod"),
-            spec=k8s_client.V1PodSpec(
-                service_account_name=SANDBOX_A,
-                containers=[k8s_client.V1Container(name="workload", image="registry.test/unused")],
-            ),
-        ),
-    )
     await core.create_namespaced_secret(
         CREDENTIALS_NAMESPACE,
         k8s_client.V1Secret(
@@ -207,6 +190,20 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         ),
     )
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(server.api))
+    identities = {}
+    for name in (SUBJECT_A, SUBJECT_B):
+        identities[name] = await custom.create_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            NAMESPACE,
+            "identities",
+            {
+                "apiVersion": _API_VERSION,
+                "kind": "Identity",
+                "metadata": {"name": name},
+                "spec": {"description": f"Sandbox {name} test Identity"},
+            },
+        )
     bodies: dict[str, dict[str, Any]] = {
         CREDENTIALS_PLURAL: {
             "apiVersion": _API_VERSION,
@@ -230,12 +227,6 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
                         "paths": ["/contract", "/contract-sse", "/contract-ws", _CONTRACT_PATH],
                         "credentialRef": {"name": _CONTRACT_CREDENTIAL},
                     },
-                    {
-                        "type": "egress",
-                        "hosts": [UPSTREAM_HOST],
-                        "paths": ["/projected"],
-                        "credentialRef": {"name": "svid-projected-credential"},
-                    },
                     {"type": "egress", "hosts": [UPSTREAM_HOST], "paths": ["/public/**"]},
                 ]
             },
@@ -244,25 +235,12 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
             "apiVersion": _API_VERSION,
             "kind": "PolicyBinding",
             "metadata": {"name": BINDING},
-            "spec": {"subject": SUBJECT_A.model_dump(), "policySets": [_CONTRACT_CREDENTIAL]},
+            "spec": {"subject": {"identity": {"name": SUBJECT_A}}, "policySets": [_CONTRACT_CREDENTIAL]},
         },
     }
     for plural, body in bodies.items():
         await custom.create_namespaced_custom_object(GROUP, VERSION, NAMESPACE, plural, body)
     for plural, body in (
-        (
-            CREDENTIALS_PLURAL,
-            {
-                "apiVersion": _API_VERSION,
-                "kind": "EgressCredential",
-                "metadata": {"name": "svid-projected-credential"},
-                "spec": {
-                    "source": {"projectedWorkloadToken": {"audience": PROJECTED_AUDIENCE}},
-                    "description": "a test projected token",
-                    "targets": [{"header": "authorization", "method": TargetMethod.SCHEME_TOKEN, "scheme": "Bearer"}],
-                },
-            },
-        ),
         (
             POLICY_SETS_PLURAL,
             {
@@ -278,10 +256,7 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
                 "apiVersion": _API_VERSION,
                 "kind": "PolicyBinding",
                 "metadata": {"name": BINDING_B},
-                "spec": {
-                    "subject": ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=SANDBOX_B).model_dump(),
-                    "policySets": ["sandbox-b-private-policy"],
-                },
+                "spec": {"subject": {"identity": {"name": SUBJECT_B}}, "policySets": ["sandbox-b-private-policy"]},
             },
         ),
     ):
@@ -325,13 +300,11 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         {"status": {"incarnation": {"name": SANDBOX_A, "uid": pod.metadata.uid}}},
         _content_type="application/merge-patch+json",
     )
-    await issue_record(custom, sandbox["metadata"]["uid"], pod.metadata.name, pod.metadata.uid, RUNNER_CREDENTIAL_ID)
-    return SeededSandbox(
-        projected_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [PROJECTED_AUDIENCE]),
-        sandbox_uid=sandbox["metadata"]["uid"],
-        pod_uid=pod.metadata.uid,
-        mismatched_pod_token=await server.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [PROJECTED_AUDIENCE]),
+    identity_uid = identities[SUBJECT_A]["metadata"]["uid"]
+    await issue_record(
+        custom, sandbox["metadata"]["uid"], pod.metadata.name, pod.metadata.uid, identity_uid, RUNNER_CREDENTIAL_ID
     )
+    return SeededSandbox(sandbox_uid=sandbox["metadata"]["uid"], pod_uid=pod.metadata.uid, identity_uid=identity_uid)
 
 
 def _record_status(credential_id: str, pod_uid: str) -> dict[str, Any]:
@@ -345,7 +318,7 @@ def _record_status(credential_id: str, pod_uid: str) -> dict[str, Any]:
 
 
 async def issue_record(
-    custom: CustomObjectsClient, sandbox_uid: str, pod_name: str, pod_uid: str, credential_id: str
+    custom: CustomObjectsClient, sandbox_uid: str, pod_name: str, pod_uid: str, identity_uid: str, credential_id: str
 ) -> None:
     """Write sandbox A's WorkloadCredential as the Sandbox Controller requests it and the issuer accepts it."""
     await custom.create_namespaced_custom_object(
@@ -369,7 +342,7 @@ async def issue_record(
                 ],
             },
             "spec": {
-                "subject": {"serviceAccount": SANDBOX_A},
+                "subject": {"identity": {"name": SUBJECT_A, "uid": identity_uid}},
                 "binding": {"podUID": pod_uid},
                 "pod": {"name": pod_name, "uid": pod_uid},
             },
@@ -412,7 +385,6 @@ class Egress:
     replica: GoReplica
     client_tls: ssl.SSLContext
     client_certificate: tuple[Path, Path]
-    projected_token: str
     api: KubernetesApiServer
     interception_ca: CertificateAuthority
     upstream_ca: CertificateAuthority
@@ -420,7 +392,7 @@ class Egress:
     upstream: RecordingUpstream
     sandbox_uid: str
     pod_uid: str
-    mismatched_pod_token: str
+    identity_uid: str
     tmp_path: Path
     database_url: str
 
@@ -469,7 +441,6 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
                 replica=running,
                 client_tls=client_tls,
                 client_certificate=client_certificate,
-                projected_token=seeded.projected_token,
                 api=api,
                 interception_ca=interception_ca,
                 upstream_ca=upstream_ca,
@@ -477,7 +448,7 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
                 upstream=upstream,
                 sandbox_uid=seeded.sandbox_uid,
                 pod_uid=seeded.pod_uid,
-                mismatched_pod_token=seeded.mismatched_pod_token,
+                identity_uid=seeded.identity_uid,
                 tmp_path=tmp_path,
                 database_url=history_db_url,
             )
@@ -539,8 +510,8 @@ async def test_rules_grpc_resolves_its_own_svid_and_returns_the_credential_descr
         response = await client.GetRules(
             request, metadata=(("x-agentplane-subject", f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"),), timeout=5
         )
-        assert response.subject.namespace == SUBJECT_A.namespace
-        assert response.subject.name == SUBJECT_A.name
+        assert response.identity.name == SUBJECT_A
+        assert not response.HasField("subject")
         credentials = [
             rule.credential for policy in response.policies for rule in policy.rules if rule.HasField("credential")
         ]
@@ -590,8 +561,8 @@ async def test_rules_grpc_sidecar_presents_its_svid_and_discards_caller_credenti
                 ),
                 timeout=5,
             )
-            assert response.subject.namespace == SANDBOX_NAMESPACE
-            assert response.subject.name == SANDBOX_A
+            assert response.identity.name == SUBJECT_A
+            assert not response.HasField("subject")
     assert not egress.upstream.requests
 
 
@@ -617,68 +588,6 @@ async def test_rules_grpc_refuses_forged_and_expired_clients(egress: Egress) -> 
                 )
             assert failure.value.code() == grpc.StatusCode.UNAVAILABLE
     assert not egress.upstream.requests
-
-
-async def test_tls_bearer_hop_checks_the_audience(egress: Egress) -> None:
-    async with aiohttp.ClientSession() as client:
-        for audience, expected in ((WORKLOAD_TOKEN_AUDIENCE, 200), ("wrong-egress-hop", 403)):
-            token = await egress.api.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [audience])
-            status, _ = await svid_request(
-                client,
-                egress,
-                client_tls_context(egress.runtime_ca),
-                "/public/bearer",
-                headers={"Proxy-Authorization": f"Bearer {token}"},
-            )
-            assert status == expected
-    assert len(egress.upstream.requests) == 1
-
-
-async def test_non_sandbox_sidecar_keeps_its_tls_bearer_hop(egress: Egress) -> None:
-    token_file = egress.tmp_path / "non-sandbox-hop-token"
-    # This Pod has no Sandbox object; its Pod-bound TokenReview is the identity proof.
-    token_file.write_text(
-        await egress.api.pod_token(SANDBOX_NAMESPACE, f"{SANDBOX_A}-other-pod", [WORKLOAD_TOKEN_AUDIENCE])
-    )
-    root = write_ca(egress.runtime_ca, egress.tmp_path, "bearer-sidecar-root")[0]
-    async with (
-        SidecarProcess(
-            proxy=Proxy(
-                address=f"localhost:{egress.proxy_listener.port}",
-                transport=TLSProxyTransport(ca_file=root, auth=KubernetesBearerProxyAuth(token_file=token_file)),
-            ),
-            platform_routes=PlatformRoutes(
-                listen_address=PLATFORM_ROUTES_LISTEN_ADDRESS,
-                routes={
-                    "rules": PlatformRoute(
-                        service_prefixes=("/agentplane.egress.EgressRules/",),
-                        upstream=f"localhost:{egress.replica.admin_listener.port}",
-                        transport=TLSBearerConnectRouteTransport(server_uri=EGRESS_PROXY_URI, token_file=token_file),
-                    )
-                },
-            ),
-        ) as sidecar,
-        aiohttp.ClientSession() as client,
-    ):
-        async with client.get(
-            f"http://{UPSTREAM_HOST}:{egress.upstream.http_port}/public/bearer-sidecar",
-            proxy=f"http://localhost:{sidecar.proxy_listener.port}",
-        ) as response:
-            assert response.status == 200
-        async with grpc.aio.insecure_channel(f"localhost:{sidecar.platform_route_listener.port}") as channel:
-            rules_response = await egress_rules_pb2_grpc.EgressRulesStub(channel).GetRules(
-                egress_rules_pb2.GetRulesRequest(), timeout=10
-            )
-            assert rules_response.subject.namespace == SUBJECT_A.namespace
-            assert rules_response.subject.name == SUBJECT_A.name
-        token_file.write_text("forged")
-        async with client.get(
-            f"http://{UPSTREAM_HOST}:{egress.upstream.http_port}/public/bearer-rotated",
-            proxy=f"http://localhost:{sidecar.proxy_listener.port}",
-        ) as response:
-            assert response.status == 403
-            assert response.headers["X-Agentplane-Egress"] == "denied; reason=token-rejected"
-    assert len(egress.upstream.requests) == 1
 
 
 async def test_svid_listener_maps_live_sandbox_and_ignores_forged_subject_header(egress: Egress) -> None:
@@ -769,7 +678,14 @@ async def test_svid_listener_keeps_a_deleting_sandboxs_credential_until_its_reco
         },
     )
     assert replacement["metadata"]["uid"] != egress.sandbox_uid
-    await issue_record(custom, replacement["metadata"]["uid"], SANDBOX_A, egress.pod_uid, ROTATED_RUNNER_CREDENTIAL_ID)
+    await issue_record(
+        custom,
+        replacement["metadata"]["uid"],
+        SANDBOX_A,
+        egress.pod_uid,
+        egress.identity_uid,
+        ROTATED_RUNNER_CREDENTIAL_ID,
+    )
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/replaced")
     assert status == 403, headers
@@ -777,39 +693,21 @@ async def test_svid_listener_keeps_a_deleting_sandboxs_credential_until_its_reco
     assert [path for _, path, _ in egress.upstream.requests] == ["/public/deleting"]
 
 
-async def test_svid_projected_token_must_match_sandbox_pod_uid(egress: Egress) -> None:
-    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "svid-client"))
-    placeholder = placeholder_of("svid-projected-credential")
+async def test_untrusted_workload_token_header_is_not_forwarded(egress: Egress) -> None:
+    proxy_tls = proxy_svid_client_context(egress, issue_runner_svid(egress, egress.tmp_path / "header-client"))
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(
             client,
             egress,
             proxy_tls,
-            "/projected",
-            headers={
-                "Authorization": f"Bearer {placeholder}",
-                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.mismatched_pod_token}",
-            },
-        )
-        assert status == 403, headers
-        assert headers["x-agentplane-egress"] == "denied; reason=credential-unavailable"
-        assert not egress.upstream.requests
-
-        status, headers = await svid_request(
-            client,
-            egress,
-            proxy_tls,
-            "/projected",
-            headers={
-                "Authorization": f"Bearer {placeholder}",
-                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.projected_token}",
-            },
+            "/public/untrusted-header",
+            headers={"X-Agentplane-Workload-Token": "attacker-controlled token"},
         )
     assert status == 200, headers
     assert len(egress.upstream.requests) == 1
-    method, path, forwarded_headers = egress.upstream.requests[0]
-    assert (method, path) == ("GET", "/projected")
-    assert forwarded_headers["authorization"] == f"Bearer {egress.projected_token}"
+    _, path, forwarded_headers = egress.upstream.requests[0]
+    assert path == "/public/untrusted-header"
+    assert "x-agentplane-workload-token" not in forwarded_headers
 
 
 STANDING_RECORD = "standing-a"
@@ -857,29 +755,24 @@ async def test_a_standing_record_authenticates_its_subject_without_a_pod(egress:
     """A record with no owner and no binding proves its subject alone: it reaches that subject's rules,
     no forwarded Pod token binds to it, and deleting the record revokes it."""
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(egress.api.api))
-    uri, _ = await _write_record(custom, STANDING_RECORD, {"subject": {"serviceAccount": SANDBOX_A}})
+    uri, _ = await _write_record(custom, STANDING_RECORD, {"subject": {"identity": {"name": SUBJECT_A}}})
     directory = egress.tmp_path / "standing-client"
     directory.mkdir()
     proxy_tls = proxy_svid_client_context(
         egress, issue_workload_leaf(egress.runtime_ca, uri, directory, dns_name="localhost")
     )
-    placeholder = placeholder_of("svid-projected-credential")
     async with aiohttp.ClientSession() as client:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/standing")
         assert status == 200, headers
-        # The token is the subject's own and Pod-bound, which a bound record would accept.
         status, headers = await svid_request(
             client,
             egress,
             proxy_tls,
-            "/projected",
-            headers={
-                "Authorization": f"Bearer {placeholder}",
-                "X-Agentplane-Workload-Token": f"{PROJECTED_AUDIENCE} {egress.projected_token}",
-            },
+            "/public/standing-with-untrusted-token",
+            headers={"X-Agentplane-Workload-Token": "attacker-controlled token"},
         )
-        assert status == 403, headers
-        assert headers["x-agentplane-egress"] == "denied; reason=credential-unavailable"
+        assert status == 200, headers
+        assert "x-agentplane-workload-token" not in egress.upstream.requests[-1][2]
 
         await custom.delete_namespaced_custom_object(
             GROUP,
@@ -892,8 +785,11 @@ async def test_a_standing_record_authenticates_its_subject_without_a_pod(egress:
         status, headers = await svid_request(client, egress, proxy_tls, "/public/pruned")
     assert status == 403, headers
     assert headers["x-agentplane-egress"] == "denied; reason=token-rejected"
-    assert [path for _, path, _ in egress.upstream.requests] == ["/public/standing"]
-    # The two authenticated decisions name the subject and no Pod.
+    assert [path for _, path, _ in egress.upstream.requests] == [
+        "/public/standing",
+        "/public/standing-with-untrusted-token",
+    ]
+    # Both authenticated decisions name the subject and no Pod.
     async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
         with attempt:
             assert await asyncio.to_thread(_source_pod_uids, egress.database_url, SUBJECT_A) == [None, None]
@@ -906,7 +802,7 @@ async def test_a_bound_record_still_needs_its_pod(egress: Egress) -> None:
     uri, _ = await _write_record(
         custom,
         "bound-without-pod",
-        {"subject": {"serviceAccount": SANDBOX_A}, "binding": binding},
+        {"subject": {"identity": {"name": SUBJECT_A}}, "binding": binding},
         owner_uid=egress.sandbox_uid,
         accepted_binding=binding,
     )
@@ -996,26 +892,32 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(egress: Egress)
 # gazelle:include_dep @pypi//psycopg
 _SUBJECT_DECISIONS = text("""
 SELECT producer_id, connection_id, reason FROM egress_decision
-WHERE subject_namespace = :namespace AND subject_name = :name
+WHERE subject_identity = :name
 """)
 
 
 _SUBJECT_SOURCE_PODS = text("""
 SELECT source_pod_uid FROM egress_decision
-WHERE subject_namespace = :namespace AND subject_name = :name
+WHERE subject_identity = :name
+""")
+
+_UNAUTHENTICATED_UNAVAILABLE_DECISIONS = text("""
+SELECT count(*) FROM egress_decision
+WHERE subject_namespace IS NULL AND subject_name IS NULL AND subject_identity IS NULL
+  AND reason = 'unavailable' AND host = :host AND method = :method
 """)
 
 
-def _source_pod_uids(database_url: str, subject: ServiceAccountRef) -> list[str | None]:
+def _source_pod_uids(database_url: str, subject: str) -> list[str | None]:
     """The source Pod UIDs the subject's decisions recorded in the shared history."""
     with ExitStack() as stack:
         engine = create_engine(database_url)
         stack.callback(engine.dispose)
         with engine.connect() as connection:
-            return [row.source_pod_uid for row in connection.execute(_SUBJECT_SOURCE_PODS, subject.model_dump())]
+            return [row.source_pod_uid for row in connection.execute(_SUBJECT_SOURCE_PODS, {"name": subject})]
 
 
-def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[UUID, str, str | None]]:
+def _decisions_of(database_url: str, subject: str) -> list[tuple[UUID, str, str | None]]:
     """The producer, connection and refusal reason of every decision the subject has in the shared history."""
     with ExitStack() as stack:
         engine = create_engine(database_url)
@@ -1023,8 +925,20 @@ def _decisions_of(database_url: str, subject: ServiceAccountRef) -> list[tuple[U
         with engine.connect() as connection:
             return [
                 (row.producer_id, row.connection_id, row.reason)
-                for row in connection.execute(_SUBJECT_DECISIONS, subject.model_dump())
+                for row in connection.execute(_SUBJECT_DECISIONS, {"name": subject})
             ]
+
+
+def _unauthenticated_unavailable_decisions(database_url: str, *, host: str, method: str) -> int:
+    """Unavailable refusals before SVID authentication, which therefore have no subject."""
+    with ExitStack() as stack:
+        engine = create_engine(database_url)
+        stack.callback(engine.dispose)
+        with engine.connect() as connection:
+            result = connection.execute(
+                _UNAUTHENTICATED_UNAVAILABLE_DECISIONS, {"host": host, "method": method}
+            ).scalar_one()
+            return int(result)
 
 
 @dataclass
@@ -1182,7 +1096,14 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             aiohttp.ClientSession() as client,
         ):
 
-            async def get(replica: GoReplica, context: ssl.SSLContext, path: str, expected: int) -> None:
+            async def get(
+                replica: GoReplica,
+                context: ssl.SSLContext,
+                path: str,
+                expected: int,
+                *,
+                denied_reason: str | None = None,
+            ) -> None:
                 async with client.get(
                     f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
                     proxy=f"https://localhost:{replica.proxy_listener.port}",
@@ -1190,6 +1111,8 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 ) as response:
                     await response.read()
                     assert response.status == expected, dict(response.headers)
+                    if denied_reason is not None:
+                        assert response.headers["x-agentplane-egress"] == f"denied; reason={denied_reason}"
 
             await get(first, first_tls, "first", 200)
             await get(second, second_tls, "second", 200)
@@ -1205,13 +1128,26 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                 _REPLICA_USER, NAMESPACE
             )
             second_path.sever()
-            await second.health(serving=False)
+            await second.process.health(serving=False)
             before = len(upstream.requests)
-            await get(second, second_tls, "stale-existing-connection", 502)
+            unavailable_before = await asyncio.to_thread(
+                _unauthenticated_unavailable_decisions, history_db_url, host=UPSTREAM_HOST, method="GET"
+            )
+            # Identity authentication must re-read the live Identity. Its API read is now unavailable too, so
+            # the refusal is deliberately unattributed rather than claiming a subject whose incarnation could
+            # not be verified.
+            await get(second, second_tls, "stale-existing-connection", 502, denied_reason="unavailable")
+            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
+                with attempt:
+                    assert (
+                        await asyncio.to_thread(
+                            _unauthenticated_unavailable_decisions, history_db_url, host=UPSTREAM_HOST, method="GET"
+                        )
+                    ) > unavailable_before
             assert len(upstream.requests) == before
             await revoke_binding(second_api)
             await grant_replica(second_api, NAMESPACE)
-            await second.health(serving=True)
+            await second.process.health(serving=True)
             await get(second, second_tls, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
@@ -1222,7 +1158,6 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                         len({connection for row_producer, connection, _ in rows if row_producer == producer}) == 1
                         for producer in producers
                     )
-                    assert any(reason == "unavailable" for _, _, reason in rows)
 
 
 async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egress) -> None:
@@ -1239,8 +1174,8 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egres
 
         pending = asyncio.create_task(slow_status())
         await asyncio.wait_for(upstream.slow_started.wait(), 10)
-        egress.replica.terminate()
-        await egress.replica.health(serving=False)
+        egress.replica.process.terminate()
+        await egress.replica.process.health(serving=False)
         # Readiness turns NOT_SERVING before the proxy listener finishes shutting down.
         async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
             with attempt:

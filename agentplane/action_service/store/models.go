@@ -25,14 +25,33 @@ type ActionIdentity struct {
 	Name  string `json:"name"`
 }
 
-// ReadPrincipal is who reads requests: a CallerPrincipal reads its own, an OperatorPrincipal and a
-// ServiceReaderPrincipal read every owner's.
+// ReadPrincipal is who reads requests: an Owner reads its own, an OperatorPrincipal and a ServiceReaderPrincipal
+// read every owner's.
 type ReadPrincipal interface{ isReadPrincipal() }
 
 // Principal is an authenticated caller or operator. A protobuf Principal records its identity on an event.
 type Principal interface {
 	ReadPrincipal
 	isPrincipal()
+}
+
+// Owner is a workload that submits, reads and cancels its own requests: a CallerPrincipal or an IdentityPrincipal.
+type Owner interface {
+	Principal
+	isOwner()
+}
+
+// Identity is one incarnation of an Identity in the policy namespace.
+type Identity struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
+}
+
+// IdentityPrincipal is a workload whose SVID named an Identity incarnation. It owns the requests it submits by the
+// incarnation, not the name: a later Identity of the same name owns none of them, as it is granted none of the
+// earlier one's bindings.
+type IdentityPrincipal struct {
+	Identity Identity `json:"identity"`
 }
 
 // CallerPrincipal is a workload that proved one ServiceAccount. The UID is authenticated provenance; Account remains
@@ -54,10 +73,37 @@ type ServiceReaderPrincipal struct {
 }
 
 func (CallerPrincipal) isReadPrincipal()        {}
+func (IdentityPrincipal) isReadPrincipal()      {}
 func (OperatorPrincipal) isReadPrincipal()      {}
 func (ServiceReaderPrincipal) isReadPrincipal() {}
 func (CallerPrincipal) isPrincipal()            {}
+func (IdentityPrincipal) isPrincipal()          {}
 func (OperatorPrincipal) isPrincipal()          {}
+func (CallerPrincipal) isOwner()                {}
+func (IdentityPrincipal) isOwner()              {}
+
+// Caller is who submitted a request, as its row records it: a ServiceAccountCaller, an IdentityCaller, or an
+// UnknownCaller.
+type Caller interface{ isCaller() }
+
+// ServiceAccountCaller is a request a ServiceAccount submitted.
+type ServiceAccountCaller struct {
+	Account ServiceAccount
+	// UID is the verified ServiceAccount UID at admission. Nil means the admitting writer did not record it; it is
+	// unknown and must not be reconstructed from a currently existing account with the same name.
+	UID *string
+}
+
+// IdentityCaller is a request an Identity incarnation submitted.
+type IdentityCaller struct{ Identity Identity }
+
+// UnknownCaller is a request a newer release recorded for a kind of caller this one does not know. It is no
+// caller's to read or cancel, and no executor runs as it.
+type UnknownCaller struct{}
+
+func (ServiceAccountCaller) isCaller() {}
+func (IdentityCaller) isCaller()       {}
+func (UnknownCaller) isCaller()        {}
 
 // ExecutionState is where an Execution is. It is stored as text.
 type ExecutionState string
@@ -152,14 +198,10 @@ type ActionRequestInput struct {
 	Description *string
 }
 
-// ProviderVote is the decisive outcome of admission's provider evaluation and the provider that cast it.
+// ProviderVote is the decisive outcome of admission's policy evaluation.
 type ProviderVote struct {
-	Provider          string
-	Verdict           Verdict
-	ReasonCode        string
-	ReasonDescription *string
-	// Evidence is set when the provider decided from policy objects.
-	Evidence *PolicyEvidence
+	Verdict Verdict
+	Policy  PolicyDecision
 }
 
 // Admission is what admission settled about a submission before the store sees it.
@@ -189,12 +231,8 @@ type ActionRequest struct {
 	Arguments   json.RawMessage
 	Title       string
 	Description *string
-	// Caller is the ServiceAccount that submitted the request.
-	Caller ServiceAccount
-	// CallerUID is the verified ServiceAccount UID at admission. Nil means the admitting writer did not record it;
-	// it is unknown and must not be reconstructed from a currently existing account with the same name.
-	CallerUID *string
-	State     action_servicepb.ActionState
+	Caller      Caller
+	State       action_servicepb.ActionState
 	// Version counts the request's transitions from 1; an Event's sequence is the version it records.
 	Version   int64
 	CreatedAt time.Time
@@ -205,18 +243,32 @@ type ActionRequest struct {
 
 // Decision is the one verdict on a request.
 type Decision struct {
-	ID       uuid.UUID
-	Verdict  Verdict
-	Provider string
-	// Operator is the human who decided; nil when a DecisionProvider did.
-	Operator          *OperatorPrincipal
-	DecisionNote      *string
-	ReasonCode        *string
-	ReasonDescription *string
-	PolicyEvidence    *PolicyEvidence
-	IdempotencyKey    string
-	DecidedAt         time.Time
+	ID             uuid.UUID
+	Verdict        Verdict
+	Decider        Decider
+	IdempotencyKey string
+	DecidedAt      time.Time
 }
+
+// Decider is who decided: an OperatorDecision or a PolicyDecision.
+type Decider interface{ isDecider() }
+
+// OperatorDecision is a Decision an operator made.
+type OperatorDecision struct {
+	Operator     OperatorPrincipal
+	DecisionNote *string
+}
+
+// PolicyDecision is a Decision the caller's Action policy objects made at admission.
+type PolicyDecision struct {
+	ReasonCode        action_servicepb.PolicyDecision_ReasonCode
+	ReasonDescription *string
+	// Evidence is nil only on rows recorded without it.
+	Evidence *PolicyEvidence
+}
+
+func (OperatorDecision) isDecider() {}
+func (PolicyDecision) isDecider()   {}
 
 // Execution is the one attempt to run an allowed request.
 type Execution struct {
@@ -224,8 +276,8 @@ type Execution struct {
 	State ExecutionState
 	// Result is any JSON value; nil when there is none.
 	Result json.RawMessage
-	// Error is a JSON object; nil when there is none.
-	Error        json.RawMessage
+	// Error is nil when there is none.
+	Error        *action_servicepb.ExecutionError
 	CreatedAt    time.Time
 	StartedAt    *time.Time
 	CompletedAt  *time.Time
@@ -267,8 +319,6 @@ type Lease struct {
 type ExecutionClaim struct {
 	RequestID uuid.UUID
 	Lease
-	// ExpiresAt is when the lease lapses unless HeartbeatExecution renews it.
-	ExpiresAt time.Time
 }
 
 // ExecutionRequest is the payload handed to the one executor dispatch, as stored.
@@ -279,9 +329,7 @@ type ExecutionRequest struct {
 	Action      ActionIdentity
 	// Arguments is a JSON object.
 	Arguments json.RawMessage
-	Caller    ServiceAccount
-	// CallerUID is nil when the request's admitting writer did not record the UID.
-	CallerUID *string
+	Caller    Caller
 }
 
 // ExecutionOutcome is the terminal outcome an executor delivers.
@@ -290,23 +338,9 @@ type ExecutionOutcome struct {
 	State ExecutionState
 	// Result is any JSON value; nil or JSON null for none.
 	Result json.RawMessage
-	// Error is a JSON object; nil or JSON null for none.
-	Error json.RawMessage
+	// Error is nil for none.
+	Error *action_servicepb.ExecutionError
 }
-
-// UnknownOutcomeReason is why an Execution ended without an outcome. It is the `kind` of its error.
-type UnknownOutcomeReason string
-
-const (
-	// UnknownExecutorLost is a lapsed lease whose executor's own heartbeat has also stopped.
-	UnknownExecutorLost UnknownOutcomeReason = "executor_lost"
-	// UnknownLeaseExpired is a lapsed lease whose executor is otherwise healthy.
-	UnknownLeaseExpired UnknownOutcomeReason = "lease_expired"
-	// UnknownAdapterOutcome is an executor that could not tell whether the effect happened.
-	UnknownAdapterOutcome UnknownOutcomeReason = "execution_outcome_unknown"
-	// UnknownCoordinatorStopped is an Execution its worker stopped while draining.
-	UnknownCoordinatorStopped UnknownOutcomeReason = "coordinator_stopped"
-)
 
 // terminalActionStates is the state of a request whose Execution ended in the key.
 var terminalActionStates = map[ExecutionState]action_servicepb.ActionState{
@@ -317,8 +351,12 @@ var terminalActionStates = map[ExecutionState]action_servicepb.ActionState{
 }
 
 // unknownOutcomeError is the `action_execution.error` of an Execution whose outcome could not be observed.
-func unknownOutcomeError(reason UnknownOutcomeReason) string {
-	return `{"kind": "` + string(reason) + `", "message": "dispatch outcome unknown; not replayed"}`
+func unknownOutcomeError(reason action_servicepb.ExecutionErrorKind) string {
+	document, err := encodeExecutionError(&action_servicepb.ExecutionError{Kind: reason, Message: "dispatch outcome unknown; not replayed"})
+	if err != nil {
+		panic(err)
+	}
+	return string(document)
 }
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
@@ -432,26 +470,23 @@ func (o ExecutionOutcome) Validate() error {
 	if o.Result != nil && !json.Valid(o.Result) {
 		return invalid("result must be a JSON value")
 	}
-	if o.Error != nil && string(o.Error) != "null" && !isObject(o.Error) {
-		return invalid("error must be a JSON object")
-	}
-	return nil
+	return validateExecutionError(o.Error)
 }
 
 func (v ProviderVote) Validate() error {
 	if !v.Verdict.valid() {
 		return invalid("a vote that decides is allow or deny, not %q", v.Verdict)
 	}
-	if err := bounded("reason_code", v.ReasonCode, 1, 64); err != nil {
-		return err
+	if _, known := reasonCodeStored(v.Policy.ReasonCode); !known {
+		return invalid("a vote names a known reason code, not %s", v.Policy.ReasonCode)
 	}
-	if v.ReasonDescription != nil {
-		if err := bounded("reason_description", *v.ReasonDescription, 0, 500); err != nil {
+	if v.Policy.ReasonDescription != nil {
+		if err := bounded("reason_description", *v.Policy.ReasonDescription, 0, 500); err != nil {
 			return err
 		}
 	}
-	if v.Evidence != nil {
-		return v.Evidence.validate()
+	if v.Policy.Evidence != nil {
+		return v.Policy.Evidence.validate()
 	}
 	return nil
 }

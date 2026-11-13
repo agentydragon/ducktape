@@ -23,8 +23,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -177,7 +177,7 @@ func TestIronCLIUsesCONNECTIdentityForInnerRequestsAndHonorsRevocation(t *testin
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		_, _ = fmt.Fprintf(w, "%s\n%s\n%s\n%s", r.Header.Get("Authorization"), r.Header.Get(proxyAuthorizationHeader), r.Header.Get(identity.ProjectedTokenHeader), body)
+		_, _ = fmt.Fprintf(w, "%s\n%s\n%s\n%s", r.Header.Get("Authorization"), r.Header.Get(proxyAuthorizationHeader), r.Header.Get(identity.UntrustedWorkloadTokenHeader), body)
 	}))
 	t.Cleanup(upstream.Close)
 	_, port, err := net.SplitHostPort(strings.TrimPrefix(upstream.URL, "http://"))
@@ -392,9 +392,9 @@ func TestTransformConnectThenSubstitutesExactGETHeaderAndJSONBody(t *testing.T) 
 			Url:    "/allowed?preserve=1",
 			Host:   "api.example.test",
 			Headers: map[string]*transformv1.HeaderValues{
-				"Authorization":               {Values: []string{"Bearer agentplane-credential-api"}},
-				"Content-Type":                {Values: []string{"application/json"}},
-				identity.ProjectedTokenHeader: {Values: []string{"sensitive-projected-token"}},
+				"Authorization":                       {Values: []string{"Bearer agentplane-credential-api"}},
+				"Content-Type":                        {Values: []string{"application/json"}},
+				identity.UntrustedWorkloadTokenHeader: {Values: []string{"sensitive-projected-token"}},
 			},
 			Body: body,
 		},
@@ -412,7 +412,7 @@ func TestTransformConnectThenSubstitutesExactGETHeaderAndJSONBody(t *testing.T) 
 	if got := modified.GetHeaders()["Authorization"].GetValues(); len(got) != 1 || got[0] != "Bearer real-api-secret" {
 		t.Errorf("rewritten Authorization = %v, want [Bearer real-api-secret]", got)
 	}
-	if values := modified.GetHeaders()[identity.ProjectedTokenHeader].GetValues(); len(values) > 0 {
+	if values := modified.GetHeaders()[identity.UntrustedWorkloadTokenHeader].GetValues(); len(values) > 0 {
 		t.Errorf("unsupported projected token header was forwarded: %v", values)
 	}
 	if values := modified.GetHeaders()[proxyAuthorizationHeader].GetValues(); len(values) > 0 {

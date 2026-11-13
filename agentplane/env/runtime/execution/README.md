@@ -27,8 +27,8 @@ agentplane-execution-service companion --socket /run/agentplane/executor/control
   --listen ws://127.0.0.1:4501 --binary /bin/codex --health-listen 0.0.0.0:4502
 ```
 
-The service fences a prior owned companion before claiming an idle generation. Closing its ownership
-lease stops the executor, kills every remaining process in the private companion PID namespace and
+The service fences a prior owned companion before claiming an idle generation. Canceling its gRPC
+ownership stream stops the executor, kills every remaining process in the private companion PID namespace and
 waits for the namespace to contain only PID 1 before publishing a fresh idle generation. The
 companion stays available for the next claim. An unexpected executor exit triggers the same
 process-domain fence and closes the ownership lease so Runtime can recover the backend. If the
@@ -76,7 +76,7 @@ in-memory state. Preserve authored files and existing Session journals and volum
 
 Environment Pods can run Codex command execution through a companion container in the same Pod. The runner
 retains the Codex app-server and journals; `agentplane-execution-service companion` runs as PID 1 and supervises
-`codex exec-server` in its private container PID namespace. The Execution Service claims the companion over a Unix socket before Codex
+`codex exec-server` in its private container PID namespace. The Execution Service claims the companion over gRPC on a Unix socket before Codex
 starts and fences it before replacing a lost process. A companion exit or failed health probe lets
 Kubernetes restart that container with a fresh PID namespace; the environment services never replay an in-flight
 command. `Environment.isolated_codex_executor` controls this Pod-template policy and can be disabled

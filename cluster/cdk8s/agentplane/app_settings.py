@@ -21,9 +21,9 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import (
 )
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
-# preset its baseline policies, so it refers to them; each comes from the module that creates the
-# policy answering to it, so a preset names a policy without repeating the string. The Pod execution
-# environment a preset launches on is the caller's: `settings()` takes its name.
+# preset its selected baseline and execution policies, so it refers to them; each comes from the
+# module that creates the policy answering to it, so a preset names a policy without repeating the
+# string. The Pod execution environment a preset launches on is the caller's: `settings()` takes its name.
 from cluster.cdk8s.agentplane import (
     egress,
     history_service,
@@ -33,7 +33,6 @@ from cluster.cdk8s.agentplane import (
     session_dispatcher,
 )
 from cluster.cdk8s.agentplane.egress import (
-    BASIC_POLICY,
     BUILDBUDDY_POLICY,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -141,6 +140,7 @@ def settings(
     connection_service_url: HttpEndpointUrl,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
+    basic_policy_set: str,
     app_origin: str,
     oidc_issuer: str,
     electric_url: HttpEndpointUrl | None = None,
@@ -172,7 +172,7 @@ def settings(
                 title="Public coder",
                 template=sandbox_template,
                 policy_sets=[
-                    BASIC_POLICY,
+                    basic_policy_set,
                     PACKAGES_POLICY,
                     GITHUB_AGENTYDRAGON_AGENT_POLICY,
                     GITHUB_CLONE_POLICY,

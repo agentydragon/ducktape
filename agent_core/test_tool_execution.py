@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Callable
 from typing import Any, Literal
 
 import pytest
@@ -26,8 +25,8 @@ from agent_core.testing.matchers import assert_function_call_output_structured, 
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
 from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
-from mcp_infra.testing.simple_servers import SendMessageInput
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.testing.openai_mock import NoopOpenAIClient, make_mock
 
 
@@ -60,6 +59,11 @@ class _RendezvousOutput(BaseModel):
     args: dict[str, Any]
 
 
+class SendMessageInput(OpenAIStrictModeBaseModel):
+    mime: Literal["text/markdown", "text/plain"]
+    content: str
+
+
 @pytest.fixture
 def rendezvous_server() -> FastMCP:
     """FastMCP server whose tool returns only once a second call of it is running too."""
@@ -80,8 +84,6 @@ def rendezvous_server() -> FastMCP:
 class ValidationServer(FastMCP):
     """FastMCP server with a tool that validates input strictly."""
 
-    send_message_tool: Callable[..., dict[str, Any]]
-
     def __init__(self):
         super().__init__("validator")
 
@@ -91,7 +93,7 @@ class ValidationServer(FastMCP):
                 raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
             return {"ok": True, "message": content}
 
-        self.send_message_tool = self.tool(output_schema=None)(send_message)
+        self.tool(output_schema=None)(send_message)
 
 
 @pytest.fixture
@@ -124,7 +126,7 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
         yield m.assistant_text("Successfully sent message")
 
     async with Client(validation_server) as client:
-        agent = await Agent.create(
+        agent = Agent(
             tool_provider=MCPToolProvider(client),
             client=mock,
             handlers=[FinishOnTextMessageHandler(), recording_handler],
@@ -152,7 +154,7 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
     assert second_output.result.is_error is False
     assert_function_call_output_structured([second_output], has_entries(ok=True))
 
-    assert_that(result.text, contains_string("Successfully sent message"))
+    assert_that(result, contains_string("Successfully sent message"))
 
 
 # --- Parallel tool call tests ---
@@ -179,7 +181,7 @@ async def test_parallel_tool_calls_run_concurrently(rendezvous_server, recording
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
     async with Client(rendezvous_server) as client:
-        agent = await Agent.create(
+        agent = Agent(
             tool_provider=MCPToolProvider(client),
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
             parallel_tool_calls=True,
@@ -203,7 +205,7 @@ async def _run_malformed_json_test(
     mcp_tool_provider_echo, recording_handler, *first_turn_calls: FunctionCallItem, parallel: bool = False
 ) -> tuple[str, list]:
     """Run tool calls and capture the agent's response and events."""
-    factory = ResponsesFactory("test-model")
+    factory = ResponsesFactory()
 
     async def handle_request(req: ResponsesRequest) -> ResponsesResult:
         if len(req.input) == 1:
@@ -211,7 +213,7 @@ async def _run_malformed_json_test(
         return factory.make_assistant_message("I received an error")
 
     client = make_mock(handle_request)
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=client,
         handlers=[FinishOnTextMessageHandler(), recording_handler],
@@ -222,7 +224,7 @@ async def _run_malformed_json_test(
 
     res = await agent.run()
     events = recording_handler.records
-    return res.text, events
+    return res, events
 
 
 @pytest.mark.parametrize(

@@ -95,8 +95,8 @@ func TestRequestsPythonStoredAreReadAndWrittenBack(t *testing.T) {
 	}
 }
 
-// decideAsPython records a Decision on the pending request the way Python does, with the document as its policy
-// evidence.
+// decideAsPython records a policy Decision on the pending request the way Python does, with the document as its
+// evidence and a reason code this release does not name.
 func (f fixture) decideAsPython(t *testing.T, id uuid.UUID, evidence json.RawMessage) {
 	t.Helper()
 	var decoded *PolicyEvidence
@@ -109,7 +109,7 @@ func (f fixture) decideAsPython(t *testing.T, id uuid.UUID, evidence json.RawMes
 	}
 	f.exec(t, `
 		INSERT INTO action_decision (id, request_id, verdict, provider, idempotency_key, decided_at, reason_code, policy_evidence_proto)
-		VALUES ($1, $2, 'deny', 'test-provider', $3, now(), 'test_reason', $4)`,
+		VALUES ($1, $2, 'deny', 'action_policy_set', $3, now(), 'test_unnamed_reason', $4)`,
 		uuid.New(), id, "auto:"+id.String(), encoded)
 	f.exec(t, `UPDATE action_request SET state = 'denied', version = 2, updated_at = now(), history_at = now() WHERE id = $1`, id)
 	f.exec(t, `INSERT INTO action_event (request_id, sequence, state, at) VALUES ($1, 2, 'denied', now())`, id)
@@ -128,12 +128,13 @@ func TestPolicyEvidencePythonStoredIsReadAndWrittenBack(t *testing.T) {
 			}
 			id := f.insertMinimalRequest(t, otherCaller.Account, "python-decided")
 			f.decideAsPython(t, id, vector.Stored)
-			if read := f.get(t, id).Decision; read == nil || !reflect.DeepEqual(read.PolicyEvidence, &evidence) {
-				t.Errorf("read evidence %+v, want %+v", read, evidence)
+			want := PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_UNKNOWN, Evidence: &evidence}
+			if read := f.get(t, id).Decision; read == nil || !reflect.DeepEqual(read.Decider, want) {
+				t.Errorf("read decision %+v, want %+v", read, want)
 			}
 
 			written := f.submitInput(t, caller, input("go-decided"), Admission{RequestID: uuid.New(), Vote: &ProviderVote{
-				Provider: "test-provider", Verdict: VerdictDeny, ReasonCode: "test_reason", Evidence: &evidence,
+				Verdict: VerdictDeny, Policy: PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE, Evidence: &evidence},
 			}})
 			encoded := f.document(t, `SELECT policy_evidence_proto FROM action_decision WHERE request_id = $1`, written.ID)
 			got, err := decodeStoredPolicyEvidenceProto(encoded)
@@ -174,7 +175,7 @@ func TestAJSONNullIsAnAbsentValue(t *testing.T) {
 	f.exec(t, `UPDATE action_execution SET state = 'succeeded', result = 'null'::jsonb, error = 'null'::jsonb WHERE request_id = $1`, allowed.ID)
 
 	read := f.get(t, allowed.ID)
-	if read.Decision.PolicyEvidence != nil || read.Execution.Result != nil || read.Execution.Error != nil {
+	if read.Execution.Result != nil || read.Execution.Error != nil {
 		t.Errorf("read %+v, %+v, %+v", read, read.Decision, read.Execution)
 	}
 	if actors := f.events(t, allowed.ID); actors[0].Actor != nil || actors[1].Actor != nil {
@@ -232,7 +233,11 @@ func TestExecutionsPythonLeftAreDispatchedSweptAndReconciled(t *testing.T) {
 	if expired := f.expire(t); !slices.Equal(expired, []uuid.UUID{lost}) {
 		t.Errorf("the sweep ended %v, want only the attempt Python left in flight, %v", expired, lost)
 	}
-	sameJSON(t, f.get(t, swept).Execution.Error, pythonError)
+	if got, want := f.get(t, swept).Execution.Error, (&action_servicepb.ExecutionError{
+		Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST, Message: "dispatch outcome unknown; not replayed",
+	}); !proto.Equal(got, want) {
+		t.Errorf("the error Python stored reads %v, want %v", got, want)
+	}
 
 	for name, finished := range map[string]struct {
 		id    uuid.UUID
@@ -285,7 +290,7 @@ func TestTypedReadersRejectInvalidPresentProtobuf(t *testing.T) {
 		t.Fatalf("an empty actor protobuf: %v", err)
 	}
 
-	evidenceRequest := f.allowed(t, caller, "invalid-evidence-proto")
+	evidenceRequest := f.submitInput(t, caller, input("invalid-evidence-proto"), Admission{RequestID: uuid.New(), Vote: vote(VerdictAllow)})
 	unknownEvidence, err := proto.Marshal(&action_servicepb.PolicyEvidence{Matched: &action_servicepb.MatchedPolicy{
 		Source: action_servicepb.PolicySource(99), Type: action_servicepb.PolicyKind_POLICY_KIND_EXACT_ACTIONS,
 	}})

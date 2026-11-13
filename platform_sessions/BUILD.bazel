@@ -228,3 +228,12 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "scoped_cookie",
+    srcs = ["scoped_cookie.py"],
+    deps = [
+        ":http_types",
+        "@pypi//pydantic",
+    ],
+)

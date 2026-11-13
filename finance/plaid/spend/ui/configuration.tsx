@@ -105,19 +105,21 @@ export function ConfigurationPage({
                       const oneOff = rule.scope === "one_off";
                       return (
                         <Paper key={`${rule.kind}-${index}`} withBorder radius="md" p="sm">
-                          <Group align="flex-start" gap="sm" wrap="nowrap">
-                            <Text size="sm" c="dimmed" w={20} ta="right">
-                              {index + 1}.
-                            </Text>
-                            <Badge color={color} variant="light" style={{ flexShrink: 0 }}>
-                              {label}
-                            </Badge>
-                            {oneOff && (
-                              <Badge color="violet" variant="light" style={{ flexShrink: 0 }}>
-                                One-off
+                          <Group align="flex-start" gap="sm" wrap="wrap">
+                            <Group gap="sm" wrap="nowrap">
+                              <Text size="sm" c="dimmed" w={20} ta="right">
+                                {index + 1}.
+                              </Text>
+                              <Badge color={color} variant="light">
+                                {label}
                               </Badge>
-                            )}
-                            <Stack gap={2} miw={0}>
+                              {oneOff && (
+                                <Badge color="violet" variant="light">
+                                  One-off
+                                </Badge>
+                              )}
+                            </Group>
+                            <Stack gap={2} miw={0} style={{ flex: "1 1 16rem" }}>
                               {rule.id && (
                                 <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                                   {rule.id}

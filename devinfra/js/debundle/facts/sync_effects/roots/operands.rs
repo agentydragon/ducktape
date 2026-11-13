@@ -2,15 +2,20 @@
 //! selected ordered initializer an owner executes with. Preparatory
 //! classifier proofs that read the prefix run here, before the body.
 
-use super::super::execution_index::{Call, CallKind, object_own_data_read_property};
+use super::super::execution_index::{
+    Call, CallKind, ExecutionIndex, object_own_data_read_property,
+};
 use super::super::interpreter::{
     CheckedLocalConstructorFactory, Executor, Outcome, ValidatedMetadataDecoration, unknown,
 };
-use super::super::local_operations::LocalBody;
+use super::super::local_operations::{LocalBody, RootStore};
+use super::super::native::array_iteration::{admitted_callback, supported_row};
 use super::super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
-use super::super::value_model::{Context, ValueExpr};
+use super::super::own_data_transfer::resolve_writable_slot;
+use super::super::value_model::{AbstractValue, CallSite, Context, MemberKey, ValueExpr, Values};
 use crate::execution_evidence::ConstructionRejection;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::local_effect_targets::MetadataDecorateCall;
 use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKind};
 use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
@@ -39,11 +44,26 @@ pub(super) struct RootOperands<'source> {
     /// Roots this owner added while no opaque call consumed them; a fully
     /// covered execution withdraws them again at finalization.
     pub(super) provisional_roots: BTreeSet<SourceUnitOrdinal>,
+    /// The owner's one call is a substituted retaining factory whose result
+    /// is its private carrier: the callback is reached only through the
+    /// result binding, so the owner is no reachability root of its own.
+    pub(super) private_factory_result: bool,
     pub(super) ordered_initializer: Option<&'source LocalBody>,
+    /// An admitted root expression statement. The body phase runs it through
+    /// the kernel and keeps it only if that execution seals the owner;
+    /// otherwise it takes it and the flattened lane runs.
+    pub(super) ordered_statement: Option<&'source LocalBody>,
+    /// An initializer the body phase runs through the kernel and keeps as
+    /// `ordered_initializer` only if that execution seals the owner; taken by
+    /// the body phase. Never set beside `ordered_initializer`.
+    pub(super) attempted_initializer:
+        Option<(&'source LocalBody, EffectInitializerSource<'source>)>,
     /// The canonical source identity of the selected initializer body.
-    pub(super) effect_initializer_source:
-        Option<(&'source InitializationSourceIdentity, &'source Id, Span)>,
+    pub(super) effect_initializer_source: Option<EffectInitializerSource<'source>>,
 }
+
+pub(super) type EffectInitializerSource<'source> =
+    (&'source InitializationSourceIdentity, &'source Id, Span);
 
 pub(super) fn prepare<'source>(
     executor: &mut Executor<'source, '_>,
@@ -226,6 +246,10 @@ pub(super) fn prepare<'source>(
         &private_constructor_result_owners,
         closed_result.as_ref(),
     );
+    // The proof is the flattened lane's; the ordered lane relies on it only
+    // for the call it substitutes.
+    let private_factory_result = closed_result.is_some()
+        && matches!(calls.as_slice(), [call] if executor.retaining_factory_summary(call).is_some());
     if let Some(proof) = closed_result {
         executor.record_callback_factory_use_fact(proof.proof_use);
     }
@@ -274,7 +298,7 @@ pub(super) fn prepare<'source>(
             let [(binding, _)] = assignments.as_slice() else {
                 return false;
             };
-            body.initializer_span().is_some_and(|span| {
+            body.root_span().is_some_and(|span| {
                 index
                     .initialization_source_identities
                     .get(&owner)
@@ -285,9 +309,15 @@ pub(super) fn prepare<'source>(
         let [(binding, _)] = assignments.as_slice() else {
             return None;
         };
-        let (callee, span) = body.single_identifier_call_with_function_argument_initializer()?;
+        let (callee, span, const_primitive_result) = body
+            .single_identifier_call_with_function_argument_initializer()
+            .map(|(callee, span)| (callee, span, false))
+            .or_else(|| {
+                body.single_identifier_call_with_binding_argument_initializer()
+                    .map(|(callee, span)| (callee, span, true))
+            })?;
         let source = index.initialization_source_identities.get(&owner)?;
-        if !source.matches(owner, binding, body.initializer_span()?) {
+        if !source.matches(owner, binding, body.root_span()?) {
             return None;
         }
         let [call] = calls.as_slice() else {
@@ -301,17 +331,57 @@ pub(super) fn prepare<'source>(
         {
             return None;
         }
-        inputs.initializer_call_effect_input(owner, binding, callee, span)
+        inputs
+            .initializer_call_effect_input(owner, binding, callee, span)
+            .filter(|input| {
+                input.returns_opaque_function_from_const_primitive == const_primitive_result
+            })
     });
     let native_root_calls = executor.ordered_root_calls_are_native(calls);
+    let root_array_iteration = root_array_iteration(executor, calls);
+    // Every call of the root is a direct call of an imported binding that
+    // carries a published foreign call summary. The ordered lane substitutes
+    // each summary, so it runs no provider or application code.
+    let provider_root_calls = {
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+            .peekable();
+        calls.peek().is_some()
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && !call.has_spread
+                    && executor
+                        .foreign_call_summary(call.kind, &call.callee)
+                        .is_some()
+            })
+    };
+    // Every call of the root is a local call or a direct call of an import
+    // the ordered lane replaces by its derived summary, with at least one of
+    // the latter. A substituted call runs no provider or application code.
+    let summarized_root_calls = {
+        let summarized = |call: &Call| {
+            call.kind == CallKind::Call
+                && !call.has_spread
+                && (executor
+                    .foreign_call_summary(call.kind, &call.callee)
+                    .is_some()
+                    || executor.retaining_factory_summary(call).is_some())
+        };
+        let mut calls = calls
+            .iter()
+            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New));
+        calls.clone().any(summarized)
+            && calls.all(|call| {
+                call.kind == CallKind::Call
+                    && (summarized(call) || executor.ordered_root_call_is_local(call))
+            })
+    };
     let root_construction = index
         .ordered_initializers
         .get(&owner)
         .is_some_and(|body| executor.ordered_root_construction(body, calls));
-    let ordered_initializer = ((initializer_source.is_none()
-        || checked_split_binding_copy
-        || selected_audited_initializer.is_some())
-        && matches!(fact.kind, StatementKind::VarDecl)
+    let root_shape = matches!(fact.kind, StatementKind::VarDecl)
         && fact.declared.len() == 1
         && matches!(assignments.as_slice(), [(binding, _)]
             if fact.declared.contains(binding)
@@ -324,16 +394,28 @@ pub(super) fn prepare<'source>(
         && index.top_property_writes[owner.0].is_empty()
         && index.top_member_value_writes[owner.0].is_empty()
         && index.top_callback_result_writes[owner.0].is_empty()
-        && index.top_exported_values[owner.0].is_empty())
-    .then(|| index.ordered_initializers.get(&owner))
-    .flatten()
-    .filter(|body| {
-        !body.requires_keyed_collection_new()
-            && body.captured_writes().is_empty()
-            && (executor.ordered_root_calls_are_local(calls)
+        && index.top_exported_values[owner.0].is_empty();
+    let admitted_body = |body: &&LocalBody| {
+        !body.requires_keyed_collection_new() && body.captured_writes().is_empty()
+    };
+    // CLEANUP(added 2026-11-09): fold these committed shapes into
+    //   `attempted_initializer` at L4e. They keep an unsealed kernel
+    //   execution (`OrderedRootInitializerUncovered`); folding them earlier
+    //   would rerun it on the flat lane and change what the legacy gate
+    //   reads. `body::attempt_seal` decides every other root call.
+    let ordered_initializer = ((initializer_source.is_none()
+        || checked_split_binding_copy
+        || selected_audited_initializer.is_some())
+        && root_shape)
+        .then(|| index.ordered_initializers.get(&owner))
+        .flatten()
+        .filter(admitted_body)
+        .filter(|body| {
+            (executor.ordered_root_calls_are_local(calls)
                 || native_root_calls
+                || provider_root_calls
                 || selected_audited_initializer.is_some())
-            && (calls
+                && (calls
                 .iter()
                 .filter(|call| call.kind == CallKind::Call)
                 .nth(1)
@@ -361,12 +443,13 @@ pub(super) fn prepare<'source>(
                     call.kind == CallKind::ArraySpread && call.caller.is_none()
                 })
                 || native_root_calls
+                || provider_root_calls
                 || root_construction
                 || calls.iter().any(|call| {
                     call.kind == CallKind::LocalMemberRead
                         && call.owner == owner
                         && call.caller.is_none()
-                        && body.initializer_span() == Some(call.span)
+                        && body.root_span() == Some(call.span)
                         && object_own_data_read_property(&call.callee, |id| {
                             inputs.flow.is_declared(id)
                                 || inputs.shadowed.contains(id.0.as_ref())
@@ -374,20 +457,119 @@ pub(super) fn prepare<'source>(
                         .is_some()
                         && index.native_own_data_read_premise(call.span).is_some()
                 }))
-    });
-    // Canonical source identity is independent of leaf/value admission.
-    // Retain the exact selected body span, not a lowered-value guess.
+        });
+    let store = index
+        .ordered_statements
+        .get(&owner)
+        .and_then(|body| Some((body, body.root_store_statement()?)));
+    // The admitted store's operands run no code, so what the prefix proves
+    // about its target is what the kernel's store rule reaches. Anything else
+    // this owner does keeps the flattened lane.
+    // `stored` is the binding a binding store writes: lowering lists it among
+    // the body's free names, but the statement never reads it.
+    let common = |body: &LocalBody, stored: Option<&Id>| {
+        matches!(fact.kind, StatementKind::SideEffect)
+            && calls.is_empty()
+            && fact.global_writes.is_empty()
+            && !inputs.exported_owners.contains(&owner)
+            && index.dynamic_scope_owners.is_empty()
+            && !index.opaque_top.contains(&owner)
+            && metadata_application.is_none()
+            && !certified_deferred_write
+            && index.top_exported_values[owner.0].is_empty()
+            && body
+                .free_reads()
+                .iter()
+                .filter(|binding| Some(*binding) != stored)
+                .all(|binding| executor.initialized_local_binding(binding))
+    };
+    let (ordered_statement, store_refusal) = match store {
+        None => (None, None),
+        Some((body, RootStore::Field { receiver, property })) => {
+            let admitted = common(body, None)
+                && assignments.is_empty()
+                && fact.rebinds.eager.is_empty()
+                && body.captured_writes().is_empty()
+                // The flat lane's callback-result record for this very store
+                // only taints the record unless the record reaches deferred
+                // or retained callbacks; those keep the flat lane.
+                && index.top_callback_result_writes[owner.0]
+                    .iter()
+                    .all(|write| matches!(&write.receiver, ValueExpr::Binding(written) if written == receiver))
+                && executor
+                    .state
+                    .world
+                    .module
+                    .prefix_values
+                    .get(receiver)
+                    .is_some_and(|receivers| {
+                        resolve_writable_slot(&*executor, receivers, property).is_some()
+                            && !executor.callback_values(receivers).iter().any(|value| {
+                                matches!(
+                                    value,
+                                    AbstractValue::DeferredCallbacks(_)
+                                        | AbstractValue::AuditedRetainedResult(_, _)
+                                )
+                            })
+                    });
+            if admitted {
+                (Some(body), None)
+            } else {
+                (
+                    None,
+                    Some(OwnerInitializationCoverageRefusalReason::UnprovedFieldStore),
+                )
+            }
+        }
+        Some((body, RootStore::Binding(binding))) => {
+            match executor.module_binding_store_refusal(binding) {
+                Some(refusal) => (None, Some(refusal)),
+                None if common(body, Some(binding))
+                    && matches!(assignments.as_slice(), [(assigned, _)] if assigned == binding)
+                    && fact.rebinds.eager.len() == 1
+                    && fact.rebinds.eager.contains(binding)
+                    && index.top_callback_result_writes[owner.0].is_empty() =>
+                {
+                    (Some(body), None)
+                }
+                None => (None, None),
+            }
+        }
+    };
+    // A store refines only the generic non-declaration refusal.
+    let initialization_coverage_refusal = match initialization_coverage_refusal {
+        _ if ordered_statement.is_some() => None,
+        Some(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind)
+            if store_refusal.is_some() =>
+        {
+            store_refusal
+        }
+        refusal => refusal,
+    };
+    // Every other initializer whose root calls are all local, or local and
+    // summarized imports (a call with arguments, an IIFE, a call inside a
+    // comma, a retaining factory call), or whose one call is an array
+    // iteration row. The body phase runs it
+    // through the kernel and keeps that execution only if it seals the owner.
+    let attempted_initializer =
+        (ordered_initializer.is_none() && initializer_source.is_none() && root_shape)
+            .then(|| index.ordered_initializers.get(&owner))
+            .flatten()
+            .filter(admitted_body)
+            .filter(|_| {
+                calls.iter().any(|call| call.kind == CallKind::Call)
+                    && (executor.ordered_root_calls_are_local(calls)
+                        || summarized_root_calls
+                        || root_array_iteration)
+            })
+            .and_then(|body| {
+                Some((
+                    body,
+                    ordered_effect_source(index, owner, assignments, body)?,
+                ))
+            });
     let effect_initializer_source = ordered_initializer
-        .and_then(|body| {
-            let [(binding, _)] = assignments.as_slice() else {
-                return None;
-            };
-            let span = body.initializer_span()?;
-            let source = index.initialization_source_identities.get(&owner)?;
-            source
-                .matches(owner, binding, span)
-                .then_some((source, binding, span))
-        })
+        .and_then(|body| ordered_effect_source(index, owner, assignments, body))
         .or_else(|| {
             let [(binding, expression)] = assignments.as_slice() else {
                 return None;
@@ -415,7 +597,185 @@ pub(super) fn prepare<'source>(
         prevalidated_metadata,
         certified_deferred_write,
         provisional_roots,
+        private_factory_result,
         ordered_initializer,
+        ordered_statement,
+        attempted_initializer,
         effect_initializer_source,
+    }
+}
+
+/// Whether the root's one invocation is worth attempting as an
+/// `Array.prototype` iteration row (`native/array_iteration.rs`): a supported
+/// row over a module binding holding one dense literal array, with a local
+/// callback that has no live captures. A cheap filter with no side effects:
+/// the attempt runs through `body::execute`, which keeps the kernel
+/// execution only if it seals the owner and otherwise rewinds to the flat
+/// lane (`plans/kernel_design.md` § Root admission). The row itself proves
+/// the method, the receiver and every callback.
+fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
+    let invocations: Vec<_> = calls
+        .iter()
+        .filter(|call| {
+            call.caller.is_none()
+                && !matches!(
+                    call.kind,
+                    CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
+                )
+        })
+        .collect();
+    let [call] = invocations.as_slice() else {
+        return false;
+    };
+    if call.kind != CallKind::Call || call.has_spread {
+        return false;
+    }
+    let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = &call.callee else {
+        return false;
+    };
+    let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+        return false;
+    };
+    let index = executor.inputs.index;
+    let Some(proof) = index.array_iterations.get(&CallSite::from(call.span)) else {
+        return false;
+    };
+    if proof.row.member != property || !supported_row(proof.row.result, call.args.len()) {
+        return false;
+    }
+    let prefix = &executor.state.world.module.prefix_values;
+    let callback = match call.args.first() {
+        Some(ValueExpr::Alloc(Kind::Function, key)) => {
+            Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, *key))])
+        }
+        Some(ValueExpr::Binding(binding)) if executor.initialized_local_binding(binding) => {
+            match prefix.get(binding) {
+                Some(values) => values.clone(),
+                None => return false,
+            }
+        }
+        _ => return false,
+    };
+    admitted_callback(index, &callback).is_ok()
+        && executor.initialized_local_binding(receiver)
+        && prefix.get(receiver).is_some_and(|values| {
+            matches!(values.iter().collect::<Vec<_>>().as_slice(),
+                [AbstractValue::Value(Value::Alloc(Kind::Object, array))]
+                    if executor.state.world.arrays.dense.contains_key(array))
+        })
+}
+
+/// Canonical source identity is independent of leaf/value admission. Retain
+/// the exact selected body span, not a lowered-value guess.
+fn ordered_effect_source<'source>(
+    index: &'source ExecutionIndex,
+    owner: SourceUnitOrdinal,
+    assignments: &'source [(Id, ValueExpr)],
+    body: &LocalBody,
+) -> Option<EffectInitializerSource<'source>> {
+    let [(binding, _)] = assignments else {
+        return None;
+    };
+    let span = body.root_span()?;
+    let source = index.initialization_source_identities.get(&owner)?;
+    source
+        .matches(owner, binding, span)
+        .then_some((source, binding, span))
+}
+
+impl Executor<'_, '_> {
+    /// Native and imported calls whose proofs still project source operands
+    /// retain their established whole-owner path. This chooses a source
+    /// family before execution; the ordered call transfer still checks each
+    /// actual target and never retries a failed invocation.
+    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+        calls
+            .iter()
+            .filter(|call| call.kind == CallKind::Call)
+            .all(|call| self.ordered_root_call_is_local(call))
+    }
+
+    fn ordered_root_call_is_local(&self, call: &Call) -> bool {
+        let (targets, member) = match &call.callee {
+            ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
+                Some(Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Function,
+                    *key,
+                ))])),
+                false,
+            ),
+            ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => (
+                self.state.world.module.prefix_values.get(binding).cloned(),
+                false,
+            ),
+            ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
+                let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+                    return false;
+                };
+                if !self.initialized_local_binding(receiver) {
+                    return false;
+                }
+                let targets = self
+                    .state
+                    .world
+                    .module
+                    .prefix_values
+                    .get(receiver)
+                    .and_then(|values| {
+                        self.present_own_data_read(values, property)
+                            .map(|read| read.values)
+                    });
+                (targets, true)
+            }
+            _ => return false,
+        };
+        let Some(targets) = targets else {
+            return false;
+        };
+        let Some((key, callable)) = self.local_call_target(&targets) else {
+            return false;
+        };
+        !callable.generator
+            && !self.inputs.index.async_callables.contains(&key)
+            && (!member || self.method_receiver_is_unused(&targets))
+    }
+
+    /// Why a root statement may not store to this top-level binding at the
+    /// current prefix, decided before anything is recorded. `None` admits the
+    /// store: `SetMutableBinding` then has no global, heap or host effect.
+    pub(in crate::facts::sync_effects) fn module_binding_store_refusal(
+        &self,
+        binding: &Id,
+    ) -> Option<OwnerInitializationCoverageRefusalReason> {
+        use OwnerInitializationCoverageRefusalReason::*;
+        let index = self.inputs.index;
+        Some(if index.imported_bindings.contains(binding) {
+            ImportedBindingStore
+        } else if !self.inputs.top_bindings.contains(binding) {
+            // An undeclared global stays a global publication.
+            UnsupportedOwnerKind
+        } else if index.top_const_bindings.contains(binding) {
+            ConstBindingStore
+        } else if !self.inputs.var_bindings.contains(binding)
+            && !self
+                .state
+                .world
+                .module
+                .initialized_bindings
+                .contains(binding)
+        {
+            UninitializedBindingStore
+        } else if index.captured_bindings.contains(binding) {
+            // A closure may have read it already or read it later through
+            // its capture, including after an `await`; neither is this
+            // owner's prefix value.
+            CapturedBindingStore
+        } else if index.exported_bindings.contains(binding) {
+            // Export-reentry facts cover only reads during this module's
+            // evaluation, not an importer's later live-binding reads.
+            ExportedBindingStore
+        } else {
+            return None;
+        })
     }
 }

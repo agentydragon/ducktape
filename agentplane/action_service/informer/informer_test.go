@@ -8,14 +8,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 var testAction = store.ActionIdentity{Group: "test-group", Name: "test-action"}
@@ -44,15 +46,15 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 	t.Parallel()
 	f := newFixture(t)
 	admitted := auth.Account{Namespace: f.callers, Name: "test-labeled"}
-	labeled := f.serviceAccount(admitted, "true")
+	labeled := f.serviceAccount(admitted, callers.ServiceAccountLabelValue)
 	unlabeled := auth.Account{Namespace: f.callers, Name: "test-unlabeled"}
 	becomesLabeled := f.serviceAccount(unlabeled, "")
 	alsoAdmitted := auth.Account{Namespace: f.moreCallers, Name: "test-labeled"}
-	deleted := f.serviceAccount(alsoAdmitted, "true")
+	deleted := f.serviceAccount(alsoAdmitted, callers.ServiceAccountLabelValue)
 	notTrue := auth.Account{Namespace: f.callers, Name: "test-labeled-false"}
 	f.serviceAccount(notTrue, "false")
 	outside := auth.Account{Namespace: f.elsewhere, Name: "test-labeled"}
-	f.serviceAccount(outside, "true")
+	f.serviceAccount(outside, callers.ServiceAccountLabelValue)
 	f.start()
 
 	f.eventually("the index to sync", f.available)
@@ -67,9 +69,9 @@ func TestOnlyLabeledServiceAccountsOfTheCallerNamespacesAreAdmitted(t *testing.T
 		t.Errorf("the callers listed: %v, %v", listed, available)
 	}
 
-	delete(labeled.Labels, CallerLabel)
+	delete(labeled.Labels, callers.ServiceAccountLabelKey)
 	f.update(labeled)
-	becomesLabeled.Labels = map[string]string{CallerLabel: "true"}
+	becomesLabeled.Labels = map[string]string{callers.ServiceAccountLabelKey: callers.ServiceAccountLabelValue}
 	f.update(becomesLabeled)
 	f.remove(deleted)
 	f.eventually("the label changes and the deletion to be followed", func() bool {
@@ -84,8 +86,8 @@ func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	caller := auth.Account{Namespace: f.moreCallers, Name: "test-workload"}
-	f.serviceAccount(caller, "true")
-	subject := policyapi.ServiceAccountRef{Namespace: caller.Namespace, Name: caller.Name}
+	f.serviceAccount(caller, callers.ServiceAccountLabelValue)
+	subject := reader.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}
 	f.create(f.policySet("test-set", exactActions()))
 	f.create(f.policyBinding(f.policy, "test-grant", subject, "test-set"))
 	f.start()
@@ -113,16 +115,49 @@ func TestNothingIsAdmittedOrResolvedWhileACallerNamespaceFails(t *testing.T) {
 	}
 }
 
+func TestAnIdentityIsAdmittedWhileABindingNamesItsIncarnation(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	bound := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: f.policy, Name: "test-bound-agent"}, Spec: policyapi.IdentitySpec{Description: "test bound agent"}}
+	unbound := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: f.policy, Name: "test-unbound-agent"}, Spec: policyapi.IdentitySpec{Description: "test unbound agent"}}
+	f.create(bound)
+	f.create(unbound)
+	// A binding grants the Identity no Action rule, yet names it: it may call, and every request waits for an operator.
+	f.create(f.policySet("test-other-readers", otherReaders()))
+	binding := &policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: f.policy, Name: "test-identity-grant"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: bound.Name}}, PolicySets: []string{"test-other-readers"},
+		},
+	}
+	f.create(binding)
+	f.start()
+
+	admitted := auth.Identity{Name: bound.Name, UID: string(bound.UID)}
+	f.eventually("the bound Identity to be admitted", func() bool { return f.index.AdmitsIdentity(admitted) })
+	for name, refused := range map[string]auth.Identity{
+		"another incarnation": {Name: bound.Name, UID: "test-stale-uid"},
+		"an unbound Identity": {Name: unbound.Name, UID: string(unbound.UID)},
+	} {
+		if f.index.AdmitsIdentity(refused) {
+			t.Errorf("%s is admitted", name)
+		}
+	}
+
+	f.remove(binding)
+	f.eventually("the unbound Identity to be refused", func() bool { return !f.index.AdmitsIdentity(admitted) })
+}
+
 func TestBindingsResolveAsAdmissionDecidesFromThem(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	subject := policyapi.ServiceAccountRef{Namespace: f.callers, Name: "test-workload"}
+	subject := reader.ServiceAccount{Namespace: f.callers, Name: "test-workload"}
 	f.create(f.policySet("test-auto", otherReaders(), exactActions()))
 	f.create(f.policySet("test-other-reader", otherReaders()))
 	f.create(f.policySet("test-refused", refusedSchema()))
 	f.create(f.policyBinding(f.policy, "test-b", subject, "test-refused", "test-auto", "test-missing"))
 	f.create(f.policyBinding(f.policy, "test-a", subject, "test-other-reader"))
-	f.create(f.policyBinding(f.policy, "test-someone-else", policyapi.ServiceAccountRef{Namespace: f.callers, Name: "test-other"}, "test-auto"))
+	f.create(f.policyBinding(f.policy, "test-someone-else", reader.ServiceAccount{Namespace: f.callers, Name: "test-other"}, "test-auto"))
 	f.start()
 
 	// Once ActionsReady is written on both, the bindings stay as they are.
@@ -152,7 +187,7 @@ func TestBindingsResolveAsAdmissionDecidesFromThem(t *testing.T) {
 	if !ok {
 		t.Fatal("the provider does not allow the Action a resolved binding auto-approves")
 	}
-	evidence := allowed.Vote.Evidence
+	evidence := allowed.Vote.Policy.Evidence
 	if len(evidence.Bindings) != 2 || evidence.Bindings[1].ResourceVersion != b.ResourceVersion ||
 		evidence.Matched != (store.MatchedPolicy{
 			Namespace: f.policy, PolicySet: "test-auto", Source: store.PolicySourceRules, Index: 1, Type: store.PolicyExactActions,
@@ -164,7 +199,7 @@ func TestBindingsResolveAsAdmissionDecidesFromThem(t *testing.T) {
 func TestActionsReadyIsAppliedOnlyOnThePolicyNamespacesBindings(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
-	subject := policyapi.ServiceAccountRef{Namespace: f.callers, Name: "test-workload"}
+	subject := reader.ServiceAccount{Namespace: f.callers, Name: "test-workload"}
 	f.create(f.policySet("test-auto", exactActions()))
 	f.create(f.policySet("test-refused", refusedSchema()))
 	f.create(f.policyBinding(f.policy, "test-ready", subject, "test-auto"))

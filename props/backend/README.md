@@ -11,19 +11,7 @@ bazelisk run //props/frontend:dev      # Frontend + backend dev servers
 
 ## API
 
-- `GET /health` — health check
-- `GET /api/stats/overview` — definitions leaderboard
-- Full endpoint list: see <../docs/SPEC.md> and <../docs/backend_api.md>
-
-## Structure
-
-```
-backend/
-├── app.py         # FastAPI app, lifespan
-├── auth.py        # Auth middleware (postgres creds → RLS)
-├── routes/        # API endpoints (stats, runs, ground_truth, llm, registry)
-└── TODO.md        # Implementation tasks
-```
+See <../docs/backend_api.md> for backend endpoint and agent-workflow details.
 
 ## Development
 

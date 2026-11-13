@@ -3,12 +3,15 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:zip.bzl", "pkg_zip")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_test")
+load("//gnome:devkit.bzl", "gnome_devkit")
 
 pkg_files(
     name = "extension_files",
     srcs = [
         "extension.js",
         "metadata.json",
+        "prefs.js",
+        "schemas/org.gnome.shell.extensions.plaid-spend.gschema.xml",
         "stylesheet.css",
     ],
     strip_prefix = strip_prefix.from_pkg(),
@@ -62,8 +65,20 @@ py_test(
         "//gnome/test_image:gnome_shell_test",
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",
+        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
+)
+
+gnome_devkit(
+    name = "devkit",
+    daemon = "//finance/plaid/spend/desktop:daemon_bin",
+    daemon_arg = "--ephemeral-credentials",
+    default_fixture = "fixtures/ready_allowance.json",
+    extension_zip = ":plaid_spend_extension",
+    fixture_env = "PLAID_SPEND_FIXTURE",
+    host_bus_env = "PLAID_SPEND_DEVKIT_HOST_BUS_ADDRESS",
+    uuid = "plaid-spend@allegedly.works",
 )

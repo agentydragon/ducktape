@@ -1,0 +1,926 @@
+{
+  "uid": "buildbuddy-executor-pool",
+  "title": "BuildBuddy executor pool",
+  "description": "The in-cluster kvm-vm workers: health, executor activity, guest resources and scheduler reservations.",
+  "tags": ["ci", "buildbuddy", "executor"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "editable": true,
+  "style": "dark",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pool status",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 2,
+      "title": "Executor scrapes up",
+      "description": "Number of executor metrics endpoints successfully scraped. Zero also covers a missing scrape target. Filtered to pods still present in kube-state-metrics.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Registered executors",
+      "description": "Executors reporting a healthy registered_to_scheduler check. This is not the configured worker count; missing metrics contribute no healthy executors. Filtered to pods still present in kube-state-metrics.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(buildbuddy_health_check_status{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\",health_check_name=\"registered_to_scheduler\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Tasks in progress",
+      "description": "Tasks in executor stages, including preparation, execution and upload; zero includes missing metrics. Filtered to pods still present in kube-state-metrics.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Guest scrapes up",
+      "description": "Number of worker guest node-exporter endpoints successfully scraped. Guest CPU, memory and filesystem panels require these scrapes. Filtered to pods still present in kube-state-metrics.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum(up{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"} and on (namespace, pod) kube_pod_info{namespace=\"buildbuddy-executor\"}) or vector(0)",
+          "refId": "A",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value",
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Executor activity",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "title": "Tasks by stage",
+      "description": "Current executor-side tasks by stage, summed across the KVM pool. A task occupies one stage at a time. Scrape intervals may miss short tasks.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (stage) (buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"})",
+          "refId": "A",
+          "legendFormat": "{{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Tasks per worker",
+      "description": "Tasks in all execution stages per worker. This shows executor occupancy, not queued central scheduler work.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (pod) (buildbuddy_remote_execution_tasks_executing{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"})",
+          "refId": "A",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Executor health checks",
+      "description": "A value of 1 means the named executor check is healthy; 0 means it failed. Missing series are not healthy. Registration is the check required by the worker readiness probe.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "buildbuddy_health_check_status{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"}",
+          "refId": "A",
+          "legendFormat": "{{pod}} \u00b7 {{health_check_name}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Local executor queue",
+      "description": "Actions waiting in each executor's local queue, summed over group labels. This is not the BuildBuddy scheduler's pool backlog or a count of distinct pending actions.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "sum by (pod) (buildbuddy_remote_execution_queue_length{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"})",
+          "refId": "A",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "title": "Guest resources",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 12,
+      "title": "Guest CPU busy",
+      "description": "100% minus idle time across the guest vCPUs, averaged over five minutes. Busy includes I/O wait and steal time.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "100 * (1 - avg by (pod) (rate(node_cpu_seconds_total{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mode=\"idle\"}[5m])))",
+          "refId": "A",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Guest RAM used",
+      "description": "Guest MemTotal minus MemAvailable: the Linux estimate of memory not readily available to new work. It includes the executor, Docker and actions, and is not a sum of process RSS.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (pod) (node_memory_MemTotal_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"} - node_memory_MemAvailable_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"})",
+          "refId": "A",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "title": "Guest RAM used %",
+      "description": "Guest memory in use, relative to the guest's MemTotal; MemAvailable includes reclaimable cache.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "100 * (1 - max by (pod) (node_memory_MemAvailable_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}) / max by (pod) (node_memory_MemTotal_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\"}))",
+          "refId": "A",
+          "legendFormat": "{{pod}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "title": "Root filesystem used and capacity",
+      "description": "Allocated bytes and total capacity of each guest root filesystem. This does not include the separate /boot or /buildbuddy filesystems. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
+          "refId": "A",
+          "legendFormat": "{{worker}} used"
+        },
+        {
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
+          "refId": "B",
+          "legendFormat": "{{worker}} capacity"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "title": "Work filesystem used and capacity",
+      "description": "Allocated bytes and total capacity inside each guest /buildbuddy filesystem. These are distinct from its backing PVC or physical thin pool. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} - node_filesystem_free_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
+          "refId": "A",
+          "legendFormat": "{{worker}} used"
+        },
+        {
+          "expr": "max by (worker) (label_replace((node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"}), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
+          "refId": "B",
+          "legendFormat": "{{worker}} capacity"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Root filesystem unavailable %",
+      "description": "Percentage of root filesystem capacity not available to unprivileged processes, including reserved ext4 blocks. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum percentage.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (worker) (label_replace((100 * (1 - node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} / node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"})), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
+          "refId": "A",
+          "legendFormat": "{{worker}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "title": "Work filesystem unavailable %",
+      "description": "Percentage of /buildbuddy capacity not available to unprivileged processes, including reserved ext4 blocks. Series are grouped by stable worker identity across launcher-pod replacements; overlapping samples keep the maximum percentage.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "max by (worker) (label_replace((100 * (1 - node_filesystem_avail_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"} / node_filesystem_size_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"node-metrics\",mountpoint=\"/buildbuddy\",pod=~\"virt-launcher-buildbuddy-kvm-worker-[0-9]+-.*\"})), \"worker\", \"$1\", \"pod\", \"^virt-launcher-(buildbuddy-kvm-worker-[0-9]+)-.*$\"))",
+          "refId": "A",
+          "legendFormat": "{{worker}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "title": "Scheduler resource reservations",
+      "type": "row",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 18,
+      "title": "Assigned and advertised CPU",
+      "description": "BuildBuddy estimated CPU assigned to tasks and the maximum advertised by each executor, in CPU cores. These are reservations, not measured guest CPU use.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 56
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "buildbuddy_remote_execution_assigned_milli_cpu{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} / 1000",
+          "refId": "A",
+          "legendFormat": "{{pod}} assigned"
+        },
+        {
+          "expr": "buildbuddy_remote_execution_assignable_milli_cpu{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"} / 1000",
+          "refId": "B",
+          "legendFormat": "{{pod}} advertised"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "title": "Assigned and advertised RAM",
+      "description": "BuildBuddy estimated RAM assigned to tasks and the maximum advertised by each executor. These are reservations, not measured guest memory use.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 56
+      },
+      "datasource": "${DS_MIMIR}",
+      "targets": [
+        {
+          "expr": "buildbuddy_remote_execution_assigned_ram_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"}",
+          "refId": "A",
+          "legendFormat": "{{pod}} assigned"
+        },
+        {
+          "expr": "buildbuddy_remote_execution_assignable_ram_bytes{namespace=\"buildbuddy-executor\",service=\"buildbuddy-kvm-worker-metrics\",endpoint=\"metrics\"}",
+          "refId": "B",
+          "legendFormat": "{{pod}} advertised"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": []
+}

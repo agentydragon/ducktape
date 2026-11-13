@@ -126,6 +126,15 @@ async def test_authenticated_browser_reads_archived_transcript(
             "response",
             lambda response: api_responses.append((response.url, response.status)) if "/api/" in response.url else None,
         )
+        earlier_page_requests: list[str] = []
+        page.on(
+            "request",
+            lambda request: (
+                earlier_page_requests.append(request.url)
+                if "/events?" in request.url and "cursor=" in request.url
+                else None
+            ),
+        )
         with VisualPage(page, outputs=test_outputs, title="Authenticated workstation session archive") as visual:
             await page.goto(archive_origin, wait_until="domcontentloaded")
             try:
@@ -171,6 +180,8 @@ async def test_authenticated_browser_reads_archived_transcript(
             earlier_response = await earlier_page.value
             assert earlier_response.ok
             assert (await earlier_response.json())["data"][0]["ordinal"] == 0
+            # A duplicate load would abort the in-flight page, leaving the matched response without a body.
+            assert earlier_page_requests == [earlier_response.url]
             await expect(history).to_have_attribute("data-layout-settled", "true")
 
             version_menu = page.get_by_role("button", name="Conversation options")

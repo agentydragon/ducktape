@@ -1,0 +1,1575 @@
+{
+  "capture_notes": "Captured from live Mimir and Loki on 2026-11-10 over 24h. Converted Prometheus vectors/matrices into Grafana frames; repository identities replaced with repo-N. Fixture verifies rendering only, not query execution. Counts and storage values preserve observed scale.",
+  "panels": {
+    "1": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Client manifest GETs"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1782.0]]
+            }
+          }
+        ]
+      }
+    },
+    "2": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Runtime pull calls"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [679.4718554551772]]
+            }
+          }
+        ]
+      }
+    },
+    "3": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Used"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [3991023616.0]]
+            }
+          }
+        ]
+      }
+    },
+    "4": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Blob response bytes"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [105671143548.0]]
+            }
+          }
+        ]
+      }
+    },
+    "5": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Zot manifest reads"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738324800000, 1738328400000, 1738332000000, 1738335600000, 1738339200000, 1738342800000,
+                  1738346400000, 1738350000000, 1738353600000, 1738357200000, 1738360800000, 1738364400000,
+                  1738368000000, 1738371600000, 1738375200000, 1738378800000, 1738382400000, 1738386000000,
+                  1738389600000, 1738393200000, 1738396800000, 1738400400000, 1738404000000, 1738407600000,
+                  1738411200000
+                ],
+                [
+                  85.42372881355932, 126.10169491525423, 393.5593220338983, 327.45762711864404, 301.0169491525424,
+                  376.271186440678, 80.33898305084745, 224.7457627118644, 305.08474576271186, 378.3050847457627,
+                  188.135593220339, 188.135593220339, 40.67796610169491, 77.28813559322033, 176.94915254237287,
+                  100.6779661016949, 25.423728813559322, 0.0, 21.35593220338983, 30.508474576271187, 97.62711864406779,
+                  100.6779661016949, 21.35593220338983, 210.50847457627117, 126.10169491525423
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "B": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "B",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Outer-cluster runtime pull calls"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738324800000, 1738328400000, 1738332000000, 1738335600000, 1738339200000, 1738342800000,
+                  1738346400000, 1738350000000, 1738353600000, 1738357200000, 1738360800000, 1738364400000,
+                  1738368000000, 1738371600000, 1738375200000, 1738378800000, 1738382400000, 1738386000000,
+                  1738389600000, 1738393200000, 1738396800000, 1738400400000, 1738404000000, 1738407600000,
+                  1738411200000
+                ],
+                [
+                  5.084745762711864, 14.23728813559322, 22.372881355932204, 34.57627118644068, 36.61016949152542,
+                  50.847457627118644, 23.389830508474574, 32.54237288135593, 52.88135593220339, 53.89830508474576,
+                  26.440677966101696, 33.559322033898304, 45.762711864406775, 53.898305084745765, 44.74576271186441,
+                  28.47457627118644, 39.66101694915254, 5.084745762711864, 6.101694915254237, 5.084745762711864,
+                  12.203389830508474, 5.084745762711864, 11.186440677966102, 19.322010629188718, 27.45762711864407
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "6": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Used"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738324800000, 1738328400000, 1738332000000, 1738335600000, 1738339200000, 1738342800000,
+                  1738346400000, 1738350000000, 1738353600000, 1738357200000, 1738360800000, 1738364400000,
+                  1738368000000, 1738371600000, 1738375200000, 1738378800000, 1738382400000, 1738386000000,
+                  1738389600000, 1738393200000, 1738396800000, 1738400400000, 1738404000000, 1738407600000,
+                  1738411200000
+                ],
+                [
+                  3991003136.0, 3991003136.0, 3108261888.0, 3768111104.0, 3991023616.0, 3991023616.0, 3991023616.0,
+                  3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0,
+                  3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0,
+                  3991023616.0, 3991023616.0, 3991023616.0, 3991023616.0
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "B": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "B",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {},
+                  "config": {
+                    "displayNameFromDS": "Capacity"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738324800000, 1738328400000, 1738332000000, 1738335600000, 1738339200000, 1738342800000,
+                  1738346400000, 1738350000000, 1738353600000, 1738357200000, 1738360800000, 1738364400000,
+                  1738368000000, 1738371600000, 1738375200000, 1738378800000, 1738382400000, 1738386000000,
+                  1738389600000, 1738393200000, 1738396800000, 1738400400000, 1738404000000, 1738407600000,
+                  1738411200000
+                ],
+                [
+                  105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0,
+                  105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0,
+                  105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0,
+                  105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0, 105085984768.0,
+                  105085984768.0
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "7": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1029.7150799166086]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-2"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-2"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [750.5211952744961]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-3"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-3"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [624.4336344683808]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-4"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-4"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [624.4336344683808]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-5"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-5"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [483.3356497567755]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-6"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-6"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [125.0868658790827]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-7"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-7"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [113.07852675469076]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-8"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-8"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [108.07505211952744]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-9"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-9"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [91.06323835997219]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-10"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-10"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [0.0]]
+            }
+          }
+        ]
+      }
+    },
+    "8": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-1"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-1"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1667136124.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-2"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-2"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [587513768.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-3"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-3"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [492706959.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-4"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-4"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [433024260.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-5"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-5"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [362806851.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-6"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-6"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [187723877.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-7"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-7"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [84229268.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-8"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-8"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [76782994.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-9"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-9"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [65280090.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-10"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-10"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [17290150.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "repo": "repo-11"
+                  },
+                  "config": {
+                    "displayNameFromDS": "repo-11"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [10181058.0]]
+            }
+          }
+        ]
+      }
+    },
+    "9": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "type": "blob"
+                  },
+                  "config": {
+                    "displayNameFromDS": "blob"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738324800000, 1738328400000, 1738332000000, 1738335600000, 1738339200000, 1738342800000,
+                  1738346400000, 1738350000000, 1738353600000, 1738357200000, 1738360800000, 1738364400000,
+                  1738368000000, 1738371600000, 1738375200000, 1738378800000, 1738382400000, 1738386000000,
+                  1738389600000, 1738393200000, 1738396800000, 1738400400000, 1738404000000, 1738407600000,
+                  1738411200000
+                ],
+                [
+                  0.0, 0.0, 141.3559322033898, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                  0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+                ]
+              ]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "type": "manifest"
+                  },
+                  "config": {
+                    "displayNameFromDS": "manifest"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [
+                [
+                  1738324800000, 1738328400000, 1738332000000, 1738335600000, 1738339200000, 1738342800000,
+                  1738346400000, 1738350000000, 1738353600000, 1738357200000, 1738360800000, 1738364400000,
+                  1738368000000, 1738371600000, 1738375200000, 1738378800000, 1738382400000, 1738386000000,
+                  1738389600000, 1738393200000, 1738396800000, 1738400400000, 1738404000000, 1738407600000,
+                  1738411200000
+                ],
+                [
+                  0.0, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                  0.0, 0.0, 0.0, 0.0, 0.0
+                ]
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "11": {
+      "A": {
+        "frames": [
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "client": "Bazel"
+                  },
+                  "config": {
+                    "displayNameFromDS": "Bazel"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [6.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "client": "buildkit"
+                  },
+                  "config": {
+                    "displayNameFromDS": "buildkit"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [330.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "client": "containerd"
+                  },
+                  "config": {
+                    "displayNameFromDS": "containerd"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [2331.0]]
+            }
+          },
+          {
+            "schema": {
+              "refId": "A",
+              "meta": {
+                "type": "timeseries-multi",
+                "typeVersion": [0, 1],
+                "custom": {
+                  "resultType": "matrix",
+                  "calculatedMinStep": 3600000
+                }
+              },
+              "fields": [
+                {
+                  "name": "Time",
+                  "type": "time",
+                  "typeInfo": {
+                    "frame": "time.Time"
+                  },
+                  "config": {
+                    "interval": 3600000
+                  }
+                },
+                {
+                  "name": "Value",
+                  "type": "number",
+                  "typeInfo": {
+                    "frame": "float64"
+                  },
+                  "labels": {
+                    "client": "docker"
+                  },
+                  "config": {
+                    "displayNameFromDS": "docker"
+                  }
+                }
+              ]
+            },
+            "data": {
+              "values": [[1738411200000], [1367.0]]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

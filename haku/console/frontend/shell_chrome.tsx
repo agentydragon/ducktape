@@ -16,7 +16,8 @@ import { CameraIcon, ChecklistIcon, ClockIcon, CloseIcon, HomeIcon, MapPinIcon, 
 import type { ConsoleNavigationView, ConsoleView } from "./routing";
 import { SUCCESS_COLOR } from "./theme";
 import { formatTimestamp } from "./time";
-import { useVariant, VariantControl } from "./variant_control";
+import type { PreviewVariant } from "./tool_rendering/vocabulary";
+import { VariantControl } from "./variant_control";
 
 export interface ShellChromeProps {
   // Capability request panel open-state, parent-controlled so a new bridge request can
@@ -168,7 +169,7 @@ function GeolocationApprovalCard({
   onApprove: () => void;
   onDeny: () => void;
 }) {
-  const [variant, setVariant] = useVariant("compact");
+  const [variant, setVariant] = useState<PreviewVariant>("compact");
   const armed = useArmed(`geo-card:${approval.id}`);
   const detailed = variant === "detailed";
   const requested = formatTimestamp(approval.createdAt);

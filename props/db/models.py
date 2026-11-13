@@ -62,19 +62,6 @@ class StatsWithCI(BaseModel):
     lcb95: float | None
     ucb95: float | None
 
-    def scaled(self, divisor: float) -> StatsWithCI:
-        """Scale by divisor to convert counts to ratios. Mirrors PostgreSQL scale_stats()."""
-        if divisor == 0:
-            return StatsWithCI(n=self.n, mean=0.0, min=0.0, max=0.0, lcb95=None, ucb95=None)
-        return StatsWithCI(
-            n=self.n,
-            mean=self.mean / divisor,
-            min=self.min / divisor,
-            max=self.max / divisor,
-            lcb95=self.lcb95 / divisor if self.lcb95 is not None else None,
-            ucb95=self.ucb95 / divisor if self.ucb95 is not None else None,
-        )
-
 
 class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
     """Adapt psycopg2 register_composite() named tuples to StatsWithCI.
@@ -969,15 +956,6 @@ class RecallByExample(Base):
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
-class WinningDefinition(BaseModel):
-    image_digest: str
-    credit_stats: StatsWithCI
-    n_runs: int
-
-
-_WinningDefinitionListAdapter: TypeAdapter[list[WinningDefinition]] = TypeAdapter(list[WinningDefinition])
-
-
 class ParetoFrontierByExample(Base):
     """Definitions tied at best mean credit for each (snapshot, split, kind, files_hash, model).
 
@@ -999,14 +977,6 @@ class ParetoFrontierByExample(Base):
     recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
-
-    @property
-    def winning_definitions(self) -> list[WinningDefinition]:
-        return _WinningDefinitionListAdapter.validate_python(self._winning_definitions_raw)
-
-    @property
-    def best_mean_credit(self) -> float:
-        return self.winning_definitions[0].credit_stats.mean
 
 
 class OccurrenceStatistics(Base):

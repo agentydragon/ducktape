@@ -2,7 +2,6 @@ package centralsampler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,6 +9,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
@@ -23,6 +24,7 @@ type Runtime struct {
 	settings     Settings
 	claimLease   func(context.Context, string, time.Duration) (Owner, error)
 	releaseLease func(context.Context, Owner) error
+	newExecutor  func(context.Context, *Store, Owner, *Session, Settings) (*Executor, func() error, error)
 
 	mu               sync.Mutex
 	runCtx           context.Context
@@ -52,9 +54,10 @@ func (s *residentSession) signal() {
 	}
 }
 
-func NewRuntime(store *Store, settings Settings) *Runtime {
+// NewRuntime takes the shared Code Mode host it attaches logical sessions to and shuts down.
+func NewRuntime(store *Store, settings Settings, codeHost *CodeModeHost) *Runtime {
 	return &Runtime{
-		store: store, settings: settings, claimLease: store.Claim, releaseLease: store.Release,
+		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: NewExecutor,
 		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
 		changed: make(chan struct{}, 1), draining: make(chan struct{}),
 	}
@@ -83,7 +86,6 @@ func (r *Runtime) Run(ctx context.Context, work <-chan struct{}) error {
 	// A service shutdown stops new work immediately, but an already dispatched effect must
 	// retain its context long enough to reach a durable result or the drain deadline.
 	r.runCtx, r.cancel = context.WithCancel(context.WithoutCancel(ctx))
-	r.codeHost = NewCodeModeHost(context.Background(), r.settings, r.store)
 	codeHost := r.codeHost
 	r.mu.Unlock()
 
@@ -161,7 +163,7 @@ func (r *Runtime) recover(ctx context.Context, work <-chan struct{}) {
 		capacity := r.settings.MaxLiveSessions - r.busyLocked()
 		r.mu.Unlock()
 		if capacity > 0 {
-			sessions, err := r.store.RecoverableSessions(ctx, excluded, capacity)
+			sessions, err := r.store.RecoverableSessions(ctx, excluded, capacity, r.codeHost.InstanceID())
 			if err != nil && ctx.Err() == nil {
 				slog.Error("central sampler recovery scan failed", "error", err)
 			} else {
@@ -270,7 +272,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 	slog.Info("central sampler lease claimed", "session_id", sessionID, "conversation_id", owner.ConversationID,
 		"generation", owner.Generation, "owner_token", owner.Token, "pod_name", os.Getenv("HOSTNAME"))
 	if runtimeCtx.Err() != nil || r.isStopping() {
-		r.release(owner)
+		r.release(owner, sessionID, releaseStopping)
 		return
 	}
 	r.mu.Lock()
@@ -288,11 +290,19 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 	activeCommand, executionErr := r.execute(executionCtx, sessionID, owner, task)
 	cancelExecution()
 	heartbeatErr := <-heartbeatDone
-	if executionErr != nil && runtimeCtx.Err() == nil && heartbeatErr == nil {
+	reason := releaseSettled
+	switch {
+	case heartbeatErr != nil:
+		reason = releaseOwnershipLost
+	case runtimeCtx.Err() != nil:
+		reason = releaseShutdownDeadline
+	case executionErr != nil:
 		var known *protocol.KnownFailureError
 		if errors.As(executionErr, &known) {
+			reason = releaseRejected
 			slog.Warn("central sampler rejected execution", "session_id", sessionID, "reason", known.Error())
 		} else {
+			reason = releaseFailed
 			slog.Error("central sampler execution stopped", "session_id", sessionID, "error", executionErr)
 		}
 		failCtx, cancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -300,8 +310,37 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 			slog.Error("central sampler could not record execution failure", "session_id", sessionID, "error", err)
 		}
 		cancel()
+	case r.isDraining():
+		reason = releaseDrain
 	}
-	r.release(owner)
+	if r.isDraining() {
+		r.logDrainExit(sessionID, owner, activeCommand)
+	}
+	r.release(owner, sessionID, reason)
+}
+
+// logDrainExit records the Session state a driver leaves behind during shutdown drain, so a
+// successor that blocks on a lost host can be traced to the owner that released it.
+func (r *Runtime) logDrainExit(sessionID string, owner Owner, activeCommand *string) {
+	timeout := r.cleanupTimeout()
+	if timeout <= 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	command := ""
+	if activeCommand != nil {
+		command = *activeCommand
+	}
+	work, err := r.store.LiveWork(ctx, owner)
+	if err != nil {
+		slog.Error("central sampler could not read live work at drain exit", "session_id", sessionID, "conversation_id", owner.ConversationID,
+			"generation", owner.Generation, "active_command", command, "error", err)
+		return
+	}
+	slog.Info("central sampler drain releasing Session", "session_id", sessionID, "conversation_id", owner.ConversationID,
+		"generation", owner.Generation, "active_command", command, "live_cells", work.LiveCells, "live_processes", work.LiveProcesses,
+		"unresolved_intents", work.UnresolvedIntents, "pending", work.Pending, "pod_name", os.Getenv("HOSTNAME"))
 }
 
 func (r *Runtime) heartbeat(ctx context.Context, owner Owner) error {
@@ -327,26 +366,56 @@ func (r *Runtime) heartbeat(ctx context.Context, owner Owner) error {
 	}
 }
 
-func (r *Runtime) release(owner Owner) {
+// releaseReason names why a driver gave up its Session lease.
+type releaseReason string
+
+const (
+	// releaseStopping: the claim committed after shutdown began; the driver never served.
+	releaseStopping releaseReason = "stopping"
+	// releaseDrain: shutdown drain released an idle Session or one whose live work settled.
+	releaseDrain releaseReason = "drain"
+	// releaseShutdownDeadline: the drain deadline cancelled active work; unresolved intents remain.
+	releaseShutdownDeadline releaseReason = "shutdown_deadline"
+	releaseOwnershipLost    releaseReason = "ownership_lost"
+	releaseRejected         releaseReason = "rejected"
+	releaseFailed           releaseReason = "failed"
+	// releaseSettled: the driver stopped outside drain without an error (unserviceable Session,
+	// failed setup, or interrupt with unknown effects).
+	releaseSettled releaseReason = "settled"
+)
+
+// cleanupTimeout bounds a store call made while the driver winds down. Zero or less means the
+// shutdown budget is already spent.
+func (r *Runtime) cleanupTimeout() time.Duration {
 	timeout := time.Duration(r.settings.RPCTimeoutSeconds) * time.Second
 	r.mu.Lock()
 	shutdownDeadline := r.shutdownDeadline
 	r.mu.Unlock()
 	if !shutdownDeadline.IsZero() {
 		timeout = min(timeout, 5*time.Second, time.Until(shutdownDeadline))
-		if timeout <= 0 {
-			slog.Warn("central sampler cleanup budget expired before lease release", "conversation_id", owner.ConversationID)
-			return
-		}
+	}
+	return timeout
+}
+
+func (r *Runtime) release(owner Owner, sessionID string, reason releaseReason) {
+	timeout := r.cleanupTimeout()
+	if timeout <= 0 {
+		slog.Warn("central sampler cleanup budget expired before lease release", "session_id", sessionID, "conversation_id", owner.ConversationID,
+			"generation", owner.Generation, "reason", string(reason))
+		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := r.releaseLease(ctx, owner); err != nil {
 		var lost *LostOwnershipError
 		if !errors.As(err, &lost) {
-			slog.Error("central sampler lease release failed", "conversation_id", owner.ConversationID, "error", err)
+			slog.Error("central sampler lease release failed", "session_id", sessionID, "conversation_id", owner.ConversationID,
+				"generation", owner.Generation, "reason", string(reason), "error", err)
 		}
+		return
 	}
+	slog.Info("central sampler lease released", "session_id", sessionID, "conversation_id", owner.ConversationID,
+		"generation", owner.Generation, "reason", string(reason), "pod_name", os.Getenv("HOSTNAME"))
 }
 
 func (r *Runtime) isStopping() bool {
@@ -362,6 +431,33 @@ func (r *Runtime) isDraining() bool {
 	default:
 		return false
 	}
+}
+
+// drainReleases reports whether a draining driver releases its Session now. An effect in flight
+// (unresolved intent, pending provider step) always keeps the owner: detaching the host would
+// cancel it mid-way. A live cell or process handle keeps the owner only while a command is active,
+// because only the turn in progress can settle it (the model's `wait`); an idle Session with a
+// background cell releases immediately, as the successor sees the same live handle either way.
+// Serving continues until that work settles or the drain deadline cancels it. The continuation
+// is logged once per driver.
+func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner Owner, activeCommand *string, continued *bool) (bool, error) {
+	if !r.isDraining() {
+		return false, nil
+	}
+	work, err := r.store.LiveWork(ctx, owner)
+	if err != nil {
+		return false, err
+	}
+	if !work.KeepsOwner(activeCommand != nil) {
+		return true, nil
+	}
+	if !*continued {
+		*continued = true
+		slog.Info("central sampler drain keeps serving Session with live work", "session_id", sessionID, "conversation_id", owner.ConversationID,
+			"generation", owner.Generation, "live_cells", work.LiveCells, "live_processes", work.LiveProcesses,
+			"unresolved_intents", work.UnresolvedIntents, "pending", work.Pending, "pod_name", os.Getenv("HOSTNAME"))
+	}
+	return false, nil
 }
 
 func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, task *residentSession) (*string, error) {
@@ -400,6 +496,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		}
 	}()
 	var activeCommand *string
+	var reconciled <-chan struct{}
+	drainContinued := false
 	client := &http.Client{}
 	for {
 		if ctx.Err() != nil {
@@ -410,6 +508,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			_ = live.Close(closeCtx)
 			closeCancel()
 			live = nil
+			reconciled = nil
 		}
 		changed, err := r.store.ReconcileCodeHostLoss(ctx, owner, r.codeHost.InstanceID(), encoding)
 		if err != nil {
@@ -418,8 +517,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		if changed {
 			continue
 		}
-		if r.isDraining() {
-			return activeCommand, nil
+		if release, err := r.drainReleases(ctx, sessionID, owner, activeCommand, &drainContinued); err != nil || release {
+			return activeCommand, err
 		}
 		command, err := r.store.NextCommand(ctx, owner, sessionID)
 		if errors.Is(err, protocol.ErrPrecondition) {
@@ -449,6 +548,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 					closeErr := live.Close(closeCtx)
 					cancel()
 					live = nil
+					reconciled = nil
 					if closeErr != nil {
 						return nil, closeErr
 					}
@@ -470,34 +570,55 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			}
 			if live == nil {
 				live, err = r.connectHost(ctx, sessionID, owner)
-				if errors.Is(err, errCodeHostInstanceChanged) {
+				if errors.Is(err, codemode.ErrHostInstanceChanged) {
 					continue
 				}
 				if err != nil {
 					return activeCommand, err
 				}
 			}
-			progressed, err := live.executor.ReconcileProcesses(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
-			if err != nil {
-				return activeCommand, err
+			changes := live.executor.processChanges()
+			if changes != reconciled {
+				progressed, err := live.executor.ReconcileProcesses(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
+				if err != nil {
+					return activeCommand, err
+				}
+				if progressed {
+					continue
+				}
+				reconciled = changes
 			}
-			if progressed {
-				continue
+			// Live cells still require the host's existing periodic check. Process
+			// reads are driven by executor notifications, not this timer or work scans.
+			var timer *time.Timer
+			var tick <-chan time.Time
+			if len(state.Cells) != 0 {
+				timer = time.NewTimer(250 * time.Millisecond)
+				tick = timer.C
 			}
-			timer := time.NewTimer(250 * time.Millisecond)
 			select {
 			case <-ctx.Done():
-				timer.Stop()
+				if timer != nil {
+					timer.Stop()
+				}
 				return activeCommand, ctx.Err()
 			case <-liveDone(live):
-				timer.Stop()
+				if timer != nil {
+					timer.Stop()
+				}
 				if err := live.code.Err(); err != nil {
 					return activeCommand, err
 				}
 				return activeCommand, errors.New("code-mode session detached while remote effects were live")
 			case <-task.wake:
-				timer.Stop()
-			case <-timer.C:
+				if timer != nil {
+					timer.Stop()
+				}
+			case <-reconciled:
+				if timer != nil {
+					timer.Stop()
+				}
+			case <-tick:
 			}
 			continue
 		}
@@ -517,8 +638,8 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		if err := proto.Unmarshal(command.Payload, payload); err != nil {
 			return activeCommand, err
 		}
-		if r.isDraining() {
-			return activeCommand, nil
+		if release, err := r.drainReleases(ctx, sessionID, owner, activeCommand, &drainContinued); err != nil || release {
+			return activeCommand, err
 		}
 		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 		var result TurnResult
@@ -541,9 +662,9 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 				if changed {
 					continue
 				}
-				if r.isDraining() {
+				if release, releaseErr := r.drainReleases(turnCtx, sessionID, owner, activeCommand, &drainContinued); releaseErr != nil || release {
 					cancel()
-					return activeCommand, nil
+					return activeCommand, releaseErr
 				}
 				conversation, readErr := r.store.Read(turnCtx, owner)
 				if readErr != nil {
@@ -556,7 +677,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 						err = stateErr
 						break
 					}
-					calls, callErr := conversation.Archive.PendingCalls()
+					calls, callErr := conversation.Transcript.PendingCalls()
 					if callErr != nil {
 						err = callErr
 						break
@@ -570,7 +691,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 						}
 						if len(interrupts) == 0 || len(state.Cells) > 0 {
 							live, err = r.connectHost(ctx, sessionID, owner)
-							if errors.Is(err, errCodeHostInstanceChanged) {
+							if errors.Is(err, codemode.ErrHostInstanceChanged) {
 								continue
 							}
 							if err != nil {
@@ -632,7 +753,7 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 	}
 	setupCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
 	defer cancel()
-	executor, closeTransport, err := NewExecutor(setupCtx, r.store, owner, session, r.settings)
+	executor, closeTransport, err := r.newExecutor(setupCtx, r.store, owner, session, r.settings)
 	if err != nil {
 		if ctx.Err() == nil {
 			finishCtx, finishCancel := context.WithTimeout(context.Background(), time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
@@ -695,7 +816,7 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner Owner
 	if err != nil {
 		return nil, err
 	}
-	executor, closeTransport, err := NewExecutor(ctx, r.store, owner, session, r.settings)
+	executor, closeTransport, err := r.newExecutor(ctx, r.store, owner, session, r.settings)
 	if err != nil {
 		return nil, err
 	}
@@ -806,7 +927,7 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner Ow
 	var cleanupErr error
 	delegatesPending := false
 	if live != nil {
-		delegatesPending = live.code.hasDelegates()
+		delegatesPending = live.code.HasDelegates()
 		live.executor.stopDispatch()
 		cells, cleanupErr = live.code.Interrupt(cleanupCtx)
 		var processErr error
@@ -883,7 +1004,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return "", err
 		}
 	}
-	calls, err := conversation.Archive.PendingCalls()
+	calls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return "", err
 	}
@@ -898,7 +1019,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			notDispatched := false
-			intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched})
+			intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil)
 			if err != nil {
 				return "", err
 			}
@@ -914,18 +1035,18 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if live == nil {
 			return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
-		intentID, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call})
+		intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call}, nil)
 		if err != nil {
 			return "", err
 		}
 		content, err := live.code.Execute(ctx, *call)
 		if err != nil {
-			var hostError *codeModeHostResponseError
-			if errors.As(err, &hostError) && hostError.phase == codeOperationResponsePhase {
-				content = []protocol.ContentPart{{Type: "input_text", Text: hostError.message}}
+			var hostError *codemode.ResponseError
+			if errors.As(err, &hostError) && hostError.Phase == codemode.OperationResponsePhase {
+				content = []protocol.ContentPart{{Type: "input_text", Text: hostError.Message}}
 				result := map[string]any{
 					"call_id": call.CallID, "output": content, "success": false,
-					"code_mode_host_response": hostError.evidence(),
+					"code_mode_host_response": hostError.Evidence(),
 				}
 				if err := r.store.FinishTool(ctx, owner, intentID, result, *call, content); err != nil {
 					return "", err
@@ -965,7 +1086,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if steered {
 		return TurnSteer, nil
 	}
-	if conversation.Archive.TurnComplete() {
+	if conversation.Transcript.TurnComplete() {
 		return TurnDone, nil
 	}
 	adapter, err := adapterFor(config)
@@ -1003,22 +1124,18 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
-	body, err := adapter.Prepare(conversation, session, state, metadata)
-	if err != nil {
-		return "", err
-	}
-	wire, err := json.Marshal(body)
-	if err != nil {
-		return "", err
-	}
-	// Persist the exact outgoing content before dispatch; credentials never enter this record.
-	intentID, err := r.store.Begin(ctx, owner, providerRequestIntent(PendingIntentSampling, connection, config, wire))
+	preparation := adapter.Prepare(session, metadata)
+	request := providerRequestIntent(PendingIntentSampling, connection, config)
+	intentID, wire, err := r.store.Begin(ctx, owner, request, preparation)
 	if err != nil {
 		return "", err
 	}
 	evidence := &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}
-	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
-	response, err := adapter.Sample(ctx, client, connection, body, wire, evidence, headers, false)
+	identity, err := executionIdentity(session)
+	if err != nil {
+		return "", err
+	}
+	response, err := adapter.Sample(ctx, client, connection, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
 	if err != nil {
 		var known *protocol.KnownFailureError
 		if errors.As(err, &known) {
@@ -1028,7 +1145,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		}
 		return "", err
 	}
-	candidate, err := cloneNativeContext(conversation.Archive)
+	candidate, err := cloneNativeContext(conversation.Transcript)
 	if err == nil {
 		err = candidate.AppendRecords(response.Records)
 	}
@@ -1067,7 +1184,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	if err := conversation.Archive.CheckSettled(); err != nil {
+	if err := conversation.Transcript.CheckSettled(); err != nil {
 		return err
 	}
 	if err := conversation.Context().CheckSettled(); err != nil {
@@ -1096,26 +1213,26 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	if err != nil {
 		return err
 	}
-	wire, err := json.Marshal(plan.Body)
-	if err != nil {
-		return err
-	}
 	connection, err := r.settings.Connection(model)
 	if err != nil {
 		return err
 	}
 	original := conversation.Context()
-	intentID, err := r.store.BeginCompaction(ctx, owner, providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model], wire), original)
+	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model])
+	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare)
 	if err != nil {
 		return err
 	}
-	headers := map[string]string{"x-agentplane-session-id": metadata.SessionID}
+	identity, err := executionIdentity(session)
+	if err != nil {
+		return err
+	}
 	client, err := connection.HTTPClient(&http.Client{})
 	if err != nil {
 		return err
 	}
 	defer client.CloseIdleConnections()
-	result, err := adapter.Sample(ctx, client, connection, plan.Body, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, headers, true)
+	result, err := adapter.Sample(ctx, client, connection, wire, &ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID}, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, true)
 	if err != nil {
 		return r.rejectKnownCompactionFailure(ctx, owner, intentID, err)
 	}

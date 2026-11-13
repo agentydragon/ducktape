@@ -55,7 +55,8 @@ Keep the server image, static image, and live config independently deployable. E
 contracts over one rollout window: readers before writers for config, server API additions before
 frontend consumers, and removals only after every consumer has moved. CI should exercise the
 server against its current and next config shapes and the frontend against every supported server
-contract. Revisit `Recreate` so a failed replacement leaves the last serving version available.
+contract. The API and static Deployments now use rolling updates; retain a serving API replica
+when a replacement fails readiness.
 
 Acceptance:
 
@@ -96,14 +97,15 @@ invariant tests, before H2 makes lifecycle contracts depend on the current graph
 
 ### Haku product sequence
 
-These are vertical product PRs, not another identity migration:
+The Operator-scoped Agent list API and settings UI already show basic identity and status. H1
+extends that existing surface; the remaining slices are product PRs, not another identity migration:
 
-| Order | Slice                           | Boundary and acceptance                                                                                                                                                                                                                                                                              |
-| ----- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| H1    | Connected Agents                | Operator-scoped API and trusted-console UI together. Derive name, client metadata, scopes, binding status/generation, timestamps, and reconnect history through canonical joins. Do not call inactivity “disconnected” or claim DCR/CIMD provenance that current public FastMCP inputs cannot prove. |
-| H2a   | Revoke and disable              | Operator-owned API, UI, audit representation, and negative tests. Distinguish revoking one credential binding/grant from disabling the Agent and all usable bindings; keep the public control scoped to the Agent rather than an internal grant identifier.                                          |
-| H2b   | Rename                          | Atomically replace the Agent's required normalized, globally unique name. Add append-only rename audit only if the product needs history; retired names need not remain authority-bearing reservations.                                                                                              |
-| H2c   | Tombstone and reconnect history | Add explicit delete/tombstone semantics and cleanup/history UI after revoke/disable and rename semantics are stable.                                                                                                                                                                                 |
+| Order | Slice                           | Boundary and acceptance                                                                                                                                                                                                                                                                 |
+| ----- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H1    | Fuller Agent detail             | Extend the existing Operator-scoped API and trusted-console UI with safe client metadata, scopes, binding generation and reconnect history through canonical joins. Do not call inactivity “disconnected” or claim DCR/CIMD provenance that current public FastMCP inputs cannot prove. |
+| H2a   | Revoke and disable              | Operator-owned API, UI, audit representation, and negative tests. Distinguish revoking one credential binding/grant from disabling the Agent and all usable bindings; keep the public control scoped to the Agent rather than an internal grant identifier.                             |
+| H2b   | Rename                          | Atomically replace the Agent's required normalized, globally unique name. Add append-only rename audit only if the product needs history; retired names need not remain authority-bearing reservations.                                                                                 |
+| H2c   | Tombstone and reconnect history | Add explicit delete/tombstone semantics and cleanup/history UI after revoke/disable and rename semantics are stable.                                                                                                                                                                    |
 
 ### Independent security and consolidation lanes
 
@@ -144,6 +146,6 @@ or cleanup prerequisite.
   stale or superseded binding cannot authorize the mutation.
 - UI metadata comes from canonical joins and is treated as untrusted presentation. Secrets and raw
   OAuth material never enter API models, logs, traces, or test artifacts.
-- Release automation validates and promotes one server/static/config tuple.
+- CI validates the supported server/static/config combinations across independent rollouts.
 - Airlock changes prove credentials work only on intended route surfaces and anonymous provider
   initiation fails.

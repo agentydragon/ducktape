@@ -12,6 +12,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -19,7 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var testWriter = Writer{Namespace: "testing", Name: "worker", UID: "test-worker-account-uid"}
+var testWriter = ServiceAccountWriter{Namespace: "testing", Name: "worker", UID: "test-worker-account-uid"}
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -413,7 +414,7 @@ func TestObservationPagesSeekTheRetainedPrefix(t *testing.T) {
 		t.Fatalf("empty history: %v", page)
 	}
 	appendEntries(t, store, sessionID, entry(1), entry(2), nativeEntry(3, "retained\x00native"), entry(4), entry(5))
-	started, native := "harness_started", "native"
+	started, native := historypb.EventKind_EVENT_KIND_HARNESS_STARTED, historypb.EventKind_EVENT_KIND_NATIVE
 	for _, test := range []struct {
 		name          string
 		before, after *uint64
@@ -570,7 +571,7 @@ func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 	if got := cursors(readPage(t, store, sessionID, 0, 128)); !reflect.DeepEqual(got, []uint64{1, 2, 4}) {
 		t.Fatalf("replay stored cursors %v", got)
 	}
-	started := "harness_started"
+	started := historypb.EventKind_EVENT_KIND_HARNESS_STARTED
 	for _, test := range []struct {
 		name  string
 		after *uint64
@@ -640,7 +641,7 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 	if got := settledRanges(readPage(t, store, sessionID, 0, 2)); got != nil {
 		t.Fatalf("a page before the gap reports settlement %v", got)
 	}
-	native, started, completed := "native", "item_started", "item_completed"
+	native, started, completed := historypb.EventKind_EVENT_KIND_NATIVE, historypb.EventKind_EVENT_KIND_ITEM_STARTED, historypb.EventKind_EVENT_KIND_ITEM_COMPLETED
 	if got, want := observationPage(t, store, sessionID, nil, pointer(0), 30), (ObservationPage{
 		8, []Observation{{1, native}, {2, started}, {7, native}, {8, completed}}, []CursorRange{{3, 6}},
 	}); !reflect.DeepEqual(got, want) {
@@ -654,6 +655,24 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 	if got := observationPage(t, store, sessionID, nil, nil, 3).Settled; !reflect.DeepEqual(got, []CursorRange{{3, 6}}) {
 		t.Fatalf("tail settled %v", got)
 	}
+}
+
+func TestSettlingStoreRetainsStderrAndCompletionWhileDroppingReasoningDeltas(t *testing.T) {
+	store := NewStore(testDB(t), true)
+	sessionID := opened(t, store)
+	span := reasoningSpanWithStderr().Entries
+	appendEntries(t, store, sessionID, span[:8]...)
+	assertEntries(t, readPage(t, store, sessionID, 0, 128).Entries, span[:8]...)
+
+	appendEntries(t, store, sessionID, span[8])
+	page := readPage(t, store, sessionID, 0, 128)
+	assertEntries(t, page.Entries, span[0], span[1], span[6], span[7], span[8])
+	if got := settledRanges(page); !reflect.DeepEqual(got, []CursorRange{{3, 6}}) {
+		t.Fatalf("settled ranges %v", got)
+	}
+	// Replayed runner deltas must remain covered without duplicating the diagnostic.
+	appendEntries(t, store, sessionID, span...)
+	assertEntries(t, readPage(t, store, sessionID, 0, 128).Entries, page.Entries...)
 }
 
 func TestAnItemWithoutNativeFramesCompletesUnsettled(t *testing.T) {
@@ -697,4 +716,89 @@ func TestReadSequencesRequiresAPositiveBatchAndNonzeroSequences(t *testing.T) {
 		_, err := store.ReadSequences(t.Context(), uuid.New(), sequences, 1)
 		assertError(t, err, ErrInvalidArgument)
 	}
+}
+
+var (
+	testIdentityWriter  = IdentityWriter{Identity{Name: "test-agent", UID: "test-agent-uid"}}
+	testIdentitySandbox = Sandbox{Namespace: "testing", Name: "test-sandbox", UID: "test-sandbox-uid"}
+)
+
+func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
+	store := testStore(t)
+	sessionID := uuid.New()
+	for range 2 {
+		if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	successor := testIdentityWriter
+	successor.UID = "test-successor-uid"
+	_, err := store.BindIdentityWriter(t.Context(), sessionID, successor, testIdentitySandbox, nil, nil)
+	assertError(t, err, ErrWriterMismatch)
+	// One Identity may run several Sandboxes; a Session stays with the one it began in.
+	otherSandbox := testIdentitySandbox
+	otherSandbox.Name, otherSandbox.UID = "test-other-sandbox", "test-other-sandbox-uid"
+	_, err = store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, otherSandbox, nil, nil)
+	assertError(t, err, ErrSandboxMismatch)
+	_, err = store.BindWriter(t.Context(), sessionID, testWriter, "", nil)
+	assertError(t, err, ErrWriterMismatch)
+
+	accountSession := opened(t, store)
+	_, err = store.BindIdentityWriter(t.Context(), accountSession, testIdentityWriter, testIdentitySandbox, nil, nil)
+	assertError(t, err, ErrWriterMismatch)
+}
+
+// A replica predating Identity writers reads an Identity-bound row as unbound; the schema refuses
+// the ServiceAccount bind it would then write.
+func TestAnIdentityBoundRowRefusesAnOlderReplicasServiceAccountBind(t *testing.T) {
+	db := testDB(t)
+	sessionID := uuid.New()
+	if _, err := NewStore(db, false).BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.ExecContext(t.Context(), `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4
+		WHERE id = $1`, sessionID, testWriter.Namespace, testWriter.Name, testWriter.UID)
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || pqErr.Constraint != "history_writer_one_kind" {
+		t.Fatalf("older replica's bind over an Identity writer: %v", err)
+	}
+}
+
+func TestAnIdentityRunSessionReadsByItsExecutionIdentityIncarnation(t *testing.T) {
+	store := testStore(t)
+	sessionID := uuid.New()
+	identity := testIdentityWriter.Identity
+	if _, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, &identity); err != nil {
+		t.Fatal(err)
+	}
+	listed := func(scope ReadScope) bool {
+		t.Helper()
+		sessions, err := store.WithReadScope(scope).RecordedSessions(t.Context(), 0, 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return slices.ContainsFunc(sessions, func(session RecordedSession) bool { return session.SessionID == sessionID })
+	}
+	successor := Identity{Name: identity.Name, UID: "test-successor-uid"}
+	if !listed(OwnedByIdentity(identity)) || listed(OwnedByIdentity(successor)) ||
+		listed(OwnedByIdentity(Identity{Name: "test-other-agent", UID: identity.UID})) {
+		t.Fatal("an Identity-run Session is read by exactly its execution Identity incarnation")
+	}
+	if listed(OwnedBy(ExecutionPrincipal(testWriter))) {
+		t.Fatal("a ServiceAccount read an Identity-run Session it was not recorded as executing as")
+	}
+	_, err := store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, &successor)
+	assertError(t, err, ErrExecutionPrincipalMismatch)
+
+	// The execution Identity is fixed by the first push; a snapshot may omit it but not change it.
+	if _, err := store.Append(t.Context(), sessionID, entries(1, 1)); err != nil {
+		t.Fatal(err)
+	}
+	attached := &sessionpb.Attached{SessionId: sessionID.String(), LastCursor: 1}
+	if err := store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{Attached: attached}); err != nil {
+		t.Fatal(err)
+	}
+	attached.ExecutionIdentity = &identitypb.Identity{Name: successor.Name, Uid: successor.UID}
+	err = store.RecordFeedState(t.Context(), sessionID, &historypb.SessionFeedState{Attached: attached})
+	assertError(t, err, ErrExecutionPrincipalMismatch)
 }

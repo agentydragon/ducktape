@@ -44,7 +44,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,8 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 	if _, err := store.DB().ExecContext(t.Context(), `ALTER TABLE sampler_intent ADD CONSTRAINT reject_test_intent CHECK (false)`); err != nil {
 		t.Fatal(err)
 	}
-	runtime := NewRuntime(store, settings)
+	codeHost, _ := newFakeCodeModeManager(t)
+	runtime := NewRuntime(store, settings, codeHost)
 	_, dispatchErr := runtime.advance(t.Context(), owner, nil, server.Client(), session)
 	var constraint *pq.Error
 	if !errors.As(dispatchErr, &constraint) || constraint.Code != "23514" || constraint.Constraint != "reject_test_intent" {
@@ -194,7 +195,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +295,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

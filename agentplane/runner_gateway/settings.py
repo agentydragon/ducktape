@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints,
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.environment_runtime_transport.config import ClientTLS, Security
+from agentplane.identity.auth.listener import Listener
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -32,6 +32,9 @@ class DelegationSettings(BaseModel):
     caller_namespaces: tuple[str, ...] = Field(
         min_length=1, description="Namespaces whose caller identity Actions may assert."
     )
+    identity_callers: bool = Field(
+        default=False, description="Whether Actions may assert an Identity in policy_namespace as the effective caller."
+    )
     methods: tuple[str, ...] = Field(
         min_length=1, description="Exact full RPC method names served by the Runner Gateway that admit delegation."
     )
@@ -45,6 +48,9 @@ class Settings(YamlFileSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
+    policy_namespace: str = Field(
+        min_length=1, description="Namespace holding the Identities a workload SVID may name."
+    )
     dispatcher_database_url: SecretStr = Field(description="The Dispatcher queue's PostgreSQL URL.")
     pod_name: str | None = Field(
         default=None,
@@ -86,9 +92,6 @@ class Settings(YamlFileSettings):
     )
     environment_launchers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="Direct Pod-bound Action brokers authorized to create Environments."
-    )
-    environment_default_policy_sets: Set[str] = Field(
-        default_factory=frozenset, description="PolicySets applied to newly created Environments."
     )
     delegation: DelegationSettings | None = Field(
         default=None,

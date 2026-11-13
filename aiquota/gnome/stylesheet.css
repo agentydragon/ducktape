@@ -76,6 +76,14 @@
   font-feature-settings: "tnum";
 }
 
+.popup-inactive-menu-item.quota-popup-read-only:insensitive {
+  color: inherit;
+}
+
+.popup-separator-menu-item.quota-popup-provider-header {
+  color: inherit;
+}
+
 .quota-popup-content {
   width: 28em;
   max-width: 28em;
@@ -155,6 +163,10 @@
 
 .quota-popup-status-warning {
   color: #f5c211;
+}
+
+.quota-popup-status-urgent {
+  color: #ff8386;
 }
 
 .quota-stream-status {

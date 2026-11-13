@@ -1,0 +1,337 @@
+{
+  "worker": {
+    "namespace": "buildbuddy-executor",
+    "vmpool": "buildbuddy-kvm-worker",
+    "vmpool_uid": "16cb7b18-d5d2-4d67-bc8b-eff36f58ca81",
+    "vm": "buildbuddy-kvm-worker-0",
+    "vm_uid": "d262d83a-49bc-4dc6-8280-5c89cd66be85",
+    "vmi_uid": "898a998f-8025-469a-ba23-e4dcd2ce593a",
+    "node": "ovh-ns1001419",
+    "vmi_ip": "10.244.9.136"
+  },
+  "test": {
+    "inner_invocation": "b0cb5f7d-ee2c-491c-94cd-3123fb685cef",
+    "outer_invocation": "13ad1686-cf64-492c-a026-c7c6f0700925",
+    "reported_remote_exit_code": 0,
+    "reported_test_duration_seconds": 276.857,
+    "reported_setup_seconds": 118.55,
+    "reported_concurrent_scenarios_seconds": 135.59,
+    "action_id": "7509008a9cf292567d17d7240fea6a097dd60a532fa4116d5e792d6b49a6a56a/596",
+    "action_container": "buildbuddy-exec-HCRNI2Bk5hLQDQ5M5XWZ",
+    "action_container_id": "3553d45728f3a42fccf5ec1f1ef15e52a0a53f079bd2570ff11765a6b3879d0a",
+    "action_scope": "/system.slice/docker-3553d45728f3a42fccf5ec1f1ef15e52a0a53f079bd2570ff11765a6b3879d0a.scope",
+    "action_memory_estimate_gib": 7,
+    "confirmed_status": "PASSED",
+    "total_num_cached": 0
+  },
+  "idle_baseline_utc": "2026-11-12T19:24:13Z",
+  "idle_baseline": {
+    "mem_total_kib": 8112364,
+    "mem_available_kib": 7422428,
+    "mem_free_kib": 3656896,
+    "swap_total_kib": 0,
+    "swap_free_kib": 0,
+    "memory_psi_some_total_us": 20337086,
+    "memory_psi_full_total_us": 17663595,
+    "oom_kill": 0,
+    "pswpin": 0,
+    "pswpout": 0,
+    "docker_containers": ["buildbuddy-kvm-worker-executor"],
+    "root_used_human": "2.2G",
+    "root_avail_human": "224M",
+    "buildbuddy_used_human": "12G",
+    "buildbuddy_avail_human": "58G",
+    "executor_service_active": true,
+    "baseline_action_occupancy": "no action container; only buildbuddy-kvm-worker-executor was present",
+    "df_h_rounded": {
+      "root_available": "224M",
+      "buildbuddy_used": "12G",
+      "buildbuddy_available": "58G"
+    }
+  },
+  "sampling": {
+    "samples": 64,
+    "window_start_utc": "2026-11-12T19:26:29Z",
+    "window_end_utc": "2026-11-12T19:31:24Z",
+    "median_interval_seconds": 4.0,
+    "gaps_over_10_seconds": [
+      {
+        "from_utc": "2026-11-12T19:27:23Z",
+        "to_utc": "2026-11-12T19:28:13Z",
+        "seconds": 50.0
+      }
+    ],
+    "minimum_mem_available": {
+      "timestamp_utc": "2026-11-12T19:29:16Z",
+      "kib": 1882676
+    },
+    "minimum_root_avail_mib": 223,
+    "minimum_buildbuddy_avail_mib": 54037,
+    "maximum_action_scope_peak": {
+      "timestamp_utc": "2026-11-12T19:29:16Z",
+      "bytes": 5914898432
+    },
+    "maximum_docker_action_working_set": {
+      "timestamp_utc": "2026-11-12T19:29:03Z",
+      "bytes": 5040144121,
+      "approximate_from_humanized_docker_stats": true
+    },
+    "memory_psi_delta_us_first_to_last_sample": {
+      "some": 607396,
+      "full": 528035
+    },
+    "vmstat_delta_first_to_last_sample": {
+      "pswpin": 0,
+      "pswpout": 0,
+      "oom_kill": 0
+    },
+    "action_cgroup_memory_max": "max",
+    "action_cgroup_events_last_sample": "low 0,high 0,max 0,oom 0,oom_kill 0,oom_group_kill 0,",
+    "executor_lifetime_peak_bytes_not_attributed_to_this_action": 4852875264,
+    "final_manual_sample_utc": "2026-11-12T19:31:54Z",
+    "final_manual": {
+      "mem_total_kib": 8112364,
+      "mem_available_kib": 6849768,
+      "mem_free_kib": 4581792,
+      "swap_total_kib": 0,
+      "swap_free_kib": 0,
+      "memory_psi_some_avg10": 0.0,
+      "memory_psi_some_avg60": 0.0,
+      "memory_psi_full_avg10": 0.0,
+      "memory_psi_full_avg60": 0.0,
+      "oom_kill": 0,
+      "pswpin": 0,
+      "pswpout": 0,
+      "readyz_http_with_server_type_buildbuddy_executor": 200,
+      "docker_containers": ["buildbuddy-kvm-worker-executor"],
+      "action_scope_removed_after_exit": true,
+      "vmpool_replicas": 1,
+      "vmpool_ready_replicas": 1,
+      "vm_uid_stable": "d262d83a-49bc-4dc6-8280-5c89cd66be85",
+      "vmi_uid_stable": "898a998f-8025-469a-ba23-e4dcd2ce593a",
+      "buildbuddy_avail_human": "54G (df -h rounded)",
+      "root_avail_human": "223M (df -h rounded)",
+      "df_h_rounded": {
+        "root_available": "223M",
+        "buildbuddy_available": "54G"
+      }
+    },
+    "limitations": [
+      "The action container started at 19:26:07Z; the first detailed sampler sample was 19:26:29Z.",
+      "Sampling paused while adding parent-scope cgroup reads; the gap is recorded above.",
+      "memory.peak on the action Docker scope disappeared when the container exited; the sampled high-water mark is retained in the accompanying CSV.",
+      "Docker stats is working-set memory; cgroup memory.current/peak includes file cache.",
+      "The guest had no swap configured; guest OOM/swap counters do not include the expected OOM inside the test fixture.",
+      "Docker working-set byte values are converted from rounded human-readable docker stats output; cgroup counters are raw integer bytes."
+    ],
+    "action_cgroup_sample_window_utc": ["2026-11-12T19:28:13Z", "2026-11-12T19:30:39Z"],
+    "last_action_cgroup_sample_utc": "2026-11-12T19:30:39Z",
+    "memory_psi_delta_us_first_to_last_action_cgroup_sample": {
+      "some": 584493,
+      "full": 518976
+    },
+    "vmstat_delta_first_to_last_action_cgroup_sample": {
+      "pswpin": 0,
+      "pswpout": 0,
+      "oom_kill": 0
+    },
+    "all_sampled_action_scope_events_zero": true,
+    "raw_transcript_sha256": "b532cb5c8bc3d25d0d0b442a5e79c81de045f6fe36d40ddf4965b948d38af2f0",
+    "samples_csv": "vm_kvm_existing_pool_2026_11_12_samples.csv",
+    "last_action_scope_sample_utc": "2026-11-12T19:30:39Z",
+    "memory_psi_delta_us_first_to_last_action_sample": {
+      "some": 584493,
+      "full": 518976
+    },
+    "samples_csv_sha256": "29c4c25cecaba9640c161e8a5adc72cc9e2d6ee391ca0ef3a1475583c9a73da8"
+  },
+  "idle_baseline_probe_note": "The 19:24:13Z probe used the wrong header value executor and returned HTTP 500; the accepted buildbuddy-executor header was verified later at HTTP 200.",
+  "probe": {
+    "base_commit": "2d8fad2b9d8178c23d7ff50fe5a2c512a4d9d83c",
+    "target": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+    "command": "bbr test //agentplane/system_tests/x/vm_kvm:test_vm_kvm --nocache_test_results",
+    "probe_patch_sha256": "63c38de9c102737aaacd251418d29d9dddc8035d1f167e04560b1312239e095e",
+    "changed_property": {
+      "test.EstimatedMemory": {
+        "before": "10GB",
+        "probe": "7GiB"
+      }
+    },
+    "unchanged": {
+      "test.EstimatedCPU": "4",
+      "test.EstimatedFreeDiskBytes": "50GB",
+      "pool": "kvm-vm",
+      "scenarios": 3
+    },
+    "prepared_at": "2026-11-12T19:25:04.548512+00:00"
+  },
+  "action_platform": {
+    "properties": [
+      {
+        "name": "Arch",
+        "value": "amd64"
+      },
+      {
+        "name": "EstimatedCPU",
+        "value": "4"
+      },
+      {
+        "name": "EstimatedComputeUnits",
+        "value": "3"
+      },
+      {
+        "name": "EstimatedFreeDiskBytes",
+        "value": "50GB"
+      },
+      {
+        "name": "EstimatedMemory",
+        "value": "7GiB"
+      },
+      {
+        "name": "OSFamily",
+        "value": "Linux"
+      },
+      {
+        "name": "Pool",
+        "value": "kvm-vm"
+      },
+      {
+        "name": "container-image",
+        "value": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5"
+      },
+      {
+        "name": "dockerNetwork",
+        "value": "bridge"
+      },
+      {
+        "name": "init-dockerd",
+        "value": "false"
+      },
+      {
+        "name": "recycle-runner",
+        "value": "false"
+      },
+      {
+        "name": "use-self-hosted-executors",
+        "value": "true"
+      },
+      {
+        "name": "workload-isolation-type",
+        "value": "docker"
+      }
+    ]
+  },
+  "physical_execution": {
+    "actionDigest": {
+      "hash": "7509008a9cf292567d17d7240fea6a097dd60a532fa4116d5e792d6b49a6a56a",
+      "sizeBytes": "596"
+    },
+    "executeResponseDigest": {
+      "hash": "8313f45beb3507823bdf320f3ff3b5946b1ea506c2963aed9b159222d9468ab1",
+      "sizeBytes": "120"
+    },
+    "stage": "COMPLETED",
+    "status": {},
+    "executedActionMetadata": {
+      "worker": "d81a9661-db05-446a-a80d-bb4a4ba17367",
+      "queuedTimestamp": "2026-11-12T19:25:59.460823Z",
+      "workerStartTimestamp": "2026-11-12T19:25:58.592450Z",
+      "workerCompletedTimestamp": "2026-11-12T19:30:45.982486Z",
+      "inputFetchStartTimestamp": "2026-11-12T19:25:58.751424Z",
+      "inputFetchCompletedTimestamp": "2026-11-12T19:26:07.604034Z",
+      "executionStartTimestamp": "2026-11-12T19:26:07.604034Z",
+      "executionCompletedTimestamp": "2026-11-12T19:30:44.461041Z",
+      "outputUploadStartTimestamp": "2026-11-12T19:30:44.461041Z",
+      "outputUploadCompletedTimestamp": "2026-11-12T19:30:45.982486Z",
+      "ioStats": {
+        "fileDownloadCount": "99",
+        "fileDownloadSizeBytes": "1903730917",
+        "fileDownloadDurationUsec": "284966389",
+        "fileUploadCount": "177",
+        "fileUploadSizeBytes": "51304803",
+        "fileUploadDurationUsec": "1521304"
+      },
+      "usageStats": {
+        "networkStats": {}
+      },
+      "doNotCache": true
+    },
+    "commandSnippet": "test/test-setup.sh agentplane/system_tests/x/vm_kvm/test_vm_kvm",
+    "executionId": "/uploads/7e226724-fe85-4941-bc7d-769c71d62356/blobs/7509008a9cf292567d17d7240fea6a097dd60a532fa4116d5e792d6b49a6a56a/596",
+    "targetLabel": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+    "actionMnemonic": "TestRunner",
+    "primaryOutputPath": "bazel-out/k8-fastbuild/testlogs/agentplane/system_tests/x/vm_kvm/test_vm_kvm/test.exited_prematurely",
+    "invocationLinkType": 1
+  },
+  "artifact_proof": [
+    {
+      "name": "test.log",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/e4736af34995f64f4a43afdba7ec48ab3f63c8a8817550a57231d786e86d4da5/4848"
+    },
+    {
+      "name": "test.outputs/test-spans.jsonl",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/92c14d4ba5b03aa29266acf5d1cd3fee55de53334b4c13d71008a35e5d196dfe/87137"
+    },
+    {
+      "name": "test.outputs/vm-codex-oom.json",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ee819a8e82918064a3d9c97033b8dd9a9a10a52d7a16d5d87661bbc9397448f0/14170"
+    },
+    {
+      "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-rcdcv_3b8ba603-0e36-48e1-9f46-707310612398/shutdown-0-1794511757248779133.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/fa92b41600c0f2174f2c9ada0df02966548a73b79f674c5cc43276527cd9e539/82960"
+    },
+    {
+      "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-m7q64_66123f64-c297-40a5-94ce-73fa603a2903/shutdown-0-1794511754154913883.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/86260ac163626513523b73d263e8b4ee3ef1cf881765bb2cd897e7f7f5ea4b49/85232"
+    },
+    {
+      "name": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-codex-oom-qstcw_11f3dc1d-c75f-4c9f-9a13-0621b6b349a0/shutdown-0-1794511817154814403.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/7abe839198f1204801fb3014c623d09a222abbd3617f7d27f7866eb9b1ce41d0/85600"
+    }
+  ],
+  "inner_oom": {
+    "memory_before": {
+      "cgroup": "/agentplane.slice/agentplane-executors.slice/agentplane-native-4b471f02e48887fc-e2e104f4-8ee7-4d25-88c2-7fefca676a0c.service",
+      "max": 268435456,
+      "swap_max": 0,
+      "oom_group": 0,
+      "executor_oom": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "memory_after": {
+      "cgroup": "/agentplane.slice/agentplane-executors.slice/agentplane-native-4b471f02e48887fc-e2e104f4-8ee7-4d25-88c2-7fefca676a0c.service",
+      "max": 268435456,
+      "swap_max": 0,
+      "oom_group": 0,
+      "executor_oom": 1,
+      "oom": 0,
+      "oom_kill": 1,
+      "oom_group_kill": 0
+    },
+    "oom_tool_result": {
+      "output": "VM_OOM_ALLOCATING\n",
+      "exit_code": 137
+    },
+    "followup_tool_result": {
+      "output": "VM_MEMORY {\"cgroup\":\"/agentplane.slice/agentplane-executors.slice/agentplane-native-4b471f02e48887fc-e2e104f4-8ee7-4d25-88c2-7fefca676a0c.service\",\"sample\":44,\"max\":268435456,\"swap_max\":0,\"oom_group\":0,\"executor_oom\":1,\"oom\":0,\"oom_kill\":1,\"oom_group_kill\":0}\nVM_OOM_FOLLOWUP_OK\n",
+      "exit_code": 0
+    },
+    "passed": true
+  },
+  "qemu_accelerators": [
+    {
+      "artifact": "systest_virt-launcher-systest-vm-1-rcdcv_3b8ba603-0e36-48e1-9f46-707310612398-shutdown-0-1794511757248779133.txt",
+      "accel": "kvm"
+    },
+    {
+      "artifact": "systest_virt-launcher-systest-vm-2-m7q64_66123f64-c297-40a5-94ce-73fa603a2903-shutdown-0-1794511754154913883.txt",
+      "accel": "kvm"
+    },
+    {
+      "artifact": "systest_virt-launcher-systest-vm-codex-oom-qstcw_11f3dc1d-c75f-4c9f-9a13-0621b6b349a0-shutdown-0-1794511817154814403.txt",
+      "accel": "kvm"
+    }
+  ]
+}

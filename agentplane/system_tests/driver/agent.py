@@ -27,7 +27,7 @@ from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_af
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import ThreadView
-from agentplane.proto import event_log_pb2, event_pb2, session_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.tracing import tracer
@@ -287,7 +287,7 @@ async def scripted_turn_with_admission_and_history(
         collecting = turns.create_task(agent.next_turn(awaiting_command_id=command_id))
         admission = await agent.submit_input(command_id, prompt)
         assert admission.command_id == command_id
-        assert admission.operation == session_dispatcher_pb2.OPERATION_SUBMIT_INPUT
+        assert admission.operation == command_pb2.OPERATION_SUBMIT_INPUT
 
         request = await model.request()
         assert prompt in request.user_texts

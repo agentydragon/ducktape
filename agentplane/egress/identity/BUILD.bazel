@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "identity",
@@ -11,25 +11,13 @@ go_library(
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/decision",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/listener",
-        "//agentplane/workload_identity/resolver",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/credentials/resolver",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
         "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
-    name = "identity_test",
-    srcs = ["identity_test.go"],
-    embed = [":identity"],
-    deps = [
-        "//agentplane/egress/decision",
-        "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/auth",
-        "@io_k8s_api//core/v1:core",
     ],
 )

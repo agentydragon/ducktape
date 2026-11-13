@@ -1,6 +1,6 @@
 """The egress relay of a VM Sandbox. KubeVirt builds a VM's virt-launcher Pod from the VirtualMachine,
 not from our SandboxTemplate's Pod, so this Kyverno policy adds the relay when the Pod is created: the
-same egress sidecar, routes and projected tokens as a runner Pod's (environment_sandbox.py), copied from the
+same egress sidecar, routes and workload trust files as a runner Pod's (environment_sandbox.py), copied from the
 rendered runner template, with settings rendered from the template's own so the two cannot drift.
 
 The guest reaches the relay at its masquerade gateway, `10.0.2.1`, on the ports a runner Pod's
@@ -9,10 +9,11 @@ The tokens are mounted into the relay and nowhere else in the Pod, and the guest
 VirtualMachine's template carries the runner Pods' labels, which KubeVirt copies onto the launcher, so
 the runner fence and the platform-route rules apply to it unchanged.
 
-The relay runs as the Sandbox's own ServiceAccount, so the egress proxy grants it what that account's
-PolicyBinding grants. The policy admits a launcher only when KubeVirt's controller creates it for a live
-VMI of a live VirtualMachine controlled by one of our Sandboxes, and that same Sandbox controls the
-ServiceAccount.
+The launcher runs as the namespace's default account with no token: the relay authenticates with the
+Sandbox's WorkloadCredential, as the Identity the Sandbox acts as, and the egress proxy grants it what that
+Identity's bindings grant. The policy admits a launcher only when KubeVirt's controller creates it for a
+live VMI of a live VirtualMachine controlled by one of our Sandboxes, whose WorkloadCredential has
+accepted that VMI.
 
 The relay is a native sidecar so the guest can flush telemetry until compute exits. It starts
 after KubeVirt's existing initializers, alongside the filesystem daemons below.
@@ -96,8 +97,7 @@ def _controller(kind: str, api_version: str) -> str:
 
 
 def _context() -> list[ClusterPolicySpecRulesContext]:
-    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential and ServiceAccount,
-    each read live."""
+    """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's WorkloadCredential, each read live."""
     return [
         ClusterPolicySpecRulesContext(
             name="vmiOwner",
@@ -153,12 +153,6 @@ def _context() -> list[ClusterPolicySpecRulesContext]:
                 jmes_path=f"credential.{_controller('Sandbox', _SANDBOX_API_VERSION)}", default={}
             ),
         ),
-        ClusterPolicySpecRulesContext(
-            name="account",
-            api_call=ClusterPolicySpecRulesContextApiCall(
-                url_path="/api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}"
-            ),
-        ),
     ]
 
 
@@ -175,8 +169,8 @@ def _protected_mounts(containers: str, volume_names: tuple[str, ...]) -> list[di
 
 
 class LauncherRelayPolicy(ClusterPolicy):
-    """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar, token
-    volume and pull secrets the relay copies. `settings_config_map` holds the relay's own sidecar
+    """`runner_pod` is the runner SandboxTemplate's rendered Pod template, whose egress sidecar
+    and pull secrets the relay copies. `settings_config_map` holds the relay's own sidecar
     settings, which listen where the guest can reach; the runner fence keeps every other peer off
     those ports."""
 
@@ -185,7 +179,6 @@ class LauncherRelayPolicy(ClusterPolicy):
     ) -> None:
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME))
-        token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
         # A deployment that pulls without credentials (the k3s fixture) has none to copy.
         pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}
         runner_tls_checks = [
@@ -217,7 +210,7 @@ class LauncherRelayPolicy(ClusterPolicy):
             "runAsGroup": 1000,
             "runAsNonRoot": True,
         }
-        protected_volumes = [token_volume]
+        protected_volumes = []
         relay["volumeMounts"].append(
             {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": sidecar_config.RUNNER_TLS_MOUNT_PATH, "readOnly": True}
         )
@@ -307,7 +300,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                     name="protect-relay-credentials-on-update",
                     match=updates,
                     validate=Validate.deny(
-                        message="Only the launcher relay may mount projected tokens or runner credentials.",
+                        message="Only the launcher relay may mount the runner credential and trust files.",
                         conditions={"any": [*relay_only]},
                     ),
                 ),
@@ -318,17 +311,13 @@ class LauncherRelayPolicy(ClusterPolicy):
                     validate=Validate.deny(
                         message=(
                             "A launcher must be created by KubeVirt for a live VirtualMachine controlled by a "
-                            "Sandbox, which also controls the ServiceAccount of the same name."
+                            "live Sandbox whose WorkloadCredential accepted its VMI."
                         ),
                         conditions={
                             "any": [
                                 _mismatch("request.userInfo.username", CONTROLLER_USERNAME),
                                 _mismatch("vmiOwner.uid", "{{vmi.metadata.uid}}"),
                                 _mismatch("vmOwner.uid", "{{vm.metadata.uid}}"),
-                                _mismatch(
-                                    "sandbox.uid || ''",
-                                    f"{{{{account.{_controller('Sandbox', _SANDBOX_API_VERSION)}.uid || 'none'}}}}",
-                                ),
                                 *relay_only,
                                 *runner_tls_checks,
                                 # The guest gets no Kubernetes token of its own.
@@ -344,13 +333,12 @@ class LauncherRelayPolicy(ClusterPolicy):
                     mutate=ClusterPolicySpecRulesMutate(
                         patch_strategic_merge={
                             "spec": {
-                                "serviceAccountName": "{{account.metadata.name}}",
+                                "serviceAccountName": "default",
                                 "automountServiceAccountToken": False,
                                 **pull_secrets,
                                 # The subsequent daemon move appends without disturbing existing init order.
                                 "+(initContainers)": [],
                                 "volumes": [
-                                    one(v for v in pod_spec["volumes"] if v["name"] == token_volume),
                                     {
                                         "name": sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
                                         "configMap": {"name": settings_config_map},
@@ -493,7 +481,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                         message="The launcher must have exactly one native relay init sidecar.",
                         conditions={
                             "any": [
-                                _mismatch("request.object.spec.serviceAccountName", "{{account.metadata.name}}"),
+                                _mismatch("request.object.spec.serviceAccountName", "default"),
                                 _mismatch("request.object.spec.automountServiceAccountToken", False),
                                 _mismatch(f"length(request.object.spec.containers[?name=='{relay['name']}'])", 0),
                                 _mismatch(f"length(request.object.spec.initContainers[?name=='{relay['name']}'])", 1),

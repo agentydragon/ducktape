@@ -21,8 +21,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	transformv1 "github.com/agentydragon/ducktape/agentplane/egress/x/iron_proxy/bridge/proto"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 const (
@@ -134,16 +134,8 @@ func (b *Bridge) TransformRequest(ctx context.Context, request *transformv1.Tran
 		return reject(http.StatusServiceUnavailable, decision.Unavailable), nil
 	}
 
-	caller := policyapi.ServiceAccountRef{
-		Namespace: state.principal.Account.Namespace,
-		Name:      state.principal.Account.Name,
-	}
-	workload := &policy.WorkloadContext{
-		Caller: caller,
-		PodUID: state.principal.PodUID,
-		// Projected audience tokens are intentionally unsupported by this bridge prototype.
-	}
-	verdict := b.policy.Evaluate(caller, policyRequest, workload)
+	caller := reader.ServiceAccount{Namespace: state.principal.Account.Namespace, Name: state.principal.Account.Name}
+	verdict := b.policy.Evaluate(caller, policyRequest)
 	allowed, ok := verdict.(policy.Allowed)
 	if !ok {
 		return reject(policyStatus(verdict), deniedReason(verdict)), nil
@@ -199,9 +191,9 @@ func (b *Bridge) authenticate(ctx context.Context, headers http.Header, previous
 	values, supplied := headers[textproto.CanonicalMIMEHeaderKey(proxyAuthorizationHeader)]
 	token := ""
 	if supplied {
-		var ok bool
-		token, ok = identity.BearerToken(values)
-		if !ok {
+		var err error
+		token, err = auth.BearerToken(values)
+		if err != nil {
 			return tunnelState{}, decision.TokenRejected, http.StatusForbidden
 		}
 	} else if previous != nil {
@@ -334,7 +326,7 @@ func headersFromProto(input map[string]*transformv1.HeaderValues) (http.Header, 
 
 func stripPrivateHeaders(headers http.Header) bool {
 	changed := false
-	for _, name := range []string{proxyAuthorizationHeader, identity.ProjectedTokenHeader} {
+	for _, name := range []string{proxyAuthorizationHeader, identity.UntrustedWorkloadTokenHeader} {
 		canonical := textproto.CanonicalMIMEHeaderKey(name)
 		if _, ok := headers[canonical]; ok {
 			// iron-proxy applies a modified header map only when it is non-empty. Keep a

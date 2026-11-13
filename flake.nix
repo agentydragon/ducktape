@@ -87,6 +87,33 @@
     }@inputs:
     let
       system = "x86_64-linux";
+      codexAwsLcOverlay = _final: prev: {
+        codex = prev.codex.overrideAttrs (old: {
+          # aws-lc-sys otherwise probes OpenSSL first and rejects its headers.
+          # AWS-LC's headers and libraries live in separate Nix outputs, and
+          # its headers are nested under include/aws-lc.
+          # The unstable Codex recipe also lacks the system libraries demanded
+          # by Nix's cargo hook; master already declares most of these.
+          buildInputs = old.buildInputs ++ [
+            prev.aws-lc
+            prev.oniguruma
+            prev.sqlite
+            prev.zstd.dev
+          ];
+          env = old.env // {
+            AWS_LC_SYS_SYSTEM_DIR = prev.symlinkJoin {
+              name = "codex-aws-lc-system";
+              paths = [
+                prev.aws-lc.out
+                prev.aws-lc.dev
+              ];
+              postBuild = ''
+                ln -s aws-lc/openssl "$out/include/openssl"
+              '';
+            };
+          };
+        });
+      };
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
@@ -180,11 +207,13 @@
       pkgsUnstable = import nixpkgs-unstable {
         inherit system;
         config.allowUnfree = true;
+        overlays = [ codexAwsLcOverlay ];
       };
 
       pkgsMaster = import nixpkgs-master {
         inherit system;
         config.allowUnfree = true;
+        overlays = [ codexAwsLcOverlay ];
       };
 
       # aarch64 nixpkgs instance for nix-on-droid (the phone). Everything else in

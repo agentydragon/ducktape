@@ -7,10 +7,6 @@ from pathlib import Path
 from x.wt.shared.protocol import WorktreeID
 
 
-def _now() -> datetime:
-    return datetime.now()
-
-
 @dataclass(frozen=True, slots=True)
 class DiscoveredWorktree:
     """Filesystem-discovered worktree instance (daemon-internal).
@@ -21,5 +17,5 @@ class DiscoveredWorktree:
     path: Path
     name: str
     wtid: WorktreeID
-    discovered_at: datetime = field(default_factory=_now, compare=False)
-    last_seen: datetime = field(default_factory=_now, compare=False)
+    discovered_at: datetime = field(default_factory=datetime.now, compare=False)
+    last_seen: datetime = field(default_factory=datetime.now, compare=False)

@@ -378,7 +378,7 @@ spec:
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: gitlab-spike-fault-isolation
+  name: fault-isolation
   namespace: gitlab-spike
 spec:
   egressDeny:
@@ -396,7 +396,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: gitlab-spike-benchmark-scripts
+  name: benchmark-scripts
   namespace: gitlab-spike
 data:
   forgejo-bench.sh: |
@@ -595,7 +595,7 @@ immutable: false
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: gitlab-spike-benchmark
+  name: benchmark
   namespace: gitlab-spike
 spec:
   concurrencyPolicy: Forbid
@@ -607,7 +607,7 @@ spec:
       template:
         metadata:
           labels:
-            app.kubernetes.io/name: gitlab-spike-benchmark
+            app.kubernetes.io/name: benchmark
         spec:
           automountServiceAccountToken: false
           containers:
@@ -660,7 +660,7 @@ spec:
               type: RuntimeDefault
           volumes:
             - configMap:
-                name: gitlab-spike-benchmark-scripts
+                name: benchmark-scripts
               name: scripts
             - emptyDir: {}
               name: tmp
@@ -741,7 +741,7 @@ spec:
               type: RuntimeDefault
           volumes:
             - configMap:
-                name: gitlab-spike-benchmark-scripts
+                name: benchmark-scripts
               name: scripts
             - emptyDir: {}
               name: tmp

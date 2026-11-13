@@ -81,6 +81,13 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 
 	finishedCount := 0
 	successfulCount := 0
+	startedCount := 0
+	var startedInvocationID string
+	parentInvocationIDSeen := false
+	parentInvocationIDConflict := false
+	var parentInvocationID string
+	configuredChildInvocationIDs := map[string]struct{}{}
+	var exitCodeNames []string
 	var commands []string
 	var explicitCmdLines []*[]string
 	var requestedPatterns []string
@@ -115,9 +122,37 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 			if finished.GetExitCode().GetName() == "SUCCESS" {
 				successfulCount++
 			}
+			if name := finished.GetExitCode().GetName(); name != "" {
+				exitCodeNames = append(exitCodeNames, name)
+			}
 		}
 		if started := event.GetStarted(); started != nil {
+			startedCount++
+			startedInvocationID = started.GetUuid()
 			commands = append(commands, started.GetCommand())
+		}
+		if metadata := event.GetBuildMetadata(); metadata != nil {
+			if value, ok := metadata.GetMetadata()["PARENT_INVOCATION_ID"]; ok {
+				if !parentInvocationIDSeen {
+					parentInvocationIDSeen = true
+					parentInvocationID = value
+				} else if value != parentInvocationID {
+					parentInvocationIDConflict = true
+				}
+			}
+		}
+		if configured := event.GetChildInvocationsConfigured(); configured != nil {
+			for _, invocation := range configured.GetInvocation() {
+				id := invocation.GetInvocationId()
+				if id == "" {
+					return nil, fmt.Errorf("child invocation configuration event %d has an empty invocation ID", i)
+				}
+				if _, ok := configuredChildInvocationIDs[id]; ok {
+					return nil, fmt.Errorf("child invocation configuration event %d repeats invocation ID %q", i, id)
+				}
+				configuredChildInvocationIDs[id] = struct{}{}
+				result.ChildInvocationIds = append(result.ChildInvocationIds, id)
+			}
 		}
 		if options := event.GetOptionsParsed(); options != nil {
 			if presence.OptionsParsed != nil {
@@ -145,6 +180,15 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 
 	result.Finished = finishedCount == 1
 	result.Successful = finishedCount == 1 && successfulCount == 1
+	if startedCount == 1 && startedInvocationID != "" {
+		result.InvocationId = stringPointer(startedInvocationID)
+	}
+	if parentInvocationIDSeen && !parentInvocationIDConflict && parentInvocationID != "" {
+		result.ParentInvocationId = stringPointer(parentInvocationID)
+	}
+	if finishedCount == 1 && len(exitCodeNames) == 1 {
+		result.ExitCodeName = stringPointer(exitCodeNames[0])
+	}
 	if len(commands) == 1 {
 		result.Command = stringPointer(commands[0])
 	}

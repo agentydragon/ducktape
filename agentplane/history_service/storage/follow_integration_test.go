@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
@@ -176,8 +177,8 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 		{ItemId: "second", CompletionCursor: 10, Ranges: []*historypb.CursorRange{{First: 7, Last: 7}}},
 	}
 	for _, settlement := range settlements {
-		if err := transaction(t.Context(), db, sql.TxOptions{}, func(tx *sql.Tx) error {
-			return recordSettlement(t.Context(), tx, sessionID, settlement)
+		if err := postgres.Transaction(t.Context(), db, sql.TxOptions{}, func(tx *sql.Tx) error {
+			return RecordSettlement(t.Context(), tx, sessionID, settlement)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -207,8 +208,8 @@ func TestFollowPageBoundsSettlementsWhenKindsFilterOutCompletions(t *testing.T) 
 	appendEntries(t, store, sessionID, entries(1, FollowSettlementsLimit+1)...)
 	for cursor := uint64(1); cursor <= FollowSettlementsLimit+1; cursor++ {
 		settled := &historypb.SettledDeltas{CompletionCursor: cursor}
-		if err := transaction(t.Context(), db, sql.TxOptions{}, func(tx *sql.Tx) error {
-			return recordSettlement(t.Context(), tx, sessionID, settled)
+		if err := postgres.Transaction(t.Context(), db, sql.TxOptions{}, func(tx *sql.Tx) error {
+			return RecordSettlement(t.Context(), tx, sessionID, settled)
 		}); err != nil {
 			t.Fatal(err)
 		}

@@ -32,8 +32,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "net",
+    testonly = True,
+    srcs = ["net.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//tenacity"],
+)
+
 py_test(
     name = "test_postgres",
+    size = "medium",
     srcs = ["test_postgres.py"],
     requires_docker = True,
     deps = [

@@ -20,6 +20,8 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 		"verdict":         {string(VerdictAllow), string(VerdictDeny)},
 		"policy_kind":     toStrings(policyKinds),
 		"policy_source":   {PolicySourceRules},
+		"provider":        {operatorProvider, policyProvider},
+		"reason_code":     storedReasonCodeNames(),
 	} {
 		if got := enums[column]; !slices.Equal(got, want) {
 			t.Errorf("%s: stored vocabulary has %v, the store %v", column, got, want)
@@ -29,8 +31,11 @@ func TestVocabulariesAreThoseOfTheStoredColumns(t *testing.T) {
 
 func TestUnknownOutcomeReasonsBelongToStoredVocabulary(t *testing.T) {
 	stored := loadGolden(t).Enums["unknown_outcome_reason"]
-	for _, reason := range []UnknownOutcomeReason{UnknownExecutorLost, UnknownLeaseExpired, UnknownAdapterOutcome, UnknownCoordinatorStopped} {
-		if !slices.Contains(stored, string(reason)) {
+	for _, reason := range []action_servicepb.ExecutionErrorKind{
+		action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTOR_LOST, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LEASE_EXPIRED,
+		action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_COORDINATOR_STOPPED,
+	} {
+		if !slices.Contains(stored, storedErrorKinds[reason]) {
 			t.Errorf("stored vocabulary has no reason %s among %v", reason, stored)
 		}
 	}
@@ -50,7 +55,7 @@ func TestTerminalStatesMapToStoredRequestStates(t *testing.T) {
 func TestEndedExecutionsHoldStoredErrors(t *testing.T) {
 	for _, vector := range loadGolden(t).UnknownOutcomes {
 		t.Run(vector.Reason, func(t *testing.T) {
-			sameJSON(t, []byte(unknownOutcomeError(UnknownOutcomeReason(vector.Reason))), vector.Error)
+			sameJSON(t, []byte(unknownOutcomeError(errorKindFromStored(vector.Reason))), vector.Error)
 		})
 	}
 }
@@ -124,10 +129,10 @@ func TestVotesRequireDecisiveOutcomes(t *testing.T) {
 			// A vote must decide; `no_opinion` defers to a human.
 			err := json.Unmarshal(vector.Input, &wire)
 			if err == nil {
-				err = ProviderVote{
-					Provider: "test-provider", Verdict: wire.Verdict, ReasonCode: wire.ReasonCode,
-					ReasonDescription: wire.ReasonDescription, Evidence: wire.Evidence,
-				}.Validate()
+				err = ProviderVote{Verdict: wire.Verdict, Policy: PolicyDecision{
+					ReasonCode: reasonCodeFromStored(wire.ReasonCode), ReasonDescription: wire.ReasonDescription,
+					Evidence: wire.Evidence,
+				}}.Validate()
 			}
 			if want := vector.Valid && vector.Decisive; want != (err == nil) {
 				t.Errorf("a vote that decides = %v, Validate = %v", want, err)

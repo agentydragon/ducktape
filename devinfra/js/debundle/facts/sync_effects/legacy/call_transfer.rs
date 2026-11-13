@@ -233,6 +233,11 @@ impl Executor<'_, '_> {
                 unreachable!()
             };
             let values = self.evaluate(receiver, env, captures);
+            let private_own_field =
+                self.private_own_field_read(receiver, property.as_deref(), call, &values);
+            if !private_own_field {
+                self.publish_accessor_receivers(&values, call.span);
+            }
             if values.iter().any(|value| {
                 matches!(value, AbstractValue::Value(Value::Top))
                     || matches!(value,
@@ -330,6 +335,17 @@ impl Executor<'_, '_> {
                     self.state.array_iteration_unsupported = true;
                 }
                 outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+            } else if private_own_field
+                && accessor_getters.is_empty()
+                && self
+                    .inputs
+                    .index
+                    .unconditionally_evaluated_member_read(call)
+            {
+                outcome
+                    .effects
+                    .proven_private_own_field_reads
+                    .push((call.owner, call.span));
             }
             return CallTransfer::EffectsOnly;
         }

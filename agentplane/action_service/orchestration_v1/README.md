@@ -22,10 +22,13 @@ Action is an act the operator delegates. No backend checks the caller itself yet
 
 **Launcher grants.** A launch names what its caller may then do to the new Sandbox without asking
 again: `send_message` to its Session inboxes, and any of this group's Actions that take the Sandbox.
-The executor writes them as a PolicySet and a PolicyBinding named `<sandbox>.launcher`, both owned
-by the Sandbox so that deleting it revokes them. The binding's subject is
-`ExecutionRequest.caller`, the authenticated account that submitted the launch; no argument names
-it. Approving a launch approves its grants, and a launch that names none gets none.
+The executor writes them as a PolicySet and a PolicyBinding named `<sandbox>.launcher`, owned
+by the Sandbox. An Identity launcher's binding also names its Identity as an owner, pinning its UID;
+a same-named replacement inherits neither that grant nor the launch receipt. The binding's subject is
+`ExecutionRequest.caller`, the authenticated ServiceAccount or Identity incarnation that submitted
+the launch; no argument names it. Deleting the Sandbox makes the exact-target grant inert; deleting
+the launcher Identity makes its UID-pinned binding inert. Garbage collection removes a binding after
+all its owners disappear. Approving a launch approves its grants, and a launch that names none gets none.
 
 **One incarnation.** Every Action on a Sandbox names it by name and UID, and a grant matches only
 that UID. Before each command and Session read, the executor rereads the Sandbox and refuses
@@ -57,8 +60,8 @@ shared `SessionPlacement` message in `SessionSpec.placement`: central sampler se
 fixed executor environment. This action does not create optional attachments or an
 environment-independent central Session.
 
-A launched Sandbox's own account is bound to this deployment's default PolicySets and the ones the
-launch names. A launch may not name a launcher grant's PolicySet, which would hand another
+A launched Sandbox's acting Identity is bound to exactly the PolicySets the launch names.
+A launch may not name a launcher grant's PolicySet, which would hand another
 Sandbox's launcher grant to the new one.
 
 ## Reading and waiting for turns
@@ -74,7 +77,8 @@ assistant-text item. Reasoning and tool output never become that final message. 
 no terminal status. A removed range makes the read fail rather than return an apparently complete
 transcript. Each input's `command_ids` comes from History's `origin_command_ids`; an input with no
 originating command has an empty array. Replayed confirmations of the same native message within a
-turn do not duplicate inputs or command IDs. Distinct messages with equal text remain distinct.
+turn do not duplicate inputs or command IDs. Distinct messages with equal text remain distinct. The event fold is shared with
+`session_client.ReadTurns`; malformed turn boundaries or completion statuses fail the read.
 
 `get_session` keeps the Dispatcher's `state`, `reason` and timestamps on each of its at most 20
 recent dispatches. A separate optional `history` object reports the latest observed History fact:
@@ -117,13 +121,12 @@ An environment offers the group with `ActionsProps.orchestration_v1`
 (`cluster/cdk8s/agentplane/environment.py`). Its Action Service then:
 
 - has the group in its settings, with the app's presets, and the `session_dispatcher` and
-  `history_service` it calls with projected tokens of their audiences; EnvironmentService applies
-  the Gateway's default PolicySets;
+  `history_service` it calls with projected tokens of their audiences;
 - is a caller and waker of the Session Dispatcher and a reader of the History Service;
 - has an EnvironmentService launcher grant to create on behalf of an Action caller; may read
   Sandboxes and get and create PolicySets and PolicyBindings in its namespace;
 - creates grants only in the executor's shape, which a ValidatingAdmissionPolicy enforces: a
-  grant owned by one Sandbox, named for it, whose rules
+  launcher grant owned by its Sandbox, named for it, whose rules
   name only that incarnation and only this group's Actions. The policy cannot see who called the
   launch, so it bounds what a grant reaches, not who holds it.
 

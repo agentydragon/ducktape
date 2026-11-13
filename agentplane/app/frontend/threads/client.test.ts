@@ -163,7 +163,7 @@ it.each(["before", "after"] as const)("preserves %s archive cursors above JS int
     return Promise.resolve(
       Response.json({
         lastCursor: (direction === "before" ? bound - 1n : bound + 1n).toString(),
-        observations: cursors.map((cursor) => ({ cursor, kind: "test" })),
+        observations: cursors.map((cursor) => ({ cursor, kind: "EVENT_KIND_NATIVE" })),
         settled: [],
       })
     );
@@ -188,8 +188,8 @@ it.each([
     label: "latest",
     request: {},
     observations: [
-      { cursor: "31", kind: "harness_stderr" },
-      { cursor: "34", kind: "item_completed" },
+      { cursor: "31", kind: "EVENT_KIND_HARNESS_STDERR" },
+      { cursor: "34", kind: "EVENT_KIND_ITEM_COMPLETED" },
     ],
     settled: [
       { first: "1", last: "30" },
@@ -200,14 +200,14 @@ it.each([
   {
     label: "older",
     request: { before: "32" },
-    observations: [{ cursor: "31", kind: "harness_stderr" }],
+    observations: [{ cursor: "31", kind: "EVENT_KIND_HARNESS_STDERR" }],
     settled: [{ first: "1", last: "30" }],
     cursors: ["31"],
   },
   {
     label: "newer",
     request: { after: "31" },
-    observations: [{ cursor: "34", kind: "item_completed" }],
+    observations: [{ cursor: "34", kind: "EVENT_KIND_ITEM_COMPLETED" }],
     settled: [{ first: "32", last: "33" }],
     cursors: ["34"],
   },

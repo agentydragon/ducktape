@@ -14,11 +14,12 @@
 //!
 //! Notable residual gaps (documented, not checked):
 //!
-//! - **A1**: `eval` inside function bodies and other lazy positions.
-//!   A1's wording only bans module-top `eval`, but a lazy direct
-//!   `eval` can still read cross-module bindings dynamically when
-//!   the enclosing function is called after the split. Aliased eval
-//!   (`const e = eval; e(...)`) is also unchecked.
+//! - **A1**: a direct `eval` in a lazy body is refused only once the
+//!   assignment splits, reorders or renames the chunk
+//!   ([`enforce_split_admission`]); an indirect
+//!   `(0, eval)(...)` only at module top level: in a lazy body it runs in
+//!   global scope, where module bindings are invisible. Aliased eval
+//!   (`const e = eval; e(...)`) is unchecked.
 //! - **A3**: non-literal dynamic-import specifiers in lazy positions
 //!   (`(n) => import(n)`), which could resolve to an internal module
 //!   at runtime. Only `Lit::Str` specifiers count as literal — the
@@ -74,23 +75,31 @@ struct AdmissionViolation {
     /// the dependency graph reports.
     ordinal: usize,
     description: String,
+    /// Benign while the emitted tree is the source as one module in source
+    /// order, under its own names: enforced by
+    /// [`enforce_split_admission`] once the assignment is known.
+    split_only: bool,
 }
 
 /// Scan `module` for admission violations and `bail!` on any that the
 /// spec does not override. Overridden violations print one notice line
 /// per check and description, naming every statement it suppressed;
 /// configured overrides that suppress nothing print a redundant-override
-/// warning (mirroring the redundant-purity-hint diagnostics).
+/// warning and are returned, for `spec lint`.
 pub(super) fn enforce_chunk_admission(
     chunk_id: &str,
     module: &Module,
     overrides: AdmissionOverrides,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
-) -> Result<()> {
+) -> Result<Vec<AdmissionCheck>> {
     let violations = scan_admission_violations(module, resolve_dynamic_import);
     let (suppressed, fatal): (Vec<_>, Vec<_>) = violations
         .into_iter()
         .partition(|violation| overrides.contains(violation.check));
+    let fatal: Vec<_> = fatal
+        .into_iter()
+        .filter(|violation| !violation.split_only)
+        .collect();
     let mut notices: Vec<(AdmissionCheck, &str, Vec<usize>)> = Vec::new();
     for violation in &suppressed {
         match notices.iter_mut().find(|(check, description, _)| {
@@ -121,38 +130,65 @@ pub(super) fn enforce_chunk_admission(
              {statements}: {description}",
         );
     }
-    for check in overrides.iter() {
-        if !suppressed.iter().any(|violation| violation.check == check) {
-            eprintln!(
-                "warning: chunk {chunk_id}: admission override `{check}` is redundant — \
+    let redundant = overrides
+        .iter()
+        .filter(|check| !suppressed.iter().any(|violation| violation.check == *check))
+        .collect::<Vec<_>>();
+    for check in &redundant {
+        eprintln!(
+            "warning: chunk {chunk_id}: admission override `{check}` is redundant — \
                  the chunk has no {check} violation and the override is a no-op. \
                  Remove it from chunk_analysis_options.{chunk_id}.admission_overrides.",
-            );
-        }
-    }
-    if !fatal.is_empty() {
-        let rendered = fatal
-            .iter()
-            .map(|violation| {
-                format!(
-                    "  statement #{ordinal}: [{check}] {description}",
-                    ordinal = violation.ordinal,
-                    check = violation.check,
-                    description = violation.description,
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} fails input-chunk admission \
-             (docs/design.md §\"Conditions on the input chunk\"):\n{rendered}\n\
-             The realizability theorem does not cover these shapes. Rework the chunk, or — \
-             after auditing that the shape is benign here — opt out per check via \
-             `chunk_analysis_options.{chunk_id}.admission_overrides` (e.g. `[{first}]`).",
-            first = fatal[0].check,
         );
     }
-    Ok(())
+    refuse(chunk_id, &fatal)?;
+    Ok(redundant)
+}
+
+/// The admission violations that are benign only while the emitted tree is
+/// the source unchanged: a lazy direct `eval` reads and writes bindings by
+/// name, so it breaks once the chunk is split across modules, reordered or
+/// renamed. Refuses them when `transformed`, unless overridden.
+pub(super) fn enforce_split_admission(
+    chunk_id: &str,
+    module: &Module,
+    overrides: AdmissionOverrides,
+    transformed: bool,
+) -> Result<()> {
+    if !transformed {
+        return Ok(());
+    }
+    let fatal: Vec<_> = scan_admission_violations(module, &|_| DynamicImportTarget::External)
+        .into_iter()
+        .filter(|violation| violation.split_only && !overrides.contains(violation.check))
+        .collect();
+    refuse(chunk_id, &fatal)
+}
+
+fn refuse(chunk_id: &str, fatal: &[AdmissionViolation]) -> Result<()> {
+    let Some(first) = fatal.first() else {
+        return Ok(());
+    };
+    let rendered = fatal
+        .iter()
+        .map(|violation| {
+            format!(
+                "  statement #{ordinal}: [{check}] {description}",
+                ordinal = violation.ordinal,
+                check = violation.check,
+                description = violation.description,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    bail!(
+        "materialize_logical_modules: chunk {chunk_id} fails input-chunk admission \
+         (docs/design.md §\"Conditions on the input chunk\"):\n{rendered}\n\
+         The realizability theorem does not cover these shapes. Rework the chunk, or — \
+         after auditing that the shape is benign here — opt out per check via \
+         `chunk_analysis_options.{chunk_id}.admission_overrides` (e.g. `[{first}]`).",
+        first = first.check,
+    );
 }
 
 fn scan_admission_violations(
@@ -192,6 +228,7 @@ impl AdmissionScan<'_> {
             check,
             ordinal: self.ordinal,
             description,
+            split_only: false,
         });
     }
 
@@ -266,6 +303,23 @@ impl Visit for AdmissionScan<'_> {
         match &node.callee {
             Callee::Import(_) => self.check_dynamic_import(node),
             Callee::Expr(expr) if self.lazy_depth == 0 => self.check_eval_callee(expr),
+            // A direct `eval` in a lazy body runs code that can read and
+            // write any binding in scope by name (string code the analysis
+            // cannot see), so it is refused at any depth. An indirect eval
+            // there runs in global scope, where module bindings are not
+            // visible: an ordinary opaque call.
+            Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "eval") =>
+            {
+                self.violations.push(AdmissionViolation {
+                    check: AdmissionCheck::A1Eval,
+                    ordinal: self.ordinal,
+                    description: "direct `eval(...)` call in a lazy body — it can read and \
+                                  write any binding in scope by name, which the analysis \
+                                  cannot see, once the chunk is split, reordered or renamed"
+                        .to_string(),
+                    split_only: true,
+                });
+            }
             _ => {}
         }
         node.visit_children_with(self);
@@ -462,23 +516,32 @@ mod tests {
         );
     }
 
-    /// `eval` inside a function body is a lazy position — A1 only
-    /// bans module-top eval (the body's eval is a documented residual
-    /// risk, not a violation).
+    /// A direct `eval` in a function body can read and write any binding
+    /// in scope; an indirect one there runs in global scope.
     #[test]
-    fn eval_in_function_body_is_not_flagged() {
-        assert_eq!(scan("function f() { return eval(\"1\"); }\n"), vec![]);
+    fn direct_eval_in_function_body_is_flagged_indirect_is_not() {
+        assert_eq!(
+            scan("function f() { return eval(\"1\"); }\n"),
+            vec![(AdmissionCheck::A1Eval, 0)]
+        );
+        assert_eq!(scan("function f() { return (0, eval)(\"1\"); }\n"), vec![]);
+        assert_eq!(scan("function f() { return Function(\"1\")(); }\n"), vec![]);
     }
 
     /// A class static block runs at class evaluation (eager), so an
-    /// eval there is module-top eval; an instance method body is lazy.
+    /// eval there is module-top eval; an instance method body is lazy,
+    /// where only a direct eval is flagged.
     #[test]
     fn class_static_block_is_eager_method_body_is_lazy() {
         assert_eq!(
             scan("class C { static { eval(\"1\"); } }\n"),
             vec![(AdmissionCheck::A1Eval, 0)]
         );
-        assert_eq!(scan("class C { m() { eval(\"1\"); } }\n"), vec![]);
+        assert_eq!(
+            scan("class C { m() { eval(\"1\"); } }\n"),
+            vec![(AdmissionCheck::A1Eval, 0)]
+        );
+        assert_eq!(scan("class C { m() { (0, eval)(\"1\"); } }\n"), vec![]);
     }
 
     /// Literal dynamic imports resolve through the caller-supplied

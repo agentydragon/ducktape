@@ -90,6 +90,8 @@ At the exact Sealing barrier, each Session closes admission for all new command 
 same lock as journal admission and sealing. The Session lifecycle status reports
 `AdmissionClosed` for its observed environment generation only after this live gate closes and
 accepted commands are settled.
+A seal worker checks its exact shutdown revision under this lock before closing the gate;
+obsolete shutdown work cannot close or seal a reopened successor.
 An exact-turn interrupt may enter during halt before that cutoff; an identical admitted command
 can return its original receipt afterward. A failed settlement or seal leaves the gate closed.
 The live gate reopens only after a successor journal reopen and its acknowledgement and seal
@@ -198,3 +200,8 @@ VM service configuration is mounted at `/run/agentplane/config/environment-runti
 launch identity at `/run/agentplane/sandbox/launch.json`. `--vm-resource-properties` remains the
 systemd prestart interface for calculating the resource envelope. Native protocol probing and the
 live Execution owner determine readiness independently of a previously published observation.
+
+`codex.turn_diff_notifications` controls aggregate diff notifications on the shared Codex
+app-server connection. It defaults to disabled; explicit `true` enables capture for all
+Codex Sessions in the environment. This startup setting takes effect when Runtime initializes
+the connection. Disabled notifications never enter the Session journal or History.

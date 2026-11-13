@@ -617,14 +617,17 @@ fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&extra_chunks));
 
     assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
     assert_eq!(
-        execution(&fixture, "result"),
-        serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
-        })
+        result["precision_losses"],
+        serde_json::json!([]),
+        "{result:#}"
+    );
+    // The whole chain runs below the bound, so the root call seals its owner.
+    assert_eq!(
+        result["binding_effect_authority"]["authority"], "operation_receipt",
+        "{result:#}"
     );
 }
 
@@ -722,7 +725,11 @@ fn global_reach(cause: &str) -> Value {
 /// The reach of the rejected construction of `result` in `source`, whose
 /// entry prints `3`.
 fn construction_reach(source: &str, extra_chunks: &[(&str, &str)]) -> Value {
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks));
+    construction_reach_of(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks))
+}
+
+fn construction_reach_of(opts: FixtureOpts<'_>) -> Value {
+    let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     result["precision_losses"]
@@ -794,10 +801,15 @@ fn published_class_with_a_borrowed_method_has_global_reach() {
 
 #[test]
 fn dynamic_scope_in_the_chunk_has_global_reach() {
+    // A direct `eval` is refused at admission (A1); the override keeps
+    // the analysis running to pin its reach.
     assert_eq!(
-        construction_reach(
-            "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
-            &[],
+        construction_reach_of(
+            FixtureOpts::new(
+                "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
+                vec![],
+            )
+            .with_admission_overrides(&["a1_eval"]),
         ),
         global_reach("dynamic_scope")
     );

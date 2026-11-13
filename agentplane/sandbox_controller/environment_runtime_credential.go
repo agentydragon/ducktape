@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -33,7 +33,6 @@ const (
 
 	// A VM's active credential and the VMI accepted for it. The Sandbox's binding is in
 	// status.runnerCredential.
-	RunnerCredentialIDAnnotation         = "agentplane.allegedly.works/environment-runtime-credential"
 	RunnerCredentialVMIUIDAnnotation     = "agentplane.allegedly.works/environment-runtime-credential-vmi-uid"
 	RunnerCredentialLastVMIUIDAnnotation = "agentplane.allegedly.works/environment-runtime-credential-last-vmi-uid"
 
@@ -61,12 +60,38 @@ func credentialOwner(sandbox *sandboxapi.Sandbox) requester.Owner {
 	return requester.OwnedBy(sandbox, sandboxapi.GroupVersion.WithKind(sandboxapi.SandboxKind))
 }
 
+// requestStartCredential asks for the unbound credential the Sandbox's next incarnation starts
+// with. A record naming another subject is revoked first, since a record's subject changes only
+// with a new binding.
+func (r *Reconciler) requestStartCredential(ctx context.Context, sandbox *sandboxapi.Sandbox) (requester.Issued, *unready, error) {
+	subject, changed, blocked, err := r.credentialSubject(ctx, sandbox, false)
+	if err != nil || blocked != nil {
+		return requester.Issued{}, blocked, err
+	}
+	if changed {
+		return requester.Issued{}, credentialPending("IdentityChanged", "the WorkloadCredential subject differs from the Sandbox's Identity and is being revoked"),
+			r.Credentials.Revoke(ctx, credentialOwner(sandbox))
+	}
+	return r.requestCredential(ctx, sandbox, subject, nil)
+}
+
+// requestIncarnationCredential asks for the credential bound to the incarnation the Sandbox
+// accepts. changed says the incarnation's recorded subject differs from the Sandbox's Identity,
+// and must go instead.
+func (r *Reconciler) requestIncarnationCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, binding requester.Binding) (issued requester.Issued, changed bool, pending *unready, err error) {
+	subject, changed, _, err := r.credentialSubject(ctx, sandbox, true)
+	if err != nil || changed {
+		return requester.Issued{}, changed, nil, err
+	}
+	issued, pending, err = r.requestCredential(ctx, sandbox, subject, binding)
+	return issued, false, pending, err
+}
+
 // requestCredential asks for the credential the Sandbox's incarnation runs with: binding is the one
-// it accepts, or nil before one exists. Until IDENTITY_CUTOVER the subject is the Sandbox's own
-// ServiceAccount.
-func (r *Reconciler) requestCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, binding requester.Binding) (requester.Issued, *unready, error) {
+// it accepts, or nil before one exists.
+func (r *Reconciler) requestCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, subject requester.Identity, binding requester.Binding) (requester.Issued, *unready, error) {
 	credential, err := r.Credentials.Ensure(ctx, requester.Request{
-		Owner: credentialOwner(sandbox), Subject: requester.ServiceAccount{Name: sandbox.Name}, Binding: binding,
+		Owner: credentialOwner(sandbox), Subject: subject, Binding: binding,
 	})
 	if err != nil {
 		return requester.Issued{}, nil, err
@@ -107,7 +132,7 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 	if template.Spec.VM != nil {
 		kind = sandboxapi.RunnerCredentialKindVM
 	}
-	issued, pending, err := r.requestCredential(ctx, sandbox, nil)
+	issued, pending, err := r.requestStartCredential(ctx, sandbox)
 	if err != nil || pending != nil {
 		return w, pending, err
 	}
@@ -123,7 +148,7 @@ func (r *Reconciler) ensureRunnerCredential(ctx context.Context, sandbox *sandbo
 
 func (r *Reconciler) ensurePodRunnerCredential(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
 	pod := w.pod
-	id := pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]
+	id := pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	if !validRunnerCredentialID(id) {
 		// A legacy runner can stay published only while it is the exact incarnation already
 		// recorded in status. A replacement without a credential must never inherit that route.
@@ -137,9 +162,12 @@ func (r *Reconciler) ensurePodRunnerCredential(ctx context.Context, sandbox *san
 	if bound.PodUID != "" && bound.PodUID != string(pod.UID) {
 		return r.replaceStalePod(ctx, w, fmt.Sprintf("Pod %s is not the incarnation this Sandbox accepted", pod.Name))
 	}
-	issued, pending, err := r.requestCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
+	issued, changed, pending, err := r.requestIncarnationCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
 	if err != nil {
 		return w, nil, err
+	}
+	if changed {
+		return r.replaceStalePod(ctx, w, fmt.Sprintf("Pod %s has a credential subject its Sandbox no longer accepts", pod.Name))
 	}
 	if pending != nil {
 		// A pending reissue, such as a renewal, keeps the route of the incarnation already published.
@@ -183,7 +211,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		w.runnerIncarnationPublished = previouslyPublishedRunnerIncarnation(sandbox, w)
 		return w, nil, nil
 	}
-	id := vm.Annotations[RunnerCredentialIDAnnotation]
+	id := vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	acceptedVMI := vm.Annotations[RunnerCredentialVMIUIDAnnotation]
 	if w.vmi == nil && !vmRunning(vm) {
 		if !needsRunner {
@@ -191,7 +219,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		}
 		// The next run starts with the record's unbound credential, which is fresh once an earlier
 		// VMI was accepted; startVM renders it into the template.
-		issued, pending, err := r.requestCredential(ctx, sandbox, nil)
+		issued, pending, err := r.requestStartCredential(ctx, sandbox)
 		if err != nil || pending != nil {
 			return w, pending, err
 		}
@@ -200,7 +228,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 			if acceptedVMI != "" {
 				vm.Annotations[RunnerCredentialLastVMIUIDAnnotation] = acceptedVMI
 			}
-			vm.Annotations[RunnerCredentialIDAnnotation] = issued.ID
+			vm.Annotations[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] = issued.ID
 			vm.Annotations[RunnerCredentialVMIUIDAnnotation] = ""
 			if err := r.Update(ctx, vm); err != nil {
 				return w, nil, err
@@ -226,7 +254,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		// KubeVirt has yet to create the running VM's VMI.
 		return w, nil, nil
 	}
-	if vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel] != id {
+	if vmi.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey] != id {
 		// A VMI of an earlier template may still be stopping. Keep the VM halted and wait; never
 		// accept it or bind the record to it.
 		if err := r.haltVM(ctx, vm); err != nil {
@@ -247,7 +275,7 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 		if err := r.Update(ctx, vm); err != nil {
 			return w, nil, err
 		}
-		if _, _, err := r.requestCredential(ctx, sandbox, nil); err != nil {
+		if _, _, err := r.requestStartCredential(ctx, sandbox); err != nil {
 			return w, nil, err
 		}
 		return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("VMI %s was replaced; its credential is being rotated", vmi.Name)}, nil
@@ -256,9 +284,15 @@ func (r *Reconciler) ensureVMRunnerCredential(ctx context.Context, sandbox *sand
 	if w.launcher != nil {
 		binding.Launcher = &requester.Pod{Name: w.launcher.Name, UID: w.launcher.UID}
 	}
-	issued, pending, err := r.requestCredential(ctx, sandbox, binding)
+	issued, changed, pending, err := r.requestIncarnationCredential(ctx, sandbox, binding)
 	if err != nil {
 		return w, nil, err
+	}
+	if changed {
+		if err := r.haltVM(ctx, vm); err != nil {
+			return w, nil, err
+		}
+		return w, &unready{reason: "RunnerCredentialMismatch", message: fmt.Sprintf("VMI %s has a credential subject its Sandbox no longer accepts", vmi.Name)}, nil
 	}
 	if pending != nil {
 		// A pending reissue, or naming the launcher, keeps the route of the accepted incarnation.

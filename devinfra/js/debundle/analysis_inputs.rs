@@ -164,6 +164,11 @@ pub struct ForeignCallSummary {
     /// remain unknown; later use must retain opaque foreign capabilities.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub retained_provider_captures: BTreeSet<String>,
+    /// Every source-private provider var cell the body reads. A summary with
+    /// any is no receipt for the call's effects: the cell's writers are
+    /// outside what the summary proves.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub provider_cell_reads: BTreeSet<String>,
     /// Census families the body constructs from (`new WeakMap()`); their
     /// integrity premise is in `dependencies`.
     pub native_constructions: BTreeSet<NativeIntrinsic>,
@@ -442,6 +447,8 @@ pub struct ResolvedInitializerCallEffectInput {
     pub provider_chunk: String,
     pub provider_export: String,
     pub provider_sha256: String,
+    #[serde(default)]
+    pub returns_opaque_function_from_const_primitive: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_replacement: Option<EffectiveInitializerCallReplacement>,
     /// Complete ordinary static dependency closure that evaluated before the
@@ -1114,6 +1121,12 @@ pub struct AnalysisInputs {
     /// oracle (`crate::cross_module_purity`); empty in strictly per-chunk
     /// paths, where imported callees stay `unknown_call`.
     pub imported_purities: BTreeMap<String, std::sync::Arc<Purity>>,
+    /// Named and default imports of this chunk, by local name, bound to a
+    /// provider cell that is never rebound
+    /// (`crate::cross_module_purity::resolve_stable_imports`). A read of any
+    /// other import is an order-dependent effect; empty in strictly per-chunk
+    /// paths, where every import stays one.
+    pub stable_imports: BTreeSet<String>,
     /// Bare imported callable capabilities, retaining the evidence that
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.

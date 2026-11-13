@@ -2,8 +2,9 @@
 
 Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation through
 its [`WorkloadCredential`](#workloadcredentials).
-Configured non-Sandbox workloads retain Pod-bound Kubernetes bearer authentication over verified
-TLS. This document describes both active routes and the remaining identity lifecycle boundary.
+Command/build boxes and standing workloads present `WorkloadCredential` SVIDs too. Backend services
+calling each other retain Kubernetes bearer authentication over verified TLS. This document
+describes both.
 
 ## Sandbox SVID route
 
@@ -17,7 +18,7 @@ projected-token headers before sending the request.
 
 The proxy verifies client TLS against the [workload CA](#the-workload-ca) and
 [resolves the peer](#how-a-verifier-resolves-a-peer) through its record before evaluating egress
-policy for the record's subject, the Sandbox's own ServiceAccount. No caller header supplies or
+policy for the record's subject, the Sandbox's bound Identity. No caller header supplies or
 overrides the subject. The proxy reads no Sandbox or Pod for it.
 
 The destination service independently verifies the client certificate against the workload CA and
@@ -28,12 +29,35 @@ the record is owned by the Sandbox, so Runtime may finish its History seal until
 cleared or the Sandbox, and with it the record, is removed. See the [egress contract](../egress/SPEC.md) and
 [LLM ingress](../llm_ingress/README.md) for their route-specific behavior.
 
+## Sandbox rollout and recovery
+
+The [2026-11-12 Sandbox Identity cutover record](sandbox_identity_cutover_2026_11_12/README.md)
+contains the accepted live checks, exact serving revisions and owned-resource cleanup. Sandboxes use
+bound Identities, default Kubernetes ServiceAccounts with token automount disabled, and separately
+selected grants. Direct and caller-delegated Identity Session creation and Identity lifecycle control
+remain denied until explicit lifecycle grants exist; an operator-approved broker acts under its own
+platform authority.
+
+For a later roll, observe the `ducktape-flux` Kustomizations `agentplane-crds`, `agentplane-staging`
+and `agentplane-staging-delivery`, their ExternalArtifact revisions, Deployment generations and actual
+image IDs. Image pins are owned by the shared `flux-system/all-images` automation. A source merge,
+image publication and applied runtime are separate observations.
+
+Before a rollback, stop new work and inventory active Sandboxes, exact Identity/credential UIDs,
+retained History and workspace PVCs. Restore compatible schema, configuration, controller RBAC/watch
+behavior and images together; an old controller image with the restricted new Role cannot synchronize
+its old caches. Use the recorded pre-cutover snapshot as evidence, never as a blind restore over new
+Identity-bound work. Preserve new Sessions and workspaces and choose a forward repair or a reviewed
+rollback. The one-time migration was already completed and its script removed; do not rerun it.
+
 ## WorkloadCredentials
 
 A workload's SVID is requested by its owner as a `WorkloadCredential`
-(`agentplane/workload_identity`), named after the owner and controlled by it. The owner writes
+(`agentplane/identity/credentials`), named after the owner and controlled by it; an Identity's Action
+box's record has no owner and lives until the box is disposed of. The owner writes
 `spec`; only the issuer, hosted in the Policy Controller, writes `status` and creates the
-Certificate. Today the Sandbox Controller is the one owner:
+Certificate. The Sandbox Controller requests one per Sandbox, and the Action Service one per command
+or build box ([sandbox Actions](../action_service/sandbox/README.md)). A Sandbox's record:
 
 ```yaml
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -43,7 +67,7 @@ metadata:
   namespace: agentplane-staging
   ownerReferences: [{ kind: Sandbox, name: agent-123, uid: <sandbox-uid>, controller: true }]
 spec: # the Sandbox Controller's
-  subject: { serviceAccount: agent-123 }
+  subject: { identity: { name: agent-123, uid: <identity-uid> } }
   binding: { podUID: <pod-uid> } # or { vmiUID: <vmi-uid> }
   pod: { name: agent-123, uid: <pod-uid> } # the caller's Pod: the bound Pod, or a VMI's virt-launcher
 status: # the Policy Controller's
@@ -67,12 +91,42 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
   once.
 - **Subjects** change only together with a new binding, and `spec.pod` only with a new binding
   (CRD transition rules), so a running incarnation is never re-pointed.
-- **Who writes:** the Sandbox Controller may create, update and delete records in its namespace;
-  only the Policy Controller may write `workloadcredentials/status`.
+- **Who writes:** the Sandbox Controller and the Action Service may create, update and delete records
+  in their namespace, and Flux applies standing ones; only the Policy Controller may write
+  `workloadcredentials/status`.
+
+### Standing workloads
+
+A record with no owner and no binding is standing: a workload with replicas, not a controller-owned
+incarnation. cdk8s renders Haku UI's (`haku-ui`, a StatefulSet), Anki's (`haku-anki`, a
+Deployment) and Jupyter's (`haku-jupyter`, a Deployment) into `haku-sandbox`
+(`cluster/cdk8s/haku/ui_egress.py`), all acting as the Flux-owned `haku-ui` `Identity` of the
+policy namespace; Haku's deployer Role cannot write a record. The issuer keeps its one credential ID
+and names its Secret `svid-<name>`, which `haku-state`'s `k8s/` mounts into that workload's egress
+sidecar alone. Any Pod Haku creates in `haku-sandbox` could mount it. haku-ci's egress relay
+(`haku-ci-egress`, a Deployment in `haku-ci`; `cluster/cdk8s/haku_ci/egress_gateway.py`) is one
+too, acting as the `haku-ci-egress` `Identity`; only the relay mounts `svid-haku-ci-egress`, so
+builds in the privileged runner Pods never hold it. The Pods keep running as their ServiceAccounts,
+which the proxy's network policies select; those accounts are no policy subject. A standing record
+names its Identity by name alone, since git cannot know the UID Kubernetes will give it; it acts as
+whatever Identity of that name the same Kustomization applies, so a same-name replacement of the
+Identity keeps the credential valid (the standing credential is already the weaker one:
+`plans/task_freezer.md` § `STANDING_WORKLOAD_INCARNATIONS`). Changing a standing record's subject
+replaces the record (the CRD never re-points one), which Flux does for the records'
+`kustomize.toolkit.fluxcd.io/force` annotation; the new record has a new credential ID.
+
+Every replica presents the same SVID and proves no Pod: the proxy drops any Pod token such a caller
+forwards, and decisions record no source Pod ([egress SPEC](../egress/SPEC.md)). This is weaker
+than a per-incarnation credential. Revocation is deleting the record, which Flux recreates with a
+fresh ID, or a Flux prune.
+
+**Gotcha:** a running sidecar refuses a reloaded SVID whose URI differs from the first it loaded
+(`environment_runtime_transport` pins it), so after a record is recreated the workload regains
+egress only on a rollout restart. Routine renewals keep the URI.
 
 ### How a verifier resolves a peer
 
-`agentplane/workload_identity/resolver` makes the same checks for every verifier, on every request,
+`agentplane/identity/credentials/resolver` makes the same checks for every verifier, on every request,
 including one inherited through a tunnel:
 
 1. The TLS listener verifies the chain against the workload CA bundle and the client-auth usage.
@@ -83,17 +137,31 @@ including one inherited through a tunnel:
    with a controller owner or a binding also needs `spec.binding` to equal `status.acceptedBinding`,
    so clearing or replacing the binding revokes before the ID rotates. A stale certificate is
    refused after a name is reused, because the new record has a new ID.
-5. `spec.subject` is the subject: a ServiceAccount in the record's namespace, read live for its
-   UID. Identity subjects are refused until `IDENTITY_CUTOVER`.
+5. `spec.subject.identity` names an Identity in the verifier's policy namespace. When the record
+   names a UID, the live UID must match, so deleting an Identity revokes every pinned credential and
+   a same-named successor inherits none. Naming the UID is the requester's choice (the Sandbox
+   Controller and the Action Service name it); a record naming none follows the live Identity of its
+   name, as a standing record from git does, since git cannot know a UID. Each verifier receives its
+   policy namespace explicitly: the egress proxy and Action Service
+   ([caller admission](../action_service/SPEC.md#caller-admission-and-connection-authority)) pass
+   their own, and LLM ingress, History, Notification and the Runner Gateway receive theirs from
+   `policy_namespace`, which staging sets for each. A legacy record without an Identity is retained
+   but refused; it is not resolved through a ServiceAccount of the same name.
 6. A caller that also forwards a Pod-bound token (`projectedWorkloadToken`) must present one whose
    TokenReview Pod UID equals `spec.pod`. A standing record has no `spec.pod`, so no forwarded token
    binds to it.
 
 An API server error fails closed. Headers, metadata and request bodies never select the subject.
-Services see the record's subject and `spec.pod` as today's `Principal`: the Sandbox's
-ServiceAccount, with the Pod as the provenance Pod. A standing workload's `Principal`, like a bound
-one whose owner has not named its Pod yet, is its subject with no Pod: an operation that needs Pod
-proof refuses it. The egress proxy refuses a bound record with no Pod outright.
+Services see every workload SVID as an `IdentityPrincipal` naming the Identity and its UID, with
+`spec.pod` as provenance when the record binds one. It also carries the record (`auth.Workload`:
+namespace, name and its controller owner, or `NoController` for an ownerless record), so a service
+can pin state to the Sandbox that owns the workload. ServiceAccount `Principal` values continue to
+come from TokenReview. Only a method whose rule is `AnySubject` or
+`ReviewedServiceAccountOrIdentity` admits an Identity caller, as an `IdentityAdmission`; every other
+rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only
+and refuse one. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A standing
+workload's Identity subject, like a bound one whose owner has not named its Pod yet, has no Pod:
+an operation that needs Pod proof refuses it. The egress proxy refuses a bound record with no Pod outright.
 
 TLS proves possession of the key, nothing more. Three things defend it: the Secret mounts only into
 Runtime and the sidecar (for a VM, the launcher relay), replacing an incarnation revokes its key
@@ -144,8 +212,7 @@ alone, so a `cluster-internal-ca` leaf naming an Agentplane URI authenticates in
 
 - Listeners verifying client SVIDs: a leaf naming a live Sandbox's URI does not authenticate, so the
   live record lookup is not the only check. A runner's control listener refuses one naming the
-  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding), except
-  Firecracker runners).
+  Runner Gateway ([runner control](runner_control.md#authentication-and-incarnation-binding)).
 - Clients verifying server SVIDs: the Gateway dialing runners (`runner_security`), the egress sidecar
   and launcher relay dialing the proxy and services, and backend clients and probes through
   `cluster/cdk8s/agentplane/workload_tls.py`. A leaf at a runner's or service's address naming its URI
@@ -166,22 +233,17 @@ other Certificate against the issuer is refused. Certificates against other issu
 
 ## TokenReview and projected credentials
 
-The central egress proxy's `forward` listener requires TLS and allows either a Runtime SVID or a
-Kubernetes bearer with the `agentplane-egress` audience. Action command/build boxes use a
-Pod-bound bearer for this hop; the proxy verifies it with TokenReview and resolves the caller's
-ServiceAccount and Pod binding. Sandbox sidecars select the SVID mode. Sandbox Runtime templates do
-not project the proxy hop bearer.
+The central egress proxy's `forward` listener requires mTLS and authenticates SVIDs alone; a
+bearer does not authenticate the hop.
 
 `projectedWorkloadToken` is a separate destination credential. A sidecar offers its explicit
 destination-audience token, and the proxy substitutes it only after TokenReview binds it to the same
 caller Pod and a matching credential rule. Sandbox Runtime templates continue to project this
-Kubernetes destination-audience token; they do not project the proxy-hop or first-party-service
-audiences. The generic sidecar also retains its explicitly selected token transport for its separate
-deployments.
+Kubernetes destination-audience token; they do not project first-party-service audiences.
 
 The proxy's `forward` and services' `rpc` settings use the shared
-[authentication allowlist](../workload_auth/README.md). Each first-party service uses one TLS RPC
-listener for Sandbox SVIDs and existing backend bearers. Protected calls reject both a certificate
+[authentication allowlist](../identity/auth/README.md); `forward` names `spiffe` alone. Each
+first-party service uses one TLS RPC listener for workload SVIDs and existing backend bearers. Protected calls reject both a certificate
 and an application credential presented together. Admission stays method-specific: enabling both
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
 or delegated calls.
@@ -195,8 +257,9 @@ Notification's signed external webhook endpoint remains a separate HTTP protocol
 
 ## Service authorization and attribution
 
-Authentication yields only the verified Sandbox ServiceAccount and, when proven, Pod identity.
-Each destination service retains its own authorization checks, policy, and resource ownership.
+Workload SVID authentication yields the record's Identity and, when proven, Pod provenance.
+Separately authorized TokenReview methods continue to yield ServiceAccount principals for
+platform callers. Each destination service retains its own authorization checks, policy, and resource ownership.
 Neither a Sandbox certificate nor a successful authentication grants Action, Thread, operator, or
 cross-service permissions by itself. The egress proxy's allow decision and the destination's
 authorization answer separate questions.
@@ -206,12 +269,8 @@ requests and responses, and stamps verified Sandbox and Pod metadata into LiteLL
 metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 [`../llm_ingress/README.md`](../llm_ingress/README.md).
 
-## Non-Sandbox and future callers
+## Future callers
 
-Action command/build boxes and Haku UI/Anki retain Pod-bound bearer credentials over verified TLS;
-the relevant listener audience and service method policy still decide whether each call is admitted.
-These configured workload paths remain active while Sandbox traffic uses SVIDs. The independent
-identity and SVID lifecycle for non-Sandbox and future callers remains deferred.
 Do not infer that arbitrary callers are admitted, or treat an egress placeholder, source IP, or
 caller-supplied identity header as authentication.
 

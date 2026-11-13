@@ -27,8 +27,8 @@
   flex-shrink: 0;
 }
 
-/* Model activity moves to the history tail on narrow screens; the autosuspend
-   countdown stays attached to the composer. */
+/* On narrow screens Model activity and the autosuspend countdown move together to the history
+   tail, leaving the composer row for input and its controls. */
 .agentplane-composer-activity {
   padding-inline: var(--mantine-spacing-xs);
   margin-left: auto;
@@ -46,11 +46,7 @@
   text-align: right;
 }
 
-.agentplane-composer-autosuspend-mobile {
-  display: none;
-}
-
-.agentplane-thread-tail-model-activity {
+.agentplane-thread-tail-activity {
   display: none;
 }
 
@@ -59,9 +55,7 @@
     display: none;
   }
 
-  .agentplane-composer-autosuspend-mobile {
-    display: block;
-    padding-inline: var(--mantine-spacing-xs);
+  .agentplane-thread-tail-autosuspend {
     overflow-wrap: anywhere;
   }
 
@@ -69,8 +63,8 @@
     display: none;
   }
 
-  .agentplane-thread-tail-model-activity {
-    display: block;
+  .agentplane-thread-tail-activity {
+    display: flex;
   }
 }
 

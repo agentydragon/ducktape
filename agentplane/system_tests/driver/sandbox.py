@@ -8,12 +8,12 @@ from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager
 from datetime import datetime
 from types import TracebackType
-from typing import Any
-
-from google.protobuf.json_format import MessageToDict
-from google.protobuf.message import Message
+from typing import Any, Literal
 
 # gazelle:include_dep @pypi//protobuf
+import httpx
+from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import Message
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
@@ -21,6 +21,12 @@ from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import (
+    LAUNCH_DEFAULT_POLICY_SETS,
+    ScenarioIdentity,
+    create_scenario_identity,
+    delete_scenario_identity,
+)
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.vm import boot_rcu
 from agentplane.system_tests.vm.launcher_topology import assert_admitted_launcher_topology, is_vm_template
@@ -98,6 +104,15 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 raise cleanup_error
             return False
 
+        launched_identities: list[ScenarioIdentity] = []
+
+        async def delete_launched_identities() -> None:
+            for identity in reversed(launched_identities):
+                await delete_scenario_identity(cluster, identity)
+
+        # Run after every Sandbox is released so its WorkloadCredential no longer references the
+        # Identity. Deletion uses the exact Identity UID and retries while controller-owned refs clear.
+        cleanup.push_async_callback(delete_launched_identities)
         cleanup.push_async_exit(release_owned)
 
         async def create(
@@ -116,23 +131,44 @@ async def sandbox_scope(cluster: Cluster, client: Client, phase_tracer: trace.Tr
                 "system_test.sandbox.create", attributes={"sandbox.name": name, "sandbox.template": template}
             ):
                 request = environment_service_pb2.CreateEnvironmentRequest(
-                    name=name,
-                    template=template,
-                    policy_sets=policies or [],
-                    inbox_tags=list(inbox_tags),
-                    bootstrap=bootstrap,
+                    name=name, template=template, inbox_tags=list(inbox_tags), bootstrap=bootstrap
                 )
                 if preset is not None:
                     request.preset = preset
                 if idle_suspend_after_seconds is not None:
                     request.idle_suspend_after.seconds = idle_suspend_after_seconds
-                created = await client.create_sandbox(request)
+                # The baseline sets a preset grants, beside the scenario's own: these launches use no preset.
+                sets = sorted({*LAUNCH_DEFAULT_POLICY_SETS, *(policies or [])})
+                identity = await create_scenario_identity(cluster, name, sets)
+                request.identity = identity["name"]
+                try:
+                    created = await client.create_sandbox(request)
+                except httpx.HTTPStatusError as error:
+                    # A definite refusal means no Sandbox references this Identity. Timeouts and
+                    # throttling may hide an accepted create, so leave the Identity for recovery.
+                    status = error.response.status_code
+                    if 400 <= status < 500 and status not in (408, 429):
+                        await delete_scenario_identity(cluster, identity)
+                    raise
+                launched_identities.append(identity)
             # Register the exact acknowledged incarnation before any follow-on watch or Get can fail.
             owned.append((created.name, created.uid))
             try:
                 view = await wait_until_running(client, created)
             except SandboxNotReadyError as error:
                 failed_view = error.last_view
+                try:
+                    path = await _write_sandbox_diagnostics(
+                        cluster,
+                        client,
+                        created.name,
+                        created.uid,
+                        [failed_view] if failed_view is not None else None,
+                        stage="readiness",
+                    )
+                    error.add_note(f"Sandbox readiness diagnostics: {path}")
+                except Exception as diagnostic_error:
+                    error.add_note(f"Sandbox readiness diagnostics failed: {diagnostic_error!r}")
                 if (
                     is_vm_template(template)
                     and failed_view is not None
@@ -302,7 +338,7 @@ async def suspend_and_delete(cluster: Cluster, client: Client, name: str, uid: s
                 raise SandboxNotReadyError(f"{name}'s stream ended before observing deletion")
         except TimeoutError as error:
             try:
-                path = await _write_cleanup_diagnostics(cluster, client, name, uid, last_snapshot)
+                path = await _write_sandbox_diagnostics(cluster, client, name, uid, last_snapshot, stage="cleanup")
                 error.add_note(f"Sandbox cleanup diagnostics: {path}")
             except Exception as diagnostic_error:
                 error.add_note(f"Sandbox cleanup diagnostics failed: {diagnostic_error!r}")
@@ -320,11 +356,14 @@ async def _wait_for_sandbox_deletion(cluster: Cluster, name: str, uid: str) -> N
         await asyncio.sleep(0.25)
 
 
-async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any) -> str:
-    """Capture the state and control logs when the effective suspend watch stops progressing."""
+async def _write_sandbox_diagnostics(
+    cluster: Cluster, client: Client, name: str, uid: str, last_snapshot: Any, *, stage: Literal["readiness", "cleanup"]
+) -> str:
+    """Capture failed lifecycle evidence before suspension removes the workload."""
 
     diagnostic: dict[str, Any] = {
         "sandbox_name": name,
+        "sandbox_uid": uid,
         "last_live_snapshot": None if last_snapshot is None else [MessageToDict(row) for row in last_snapshot],
     }
 
@@ -370,16 +409,41 @@ async def _write_cleanup_diagnostics(cluster: Cluster, client: Client, name: str
     diagnostic["sandbox_controller_logs"] = controller_logs
     diagnostic["runner_gateway_logs"] = gateway_logs
     if pods.get("returncode") == 0:
-        try:
-            pod_names = [pod["metadata"]["name"] for pod in json.loads(pods["stdout"]).get("items", [])]
-        except KeyError, TypeError, ValueError:
-            pod_names = []
-        diagnostic["environment_runtime_logs"] = await asyncio.gather(
-            *(
-                kubectl("logs", f"pod/{pod}", "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--tail=100", "--since=10m")
-                for pod in pod_names
+        owned = [
+            pod
+            for pod in json.loads(pods["stdout"])["items"]
+            if any(
+                owner.get("kind") == "Sandbox" and owner.get("uid") == uid
+                for owner in pod["metadata"].get("ownerReferences", [])
             )
-        )
-    path = undeclared_outputs_dir() / f"sandbox-cleanup-{name}.json"
+            and any(container["name"] == ENVIRONMENT_RUNTIME_CONTAINER for container in pod["spec"]["containers"])
+        ]
+
+        async def runtime_logs(pod: dict[str, Any]) -> dict[str, Any]:
+            pod_name = pod["metadata"]["name"]
+            current, previous = await asyncio.gather(
+                kubectl("logs", f"pod/{pod_name}", "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--tail=100", "--since=10m"),
+                kubectl("logs", f"pod/{pod_name}", "-c", ENVIRONMENT_RUNTIME_CONTAINER, "--previous", "--tail=100"),
+            )
+            after = await kubectl("get", "pod", pod_name, "-o", "json")
+            if after.get("returncode") != 0 or json.loads(after["stdout"])["metadata"]["uid"] != pod["metadata"]["uid"]:
+                return {
+                    "pod_name": pod_name,
+                    "pod_uid": pod["metadata"]["uid"],
+                    "status_before": pod.get("status"),
+                    "identity_unverified": True,
+                    "pod_after": after,
+                }
+            return {
+                "pod_name": pod_name,
+                "pod_uid": pod["metadata"]["uid"],
+                "status_before": pod.get("status"),
+                "current": current,
+                "previous": previous,
+                "pod_after": after,
+            }
+
+        diagnostic["environment_runtime_logs"] = await asyncio.gather(*(runtime_logs(pod) for pod in owned))
+    path = undeclared_outputs_dir() / f"sandbox-{stage}-{name}.json"
     path.write_text(json.dumps(diagnostic, indent=2) + "\n")
     return str(path)

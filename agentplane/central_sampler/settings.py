@@ -17,7 +17,9 @@ MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = (2**63 - 1) // 1_000_000_000
 class AuthConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["bearer", "anthropic_api_key"]
+    # `agentplane_ingress` is Agentplane's LLM ingress called with the projected workload token;
+    # a Session executing as an Identity is sampled as a delegating actor for it (SPEC.md).
+    type: Literal["bearer", "agentplane_ingress", "anthropic_api_key"]
     credential: SecretStr | None = None
     credential_file: Path | None = None
 
@@ -224,6 +226,12 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed for the executor OpenSession initialization handshake.",
     )
+    executor_reconnect_timeout_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Time allowed to resume a retained executor session during a connection outage.",
+    )
     shutdown_drain_seconds: int = Field(
         default=40, gt=0, description="Wait for active effects to settle before canceling them during shutdown."
     )
@@ -255,9 +263,11 @@ class Settings(BaseModel):
             connection = self.connections.get(config.connection)
             if connection is None:
                 raise ValueError(f"model {model} references unknown connection {config.connection}")
-            expected_auth = "bearer" if config.api == "responses" else "anthropic_api_key"
-            if connection.auth.type != expected_auth:
-                raise ValueError(f"model {model} {config.api} API requires {expected_auth} connection auth")
+            expected_auth = {"bearer", "agentplane_ingress"} if config.api == "responses" else {"anthropic_api_key"}
+            if connection.auth.type not in expected_auth:
+                raise ValueError(
+                    f"model {model} {config.api} API requires {' or '.join(sorted(expected_auth))} connection auth"
+                )
         return self
 
     def connection(self, model: str) -> ConnectionConfig:

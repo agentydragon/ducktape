@@ -34,25 +34,20 @@ REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
 
 
-def missing_wheel_imports(util_wheel: bytes, consumers: dict[str, bytes]) -> list[str]:
-    """Keep old consumers paired with the utility modules their released wheels import."""
+def missing_wheel_imports(util_wheel: bytes, git_hooks_wheel: bytes) -> list[str]:
+    """Keep the git-hooks wheel paired with the utility module it imports."""
     with zipfile.ZipFile(io.BytesIO(util_wheel)) as wheel:
         available = set(wheel.namelist())
 
-    # CLEANUP(added 2026-11-03): remove once the pinned ws and gmail-archiver
-    # wheels no longer import util.agent_sandbox and util.fmt respectively.
-    uses = {
-        "ws": ("util.agent_sandbox", ("devinfra/ws/cli.py",)),
-        "gmail-archiver": ("util.fmt", ("gmail_archiver/main.py", "gmail_archiver/planners/doordash.py")),
-    }
-    missing = []
-    for name, (module, paths) in uses.items():
-        if module.replace(".", "/") + ".py" in available:
-            continue
-        with zipfile.ZipFile(io.BytesIO(consumers[name])) as wheel:
-            if any(module.encode() in wheel.read(path) for path in paths):
-                missing.append(f"{name} imports {module}")
-    return missing
+    if "util/otel.py" in available or "util/otel/__init__.py" in available:
+        return []
+    with zipfile.ZipFile(io.BytesIO(git_hooks_wheel)) as wheel:
+        for path in wheel.namelist():
+            if path.endswith(".py"):
+                source = wheel.read(path)
+                if b"util.otel" in source or b"from util import otel" in source:
+                    return ["ducktape-git-hooks imports util.otel"]
+    return []
 
 
 def download_wheel(url: str) -> bytes:
@@ -112,8 +107,37 @@ def main() -> None:
     }
     artifacts_by_package = {artifact.pkg: artifact for artifact in ARTIFACTS}
 
+    # The two pins are committed together. Check the proposed pair before
+    # updating either one, regardless of release publication order.
+    paired_packages = ("ducktape-util", "ducktape-git-hooks")
+    selected_urls: dict[str, str] = {}
+    for name in paired_packages:
+        if release := releases_by_package[name]:
+            selected_urls[name] = f"{BASE}/{release.tag_name}/{artifacts_by_package[name].filename}"
+        elif pin := sources.pins.get(name):
+            selected_urls[name] = pin.url
+
+    paired_changed = any(
+        name in selected_urls and (name not in sources.pins or sources.pins[name].url != selected_urls[name])
+        for name in paired_packages
+    )
+    blocked_pair = False
+    if paired_changed:
+        if len(selected_urls) != len(paired_packages):
+            print("ducktape-util/ducktape-git-hooks: no compatible wheel pair available; keeping existing pins")
+            blocked_pair = True
+        else:
+            missing = missing_wheel_imports(
+                download_wheel(selected_urls["ducktape-util"]), download_wheel(selected_urls["ducktape-git-hooks"])
+            )
+            if missing:
+                print(f"ducktape-util/ducktape-git-hooks: keeping existing pins; {', '.join(missing)}")
+                blocked_pair = True
+
     updated = []
     for artifact in ARTIFACTS:
+        if blocked_pair and artifact.pkg in paired_packages:
+            continue
         release = releases_by_package[artifact.pkg]
         if not release:
             print(f"{artifact.pkg}: no release from devel found, skipping")
@@ -124,29 +148,6 @@ def main() -> None:
         if pin and url == pin.url:
             print(f"{artifact.pkg}: up to date ({tag})")
             continue
-
-        if artifact.pkg == "ducktape-util":
-            consumers: dict[str, bytes] = {}
-            compatible = True
-            for name in ("ws", "gmail-archiver"):
-                candidate = releases_by_package[name]
-                if candidate:
-                    filename = artifacts_by_package[name].filename
-                    consumer_url = f"{BASE}/{candidate.tag_name}/{filename}"
-                elif current := sources.pins.get(name):
-                    consumer_url = current.url
-                else:
-                    print(f"{artifact.pkg}: no {name} wheel available; keeping the existing pin")
-                    compatible = False
-                    break
-                consumers[name] = download_wheel(consumer_url)
-            else:
-                missing = missing_wheel_imports(download_wheel(url), consumers)
-                if missing:
-                    print(f"{artifact.pkg}: keeping the existing pin; {', '.join(missing)}")
-                    compatible = False
-            if not compatible:
-                continue
 
         print(f"{artifact.pkg}: updating to {tag}")
         new_hash = url_sha256(url)

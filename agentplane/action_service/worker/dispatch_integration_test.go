@@ -32,7 +32,7 @@ func TestAnAllowedRequestRunsOnceAndItsOutcomeIsRecorded(t *testing.T) {
 	e.mu.Lock()
 	payload := e.runs[1]
 	e.mu.Unlock()
-	if payload.Action != actionIdentity || payload.Caller != caller.Account {
+	if recorded, _ := payload.Caller.(store.ServiceAccountCaller); payload.Action != actionIdentity || recorded.Account != caller.Account {
 		t.Errorf("the executor ran %+v", payload)
 	}
 	sameJSON(t, payload.Arguments, json.RawMessage(`{"key": "second"}`))
@@ -163,8 +163,8 @@ func TestAnActionNoExecutorRunsFailsOnceStarted(t *testing.T) {
 	id := f.allowed(t, "unsupported")
 	run(t, f.store, unrouted{}, testTiming(), nil)
 	got := f.await(t, id, action_servicepb.ActionState_ACTION_STATE_FAILED)
-	if kind := errorKind(t, got); kind != "*worker.UnsupportedActionError" {
-		t.Errorf("kind %q", kind)
+	if kind := errorKind(t, got); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL {
+		t.Errorf("kind %v", kind)
 	}
 	events, err := f.store.Events(t.Context(), id, operator, store.EventsFilter{})
 	if err != nil {
@@ -181,33 +181,33 @@ type testError struct{}
 func (*testError) Error() string { return "test error with request material" }
 
 func TestWhatTheExecutorAnswersIsWhatTheExecutionRecords(t *testing.T) {
-	described := json.RawMessage(`{"kind": "test_failure", "message": "test message"}`)
+	described := &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"}
 	for name, test := range map[string]struct {
 		answer func() (store.ExecutionOutcome, error)
 		state  action_servicepb.ActionState
-		kind   string
+		kind   action_servicepb.ExecutionErrorKind
 	}{
 		"a described failure": {
 			answer: func() (store.ExecutionOutcome, error) {
 				return store.ExecutionOutcome{State: store.ExecutionFailed, Error: described}, nil
 			},
-			state: action_servicepb.ActionState_ACTION_STATE_FAILED, kind: "test_failure",
+			state: action_servicepb.ActionState_ACTION_STATE_FAILED, kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS,
 		},
-		"an error, by its type": {
+		"an error, as internal": {
 			answer: func() (store.ExecutionOutcome, error) { return store.ExecutionOutcome{}, &testError{} },
-			state:  action_servicepb.ActionState_ACTION_STATE_FAILED, kind: "*worker.testError",
+			state:  action_servicepb.ActionState_ACTION_STATE_FAILED, kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL,
 		},
 		"an unknown outcome": {
 			answer: func() (store.ExecutionOutcome, error) {
 				return store.ExecutionOutcome{}, fmt.Errorf("test backend timed out: %w", ErrOutcomeUnknown)
 			},
-			state: action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, kind: string(store.UnknownAdapterOutcome),
+			state: action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN, kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN,
 		},
 		"an invalid outcome": {
 			answer: func() (store.ExecutionOutcome, error) {
 				return store.ExecutionOutcome{State: store.ExecutionRunning}, nil
 			},
-			state: action_servicepb.ActionState_ACTION_STATE_FAILED, kind: "*worker.InvalidOutcomeError",
+			state: action_servicepb.ActionState_ACTION_STATE_FAILED, kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INTERNAL,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -219,7 +219,7 @@ func TestWhatTheExecutorAnswersIsWhatTheExecutionRecords(t *testing.T) {
 			run(t, f.store, &executor{step: step}, testTiming(), nil)
 			got := f.await(t, id, test.state)
 			if kind := errorKind(t, got); kind != test.kind {
-				t.Errorf("kind %q, want %q", kind, test.kind)
+				t.Errorf("kind %v, want %v", kind, test.kind)
 			}
 		})
 	}

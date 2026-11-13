@@ -87,6 +87,7 @@ def test_fixture_cas_are_fresh_on_the_same_controllers(tmp_path: Path) -> None:
                 assert all(previous[name] != uid for name, uid in identities.items())
             previous = identities
             evidence.append({"cycle": cycle, "certificate_uids": identities, "chain_valid": True})
+            certificates.report(node.kubectl, cert_manager + trust_manager)
             stack._baseline_clean(node, fixture)
             for name, uid in controllers.items():
                 assert (

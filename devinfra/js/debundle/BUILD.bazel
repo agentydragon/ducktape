@@ -55,6 +55,13 @@ rust_library(
 )
 
 rust_library(
+    name = "analysis_thread",
+    srcs = ["analysis_thread.rs"],
+    edition = "2024",
+    deps = ["@crates//:swc_common"],
+)
+
+rust_library(
     name = "report_io",
     srcs = ["report_io.rs"],
     edition = "2024",
@@ -368,7 +375,9 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":final_global_resolution",
         ":gate",
+        ":js_ast",
         ":lowering",
         ":output_layout",
         ":source_identity",
@@ -697,6 +706,7 @@ rust_library(
         "facts/sync_effects/local_operations.rs",
         "facts/sync_effects/namespace_wrapper.rs",
         "facts/sync_effects/native.rs",
+        "facts/sync_effects/native/array_iteration.rs",
         "facts/sync_effects/native/operation.rs",
         "facts/sync_effects/noninvoking_initialization.rs",
         "facts/sync_effects/own_data_transfer.rs",
@@ -718,6 +728,7 @@ rust_library(
         "facts/sync_effects/world/descriptor_heap.rs",
         "facts/sync_effects/world/join.rs",
         "facts/sync_effects/world/object_surface.rs",
+        "facts/sync_effects/world/prefix_values.rs",
         "facts/value_flow.rs",
         "facts/value_flow_tests.rs",
         "facts/value_set_tests.rs",
@@ -746,6 +757,7 @@ rust_library(
         "purity/graph_purity_tests.rs",
         "purity/mod.rs",
         "purity/native_rows.rs",
+        "purity/order_dependent_reads.rs",
         "purity/purity_type.rs",
         "purity/redundant_hints.rs",
         "purity/redundant_hints_tests.rs",
@@ -755,6 +767,7 @@ rust_library(
         "reports/mod.rs",
         "reports/saved.rs",
         "reports/schema.rs",
+        "reports/spec_lint.rs",
         "swc_parallel.rs",
     ],
     compile_data = [":standard_globals_json"],
@@ -1446,6 +1459,7 @@ rust_library(
         "cli/snapshot.rs",
         "cli/source_unit_refine.rs",
         "cli/spec_commands.rs",
+        "cli/spec_lint.rs",
         "cli/static_imports.rs",
         "cli/validate.rs",
     ],
@@ -1810,9 +1824,9 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":analysis_identity",
+        ":analysis_thread",
         ":analyze_command",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
@@ -1823,10 +1837,10 @@ rust_binary(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        ":analysis_thread",
         ":transform_command",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
@@ -1838,10 +1852,10 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":analysis_identity",
+        ":analysis_thread",
         ":cli",
         ":gate",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 
@@ -1858,10 +1872,10 @@ rust_binary(
     visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
     deps = [
         ":analysis_identity",
+        ":analysis_thread",
         ":cli",
         ":gate",
         "@crates//:clap",
-        "@crates//:swc_common",
     ],
 )
 

@@ -2,6 +2,7 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
 import { ActionIcon, Anchor, Button, Group, Menu, Popover, Select, Stack, Text, UnstyledButton } from "@mantine/core";
 import type { LangfuseSearchSettings, ModelOption, TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
+import { Operation } from "../../../proto/command_pb";
 import { Harness, SetupState } from "../../../proto/session_pb";
 import { IconDotsVertical, IconHistory } from "../icons";
 import { intlFormatDistance } from "date-fns";
@@ -301,7 +302,8 @@ function ConversationBody({
           row.entity.case === "item" ||
           row.entity.case === "confirmedInput" ||
           row.entity.case === "lifecycle" ||
-          (row.entity.case === "command" && (pendingSentMessage(row) || row.entity.value.operation !== "submit_input"))
+          (row.entity.case === "command" &&
+            (pendingSentMessage(row) || row.entity.value.operation !== Operation.SUBMIT_INPUT))
       )
       .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
@@ -332,12 +334,15 @@ function ConversationBody({
           deliver={commands.deliver}
         />
       )}
-      <ModelActivityHint
-        at={lastModelActivityAt}
-        age={activityAge}
-        idleSince={activeTurn ? null : idleSince}
-        className="agentplane-thread-tail-model-activity"
-      />
+      <Stack className="agentplane-thread-tail-activity" gap={0}>
+        <AutosuspendHint threadId={threadId} hint={sandboxAutosuspend} className="agentplane-thread-tail-autosuspend" />
+        <ModelActivityHint
+          at={lastModelActivityAt}
+          age={activityAge}
+          idleSince={activeTurn ? null : idleSince}
+          className="agentplane-thread-tail-model-activity"
+        />
+      </Stack>
     </Stack>
   );
 
@@ -380,13 +385,6 @@ function ConversationBody({
           onResumeSandbox={onResumeSandbox}
           onSubmit={commands.submitInput}
           onInterrupt={commands.interruptTurn}
-          status={
-            <AutosuspendHint
-              threadId={threadId}
-              hint={sandboxAutosuspend}
-              className="agentplane-composer-autosuspend-mobile"
-            />
-          }
         >
           <Group className="agentplane-composer-settings" gap="xs" wrap="nowrap">
             <Select

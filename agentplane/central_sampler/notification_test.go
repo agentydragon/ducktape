@@ -62,7 +62,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 		t.Fatalf("notification without an active turn: %v", err)
 	}
 	startTurnForStore(t, store, session, owner, "turn")
-	sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cell, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
+	cell, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invocation, err := conversation.Archive.FindCall("exec-call")
+	invocation, err := conversation.Transcript.FindCall("exec-call")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +104,11 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Archive)
+	items := responsesItems(t, conversation.Transcript)
 	if got, want := outputTexts(items), []string{"final", "progress", "after last step"}; !slices.Equal(got, want) {
 		t.Fatalf("outputs=%q, want %q", got, want)
 	}
-	if err := conversation.Archive.CheckSettled(); err != nil {
+	if err := conversation.Transcript.CheckSettled(); err != nil {
 		t.Fatalf("notify outputs break call/output pairing: %v", err)
 	}
 	if count := queuedNotifications(t, store, session.ConversationID); count != 0 {
@@ -146,7 +146,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					t.Fatal(err)
 				}
 				startTurnForStore(t, store, session, owner, "turn")
-				sampling, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+				sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -177,18 +177,18 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if pending, err := conversation.Archive.PendingCalls(); err != nil || len(pending) != 1 || pending[0].CallID != "call-1" {
+				if pending, err := conversation.Transcript.PendingCalls(); err != nil || len(pending) != 1 || pending[0].CallID != "call-1" {
 					t.Fatalf("retiring executor changed pending model call: calls=%+v err=%v", pending, err)
 				}
-				beforeResult, err := conversation.Archive.Records()
+				beforeResult, err := conversation.Transcript.Records()
 				if err != nil || len(beforeResult) == 0 {
 					t.Fatalf("notice was appended before pending tool result: records=%d err=%v", len(beforeResult), err)
 				}
-				cell, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell})
+				cell, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				call, err := conversation.Archive.FindCall("call-1")
+				call, err := conversation.Transcript.FindCall("call-1")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -202,11 +202,11 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := conversation.Archive.CheckSettled(); err != nil {
+				if err := conversation.Transcript.CheckSettled(); err != nil {
 					t.Fatalf("loss notice broke provider tool-result ordering: %v", err)
 				}
 				if api == protocol.APIStyleResponses {
-					items := responsesItems(t, conversation.Archive)
+					items := responsesItems(t, conversation.Transcript)
 					callIndex := -1
 					for i, item := range items {
 						if item.CallID == "call-1" && item.Type == responses.ItemCustomToolCall {
@@ -219,10 +219,10 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 						t.Fatalf("Responses notice ordering is invalid: %+v", items)
 					}
 				} else {
-					context := conversation.Archive.(*anthropic.Context)
+					context := conversation.Transcript.(*anthropic.Context)
 					wireMessages, err := context.WireMessages()
 					if err != nil {
-						t.Fatalf("Anthropic archive is not valid provider input: %v", err)
+						t.Fatalf("Anthropic transcript is not valid provider input: %v", err)
 					}
 					var result, notice struct {
 						Role    string `json:"role"`
@@ -232,14 +232,14 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 							Text      string `json:"text"`
 						} `json:"content"`
 					}
-					archiveRecords, err := conversation.Archive.Records()
-					if err != nil || len(archiveRecords) < 2 || len(wireMessages) != len(archiveRecords) {
-						t.Fatalf("Anthropic records=%d wire messages=%d err=%v", len(archiveRecords), len(wireMessages), err)
+					transcriptRecords, err := conversation.Transcript.Records()
+					if err != nil || len(transcriptRecords) < 2 || len(wireMessages) != len(transcriptRecords) {
+						t.Fatalf("Anthropic records=%d wire messages=%d err=%v", len(transcriptRecords), len(wireMessages), err)
 					}
-					if err := json.Unmarshal(archiveRecords[len(archiveRecords)-2], &result); err != nil {
+					if err := json.Unmarshal(transcriptRecords[len(transcriptRecords)-2], &result); err != nil {
 						t.Fatal(err)
 					}
-					if err := json.Unmarshal(archiveRecords[len(archiveRecords)-1], &notice); err != nil {
+					if err := json.Unmarshal(transcriptRecords[len(transcriptRecords)-1], &notice); err != nil {
 						t.Fatal(err)
 					}
 					if result.Role != "user" || len(result.Content) != 1 || result.Content[0].Type != "tool_result" || result.Content[0].ToolUseID != "call-1" ||
@@ -278,7 +278,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if texts := outputTexts(responsesItems(t, conversation.Archive)); len(texts) != 0 {
+			if texts := outputTexts(responsesItems(t, conversation.Transcript)); len(texts) != 0 {
 				t.Fatalf("aborted turn recorded notify outputs %q", texts)
 			}
 			if count := queuedNotifications(t, store, session.ConversationID); count != 0 {
@@ -308,7 +308,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	})
 	peer := peers()[0]
 
-	if err := peer.sendNotification(1, code.sessionID, "cell-1", "between turns"); err != nil {
+	if err := peer.sendNotification(1, code.ID(), "cell-1", "between turns"); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 1, "error")
@@ -317,7 +317,7 @@ func TestCodeModeAcknowledgesNotificationOnlyAfterDurableQueue(t *testing.T) {
 	}
 
 	startTurnForStore(t, store, session, owner, "turn")
-	if err := peer.sendNotification(2, code.sessionID, "cell-1", "progress"); err != nil {
+	if err := peer.sendNotification(2, code.ID(), "cell-1", "progress"); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 2, "ok")

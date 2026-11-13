@@ -27,6 +27,22 @@ editing a route.
 
 ## Next Actions
 
+- [ ] **Complete host firewall hardening.** Cilium host ingress policies are
+      enforced on all seven Talos nodes. Keep public Kubernetes API access on
+      TCP 6443 initially; revisit source restrictions after client paths are
+      inventoried. Cilium's host policy matches Nebula source IPs on public
+      interfaces too; verify or add underlay anti-spoofing before trusting
+      those identities. Cilium IPv6 is disabled while host IPv6 is enabled;
+      verify IPv6 exposure and implement IPv6 ingress protection independently.
+      Canary binding the LINSTOR satellite to its Nebula address (including
+      startup when Nebula is unavailable); verify controller connectivity and
+      storage health before rolling the change across nodes.
+- [ ] **Converge the retired Proxmox CSI role.** The bootstrap plan proposes
+      deleting `proxmox_virtual_environment_role.persistent["csi"]`, but
+      `prevent_destroy` blocks it. Check remaining Proxmox ACL references and
+      retain or retire the role through a reviewed state transition without
+      removing the protection from persistent auth. Then review a full plan,
+      including the obsolete Nebula certificate-generation state records.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). The named
       `grocy-{sf,vallejo}` and `tana-mcp` workloads use PVC-to-PVC `rsyncTLS`;
@@ -88,19 +104,6 @@ editing a route.
       never got to creating the PVC before the next restart. Worth reproducing
       without API server pressure: kill one CNPG replica's PVC + pod cleanly,
       observe self-heal vs needing nudging.
-- [ ] **Re-key admin-only SOPS files to include user keys** — admin age key
-      lives only on wyrm2. `.sops.yaml` rules say
-      `secrets/nebula/ca.sops.key` and `k8s/tofu-state/db/credentials.sops.yaml` (among
-      others) should be encrypted to admin + 4 user keys, but the files in git still have
-      only admin. Discovered 2026-05-13 trying to provision the Kimsufi node from rugged.
-      Nebula CA access now blocks certificate rotation only; it no longer blocks routine
-      Tofu applies. The PG backend credentials still block `tofu init` in
-      `tofu-state/db/credentials.sops.yaml`). - Partial workaround for PG backend: fetch creds from k8s instead of SOPS in
-      `cluster/.envrc` — `kubectl -n tofu-state get secret tofu-state-db-credentials`
-      works with current agent RBAC base/user kubeconfig. - Real fix (wyrm2 is up): `sops updatekeys` on every file where `.sops.yaml`
-      lists more recipients than the file actually has. Audit with
-      `for f in $(git ls-files '*.sops.*'); do jq -r '.sops.age[]?.recipient' $f; done`
-      and compare to expected recipients per rule.
 - [ ] **Restore SDR kustomization** — add or unsuspend the SDR Flux Kustomization in the
       central cdk8s chart once the radio hardware is set up at the new place.
 - [ ] **Set up offsite tofu-state backup** — the Proxmox-pinned `pg_dump` CronJob
@@ -164,21 +167,15 @@ editing a route.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `props`/`props-registry`).
       `proxmox-proxy` likely belongs on `optiplex` rather than a roaming laptop —
       decide placement before moving it.
-- [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
-      mutates pod requests on creation but old pods retain stale high values until
-      restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL
-      workers despite 65-78% actual usage). **Root cause**: Goldilocks auto-creates VPAs
-      with no resource policy, and VPA recommendations accumulate historical peaks.
-      **Proposed solution**: (1) Add `goldilocks.fairwinds.com/vpa-resource-policy`
-      annotations to all namespaces with memory min/max bounds (enforce via Kyverno).
-      (2) Switch VPA `updateMode` from `Auto` to `Initial` for non-critical workloads
-      so stale requests don't block scheduling — let pod restarts pick up new values
-      naturally. (3) Consider running the Kubernetes Descheduler (`k8s-sigs/descheduler`)
-      with `RemoveDuplicates` and `LowNodeUtilization` strategies to spread pods across
-      HIL workers and evict those with grossly inflated requests. Descheduler is the
-      right tool for _rebalancing_ after VPA shrinks requests, but the root fix is
-      bounding VPA recommendations via resource policies so they never balloon in the
-      first place.
+- [ ] Review Goldilocks VPA memory requests on HIL pods. The grocy-sf scheduling
+      incident recorded 97% of HIL worker memory requested despite 65–78% actual use.
+      Source now defines a Kyverno policy that defaults `auto` VPA namespaces to
+      `controlledValues: RequestsOnly` (<../cdk8s/kyverno/policies.py>), so VPA leaves
+      manifest limits unchanged; it does not bound memory requests. Review the workloads
+      whose requests still threaten scheduling and set evidence-based
+      `minAllowed`/`maxAllowed` policies where useful.
+      Decide separately whether noncritical workloads should use `Initial`; consider a
+      descheduler only if measured post-right-sizing placement still needs rebalancing.
 - Loki + SeaweedFS S3 (MinIO retired 2026-05; Loki/Tempo/Mimir all point at the
   SeaweedFS S3 gateway on OVH):
   - [ ] **Host log capture**: Add durable Talos node-level log collection for
@@ -203,8 +200,8 @@ editing a route.
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
 - [ ] Airlock OAuth: upgrade Google scopes (requires new operator consent) — `calendar`, `gmail.send`,
       `gmail.compose`, `drive`, `spreadsheets`
-- [ ] Airlock OAuth: add readonly scopes — Photos, Tasks, Slides, Forms
-- [ ] Airlock OAuth: reflect only access tokens (not refresh tokens) to consumer namespaces
+- [ ] Airlock OAuth: add readonly scopes — Photos and Forms (Tasks and Slides are already
+      configured in <../cdk8s/airlock.py>)
 - [ ] Proxmox: configure its native OIDC realm against Authentik and remove the Authentik
       forward-proxy provider. Retain the nginx transport relay for upstream TLS,
       reachability, and noVNC/xterm.js WebSockets unless Gateway API is separately proven
@@ -272,9 +269,8 @@ SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encr
 
 ### Firewall Hardening
 
-Restrict K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet
-(10250), Nebula (4242), and VXLAN (8472) to admin IPs and inter-node CIDRs.
-Keep 80/443/53 public.
+Cilium host ingress policies cover the Talos nodes. Outstanding source-spoofing,
+IPv6 and public Kubernetes API work is tracked in Next Actions above.
 
 ### OpenTofu State Backend
 

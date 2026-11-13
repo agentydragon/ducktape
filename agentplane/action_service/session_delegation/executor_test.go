@@ -16,20 +16,23 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
 	"github.com/google/uuid"
+	"google.golang.org/genproto/googleapis/rpc/code"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -51,7 +54,10 @@ type delegatedBackend struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	historypb.UnimplementedHistoryServiceServer
-	testing        *testing.T
+	testing *testing.T
+	// identity, when set, is the Identity every call must be delegated for instead of the
+	// test ServiceAccount.
+	identity       *identitypb.Identity
 	gotOpen        *dispatcherpb.CreateSessionRequest
 	openErr        error
 	openCalls      int
@@ -142,8 +148,16 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 	if err := proto.Unmarshal([]byte(values[0]), &envelope); err != nil {
 		b.testing.Fatalf("unmarshal delegation envelope: %v", err)
 	}
-	if envelope.GetCaller().GetAccount().GetNamespace() != testCallerNamespace || envelope.GetCaller().GetAccount().GetName() != testCallerName || envelope.GetCaller().GetUid() != testCallerUID ||
-		envelope.GetActionRequestId() != wantRequest.String() || envelope.GetActionExecutionId() != wantExecution.String() {
+	if envelope.GetAction().GetRequestId() != wantRequest.String() || envelope.GetAction().GetExecutionId() != wantExecution.String() {
+		b.testing.Fatalf("delegation envelope = %v", &envelope)
+	}
+	if b.identity != nil {
+		if !proto.Equal(envelope.GetIdentity(), b.identity) || envelope.GetCaller() != nil {
+			b.testing.Fatalf("delegation envelope = %v, want it for Identity %v", &envelope, b.identity)
+		}
+		return
+	}
+	if envelope.GetCaller().GetAccount().GetNamespace() != testCallerNamespace || envelope.GetCaller().GetAccount().GetName() != testCallerName || envelope.GetCaller().GetUid() != testCallerUID {
 		b.testing.Fatalf("delegation envelope = %v", &envelope)
 	}
 }
@@ -167,7 +181,7 @@ func (b *delegatedBackend) SubmitInput(ctx context.Context, request *dispatcherp
 	b.gotSubmit = proto.Clone(request).(*dispatcherpb.SubmitInputRequest)
 	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
 		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Sandbox: "sandbox-one",
-		SandboxUid: request.GetExpectedSandboxUid(), Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		SandboxUid: request.GetExpectedSandboxUid(), Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
@@ -191,7 +205,7 @@ func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatch
 	}
 	return &dispatcherpb.CancelDispatchResponse{Dispatch: &dispatcherpb.Dispatch{
 		CommandId: request.GetCommandId(), SessionId: testSessionID,
-		Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
 	}}, nil
 }
@@ -199,7 +213,7 @@ func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatch
 func (b *delegatedBackend) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.interruptCalls++
-	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Operation: dispatcherpb.Operation_OPERATION_INTERRUPT_TURN, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
+	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Operation: commandpb.Operation_OPERATION_INTERRUPT_TURN, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
 }
 
 type unavailableHistoryClient struct{ historypb.HistoryServiceClient }
@@ -240,7 +254,7 @@ func newDelegatedExecutorForGroup(t *testing.T, backend *delegatedBackend, group
 	if err := os.WriteFile(tokenFile, []byte("delegated-test-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 2_000_000_000, nil)
+	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 2_000_000_000, nil, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,26 +341,12 @@ func TestResumeUnknownReplyIsNotReplayed(t *testing.T) {
 	if err != nil || outcome.State != store.ExecutionUnknown || backend.resumeCalls != 1 {
 		t.Fatalf("resume outcome=%+v error=%v calls=%d; want one unknown-outcome attempt", outcome, err, backend.resumeCalls)
 	}
-	var failure struct {
-		Kind           string `json:"kind"`
-		GRPCCode       string `json:"grpc_code"`
-		WakeAssessment struct {
-			State  string `json:"state"`
-			Reason string `json:"reason"`
-			Error  struct {
-				Code    int32  `json:"code"`
-				Message string `json:"message"`
-			} `json:"error"`
-		} `json:"wake_assessment"`
-	}
-	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-		t.Fatal(err)
-	}
-	if failure.Kind != string(store.UnknownAdapterOutcome) || failure.GRPCCode != "UNAVAILABLE" ||
-		failure.WakeAssessment.State != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN.String() ||
-		failure.WakeAssessment.Reason != environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN.String() ||
-		failure.WakeAssessment.Error.Code != int32(codes.Unavailable) || failure.WakeAssessment.Error.Message != "patch result unknown" {
-		t.Fatalf("unknown resume error details = %+v", failure)
+	failure, resume := outcome.Error, outcome.Error.GetResume()
+	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXECUTION_OUTCOME_UNKNOWN || resume.GetGrpcCode() != code.Code_UNAVAILABLE ||
+		resume.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN ||
+		resume.GetWakeAssessment().GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN ||
+		resume.GetWakeAssessment().GetError().GetCode() != int32(codes.Unavailable) || resume.GetWakeAssessment().GetError().GetMessage() != "patch result unknown" {
+		t.Fatalf("unknown resume error details = %v", failure)
 	}
 }
 
@@ -369,22 +369,12 @@ func TestResumePolicyDenialIsMappedToBackendRefusal(t *testing.T) {
 	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
 		t.Fatalf("denied resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
 	}
-	var failure struct {
-		Kind              string `json:"kind"`
-		GRPCCode          string `json:"grpc_code"`
-		ResumeEligibility struct {
-			State  string `json:"state"`
-			Reason string `json:"reason"`
-		} `json:"resume_eligibility"`
-	}
-	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-		t.Fatal(err)
-	}
-	if failure.Kind != "backend_refused" || failure.GRPCCode != "PERMISSION_DENIED" ||
-		failure.ResumeEligibility.State != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED.String() ||
-		failure.ResumeEligibility.Reason != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED.String() ||
-		strings.Contains(string(outcome.Error), "private policy detail") {
-		t.Fatalf("denied resume error = %s", outcome.Error)
+	failure, resume := outcome.Error, outcome.Error.GetResume()
+	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_BACKEND_REFUSED || resume.GetGrpcCode() != code.Code_PERMISSION_DENIED ||
+		resume.GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_DENIED ||
+		resume.GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED ||
+		strings.Contains(failure.String(), "private policy detail") {
+		t.Fatalf("denied resume error = %v", failure)
 	}
 }
 
@@ -409,23 +399,12 @@ func TestResumeRateLimitPreservesWakeAssessmentRetryTime(t *testing.T) {
 	if err != nil || outcome.State != store.ExecutionFailed || backend.resumeCalls != 1 {
 		t.Fatalf("rate limited resume outcome=%+v error=%v calls=%d", outcome, err, backend.resumeCalls)
 	}
-	var failure struct {
-		Kind           string `json:"kind"`
-		GRPCCode       string `json:"grpc_code"`
-		WakeAssessment struct {
-			State   string `json:"state"`
-			Reason  string `json:"reason"`
-			RetryAt string `json:"retry_at"`
-		} `json:"wake_assessment"`
-	}
-	if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-		t.Fatal(err)
-	}
-	if failure.Kind != "capacity_exhausted" || failure.GRPCCode != "RESOURCE_EXHAUSTED" ||
-		failure.WakeAssessment.State != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED.String() ||
-		failure.WakeAssessment.Reason != environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED.String() ||
-		failure.WakeAssessment.RetryAt != "2026-11-01T12:00:00Z" {
-		t.Fatalf("rate limit resume error details = %+v; raw=%s", failure, outcome.Error)
+	failure, resume := outcome.Error, outcome.Error.GetResume()
+	if failure.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CAPACITY_EXHAUSTED || resume.GetGrpcCode() != code.Code_RESOURCE_EXHAUSTED ||
+		resume.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED ||
+		resume.GetWakeAssessment().GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_WAKE_BUDGET_EXHAUSTED ||
+		!resume.GetWakeAssessment().GetRetryAt().AsTime().Equal(retryAt.AsTime()) {
+		t.Fatalf("rate limit resume error details = %v", failure)
 	}
 }
 
@@ -587,7 +566,7 @@ func requestFor(action string, args any, callerUID *string) store.ExecutionReque
 	return store.ExecutionRequest{
 		RequestID: testRequestID, ExecutionID: testExecutionID,
 		Action: store.ActionIdentity{Group: "sessions", Name: action}, Arguments: encoded,
-		Caller: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, CallerUID: callerUID,
+		Caller: store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, UID: callerUID},
 	}
 }
 
@@ -685,13 +664,7 @@ func TestSessionWritesRejectTargetOutsideAuthenticatedCallerNamespace(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			var failure struct {
-				Kind string `json:"kind"`
-			}
-			if err := json.Unmarshal(outcome.Error, &failure); err != nil {
-				t.Fatalf("decode Action error %s: %v", outcome.Error, err)
-			}
-			if outcome.State != store.ExecutionFailed || failure.Kind != "invalid_arguments" {
+			if outcome.State != store.ExecutionFailed || outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS {
 				t.Fatalf("outcome=%+v error=%v; want invalid_arguments", outcome, err)
 			}
 			if backend.openCalls != 0 || backend.submitCalls != 0 || backend.interruptCalls != 0 {
@@ -742,7 +715,7 @@ func TestCancelRequiresTheDurableReceiptToMatchTheSuppliedSession(t *testing.T) 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			backend := &delegatedBackend{testing: t, lookup: &dispatcherpb.Dispatch{
-				CommandId: testCommandID, SessionId: testSessionID, Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+				CommandId: testCommandID, SessionId: testSessionID, Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 				State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 			}}
 			executor := newDelegatedExecutor(t, backend)
@@ -789,7 +762,7 @@ func TestObservePreservesTypedPartialSourceError(t *testing.T) {
 
 func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 	backend := &delegatedBackend{testing: t, lookup: &dispatcherpb.Dispatch{
-		CommandId: testCommandID, SessionId: testSessionID, Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		CommandId: testCommandID, SessionId: testSessionID, Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
 		Admission: &eventlogpb.EventEntry{Cursor: 2},
 	}}
@@ -838,5 +811,31 @@ func TestMissingCallerUIDFailsClosedBeforeBackendCall(t *testing.T) {
 	}
 	if outcome.State != store.ExecutionFailed || backend.gotOpen != nil {
 		t.Fatalf("outcome=%+v backend opening=%v; missing caller UID must fail before RPC", outcome, backend.gotOpen)
+	}
+}
+
+// An Identity's request is forwarded as that Identity incarnation: the backend, not a caller
+// namespace, scopes it to what is recorded with the Identity.
+func TestAnIdentityCallersRequestIsDelegatedAsItsIdentity(t *testing.T) {
+	identity := &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}
+	backend := &delegatedBackend{testing: t, identity: identity}
+	executor := newDelegatedExecutor(t, backend)
+	request := requestFor("submit_input", map[string]any{
+		"target":     map[string]string{"namespace": "test-any-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
+		"session_id": testSessionID, "command_id": testCommandID, "text": "Do the requested work.",
+	}, nil)
+	request.Caller = store.IdentityCaller{Identity: store.Identity{Name: identity.GetName(), UID: identity.GetUid()}}
+	outcome, err := executor.attempt(t.Context(), request)
+	if err != nil || outcome.State != store.ExecutionSucceeded {
+		t.Fatalf("outcome=%+v error=%v", outcome, err)
+	}
+	if backend.gotSubmit.GetSessionId() != testSessionID || backend.gotSubmit.GetCommandId() != testCommandID {
+		t.Fatalf("SubmitInput request = %v", backend.gotSubmit)
+	}
+
+	request.Caller = store.UnknownCaller{}
+	outcome, err = executor.attempt(t.Context(), request)
+	if err != nil || outcome.State != store.ExecutionFailed || backend.submitCalls != 1 {
+		t.Fatalf("a caller of unknown kind: outcome=%+v error=%v submits=%d; want failure before any call", outcome, err, backend.submitCalls)
 	}
 }

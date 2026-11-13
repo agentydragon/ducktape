@@ -4,7 +4,6 @@ import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -53,24 +52,6 @@ from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
 from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AgentResult:
-    text: str
-    # Event access belongs to handlers; AgentResult contains only assembled text.
-
-
-@dataclass
-class StepResult:
-    """`done` reflects handler completion; output remains with handlers."""
-
-    done: bool
-
-
-@dataclass
-class CompactionResult:
-    compacted: bool
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
@@ -210,11 +191,15 @@ class Agent:
         client: Model,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool,
+        parallel_tool_calls: bool = True,
         handlers: Iterable[BaseHandler],
         tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
+        """Keep `tool_policy` fixed for the agent's lifetime.
+
+        Use transcript system messages for static context; `dynamic_instructions` fills the separate API field per request.
+        """
         self._tool_provider = tool_provider
         self._client = client
         self._parallel_tool_calls = parallel_tool_calls
@@ -295,25 +280,23 @@ class Agent:
             return await self._dynamic_instructions()
         return None
 
-    async def compact_transcript(
-        self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None
-    ) -> CompactionResult:
+    async def compact_transcript(self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None) -> bool:
         """Summarize the transcript prefix before the last `keep_recent_turns` items.
 
         The prefix needs at least three items; it becomes one summary `UserMessage`.
-        If no prompt is supplied, load `compaction_prompt.md`.
+        If no prompt is supplied, load `compaction_prompt.md`. Return whether compaction occurred.
         """
 
         boundary_index = max(0, len(self._transcript) - keep_recent_turns)
 
         if boundary_index < 1:
-            return CompactionResult(compacted=False)
+            return False
 
         all_to_compact = self._transcript[:boundary_index]
         recent_region = self._transcript[boundary_index:]
 
         if len(all_to_compact) < 3:
-            return CompactionResult(compacted=False)
+            return False
 
         summary_text = await self._generate_summary(all_to_compact, summarization_prompt)
 
@@ -324,7 +307,7 @@ class Agent:
             *recent_region,  # Keep recent transcript items unchanged.
         ]
 
-        return CompactionResult(compacted=True)
+        return True
 
     async def _generate_summary(self, items: list[TranscriptItem], custom_prompt: str | None) -> str:
         """Serialize messages, reasoning items, function calls, and outputs for the summarizer."""
@@ -348,29 +331,29 @@ class Agent:
 
         raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
-    async def step(self) -> StepResult:
+    async def step(self) -> bool:
         """Run one step and resolve pending calls.
 
-        Preserves accumulated text and resets `finished` before returning; output is emitted to handlers.
+        Return whether a handler finished. Preserve accumulated text and reset `finished` before
+        returning; output is emitted to handlers.
         """
         await self._run_one_phase()
         if self.pending_function_calls:
             await self._handle_pending_tool_calls()
         done = self.finished
         self.finished = False  # Reset so step() can be called again
-        return StepResult(done=done)
+        return done
 
-    async def run(self) -> AgentResult:
-        """Clear text, pending calls, and completion state, then step until a handler finishes."""
+    async def run(self) -> str:
+        """Clear state, then step until a handler finishes and return the assembled text."""
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
         try:
             while True:
-                result = await self.step()
-                if result.done:
+                if await self.step():
                     break
-            return AgentResult(text="\n".join(self.assistant_text_chunks))
+            return "\n".join(self.assistant_text_chunks)
         except Exception as exc:
             for h in self._handlers:
                 h.on_error(exc)
@@ -479,8 +462,8 @@ class Agent:
                     "Cannot compact transcript when last item is a ReasoningItem. "
                     "Handlers must not return Compact() after receiving reasoning output."
                 )
-            result = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
-            if result.compacted:
+            compacted = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
+            if compacted:
                 logger.info(
                     "Transcript compacted (kept %d recent turns, compacted %d items)",
                     decision.keep_recent_turns,
@@ -490,7 +473,7 @@ class Agent:
                 logger.info("Compaction skipped (not enough items to compact)")
 
             for h in self._handlers:
-                h.on_compaction_complete(compacted=result.compacted)
+                h.on_compaction_complete(compacted=compacted)
 
             return  # Continue to next iteration after compaction
 
@@ -621,34 +604,6 @@ class Agent:
                 self.pending_function_calls.append(item)
             else:
                 raise TypeError(f"Unsupported Responses output item: {type(item)}")
-
-    @classmethod
-    async def create(
-        cls,
-        *,
-        tool_provider: ToolProvider,
-        handlers: Iterable[BaseHandler],
-        client: Model,
-        reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool = True,
-        tool_policy: ToolPolicy,
-        dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
-    ) -> Agent:
-        """Keep `tool_policy` fixed for the agent's lifetime.
-
-        Use transcript system messages for static context; `dynamic_instructions` fills the separate API field per request.
-        """
-        return cls(
-            tool_provider=tool_provider,
-            client=client,
-            reasoning_effort=reasoning_effort,
-            reasoning_summary=reasoning_summary,
-            parallel_tool_calls=parallel_tool_calls,
-            tool_policy=tool_policy,
-            handlers=list(handlers),
-            dynamic_instructions=dynamic_instructions,
-        )
 
     def _emit_tool_result(self, function_call: FunctionCallItem, result: ToolResult) -> None:
         call_id = _require_call_id(function_call)

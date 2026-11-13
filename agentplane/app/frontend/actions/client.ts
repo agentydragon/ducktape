@@ -67,7 +67,16 @@ function validateDecision(value: Decision): void {
       throw new Error(`The Action Service returned an unknown verdict (${value.verdict}).`);
   }
   required(value.decidedAt, "Decision.decided_at");
-  if (value.policyEvidence !== undefined) validatePolicyEvidence(value.policyEvidence);
+  switch (value.decider.case) {
+    case "operator":
+      required(value.decider.value.operator, "OperatorDecision.operator");
+      break;
+    case "policy":
+      if (value.decider.value.evidence !== undefined) validatePolicyEvidence(value.decider.value.evidence);
+      break;
+    default:
+      throw new Error("The Action Service omitted Decision.decider.");
+  }
 }
 
 function validateExecution(value: Execution): void {
@@ -88,7 +97,17 @@ function validateExecution(value: Execution): void {
 
 function validateActionRequest(value: ActionRequest): ActionRequest {
   required(value.action, "ActionRequest.action");
-  required(value.caller, "ActionRequest.caller");
+  if (value.caller !== undefined && value.callerIdentity !== undefined) {
+    throw new Error("The Action Service returned an ActionRequest with multiple callers.");
+  }
+  if (value.callerIdentity !== undefined) {
+    if (value.callerIdentity.name === "") {
+      throw new Error("The Action Service returned an Identity caller without a name.");
+    }
+    if (value.callerIdentity.uid === "") {
+      throw new Error("The Action Service returned an Identity caller without a UID.");
+    }
+  }
   required(value.createdAt, "ActionRequest.created_at");
   required(value.updatedAt, "ActionRequest.updated_at");
   switch (value.state) {
@@ -225,10 +244,6 @@ export async function decideActionById(
     )
   );
   return validateActionRequest(required(response.actionRequest, "decided request"));
-}
-
-export function decideAction(request: ActionRequest, verdict: Verdict): Promise<ActionRequest> {
-  return decideActionById(request.id, request.version, verdict);
 }
 
 export type ActionRequestWatchFrame =

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
 # gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
@@ -208,7 +208,10 @@ py_test(
 py_library(
     name = "trace_contract",
     srcs = ["trace_contract.py"],
-    visibility = ["//agentplane/system_tests/suites:__pkg__"],
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
+    ],
 )
 
 py_library(
@@ -286,6 +289,31 @@ k3s_tcg_vm_image_manifest(
 )
 
 py_library(
+    name = "render_tcg_vmi_shutdown_policy",
+    srcs = ["render_tcg_vmi_shutdown_policy.py"],
+    deps = [
+        "//cluster/cdk8s/agentplane:launcher_relay",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_binary(
+    name = "render_tcg_vmi_shutdown_policy_bin",
+    main_module = "agentplane.system_tests.vm.render_tcg_vmi_shutdown_policy",
+    deps = [":render_tcg_vmi_shutdown_policy"],
+)
+
+genrule(
+    name = "tcg_vmi_shutdown_policy_manifest",
+    outs = ["rendered/tcg-vmi-shutdown-policy.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) TCG_VMI_POLICY_OUTPUT=$@ $(execpath :render_tcg_vmi_shutdown_policy_bin)",
+    tools = [
+        ":render_tcg_vmi_shutdown_policy_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+)
+
+py_library(
     name = "boot_rcu",
     srcs = ["boot_rcu.py"],
     deps = [
@@ -324,6 +352,7 @@ py_test(
     srcs = ["test_tcg_vmi_shutdown.py"],
     data = [
         K3S_BINARY,
+        ":tcg_vmi_shutdown_policy_manifest",
         ":test_tcg_vmi_shutdown_image_manifest",
         "//agentplane/system_tests/vm/guest:agentplane-cgroup-pilot-resident.service",
         "//agentplane/system_tests/vm/guest:agentplane-cgroup-stress-probe.service",
@@ -334,14 +363,13 @@ py_test(
         "//agentplane/system_tests/vm/guest:stress.slice",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
-        "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_tcg_vmi_shutdown_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "TCG_VMI_POLICY_RLOCATION": "$(rlocationpath :tcg_vmi_shutdown_policy_manifest)",
         "AGENTPLANE_K3S_REQUIRE_KVM": "0",
     },
     exec_properties = K3S_EXEC_PROPERTIES | {"EstimatedComputeUnits": "8"},
@@ -356,9 +384,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -374,8 +400,8 @@ py_test(
         "-k",
         "policy",
     ],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    data = [":tcg_vmi_shutdown_policy_manifest"],
+    env = {"TCG_VMI_POLICY_RLOCATION": "$(rlocationpath :tcg_vmi_shutdown_policy_manifest)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
@@ -386,9 +412,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -401,8 +425,6 @@ py_test(
     size = "small",
     srcs = ["test_tcg_vmi_shutdown.py"],
     args = ["-k=shutdown_proof_progress"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
@@ -413,9 +435,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -428,8 +448,6 @@ py_test(
     size = "small",
     srcs = ["test_tcg_vmi_shutdown.py"],
     args = ["-k=synthetic_slice"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
@@ -440,9 +458,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -463,9 +479,7 @@ py_test(
         "//agentplane/system_tests/vm/guest:cgroup_pilot_probe",
         "//agentplane/system_tests/vm/guest:pilot.slice",
         "//agentplane/system_tests/vm/guest:stress.slice",
-        "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
@@ -476,9 +490,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -491,8 +503,6 @@ py_test(
     size = "small",
     srcs = ["test_tcg_vmi_shutdown.py"],
     args = ["-k=cgroup_pilot"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
@@ -503,9 +513,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
@@ -518,8 +526,6 @@ py_test(
     size = "small",
     srcs = ["test_tcg_vmi_shutdown.py"],
     args = ["-k=delegated_cgroup_stress"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
@@ -530,9 +536,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/k3s:baseline",
-        "//cluster/cdk8s/agentplane:launcher_relay",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",

@@ -189,13 +189,9 @@ func (r *Runtime) waitForExecutionCalls(ctx context.Context) error {
 	})
 }
 
-func (r *Runtime) readSessionStatus(ctx context.Context) (lifecycle.Status, bool, error) {
-	return lifecycle.ReadStatus(ctx, r.lifecycleState)
-}
-
 func (r *Runtime) waitSessionStage(ctx context.Context, minimum lifecycle.Stage) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
-		current, found, err := r.readSessionStatus(ctx)
+		current, found, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		if err != nil {

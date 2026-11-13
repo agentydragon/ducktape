@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 )
 
 // ActionEvent is an event of an Action request as the Action Service returns it, and the payload of the
@@ -30,23 +31,26 @@ func DecodeActionActor(data json.RawMessage) (*action_servicepb.Principal, error
 		return nil, nil
 	}
 	var wire struct {
-		Account *actionActorAccount `json:"account"`
-		Issuer  *string             `json:"issuer"`
-		Subject *string             `json:"subject"`
+		Account  *actionActorAccount  `json:"account"`
+		Identity *actionActorIdentity `json:"identity"`
+		Issuer   *string              `json:"issuer"`
+		Subject  *string              `json:"subject"`
 	}
 	if err := Decode(data, &wire); err != nil {
 		return nil, err
 	}
 	switch {
-	case wire.Account != nil && wire.Issuer == nil && wire.Subject == nil:
+	case wire.Account != nil && wire.Identity == nil && wire.Issuer == nil && wire.Subject == nil:
 		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{Caller: ServiceAccountProto(model.ServiceAccount{
 			Namespace: wire.Account.Namespace,
 			Name:      wire.Account.Name,
 		})}}, nil
-	case wire.Account == nil && wire.Issuer != nil && wire.Subject != nil && *wire.Issuer != "" && *wire.Subject != "":
+	case wire.Identity != nil && wire.Identity.Name != "" && wire.Identity.UID != "" && wire.Account == nil && wire.Issuer == nil && wire.Subject == nil:
+		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: &identitypb.Identity{Name: wire.Identity.Name, Uid: wire.Identity.UID}}}, nil
+	case wire.Account == nil && wire.Identity == nil && wire.Issuer != nil && wire.Subject != nil && *wire.Issuer != "" && *wire.Subject != "":
 		return &action_servicepb.Principal{Principal: &action_servicepb.Principal_Operator{Operator: &action_servicepb.Operator{Issuer: *wire.Issuer, Subject: *wire.Subject}}}, nil
 	default:
-		return nil, errors.New("an actor is a caller (account) or an operator (issuer and subject)")
+		return nil, errors.New("an actor is a caller account, an Identity (name and UID), or an operator (issuer and subject)")
 	}
 }
 

@@ -1,15 +1,19 @@
 """Real-browser acceptance for a thread's window: one shape, paged back into, resumed after a gap."""
 
 import asyncio
+import base64
+import hashlib
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import ParseDict
-from playwright.async_api import Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
+from playwright.async_api import CDPSession, Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
 from agentplane.app.frontend.testing.history_interactions import frames
 from agentplane.app.testing import thread_view_marks
@@ -142,8 +146,86 @@ async def _holding_older_pages(page: Page) -> AsyncIterator[_HeldPages]:
         await page.unroute("**/sync/entities?*", hold)
 
 
+@dataclass
+class _EntityStream:
+    """The current entity SSE response, retained by Chromium rather than a fetch wrapper."""
+
+    session: CDPSession
+    request_id: str | None = None
+    url: str | None = None
+
+    def response_received(self, event: dict[str, Any]) -> None:
+        response = event["response"]
+        if "/sync/entities?" in response["url"] and response["mimeType"] == "text/event-stream":
+            self.request_id = event["requestId"]
+            self.url = response["url"]
+
+    async def capture(self) -> None:
+        if self.request_id is None or self.url is None:
+            raise AssertionError("Chromium observed no entity SSE response")
+        result = await self.session.send("Network.streamResourceContent", {"requestId": self.request_id})
+        body = base64.b64decode(result["bufferedData"], validate=True)
+        if len(body) > 1_048_576:
+            raise AssertionError("Entity SSE buffer exceeds the diagnostic byte limit")
+        # Inspect bytes only in memory. CI artifacts retain cursor evidence, never entity text/state.
+        revisions = []
+        changes = 0
+        malformed = 0
+        frames = body.replace(b"\r\n", b"\n").split(b"\n\n")
+        for raw_frame in frames[:-1]:
+            try:
+                frame = raw_frame.decode()
+                data = "\n".join(
+                    line.removeprefix("data:").lstrip() for line in frame.splitlines() if line.startswith("data:")
+                )
+                if not data:
+                    continue
+                message = json.loads(data)
+                if not isinstance(message, dict):
+                    raise ValueError("Expected an SSE message object")
+                value = message.get("value", {})
+                headers = message["headers"]
+                if not isinstance(value, dict) or not isinstance(headers, dict):
+                    raise ValueError("Expected SSE row and header objects")
+                if "operation" in headers:
+                    changes += 1
+                if value.get("entity_kind") == "view_state":
+                    revisions.append(int(value["revision_cursor"]))
+            except ValueError, KeyError, TypeError:
+                # A bad frame is evidence too; retain the other cursors and whole-buffer digest.
+                malformed += 1
+        query = parse_qs(urlsplit(self.url).query)
+        (undeclared_outputs_dir() / "thread-window-entity-stream.json").write_text(
+            json.dumps(
+                {
+                    "request_id": self.request_id,
+                    "handle": query.get("handle"),
+                    "offset": query.get("offset"),
+                    "bytes": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                    "changes": changes,
+                    "view_revisions": revisions,
+                    "malformed_frames": malformed,
+                    "trailing_bytes": len(frames[-1]),
+                }
+            )
+        )
+
+
+@pytest.fixture
+async def entity_stream(thread_browser: ThreadBrowser) -> AsyncIterator[_EntityStream]:
+    session = await thread_browser.page.context.new_cdp_session(thread_browser.page)
+    stream = _EntityStream(session)
+    session.on("Network.responseReceived", stream.response_received)
+    try:
+        await session.send("Network.enable", {"maxResourceBufferSize": 1_048_576, "maxTotalBufferSize": 2_097_152})
+        yield stream
+    finally:
+        await session.detach()
+
+
 async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place(
-    thread_browser: ThreadBrowser,
+    thread_browser: ThreadBrowser, entity_stream: _EntityStream
 ) -> None:
     page = thread_browser.page
     thread_browser.opened.replay.set()
@@ -190,7 +272,54 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     # The tail grows by more than a page while the reader stays back in the thread: its rows
     # arrive on the same shape, and the row the reader is at does not move.
     latest = append_items(thread_browser, "window-item", range(130, 165))
-    await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    try:
+        await expect(page.locator(f'[data-projection-cursor="{latest.cursor}"]')).to_have_count(1, timeout=30_000)
+    except AssertionError as error:
+        # Best-effort evidence must neither wedge the test nor replace its browser assertion.
+        try:
+            async with asyncio.timeout(10):
+                thread_id = thread_browser.source.session_id
+                summary = await thread_browser.content.session_summary(thread_id)
+                if summary is None:
+                    raise AssertionError("History has no Session summary for the seeded thread")
+                view = await thread_browser.content.reader.read_thread_entities(
+                    history_service_pb2.ReadThreadEntitiesRequest(
+                        session_id=str(thread_id),
+                        keys=history_service_pb2.EntityKeys(
+                            keys=[
+                                history_service_pb2.EntityKey(
+                                    entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
+                                )
+                            ]
+                        ),
+                    )
+                )
+                shape = await page.request.post(
+                    f"{thread_browser.ingress.url}/threads/{thread_id}/sync/entities"
+                    f"?projection_epoch={summary.projection_epoch}&offset=now",
+                    data={"where": "entity_kind = 'view_state'", "order_by": "entity_index DESC", "limit": 1},
+                    headers={"Origin": thread_browser.ingress.url},
+                )
+                browser_cursor = await page.locator("[data-projection-cursor]").get_attribute("data-projection-cursor")
+                (undeclared_outputs_dir() / "thread-window-projection-gap.json").write_text(
+                    json.dumps(
+                        {
+                            "expected": latest.cursor,
+                            "committed": summary.committed_cursor,
+                            "folded": summary.folded_through,
+                            "view": [row.revision_cursor for row in view.entities],
+                            "browser": browser_cursor,
+                            "electric_status": shape.status,
+                            "electric_body": await shape.text(),
+                        }
+                    )
+                )
+                error.add_note("Projection diagnostics saved to thread-window-projection-gap.json")
+                await entity_stream.capture()
+                error.add_note("Chromium entity SSE cursor evidence saved to thread-window-entity-stream.json")
+        except Exception as diagnostic_error:
+            error.add_note(f"Projection diagnostics unavailable ({type(diagnostic_error).__name__})")
+        raise
     restored = page.locator(f'[data-thread-anchor="{anchor["cursor"]}"]')
     await expect(restored).to_have_count(1)
     assert abs(await restored.evaluate("row => row.getBoundingClientRect().top") - anchor["top"]) <= 2

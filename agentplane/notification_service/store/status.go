@@ -156,7 +156,7 @@ func summarizeStored(cursor int64, event model.EventIdentity, githubPayload []by
 // Status needs only Action and mergeability lifecycle fields. Message summaries use the authenticated sender in
 // the identity, so the SQL projection never fetches or decodes a Message body.
 const entryContentSummaryReadColumns = `action_state, action_at,
-	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject,
+	action_actor_kind, action_actor_namespace, action_actor_name, action_actor_issuer, action_actor_subject, action_actor_identity_name, action_actor_identity_uid,
 	mergeability_repository, mergeability_base_ref, mergeability_head_sha, mergeability_base_sha,
 	mergeability_previous, mergeability_current, mergeability_observed_at, mergeability_observed_at_submicro_nanos,
 	merge_commit_sha, merge_commit_base_sha, merge_commit_head_sha, NULL::text, NULL::text`
@@ -179,16 +179,17 @@ type InboxStatus struct {
 }
 
 // SessionStatus reads the one inbox for a Session. A workload only sees its own current Sandbox
-// incarnation; the operator passes nil for owner. Missing and unauthorized inboxes both return nil.
-func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, owner *Owner, debounce Debounce, entries, subscriptions bool) (*InboxStatus, time.Time, error) {
+// incarnation; the operator passes a nil owner. Missing and unauthorized inboxes both return nil.
+func (s *Store) SessionStatus(ctx context.Context, namespace, sessionID string, owner Owner, debounce Debounce, entries, subscriptions bool) (*InboxStatus, time.Time, error) {
 	observed := now()
 	var result *InboxStatus
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		clause := `WHERE destination_namespace = $1 AND session_id = $2`
 		args := []any{namespace, sessionID}
 		if owner != nil {
-			clause += ` AND owner_namespace = $3 AND owner_name = $4 AND destination_uid = $5 AND owner_uid = $6`
-			args = append(args, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID)
+			predicate, ownerArgs := ownerPredicate(owner, "", 3)
+			clause += ` AND ` + predicate
+			args = append(args, ownerArgs...)
 		}
 		inboxes, nextWork, err := inboxesOf(ctx, tx, clause, args...)
 		if err != nil || len(inboxes) == 0 {

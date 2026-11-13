@@ -8,7 +8,7 @@ All coordinates use LightBurn's native Y-up convention: larger Y is higher
 on the page, origin at bottom-left.
 
 Usage:
-    bazel run //laser/lightburn/ground_truth:generate_test_docs_bin -- /tmp/test_docs
+    bb run //laser/lightburn/ground_truth:generate_test_docs_bin -- "$PWD/test_docs"
 """
 
 from __future__ import annotations

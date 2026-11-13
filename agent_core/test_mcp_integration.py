@@ -27,7 +27,7 @@ async def test_agent_mcp_echo(mcp_tool_provider_echo, test_handlers, recording_h
         yield from m.echo_roundtrip("hello")
         yield m.assistant_text("done")
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=test_handlers,
@@ -42,7 +42,7 @@ async def test_agent_mcp_echo(mcp_tool_provider_echo, test_handlers, recording_h
     outputs = [r for r in recording_handler.records if r.type == "function_call_output"]
     assert outputs, "No tool outputs captured"
     assert outputs[0].result.structured_content == {"echo": "hello"}
-    assert res.text.strip() == "done"
+    assert res.strip() == "done"
 
 
 if __name__ == "__main__":

@@ -51,13 +51,10 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from agentplane.crd_group import GROUP
-from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
-from agentplane.egress.resources import placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
+from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.workload_auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
@@ -101,14 +98,12 @@ ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # admission policy refuses that controller's use sets naming any other host, which the controller's
 # TestManagedAccountUseIsAdmitted envtest checks.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
-# The credential substituted there; agents discover its usage through the rules endpoint.
-KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # The in-cluster Forgejo, plain HTTP, so the proxy reads the request without bumping TLS.
 # It is the name to prefer: the public name below would hairpin out through the Gateway and back
 # for a Service one hop away.
 FORGEJO_HOST = forgejo.HTTP.fqdn
-# The same Service under the shorter names its search path resolves (haku-egress-proxy's clients
-# still spell it `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
+# The same Service under the shorter names its search path resolves (haku-ci's runners spell it
+# `forgejo-http.forgejo`). The proxy matches a request's host on the exact string,
 # so a spelling left out is refused `no-rule` although it dials the same address.
 FORGEJO_HOST_ALIASES = (forgejo.HTTP.host, f"{forgejo.HTTP.name}.{forgejo.HTTP.pods.namespace}")
 # Forgejo by its public name: HTTPS through the Gateway, resolving to public addresses.
@@ -128,7 +123,7 @@ _API_SERVER_TOKEN_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
 # construct that creates it, so renaming or dropping a policy is a change in one file.
-BASIC_POLICY = "basic"
+BASIC_POLICY = "basic-identity"
 PACKAGES_POLICY = "packages"
 INFERENCE_EXPERIMENTS_POLICY = "inference-experiments"
 GITHUB_AGENTYDRAGON_AGENT_POLICY = "github-agentydragon-agent"
@@ -188,8 +183,7 @@ def kubernetes_account_rule(account: KubernetesAccountRef) -> PolicySetSpecRules
     )
 
 
-def _egress_credentials(scope: Construct, *, namespace: str, projected_kubernetes_token: bool) -> None:
-    """`projected_kubernetes_token` renders the credential `basic` presents to the API server."""
+def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     EgressCredential(
         scope,
         "egresscredential-github-pat",
@@ -257,35 +251,8 @@ def _egress_credentials(scope: Construct, *, namespace: str, projected_kubernete
             ],
         )
 
-    if projected_kubernetes_token:
-        EgressCredential(
-            scope,
-            "egresscredential-kubernetes-workload",
-            metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
-            description=(
-                f"Kubernetes API server: https://{KUBERNETES_HOST}. This credential acts as the calling "
-                "Sandbox's own ServiceAccount. Use "
-                f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder_of(KUBERNETES_CREDENTIAL)} "
-                "for Kubernetes commands; the proxy substitutes this Sandbox's projected "
-                "Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
-            ),
-            source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
-            targets=[
-                EgressCredentialSpecTargets(
-                    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-                )
-            ],
-        )
 
-
-def _egress_policies(
-    scope: Construct,
-    *,
-    namespace: str,
-    litellm_host: str,
-    litellm_cluster_internal: bool,
-    projected_kubernetes_token: bool,
-) -> None:
+def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, litellm_cluster_internal: bool) -> None:
     add_egress_policy(
         scope,
         "egresspolicy-inference-experiments",
@@ -346,56 +313,30 @@ def _egress_policies(
         metadata=ApiObjectMetadata(name=PUBLIC_INTERNET_POLICY, namespace=namespace),
         rules=[Rule.egress(hosts=["*"])],
     )
+    basic_action_rules = [
+        # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
+        # effective caller's own authority. The receivers check the caller UID and resource
+        # ownership; this exact list grants no provisioning, broker or unrelated Actions.
+        AutoApproveIf.exact_actions(
+            actions={
+                "environments": ["get", "list", "resume"],
+                "sessions": [
+                    "cancel_input",
+                    "create",
+                    "get",
+                    "interrupt_turn",
+                    "observe_input",
+                    "read_turns",
+                    "submit_input",
+                ],
+            }
+        )
+    ]
     add_egress_policy(
         scope,
         "egresspolicy-basic",
         metadata=ApiObjectMetadata(name=BASIC_POLICY, namespace=namespace),
-        rules=[
-            # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
-            # full names their clients spell.
-            #
-            # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
-            # effective caller's own authority. The receivers check the caller UID and resource
-            # ownership; this exact list grants no provisioning, broker or unrelated Actions.
-            AutoApproveIf.exact_actions(
-                actions={
-                    "environments": ["get", "list", "resume"],
-                    "sessions": [
-                        "cancel_input",
-                        "create",
-                        "get",
-                        "interrupt_turn",
-                        "observe_input",
-                        "read_turns",
-                        "submit_input",
-                    ],
-                }
-            ),
-            # The API server, inside `basic` rather than behind a policy a launch opts into: every
-            # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
-            # caller happened to name a policy. Every Sandbox discovers this credential through
-            # the rules endpoint. Kubernetes commands carry its placeholder directly; the proxy
-            # substitutes the Sandbox's own projected token. A missing rule therefore means no
-            # available Kubernetes route. Without `projected_kubernetes_token`, an agent reaches the
-            # API server only as an account whose use set it holds (`kubernetes_account_rule`).
-            #
-            # No method or path list: what a sandbox may read or write is the API server's answer
-            # for its own ServiceAccount, and narrowing verbs here would be a second, weaker copy
-            # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
-            # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
-            # requests and watches are what this admits in practice.
-            *(
-                [
-                    Rule.egress(
-                        hosts=[KUBERNETES_HOST],
-                        cluster_internal=True,
-                        credential_ref=PolicySetSpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
-                    )
-                ]
-                if projected_kubernetes_token
-                else []
-            ),
-        ],
+        rules=basic_action_rules,
     )
     add_egress_policy(
         scope,
@@ -430,9 +371,12 @@ def _egress_policies(
                     "dl.google.com",
                     "files.pythonhosted.org",
                     "ftp.gnu.org",
+                    # Base images Bazel's rules_oci pulls (mirror.gcr.io fronts Docker Hub).
+                    "gcr.io",
                     "ghcr.io",
                     "go.dev",
                     "index.crates.io",
+                    "mirror.gcr.io",
                     "nixos.org",
                     "nodejs.org",
                     # ghcr.io redirects blob reads here, so a pull fails without it. A
@@ -449,7 +393,14 @@ def _egress_policies(
                     # keep-sorted end
                 ],
                 methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
-            )
+            ),
+            # proxy.golang.org answers a module zip with a signed redirect into its own bucket, so
+            # a Go module fetch fails without it. Only that bucket: the host serves every GCS bucket.
+            Rule.egress(
+                hosts=["storage.googleapis.com"],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
+                paths=["/proxy-golang-org-prod/**"],
+            ),
         ],
     )
     add_egress_policy(
@@ -604,7 +555,6 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [KUBERNETES_AUDIENCE],
             # Where kubernetesServiceAccount credentials impersonate, with the proxy's own bearer. What
             # it may impersonate there is kubernetes_accounts.py's Role, not this.
             "local_api_server": {"host": KUBERNETES_HOST, "port": 443, "token_file": _API_SERVER_TOKEN_FILE},
@@ -617,12 +567,7 @@ class Egress(Construct):
                     cert_file=Path("/etc/agentplane-egress/svid/tls.crt"),
                     key_file=Path("/etc/agentplane-egress/svid/tls.key"),
                 ),
-                auth=[
-                    SPIFFEAuth(ca_file=Path(_SVID_CA_FILE)),
-                    # CLEANUP(added 2026-11-09): Remove the bearer mode once no non-Sandbox workload
-                    # (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer.
-                    KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-                ],
+                auth=[SPIFFEAuth(ca_file=Path(_SVID_CA_FILE))],
             ).model_dump(mode="json", exclude_none=True),
         }
         settings = SettingsFile(
@@ -643,16 +588,13 @@ class Egress(Construct):
             selector=workload.deployment,
             ports=[self.admin.port.service_port()],
         )
-        # The identity catalog reaches the API server only as accounts.
-        projected_kubernetes_token = not env.identity_catalog
-        _egress_credentials(self, namespace=env.namespace, projected_kubernetes_token=projected_kubernetes_token)
+        _egress_credentials(self, namespace=env.namespace)
         (litellm_spec,) = litellm_proxy.proxy_specs()
         _egress_policies(
             self,
             namespace=env.namespace,
             litellm_host=litellm_host or litellm_proxy.service(litellm_spec).fqdn,
             litellm_cluster_internal=litellm_cluster_internal,
-            projected_kubernetes_token=projected_kubernetes_token,
         )
 
     def add_platform_resources(self) -> None:
@@ -662,9 +604,8 @@ class Egress(Construct):
         self._add_network_policy(self.runners)
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # TokenReview proves the sidecar's projected, audience-scoped ServiceAccount
-        # token and names the Pod it is bound to. Creating a review grants nothing of
-        # the reviewed identity's authority.
+        # TokenReview authenticates configured admin gRPC ServiceAccount callers. It grants no
+        # authority by itself; the admin service also checks the exact allowed caller.
         token_reviewer_cluster_rbac(
             self,
             "token-reviewer",
@@ -707,16 +648,14 @@ class Egress(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
             role=Role.from_role_name(self, "role-ref", NAME.removeprefix("agentplane-")),
         ).add_subjects(service_account)
-        # A standing workload's record and subject live in its own namespace.
+        # A standing workload's record lives in its own namespace; its Identity subject in the policy
+        # namespace, read above.
         for namespace in self.env.egress.standing_workload_namespaces:
             standing = Role(
                 self,
                 f"workload-credentials-role-{namespace}",
                 metadata=ApiObjectMetadata(name=f"{NAME}-workload-credentials", namespace=namespace),
-                rules=[
-                    RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
-                    RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
-                ],
+                rules=[RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"])],
             )
             RoleBinding(
                 self,
@@ -727,7 +666,7 @@ class Egress(Construct):
 
     def _add_certificate_and_bundle(self) -> None:
         # The interception root the proxy issues leaves from, separate from the cluster's
-        # internal CA (the haku-egress-proxy pattern). Published as a ConfigMap of the same
+        # internal CA. Published as a ConfigMap of the same
         # name, which every sandbox Pod mounts over its system bundle and as its Java trust
         # store (sandbox_pod.py).
         interception_root_ca(

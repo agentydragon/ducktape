@@ -44,7 +44,9 @@ var _ worker.Provider = (*Source)(nil)
 //
 // The subscription servicer calls it when a subscription is created and shows an access denied failure as
 // PERMISSION_DENIED: authorization precedes persistence even when replay starts after the last event.
-func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64, ownerUID string) ([]storagecodec.ActionEvent, error) {
+//
+// An IdentityOwner follows only the requests its exact Identity incarnation submitted.
+func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
 		return nil, rpcFailure(ctx, err)
@@ -52,11 +54,22 @@ func (s *Source) Events(ctx context.Context, owner model.ServiceAccount, request
 	if request == nil || request.GetActionRequest() == nil {
 		return nil, validationFailure()
 	}
-	caller, err := serviceAccount(request.GetActionRequest().GetCaller())
-	if err != nil {
-		return nil, err
+	submitted := request.GetActionRequest()
+	var owned bool
+	switch owner := owner.(type) {
+	case store.AccountOwner:
+		caller, err := serviceAccount(submitted.GetCaller())
+		if err != nil {
+			return nil, err
+		}
+		owned = caller == owner.Account && owner.AccountUID != "" && submitted.GetCallerUid() == owner.AccountUID
+	case store.IdentityOwner:
+		caller := submitted.GetCallerIdentity()
+		owned = owner.Identity.UID != "" && caller.GetName() == owner.Identity.Name && caller.GetUid() == owner.Identity.UID
+	default:
+		panic(fmt.Sprintf("unknown inbox owner %T", owner))
 	}
-	if caller != owner || ownerUID == "" || request.GetActionRequest().GetCallerUid() != ownerUID {
+	if !owned {
 		return nil, &worker.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	if afterSequence < 0 || afterSequence > maxEventSequence {
@@ -88,11 +101,7 @@ func (s *Source) Reconcile(ctx context.Context, claim store.Claim, due store.Due
 	if !ok || due.ActionsAfterSequence == nil {
 		return fmt.Errorf("subscription %s is not an Actions subscription", due.ID)
 	}
-	ownerUID := ""
-	if claim.OwnerUID != nil {
-		ownerUID = *claim.OwnerUID
-	}
-	events, err := s.Events(ctx, claim.Owner, request.RequestID, *due.ActionsAfterSequence, ownerUID)
+	events, err := s.Events(ctx, claim.Holder(), request.RequestID, *due.ActionsAfterSequence)
 	if err != nil {
 		return err
 	}
@@ -119,7 +128,7 @@ func actionEvent(event *action_servicepb.ActionEvent) (storagecodec.ActionEvent,
 		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	actor := event.GetActor()
-	if err := validateActionActor(actor); err != nil {
+	if err := storagecodec.ValidateActionActor(actor); err != nil {
 		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	return storagecodec.ActionEvent{
@@ -155,17 +164,4 @@ func validationFailure() error {
 func validActionState(state action_servicepb.ActionState) bool {
 	_, known := action_servicepb.ActionState_name[int32(state)]
 	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
-}
-
-func validateActionActor(actor *action_servicepb.Principal) error {
-	if actor == nil {
-		return nil
-	}
-	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
-		return nil
-	}
-	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
-		return nil
-	}
-	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
 }

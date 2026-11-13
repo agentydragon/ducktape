@@ -4,18 +4,21 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"strings"
 	"testing"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -55,9 +58,15 @@ const (
 
 type tokenReviewStub map[string]authenticationv1.UserInfo
 
+type fixedSubjectResolver struct{ subject auth.Subject }
+
+func (resolver fixedSubjectResolver) ResolveSubject(context.Context) (auth.Subject, error) {
+	return resolver.subject, nil
+}
+
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -124,7 +133,7 @@ func serveDiscoveryWithDelegation(
 	catalog runtimeconfig.Catalog,
 	delegatedMethods []string,
 ) environmentpb.EnvironmentServiceClient {
-	return serveDiscoveryWithOptions(t, objects, catalog, delegatedMethods, nil)
+	return serveDiscoveryWithOptions(t, objects, catalog, delegatedMethods, nil, nil)
 }
 
 func serveDiscoveryWithOptions(
@@ -133,11 +142,13 @@ func serveDiscoveryWithOptions(
 	catalog runtimeconfig.Catalog,
 	delegatedMethods []string,
 	wakeCallers []auth.Account,
+	identityChanges IdentityChangeGuard,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
 	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), nil, ManagementOptions{
-		Managers:  sets.New(auth.Account{Namespace: discoveryNamespace, Name: "actions"}),
-		Launchers: sets.New(auth.Account{Namespace: discoveryNamespace, Name: "launcher"}),
+		Managers:        sets.New(auth.Account{Namespace: discoveryNamespace, Name: "actions"}),
+		Launchers:       sets.New(auth.Account{Namespace: discoveryNamespace, Name: "launcher"}),
+		IdentityChanges: identityChanges,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +167,7 @@ func serveDiscoveryWithOptions(
 				return "", false, nil
 			}
 			return executionUID, true, nil
-		}))
+		}), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -175,6 +186,12 @@ func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch 
 		t.Fatal(err)
 	}
 	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := workloadapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := policyapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	builder := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...)
@@ -214,6 +231,115 @@ func baseReader(t *testing.T) client.WithWatch {
 	return readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
 }
 
+type identityChangeGuardFake struct {
+	identity *identitypb.Identity
+	err      error
+}
+
+func (g *identityChangeGuardFake) ChangeSandboxIdentity(_ context.Context, _ string, identity *identitypb.Identity, patch func() error) error {
+	g.identity = identity
+	if g.err != nil {
+		return g.err
+	}
+	return patch()
+}
+
+type sessionConflictFake struct{}
+
+func (sessionConflictFake) Error() string {
+	return "environment identity is still named by Session test-session"
+}
+func (sessionConflictFake) ConflictingSessionIDs() []string { return []string{"test-session"} }
+
+func TestIdentityChangeRequiresManagerStoppedSandboxAndSessionGuard(t *testing.T) {
+	resource := sandboxObject(sandboxUID)
+	resource.Spec.Running = false
+	resource.Status.OperatingMode = sandboxapi.OperatingModeSuspended
+	resource.Status.StopStage = sandboxapi.StopStageStopped
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "test-agent", UID: "identity-uid"}}
+	objects := readerWithObjects(t, resource, executionAccountObject(sandboxUID), identity)
+	guard := &identityChangeGuardFake{}
+	rpc := serveDiscoveryWithOptions(t, objects, runtimeconfig.Catalog{}, nil, nil, guard)
+	request := &environmentpb.SetEnvironmentIdentityRequest{
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}, IdentityName: "test-agent",
+	}
+	if _, err := rpc.SetEnvironmentIdentity(bearing(t, matchingToken), request); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("ungranted caller = %v", err)
+	}
+	stale := proto.Clone(request).(*environmentpb.SetEnvironmentIdentityRequest)
+	stale.Target.Uid = "old-sandbox-uid"
+	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), stale); status.Code(err) != codes.NotFound {
+		t.Fatalf("stale target = %v", err)
+	}
+	guard.err = sessionConflictFake{}
+	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != guard.err.Error() {
+		t.Fatalf("Session refusal = %v", err)
+	}
+	guard.err = nil
+	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); err != nil {
+		t.Fatal(err)
+	}
+	stored := &sandboxapi.Sandbox{}
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Spec.Identity == nil || stored.Spec.Identity.Name != "test-agent" || guard.identity.GetUid() != "identity-uid" {
+		t.Fatalf("saved identity = %v, pinned guard identity = %v", stored.Spec.Identity, guard.identity)
+	}
+	request.IdentityName = ""
+	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, stored); err != nil || stored.Spec.Identity != nil {
+		t.Fatalf("clear identity = %v, %v", stored.Spec.Identity, err)
+	}
+	stored.Spec.Running = true
+	stored.Status.OperatingMode = sandboxapi.OperatingModeRunning
+	stored.Status.StopStage = sandboxapi.StopStageQuiescing
+	if err := objects.Update(t.Context(), stored); err != nil {
+		t.Fatal(err)
+	}
+	request.IdentityName = "test-agent"
+	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); status.Code(err) != codes.FailedPrecondition || !strings.Contains(status.Convert(err).Message(), "spec.identity changes only while nothing runs") {
+		t.Fatalf("running Sandbox mutation = %v", err)
+	}
+}
+
+func TestIdentityRecordIsOnlyTheCurrentSandboxOwnedCredential(t *testing.T) {
+	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	request := &environmentpb.GetEnvironmentRequest{Target: target}
+	controller := true
+	owner := metav1.OwnerReference{APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandboxName, UID: sandboxUID, Controller: &controller}
+	for _, test := range []struct {
+		name     string
+		record   *workloadapi.WorkloadCredential
+		expected string
+	}{
+		{name: "no retained record"},
+		{name: "identity subject", record: &workloadapi.WorkloadCredential{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: sandboxName, OwnerReferences: []metav1.OwnerReference{owner}}, Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: "review-agent", UID: "identity-uid"}}}}, expected: "review-agent"},
+		{name: "legacy subject without Identity", record: &workloadapi.WorkloadCredential{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: sandboxName, OwnerReferences: []metav1.OwnerReference{owner}}, Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{}}}},
+		{name: "prior Sandbox owner", record: &workloadapi.WorkloadCredential{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: sandboxName, OwnerReferences: []metav1.OwnerReference{{APIVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, UID: "old-sandbox-uid"}}}, Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: "old-agent", UID: "old-identity-uid"}}}}},
+		{name: "noncontroller reference", record: &workloadapi.WorkloadCredential{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: sandboxName, OwnerReferences: []metav1.OwnerReference{{APIVersion: owner.APIVersion, Kind: owner.Kind, Name: owner.Name, UID: owner.UID}}}, Spec: workloadapi.WorkloadCredentialSpec{Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: "other-agent", UID: "other-identity-uid"}}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			objects := []client.Object{sandboxObject(sandboxUID), executionAccountObject(sandboxUID)}
+			if test.record != nil {
+				objects = append(objects, test.record)
+			}
+			rpc := serveDiscovery(t, readerWithObjects(t, objects...), runtimeconfig.Catalog{})
+			got, err := rpc.GetEnvironmentIdentityRecord(bearing(t, matchingToken), request)
+			if err != nil || got.GetIdentity().GetName() != test.expected {
+				t.Fatalf("identity record = %v, %v; want %q", got, err, test.expected)
+			}
+			stale := proto.Clone(request).(*environmentpb.GetEnvironmentRequest)
+			stale.Target.Uid = "old-sandbox-uid"
+			if _, err := rpc.GetEnvironmentIdentityRecord(bearing(t, matchingToken), stale); status.Code(err) != codes.NotFound {
+				t.Fatalf("stale target = %v", err)
+			}
+		})
+	}
+}
+
 func bearing(t *testing.T, token string) context.Context {
 	t.Helper()
 	return metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+token)
@@ -222,10 +348,10 @@ func bearing(t *testing.T, token string) context.Context {
 func delegatedBearing(t *testing.T, token string, account auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
-		},
-		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+		}},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -235,6 +361,149 @@ func delegatedBearing(t *testing.T, token string, account auth.Account, uid stri
 		"authorization", "Agentplane-Delegated "+token,
 		auth.DelegationMetadataKey, string(encoded),
 	))
+}
+
+func delegatedIdentityBearing(t *testing.T, token string, identity auth.Identity) context.Context {
+	t.Helper()
+	envelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
+	}
+	encoded, err := auth.MarshalDelegation(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+		"authorization", "Agentplane-Delegated "+token,
+		auth.DelegationMetadataKey, string(encoded),
+	))
+}
+
+func serveIdentityDiscovery(
+	t *testing.T,
+	objects client.WithWatch,
+	catalog runtimeconfig.Catalog,
+	readers sets.Set[auth.Account],
+) environmentpb.EnvironmentServiceClient {
+	t.Helper()
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, nil), readers, ManagementOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace, foreignNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identities, err := auth.KubernetesIdentityUIDs(objects, discoveryNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := Methods(resolver).WithDelegation(
+		[]string{
+			environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
+			environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
+		},
+		[]auth.Delegator{{Account: auth.Account{Namespace: discoveryNamespace, Name: "actions"}, IdentityCallers: true}},
+		nil,
+		identities,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	})
+	return environmentpb.NewEnvironmentServiceClient(connection)
+}
+
+func TestIdentityEnvironmentReadsFollowSandboxBindingWithoutActorPrivileges(t *testing.T) {
+	first := sandboxObject(sandboxUID)
+	first.Spec.Identity = &sandboxapi.IdentityRef{Name: "agent"}
+	second := sandboxObject("other-sandbox-uid")
+	second.Name = "other"
+	second.Spec.Identity = &sandboxapi.IdentityRef{Name: "other-agent"}
+	secondAccount := executionAccountObject(second.UID)
+	secondAccount.Name = second.Name
+	secondAccount.OwnerReferences[0].Name = second.Name
+	objects := readerWithObjects(
+		t,
+		first,
+		executionAccountObject(first.UID),
+		second,
+		secondAccount,
+		&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "agent", UID: "agent-uid-current"}},
+		&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "other-agent", UID: "other-agent-uid"}},
+	)
+	// The Action actor is a direct broad reader. Its component grant must not cross the delegation
+	// boundary to the effective Identity.
+	actorReader := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
+	rpc := serveIdentityDiscovery(t, objects, runtimeconfig.Catalog{}, sets.New(actorReader))
+	identity := auth.Identity{Name: "agent", UID: "agent-uid-current"}
+	ctx := delegatedIdentityBearing(t, actionsToken, identity)
+	listed, err := rpc.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Items) != 1 || listed.Items[0].GetTarget().GetName() != sandboxName {
+		t.Fatalf("Identity list = %+v; want only the Sandbox bound to agent", listed.Items)
+	}
+	descriptor := listed.Items[0]
+	if descriptor.GetExecutionAccount() != nil || descriptor.GetActions().GetResumeEligibility() != nil || descriptor.GetActions().GetResumeToken() != "" ||
+		descriptor.GetActions().GetAutomaticWake() != environmentpb.AutomaticWakeState_AUTOMATIC_WAKE_STATE_NOT_AVAILABLE {
+		t.Fatalf("Identity descriptor inherited account or lifecycle authority: %+v", descriptor)
+	}
+	if _, err := rpc.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: descriptor.GetTarget()}); err != nil {
+		t.Fatalf("Identity GetEnvironment own Sandbox: %v", err)
+	}
+	if _, err := rpc.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: &identitypb.EnvironmentTarget{
+		Namespace: discoveryNamespace, Name: "other", Uid: string(second.UID),
+	}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("Identity GetEnvironment other Identity Sandbox = %v, want NotFound", err)
+	}
+	// The name-based Sandbox reference deliberately follows the current same-name Identity; old
+	// credentials remain fenced by UID at admission and cannot inherit that replacement.
+	if _, err := rpc.GetEnvironment(delegatedIdentityBearing(t, actionsToken, auth.Identity{Name: "agent", UID: "agent-uid-old"}), &environmentpb.GetEnvironmentRequest{Target: descriptor.GetTarget()}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("replaced Identity UID GetEnvironment = %v, want PermissionDenied", err)
+	}
+
+	// A direct reader keeps its broad inventory grant through the original ServiceAccount path.
+	direct, err := rpc.ListEnvironments(bearing(t, actionsToken), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil || len(direct.Items) != 2 {
+		t.Fatalf("direct component reader list = %+v, %v; want both Sandboxes", direct, err)
+	}
+}
+
+func TestDirectIdentityEnvironmentReadsUseCurrentSandboxIdentity(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "agent"}
+	objects := readerWithObjects(
+		t,
+		sandbox,
+		&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "agent", UID: "agent-uid-current"}},
+	)
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, ManagementOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := auth.NewResolver(testTokenReviews(), dispatcherAudience, []string{discoveryNamespace}, auth.WithVerdictTTL(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := Methods(resolver)
+	identityResolver := fixedSubjectResolver{subject: auth.IdentityPrincipal{Identity: auth.Identity{Name: "agent", UID: "agent-uid-current"}}}
+	methods[environmentpb.EnvironmentService_ListEnvironments_FullMethodName] = auth.AnySubject(identityResolver)
+	methods[environmentpb.EnvironmentService_GetEnvironment_FullMethodName] = auth.AnySubject(identityResolver)
+	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	})
+	rpc := environmentpb.NewEnvironmentServiceClient(connection)
+	listed, err := rpc.ListEnvironments(t.Context(), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].GetTarget().GetUid() != sandboxUID {
+		t.Fatalf("direct Identity list = %+v, %v", listed, err)
+	}
+	if _, err := rpc.GetEnvironment(t.Context(), &environmentpb.GetEnvironmentRequest{Target: listed.Items[0].GetTarget()}); err != nil {
+		t.Fatalf("direct Identity GetEnvironment: %v", err)
+	}
 }
 
 func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
@@ -279,6 +548,24 @@ func TestActionLauncherGrantDoesNotConferGeneralManagement(t *testing.T) {
 	}
 	if _, err := rpc.SuspendEnvironment(bearing(t, launcherToken), &environmentpb.EnvironmentMutationRequest{Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("launcher suspended environment: %v", err)
+	}
+}
+
+func TestActionLauncherOriginRequiresExactlyOneCompleteCaller(t *testing.T) {
+	objects := readerWithObjects(t, &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "test-agent", UID: "test-agent-uid"}})
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
+	for name, origin := range map[string]*environmentpb.EnvironmentLaunchOrigin{
+		"both":           {Caller: &identitypb.ServiceAccount{Namespace: discoveryNamespace, Name: "test-launcher"}, CallerIdentity: &identitypb.Identity{Name: "test-launcher", Uid: "test-launcher-uid"}, ActionGroup: "orchestration_v1"},
+		"missing UID":    {CallerIdentity: &identitypb.Identity{Name: "test-launcher"}, ActionGroup: "orchestration_v1"},
+		"missing name":   {CallerIdentity: &identitypb.Identity{Uid: "test-launcher-uid"}, ActionGroup: "orchestration_v1"},
+		"missing caller": {ActionGroup: "orchestration_v1"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := rpc.CreateEnvironment(bearing(t, launcherToken), &environmentpb.CreateEnvironmentRequest{Name: "identity-launched", Template: "test", Identity: "test-agent", LaunchOrigin: origin})
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("invalid launch origin result = %v", err)
+			}
+		})
 	}
 }
 
@@ -342,6 +629,40 @@ func TestListAndGetReturnTheExactExecutionAccountIdentity(t *testing.T) {
 	}
 	if !unchanged.Spec.Running || unchanged.Spec.WakeGeneration != 0 {
 		t.Fatalf("discovery changed Sandbox desired state: running=%t generation=%d", unchanged.Spec.Running, unchanged.Spec.WakeGeneration)
+	}
+}
+
+func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
+	objects := baseReader(t)
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), nil, ManagementOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &environmentpb.EnvironmentDescriptor{
+		Target:       &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+		IdentityName: proto.String("old-agent"),
+	}
+	resource := &sandboxapi.Sandbox{}
+	key := client.ObjectKey{Namespace: discoveryNamespace, Name: sandboxName}
+	if err := objects.Get(t.Context(), key, resource); err != nil {
+		t.Fatal(err)
+	}
+	resource.Spec.Identity = &sandboxapi.IdentityRef{Name: "new-agent"}
+	if err := objects.Update(t.Context(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.GetIdentityName() != "new-agent" {
+		t.Fatalf("revalidated identity = %q, visible %t, error %v; want new-agent", descriptor.GetIdentityName(), visible, err)
+	}
+	if err := objects.Get(t.Context(), key, resource); err != nil {
+		t.Fatal(err)
+	}
+	resource.Spec.Identity = nil
+	if err := objects.Update(t.Context(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, visible, err := service.revalidateDescriptor(t.Context(), descriptor, environmentCaller{}, true); err != nil || !visible || descriptor.IdentityName != nil {
+		t.Fatalf("revalidated unbound identity = %q, visible %t, error %v; want absent", descriptor.GetIdentityName(), visible, err)
 	}
 }
 
@@ -414,7 +735,7 @@ func TestLegacyWakeOnSendAvailabilityIsSeparateFromExplicitResumeEligibility(t *
 	objects := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
 	rpc := serveDiscoveryWithOptions(t, objects, runtimeconfig.Catalog{}, nil, []auth.Account{{
 		Namespace: discoveryNamespace, Name: sandboxName,
-	}})
+	}}, nil)
 	got, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
 	})
@@ -904,7 +1225,8 @@ func TestEveryGeneratedRPCRequiresReviewedServiceAccountAdmission(t *testing.T) 
 				environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName,
 				environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName,
 				environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName,
-				environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName:
+				environmentpb.EnvironmentService_SetEnvironmentIdleSuspend_FullMethodName,
+				environmentpb.EnvironmentService_SetEnvironmentIdentity_FullMethodName:
 				want = codes.PermissionDenied
 			}
 			if got := status.Code(method.Call(bearing(t, matchingToken), connection)); got != want {
@@ -981,7 +1303,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, CallerNamespaces: []string{discoveryNamespace}}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, _ auth.Account) (string, bool, error) { return executionUID, true, nil }))
+	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, CallerNamespaces: []string{discoveryNamespace}}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, _ auth.Account) (string, bool, error) { return executionUID, true, nil }), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1048,6 +1370,30 @@ func TestGetRechecksExecutionAccountAfterPodProjection(t *testing.T) {
 	}
 }
 
+func TestGetUsesRevalidatedIdentityAfterPodProjection(t *testing.T) {
+	sandbox := sandboxObject(sandboxUID)
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: "before-pod-read"}
+	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "runner", UID: "pod-uid-current"}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Namespace: discoveryNamespace, Name: "runner", UID: "pod-uid-current",
+	}}
+	base := readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), pod)
+	reader := &changeIdentityAfterPodRead{
+		WithWatch: base,
+		identity:  &sandboxapi.IdentityRef{Name: "after-pod-read"},
+	}
+	rpc := serveDiscovery(t, reader, runtimeconfig.Catalog{})
+	descriptor, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
+		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reader.changed || descriptor.GetIdentityName() != "after-pod-read" {
+		t.Fatalf("GetEnvironment identity_name = %q, changed=%t; want after-pod-read from revalidation", descriptor.GetIdentityName(), reader.changed)
+	}
+}
+
 type replaceSandboxOnAuthorizationRead struct {
 	client.WithWatch
 	replacement *sandboxapi.Sandbox
@@ -1085,6 +1431,33 @@ func (r *replaceSandboxOnAuthorizationRead) Get(ctx context.Context, key types.N
 type removeOwnerAfterPodRead struct {
 	client.WithWatch
 	removed bool
+}
+
+type changeIdentityAfterPodRead struct {
+	client.WithWatch
+	identity *sandboxapi.IdentityRef
+	changed  bool
+}
+
+func (r *changeIdentityAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {
+	if _, ok := object.(*corev1.Pod); ok {
+		if err := r.WithWatch.Get(ctx, key, object, options...); err != nil {
+			return err
+		}
+		if !r.changed {
+			r.changed = true
+			var sandbox sandboxapi.Sandbox
+			if err := r.WithWatch.Get(ctx, types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &sandbox); err != nil {
+				return err
+			}
+			sandbox.Spec.Identity = r.identity
+			if err := r.WithWatch.Update(ctx, &sandbox); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return r.WithWatch.Get(ctx, key, object, options...)
 }
 
 func (r *removeOwnerAfterPodRead) Get(ctx context.Context, key types.NamespacedName, object client.Object, options ...client.GetOption) error {

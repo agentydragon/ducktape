@@ -80,7 +80,11 @@ def _push_invocation_problem(
     event_name: str,
     rbe_image: str | None,
 ) -> str | None:
-    """Why this invocation is not the normal push workflow's own full-sweep test of this source."""
+    """Why this command is not the normal push workflow's own full-sweep test of this source.
+
+    The loader follows structured runner lineage for cache retries. Those retain
+    the original requested --invocation_id even when Started.uuid changes.
+    """
     if event_name != "push":
         return "only push-CI evidence can be reused"
     if not invocation_id_value or not run_id or not run_attempt:

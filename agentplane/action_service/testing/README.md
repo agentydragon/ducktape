@@ -18,3 +18,8 @@ app callback, then executes the protected echo tool. The fixture verifies tokens
 the MCP edge owns external OAuth, while the Action Service retains credentials only for configured
 upstream MCP linkage. This fixture exercises external authorization-server linkage rather than
 duplicating Everything's unauthenticated tool catalog.
+
+Everything cannot replace this fixture: its HTTP transports have no authorization hook, so it can
+neither publish protected-resource metadata nor verify a Dex token (upstream
+`modelcontextprotocol/servers` `src/everything`, checked on main 2026-11-10). Revisit if it gains
+resource-server support.

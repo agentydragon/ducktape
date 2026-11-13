@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/testing/httptransport"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
@@ -61,7 +62,7 @@ func TestAFailingKindKeepsTheIndexUnavailable(t *testing.T) {
 			f := newFixture(t)
 			base := rest.CopyConfig(apiConfig)
 			base.Wrap(func(next http.RoundTripper) http.RoundTripper {
-				return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				return httptransport.RoundTripperFunc(func(request *http.Request) (*http.Response, error) {
 					if watchhealth.Kind(path.Base(request.URL.Path)) == kind {
 						return nil, errors.New("test fault: the API server is unreachable")
 					}
@@ -79,10 +80,6 @@ func TestAFailingKindKeepsTheIndexUnavailable(t *testing.T) {
 		})
 	}
 }
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) { return f(request) }
 
 // The CRD schema rejects every credential this parser refuses, so only one stored under an older
 // schema can reach it.

@@ -1,6 +1,22 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: host-firewall
+  namespace: ducktape-flux
+spec:
+  interval: 10m
+  path: ./cluster/k8s/host-firewall
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: host-firewall
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   annotations:
     description: Agentplane's own CRDs (agentplane/crds/manifests), cluster-scoped and shared by every Agentplane namespace; the environment seeds, the egress proxy and the Action Service depend on this.
   name: agentplane-crds
@@ -3626,6 +3642,19 @@ spec:
       namespace: ducktape-flux
     - name: kubevirt
       namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: piraeus-cluster
+      namespace: ducktape-flux
+  ignore:
+    - paths:
+        - /spec/replicas
+      target:
+        group: pool.kubevirt.io
+        kind: VirtualMachinePool
+        name: buildbuddy-kvm-worker
+        namespace: buildbuddy-executor
+        version: v1beta1
   interval: 10m
   path: ./cluster/k8s/buildbuddy-kvm-worker
   prune: true
@@ -3636,6 +3665,31 @@ spec:
     namespace: ducktape-flux
   suspend: false
   timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: buildbuddy-kvm-worker-autoscaler
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: buildbuddy-kvm-worker
+      namespace: ducktape-flux
+    - name: keda
+      namespace: ducktape-flux
+    - name: monitoring-stack
+      namespace: ducktape-flux
+    - name: mimir
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/buildbuddy-kvm-worker-autoscaler
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: buildbuddy-kvm-worker-autoscaler
+    namespace: ducktape-flux
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -3759,7 +3813,7 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/platform-sessions-remote
-  prune: false
+  prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
@@ -4319,33 +4373,6 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: haku-egress-proxy
-  namespace: ducktape-flux
-spec:
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age-cluster-secrets
-  deletionPolicy: Orphan
-  dependsOn:
-    - name: cert-manager
-      namespace: ducktape-flux
-    - name: cert-manager-trust
-      namespace: ducktape-flux
-    - name: external-secrets-operator
-      namespace: ducktape-flux
-  interval: 10m
-  path: ./cluster/k8s/agents/haku-egress-proxy
-  prune: true
-  sourceRef:
-    kind: ExternalArtifact
-    name: haku-egress-proxy
-    namespace: ducktape-flux
-  timeout: 5m
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: haku-ui-image-webhook
   namespace: ducktape-flux
 spec:
@@ -4390,8 +4417,6 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: tofu-controller
-      namespace: ducktape-flux
     - name: litellm
       namespace: ducktape-flux
   interval: 10m
@@ -4437,25 +4462,55 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
-    description: Publish Crossplane's LiteLLM live-test key as the sealed BuildBuddy OPENAI_API_KEY secret.
-  name: litellm-buildbuddy-sync
+    description: Install the BuildBuddy provider after Crossplane and its registry credentials are ready.
+  name: crossplane-provider-buildbuddy
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: tofu-controller
+    - name: crossplane-provider-litellm
+      namespace: ducktape-flux
+    - name: litellm
+      namespace: ducktape-flux
+  healthCheckExprs:
+    - apiVersion: pkg.crossplane.io/v1
+      current: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'True')
+      failed: has(status.conditions) && status.conditions.exists(c, c.type == 'Healthy' && c.status == 'False')
+      kind: Provider
+  interval: 10m
+  path: ./cluster/generated/crossplane-provider-buildbuddy
+  prune: false
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: crossplane-provider-buildbuddy
+    namespace: ducktape-flux
+  timeout: 15m
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Manage the BuildBuddy live-test secret with Crossplane.
+  name: litellm-buildbuddy-crossplane
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: crossplane-provider-buildbuddy
       namespace: ducktape-flux
     - name: litellm-crossplane-keys
       namespace: ducktape-flux
+    - name: litellm-keys-tf
+      namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/litellm/buildbuddy-sync
+  path: ./cluster/generated/litellm-buildbuddy-crossplane
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
-    name: litellm-buildbuddy-sync
+    name: litellm-buildbuddy-crossplane
     namespace: ducktape-flux
-  timeout: 20m
-  wait: true
+  wait: false
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -4467,8 +4522,6 @@ metadata:
 spec:
   dependsOn:
     - name: haku-rbac
-      namespace: ducktape-flux
-    - name: haku-egress-proxy
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
@@ -4636,6 +4689,10 @@ spec:
       kind: Deployment
       name: notifications
       namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: haku-ci-egress
+      namespace: haku-ci
     - apiVersion: apps/v1
       kind: Deployment
       name: policy-controller

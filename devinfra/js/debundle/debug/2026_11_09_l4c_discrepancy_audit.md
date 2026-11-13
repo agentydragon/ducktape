@@ -38,6 +38,10 @@ Legacy gate verdict vs effect verdict (`effect_translation_validation.json`
 | Tana Desktop v1.515.0     |     1 chunk |     0 |               0 |                1 |             0 |      0 |
 | Quest 2026-11-08          |   44 chunks |    44 |               0 |                0 |             0 |      0 |
 
+The "Unsafe legacy" column is what this pass's fixtures showed. It is zero
+because no fixture had the unsafe shape, not because the gate had none
+(§ Unsafe legacy acceptance).
+
 e2e breakdown:
 
 | Class                                                                       | Evaluations | Targets |
@@ -51,7 +55,7 @@ e2e breakdown:
 | Missing coverage: premise-covered havoc reported `incomplete`               |          10 |       3 |
 
 Every legacy-accepted / effect-refused case, e2e and canonical, is an
-uncovered **havoc** pair: no case has an uncovered modeled cell conflict
+uncovered **havoc** pair (one of them unsafe: § Unsafe legacy acceptance): no case has an uncovered modeled cell conflict
 (e2e: 841 uncovered rows, all `havoc`, `cell_count` 0,
 `legacy_edge_conflict` false; canonical: `pairs == havoc_pairs`, 0 cell
 incidences, 0 premise contradictions). The effect gate never names a
@@ -85,12 +89,78 @@ Every divergence outside the "both refuse" rows:
 
 ## Unsafe legacy acceptance
 
-None found. All 394 runnable legacy-accepted / effect-`incomplete` e2e
-fixtures produce the same Node output and exit code as their source.
+One class, found after the first pass and reproduced on `cfba98e22e` and
+`3cb00014f2`: **a read of another chunk's mutable state moved across a
+writer of that state.**
+
+```js
+// static/peer.js
+let count = 0;
+export function next() {
+  return ++count;
+}
+export function peek() {
+  return count;
+}
+// static/app.js
+import { next, peek } from "./peer.js";
+const first = next();
+const second = peek();
+console.log(first, second);
+```
+
+With `second` in a logical module and the rest inline, the legacy gate
+accepted, the effect verdict was `incomplete` (uncovered havoc), and Node
+printed `1 0` for the emitted entry against `1 1` for the source.
+
+Mechanism: the strict S-chain and the dataflow-aware chain order only
+statements whose purity is not `Pure` (`emit_s_chain`, `graph/build.rs`). The
+cross-module purity oracle classified `peek` as `Pure` because its body
+writes nothing, and the importer's graph has no node for `count`, so nothing
+ordered `second` against `first`. The same held for a direct read of an
+imported live binding (`import { count }`), which the classifier treats as a
+pure identifier read. Rule and fixtures: <../docs/design.md> § Reads of
+another chunk's cells, `e2e/foreign_cell_read_order_test.rs`.
+
+Shapes the legacy gate accepted unsoundly before that rule, each with a Node
+divergence: a reader of a rebound `let` or reassigned `var`; a reader of an
+array's contents (`items.length`); writer and reader in two chunks sharing a
+third chunk's state; a reader behind a local function; a writer invoked
+through a provider callback; a direct read of a live binding, also through a
+re-export or as a default export. Already refused: readers reached through a
+namespace import or a re-exported function, provider state in an object
+property, and reader and writer as methods of an exported object.
+
+### Why the first pass reported none
+
+The first pass probed only the fixtures the suite already had: all 394
+runnable legacy-accepted / effect-`incomplete` fixtures matched their source
+under Node. That bounds the fixtures, not the gate. No fixture had this
+shape, because it needs four things at once and each test was written for
+one feature:
+
+- a second analyzed chunk (most fixtures are one chunk);
+- mutable state in that chunk (`provider_summary_effect_test` was the first
+  with a counter);
+- a reader of the state the classifier calls `Pure` (the existing
+  counter test only called the writer twice, and a writer is impure, so the
+  chain ordered it);
+- a split that moves the reader across a writer.
+
+Whether the canonical inputs depend on the old acceptance is not measured:
+the canonical-spec check has not been run on the new rule.
+
+Probing accepted fixtures cannot find a hole no fixture exercises. The
+systematic check is a generated differential: enumerate provider state
+shapes, the paths an importer takes to their reader and writer, and both
+statement orders, and require that every split the gate accepts runs like
+its source under Node
+(`e2e/foreign_state_node_differential_sweep_test.rs`).
 
 ## Defects
 
-None found in either gate. One policy decision is open for L4d (below).
+The legacy gate had one under-restriction (§ Unsafe legacy acceptance); none
+found in the effect gate. One policy decision is open for L4d (below).
 
 ## Sharper effects (76 e2e)
 
@@ -234,6 +304,31 @@ per product:
   needs S3, S4, the call-initializer seal or non-invoking coverage.
   Canonical guards (`typeof X<"u"&&…`) show up in Claude Web and Tana
   Desktop examples.
+
+## Rerun after Wave 3 slice 3 PR 2 (2026-11-10)
+
+`debundle_node_parity/` records only (one per fixture run), the PR head
+against its `devel` merge-base `a7006bf26e`; the pattern-rule scripts were not
+available, so the per-owner counts above are not recomputed.
+
+| Legacy  | Effect status | Base | Branch |
+| ------- | ------------- | ---: | -----: |
+| accepts | accepted      | 1512 |   1535 |
+| accepts | `incomplete`  |  393 |    394 |
+| refuses | accepted      |  159 |    153 |
+| refuses | `conflict`    |  955 |    955 |
+| refuses | `incomplete`  |   81 |     81 |
+
+Compared run by run (target, test, source output): no existing fixture
+changed its legacy verdict or its emitted order. Two changed effect status,
+both `imported_callback_timing_test`, from `incomplete` to accepted
+(`returned_wrapper_does_not_invoke_its_callback_at_creation`,
+`successive_factories_do_not_publish_callbacks_to_the_next_factory`). The
+other differences are new or renamed tests: `provider_summary_effect_test`,
+and six `export_availability_test` runs that now emit on rejection and write
+no parity record. Most S3 havoc is untouched: it is namespace-member and
+author-asserted factories, which the ordered lane does not substitute, and
+invocations of a retained result.
 
 ## Re-running
 

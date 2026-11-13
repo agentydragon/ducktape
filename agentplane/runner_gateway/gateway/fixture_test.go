@@ -9,10 +9,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	tlstest "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -71,7 +71,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if f.objects, err = client.New(api.Config, client.Options{Scheme: scheme}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.ServiceAccount(ctx, auth.Account{Namespace: f.namespace, Name: testSandbox}); err != nil {
+	if _, err := api.ServiceAccount(ctx, auth.Account{Namespace: f.namespace, Name: "default"}); err != nil {
 		t.Fatal(err)
 	}
 	f.sandbox = &sandboxapi.Sandbox{
@@ -82,19 +82,21 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		t.Fatal(err)
 	}
 	controller := true
+	automount := false
 	pods := api.Clientset.CoreV1().Pods(f.namespace)
 	f.pod, err = pods.Create(ctx, &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: testPod, Namespace: f.namespace,
-			Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialLabel: "test-environment-runtime-credential"},
+			Labels: map[string]string{sandboxapi.EnvironmentRuntimeCredentialMetadataKey: "test-environment-runtime-credential"},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: testSandbox,
 				UID: f.sandbox.UID, Controller: &controller,
 			}},
 		},
 		Spec: corev1.PodSpec{
-			ServiceAccountName: testSandbox,
-			Containers:         []corev1.Container{{Name: "runner", Image: "registry.test/unused"}},
+			ServiceAccountName:           "default",
+			AutomountServiceAccountToken: &automount,
+			Containers:                   []corev1.Container{{Name: "runner", Image: "registry.test/unused"}},
 		},
 	}, metav1.CreateOptions{})
 	if err != nil {
@@ -140,7 +142,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	}
 	f.ca = tlstest.NewCA(t)
 	f.gatewayTLS = f.ca.Issue(t, environment_runtime_transport.GatewayURI)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialLabel]}.URI()
+	uri, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

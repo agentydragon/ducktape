@@ -72,6 +72,87 @@ k3s_suite(
     ],
 )
 
+# Each disruptive Gateway case owns a stack so an aborted central turn cannot send an
+# unanswered model request into the following case's scripted upstream.
+k3s_suite(
+    name = "test_gateway_crash",
+    srcs = ["test_gateway_crash.py"],
+    environment_tools = "codex",
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+k3s_suite(
+    name = "test_gateway_budget",
+    srcs = ["test_gateway_budget.py"],
+    environment_tools = "codex",
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Replacing the central sampler Pod must not affect the services suite's other cases.
+k3s_suite(
+    name = "test_sampler_roll",
+    srcs = ["test_sampler_roll.py"],
+    environment_tools = "codex",
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# The History outage is isolated so a failed recovery assertion cannot leave another case without History.
+k3s_suite(
+    name = "test_history_outage",
+    srcs = ["test_history_outage.py"],
+    environment_tools = "codex",
+    stack = "mcp",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # The external delegation acceptance scales app to zero after OAuth consent, so it owns a stack
 # independent from the services and Action suites.
 k3s_suite(
@@ -84,27 +165,24 @@ k3s_suite(
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/grpc:calls",
         "//agentplane/mcp_edge:connection_service_pb2",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/proto:session_pb2",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:egress_decisions",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:identity",
         "//agentplane/system_tests/driver:mcp_connection",
         "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/driver:port_forward",
         "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:mcp",
-        "//agentplane/testing:scripted_model",
-        "//devinfra/testing:undeclared_outputs",
+        "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

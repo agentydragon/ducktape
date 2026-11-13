@@ -19,6 +19,7 @@ describe("effectiveQuota", () => {
         },
       },
       last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "error", error: "offline" } },
+      monthly_extra_spend: { used_usd: 25.5, monthly_limit_usd: 100, utilization: 25.5 },
       display_windows: [],
     } as unknown as ProviderView;
 

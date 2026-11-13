@@ -51,8 +51,8 @@ def test_gaffer_write_policies_are_finance_agent_only() -> None:
 
 def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: list[dict[str, Any]]) -> None:
     """The Haku preset covers every Action set the `haku-agent` binding names, plus Haku's one
-    write. The binding is the reviewed bundle; the preset is what a launch actually gets, because a
-    managed runner Pod runs as its own per-Sandbox ServiceAccount and never sees that binding."""
+    write. The binding is the reviewed bundle; a launch's Identity has its own binding, so the
+    preset spells out what that Sandbox receives."""
     binding = one(
         doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent"
     )
@@ -67,10 +67,10 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
         if doc["kind"] == "PolicySet" and any(rule["type"] == "action_auto_approve" for rule in doc["spec"]["rules"])
     }
     bound = set(binding["spec"]["policySets"]) & action_sets
+    bound -= {BASIC_POLICY}
     assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    # `basic` is listed separately on the preset and now also owns the narrow same-principal
-    # Session-delegation approval rule, so include it in the rendered action-set view without
-    # duplicating it in HAKU_ACTION_POLICY_SETS.
+    # `basic` owns the same-principal Session-delegation approval rule, while also serving direct
+    # platform ServiceAccount callers.
     expected_action_sets = set(HAKU_ACTION_POLICY_SETS) | {BASIC_POLICY}
     assert set(preset) & action_sets == expected_action_sets, "preset and its named bundle drifted"
     assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"

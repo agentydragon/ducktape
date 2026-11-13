@@ -6,7 +6,6 @@ from types import SimpleNamespace
 import pytest
 import pytest_bazel
 
-from devinfra.pr_visuals import pull_request
 from devinfra.pr_visuals.pull_request import PullRequestRef, find_reviewable_pull_request
 
 HEAD_SHA = "a" * 40
@@ -44,43 +43,38 @@ class FakeGithub:
         return self.pulls
 
 
-def _find(monkeypatch: pytest.MonkeyPatch, pulls: list[SimpleNamespace]) -> tuple[PullRequestRef | None, FakeGithub]:
+def _find(pulls: list[SimpleNamespace]) -> tuple[PullRequestRef | None, FakeGithub]:
     github = FakeGithub(pulls)
-    monkeypatch.setattr(pull_request, "Github", lambda **_kwargs: github)
     found = find_reviewable_pull_request(
-        repository="example/repo", head="fork-owner:topic", head_sha=HEAD_SHA, token="t"
+        github=github, repository="example/repo", head="fork-owner:topic", head_sha=HEAD_SHA
     )
     return found, github
 
 
 @pytest.mark.parametrize(("state", "merged"), [("open", False), ("closed", True)], ids=["open", "merged"])
-def test_the_pr_whose_head_is_the_run_commit_is_found_by_its_head_ref(
-    monkeypatch: pytest.MonkeyPatch, state: str, merged: bool
-) -> None:
-    found, github = _find(monkeypatch, [_pull(8733, base_sha="c" * 40, state=state, merged=merged)])
+def test_the_pr_whose_head_is_the_run_commit_is_found_by_its_head_ref(state: str, merged: bool) -> None:
+    found, github = _find([_pull(8733, base_sha="c" * 40, state=state, merged=merged)])
 
     assert found == PullRequestRef(number=8733, base_sha="c" * 40)
     assert github.queries == [{"state": "all", "head": "fork-owner:topic"}]
 
 
 @pytest.mark.parametrize(("state", "merged"), [("open", False), ("closed", True)], ids=["open", "merged"])
-def test_a_pr_that_moved_on_to_a_newer_commit_is_not_the_runs_pr(
-    monkeypatch: pytest.MonkeyPatch, state: str, merged: bool
-) -> None:
-    found, _ = _find(monkeypatch, [_pull(8733, head_sha="d" * 40, state=state, merged=merged)])
+def test_a_pr_that_moved_on_to_a_newer_commit_is_not_the_runs_pr(state: str, merged: bool) -> None:
+    found, _ = _find([_pull(8733, head_sha="d" * 40, state=state, merged=merged)])
 
     assert found is None
 
 
-def test_a_closed_unmerged_pr_is_not_reviewable(monkeypatch: pytest.MonkeyPatch) -> None:
-    found, _ = _find(monkeypatch, [_pull(8733, state="closed")])
+def test_a_closed_unmerged_pr_is_not_reviewable() -> None:
+    found, _ = _find([_pull(8733, state="closed")])
 
     assert found is None
 
 
-def test_two_prs_at_the_same_commit_are_ambiguous(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_two_prs_at_the_same_commit_are_ambiguous() -> None:
     with pytest.raises(ValueError, match="Expected exactly one"):
-        _find(monkeypatch, [_pull(1), _pull(2)])
+        _find([_pull(1), _pull(2)])
 
 
 if __name__ == "__main__":

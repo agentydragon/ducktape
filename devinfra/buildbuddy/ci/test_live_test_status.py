@@ -135,6 +135,18 @@ def test_finish_retries_status_after_github_rejects_watch_post(monkeypatch: pyte
             id="tests-failed",
         ),
         pytest.param(
+            lambda *_args: {"invocationStatus": "COMPLETE_INVOCATION_STATUS", "success": False},
+            "cancelled",
+            "failure",
+            id="tests-failed-ci-cancelled",
+        ),
+        pytest.param(
+            lambda *_args: {"invocationStatus": "COMPLETE_INVOCATION_STATUS", "success": False},
+            "skipped",
+            "failure",
+            id="tests-failed-ci-skipped",
+        ),
+        pytest.param(
             lambda *_args: {"invocationStatus": "DISCONNECTED_INVOCATION_STATUS"},
             "success",
             "success",
@@ -178,6 +190,45 @@ def test_finish_status(
     live_test_status._finish(args)
 
     assert publish_status.call_args.kwargs["state"] == expected_state
+
+
+def test_finish_successful_ci_replaces_early_failure_and_links_workflow(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    state_file = tmp_path / "state.json"
+    live_test_status._write_state(state_file, "failure", "First failing ordinary test: //pkg:flaky_test")
+    workflow_url = "https://github.com/owner/repo/actions/runs/123/attempts/2"
+    post_status = Mock(return_value={})
+    monkeypatch.setattr(live_test_status, "_json_request", post_status)
+    monkeypatch.setattr(live_test_status, "_credentials", lambda: ("bb-key", "gh-token", "owner/repo"))
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setattr(
+        live_test_status,
+        "_invocation",
+        lambda *_args: {"invocationStatus": "COMPLETE_INVOCATION_STATUS", "success": False},
+    )
+    args = Namespace(
+        invocation_id="failed-attempt",
+        sha="abc123",
+        state_file=state_file,
+        pid_file=tmp_path / "watcher.pid",
+        buildbuddy_url="https://buildbuddy.example",
+        github_api_url="https://github.example/api",
+        remote_outcome="success",
+    )
+
+    live_test_status._finish(args)
+
+    body = post_status.call_args.kwargs["body"]
+    assert body["state"] == "success"
+    assert body["description"] == "Bazel CI passed; initial test invocation failed"
+    assert body["target_url"] == workflow_url
+    assert live_test_status._read_state(state_file) == {
+        "state": "success",
+        "description": "Bazel CI passed; initial test invocation failed",
+    }
 
 
 if __name__ == "__main__":

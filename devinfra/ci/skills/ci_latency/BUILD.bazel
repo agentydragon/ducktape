@@ -10,11 +10,11 @@ skill_package(
             srcs = [
                 "SKILL.md",
                 "references/execution_graphs.md",
+                "references/executor_queues.md",
                 "scripts/analyze_executions.py",
                 "scripts/attribution.py",
                 "scripts/checks.jq",
                 "scripts/collect.py",
-                "scripts/collect.sh",
                 "scripts/contention.jq",
                 "scripts/evidence.sh",
                 "scripts/gate_headroom.py",

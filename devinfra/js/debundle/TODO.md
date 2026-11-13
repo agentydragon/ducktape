@@ -52,9 +52,13 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-3. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
-   bundled vendor singleton/importmap behavior. Node probes already run;
-   browser loading is the missing contract, not a missing vendor schema.
+3. **Excalidraw smoke follow-up.** The public corpus, accepted
+   spec and self-hosted browser smoke landed (<excalidraw/README.md>); the
+   smoke loads swapped packages through an import map. The public canonical
+   spec check is `excalidraw:canonical_summary`
+   (<plans/convergence_landing.md>). Remaining per
+   <plans/excalidraw_live_smoke.md>: dynamic-import coverage after startup and
+   a published screenshot. The current smoke covers startup and drawing.
 4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
@@ -94,12 +98,28 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   other callbacks as possible arguments, evaluates against evolving state, and
   falls back at depth, expansion and pool limits. Reduce repeated cross-product
   exploration with proved callee/reach summaries and shared effect composition;
-  keep global/unknown behavior explicit. Close with neutral CLI controls around
-  the current limits, recursion, callback order and reentry, plus a real profiler
-  comparison on identical inputs. Exhaustion must retain conservative effects,
-  dependencies and precision-loss evidence. Increasing limits alone is not a
-  resolution; the rejected global-prefix fixpoint in <docs/design.md> needs new
-  evidence before reconsideration.
+  keep global/unknown behavior explicit. Also distinguish a callback's
+  primitive argument from its collection receiver: for a fresh dense array
+  with an own data index, a callback that only passes and returns that primitive
+  must not taint the array merely because the primitive reaches opaque code.
+  Retain the later own-index fact only with an interpreter proof, across every
+  reachable callback execution, that the receiver does not escape, is not
+  written, and has no descriptor or prototype change. With that proof, a later
+  read of the same index must remain an ordinary own-data read without the
+  possible-getter/callback fallback; if any proof obligation is incomplete,
+  keep the current conservative taint and fallback. Follow
+  <plans/abstract_interpreter.md> and <plans/synchronous_execution_fallback.md>.
+  Close with a neutral positive CLI case for that shape and adversarial negatives
+  for receiver escape, receiver writes, changed descriptors or prototype,
+  replaced callback-producing methods, getters or proxies, recursion, dynamic
+  scope and truncated execution. Each negative must retain conservative
+  behavior; the positive must pass the ordinary realizability gate and
+  original/emitted translation validation. Also retain controls around the
+  current limits, callback order and reentry, plus a real profiler comparison
+  on identical inputs. Exhaustion must retain conservative effects, dependencies
+  and precision-loss evidence. Increasing limits alone is not a resolution; the
+  rejected global-prefix fixpoint in <docs/design.md> needs new evidence before
+  reconsideration.
 
 - **AR3 — Compose callable capabilities and initialization availability.**
   `CallableSummary` in <analysis_inputs.rs>, <cross_module_purity.rs> and
@@ -206,51 +226,35 @@ to one exact source/spec pair and held to the interactive budget in
 
 ### Test infrastructure
 
-1. **Public real-bundle smoke.** Build the Excalidraw live-browser smoke
-   (<plans/excalidraw_live_smoke.md>) so private-corpus debundler issues can be
-   reproduced and protected in public CI.
-2. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
+1. **Runtime resource controls.** `url_rebase_test` covers lazy JavaScript and
    stylesheet reads through `new URL(..., import.meta.url)` under Node. Still
    uncontrolled: URL search/fragment and encoded path identity, nested CSS asset
    references, real browser worker/style loading, dynamic consumers of package
    replacements, and the direct `Worker`-string rewrite (whose browser document
    base is not the module URL; the resource inventory marks it unresolved).
-3. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
+2. **Ground selector-stabilization skill fixtures.** Add tested, anonymized
    fixtures for the common anchor-choice cases of the `debundle_stabilize`
    playbook so its guidance is executable rather than only prose.
 
 ### Encountered tooling friction
 
-- **F1 — Explain redundant commuting premises by authored identity.** An
-  engine improvement removed a native-read heap frontier, and the next run
-  rejected a formerly needed pair as `unused` / `no_sequenced_edge`. The
-  diagnostic named its YAML index, source-unit ordinals and minified bindings;
-  finding the authored module/member pair required a separate spec audit.
-  Include resolved module/member names and source locations, plus a scoped
-  cleanup suggestion. Keep removal explicit and reviewed.
-- **F2 — Make readable-output recovery actionable.** The unused premise
-  above made an `emit_on_rejection` run fail without its readable tree. Emit
-  a complete stale-premise report and a reviewable cleanup plan. Decide
-  explicitly whether diagnostic-only emission is valid for this failure;
-  preserve stale-input rejection and never silently ignore author contracts.
-- **F5 — One report of annotations the engine could have inferred.** Today
-  each annotation kind answers "was this needed?" differently:
-  `purity: pure` hints get a `modules.json.redundant_purity_hints` probe,
-  `admission_overrides` get a redundancy notice, an unused
-  `commuting_statements` entry fails validation (F1, F2), and the other
-  premises (`host_behavior` keys, `native_operation_inputs`,
-  `native_call_identity_inputs`, `initializer_call_effect_inputs`,
-  `trusted_dataflow_summaries`, `deferred_global_publications`,
-  `program_premises`, `chunk_export_purity`) record uses only, which SPEC.md
-  says is not an unused-contract verdict. Give every author annotation the
-  same check: rerun the decision it feeds with the annotation withheld, and
-  report it as inferable when the verdict and emitted order are unchanged.
-  Report by authored identity (module, member, YAML path, source location)
-  with a removal suggestion, as a warning in `run` and `spec validate` output
-  and one machine-readable list; removal stays an explicit, reviewed spec
-  edit. Open decision: whether an unused `commuting_statements` entry stays a
-  hard failure or joins the warning. Bound the cost: probe per annotation
-  against cached analysis, not a full rerun each.
+- **F5 — Decide the remaining premise kinds from provenance.**
+  <docs/premise_provenance.md> lists where each premise is consumed, whether
+  every read records its use, and what the default `spec lint` decides. Paused
+  behind the architecture convergence; resume one kind per change, outside
+  `facts/sync_effects/`, linting each the same way (never consumed →
+  `inferable`, consumed → probe):
+  - a per-statement use list written at each classifier arm for read
+    `purity: pure` hints and `pure_new` / `pure_members` (never a
+    `ProofDependencies` field); unread `purity: pure` hints are already linted;
+  - `predefined_globals`: three blockers and a structural alternative in
+    <docs/premise_provenance.md#predefined_globals>;
+  - per-chunk or parallel `--probe-analysis` runs, to bound probe cost on
+    large inputs;
+  - the hot-path kinds (`reentry_free_builtin_modules` / `_bun_modules` static
+    closure, `initializer_call_effect_inputs`, `deferred_global_publications`,
+    `initializer_purity`, `no_reentry_*`), probe-only until the
+    `callback_values` performance work lands.
 - **F3 — Summarize the complete gate inventory.** A canonical program had
   several rejected chunks while its pipeline stderr led with only the first
   failure. This caused an undercount until every saved rejection report was
@@ -307,6 +311,23 @@ closure`, conflating unresolved host requests, missing captured chunks,
   pins, structural members, imports, anonymous claims, repeated declarations
   and path-case aliases; accepted rows must reconcile with `modules.json`,
   while unresolved statuses never infer identity by spelling.
+
+- **Vendor swaps on a production esbuild corpus (Excalidraw).** Observed while
+  authoring <excalidraw/spec/vendor_marks.yaml>:
+  - A `partial_swap` package whose subpath is JSON (`open-color.json`) fails
+    `DebundleProjectAnalysis` with the bare parser error
+    `failed to parse <path>: ExpectedSemiForExprStmt`, naming neither the mark
+    nor the package. Reject non-JS subpaths at spec validation with the mark's
+    identity, or support JSON defaults as `swap` does.
+  - A `partial_swap` package has one subpath, so a chunk exporting values from
+    several entry files of one package (roughjs `bin/rough.js`,
+    `bin/generator.js`, `bin/math.js`) cannot be swapped. Next action: decide
+    whether a symbol may name its own subpath.
+  - `chunk_renames` selectors accept only `binding` names, so renaming a
+    residual binding requires a minified-name pin; the corpus renames through
+    module members instead.
+  - `(e => e)({...})`, an immediately invoked local identity arrow, is an
+    `unknown_call` initializer, which put `APP_STATE_STORAGE_CONF` on the side-effect chain.
 
 ### Pipeline performance and architecture cleanup
 

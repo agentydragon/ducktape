@@ -14,6 +14,20 @@ journal producer identity and is retained separately by History. The Dispatcher 
 configured central sampler target; callers select the V1 placement, not a service endpoint. Model and
 effort must be server-configured. Every RPC uses TokenReview and the allowed-account policy; Session
 UUID knowledge grants no authority.
+
+The Dispatcher also supplies `execution_identity`, the Identity the executor's Sandbox names, when it
+names one; it is retained with the configuration like the execution principal. The sampler acts for
+that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
+authenticates as itself with its own projected token and holds no agent key, and each History push
+and each LLM ingress call for the Session names the retained Identity as effective caller and the
+Session as provenance. Neither JavaScript nor tool arguments can name or override it; History
+refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
+receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose
+Identity is gone. A Session whose Sandbox named no Identity has none to act for: the sampler pushes
+and samples it as itself, exactly as before Identities existed, and a delegating call for such a
+Session is refused rather than attributed to the sampler. Direct Anthropic connections carry no
+attribution either way. Executor and Gateway calls stay the sampler's own: they are
+environment-bound, not caller-bound.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 
@@ -157,8 +171,10 @@ may claim pending work only when the Session lease is unowned or expired.
 Both work scans include accepted commands after the previous turn stopped, including a known
 provider rejection. The conversation's stopped flag prevents further sampling for that turn;
 it does not prevent processing newly admitted input. An idle Session with no pending work is not
-selected, and blocked Sessions remain excluded. Admission and wakeups never clear a blocked Session
-or replay a rejected or uncertain effect.
+selected. A blocked Session is excluded unless its recorded JavaScript host is not the scanning
+runtime's; such a Session is selected so that its new owner settles and unblocks it (see host loss
+below). Admission and wakeups never clear a blocked Session or replay a rejected or uncertain
+effect.
 
 Reconciliation is level-triggered: the runtime subscribes before its initial ownership/work scan,
 then work notifications and listener reconnects wake further scans of committed rows. Periodic
@@ -234,8 +250,11 @@ retained in provider history and answered with the matching function or custom t
 unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
 unsupported output items, duplicate call IDs, and configured names used with the wrong item type
 remain validation failures.
-Model changes cannot change connection, API, dialect or exec encoding within a Session. Anthropic
-also requires the same provider model and request options to preserve signed continuation. Route contracts must remain fixed
+Model changes cannot change connection, provider model, API, dialect or exec encoding within a
+Session. Matching wire formats do not establish that a different model accepts retained signed
+thinking, encrypted reasoning or compaction items; cross-model continuation is conservatively
+rejected with `FAILED_PRECONDITION`. Route aliases for the same provider model remain eligible.
+Anthropic also requires the same request options to preserve signed continuation. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID. Model changes require the
 target to allow the current effort; effort changes must be allowed by the current model.
 Admission validates the projected model and effort after earlier queued commands under the
@@ -297,7 +316,7 @@ the first new user message after kept turns. Native compaction puts the summary 
 prepend the Responses environment reinjection. Background compaction and dynamic definitions are
 deferred.
 
-Nested `exec_command` and `write_stdin` match Codex 0.162.1 unified exec for one remote environment:
+Nested `exec_command` and `write_stdin` follow Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
 `exit_code`, numeric `session_id`, `original_token_count`, `output`), yield bounds, `max_output_tokens`
 truncation and the unified exec environment overlay. Every executor process (nested tools and the
@@ -346,8 +365,13 @@ intent/result journal distinguishes this from an operation known not to have bee
 On service shutdown, the runtime stops starting Session work and claiming unowned or expired work,
 wakes idle resident drivers to release their leases, and lets active top-level effects reach their
 durable result within the existing drain window. The gRPC server can continue durably admitting
-commands until graceful stop; other replicas continue admitting commands throughout. A live
-JavaScript cell may continue its own nested executor calls until that cell settles. Active owners
+commands until graceful stop; other replicas continue admitting commands throughout. A Session
+with an effect in flight (an unresolved nested intent or a pending provider step) keeps its owner
+until that effect settles. A live JavaScript cell or process handle keeps its owner while a
+command is active: the owner continues serving the turn, including the model's `wait` on the cell
+and the cell's own nested executor calls, until no live cell, handle or unresolved intent remains,
+then releases. A Session whose turn is complete releases at once, even with a background cell or
+handle still live. Active owners
 keep renewing their leases during drain. The runtime joins resident drivers and completes
 ownership release before shutting down the shared host;
 the next replica can then claim the released Session and resume its committed command.
@@ -364,15 +388,29 @@ Executor failure leaves continuation and retained conversation outside the faile
 
 The conversation records the actual Code Mode host process generation after its logical Session
 opens. A host restart within one Pod rotates that generation. Before the next model step, a new
-owner compares it under the lease fence. If it differs and no effect is unresolved, the sampler
-advances the durable JavaScript epoch and appends a model-visible notice that prior `store()` /
-`load()` values and live handles were lost. Pending model tool calls proven undispatched receive
-failed outputs paired to their exact call IDs before the notice; unrelated calls follow their
-ordinary dispatcher path. The transaction clears the old host marker, so a retry cannot duplicate
-the notice. The marker is set again only after a logical Session is created on a real host. With an
-unresolved cell, tool, executor or live handle, host loss remains an unknown outcome requiring
-explicit recovery; it is never interpreted as a known no-dispatch call. A first use with no marker
-and an ordinary same-host reacquisition do not add a notice.
+owner compares it under the lease fence. If it differs, or an older owner generation left an intent
+or live cell behind without blocking the Session (that generation is fenced and can never settle
+them), the sampler settles the lost work in one transaction and continues; it never blocks the
+Session on it. A block an owner recorded on the host still serving the Session is left alone until
+that host is replaced or an operator recovers it, until `SAMPLER_INTENT_LEASES` (DAG section 5)
+replaces such blocks with leased attempts and backoff. Every unresolved
+intent is abandoned as an unknown remote outcome with no automatic replay: nested tool and executor
+intents, the cell intent of the running cell, and a pending provider sampling or compaction
+intent, whose partial stream is not committed as model output (`ConversationReconciled` marks its
+observed items `ABSENT`) and whose request is then sampled again, as that is not an external
+effect. Live cells and nonterminal process handles become `abandoned`, keeping each handle's last
+read cursor and retained output; no remote process is killed or reported exited. The model tool
+call of a lost cell receives a failed output naming the nested calls with unknown outcome; pending
+model tool calls proven undispatched receive the no-dispatch output; unrelated calls follow their
+ordinary dispatcher path. The sampler then advances the durable JavaScript epoch, appends a
+model-visible notice that prior `store()` / `load()` values and live handles were lost (listing
+the abandoned calls), records a `CODE_HOST_LOSS` boundary with what was abandoned, and unblocks a
+Session an earlier owner had blocked on this state. The turn continues so the model decides what
+to do. The transaction clears the old host marker, so a retry cannot duplicate the notice. The
+marker is set again only after a logical Session is created on a real host. A first use with no
+marker and an ordinary same-host reacquisition do not add a notice. Work scans select a blocked
+Session whose recorded host is not the scanning runtime's, so a wedge never outlives the host that
+caused it.
 
 Invalid `exec`/`wait` arguments and unknown, completed or foreign JavaScript cell handles return
 error text in the matching model tool output without dispatching to the runtime or executor.
@@ -409,9 +447,9 @@ After an ordinary connection failure, a later explicit executor tool call may re
 current Sandbox incarnation fence and resume the same retained exec-server session, or follow the
 authenticated incarnation-change initialization described above. The failed
 call itself is never replayed. Only cursor-based `process/read` may be retried within its original
-call, because it does not consume remote output. If idle process reconciliation encounters a
-transport failure while reading a handle, it marks that process abandoned with its last observed
-cursor and buffered output, then lets the scheduler continue. Failures to persist operation results,
+call, because it does not consume remote output. If idle process reconciliation exhausts its
+reconnect window or its retried read also fails, it marks that process abandoned with its last
+observed cursor and buffered output, then lets the scheduler continue. Failures to persist operation results,
 native frames, or ownership state remain operational failures rather than catchable remote tool
 errors.
 Nested `view_image` has no external effect: missing, unreadable, oversized (over 32 MiB)
@@ -425,8 +463,14 @@ without changing that confirmed input outcome, while queued commands follow the 
 
 Process exit can precede stdout/stderr closure. Setup, tool reads and idle reconciliation retain the
 process until `process/read` reports closed streams and an empty output page, preserving late output.
-Idle owners independently read process output and reconcile exit in bounded pages. Observed exit
-releases driver/host capacity without a model poll. Unread output per handle remains in PostgreSQL as
+Tool reads stop waiting for output at their yield deadline even when a process has exited but its
+output remains open; RPC, reconnect and evidence writes have separate bounded budgets. In that state
+they return the known exit code and retain a session ID for reading late output; input is not sent to
+the exited process. This retained handle differs from Codex's exit handling. Executor
+notifications wake foreground and idle cursor reads, and an initial read catches up after connection
+or reconnect. Unchanged exit observations do not count as reconciliation progress. Once the output
+is drained, the idle owner releases driver/host capacity without a model poll. An exited process with
+open output retains capacity until it closes. Unread output per handle remains in PostgreSQL as
 upstream's 1 MiB head and tail with an omission count, and can be consumed by an empty `write_stdin`,
 including after the old executor session expires. The sampler never advances a read cursor until
 the corresponding page is durably recorded. Once an uncertain process operation is settled as abandoned,
@@ -434,11 +478,27 @@ that operation does not by itself block continuation. An abandoned process keeps
 cursor and buffered output for inspection, but retains no runtime slot. Truly running processes and
 live JS cells retain a runtime slot.
 
-A transport failure during cursor-based `process/read` permits one reconnect and retry within the
+A transport failure during cursor-based `process/read` permits one read retry within the
 call's deadline. The sampler resumes the retained exec-server session under the same Sandbox
 incarnation fence and reuses the read intent, process ID and cursor. The read does not consume remote
 output; only its durable result advances the sampler's cursor. An expired session, changed session
 ID, failed reconnect or second transport failure settles the affected intent and process as unknown.
+For a retained session, a reconnect retries `OpenSession` on `Unavailable` or an attempt deadline
+until the separate `executor_reconnect_timeout_seconds` budget (120 seconds by default) or the
+caller's earlier deadline. The first-open `executor_initialize_timeout_seconds` remains 30 seconds
+by default. Each attempt
+has a five-second handshake limit and a separate durable initialization intent. The old stream ends
+before another attempt starts. A temporary Gateway outage therefore leaves the native session ID,
+process handles and read cursor intact while reconnection is in progress, including during idle
+process reconciliation. Once the retry budget expires, the failed read is settled as unknown and its
+handle is abandoned with the last observed output. A read can occupy its driver for the initial RPC,
+the reconnect window, and a final read or fresh-session handshake, plus five seconds for
+outcome journaling (up to 185 seconds with the default 30-second RPC and initialization limits);
+caller cancellation and shutdown drain stop the wait. Other
+typed operations keep their ordinary RPC deadline and are never replayed.
+The original and retried read RPCs keep their prior per-page deadline (the requested wait plus
+five seconds for foreground reads, or the reconciliation page timeout); only the enclosing read
+operation can wait through the reconnect window.
 The exact native rejection `unknown session id <retained-id>` with JSON-RPC code `-32600` is definitive
 session loss only when both its native response frames and semantic rejection result are durably
 recorded. The sampler then abandons live process handles while retaining observed output, clears the
@@ -464,9 +524,13 @@ behavior.
 
 When a Session is blocked, `GetSession.blocked_reason` names the unresolved intent or live handle and
 points operators to the linked boundary evidence. Ordinary executor connection or operation
-uncertainty is settled at its tool boundary and does not by itself block a Session. Existing blocked
-Sessions remain blocked until explicitly reviewed and recovered; this contract does not clear them.
-An authenticated caller for the same account can
+uncertainty is settled at its tool boundary and does not by itself block a Session. A blocked
+Session whose recorded JavaScript host is gone is selected by the next runtime's work scan,
+settled and unblocked as described above without an operator. A Session blocked on the host that
+still serves it (an uncommitted provider stream or compaction, an interrupt whose cleanup could not
+confirm every handle) waits: it settles the same way once that host is replaced, or an operator
+recovers it earlier, until `SAMPLER_INTENT_LEASES` (DAG section 5) replaces such blocks with leased
+attempts and backoff. An authenticated caller for the same account can
 call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
 to abandon a blocked cell/runtime or provider-sampling failure. Its transaction locks the conversation
 before its session and requires an expired owner lease and an exact cursor match. It supports
@@ -538,11 +602,19 @@ initial context renders an update; Codex resolves the shell before its first ren
 ## Evidence and continuation
 
 Provider requests/responses, tool intents/results, commands and context checkpoints commit in the
-sampler DB. Each provider intent stores its final serialized request before dispatch. Transport
+sampler DB. Each provider intent commits immutable context/profile references before dispatch.
+Preparation returns the rendered bytes directly to the dispatcher; provider objects and rendered
+bytes are absent from the persisted intent. The retained contract is equivalent provider JSON.
+`ReadProviderRequest` streams the request metadata and body for an authorized Session/request pair;
+content hashes alone grant no read access. The public read metadata and new dispatch boundaries expose
+the request ID and route, not private content, context or profile IDs.
+Transport
 bytes, HTTP status/request ID, ordered native events, partial streams, errors, final content and
 usage are retained; credentials and authentication headers are excluded. Parsing buffers are capped
 at 64 MiB per response; received bytes are recorded before parsing, including incomplete SSE tails.
-A DB write failure prevents further effect dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
+A received executor response gets a bounded evidence and outcome journal window independent of the
+RPC deadline; each write still checks the owner lease. A DB write failure prevents further effect
+dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
 raw `BoundaryRecord` observations plus source-linked normalized reasoning, text, tool and turn
 records. `ExecutionProgress` preserves code-cell visibility where upstream native APIs lack it.
 Thread is a lossy display projection; it is not suitable for reconstructing provider continuation.
@@ -588,33 +660,86 @@ archives retain no streams or tasks. History unavailability delays display while
 retains its outbox.
 
 Public Session ID is the inference correlation key. Executor Sandbox/incarnation are distinct
-metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse;
-arbitrary workload identity metadata remains rejected/stripped. Credentials and auth headers are
-not evidence payloads. Existing History reader authorization continues to govern retained reads.
+metadata. Explicitly trusted LLM ingress callers may claim a canonical Session UUID for Langfuse,
+and a Session executing as an Identity is attributed to that Identity through the delegated call
+(§ Identity and admission); arbitrary workload identity metadata remains rejected/stripped.
+Credentials and auth headers are not evidence payloads. Existing History reader authorization
+continues to govern retained reads.
 
 ## Implementation and database ownership
 
 The service and provider/tool loop run in Go; the pinned upstream JavaScript host is a child
 process of the sampler. Production requires no Python interpreter. The existing gRPC API and
 sampler-owned `sampler_*` table layout remain the boundary for clients and durable state. The Go
-service applies its Goose SQL baseline before serving. Repeated startup preserves
+service applies its Goose migrations before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
 Acceptance tests start the actual Go binary and inspect its database separately.
 
-`sampler_conversation.api` pins the native protocol. Ordered, immutable native records live in
-`sampler_conversation_item.record`. `sampler_conversation.context` optionally holds the compacted
-active context as a protocol-owned object (`items` for Responses; `messages` and deferred effort
-restoration for Anthropic). With no replacement context, the archive is the active context.
-Compaction atomically verifies the expected active context and lease before replacing it and
-settling its intent/command. It never rewrites the archive. New responses append only new records.
+`sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
+complete OpenAI items and Anthropic messages/content blocks. An OpenAI item retains its message
+parts, tool arguments/results, images and opaque reasoning inline. An Anthropic message references
+its ordered complete blocks; each block retains all text, signatures, image data and nested content
+inline. Content addressing shares these native units across requests and transcript/request views,
+without extracting their scalar fields or changing their order. Request profiles share system
+instructions and tool definitions separately; unknown provider fields survive.
+Content IDs hash the kind and standard-JSON payload with a versioned domain separator. Payloads are
+bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
+general JSON node format or serializer.
 
-Baseline 11 creates the native schema on a fresh empty database. An existing database is adopted
+Native `anthropic`/`responses` packages own their private stored types, packing/reconstruction
+codecs, API types, request construction, streaming and continuation semantics. They use the
+sampler-private `internal/storage` content reader/writer: typed IDs/kinds, standard JSON encoding,
+content hashing and integrity checks. Shared storage imports neither provider nor semantic protocol
+packages and does not interpret provider payloads. The shared `protocol` package defines semantic
+contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
+authorization and request history. The shared table holds native item/block JSON and small
+provider-specific message/profile reference records, not a universal message schema.
+
+`sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
+shares the entire prior prefix. The conversation transcript retains the full native conversation
+across compaction. Transcript and optional active roots reference these contexts; small controls
+retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
+`sampler_model_request` links each provider request to a frozen profile, ordered request-only
+prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
+encoding projection key permit projecting only newly appended native records. A changed prefix
+never becomes the parent of the stable history chain. Loaded contexts retain append checkpoints;
+normal persistence packs and hashes only new records. Native context arrays are private and retained
+entries are immutable. Compaction starts a replacement view while retaining shared content.
+
+Profiles share instructions/system text and individual tool definitions; per-call attribution does
+not duplicate them. The first request's authored system/instructions and tool definitions remain
+fixed across sampler rolls. Preparation runs against the authoritative conversation in the intent
+transaction and constructs a reference-based request recipe before rendering. Reconstruction uses
+these concrete native fields and Go's standard JSON encoder, rather than rerunning current prompt
+policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
+commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
+
+Before sampling, the first snapshot of model-visible execution handles and subsequent changes
+append as native notices, after the
+applicable input/tool results. Unchanged snapshots do not append; disappearance emits an empty
+snapshot. Snapshot comparison uses sampler-owned context controls and deterministic handle ordering,
+not matching visible message text. Compaction requires a fresh snapshot in its replacement active
+context before the next request. This retains prior request prefixes instead of replacing an early
+execution-state message.
+
+Compaction atomically verifies the expected active context and lease before replacing it and
+settling its intent/command. It never rewrites the transcript. New responses append to both the
+transcript and active context using shared content records.
+
+Migration 13 atomically clears the disposable staging sampler state and replaces inline
+transcript/context storage with content-addressed tables. It clears conversations, Sessions,
+intents, commands, events, export checkpoints, process/cell bookkeeping, interrupts and notifications.
+Existing sampler Sessions cannot resume after this cutover; create new Sessions. The History
+service's database and executor storage are unchanged. The runtime reads only the new format.
+Stop old sampler replicas before applying this migration. Afterward ordinary restarts retain
+new-format data; migration 13 never resets it again.
+
+Baseline 11 creates the initial schema on a fresh empty database. An existing database is adopted
 only with completed Goose version 10, including the earlier baseline and export checkpoint migration,
-and a validated native schema. Adoption preserves Goose history, Session identities, provider
-payloads, raw exchange evidence, commands, events, unresolved-effect state, and current export
-checkpoints without copying data. Older or partial histories fail startup and require the previous
-image to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
+and a validated native schema. Adoption preserves existing rows through version 12; migration 13
+intentionally clears them. Older or partial histories fail startup and require the previous image
+to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
 requires restoring the pre-migration database backup together with the old service image.
 
-The staging sampler Deployment uses two rolling replicas. New migrations must remain compatible
-with serving old replicas during a rollout. The host-instance marker is nullable.
+The staging sampler Deployment uses two rolling replicas. This schema cutover requires stopping
+old replicas; later compatible migrations can roll normally. The host-instance marker is nullable.

@@ -4,18 +4,17 @@
 //! writes only the execution state and the run-level observations it drains.
 
 use super::super::effect_coverage::BindingEffectCoverage;
-use super::super::execution_index::CallKind;
 use super::super::interpreter::{ExecutionInputs, ExecutionState, Observations, Outcome};
 use super::super::noninvoking_initialization::CompletedInitialization;
 use super::super::runtime_inference::RuntimeQueries;
 use super::super::value_model::AbstractValue;
 use super::assignment::RootAssignment;
+use super::body::expected_root_calls;
 use super::operands::RootOperands;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
-use std::collections::BTreeSet;
 
 pub(super) fn finalize(
     inputs: &ExecutionInputs<'_>,
@@ -40,6 +39,7 @@ pub(super) fn finalize(
         record_factory_rejection,
         checked_local_constructor_factory,
         provisional_roots,
+        ordered_statement,
         effect_initializer_source,
         ..
     } = root;
@@ -92,12 +92,27 @@ pub(super) fn finalize(
         && let Some(proof) = checked_local_constructor_factory
     {
         let dependencies = observations.dependencies().clone();
+        if proof.heap_local {
+            // The source proof selected this exact root call and only local
+            // constructor bodies. The completed execution below rules out a
+            // refused path. Argument evaluation is projected separately from
+            // the root AST after this pass; these callable summaries still
+            // describe arbitrary invocations of the same source functions.
+            outcome.effects.local_record_factory_heap_call = Some(proof.call_span);
+        }
         outcome.effects.local_record_factory_purity =
             Some(crate::facts::LocalRecordFactoryPurityCertificate {
                 call_span: proof.call_span,
                 checked_owners: proof.checked_owners,
                 dependencies,
             });
+        if let [binding] = fact.declared.iter().collect::<Vec<_>>().as_slice() {
+            state
+                .world_mut()
+                .classes
+                .private_fresh_instance_bindings
+                .insert((*binding).clone());
+        }
     }
     state.world_mut().module.top_env = top_env;
     state.world_mut().module.top_captures = top_captures;
@@ -112,8 +127,30 @@ pub(super) fn finalize(
             outcome.effects.heap_contents.extend(cells);
         }
     }
-    outcome.effects.purity_disagreement =
-        queries.complete_owner_purity(owner, outcome.effects.local_record_factory_purity.as_ref());
+    if outcome.effects.local_record_factory_heap_call.is_some() {
+        outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
+        outcome.effects.non_assumed_heap_accesses = Default::default();
+    }
+    let proven_reads = if outcome.complete
+        && !outcome.unknown_call
+        && outcome.effects.precision_losses.is_empty()
+        && outcome.effects.uninitialized_reads.is_empty()
+    {
+        outcome
+            .effects
+            .proven_private_own_field_reads
+            .iter()
+            .filter_map(|(read_owner, span)| (*read_owner == owner).then_some(*span))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    outcome.effects.purity_disagreement = queries.complete_owner_purity(
+        owner,
+        outcome.effects.local_record_factory_purity.as_ref(),
+        &proven_reads,
+        observations.dependencies(),
+    );
     let mut prior_effect_owners = outcome.executed_owners.clone();
     prior_effect_owners.retain(|owner| {
         !state
@@ -188,6 +225,11 @@ pub(super) fn finalize(
             &outcome.effect_coverage,
         );
     }
+    // The body phase keeps an attempted statement only when it seals.
+    if outcome.effects.completed_initialization.is_none() && ordered_statement.is_some() {
+        outcome.effects.completed_initialization =
+            CompletedInitialization::from_root_statement_effects(owner, &outcome.effect_coverage);
+    }
     // A private declaration whose every operation the ledger covers ran
     // no user code and exposed no capability: its own callables and the
     // bindings it read into its result stay as unpublished as under a
@@ -240,14 +282,17 @@ pub(super) fn finalize(
                 OwnerInitializationCoverageRefusalReason::BindingNotInitialized
             });
         }
-        outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
+        // A refusal the execution itself named is more specific than the
+        // owner's syntactic one.
+        outcome.effects.initialization_coverage_refusal = outcome
+            .effects
+            .initialization_coverage_refusal
+            .or(initialization_coverage_refusal);
+    } else {
+        outcome.effects.initialization_coverage_refusal = None;
     }
     if let Some(identity) = outcome.root_binding_effect_identity.take() {
-        let expected_root_calls: BTreeSet<_> = calls
-            .iter()
-            .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
-            .map(|call| (call.span.lo.0, call.span.hi.0))
-            .collect();
+        let expected_root_calls = expected_root_calls(calls);
         let receipt = effect_initializer_source.and_then(|(source, binding, span)| {
             (identity.owner == owner
                 && identity.binding == *binding

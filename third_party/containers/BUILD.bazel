@@ -12,6 +12,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
+load(":images.bzl", "POSTGRES_18_TAG")
 
 py_test(
     name = "test_image_descriptor",
@@ -121,7 +122,7 @@ oci_load(
     name = "postgres_18_load",
     testonly = True,
     image = "@postgres_18_linux_amd64",
-    repo_tags = ["postgres:18"],
+    repo_tags = [POSTGRES_18_TAG],
     visibility = ["//visibility:public"],
 )
 

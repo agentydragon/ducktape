@@ -16,9 +16,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -65,7 +65,7 @@ func newAdminServer(
 	index *policy.Index,
 ) (*adminServer, error) {
 	rulesMethods := auth.Methods{
-		egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnyAccount(authentication),
+		egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnySubject(authentication),
 	}
 	methods := auth.HealthMethods()
 	maps.Copy(methods, rulesMethods)

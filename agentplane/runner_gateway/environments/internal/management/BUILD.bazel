@@ -11,15 +11,14 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/internal/management",
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/runner_gateway/environments/internal/view",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
+        "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
-        "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_client_go//util/retry",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@org_golang_google_grpc//codes",
@@ -36,7 +35,6 @@ go_test(
     embed = [":management"],
     deps = [
         "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/policy",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/runner_gateway/environments/internal/view",
@@ -48,6 +46,7 @@ go_test(
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

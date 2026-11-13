@@ -46,12 +46,11 @@ a future personal-data agent.
 
 Cost it before assuming W2 is blocked on OpenClaw's maturity: the answer we have
 is "the OpenShell plugin is under-tested", not "OpenClaw cannot split execution".
-And note we have no working split-execution deployment at all right now:
-`public-coder-agent` runs `sandbox.mode: "off"`, and the main `openclaw` gateway
-— the one thing configured for the OpenShell mirror — is unused and believed
-broken. So W2 is unattempted, not tried-and-failed, and the mirror's weaknesses
-are an argument from upstream code rather than from our own operational
-experience.
+The previous Public Coder configuration had `sandbox.mode: "off"`; Public Coder is now
+parked (<../../cluster/parked/public-coder-agent/README.md>). Re-check the current runtime
+options before treating that configuration or the old gateway as a live baseline. W2 was
+unattempted in the earlier deployment, and the mirror's weaknesses were inferred from upstream
+code rather than our own operational experience.
 Three unknowns to settle first — how much of the provider contract assumes a VM,
 whether a pod can satisfy the setup/lease lifecycle, and where sandboxing (H3)
 comes from once OpenShell is out of the path.
@@ -80,7 +79,7 @@ Docker daemon in the pod.
 
 What it costs: a privileged Docker-in-Docker pod, a second gateway to operate, and
 stepping outside the operator's declarative model — against a shape whose only
-gain over today's `public-coder-agent` is S5, a _want_ rather than a hard
+gain over the earlier `public-coder-agent` setup is S5, a _want_ rather than a hard
 requirement. Do not start this unless S5 becomes a real requirement.
 
 **Now proven, mostly** (F13): the whole stack was built locally and a sandbox on
@@ -184,11 +183,11 @@ reporting it (F8). Nothing surfaced that. Containment held — destinations are
 enforced at `CONNECT`, before TLS — so this is an integrity and observability gap,
 not an escape.
 
-Cheap detector, since every request already transits an intercepting proxy —
-Agentplane egress for `public-coder-agent`, mitmproxy for Haku sandbox and CI. The proxy sees
-which client connections skip verification, and `-k`/`sslVerify=false` appearing in
-an agent's command history is a reliable signal that some control has broken. Worth
-alerting on rather than discovering by reading transcripts weeks later.
+Investigate detection from command history and TLS handshake failures, accounting for commands
+that are not captured and for legitimate uses of those flags. Haku sandbox and CI now route public
+egress through Agentplane egress (<../../haku/docs/security.md>), and Public Coder is parked.
+A successful TLS handshake alone does not reveal whether a client verified the server certificate;
+do not assume the proxy can directly observe that choice.
 
 ## Give the OpenClaw agents their own Langfuse project, or populate the key alias
 
@@ -225,11 +224,10 @@ Until then: aggregates for counts, `limit<=5` and a tight window for bodies.
 
 ## Verify iron-proxy's `oauth_token` transform before designing around it
 
-[personal_data_agent.md](personal_data_agent.md) puts iron-proxy's `oauth_token`
-transform (`grant: refresh_token`) at the centre of the personal-data agent's
-Google credential path, and every claim about it so far is read off the shipped
-example config rather than measured. Four things to test in the lab, in this
-order — each one invalidates the design if it fails:
+[personal_data_agent.md](personal_data_agent.md) retains iron-proxy's `oauth_token`
+transform (`grant: refresh_token`) as one candidate; the earlier claims were read off its
+example config rather than measured. If choosing that candidate, test these in a lab before
+relying on it:
 
 1. **A real refresh-token exchange through the proxy.** One Google client, one
    read-only scope, `curl` from the agent side with no credential at all, and a

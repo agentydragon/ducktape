@@ -32,12 +32,14 @@ type eventIdentityStorage struct {
 	messageID                  *uuid.UUID
 	messageSenderNamespace     *string
 	messageSenderName          *string
+	messageSenderIdentityName  *string
+	messageSenderIdentityUID   *string
 }
 
 const eventIdentityReadColumns = `identity_provider, actions_request_id::text, actions_sequence,
 	github_app_id, github_delivery_id::text, github_repository_id, github_event, github_action,
 	github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
-	message_id::text, message_sender_namespace, message_sender_name`
+	message_id::text, message_sender_namespace, message_sender_name, message_sender_identity_name, message_sender_identity_uid`
 
 // eventIdentityRead is one relational source key read from entry.
 type eventIdentityRead struct {
@@ -56,6 +58,8 @@ type eventIdentityRead struct {
 	messageID                  sql.NullString
 	messageSenderNamespace     sql.NullString
 	messageSenderName          sql.NullString
+	messageSenderIdentityName  sql.NullString
+	messageSenderIdentityUID   sql.NullString
 }
 
 func (r *eventIdentityRead) destinations() []any {
@@ -63,7 +67,7 @@ func (r *eventIdentityRead) destinations() []any {
 		&r.provider, &r.actionsRequestID, &r.actionsSequence,
 		&r.githubAppID, &r.githubDeliveryID, &r.githubRepositoryID, &r.githubEvent, &r.githubAction,
 		&r.githubPullRequestNumber, &r.githubMergeabilitySequence, &r.githubSnapshotVersion, &r.githubObservationSequence,
-		&r.messageID, &r.messageSenderNamespace, &r.messageSenderName,
+		&r.messageID, &r.messageSenderNamespace, &r.messageSenderName, &r.messageSenderIdentityName, &r.messageSenderIdentityUID,
 	}
 }
 
@@ -166,10 +170,17 @@ func (r eventIdentityRead) event() (model.EventIdentity, error) {
 		if !r.messageSenderNamespace.Valid || !r.messageSenderName.Valid {
 			return nil, errors.New("entry has an incomplete message sender")
 		}
-		return model.MessageEvent{
+		event := model.MessageEvent{
 			MessageID: messageID,
 			Sender:    model.ServiceAccount{Namespace: r.messageSenderNamespace.String, Name: r.messageSenderName.String},
-		}, nil
+		}
+		if r.messageSenderIdentityName.Valid != r.messageSenderIdentityUID.Valid {
+			return nil, errors.New("entry has an incomplete message sender Identity")
+		}
+		if r.messageSenderIdentityName.Valid {
+			event.SenderIdentity = &model.Identity{Name: r.messageSenderIdentityName.String, UID: r.messageSenderIdentityUID.String}
+		}
+		return event, nil
 	default:
 		return nil, fmt.Errorf("unknown relational event identity provider %q", r.provider.String)
 	}
@@ -221,8 +232,9 @@ func insertEntry(
 		identity_provider, actions_request_id, actions_sequence,
 		github_app_id, github_delivery_id, github_repository_id, github_event, github_action,
 		github_pull_request_number, github_mergeability_sequence, github_snapshot_version, github_observation_sequence,
-		message_id, message_sender_namespace, message_sender_name, `+storagecodec.EntryContentReadColumns+`)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)`, args...)
+		message_id, message_sender_namespace, message_sender_name, message_sender_identity_name, message_sender_identity_uid,
+		`+storagecodec.EntryContentReadColumns+`)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43)`, args...)
 	return err
 }
 
@@ -265,6 +277,10 @@ func eventIdentityStorageFor(event model.EventIdentity) (eventIdentityStorage, e
 		columns.messageID = &event.MessageID
 		columns.messageSenderNamespace = &event.Sender.Namespace
 		columns.messageSenderName = &event.Sender.Name
+		if event.SenderIdentity != nil {
+			columns.messageSenderIdentityName = &event.SenderIdentity.Name
+			columns.messageSenderIdentityUID = &event.SenderIdentity.UID
+		}
 	default:
 		return eventIdentityStorage{}, fmt.Errorf("unsupported event identity type %T", event)
 	}
@@ -288,5 +304,7 @@ func (c eventIdentityStorage) args() []any {
 		c.messageID,
 		c.messageSenderNamespace,
 		c.messageSenderName,
+		c.messageSenderIdentityName,
+		c.messageSenderIdentityUID,
 	}
 }

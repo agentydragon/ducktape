@@ -1,3 +1,5 @@
+# gazelle:resolve py agentplane.policy.v1.policy_service_pb2 //agentplane/policy/v1:policy_service_pb2
+# gazelle:resolve py agentplane.policy.v1.policy_service_pb2_grpc //agentplane/policy/v1:policy_service_pb2_grpc
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@image_pins//:pins.bzl", "ELECTRIC_1_8_1_DIGEST", "NGINX_UNPRIVILEGED_DIGEST", "POSTGRES_18_DIGEST", "RYUK_DIGEST")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
@@ -253,6 +255,7 @@ oci_image(
     visibility = [
         "//agentplane/system_tests/deployment:__pkg__",
         "//agentplane/system_tests/suites:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
     ],
     workdir = "/",
 )
@@ -266,6 +269,18 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_oidc",
+    srcs = ["test_oidc.py"],
+    deps = [
+        ":oidc",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
@@ -323,6 +338,7 @@ py_test(
         "//agentplane/app/testing:thread_browser",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/testing:thread_view_marks",
+        "//agentplane/grpc:serving",
         "//agentplane/history_service:channels",
         "//agentplane/history_service:client",
         "//agentplane/history_service:history_service_pb2",
@@ -330,6 +346,8 @@ py_test(
         "//agentplane/history_service/testing:electric_service",
         "//agentplane/history_service/testing:history",
         "//agentplane/history_service/testing:protojson",
+        "//agentplane/policy/v1:policy_service_pb2",
+        "//agentplane/policy/v1:policy_service_pb2_grpc",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
@@ -343,11 +361,13 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:viewports",
+        "@pypi//grpcio",
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@pypi//types_grpcio",  # keep: mypy follows the generated PolicyService gRPC servicer
     ],
 )
 

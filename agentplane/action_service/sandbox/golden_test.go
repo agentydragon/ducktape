@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
-	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 )
@@ -36,11 +35,11 @@ type vectors struct {
 		Valid  bool            `json:"valid"`
 	} `json:"arguments"`
 	Boxes []struct {
-		Name       string               `json:"name"`
-		Caller     store.ServiceAccount `json:"caller"`
-		Box        string               `json:"box"`
-		ObjectName string               `json:"object_name"`
-		Labels     map[string]string    `json:"labels"`
+		Name       string            `json:"name"`
+		Caller     Identity          `json:"caller"`
+		Box        string            `json:"box"`
+		ObjectName string            `json:"object_name"`
+		Labels     map[string]string `json:"labels"`
 	} `json:"boxes"`
 }
 

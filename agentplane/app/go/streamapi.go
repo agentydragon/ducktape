@@ -146,7 +146,7 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 }
 
 // environmentFacade forwards the generated EnvironmentService API with the app's Pod-bound
-// identity. Operator sessions stay tied to logout; service callers stay tied to the request.
+// identity. Browser sessions stay tied to logout; bearer callers stay tied to the request.
 func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
@@ -159,8 +159,7 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 	}
 	var ctx context.Context
 	var cancel context.CancelFunc
-	caller, _ := auth.CallerFromContext(request.Context())
-	if caller.Kind == auth.CallerOperator {
+	if session, ok := auth.SessionFromContext(request.Context()); ok && session.Login != nil {
 		var err error
 		ctx, cancel, err = r.operatorLifetime(request)
 		if err != nil {
@@ -645,22 +644,6 @@ func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Requ
 	}
 }
 
-func grpcFailure(err error) string {
-	if err == nil {
-		return "Unknown"
-	}
-	converted := status.Convert(err)
-	return converted.Code().String() + ": " + converted.Message()
-}
-
-func writeGRPCOpenError(w http.ResponseWriter, err error) {
-	code := http.StatusServiceUnavailable
-	if status.Code(err) == codes.DeadlineExceeded {
-		code = http.StatusGatewayTimeout
-	}
-	writeDetailError(w, code, grpcFailure(err))
-}
-
 func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
 	switch {
 	case status.Code(err) == codes.NotFound:
@@ -717,12 +700,4 @@ func waitContext(ctx context.Context, duration time.Duration) bool {
 	case <-timer.C:
 		return true
 	}
-}
-
-func compactDuration(duration time.Duration) string {
-	if duration <= 0 {
-		duration = 5 * time.Second
-	}
-	seconds := duration.Seconds()
-	return strconv.FormatFloat(seconds, 'f', -1, 64) + "s"
 }

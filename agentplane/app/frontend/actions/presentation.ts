@@ -2,6 +2,7 @@ import { toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, ValueSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import {
+  ExecutionErrorSchema,
   McpLifecycle,
   McpUnavailableReason,
   type ActionIdentity,
@@ -19,8 +20,9 @@ export function executionResult(execution: Execution | undefined): JsonValue | u
   return execution?.result === undefined ? undefined : toJson(ValueSchema, execution.result);
 }
 
-export function executionError(execution: Execution | undefined): JsonObject | undefined {
-  return execution?.error;
+/** The typed error as its ProtoJSON, which the history view shows as is. */
+export function executionError(execution: Execution | undefined): JsonValue | undefined {
+  return execution?.error === undefined ? undefined : toJson(ExecutionErrorSchema, execution.error);
 }
 
 export function actionIdentity(request: ActionRequest): ActionIdentity {
@@ -28,9 +30,25 @@ export function actionIdentity(request: ActionRequest): ActionIdentity {
   return request.action;
 }
 
-export function actionCaller(request: ActionRequest): NonNullable<ActionRequest["caller"]> {
-  if (request.caller === undefined) throw new Error("The Action Service omitted ActionRequest.caller.");
-  return request.caller;
+/** Newer caller kinds may be unknown to this UI, so the wire contract can omit both known forms. */
+export type ActionCaller =
+  | { kind: "service-account"; account: NonNullable<ActionRequest["caller"]>; uid?: string }
+  | { kind: "identity"; identity: NonNullable<ActionRequest["callerIdentity"]> }
+  | { kind: "unknown" };
+
+export function actionCaller(request: ActionRequest): ActionCaller {
+  if (request.caller !== undefined && request.callerIdentity !== undefined) {
+    throw new Error("The Action Service returned multiple ActionRequest callers.");
+  }
+  if (request.caller !== undefined) {
+    return {
+      kind: "service-account",
+      account: request.caller,
+      ...(request.callerUid === undefined ? {} : { uid: request.callerUid }),
+    };
+  }
+  if (request.callerIdentity !== undefined) return { kind: "identity", identity: request.callerIdentity };
+  return { kind: "unknown" };
 }
 
 export function timestampText(value: Timestamp | undefined): string | undefined {

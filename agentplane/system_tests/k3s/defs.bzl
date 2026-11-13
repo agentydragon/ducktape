@@ -20,9 +20,10 @@ K3S_PERSISTENCE_PROPERTIES = {
     "test.snapshot-read-policy": "newest",
 }
 
-# Match the dedicated VM worker's four-vCPU budget.
+# Where a KVM test runs. Its size is not defaulted here: each KVM suite declares test.EstimatedCPU,
+# test.EstimatedMemory and test.EstimatedFreeDiskBytes in its own exec_properties, beside the test it describes.
+_KVM_SIZE_PROPERTIES = ("test.EstimatedCPU", "test.EstimatedMemory", "test.EstimatedFreeDiskBytes")
 KVM_EXEC_PROPERTIES = {
-    "test.EstimatedComputeUnits": "4",
     "test.Pool": "kvm-vm",
     "test.init-dockerd": "false",
     "test.recycle-runner": "false",
@@ -197,11 +198,13 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, environment_tools = None, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None):
+def k3s_suite(name, srcs, deps, stack, environment_tools = None, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `environment_tools` names the `_ENVIRONMENT_TOOLS_IMAGES` variant a Pod-template stack's
     Sandboxes run; VM and Firecracker stacks take none.
+    `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
+    `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
     """
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -211,6 +214,10 @@ def k3s_suite(name, srcs, deps, stack, environment_tools = None, tags = [], prof
         fail("boot_evidence requires the VM stack")
     if shutdown_diagnostic and stack != "vm":
         fail("shutdown_diagnostic requires the VM stack")
+    if require_kvm:
+        missing = [key for key in _KVM_SIZE_PROPERTIES if key not in exec_properties]
+        if missing:
+            fail("KVM suite " + name + " must declare its size in exec_properties: " + ", ".join(missing))
     config = _STACKS[stack]
     if require_kvm and not (config.vm or config.firecracker):
         fail("require_kvm requires the VM or Firecracker stack")
@@ -276,6 +283,16 @@ def k3s_suite(name, srcs, deps, stack, environment_tools = None, tags = [], prof
         properties |= K3S_PERSISTENCE_PROPERTIES | {
             "test.runner-recycling-key": k3s_recycling_key(vm = config.vm),
         }
+    merged_properties = K3S_EXEC_PROPERTIES | properties
+    if require_kvm:
+        # The suite's own test.-prefixed size replaces these; compute units or the default disk request left here
+        # would be a second, conflicting size.
+        merged_properties = {
+            key: value
+            for key, value in merged_properties.items()
+            if key not in ("EstimatedComputeUnits", "EstimatedFreeDiskBytes")
+        }
+    merged_properties = merged_properties | exec_properties
     py_test(
         name = name,
         size = "enormous",
@@ -283,7 +300,7 @@ def k3s_suite(name, srcs, deps, stack, environment_tools = None, tags = [], prof
         main = main,
         data = data,
         env = env,
-        exec_properties = K3S_EXEC_PROPERTIES | properties,
+        exec_properties = merged_properties,
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",

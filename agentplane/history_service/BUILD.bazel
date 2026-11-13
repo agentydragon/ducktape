@@ -4,7 +4,7 @@ load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
@@ -48,10 +48,22 @@ py_library(
     deps = [
         "//agentplane:log_levels",
         "//agentplane:subjects",
-        "//agentplane/workload_auth:listener",
+        "//agentplane/identity/auth:listener",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":settings",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -60,6 +72,7 @@ go_library(
     srcs = [
         "config.go",
         "main.go",
+        "settle_history.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service",
     deps = [
@@ -68,27 +81,33 @@ go_library(
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service/api",
+        "//agentplane/history_service/backfill",
         "//agentplane/history_service/ingress",
+        "//agentplane/history_service/internal/reads",
         "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
-        "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
         "//agentplane/net/listener",
         "//agentplane/observability",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/listener",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
+        "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_apimachinery//pkg/util/sets",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//health",
@@ -125,12 +144,15 @@ oci_image(
 
 go_test(
     name = "config_test",
-    srcs = ["config_test.go"],
+    srcs = [
+        "config_test.go",
+        "settle_history_test.go",
+    ],
     embed = [":main_lib"],
     deps = [
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/listener",
         "//agentplane/testing/configtest",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/listener",
     ],
 )
 
@@ -152,15 +174,17 @@ go_test(
         "//agentplane/history_service/projection",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/auth/testing",
+        "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/listener",
-        "//agentplane/workload_auth/testing",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -204,6 +228,7 @@ proto_library(
     srcs = ["history_service.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_proto",
         "//agentplane/proto:event_log_proto",
         "//agentplane/proto:event_proto",
         "//agentplane/proto:session_proto",
@@ -253,6 +278,7 @@ go_proto_library(
     proto = ":history_service_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:session_go_proto",
@@ -267,6 +293,7 @@ ts_proto_library(
     proto = ":history_service_proto",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
         "//agentplane/proto:event_pb",
         "//agentplane/proto:session_pb",

@@ -23,6 +23,8 @@ export interface VirtualizedHistoryProps<T> {
   renderRow: (value: T) => ReactNode;
   label: string;
   showJumpToLatest: boolean;
+  /** `load` runs whenever the reader nears the oldest row, possibly again before `loading` renders,
+   * so it must ignore calls while a page is in flight. */
   earlier?: { available: boolean; loading: boolean; load: () => void };
   tail?: ReactNode;
   onClick?: React.MouseEventHandler<HTMLDivElement>;
@@ -52,7 +54,7 @@ function HistoryViewportView<T>({
   const [, redraw] = useReducer((value: number) => value + 1, 0);
   const loadOlder = useRef<() => void>(() => undefined);
   loadOlder.current = () => {
-    if (earlier?.available && !earlier.loading) earlier.load();
+    if (earlier?.available) earlier.load();
   };
   const [geometry] = useState(() => new HistoryGeometry(scopeId));
   const [controller] = useState(

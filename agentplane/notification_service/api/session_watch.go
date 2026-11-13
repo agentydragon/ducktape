@@ -6,13 +6,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	pb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,32 +22,25 @@ import (
 
 const sessionWatchHeartbeat = 15 * time.Second
 
-// sessionOwner admits the configured app reader to the namespace, and other callers to their own
-// current Sandbox incarnation. A missing inbox is visible only if History proves the Session belongs
-// to that incarnation; existing inboxes retain their established ownership even if History is down.
-func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*store.Owner, error) {
+// sessionOwner admits the configured app reader to the namespace, returned as a nil owner, and other
+// callers to their own current Sandbox incarnation (currentWorkload). A missing inbox is visible only if
+// the Session authority and History prove the Session belongs to that owner and incarnation; existing
+// inboxes retain their established ownership even if History is down.
+func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*workload, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 	if sessionID == "" || len([]rune(sessionID)) > 200 {
 		return nil, invalidRequest("session_id must contain between 1 and 200 characters")
 	}
-	caller, err := s.caller(ctx)
+	operator, err := s.operator(ctx)
+	if err != nil || operator {
+		return nil, err
+	}
+	caller, err := s.currentWorkload(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if caller.Namespace == s.namespace && caller.Name == s.operatorReader && s.operatorReader != "" {
-		return nil, nil
-	}
-	sandbox, err := s.sandbox(ctx, model.DestinationRef{Namespace: caller.Namespace, Name: caller.Name})
-	if err != nil {
-		return nil, err
-	}
-	currentOwner, err := s.owner(ctx, caller, sandbox.Identity.Uid)
-	if err != nil {
-		return nil, err
-	}
-	owner := &currentOwner
-	found, _, err := s.store.SessionStatus(ctx, s.namespace, sessionID, owner, s.debounce, false, false)
+	found, _, err := s.store.SessionStatus(ctx, s.namespace, sessionID, caller.owner, s.debounce, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -57,25 +49,44 @@ func (s *Notifications) sessionOwner(ctx context.Context, sessionID string) (*st
 		if err != nil {
 			return nil, store.ErrNotFound
 		}
-		uid, err := sessionidentity.AccountUID(response.GetSession(), sessionID, model.DestinationRef{Namespace: caller.Namespace, Name: caller.Name, UID: sandbox.Identity.Uid}, caller)
-		if err != nil || uid != owner.AccountUID {
-			return nil, store.ErrNotFound
+		switch owner := caller.owner.(type) {
+		case store.AccountOwner:
+			uid, err := sessionidentity.AccountUID(response.GetSession(), sessionID, caller.sandbox, owner.Account)
+			if err != nil || uid != owner.AccountUID {
+				return nil, store.ErrNotFound
+			}
+		case store.IdentityOwner:
+			if identity, ok := sessionidentity.Identity(response.GetSession(), sessionID, caller.sandbox); !ok || identity != owner.Identity {
+				return nil, store.ErrNotFound
+			}
+		}
+		sandbox, err := s.sandbox(ctx, caller.sandbox)
+		if err != nil {
+			return nil, err
 		}
 		if err := s.confirmSession(ctx, sandbox.Identity, sessionID); err != nil {
 			return nil, err
 		}
 	}
-	return owner, nil
+	return &caller, nil
+}
+
+// inboxOwner is the store owner of a sessionOwner result: nil for the operator.
+func inboxOwner(caller *workload) store.Owner {
+	if caller == nil {
+		return nil
+	}
+	return caller.owner
 }
 
 func (s *Notifications) GetInbox(ctx context.Context, request *pb.GetInboxRequest) (*pb.GetInboxResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
-	owner, err := s.sessionOwner(ctx, request.GetSessionId())
+	caller, err := s.sessionOwner(ctx, request.GetSessionId())
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
-	current, _, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), owner, s.debounce, false, false)
+	current, _, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, false, false)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}
@@ -165,7 +176,7 @@ func nextSessionChange(current *store.InboxStatus, observed time.Time) time.Time
 
 // followSession subscribes before reading. A dropped listener fails the stream so a client reconnects
 // and receives a fresh snapshot. A quiet stream revalidates its bearer and sends bounded heartbeats.
-func followSession[T any](ctx context.Context, s *Notifications, sessionID string, owner *store.Owner, stream grpc.ServerStreamingServer[T], read func(context.Context) (*T, time.Time, error), heartbeat *T) error {
+func followSession[T any](ctx context.Context, s *Notifications, sessionID string, caller *workload, stream grpc.ServerStreamingServer[T], read func(context.Context) (*T, time.Time, error), heartbeat *T) error {
 	if s.wakeups == nil {
 		return status.Error(codes.Unavailable, "notification change feed unavailable")
 	}
@@ -185,9 +196,9 @@ func followSession[T any](ctx context.Context, s *Notifications, sessionID strin
 		if !s.wakeups.Connected() {
 			return status.Error(codes.Unavailable, "notification change feed unavailable")
 		}
-		if owner != nil {
+		if caller != nil {
 			checkCtx, cancel := context.WithTimeout(ctx, s.timeout)
-			_, err := s.sandbox(checkCtx, model.DestinationRef{Namespace: owner.Account.Namespace, Name: owner.Account.Name, UID: owner.SandboxUID})
+			_, err := s.sandbox(checkCtx, caller.sandbox)
 			cancel()
 			if err != nil {
 				return failure(ctx, err)
@@ -254,13 +265,13 @@ func followSession[T any](ctx context.Context, s *Notifications, sessionID strin
 
 func (s *Notifications) WatchInbox(request *pb.WatchInboxRequest, stream grpc.ServerStreamingServer[pb.WatchInboxResponse]) error {
 	ctx := stream.Context()
-	owner, err := s.sessionOwner(ctx, request.GetSessionId())
+	caller, err := s.sessionOwner(ctx, request.GetSessionId())
 	if err != nil {
 		return failure(ctx, err)
 	}
 	var previous *pb.WatchInboxResponse
 	read := func(ctx context.Context) (*pb.WatchInboxResponse, time.Time, error) {
-		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), owner, s.debounce, false, false)
+		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, false, false)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -283,7 +294,7 @@ func (s *Notifications) WatchInbox(request *pb.WatchInboxRequest, stream grpc.Se
 		previous = frame
 		return frame, nextSessionChange(current, observed), nil
 	}
-	return followSession(ctx, s, request.GetSessionId(), owner, stream, read, &pb.WatchInboxResponse{State: &pb.WatchInboxResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
+	return followSession(ctx, s, request.GetSessionId(), caller, stream, read, &pb.WatchInboxResponse{State: &pb.WatchInboxResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
 }
 
 func entrySummaryView(entry store.EntrySummary) (*pb.InboxEntrySummary, error) {
@@ -304,13 +315,13 @@ func entrySummaryView(entry store.EntrySummary) (*pb.InboxEntrySummary, error) {
 
 func (s *Notifications) WatchInboxEntries(request *pb.WatchInboxEntriesRequest, stream grpc.ServerStreamingServer[pb.WatchInboxEntriesResponse]) error {
 	ctx := stream.Context()
-	owner, err := s.sessionOwner(ctx, request.GetSessionId())
+	caller, err := s.sessionOwner(ctx, request.GetSessionId())
 	if err != nil {
 		return failure(ctx, err)
 	}
 	var previous *pb.InboxEntrySummarySnapshot
 	read := func(ctx context.Context) (*pb.WatchInboxEntriesResponse, time.Time, error) {
-		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), owner, s.debounce, true, false)
+		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, true, false)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -353,7 +364,7 @@ func (s *Notifications) WatchInboxEntries(request *pb.WatchInboxEntriesRequest, 
 		}
 		return &pb.WatchInboxEntriesResponse{Frame: &pb.WatchInboxEntriesResponse_Delta{Delta: delta}}, nextSessionChange(current, observed), nil
 	}
-	return followSession(ctx, s, request.GetSessionId(), owner, stream, read, &pb.WatchInboxEntriesResponse{Frame: &pb.WatchInboxEntriesResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
+	return followSession(ctx, s, request.GetSessionId(), caller, stream, read, &pb.WatchInboxEntriesResponse{Frame: &pb.WatchInboxEntriesResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
 }
 
 func subscriptionInfoView(sub store.Subscription, owner bool) (*pb.Subscription, error) {
@@ -370,20 +381,20 @@ func subscriptionInfoView(sub store.Subscription, owner bool) (*pb.Subscription,
 
 func (s *Notifications) WatchSubscriptions(request *pb.WatchSubscriptionsRequest, stream grpc.ServerStreamingServer[pb.WatchSubscriptionsResponse]) error {
 	ctx := stream.Context()
-	owner, err := s.sessionOwner(ctx, request.GetSessionId())
+	caller, err := s.sessionOwner(ctx, request.GetSessionId())
 	if err != nil {
 		return failure(ctx, err)
 	}
 	var previous *pb.SubscriptionSnapshot
 	read := func(ctx context.Context) (*pb.WatchSubscriptionsResponse, time.Time, error) {
-		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), owner, s.debounce, false, true)
+		current, observed, err := s.store.SessionStatus(ctx, s.namespace, request.GetSessionId(), inboxOwner(caller), s.debounce, false, true)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
 		snapshot := &pb.SubscriptionSnapshot{}
 		if current != nil {
 			for _, sub := range current.Subscriptions {
-				view, err := subscriptionInfoView(sub, owner != nil)
+				view, err := subscriptionInfoView(sub, caller != nil)
 				if err != nil {
 					return nil, time.Time{}, err
 				}
@@ -415,5 +426,5 @@ func (s *Notifications) WatchSubscriptions(request *pb.WatchSubscriptionsRequest
 		}
 		return &pb.WatchSubscriptionsResponse{Frame: &pb.WatchSubscriptionsResponse_Delta{Delta: delta}}, nextSessionChange(current, observed), nil
 	}
-	return followSession(ctx, s, request.GetSessionId(), owner, stream, read, &pb.WatchSubscriptionsResponse{Frame: &pb.WatchSubscriptionsResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
+	return followSession(ctx, s, request.GetSessionId(), caller, stream, read, &pb.WatchSubscriptionsResponse{Frame: &pb.WatchSubscriptionsResponse_Heartbeat{Heartbeat: &emptypb.Empty{}}})
 }

@@ -10,14 +10,60 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/util/workqueue"
 )
+
+// exportChannels are the exporter's two connections to History, both authenticated by the
+// sampler's own token: delegated carries the Identity a Session executes as in each call's
+// envelope, and direct is the sampler calling as itself.
+type exportChannels struct {
+	direct, delegated *grpc.ClientConn
+}
+
+func dialExportChannels(target, tokenFile string, tls *environment_runtime_transport.ClientTLS) (exportChannels, error) {
+	direct, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
+	if err != nil {
+		return exportChannels{}, err
+	}
+	delegated, err := workloadgrpc.DialDelegated(target, tokenFile, 30*time.Second, tls, workloadgrpc.ClientInterceptors{})
+	if err != nil {
+		direct.Close()
+		return exportChannels{}, err
+	}
+	return exportChannels{direct: direct, delegated: delegated}, nil
+}
+
+func (c exportChannels) close() {
+	c.direct.Close()
+	c.delegated.Close()
+}
+
+// pushContext is the call context and connection for one Session's push: a Session the Dispatcher
+// recorded as executing as an Identity is pushed as a delegating actor for that Identity, and a
+// Session whose Sandbox named none as the sampler itself, exactly as before Identities existed.
+func (c exportChannels) pushContext(ctx context.Context, snapshot *samplerpb.GetSessionResponse) (context.Context, *grpc.ClientConn, error) {
+	identity := snapshot.GetAttached().GetExecutionIdentity()
+	if identity == nil {
+		return ctx, c.direct, nil
+	}
+	delegated, err := workloadgrpc.WithDelegation(ctx, &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: identity},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: snapshot.GetAttached().GetSessionId()}},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return delegated, c.delegated, nil
+}
 
 const (
 	exportPageSize     = 16
@@ -29,17 +75,17 @@ const (
 )
 
 func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFile string, tls *environment_runtime_transport.ClientTLS) error {
-	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
+	channels, err := dialExportChannels(target, tokenFile, tls)
 	if err != nil {
 		return err
 	}
-	defer channel.Close()
-	_, err = exportSession(ctx, store, sessionID, target, channel)
+	defer channels.close()
+	_, err = exportSession(ctx, store, sessionID, target, channels)
 	return err
 }
 
 // exportSession sends at most one scheduling quantum and reports whether History has caught up.
-func exportSession(ctx context.Context, store *Store, sessionID, target string, channel grpc.ClientConnInterface) (bool, error) {
+func exportSession(ctx context.Context, store *Store, sessionID, target string, channels exportChannels) (bool, error) {
 	pages := 0
 	for refresh := 0; refresh < exportPagesPerTurn; refresh++ {
 		session, err := store.GetSession(ctx, sessionID, "")
@@ -52,7 +98,11 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = func() error {
-			call, err := ingresspb.NewSessionJournalIngressClient(channel).Push(callCtx)
+			pushCtx, channel, err := channels.pushContext(callCtx, snapshot)
+			if err != nil {
+				return err
+			}
+			call, err := ingresspb.NewSessionJournalIngressClient(channel).Push(pushCtx)
 			if err != nil {
 				return err
 			}
@@ -252,13 +302,13 @@ func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hu
 		return err
 	}
 	defer unsubscribe()
-	channel, err := bearer.Dial(target, tokenFile, 30*time.Second, tls)
+	channels, err := dialExportChannels(target, tokenFile, tls)
 	if err != nil {
 		return err
 	}
-	defer channel.Close()
+	defer channels.close()
 	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{}, func(ctx context.Context, sessionID string) (bool, error) {
-		return exportSession(ctx, store, sessionID, target, channel)
+		return exportSession(ctx, store, sessionID, target, channels)
 	})
 	tasks, taskCtx := errgroup.WithContext(ctx)
 	for range exportConcurrency {

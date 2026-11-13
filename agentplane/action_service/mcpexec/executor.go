@@ -67,8 +67,7 @@ type Executor struct {
 	// current is the session Executions are pinned to; nil while there is none.
 	current   *session
 	available bool
-	tools     map[string]tool
-	// actions are tools' definitions, as the catalog holds them.
+	// actions are the offered tools' definitions, as the catalog holds them.
 	actions map[string]catalog.ActionDefinition
 	// state, reason, detail, discovered, retryAt and failures are the group's health; see action_servicepb.McpHealth.
 	// A zero time is none.
@@ -320,7 +319,7 @@ func (e *Executor) offer(tools map[string]tool) {
 	for name, tool := range tools {
 		e.actions[name] = tool.definition
 	}
-	e.tools, e.available = tools, true
+	e.available = true
 	if e.availableSince.IsZero() {
 		e.availableSince = now
 	}
@@ -333,7 +332,7 @@ func (e *Executor) offer(tools map[string]tool) {
 // hold mu.
 func (e *Executor) withdraw(reason *action_servicepb.McpUnavailableReason, detail string) {
 	e.forgetStableFailures(time.Now())
-	e.tools, e.actions, e.available, e.availableSince = nil, nil, false, time.Time{}
+	e.actions, e.available, e.availableSince = nil, false, time.Time{}
 	e.state, e.reason, e.detail = action_servicepb.McpLifecycle_MCP_LIFECYCLE_DISCONNECTED, reason, nil
 	if detail != "" {
 		if utf8.RuneCountInString(detail) > detailLimit {
@@ -463,29 +462,28 @@ func (e *Executor) call(ctx context.Context, request store.ExecutionRequest, lea
 		if current {
 			e.wake()
 		}
-		return worker.Failed("mcp_invalid_schema", "backend tool schema is invalid"), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA, "backend tool schema is invalid"), nil
 	case err != nil:
-		diagnostics := map[string]any{
-			"exception_type":     fmt.Sprintf("%T", err),
-			"connection_age_s":   seconds(started.Sub(s.connectedAt)),
-			"request_duration_s": seconds(time.Since(started)),
+		diagnostics := &action_servicepb.McpRequestDiagnostics{
+			ConnectionAgeSeconds:   seconds(started.Sub(s.connectedAt)),
+			RequestDurationSeconds: seconds(time.Since(started)),
 		}
 		// The SDK's errors can carry the server's address or a credential, so their text is not logged.
-		slog.Warn("MCP execution schema check failed", "group", e.key, "diagnostics", diagnostics)
+		slog.Warn("MCP execution schema check failed", "group", e.key, "error_type", fmt.Sprintf("%T", err), "diagnostics", diagnostics)
 		e.sessionFailed(s, err)
 		return unavailable(diagnostics), nil
 	}
 	if reason, bad := skip[name]; bad {
 		// The group stays offered: only this tool is unusable.
 		slog.Warn("MCP tool schema is invalid", "group", e.key, "tool", name, "detail", reason)
-		return worker.Failed("mcp_invalid_schema", "backend tool schema is invalid"), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_INVALID_SCHEMA, "backend tool schema is invalid"), nil
 	}
 	tool, offered := tools[name]
 	if !offered {
-		return worker.Failed("unknown_action", "action is no longer offered by the backend"), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, "action is no longer offered by the backend"), nil
 	}
 	if !tool.matches(request.Arguments) {
-		return worker.Failed("incompatible_action_schema", "arguments no longer match the current tool schema"), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INCOMPATIBLE_ACTION_SCHEMA, "arguments no longer match the current tool schema"), nil
 	}
 	if err := lease.Renew(ctx); err != nil {
 		return store.ExecutionOutcome{}, err
@@ -531,8 +529,10 @@ func seconds(d time.Duration) float64 {
 
 // unavailable is the failure of an Execution the group cannot run now, with diagnostics of the request that showed
 // it when there are any.
-func unavailable(diagnostics map[string]any) store.ExecutionOutcome {
-	return worker.ErrorDocument{
-		Kind: "mcp_unavailable", Message: "could not verify the current tool schema", Diagnostics: diagnostics,
-	}.Outcome(store.ExecutionFailed)
+func unavailable(diagnostics *action_servicepb.McpRequestDiagnostics) store.ExecutionOutcome {
+	return store.ExecutionOutcome{State: store.ExecutionFailed, Error: &action_servicepb.ExecutionError{
+		Kind:    action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_MCP_UNAVAILABLE,
+		Message: "could not verify the current tool schema",
+		Detail:  &action_servicepb.ExecutionError_McpUnavailable{McpUnavailable: &action_servicepb.McpUnavailable{Diagnostics: diagnostics}},
+	}}
 }

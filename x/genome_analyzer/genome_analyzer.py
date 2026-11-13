@@ -565,10 +565,6 @@ class GenomicAnalyzer:
 
         return findings
 
-    def analyze_all_variants_comprehensively(self) -> AnalysisFindings:
-        """Legacy comprehensive analysis - use analyze_all_variants_progressively instead"""
-        return self.analyze_all_variants_progressively()
-
     def print_error_summary(self):
         """Print summary of any errors encountered"""
         if self.errors:
@@ -622,7 +618,7 @@ class GenomicAnalyzer:
         self.get_cache_stats()
 
         # Run comprehensive analysis
-        findings = self.analyze_all_variants_comprehensively()
+        findings = self.analyze_all_variants_progressively()
 
         # Save results
         results = {

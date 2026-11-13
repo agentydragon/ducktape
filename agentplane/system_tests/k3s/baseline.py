@@ -39,6 +39,11 @@ CONTAINERD_DEBUG_SOCKET = "/run/k3s/containerd/debug.sock"
 WORKING_SET_SAMPLE_SECONDS = 10
 # k3s/defs.bzl imports every fixture and guest image under this repository with a fixture-local tag.
 FIXTURE_IMAGE_REPOSITORY = "git.allegedly.works/ducktape-ci/"
+# A kept image store shares the worker's work disk with a file cache that grows toward its cap. Below this
+# much free space an action has too little room for its image imports and one RAM checkpoint, so the
+# store is dropped. Not the scheduler's `EstimatedFreeDiskBytes`: a full cache would then keep the store from ever being kept.
+RETAINED_IMAGE_STORE_MIN_FREE_BYTES = 20 * 10**9
+_IMAGE_STORE_MARKER = Path("agent/containerd/.stack-state.json")
 
 
 def run(
@@ -165,6 +170,7 @@ class K3s:
         self._database_cleanup = contextlib.ExitStack()
         # CRI publishes an imported image's config-ID alias before its pinned tag.
         self._fixture_image_ids: set[str] = set()
+        self._image_store_binary_digest: str | None = None
 
     def protect_image_layouts(self, images: dict[str, Path]) -> None:
         """Protect current fixture images even before CRI publishes their named references."""
@@ -202,6 +208,39 @@ class K3s:
             timeout=timeout,
             stdout_only=stdout_only,
         )
+
+    def image_store_is_retainable(self) -> bool:
+        """Whether the image store a previous stack left may seed this one.
+
+        Blobs are digest-addressed, so a stale store cannot serve the wrong image; the policy only bounds
+        disk use and distrusts a store whose last stack did not stop cleanly."""
+        marker = self.data_dir / _IMAGE_STORE_MARKER
+        if not marker.exists():
+            return False
+        previous = json.loads(marker.read_text())
+        if previous["state"] != "clean":
+            logger.warning("dropping the image store: its last stack did not stop cleanly")
+            return False
+        with self.binary.open("rb") as binary:
+            digest = hashlib.file_digest(binary, "sha256").hexdigest()
+        if previous["binary_sha256"] != digest:
+            logger.info("dropping the image store: its k3s binary changed")
+            return False
+        free = shutil.disk_usage(self.data_dir).free
+        if free < RETAINED_IMAGE_STORE_MIN_FREE_BYTES:
+            logger.warning(
+                "dropping the image store: %s bytes free, need %s", free, RETAINED_IMAGE_STORE_MIN_FREE_BYTES
+            )
+            return False
+        return True
+
+    def _write_image_store_state(self, state: str) -> None:
+        assert self._image_store_binary_digest is not None
+        marker = self.data_dir / _IMAGE_STORE_MARKER
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        temporary = marker.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"state": state, "binary_sha256": self._image_store_binary_digest}))
+        temporary.replace(marker)
 
     @tracer.start_as_current_span("system_test.k3s.start")
     def start(
@@ -245,6 +284,10 @@ class K3s:
         diagnostics = self.data_dir / "agent/etc/containerd/config-v3.toml.d/diagnostics.toml"
         diagnostics.parent.mkdir(parents=True, exist_ok=True)
         diagnostics.write_text(f'[debug]\n  address = "{CONTAINERD_DEBUG_SOCKET}"\n')
+        if not detached:
+            with self.binary.open("rb") as binary:
+                self._image_store_binary_digest = hashlib.file_digest(binary, "sha256").hexdigest()
+            self._write_image_store_state("dirty")
         process = subprocess.Popen(
             [
                 str(self.binary),
@@ -506,6 +549,8 @@ class K3s:
         process.wait(timeout=STOP_TIMEOUT_SECONDS)
         self._database_cleanup.close()
         self.cleanup_stopped()
+        if self._image_store_binary_digest is not None:
+            self._write_image_store_state("clean")
 
     def cleanup_stopped(self) -> None:
         """Remove Pods after an owned detached server has exited between test actions."""

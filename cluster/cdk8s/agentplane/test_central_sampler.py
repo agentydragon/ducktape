@@ -11,7 +11,7 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,
@@ -93,6 +93,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     }
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
+    assert "executor_reconnect_timeout_seconds" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
     platform_instructions = config["platform_instructions"]
     assert platform_instructions
@@ -152,8 +153,11 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     history = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
     )
+    assert history["policy_namespace"] == namespace
     assert history["ingress"]["sampler_accounts"] == [{"namespace": namespace, "name": central_sampler.NAME}]
+    assert history["ingress"]["sampler_identity_callers"] is True
     llm = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
+    assert llm["policy_namespace"] == namespace
     assert llm["central_sampler_accounts"] == [f"{namespace}/{central_sampler.NAME}"]
 
     assert _admits(

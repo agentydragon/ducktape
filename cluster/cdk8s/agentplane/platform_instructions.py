@@ -14,16 +14,19 @@ class ServiceUrls:
     egress_grpc: str
     actions: str
     sessions: str
+    history: str
     notifications_grpc: str
 
 
 def service_urls(env: Environment, *, egress_host: str = "127.0.0.1") -> ServiceUrls:
     actions_service = actions.service(env.namespace)
     sessions_service = session_dispatcher.service(env.namespace)
+    history_route = platform_routes.history_grpc(env.namespace)
     return ServiceUrls(
         egress_grpc=f"http://{egress_host}:{platform_routes.egress_rules(env.namespace).listen_port}",
         actions=f"http://{actions_service.fqdn}:{actions_service.port.number}",
         sessions=f"http://{sessions_service.fqdn}:{sessions_service.port.number}",
+        history=f"http://{egress_host}:{history_route.listen_port}",
         notifications_grpc=f"http://{egress_host}:{platform_routes.notifications_grpc(env.namespace).listen_port}",
     )
 
@@ -44,6 +47,7 @@ def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
     return {
         "AGENTPLANE_ACTIONS_URL": urls.actions,
         "AGENTPLANE_SESSIONS_URL": urls.sessions,
+        "AGENTPLANE_HISTORY_URL": urls.history,
         "AGENTPLANE_NOTIFICATIONS_GRPC_URL": urls.notifications_grpc,
         "AGENTPLANE_EGRESS_GRPC_URL": urls.egress_grpc,
     }

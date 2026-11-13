@@ -23,8 +23,8 @@ py_library(
     srcs = ["go_replica.py"],
     deps = [
         "//agentplane/egress:settings",
+        "//agentplane/identity/auth:listener",
         "//agentplane/testing:go_process",
-        "//agentplane/workload_auth:listener",
         "//util:db_url",
         "//util:net",
         "@pypi//grpcio",

@@ -1,4 +1,4 @@
-//! Report-only check that emission did not capture a source global.
+//! Check whether emission captured a source global.
 //!
 //! The source inventory is the prepared parse's `ParsedGlobalUses`: every
 //! identifier site the resolver left unbound. The output side resolves each
@@ -7,6 +7,7 @@
 //! appears exactly once in the chunk's final files, with the same spelling,
 //! still unbound. Capture by an emitted import or local, or a rename, is
 //! `changed`; anything the two inventories cannot settle is `incomplete`.
+//! Final validation refuses a proven capture; other findings remain diagnostic.
 //!
 //! This proves binding correspondence only. It does not give an unbound read
 //! value or effect authority, and it does not cover identifiers that emission

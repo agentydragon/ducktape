@@ -7,8 +7,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -18,31 +18,30 @@ import (
 // does, only while its ServiceAccount carries the caller label. An operator must name the account, and is also shown
 // each binding's diagnostics.
 func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
-	var own *store.ServiceAccount
+	var own reader.Subject
 	viewer := policyview.Workload
 	switch principal := admitted(ctx).principal.(type) {
-	case store.CallerPrincipal:
-		own = &principal.Account
+	case store.Owner:
+		own = policySubject(principal)
 	case store.ServiceReaderPrincipal:
 		if !s.gate.callers.Admits(auth.Account(principal.Account)) {
 			return nil, unauthenticated
 		}
-		own = &principal.Account
+		own = reader.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}
 	case store.OperatorPrincipal:
 		viewer = policyview.Operator
 	}
-	subject := request.GetSubject()
-	switch {
-	case subject == nil && own == nil:
+	subject := own
+	switch named := request.GetSubject(); {
+	case named == nil && own == nil:
 		return nil, invalidRequest("an operator has no account of its own: name the subject")
-	case subject == nil:
-		subject = own.Proto()
-	case subject.GetNamespace() == "" || subject.GetName() == "":
+	case named == nil:
+	case named.GetNamespace() == "" || named.GetName() == "":
 		return nil, invalidRequest("subject must set both namespace and name")
+	default:
+		subject = reader.ServiceAccount{Namespace: named.GetNamespace(), Name: named.GetName()}
 	}
-	return &action_servicepb.GetActionPolicyResponse{ActionPolicy: policyview.View(
-		s.policy, policyapi.ServiceAccountRef{Namespace: subject.GetNamespace(), Name: subject.GetName()}, viewer,
-	)}, nil
+	return &action_servicepb.GetActionPolicyResponse{ActionPolicy: policyview.View(s.policy, subject, viewer)}, nil
 }
 
 // WatchActionPolicy follows the same view and authorization as GetActionPolicy. Subscribing before each read

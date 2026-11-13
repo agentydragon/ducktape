@@ -784,6 +784,22 @@ error severity. Warnings do not fail validation. Pass `--report-only` to keep
 the report but exit zero for selector errors, for example when collecting
 diagnostics across several chunks.
 
+To list annotations the engine may already infer, run `debundle spec lint`
+with the same inputs as `spec validate`. It costs one validate pass, whatever
+the number of annotations: each finding's signal comes from that pass. JSON
+gives `findings[]` (typed per [SPEC](../SPEC.md#spec-lint)) and
+`unlinted_chunks`, plus `pass_error` when the pass failed after linting
+(text prints it as a `note:` line); text prints one `warning[inferable_annotation]:` line per
+`inferable` finding and a `note[...]` line per `inconclusive` one, naming the
+module/member or spec location. It exits 0 whenever the pass produced reports.
+`host_behavior.reentry_free_operations` entries are decided from recorded uses
+at no extra cost (<premise_provenance.md>). `--probe-analysis` additionally
+decides `purity: pure` hints and consumed operation entries by rerunning the
+whole program once per annotation with that annotation withheld
+([SPEC](../SPEC.md#spec-lint)); `--probe-chunk <chunk>` and `--max-probes <n>`
+bound it, and `probes[]` gives each run's outcome and `millis`. Budget it as one
+`run --dry-run` per hint.
+
 To find authored chunk-export contracts that this exact assignment does not
 currently need, run a bounded fresh audit:
 
@@ -1567,21 +1583,20 @@ A preflight error leaves the last completed gate result intact. `debundle run`
 (and `run --dry-run`) writes the same files under `reports/tree/<chunk>/`,
 which is the same sibling-of-`dependency_graph.json.gz` layout.
 
-A `commuting_statements` entry the graph build rejects (contradicted by a
-source fact, or inerting no edge; [SPEC](../SPEC.md#commuting-statements))
-fails `run` with its diagnostic on stderr. `spec validate` reports it as a
-typed entry beside the selector outcomes: `commuting_statements_diagnostics[]`
-(`kind` ∈ `contradicted` with `conflicts[]`, `unused` with `reason`; each with
-`spec_location`, `a`, `b` and their bindings), read from the chunk's
-`commuting_statements_diagnostics.json`; any such entry fails
-`validation.success`. The ndjson stream emits each as a
-`commuting_statements_diagnostic` section. For an unused entry, each endpoint
-can include `a_logical_members` or `b_logical_members`: the authored module
-members whose resolved declaration is that endpoint, including when a
-`source_match` selected it. The field is omitted when no authored member maps
-to the endpoint. `a_source_location` and `b_source_location` contain the input path,
-line and column when available. The text diagnostic prints the same module/member
-names and source position so a stale premise can be reviewed against the input.
+A `commuting_statements` entry contradicted by a source fact
+([SPEC](../SPEC.md#commuting-statements)) fails `run` with its diagnostic on
+stderr; an entry inerting no edge is a `warning:` line instead and the run
+continues unchanged. Whenever a report directory is written (`run`, `run
+--dry-run`, `spec validate`), either lands in the chunk's
+`commuting_statements_diagnostics.json`. `spec validate` reports them beside
+the selector outcomes as `commuting_statements_diagnostics[]` (`kind` ∈
+`contradicted` with `conflicts[]` and the endpoint source units; `unused` with
+`reason`); only `contradicted` fails `validation.success`. The ndjson stream
+emits each as a `commuting_statements_diagnostic` section. An `unused` entry
+names its `spec_location` and, for each endpoint `a`/`b`, the authored
+`selector`, the `logical_members` whose resolved declaration is that endpoint
+(omitted when none) and its `source_location`. The text line prints the same
+module/member names, or a `source_match` preview, and source position.
 
 ## Gate queries
 

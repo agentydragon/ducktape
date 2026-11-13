@@ -33,16 +33,15 @@ type target struct {
 	field  field
 }
 
-// anomalies are observations that may signal a harness or runner problem. A span holding one keeps
-// every packet, so the frames stay available to turn into a harness/runner test.
-var anomalies = map[string]bool{
-	"command_failed":          true,
-	"harness_stderr":          true,
-	"harness_lost":            true,
-	"harness_exited":          true,
-	"harness_launch_failed":   true,
-	"conversation_reconciled": true,
-	"turn_completed":          true,
+// Failures and recovery boundaries keep a span whole. Stderr is retained independently;
+// it does not invalidate proof that a completed item holds all of its delta content.
+var anomalies = map[historypb.EventKind]bool{
+	historypb.EventKind_EVENT_KIND_COMMAND_FAILED:          true,
+	historypb.EventKind_EVENT_KIND_HARNESS_LOST:            true,
+	historypb.EventKind_EVENT_KIND_HARNESS_EXITED:          true,
+	historypb.EventKind_EVENT_KIND_HARNESS_LAUNCH_FAILED:   true,
+	historypb.EventKind_EVENT_KIND_CONVERSATION_RECONCILED: true,
+	historypb.EventKind_EVENT_KIND_TURN_COMPLETED:          true,
 }
 
 var fieldTemplates = map[field][]deltaTemplate{
@@ -134,7 +133,7 @@ func settle(span []*eventlogpb.EventEntry) *historypb.SettledDeltas {
 	}
 	for _, entry := range span {
 		native := entry.GetEvent().GetNative()
-		if anomalies[observationKind(entry)] ||
+		if anomalies[historypb.EventKind(observationNumber(entry))] ||
 			(native != nil && native.GetDirection() == eventpb.Direction_DIRECTION_FROM_HARNESS && nativeFrame(entry) == nil) {
 			return nil
 		}

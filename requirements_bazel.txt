@@ -4110,7 +4110,9 @@ prometheus-client==0.26.0 \
 prompt-toolkit==3.0.53 \
     --hash=sha256:01c0891d7f9237d5e339f7d3e42cdae80b7534abb1c7c0e3352efba6231492f2 \
     --hash=sha256:9ec8a0ad96d5c56148b3f914aa79c1564c3fde5d2e6b876e7bc327e353cf8fa6
-    # via ipython
+    # via
+    #   ducktape (pyproject.toml)
+    #   ipython
 propcache==0.5.2 \
     --hash=sha256:01c4fc7480cd0598bb4b57022df55b9ca296da7fc5a8760bd8451a7e63a7d427 \
     --hash=sha256:04dc2390d9edbbaef7461f33322555976ffddf0b650a038649d026358714e6c5 \
@@ -5581,6 +5583,10 @@ soupsieve==2.9.2 \
     --hash=sha256:4a55d8cf158a9c2e587fa4922f1bbb91d68ac829e2d6f25403a85747c71daf74 \
     --hash=sha256:8089a26fd974ca7a1f30276d3d8492ab266ab15af581642dfe8aa162e0c1c823
     # via beautifulsoup4
+sparklines==1.0.0 \
+    --hash=sha256:6d3d2cd7ad955b071c3f0abcb5e04662c65cc51ab287342ed2602f3b95576033 \
+    --hash=sha256:eee3ed5ac6dc954096ab092ce336941050eca790e2f33f85de65a4ea0a43cf74
+    # via ducktape (pyproject.toml)
 splitwise==3.0.0 \
     --hash=sha256:48049bc8c025224c7df6059b2d8def80c5cb1f9a210a5650d92a410b7706f6de \
     --hash=sha256:aaa956d3f65b0d9e716333afa612656b20f50010f10d9b8313e692f25f8b6a14
@@ -5743,6 +5749,10 @@ tenacity==9.1.4 \
     #   ducktape (pyproject.toml)
     #   inspect-ai
     #   redisvl
+termcolor==3.3.0 \
+    --hash=sha256:348871ca648ec6a9a983a13ab626c0acce02f515b9e1983332b17af7979521c5 \
+    --hash=sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5
+    # via sparklines
 testcontainers[postgres]==4.15.0 \
     --hash=sha256:085cde086337632e19002719460b7b80bbab2bdd51bb3ea04f77d0de96504706 \
     --hash=sha256:8796c14e76604031ad39cf0ed3b8e9806283a1fbf5270965c2b1c594caa31b74
@@ -5886,6 +5896,10 @@ typer-slim==0.24.0 \
 types-aiofiles==25.1.0.20260518 \
     --hash=sha256:c0c95eb78755d4fa7b397d4f0332c632714dd7cd0d17f49b96e31d4d7a8d8c76 \
     --hash=sha256:f776bdfb4bec17f743d9ef042e61edf03bdcc7821fc08556fba9b63d873fdea9
+    # via ducktape (pyproject.toml)
+types-boto3-s3==1.40.61 \
+    --hash=sha256:2263a878a1c29ba7b886bc71fc771b9b5dbfb85de15564595a77b33aa9f1aca4 \
+    --hash=sha256:8692242b1b2855b2b96b93268c921344c65c66250ec1f870b50bdef2009cfd67
     # via ducktape (pyproject.toml)
 types-colorama==0.4.15.20260508 \
     --hash=sha256:3a8916039e57452bd21f57e674e1f221ca9e4f319893c5e3bbd37b845c27d8e6 \

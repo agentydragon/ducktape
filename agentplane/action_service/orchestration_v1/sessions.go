@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -111,11 +112,11 @@ func (e *Executor) requireSandbox(ctx context.Context, ref contract.SandboxRef) 
 	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: ref.Name}, &sandbox)
 	switch {
 	case apierrors.IsNotFound(err):
-		return nil, refuse("sandbox_not_found", "no Sandbox named %q exists", ref.Name)
+		return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_FOUND, "no Sandbox named %q exists", ref.Name)
 	case err != nil:
 		return nil, kubeError("reading the Sandbox", err)
 	case sandbox.UID != ref.UID:
-		return nil, refuse("sandbox_replaced", "Sandbox %q is no longer the incarnation %s", ref.Name, ref.UID)
+		return nil, refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_REPLACED, "Sandbox %q is no longer the incarnation %s", ref.Name, ref.UID)
 	}
 	return &sandbox, nil
 }
@@ -124,20 +125,20 @@ func (e *Executor) requireSandbox(ctx context.Context, ref contract.SandboxRef) 
 // never sent, had no effect and is a refusal; any other failure leaves the outcome unknown.
 func dispatcherError(err error) error {
 	if bearer.IsTokenFileError(err) {
-		return refuse("dispatcher_unreachable", "the Session Dispatcher was not called: %v", err)
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_DISPATCHER_UNREACHABLE, "the Session Dispatcher was not called: %v", err)
 	}
 	refused := status.Convert(err)
 	switch refused.Code() {
 	case codes.NotFound:
-		return refuse("sandbox_not_found", "%s", refused.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_FOUND, "%s", refused.Message())
 	case codes.AlreadyExists:
-		return refuse("id_reused", "%s", refused.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ID_REUSED, "%s", refused.Message())
 	case codes.InvalidArgument:
-		return refuse("invalid_arguments", "%s", refused.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, "%s", refused.Message())
 	case codes.FailedPrecondition:
-		return refuse("rejected", "%s", refused.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_REJECTED, "%s", refused.Message())
 	case codes.PermissionDenied, codes.Unauthenticated:
-		return refuse("dispatcher_refused", "%s", refused.Message())
+		return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_DISPATCHER_REFUSED, "%s", refused.Message())
 	}
 	return fmt.Errorf("%w: Session Dispatcher: %w", worker.ErrOutcomeUnknown, err)
 }

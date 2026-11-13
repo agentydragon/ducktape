@@ -172,6 +172,13 @@ class Harness(_RuntimeConfigModel):
         return value
 
 
+class Codex(Harness):
+    turn_diff_notifications: bool | None = Field(
+        default=None,
+        description="Receive aggregate turn diff notifications on the shared app-server connection; omitted disables them.",
+    )
+
+
 class Executor(_RuntimeConfigModel):
     url: str
 
@@ -271,7 +278,7 @@ class Configuration(_RuntimeConfigModel):
     environment_runtime_environment: EnvironmentVariables = Field(default_factory=EnvironmentVariables)
     harness_environment: EnvironmentVariables
     claude: Harness | None = None
-    codex: Harness | None = None
+    codex: Codex | None = None
     codex_readiness: CodexReadiness | None = None
     environment: Annotated[PodEnvironment | VMEnvironment, Field(discriminator="kind")]
     debug_checkpoint: DebugCheckpoint | None = None

@@ -31,6 +31,7 @@ from agentplane.system_tests.driver.dispatcher_transport import (
     bound_caller as _bound_caller,
     forward as _forward,
 )
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import (
     ENVIRONMENT_RUNTIME_CONTAINER,
     ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
@@ -476,11 +477,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
     assert deployment["status"].get("readyReplicas") == 1, "the Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
-    gateway_config = json.loads(await cluster.kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
-    policies = yaml.safe_load(gateway_config["data"]["settings.yaml"])["environment_default_policy_sets"]
-    assert isinstance(policies, list)
-    assert policies
-    assert all(isinstance(name, str) and name for name in policies)
+    policies = list(LAUNCH_DEFAULT_POLICY_SETS)
     suffix = uuid4().hex[:8]
     sandbox, session, command = (f"systest-dispatch-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
@@ -498,6 +495,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
         authentication, caller, _caller_uid = await _bound_caller(cluster, "app")
+        identity = await stack.enter_async_context(scenario_identity(cluster, sandbox, policies))
         created = json.loads(
             await cluster.kubectl(
                 "create",
@@ -509,7 +507,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
                     "metadata": {"name": sandbox, "namespace": cluster.namespace},
-                    "spec": {"template": POD_TEMPLATE, "running": False, "policySets": policies},
+                    "spec": {"template": POD_TEMPLATE, "running": False, "identity": {"name": identity}},
                 },
             )
         )
@@ -770,9 +768,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     assert set(gateway_settings["dispatcher_callers"]) == accounts
     assert set(gateway_settings["wake_callers"]) == accounts
 
-    policies = gateway_settings["environment_default_policy_sets"]
-    assert isinstance(policies, list)
-    assert policies
+    policies = list(LAUNCH_DEFAULT_POLICY_SETS)
     suffix = uuid4().hex[:8]
     sandbox, session, command = (f"systest-wake-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
@@ -787,6 +783,9 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
     }
     path = undeclared_outputs_dir() / "dispatcher-wake.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
+    # Closed in cleanup, after the Sandbox that acts as it.
+    identities = AsyncExitStack()
+    identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
     created = json.loads(
         await cluster.kubectl(
             "create",
@@ -803,7 +802,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     "running": True,
                     "wakeOnSend": True,
                     "idleSuspendAfter": "1m",
-                    "policySets": policies,
+                    "identity": {"name": identity},
                 },
             },
         )
@@ -820,6 +819,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     error, lambda: _capture_cleanup_diagnostics(crictl_command, cluster, sandbox, [session], [command])
                 )
             await _cleanup_sandbox(crictl_command, cluster, sandbox, uid, session_ids=[session], command_ids=[command])
+            await identities.aclose()
             cleaned = True
 
     try:

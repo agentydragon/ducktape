@@ -11,7 +11,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "//agent_core/testing:responses",
-        "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "//util/exec:models",
         "//util/exec:subprocess",

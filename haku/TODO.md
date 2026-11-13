@@ -13,8 +13,8 @@ component checklist rather than being copied here: haku-console's tool/API backl
   one rollout window instead: deploy readers before writers for config changes; make server API
   additions available before the static frontend consumes them; remove old fields/endpoints only
   after every consumer has moved. CI should exercise the server against the current and next config
-  shapes and the frontend against its supported server contract. Revisit the current `Recreate`
-  strategy so a failed replacement does not discard the last serving version. The 2026-07-14
+  shapes and the frontend against its supported server contract. Preserve a serving API replica
+  if a replacement fails readiness. The 2026-07-14
   authority cutover is the regression case: new config restarted the old incompatible server and
   caused an outage until image automation caught up.
 - **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and
@@ -26,10 +26,10 @@ component checklist rather than being copied here: haku-console's tool/API backl
 The canonical authority/enrollment cutover and migration squash are complete. These are product
 slices over the deployed schema, not another identity migration:
 
-- **Connected Agents:** ship an Operator-scoped API and trusted-console UI showing canonical Agent
-  name/status, safe client metadata, scopes, binding generations, creation time, last-authenticated
-  time, and reconnect history. Do not call inactivity "disconnected" or expose secrets/raw OAuth
-  metadata. The existing schema is sufficient for this slice; do not block it on schema cleanup.
+- **Fuller Agent detail:** extend the existing Operator-scoped Agent API and settings UI with safe
+  client metadata, scopes, binding generations and reconnect history. Do not call inactivity
+  "disconnected" or expose secrets/raw OAuth metadata. The existing schema is sufficient for this
+  slice; do not block it on schema cleanup.
 - **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect
   history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
   the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide

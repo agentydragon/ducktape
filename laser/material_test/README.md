@@ -18,11 +18,12 @@ Example: X axis = power (12%, 13.5%, 15%, 16.5%, 18%), Y axis = ΔZ/pass (−0.5
 
 ## Usage
 
-```
-bazel run //laser/material_test:grid_generator_bin -- config.toml [-o output.lbrn2]
+```bash
+bb run //laser/material_test:grid_generator_bin -- "$PWD/config.toml" -o "$PWD/output.lbrn2"
 ```
 
-All parameters are supplied via a TOML configuration file. The output path defaults to the
+Pass absolute paths: the binary runs from its Bazel runfiles directory. All parameters are
+supplied via a TOML configuration file. The output path defaults to the
 config filename with `.lbrn2` extension. See <example_config.toml> for a fully annotated
 example with all available options and their defaults.
 

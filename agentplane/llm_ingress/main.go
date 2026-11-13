@@ -15,17 +15,35 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	authlistener "github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for the central
+// samplers' delegated Identity callers.
+func kubernetesIdentityUIDs(kubeConfig *rest.Config, policyNamespace string) (auth.IdentityUIDReader, error) {
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	return auth.KubernetesIdentityUIDs(objects, policyNamespace)
+}
 
 func main() {
 	c, err := loadConfig()
@@ -58,22 +76,29 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return errors.New("could not create Kubernetes client")
 	}
-	resolver, err := auth.NewResolver(authentication.TokenReviews(), c.TokenAudience, c.AllowedServiceAccountNamespaces)
+	callers, err := auth.NewResolver(authentication.TokenReviews(), c.TokenAudience, c.AllowedServiceAccountNamespaces)
 	if err != nil {
 		return err
 	}
 	var svidResolver *auth.SVIDResolver
 	if c.RPC.Has(authlistener.SPIFFE) {
-		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces)
+		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {
 			return err
 		}
 	}
-	resolver, err = resolver.WithListenerAuthentication(c.RPC, svidResolver)
+	callers, err = callers.WithListenerAuthentication(c.RPC, svidResolver)
 	if err != nil {
 		return err
 	}
-	handler, err := newIngressHandler(c, resolver, logger)
+	var identityUIDs auth.IdentityUIDReader
+	if c.CentralSamplerIdentityCallers {
+		if identityUIDs, err = kubernetesIdentityUIDs(kubeConfig, c.PolicyNamespace); err != nil {
+			return err
+		}
+	}
+	handler, err := newIngressHandler(c, callers, identityUIDs, logger)
 	if err != nil {
 		return err
 	}
@@ -99,7 +124,7 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	for _, model := range c.Models {
 		models[model.Model] = model
 	}
-	grpcServer := newModelConfigServer(resolver, &modelConfigService{models: models})
+	grpcServer := newModelConfigServer(callers, &modelConfigService{models: models})
 	server := &http.Server{
 		Handler:           observability.HTTPHandler(rpcHandler(grpcServer, handler)),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -147,9 +172,11 @@ func rpcHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler 
 	})
 }
 
-func newModelConfigServer(resolver auth.PrincipalResolver, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
+// newModelConfigServer serves budgets to any caller the resolver authenticates; the handler never
+// reads the caller, so an Identity caller is served as a ServiceAccount one is.
+func newModelConfigServer(callers *auth.Resolver, service modelconfigpb.ModelConfigServiceServer) *grpc.Server {
 	methods := auth.HealthMethods()
-	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnyAccount(resolver)
+	methods[modelconfigpb.ModelConfigService_GetModelConfig_FullMethodName] = auth.AnySubject(callers)
 	server := grpc.NewServer(append(methods.ServerOptions(10*time.Second), observability.GRPCServerOption())...)
 	modelconfigpb.RegisterModelConfigServiceServer(server, service)
 	healthpb.RegisterHealthServer(server, health.NewServer())

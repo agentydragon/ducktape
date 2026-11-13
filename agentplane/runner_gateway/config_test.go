@@ -11,14 +11,14 @@ import (
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -31,7 +31,8 @@ import (
 
 const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:never-print-this@queue/dispatcher"
 
-const requiredFile = `dispatcher_callers: [agentplane/app, agentplane/notifications]
+const requiredFile = `policy_namespace: agentplane
+dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
@@ -47,7 +48,7 @@ type configTestTokenReviews struct{}
 
 type configTestWakeBudget struct{}
 
-func (configTestWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (configTestWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -75,6 +76,20 @@ func required(t *testing.T, extra ...string) []string {
 		settingPrefix + "POD_IP=10.0.0.5",
 		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile), databaseURLEnv,
 	}, extra...)
+}
+
+func TestPolicyNamespaceIsRequired(t *testing.T) {
+	for name, contents := range map[string]string{
+		"missing": strings.Replace(requiredFile, "policy_namespace: agentplane\n", "", 1),
+		"empty":   strings.Replace(requiredFile, "policy_namespace: agentplane", `policy_namespace: ""`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := configtest.WriteSettings(t, contents)
+			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+				t.Fatal("accepted a missing policy_namespace")
+			}
+		})
+	}
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {

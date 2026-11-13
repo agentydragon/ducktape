@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from collections.abc import Mapping
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +14,7 @@ import yaml
 
 from x.ai_session_archive.database import make_engine, make_session_factory
 from x.ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
+from x.ai_session_archive.migrate_cli import main as migrate_database
 from x.ai_session_archive.models import Harness
 from x.ai_session_archive.restic import ResticRepository
 
@@ -100,6 +102,11 @@ def _parse_args(arguments: list[str] | None) -> argparse.Namespace:
 
 
 def main(arguments: list[str] | None = None) -> None:
+    if arguments is None:
+        arguments = sys.argv[1:]
+    if arguments == ["--migrate-database"]:
+        migrate_database()
+        return
     args = _parse_args(arguments)
     if not os.environ.get("RESTIC_REPOSITORY"):
         raise SystemExit("RESTIC_REPOSITORY must point at one host's Restic repository")

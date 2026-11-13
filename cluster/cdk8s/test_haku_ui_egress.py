@@ -11,9 +11,8 @@ import yaml
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
-from agentplane.action_service.policies.resources import CALLER_LABEL
 from cluster.cdk8s.agentplane import staging
-from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY
+from cluster.cdk8s.agentplane.actions_staging_policies import ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY
 from cluster.cdk8s.haku import rbac as haku_rbac, ui_egress
 
 
@@ -31,7 +30,8 @@ def _binding(resources: list[dict[str, Any]], name: str) -> dict[str, Any]:
     return one(d for d in resources if d["kind"] == "PolicyBinding" and d["metadata"]["name"] == name)
 
 
-def test_haku_ui_is_a_labelled_caller_with_no_token_automount(resources: list[dict[str, Any]]) -> None:
+def test_haku_ui_account_mounts_no_token(resources: list[dict[str, Any]]) -> None:
+    """Haku runs Pods as this account; none of them gets a Kubernetes credential from it."""
     account = one(
         d
         for d in resources
@@ -40,25 +40,44 @@ def test_haku_ui_is_a_labelled_caller_with_no_token_automount(resources: list[di
         and d["metadata"]["namespace"] == ui_egress.NAMESPACE
     )
 
-    assert account["metadata"]["labels"][CALLER_LABEL] == "true"
     assert account["automountServiceAccountToken"] is False
 
 
 def test_haku_ui_grants_are_a_subset_of_claude_ais(resources: list[dict[str, Any]]) -> None:
     """`haku-sandbox-admin` lets Haku run Pods as haku-ui, so its grants must add nothing to claude-ai's."""
-    haku_ui = _binding(resources, ui_egress.SERVICE_ACCOUNT)
+    haku_ui = _binding(resources, ui_egress.IDENTITY)
     claude_ai = _binding(resources, "claude-ai")
 
-    assert haku_ui["spec"]["subject"] == {"namespace": ui_egress.NAMESPACE, "name": ui_egress.SERVICE_ACCOUNT}
+    assert haku_ui["spec"]["subject"] == {"identity": {"name": ui_egress.IDENTITY}}
     # AnkiWeb is the one deliberate grant claude-ai lacks; haku-anki shares this account.
-    own = set(haku_ui["spec"]["policySets"]) - {ANKIWEB_SYNC_POLICY}
+    own = set(haku_ui["spec"]["policySets"]) - {ANKIWEB_SYNC_POLICY, HAKU_NOTEBOOK_FETCH_POLICY}
     assert own <= set(claude_ai["spec"]["policySets"])
 
 
+def _egress_hosts(resources: list[dict[str, Any]], policy_sets: list[str]) -> set[str]:
+    return {
+        host
+        for doc in resources
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] in policy_sets
+        for rule in doc["spec"]["rules"]
+        if rule["type"] == "egress"
+        for host in rule["hosts"]
+    }
+
+
+def test_haku_jupyters_hosts_are_haku_uis_and_within_claude_ais(resources: list[dict[str, Any]]) -> None:
+    """haku-jupyter egresses as haku-ui, so its notebook hosts are that account's, and add no host to claude-ai's."""
+    haku_ui = _binding(resources, ui_egress.IDENTITY)
+    claude_ai = _binding(resources, "claude-ai")
+
+    assert HAKU_NOTEBOOK_FETCH_POLICY in haku_ui["spec"]["policySets"]
+    hosts = _egress_hosts(resources, [HAKU_NOTEBOOK_FETCH_POLICY])
+    assert hosts
+    assert hosts <= _egress_hosts(resources, claude_ai["spec"]["policySets"])
+
+
 def test_haku_ui_has_no_legacy_direct_action_policy(resources: list[dict[str, Any]]) -> None:
-    assert not any(
-        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == ui_egress.SERVICE_ACCOUNT for doc in resources
-    )
+    assert not any(doc["kind"] == "PolicySet" and doc["metadata"]["name"] == ui_egress.IDENTITY for doc in resources)
 
 
 def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any]:
@@ -66,12 +85,11 @@ def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any
     return cast(dict[str, Any], yaml.safe_load(one(data.values())))
 
 
-def test_haku_sandbox_retains_explicit_bearer_authentication(resources: list[dict[str, Any]]) -> None:
+def test_haku_sandbox_reaches_the_tls_proxy_and_actions(resources: list[dict[str, Any]]) -> None:
     egress = _settings(resources, "egress-go-settings")
     actions = _settings(resources, "actions-settings")
 
     assert ui_egress.NAMESPACE in egress["allowed_service_account_namespaces"]
-    assert {method["mode"] for method in egress["forward"]["auth"]} == {"spiffe", "kubernetes_bearer"}
     assert egress["forward"]["tls"]
     assert ui_egress.NAMESPACE in actions["caller_service_account_namespaces"]
     # Callers are watched in every allowed namespace, but policies and bindings only in the staging one.
@@ -115,14 +133,17 @@ def _container_env(resources: list[dict[str, Any]], deployment: str) -> dict[str
     return {variable["name"]: variable["value"] for variable in container["env"] if "value" in variable}
 
 
-def test_each_haku_workload_has_a_standing_record_as_haku_ui(resources: list[dict[str, Any]]) -> None:
-    """No owner and no binding make a record standing: its ID never rotates and its Secret is `svid-<name>`."""
+def test_each_haku_workload_has_a_standing_record_as_the_haku_ui_identity(resources: list[dict[str, Any]]) -> None:
+    """No owner and no binding make a record standing: its ID never rotates and its Secret is `svid-<name>`.
+    Its subject names the Identity by name alone, since git cannot know the UID; a changed subject
+    replaces the record, which the Flux annotation lets kustomize-controller do."""
     records = _standing_records(resources)
 
     assert {record["metadata"]["name"] for record in records} == set(ui_egress.STANDING_WORKLOADS)
     for record in records:
         assert "ownerReferences" not in record["metadata"]
-        assert record["spec"] == {"subject": {"serviceAccount": ui_egress.SERVICE_ACCOUNT}}
+        assert record["spec"] == {"subject": {"identity": {"name": ui_egress.IDENTITY}}}
+        assert record["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/force"] == "enabled"
 
 
 def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict[str, Any]]) -> None:
@@ -140,16 +161,17 @@ def test_the_issuer_serves_every_standing_records_namespace(resources: list[dict
 
 
 def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str, Any]]) -> None:
-    """The proxy reads the record and its subject live on each request; a missing grant fails closed."""
+    """The proxy reads the record, and its Identity in the policy namespace, live on each request; a
+    missing grant fails closed."""
     allowed = set(_settings(resources, "egress-go-settings")["allowed_service_account_namespaces"])
-    accounts = {(d["metadata"]["namespace"], d["metadata"]["name"]) for d in resources if d["kind"] == "ServiceAccount"}
+    policy_namespace = _container_env(resources, "egress")["AGENTPLANE_EGRESS_RULES_NAMESPACE"]
+    identities = {(d["metadata"]["namespace"], d["metadata"]["name"]) for d in resources if d["kind"] == "Identity"}
+    assert ("identities", "get") in _granted(resources, policy_namespace, ("agentplane-staging", "egress"))
     for record in _standing_records(resources):
         namespace = record["metadata"]["namespace"]
         assert namespace in allowed
-        assert {("workloadcredentials", "get"), ("serviceaccounts", "get")} <= _granted(
-            resources, namespace, ("agentplane-staging", "egress")
-        )
-        assert (namespace, record["spec"]["subject"]["serviceAccount"]) in accounts
+        assert ("workloadcredentials", "get") in _granted(resources, namespace, ("agentplane-staging", "egress"))
+        assert (policy_namespace, record["spec"]["subject"]["identity"]["name"]) in identities
 
 
 if __name__ == "__main__":

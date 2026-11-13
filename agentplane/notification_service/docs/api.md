@@ -94,6 +94,11 @@ event can match multiple subscriptions. Payload content remains provider-defined
 }
 ```
 
+An Action cancellation's `actor` is attribution: `account` retains a ServiceAccount namespace and
+name, `identity` retains an Identity name and UID, and `issuer` plus `subject` identifies an operator.
+These forms are exclusive. Recreating an Identity does not rewrite a stored actor. Source access is
+checked against the request owner independently of the actor who cancelled it.
+
 Pull-request subscriptions include the Agentplane-generated `mergeability_changed` selector by
 default. Selecting it explicitly replaces the defaults and accepts no `actions` filter. The service
 records mergeability observations when the pull request is conflicted and later changes to either
@@ -132,7 +137,10 @@ remain explicit client operations. A retried notice retains its original text.
 ## Messages
 
 A workload sends a message to a Session's inbox when a `session_inbox_access` rule of a PolicySet bound to its
-ServiceAccount allows `send_message` to the Session's Sandbox. A rule targets Sandboxes of its PolicySet's
+ServiceAccount or Identity allows `send_message` to the Session's Sandbox. No rule is needed between Sessions of
+one Identity: a workload whose credential names an Identity sends to any Session the Dispatcher recorded as
+executing as that same Identity incarnation (name and UID; an Identity recreated under the name is another
+sender), and such a send needs no current permission view. A rule targets Sandboxes of its PolicySet's
 namespace by name, optionally pinned to one incarnation by `uid`, by inbox tag (`inboxTags`), or all of them with
 `allSandboxes`; grants combine additively. A target without `uid` follows a Sandbox deleted and recreated under its
 name. A tag target matches the Sandbox's `spec.inboxTags` as the service reads it at acceptance, so removing the tag
@@ -153,7 +161,8 @@ Sandbox with the same name. An already-existing inbox is keyed by destination UI
 replacement Sandbox has a different inbox; sends to an existing inbox do not repeat the History check.
 
 A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
-purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; its payload
+purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; for an
+Identity sender, `sender` names the Sandbox it sent from and `sender_identity` the Identity incarnation. Its payload
 is the `body` and the optional `from_session`, the sender's unverified label for the Session it writes from. The
 idempotency key is unique per sender within the inbox: an identical retry answers with the accepted message,
 also after its payload expired, and other content under the key is `ALREADY_EXISTS`. Bodies are UTF-8, at most

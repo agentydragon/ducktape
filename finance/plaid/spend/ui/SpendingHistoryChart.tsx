@@ -13,6 +13,7 @@ import {
 } from "chart.js";
 import type { AllowanceView, SpendTransactionsView } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import { money } from "./spend_display";
 import type { EstimatePeriodId } from "./types";
 
 Chart.register(
@@ -36,17 +37,6 @@ type LegendRow = {
 function legendColumnsForViewport(): number {
   if (typeof window === "undefined" || window.innerWidth >= 960) return 3;
   return window.innerWidth >= 600 ? 2 : 1;
-}
-
-function formatMoney(minorUnits: number, currency: string): string {
-  const code = currency.length === 3 ? currency.toUpperCase() : "USD";
-  const fractionDigits = new Intl.NumberFormat(undefined, { style: "currency", currency: code }).resolvedOptions()
-    .maximumFractionDigits;
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: code,
-    maximumFractionDigits: 0,
-  }).format(minorUnits / 10 ** (fractionDigits ?? 2));
 }
 
 function datesInPeriod(start: string, end: string): string[] {
@@ -181,11 +171,11 @@ export function SpendingHistoryChart({
           tooltip: {
             filter: (context) => {
               const value = Number(context.parsed.y ?? 0);
-              return value > 0 && formatMoney(value, allowance.currency) !== formatMoney(0, allowance.currency);
+              return value > 0 && money(value, allowance.currency) !== money(0, allowance.currency);
             },
             callbacks: {
               label: (context) =>
-                `${context.dataset.label}: ${formatMoney(Number(context.parsed.y ?? 0), allowance.currency)}`,
+                `${context.dataset.label}: ${money(Number(context.parsed.y ?? 0), allowance.currency)}`,
             },
           },
         },
@@ -200,7 +190,7 @@ export function SpendingHistoryChart({
             beginAtZero: true,
             title: { display: true, text: "Flexible spending per day" },
             ticks: {
-              callback: (value) => formatMoney(Number(value), allowance.currency),
+              callback: (value) => money(Number(value), allowance.currency),
             },
           },
         },
@@ -215,28 +205,28 @@ export function SpendingHistoryChart({
   const leashDailyMinorUnits = chart?.leashDailyMinorUnits ?? 0;
   const summary =
     chart && transactions
-      ? `${formatMoney(totalMinorUnits, allowance.currency)} flexible spending over ${chart.days} days; average ${formatMoney(dailyAverageMinorUnits, allowance.currency)} per day; leash reference ${formatMoney(leashDailyMinorUnits, allowance.currency)} per day.`
+      ? `${money(totalMinorUnits, allowance.currency)} flexible spending over ${chart.days} days; average ${money(dailyAverageMinorUnits, allowance.currency)} per day; leash reference ${money(leashDailyMinorUnits, allowance.currency)} per day.`
       : "Spending history is loading.";
   const legendRows: LegendRow[] = chart
     ? [
         ...chart.categories.map((category) => ({
           key: category.id,
           label: category.label,
-          value: formatMoney(category.total, allowance.currency),
+          value: money(category.total, allowance.currency),
           color: category.color,
           marker: "square" as const,
         })),
         {
           key: "average",
           label: "Average over period",
-          value: `${formatMoney(dailyAverageMinorUnits, allowance.currency)}/day`,
+          value: `${money(dailyAverageMinorUnits, allowance.currency)}/day`,
           color: "#1971C2",
           marker: "dotted",
         },
         {
           key: "leash",
           label: "Leash level",
-          value: `${formatMoney(leashDailyMinorUnits, allowance.currency)}/day`,
+          value: `${money(leashDailyMinorUnits, allowance.currency)}/day`,
           color: "#E8590C",
           marker: "dashed",
         },

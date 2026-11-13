@@ -103,6 +103,10 @@ pub struct StatementFacts {
     /// Proven effects are retained even when some targets remain unresolved;
     /// `complete` decides whether the conservative fallback also runs.
     pub(crate) synchronous_calls: Option<SynchronousCalls>,
+    /// Every source-indexed callable this statement can publish contributes
+    /// its synchronous prefix. `None` means coverage is incomplete, so the
+    /// graph fallback must use the whole lazy read/rebind closure.
+    pub(crate) synchronous_prefix_effects: Option<(BTreeSet<Id>, BTreeSet<Id>)>,
     /// Bindings referenced in the callee or arguments of at-init
     /// calls promotion can't follow (member calls `api.read()`,
     /// optional-chain calls, tagged templates). A function value
@@ -146,6 +150,10 @@ pub struct StatementFacts {
     /// "Conditionally-correct optimizations" for the soundness
     /// precondition.
     pub havoc: BTreeSet<DataflowOpacityCause>,
+    /// Causes `trusted_dataflow_summaries` removed from `havoc`, including an
+    /// opaque at-init call it kept out. Empty when the premise changed nothing
+    /// for this statement (docs/premise_provenance.md).
+    pub trusted_summary_discharged: BTreeSet<DataflowOpacityCause>,
     /// Heap-content cells of the statement's own at-init syntax. These are
     /// distinct from binding effects: mutating an array changes its contents,
     /// not the binding that names it. Its calls' cells are
@@ -215,6 +223,8 @@ pub(crate) struct SynchronousCalls {
     /// refused. This never changes the conservative effect projection.
     pub(crate) initialization_coverage_refusal:
         Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
+    /// Report-only outcome of the owner's attempted kernel lane, if any.
+    pub(crate) root_attempt: Option<crate::facts::RootAttempt>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
     pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
     // SavedSynchronousCalls transports both verdicts through the artifact's
@@ -227,6 +237,12 @@ pub(crate) struct SynchronousCalls {
     /// succeed. It is deliberately separate from the serialized proof-use
     /// report: report data is not an analysis input.
     pub local_record_factory_purity: Option<LocalRecordFactoryPurityCertificate>,
+    /// Direct top-level reads whose executed receiver was a private fresh
+    /// instance with an own class data field on every reached path.
+    pub(crate) proven_private_own_field_reads: Vec<(SourceUnitOrdinal, swc_common::Span)>,
+    /// Exact completed constructor-factory call whose checked bodies have no
+    /// immediate array-content operation. Separate from the purity proof.
+    pub(crate) local_record_factory_heap_call: Option<swc_common::Span>,
     pub reads: BTreeSet<(Id, SourceUnitOrdinal)>,
     pub rebinds: BTreeSet<(Id, SourceUnitOrdinal)>,
     /// Bindings a synchronous callee can observe before their source-order
@@ -568,6 +584,11 @@ pub struct ChunkFactAnalysis {
     /// `Array`). Surfaced for the same trust-surface-shrinking
     /// reason as `redundant_purity_hints`.
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
+    /// Author-declared `purity: pure` hints no statement of this chunk reads
+    /// by name. The classifier consults a hint only at a direct call of the
+    /// name, and the code graph only at a read of the name as an import, so
+    /// these hints changed no fact (docs/premise_provenance.md).
+    pub unconsulted_purity_hints: BTreeSet<String>,
 }
 
 fn apply_initializer_binding_effects(
@@ -654,6 +675,25 @@ fn apply_initializer_binding_effects(
 }
 
 impl ChunkFactAnalysis {
+    /// Every `host_behavior.reentry_free_operations` entry some statement's
+    /// execution consumed. The interpreter's only reader of these entries,
+    /// `host_call_does_not_reenter`, records each use it grants, so an entry
+    /// absent here changed no fact of this chunk.
+    pub fn consumed_trusted_dataflow_summaries(&self) -> bool {
+        self.facts
+            .iter()
+            .any(|fact| !fact.trusted_summary_discharged.is_empty())
+    }
+
+    pub fn consumed_reentry_free_operations(&self) -> BTreeSet<spec::ReentryFreeOperation> {
+        self.facts
+            .iter()
+            .filter_map(|fact| fact.synchronous_calls.as_ref())
+            .flat_map(|calls| &calls.author_host_contract_uses)
+            .map(|proof_use| proof_use.operation)
+            .collect()
+    }
+
     /// Apply author lexical-effect boundaries after raw source execution and
     /// receipt sealing. Source-owned coverage is never changed by this overlay.
     pub fn apply_initializer_binding_effects(&mut self, source_only_bindings: &BTreeSet<String>) {

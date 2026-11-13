@@ -8,47 +8,52 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )
 
-// HumanProvider is the provider a human Decision is recorded under.
-const HumanProvider = "human_operator"
-
-// decisionRecord is a Decision to record: a human's, which names its operator, or a provider's, which names its
-// reason.
+// decisionRecord is a Decision to record.
 type decisionRecord struct {
-	Verdict           Verdict
-	Provider          string
-	Operator          *OperatorPrincipal
-	IdempotencyKey    string
-	DecisionNote      *string
-	ReasonCode        *string
-	ReasonDescription *string
-	PolicyEvidence    *PolicyEvidence
+	Verdict        Verdict
+	IdempotencyKey string
+	Decider        Decider
 }
 
 // recordDecision decides a pending request in the caller's transaction and reports whether it now awaits
 // dispatch: an allow adds the one Execution and wakes the dispatchers.
 func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Time, decision decisionRecord) (bool, error) {
-	var evidenceProto, issuer, subject any
-	if decision.PolicyEvidence != nil {
-		encoded, err := encodePolicyEvidence(decision.PolicyEvidence)
-		if err != nil {
-			return false, err
+	var provider string
+	var issuer, subject, decisionNote, reasonCode, reasonDescription, evidenceProto any
+	switch decider := decision.Decider.(type) {
+	case OperatorDecision:
+		provider = operatorProvider
+		issuer, subject = decider.Operator.Issuer, decider.Operator.Subject
+		decisionNote = decider.DecisionNote
+	case PolicyDecision:
+		provider = policyProvider
+		code, known := reasonCodeStored(decider.ReasonCode)
+		if !known {
+			return false, fmt.Errorf("policy Decision has no stored form for reason code %s", decider.ReasonCode)
 		}
-		if encoded != nil {
-			evidenceProto = encoded
+		reasonCode, reasonDescription = code, decider.ReasonDescription
+		if decider.Evidence != nil {
+			encoded, err := encodePolicyEvidence(decider.Evidence)
+			if err != nil {
+				return false, err
+			}
+			if encoded != nil {
+				evidenceProto = encoded
+			}
 		}
-	}
-	if decision.Operator != nil {
-		issuer, subject = decision.Operator.Issuer, decision.Operator.Subject
+	default:
+		return false, fmt.Errorf("decision has unknown decider %T", decider)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO action_decision (id, request_id, verdict, provider, operator_issuer, operator_subject,
 			decision_note, reason_code, reason_description, policy_evidence_proto, idempotency_key, decided_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-		uuid.New(), row.ID, decision.Verdict, decision.Provider, issuer, subject, decision.DecisionNote,
-		decision.ReasonCode, decision.ReasonDescription, evidenceProto, decision.IdempotencyKey, at); err != nil {
+		uuid.New(), row.ID, decision.Verdict, provider, issuer, subject, decisionNote,
+		reasonCode, reasonDescription, evidenceProto, decision.IdempotencyKey, at); err != nil {
 		return false, err
 	}
 	state := action_servicepb.ActionState_ACTION_STATE_DENIED
@@ -66,7 +71,7 @@ func recordDecision(ctx context.Context, tx *sql.Tx, row *requestRow, at time.Ti
 		uuid.New(), row.ID, ExecutionPendingDispatch, at); err != nil {
 		return false, err
 	}
-	return true, notify(ctx, tx, DispatchChannel, "")
+	return true, postgres.Notify(ctx, tx, DispatchChannel, "")
 }
 
 // Decide records an operator's Decision on a pending request and returns the request and whether it now awaits
@@ -93,7 +98,7 @@ func (s *Store) Decide(ctx context.Context, id uuid.UUID, input DecisionInput, o
 		err = tx.QueryRowContext(ctx, `
 			SELECT request_id, verdict FROM action_decision
 			WHERE provider = $1 AND operator_issuer = $2 AND operator_subject = $3 AND idempotency_key = $4`,
-			HumanProvider, operator.Issuer, operator.Subject, input.IdempotencyKey).Scan(&priorRequest, &priorVerdict)
+			operatorProvider, operator.Issuer, operator.Subject, input.IdempotencyKey).Scan(&priorRequest, &priorVerdict)
 		switch {
 		case err == nil:
 			if priorRequest != id || Verdict(priorVerdict) != input.Verdict {
@@ -126,10 +131,8 @@ func (s *Store) Decide(ctx context.Context, id uuid.UUID, input DecisionInput, o
 		}
 		if dispatch, err = recordDecision(ctx, tx, &row, now(), decisionRecord{
 			Verdict:        input.Verdict,
-			Provider:       HumanProvider,
-			Operator:       &operator,
 			IdempotencyKey: input.IdempotencyKey,
-			DecisionNote:   input.DecisionNote,
+			Decider:        OperatorDecision{Operator: operator, DecisionNote: input.DecisionNote},
 		}); err != nil {
 			return err
 		}

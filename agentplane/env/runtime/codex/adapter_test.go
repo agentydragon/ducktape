@@ -18,6 +18,48 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
 
+func TestInitializeTurnDiffNotificationPolicy(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			request, initialized, err := InitializeFrames(enabled)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var frame struct {
+				ID     string `json:"id"`
+				Method string `json:"method"`
+				Params struct {
+					Capabilities struct {
+						ExperimentalAPI bool     `json:"experimentalApi"`
+						OptOut          []string `json:"optOutNotificationMethods"`
+					} `json:"capabilities"`
+				} `json:"params"`
+			}
+			if err := json.Unmarshal(request, &frame); err != nil {
+				t.Fatal(err)
+			}
+			if frame.ID != InitializeRequestID || frame.Method != "initialize" {
+				t.Fatalf("unexpected initialization request: %s", request)
+			}
+			if slices.Contains(frame.Params.Capabilities.OptOut, "turn/diff/updated") == enabled {
+				t.Fatalf("turn diff notification opt-out disagrees with enabled=%t: %s", enabled, request)
+			}
+			if frame.Params.Capabilities.ExperimentalAPI {
+				t.Fatal("notification policy enabled experimental APIs")
+			}
+			var notification struct {
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(initialized, &notification); err != nil {
+				t.Fatal(err)
+			}
+			if notification.Method != "initialized" {
+				t.Fatalf("unexpected initialization acknowledgement: %s", initialized)
+			}
+		})
+	}
+}
+
 func TestDecodeCodexItemRetainsGeneratedVariants(t *testing.T) {
 	for _, test := range []struct {
 		typeName string

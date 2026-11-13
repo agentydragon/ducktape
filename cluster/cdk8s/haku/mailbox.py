@@ -396,8 +396,8 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # The Haku mailbox's own trusted namespace -- deliberately NOT haku-sandbox. The Stalwart
     # mailserver here enforces the inbound-email perimeter (DMARC-gated sender whitelist,
-    # operator-owned provisioning plan), so it sits OUTSIDE Haku's RBAC and OUTSIDE the
-    # haku-egress-proxy egress fence: Haku must not be able to patch the server, edit the
+    # operator-owned provisioning plan), so it sits OUTSIDE Haku's RBAC and OUTSIDE
+    # haku-sandbox's egress fence: Haku must not be able to patch the server, edit the
     # whitelist, read the admin/TLS secrets, or touch the CNPG store. Haku is a mail *user* only,
     # authenticated via its Authentik-issued bearer. See cluster/k8s/haku/mailbox/README.md.
     namespaces.namespace(

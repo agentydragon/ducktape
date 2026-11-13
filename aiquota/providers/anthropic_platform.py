@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from aiquota.models import (
     AnthropicPlatformCredits,
@@ -38,68 +38,13 @@ class _Organization(BaseModel):
     model_config = ConfigDict(hide_input_in_errors=True)
 
 
-class _CreditAmount(BaseModel):
-    amount_minor: int
-    exponent: int
-
-    model_config = ConfigDict(hide_input_in_errors=True)
-
-
-class _CreditValue(BaseModel):
-    credits: _CreditAmount | None = None
-    money: object | None = None
-
-    model_config = ConfigDict(hide_input_in_errors=True)
-
-
-class _Product(BaseModel):
-    product: str
-    model_family: str | None = None
-    model_version: str | None = None
-
-    model_config = ConfigDict(hide_input_in_errors=True)
-
-
-class _Scope(BaseModel):
-    kind: str
-    applies_to: list[_Product] = Field(default_factory=list)
-
-    model_config = ConfigDict(hide_input_in_errors=True)
-
-
-class _Tranche(BaseModel):
-    id: str
-    name: str | None = None
-    currency: str
-    granted_at: datetime
-    expires_at: datetime | None = None
-    granted: _CreditValue
-    remaining: _CreditValue
-    scope: _Scope
-
-    model_config = ConfigDict(hide_input_in_errors=True)
-
-    def to_model(self) -> AnthropicPlatformTranche:
-        return AnthropicPlatformTranche.model_validate(self.model_dump())
-
-
 class _CreditsResponse(BaseModel):
     currency: str
-    balance: _CreditValue
-    tranches: list[_Tranche]
-    promo_tranches: list[_Tranche]
+    balance: AnthropicPlatformCreditValue
+    tranches: list[AnthropicPlatformTranche]
+    promo_tranches: list[AnthropicPlatformTranche]
 
     model_config = ConfigDict(hide_input_in_errors=True)
-
-    def to_organization(self, organization: _Organization) -> AnthropicPlatformOrganization:
-        return AnthropicPlatformOrganization(
-            uuid=organization.uuid,
-            name=organization.name,
-            currency=self.currency,
-            balance=AnthropicPlatformCreditValue.model_validate(self.balance.model_dump()),
-            tranches=[tranche.to_model() for tranche in self.tranches],
-            promo_tranches=[tranche.to_model() for tranche in self.promo_tranches],
-        )
 
 
 class AnthropicPlatformProvider(Provider):
@@ -162,7 +107,14 @@ class AnthropicPlatformProvider(Provider):
                 response = await client.get(url, headers={"Authorization": f"Bearer {token}"})
             response.raise_for_status()
             credits = _CreditsResponse.model_validate_json(response.content)
-            return credits.to_organization(organization)
+            return AnthropicPlatformOrganization(
+                uuid=organization.uuid,
+                name=organization.name,
+                currency=credits.currency,
+                balance=credits.balance,
+                tranches=credits.tranches,
+                promo_tranches=credits.promo_tranches,
+            )
         except (httpx.HTTPError, ValueError) as exc:
             return AnthropicPlatformOrganization(
                 uuid=organization.uuid, name=organization.name, error=_error_message(exc)

@@ -21,13 +21,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -90,6 +90,8 @@ func start(t *testing.T, tune func(*config)) running {
 	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
 	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
 	c.RPC.Auth = []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}}}
+	// Keep bearer-only Push namespace-scoped: the journal test admits a writer; the
+	// caller-contract test rejects a reader.
 	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
 	// The fold waits for a commit's wakeup rather than for its next cycle.
 	c.FoldIntervalSeconds = 3600

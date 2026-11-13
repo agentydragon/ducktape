@@ -25,7 +25,7 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 		if err := s.recordEnvironmentContext(conversation, session); err != nil {
 			return err
 		}
-		if err := conversation.apply(func(native protocol.Context) error { return native.AppendExecutionState(state.protocolState()) }); err != nil {
+		if err := conversation.appendExecutionState(state.protocolState()); err != nil {
 			return err
 		}
 		return updateConversation(ctx, tx, conversation)

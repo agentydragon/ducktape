@@ -41,9 +41,9 @@ from agentplane.action_service.session_delegation.binding import SessionDelegati
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import ACTIONS_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.identity.auth import listener
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth import listener
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps, SessionDelegationProps
@@ -74,6 +74,8 @@ SANDBOX_GROUP = "sandbox"
 _PEER_TOKEN_DIR = "/var/run/secrets/actions"
 # The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
 _LAUNCHER_SUFFIX = ".launcher"
+# Must equal the suffix orchestration_v1 launchIdentity names its Identity grant with.
+_IDENTITY_GRANT_SUFFIX = ".identity"
 _LAUNCHER_ACTIONS = (
     "create_session",
     "submit_input",
@@ -221,13 +223,34 @@ def add_launcher_admission(scope: Construct, namespace: str) -> None:
                     expression=(
                         "(size(variables.owners) == 1"
                         f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Sandbox'"
-                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}')"
+                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}'"
+                        " && (request.resource.resource != 'policybindings' || !has(object.spec.subject.identity)))"
+                        # An Identity caller's launcher binding pins that caller as a second owner.
+                        " || (request.resource.resource == 'policybindings' && size(variables.owners) == 2"
+                        f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Sandbox'"
+                        f" && object.metadata.name == {owner}.name + '{_LAUNCHER_SUFFIX}'"
+                        f" && variables.owners[1].apiVersion.startsWith('{GROUP}/')"
+                        " && variables.owners[1].kind == 'Identity' && variables.owners[1].uid != ''"
+                        " && has(object.spec.subject.identity)"
+                        " && object.spec.subject.identity.name == variables.owners[1].name)"
+                        # A launch's grant to the Identity it created: owned by that Identity, named
+                        # for it, and binding only it (orchestration_v1 launchIdentity).
+                        " || (request.resource.resource == 'policybindings' && size(variables.owners) == 1"
+                        f" && {owner}.apiVersion.startsWith('{GROUP}/') && {owner}.kind == 'Identity'"
+                        f" && object.metadata.name == {owner}.name + '{_IDENTITY_GRANT_SUFFIX}'"
+                        " && has(object.spec.subject.identity)"
+                        f" && object.spec.subject.identity.name == {owner}.name)"
                     ),
-                    message="A launcher grant is owned by one Sandbox and named for it.",
+                    message=(
+                        "A launcher grant is owned by its Sandbox, with an Identity caller pinned as a second "
+                        "owner for an Identity subject; a launch's Identity "
+                        "grant is owned by that Identity, named for it and binds only it."
+                    ),
                 ),
                 k8s.Validation(
                     expression=(
                         "request.resource.resource != 'policybindings'"
+                        f" || {owner}.kind == 'Identity'"
                         " || object.spec.policySets == [object.metadata.name]"
                     ),
                     message="A launcher grant's PolicyBinding binds only its own PolicySet.",
@@ -449,15 +472,15 @@ class Actions(Construct):
         # The runtime policy and caller watch scopes are independent. Keep the policy
         # CR permissions in the policy namespace, and grant only ServiceAccount reads in
         # caller namespaces. No Secrets or serviceaccounts/token permissions are needed. The
-        # policy informer lists and watches them and reads only what it holds: no `get`.
+        # policy informer lists and watches them and reads only what it holds: no `get`, except
+        # on Identities, which an Identity caller's SVID resolution reads live (uncached).
         rules_by_namespace: dict[str, list[RolePolicyRule]] = {
             namespace: [
                 RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource) for resource in ("policysets", "policybindings", "identities")
-                    ],
+                    resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
                     verbs=["list", "watch"],
                 ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
             ]
         }
@@ -474,7 +497,7 @@ class Actions(Construct):
             )
 
         # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
-        # their callers and owned by the caller's ServiceAccount, and runs commands in them. This is namespace-wide and cannot
+        # their callers and owned by their WorkloadCredentials, and runs commands in them. This is namespace-wide and cannot
         # say "only the boxes this Action made": that boundary is the executor's own label check
         # (agentplane/action_service/sandbox/inventory.go), which is why it is an application rule
         # tested as one rather than something RBAC states.
@@ -485,8 +508,13 @@ class Actions(Construct):
                 # Both verbs: a WebSocket exec is an HTTP GET upgrade, and the API server
                 # authorizes it as `create` too.
                 RolePolicyRule(resources=[custom_resource("", "pods/exec")], verbs=["get", "create"]),
-                # The caller's account, for the owner reference that collects its boxes with it.
+                # The caller's account: the box records' subject, and its controller their owner.
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
+                # Each box's credential, which the Policy Controller issues; no Certificate rights.
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "workloadcredentials")],
+                    verbs=["get", "create", "update", "delete"],
+                ),
             ]
         )
         if self.env.actions.orchestration_v1 is not None:
@@ -500,6 +528,10 @@ class Actions(Construct):
                     resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
                     verbs=["get", "create"],
                 )
+            )
+            # A launch creates the Identity its Sandbox acts as, and deletes it if the Sandbox is refused.
+            rules_by_namespace[namespace].append(
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get", "create", "delete"])
             )
         for target_namespace, rules in sorted(rules_by_namespace.items()):
             suffix = "" if target_namespace == namespace else f"-{target_namespace}"

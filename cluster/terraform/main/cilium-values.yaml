@@ -18,6 +18,11 @@ k8sServicePort: "7445"
 loadBalancer:
   serviceTopology: true
 
+# Host policies need the host firewall datapath, including for host-network Pods.
+# Enabling it does not itself select any nodes for policy enforcement.
+hostFirewall:
+  enabled: true
+
 # Apply config changes with a deliberate, sequential agent rollout; see
 # cluster/docs/network.md. Disconnected roaming nodes must not block the rollout.
 rollOutCiliumPods: false

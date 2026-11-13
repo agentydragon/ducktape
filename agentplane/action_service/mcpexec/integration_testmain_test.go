@@ -123,6 +123,14 @@ func unavailableFor(reason action_servicepb.McpUnavailableReason, detail func(st
 	}
 }
 
+// unavailableAndRetryingFor waits until an unavailable group's retry metadata has been published too.
+func unavailableAndRetryingFor(reason action_servicepb.McpUnavailableReason, detail func(string) bool) func(*catalog.Group) bool {
+	unavailable := unavailableFor(reason, detail)
+	return func(g *catalog.Group) bool {
+		return unavailable(g) && g.Health.RetryAt != nil && g.Health.Failures > 0
+	}
+}
+
 func anyDetail(string) bool { return true }
 
 // executorTiming is the Python service's but for a shorter lifecycle bound, so that a test of a step that never
@@ -306,16 +314,13 @@ func (f fixture) await(t *testing.T, id uuid.UUID, state action_servicepb.Action
 	return f.awaitRequest(t, id, func(request store.ActionRequest) bool { return request.State == state })
 }
 
-// errorKind is the `kind` of an Execution's error document.
-func errorKind(t *testing.T, request store.ActionRequest) string {
+// errorKind is the kind of an Execution's error.
+func errorKind(t *testing.T, request store.ActionRequest) action_servicepb.ExecutionErrorKind {
 	t.Helper()
-	var document struct {
-		Kind string `json:"kind"`
+	if request.Execution == nil || request.Execution.Error == nil {
+		t.Fatalf("execution %+v has no error", request.Execution)
 	}
-	if err := json.Unmarshal(request.Execution.Error, &document); err != nil {
-		t.Fatalf("execution error %s: %v", request.Execution.Error, err)
-	}
-	return document.Kind
+	return request.Execution.Error.GetKind()
 }
 
 func sameJSON(t *testing.T, got, want json.RawMessage) {

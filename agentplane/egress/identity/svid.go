@@ -6,36 +6,37 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 )
 
 // ResolveSVID rechecks the live WorkloadCredential the peer certificate names on every request. Only
-// the record supplies the ServiceAccount used as the policy subject, and the Pod its owner accepted,
-// which a forwarded projected token must come from. A standing record, with no owner and no binding,
-// proves no Pod: its principal has none, and no projected token can be bound to it.
-func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resolver.Resolver) (auth.Principal, error) {
+// the record supplies the Identity subject and the Pod its owner accepted as provenance. A standing record, with no owner and no binding,
+// proves no Pod, so decisions record no source Pod.
+func ResolveSVID(ctx context.Context, state *tls.ConnectionState, records *resolver.Resolver) (auth.IdentityPrincipal, error) {
 	if state == nil || len(state.PeerCertificates) == 0 {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
+		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.TokenRejected, Detail: "invalid SVID peer certificate"}
 	}
 	if records == nil {
-		return auth.Principal{}, &Rejection{Reason: decision.Unavailable, Detail: "SVID authentication is not configured"}
+		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.Unavailable, Detail: "SVID authentication is not configured"}
 	}
 	resolved, err := records.Resolve(ctx, state.PeerCertificates[0])
 	if errors.Is(err, resolver.ErrUnavailable) {
-		return auth.Principal{}, &Rejection{Reason: decision.Unavailable, Detail: "live WorkloadCredential lookup failed"}
+		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.Unavailable, Detail: "live WorkloadCredential lookup failed"}
 	}
 	if err != nil {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current WorkloadCredential"}
+		return auth.IdentityPrincipal{}, &Rejection{Reason: decision.TokenRejected, Detail: "SVID does not name a current WorkloadCredential"}
 	}
-	principal := auth.Principal{Account: auth.Account{Namespace: resolved.Subject.Namespace, Name: resolved.Subject.Name}}
-	if resolved.Binding == nil {
-		return principal, nil
+	var podName, podUID string
+	if resolved.Binding != nil {
+		// A bound incarnation authenticates only once its owner has named the Pod it runs in.
+		if resolved.Pod == nil {
+			return auth.IdentityPrincipal{}, &Rejection{Reason: decision.TokenRejected, Detail: "WorkloadCredential has no accepted Pod"}
+		}
+		podName, podUID = resolved.Pod.Name, string(resolved.Pod.UID)
 	}
-	// A bound incarnation authenticates only once its owner has named the Pod it runs in.
-	if resolved.Pod == nil {
-		return auth.Principal{}, &Rejection{Reason: decision.TokenRejected, Detail: "WorkloadCredential has no accepted Pod"}
-	}
-	principal.PodName, principal.PodUID = resolved.Pod.Name, string(resolved.Pod.UID)
-	return principal, nil
+	return auth.IdentityPrincipal{
+		Identity: auth.Identity{Name: resolved.Subject.Name, UID: string(resolved.Subject.UID)}, Workload: auth.WorkloadOf(resolved),
+		PodName: podName, PodUID: podUID,
+	}, nil
 }

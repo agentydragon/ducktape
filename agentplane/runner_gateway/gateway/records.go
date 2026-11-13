@@ -107,7 +107,7 @@ func newConnectionRecords(
 	return &connectionRecords{coordination: coordination, discovery: discovery, namespace: namespace, holder: holder, now: time.Now}, nil
 }
 
-func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Identity, podUID string) (uint64, error) {
+func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Identity, podUID string) (uint64, types.UID, error) {
 	leaseName := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
 	var epoch uint64
 	var leaseUID types.UID
@@ -179,13 +179,47 @@ func (r *connectionRecords) claim(ctx context.Context, sandbox *sandboxreader.Id
 		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("accept runner connection: %w", err)
+		return 0, "", fmt.Errorf("accept runner connection: %w", err)
 	}
 	r.observed.forget(leaseName)
 	if err := r.pointControlEndpoints(ctx, sandbox, leaseUID, epoch); err != nil {
-		return 0, fmt.Errorf("point Sandbox control Service at connection holder: %w", err)
+		// The Lease was claimed even if publication failed. Return its identity so
+		// the observer can release that exact claim after closing its connection.
+		return epoch, leaseUID, fmt.Errorf("point Sandbox control Service at connection holder: %w", err)
 	}
-	return epoch, nil
+	return epoch, leaseUID, nil
+}
+
+// release gives up only this exact claim after the observer's local traffic and direct Runner
+// connection have stopped. A resource-version update and a fresh holder/UID/epoch check on every
+// conflict prevent a delayed release from clearing a successor's claim.
+func (r *connectionRecords) release(ctx context.Context, sandbox *sandboxreader.Identity, leaseUID types.UID, epoch uint64) error {
+	name := sandbox.Name + sandboxlease.EnvironmentRuntimeLeaseSuffix
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		lease, err := r.coordination.Leases(r.namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return errSupersededConnection
+		}
+		if err != nil {
+			return err
+		}
+		if !ownsSandbox(lease.OwnerReferences, sandbox) || !lease.DeletionTimestamp.IsZero() || lease.UID != leaseUID ||
+			lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity != r.holder.name ||
+			lease.Spec.LeaseTransitions == nil || uint64(*lease.Spec.LeaseTransitions) != epoch {
+			return errSupersededConnection
+		}
+		lease.Spec.HolderIdentity = nil
+		lease.Spec.RenewTime = nil
+		for _, key := range []string{
+			sandboxlease.EnvironmentRuntimeBootIDAnnotation, sandboxlease.QuiesceStageAnnotation,
+			sandboxlease.IdleSinceAnnotation, sandboxlease.BootstrapAnnotation,
+			sandboxlease.SetupsRunningAnnotation, sandboxlease.AutosuspendBlockersAnnotation,
+		} {
+			delete(lease.Annotations, key)
+		}
+		_, err = r.coordination.Leases(r.namespace).Update(ctx, lease, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 func (r *connectionRecords) recordBootID(ctx context.Context, sandbox *sandboxreader.Identity, epoch uint64, bootID string) error {

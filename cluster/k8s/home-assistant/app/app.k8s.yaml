@@ -92,7 +92,7 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: home-assistant-configuration
+  name: configuration
   namespace: home-assistant
 data:
   configuration.yaml: |
@@ -137,7 +137,7 @@ immutable: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: home-assistant-caddy
+  name: caddy
   namespace: home-assistant
 data:
   Caddyfile: |
@@ -305,13 +305,13 @@ spec:
           persistentVolumeClaim:
             claimName: home-assistant-config-piraeus
         - configMap:
-            name: home-assistant-configuration
+            name: configuration
           name: configuration
         - configMap:
             name: component-installer
           name: installer-settings
         - configMap:
-            name: home-assistant-caddy
+            name: caddy
           name: caddy-config
 ---
 apiVersion: v1

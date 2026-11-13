@@ -103,6 +103,7 @@ def add_service_workload(
     registry_secret_name: str | None = None,
     automount_service_account_token: bool = True,
     read_only_root_filesystem: bool = False,
+    run_as: int = 1000,
 ) -> ServiceWorkload:
     """`serves` identify the Pod ports and shared name/labels. Normally build their Service here;
     a separately reconciled Service can instead use the same refs. Mount into the returned container."""
@@ -139,7 +140,7 @@ def add_service_workload(
             if registry_secret_name is not None
             else None
         ),
-        security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
+        security_context=PodSecurityContextProps(ensure_non_root=True, user=run_as, group=run_as, fs_group=run_as),
     )
     service_environment = (
         {name: EnvValue.from_value(value) for name, value in telemetry.service_environment(env.namespace, name).items()}

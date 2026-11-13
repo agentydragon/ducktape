@@ -11,7 +11,6 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from uuid import uuid4
 
-import yaml
 from kubernetes_asyncio import client as k8s
 
 from agentplane.app.testing.client import Client
@@ -20,6 +19,7 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -101,6 +101,17 @@ async def _readiness_snapshot(cluster: Cluster, name: str) -> dict:
         }
         for pod in pods
     ]
+    for pod, pod_snapshot in zip(pods, snapshot["pods"], strict=True):
+        for status in pod.get("status", {}).get("containerStatuses", []):
+            if "terminated" not in status.get("lastState", {}):
+                continue
+            try:
+                logs = await cluster.kubectl(
+                    "logs", pod["metadata"]["name"], "-c", status["name"], "--previous", "--tail=100"
+                )
+            except Exception as error:
+                logs = f"read_error: {error}"
+            pod_snapshot.setdefault("previous_logs", {})[status["name"]] = logs
     events = json.loads(await cluster.kubectl("get", "events", "-o", "json"))["items"]
     snapshot["events"] = [
         {key: event.get(key) for key in ("eventTime", "firstTimestamp", "lastTimestamp", "type", "reason", "message")}
@@ -293,10 +304,7 @@ async def fresh_workspace_storage_survives_replacement(
     if vm:
         bootstrap += f"printf '%s\\n' {marker} > /state/home/storage-systest-home\n"
     bootstrap += "sync\n"
-    config = await _object(cluster, "configmap", "runner-gateway-settings")
-    policies = yaml.safe_load(config["data"]["settings.yaml"])["environment_default_policy_sets"]
-    assert policies
-    assert all(isinstance(policy, str) for policy in policies)
+    policies = list(LAUNCH_DEFAULT_POLICY_SETS)
     evidence: dict = {
         "case": case,
         "namespace": cluster.namespace,
@@ -339,6 +347,7 @@ async def fresh_workspace_storage_survives_replacement(
                 await _delete(cluster, "sandboxtemplates", template, created_template["metadata"]["uid"])
 
         stack.push_async_callback(delete_template)
+        identity = await stack.enter_async_context(scenario_identity(cluster, name, policies))
         with tracer.start_as_current_span(
             "system_test.storage.create_sandbox", attributes={"storage.case": case, "sandbox.name": name}
         ):
@@ -353,7 +362,12 @@ async def fresh_workspace_storage_survives_replacement(
                         "apiVersion": SANDBOX_API_VERSION,
                         "kind": "Sandbox",
                         "metadata": {"name": name, "namespace": cluster.namespace},
-                        "spec": {"template": template, "running": True, "policySets": policies, "bootstrap": bootstrap},
+                        "spec": {
+                            "template": template,
+                            "running": True,
+                            "identity": {"name": identity},
+                            "bootstrap": bootstrap,
+                        },
                     },
                 )
             )

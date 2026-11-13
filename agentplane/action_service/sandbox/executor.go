@@ -5,15 +5,16 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 )
 
-// Executor runs the sandbox Actions in this process, as the caller the request names. That identity comes from
-// ExecutionRequest.Caller, which the authenticated admission path sets and no argument can reach: a surface that
-// took the account as an argument would instead mean "stamp a Pod as any account you can name".
+// Executor runs the sandbox Actions in this process for the Identity the request names. That Identity comes from
+// ExecutionRequest.Caller, which the authenticated admission path sets after delegation review and no argument can
+// reach: the platform actor's own ServiceAccount is not a workload identity.
 //
 // A box outlives any one call and is its caller's to dispose of, so a drain leaves boxes alone.
 type Executor struct {
@@ -40,34 +41,37 @@ func (e *Executor) Actions() map[string]catalog.ActionDefinition {
 // large repository does, but never runs unbounded. A caller no box can be given is refused before the lease is held:
 // nothing has happened, so the outcome is known.
 func (e *Executor) Execute(ctx context.Context, request store.ExecutionRequest, lease *worker.Lease) (store.ExecutionOutcome, error) {
-	if caller := request.Caller; caller.Namespace != e.binding.Namespace {
-		// A Pod can only run as a ServiceAccount of its own namespace, so a caller from anywhere else cannot be given
-		// a box that is it. Stamping the box as some other account would quietly hand it authority its caller never
-		// had.
-		return worker.Failed("caller_not_local", fmt.Sprintf("sandboxes run as their caller, so the calling ServiceAccount "+
-			"must live in %q; %q cannot be given one", e.binding.Namespace, caller.Namespace)), nil
+	var caller Identity
+	switch recorded := request.Caller.(type) {
+	case store.ServiceAccountCaller:
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN,
+			"sandbox Actions require a reviewed Identity effective caller; a ServiceAccount actor alone cannot create a box"), nil
+	case store.IdentityCaller:
+		caller = Identity(recorded.Identity)
+	default:
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN, "this request's caller is not a reviewed Identity effective caller"), nil
 	}
 	return worker.Hold(ctx, lease, func(ctx context.Context) (store.ExecutionOutcome, error) {
-		return e.attempt(ctx, request)
+		return e.attempt(ctx, request, caller)
 	})
 }
 
-// attempt is one attempt at request from a caller of the group's namespace. A refusal the caller can act on is a
+// attempt is one attempt at request from a caller the group can serve. A refusal the caller can act on is a
 // failed Execution with its reason; only an outcome this cannot characterise is an error.
-func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	outcome, err := e.dispatch(ctx, request)
+func (e *Executor) attempt(ctx context.Context, request store.ExecutionRequest, caller Identity) (store.ExecutionOutcome, error) {
+	outcome, err := e.dispatch(ctx, request, caller)
 	var foreign *ForeignError
 	var unavailable *UnavailableError
 	var unrun *ExecError
 	switch {
 	case errors.As(err, &foreign):
-		return worker.Failed("sandbox_not_yours", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_YOURS, err.Error()), nil
 	case errors.As(err, &unavailable):
-		return worker.Failed("sandbox_unavailable", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE, err.Error()), nil
 	case errors.As(err, &unrun):
-		return worker.Failed("exec_failed", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXEC_FAILED, err.Error()), nil
 	case errors.Is(err, catalog.ErrInvalidArguments):
-		return worker.Failed("invalid_arguments", err.Error()), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, err.Error()), nil
 	}
 	return outcome, err
 }
@@ -83,8 +87,8 @@ type DisposeResult struct {
 	Existed bool   `json:"existed"`
 }
 
-func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest) (store.ExecutionOutcome, error) {
-	caller, action := request.Caller, request.Action.Name
+func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest, caller Identity) (store.ExecutionOutcome, error) {
+	action := request.Action.Name
 	switch action {
 	case string(contract.Create):
 		args, err := e.inputs.Create.Decode(request.Arguments)
@@ -127,6 +131,6 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		return worker.Succeeded(DisposeResult{Name: string(args.Name), Existed: existed}, err)
 	default:
 		// The catalog admitted it, so this is a roster that grew without a branch here.
-		return worker.Failed("unknown_action", fmt.Sprintf("this executor has no %q", action)), nil
+		return worker.Failed(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION, fmt.Sprintf("this executor has no %q", action)), nil
 	}
 }

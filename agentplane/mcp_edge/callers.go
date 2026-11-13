@@ -8,9 +8,10 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -18,10 +19,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
-
-// callerIndex reads only caller labels. The Action Service owns policy and ActionsReady; this edge never writes them.
-// Keep this label equal to action_service/informer.CallerLabel; both services independently check it.
-const callerLabel = "agentplane.allegedly.works/use-action-service"
 
 type callerIndex struct {
 	health   *watchhealth.Health
@@ -77,7 +74,9 @@ func callerWatches(base *rest.Config, namespaces []string, mintable []auth.Accou
 		if err != nil {
 			return nil, nil, err
 		}
-		selected := func(options *metav1.ListOptions) { options.LabelSelector = callerLabel + "=true" }
+		selected := func(options *metav1.ListOptions) {
+			options.LabelSelector = callers.ServiceAccountLabelKey + "=" + callers.ServiceAccountLabelValue
+		}
 		if err := reader.Watch(
 			watches,
 			kind,

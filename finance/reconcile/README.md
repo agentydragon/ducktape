@@ -9,7 +9,7 @@ The matching is done by adding `splitwise=12345` into the notes field in GnuCash
 where `12345` is the Splitwise expense ID.
 
 ```bash
-bazel run //finance/reconcile | tee output.txt
+bb run //finance/reconcile | tee output.txt
 ```
 
 Expects some configuration in `~/.config/ducktape/config.yaml`.

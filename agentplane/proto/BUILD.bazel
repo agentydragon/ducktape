@@ -85,6 +85,17 @@ js_library(
     deps = ["//:node_modules/@bufbuild/protobuf"],
 )
 
+stage_protobuf_es(
+    name = "code_generated",
+    proto = "@googleapis//google/rpc:code_proto",
+)
+
+js_library(
+    name = "code_pb",
+    srcs = [":code_generated"],
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
 ts_proto_library(
     name = "environment_lifecycle_pb",
     copy_files = False,

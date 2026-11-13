@@ -31,6 +31,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecDependsOn,
     KustomizationSpecHealthCheckExprs,
     KustomizationSpecHealthChecks,
+    KustomizationSpecIgnore,
     KustomizationSpecImages,
     KustomizationSpecPatches,
     KustomizationSpecPostBuild,
@@ -185,6 +186,7 @@ def flux_kustomization(
     service_account_name: str | None = None,
     images: Sequence[KustomizationSpecImages] | None = None,
     patches: Sequence[KustomizationSpecPatches] | None = None,
+    ignore: Sequence[KustomizationSpecIgnore] | None = None,
     description: str | None = None,
     namespace: str = NAMESPACE,
     annotations: dict[str, str] | None = None,
@@ -249,6 +251,7 @@ def flux_kustomization(
         service_account_name=service_account_name,
         images=images,
         patches=patches,
+        ignore=ignore,
     )
 
 

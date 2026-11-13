@@ -5,6 +5,7 @@
 use super::cells::{CellInitialization, LexicalCell, LexicalCells};
 use super::descriptor_heap::OwnDescriptorMapState;
 use super::object_surface::{AppliedAccessor, ObjectSurfaceStore};
+use super::prefix_values::PrefixValues;
 use super::{
     ClassState, DenseArrays, ModuleBindings, NativeRetained, Publication, ReachabilityState,
     Revision, World, WorldScope,
@@ -146,9 +147,10 @@ impl Join for ModuleBindings {
     fn join(alternatives: &[&Self], widened: &mut bool) -> Self {
         let first = alternatives[0];
         let joined = Self {
-            prefix_values: join_value_maps(&each_field(alternatives, |module| {
-                &module.prefix_values
-            })),
+            prefix_values: PrefixValues::join(
+                &each_field(alternatives, |module| &module.prefix_values),
+                join_value_maps,
+            ),
             // Only an agreed selection survives; a value present on one path
             // only is unknown on the others.
             prefix_callable_selections: intersect_ord_maps(&each_field(alternatives, |module| {
@@ -266,6 +268,9 @@ impl Join for ClassState {
                 alternatives,
                 |classes| &classes.private_constructor_result_owners,
             )),
+            private_fresh_instance_bindings: intersect_sets(&each_field(alternatives, |classes| {
+                &classes.private_fresh_instance_bindings
+            })),
         };
         *widened |= joined != *first;
         joined
@@ -735,11 +740,13 @@ fn intersect_ord_maps<K: Ord + Clone, V: Clone + PartialEq>(
 #[cfg(test)]
 mod tests {
     use super::super::cells::{CellInitialization, LexicalCell};
+    use super::super::prefix_values::{PrefixValues, TopBindings};
     use super::super::{World, WorldScope};
     use super::{JoinRefusal, Joined};
     use crate::facts::abstract_domain::value::{Kind, Value};
     use crate::facts::sync_effects::local_operations::LocalBinding;
     use crate::facts::sync_effects::value_model::{AbstractValue, DenseArray, Values};
+    use std::sync::Arc;
     use swc_atoms::Atom;
     use swc_common::SyntaxContext;
     use swc_ecma_ast::Id;
@@ -754,10 +761,11 @@ mod tests {
 
     fn world_with_prefix(name: &str, value: AbstractValue) -> World {
         let mut world = World::new(WorldScope::Application);
+        world.module.prefix_values = PrefixValues::new(Arc::new(TopBindings::new([binding(name)])));
         world
             .module
             .prefix_values
-            .insert(binding(name), Values::from([value]));
+            .insert(&binding(name), Values::from([value]));
         world.module.initialized_bindings.insert(binding(name));
         world
     }
@@ -853,7 +861,7 @@ mod tests {
         right
             .module
             .prefix_values
-            .insert(binding("a"), Values::from([object(2)]));
+            .insert(&binding("a"), Values::from([object(2)]));
         left.publication.global_escaped_callbacks.insert(object(4));
 
         let joined = World::join(&[&left, &right]);

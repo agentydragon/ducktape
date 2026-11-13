@@ -101,21 +101,11 @@ class ContainerExecServer(FastMCP):
     # Tool name constant (for test infrastructure only)
     EXEC_TOOL_NAME = "exec"
 
-    # Default mount prefixes for container exec servers in tests
-    # Different test contexts use different names for the same server type
-    DOCKER_MOUNT_PREFIX = "docker"
-    RUNTIME_MOUNT_PREFIX = "runtime"
-
     # Resource URI constants
     CONTAINER_INFO_URI = "resource://container.info"
 
     # Tool reference (assigned in __init__ after tool registration)
     exec_tool: Callable[..., Awaitable[BaseExecResult]]
-
-    @staticmethod
-    def file_uri(path: str) -> str:
-        """Construct file:// URI for a container path (file:///absolute/path)."""
-        return f"file://{path}"
 
     def __init__(self, docker_client: aiodocker.Docker, config: ContainerExecServerConfig):
         """Create a generic per-session container exec FastMCP server.
@@ -305,4 +295,4 @@ class ContainerExecServer(FastMCP):
                 raise ValueError(f"{path} is not a regular file")
             return [validate_and_encode_image(f.read(), path)]
 
-        self.read_image_tool = self.tool(output_schema=None)(read_image)
+        self.tool(output_schema=None)(read_image)

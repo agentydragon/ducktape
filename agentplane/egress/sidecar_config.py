@@ -1,18 +1,12 @@
 """Authoring model for the Agentplane egress sidecar's Go process settings."""
 
-from enum import StrEnum
 from ipaddress import AddressValueError, IPv6Address
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal
+from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from agentplane.egress.platform_routes import (
-    PLATFORM_ROUTES_LISTEN_ADDRESS,
-    PlatformRoutes,
-    TLSBearerConnectRouteTransport,
-    TLSConnectRouteTransport,
-)
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, PlatformRoutes
 
 CONTAINER_NAME = "egress-sidecar"
 READINESS_PATH = "/readyz"
@@ -25,22 +19,12 @@ RUNNER_TLS_MOUNT_PATH = "/run/agentplane/environment-runtime-tls"
 RUNNER_WORKLOAD_TRUST_FILE = Path(RUNNER_TLS_MOUNT_PATH) / "workload-ca.crt"
 
 
-class ProxyAuthMode(StrEnum):
-    KUBERNETES_BEARER = "kubernetes_bearer"
-    SPIFFE = "spiffe"
-
-
-class ProxyTransportMode(StrEnum):
-    PLAINTEXT = "plaintext"
-    TLS = "tls"
-
-
 class SpiffeProxyAuth(BaseModel):
-    """The Runtime SVID presented to the central proxy."""
+    """The workload SVID presented to the central proxy, the only hop authentication it accepts."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    mode: Literal[ProxyAuthMode.SPIFFE] = ProxyAuthMode.SPIFFE
+    mode: Literal["spiffe"] = "spiffe"
     cert_file: Path
     key_file: Path
 
@@ -52,43 +36,14 @@ class SpiffeProxyAuth(BaseModel):
         return value
 
 
-# CLEANUP(added 2026-11-09): Remove once no non-Sandbox workload (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer and the proxy's `forward.auth` lists only `spiffe`.
-class KubernetesBearerProxyAuth(BaseModel):
-    """The sidecar-only projected bearer used to authenticate the central proxy hop."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    mode: Literal[ProxyAuthMode.KUBERNETES_BEARER] = ProxyAuthMode.KUBERNETES_BEARER
-    token_file: Path
-
-    @field_validator("token_file")
-    @classmethod
-    def absolute_path(cls, value: Path) -> Path:
-        if not value.is_absolute():
-            raise ValueError("Kubernetes bearer token_file must be an absolute path")
-        return value
-
-
-ProxyAuth = Annotated[SpiffeProxyAuth | KubernetesBearerProxyAuth, Field(discriminator="mode")]
-
-
-class PlaintextProxyTransport(BaseModel):
-    """The legacy in-cluster plaintext connection to the central proxy."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    mode: Literal[ProxyTransportMode.PLAINTEXT] = ProxyTransportMode.PLAINTEXT
-    auth: KubernetesBearerProxyAuth
-
-
 class TLSProxyTransport(BaseModel):
-    """TLS to the central proxy, with explicit roots and tagged hop authentication."""
+    """mTLS to the central proxy, with explicit roots."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    mode: Literal[ProxyTransportMode.TLS] = ProxyTransportMode.TLS
+    mode: Literal["tls"] = "tls"
     ca_file: Path
-    auth: ProxyAuth
+    auth: SpiffeProxyAuth
 
     @field_validator("ca_file")
     @classmethod
@@ -98,16 +53,13 @@ class TLSProxyTransport(BaseModel):
         return value
 
 
-ProxyTransport = Annotated[PlaintextProxyTransport | TLSProxyTransport, Field(discriminator="mode")]
-
-
 class Proxy(BaseModel):
     """Central proxy endpoint, hop authentication, and connection transport."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     address: str = Field(description="Central proxy host:port.")
-    transport: ProxyTransport = Field(description="Plaintext or server-authenticated TLS to the proxy.")
+    transport: TLSProxyTransport = Field(description="mTLS to the proxy, presenting the workload SVID.")
 
     @field_validator("address")
     @classmethod
@@ -146,11 +98,12 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
     proxy: Proxy = Field(description="The central egress proxy hop.")
+    # CLEANUP(added 2026-11-12): remove after staging sidecar ConfigMaps are observed without this key.
     audience_token_files: dict[str, Path] = Field(
         default_factory=dict,
-        description="Audience to the projected token file holding this Pod's identity for it, offered to the "
-        "central proxy to substitute where a rule names that audience. Destination tokens are independent "
-        "of the proxy hop authentication.",
+        exclude=True,
+        description="Compatibility with existing deployment ConfigMaps during rollout; projected workload tokens "
+        "are no longer forwarded, and newly rendered settings omit this field.",
     )
     workload_routes: dict[str, WorkloadRoute] = Field(
         default_factory=dict,
@@ -165,21 +118,3 @@ class Settings(BaseModel):
         default="127.0.0.1:3128", description="Address the runner container's HTTP(S)_PROXY names."
     )
     readiness_listen_address: str = Field(default=READINESS_LISTEN_ADDRESS, description="HTTP address serving /readyz.")
-
-    @model_validator(mode="after")
-    def validate_route_authentication(self) -> Settings:
-        has_svid_route = bool(self.workload_routes) or any(
-            isinstance(route.transport, TLSConnectRouteTransport) for route in self.platform_routes.routes.values()
-        )
-        has_bearer_route = any(
-            isinstance(route.transport, TLSBearerConnectRouteTransport)
-            for route in self.platform_routes.routes.values()
-        )
-        if has_bearer_route and not isinstance(self.proxy.transport, TLSProxyTransport):
-            raise ValueError("TLS bearer routes require TLS proxy transport")
-        if has_svid_route and not (
-            isinstance(self.proxy.transport, TLSProxyTransport)
-            and isinstance(self.proxy.transport.auth, SpiffeProxyAuth)
-        ):
-            raise ValueError("SVID-authenticated routes require TLS proxy transport with SPIFFE authentication")
-        return self

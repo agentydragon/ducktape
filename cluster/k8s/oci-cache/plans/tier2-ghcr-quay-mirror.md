@@ -1,9 +1,8 @@
 # Deferred: route non-Docker-Hub pulls through oci-cache
 
 Handoff notes. **Status as of 2026-07-05: downprioritized.** The original goal was
-to drop `ghcr.io` + `pkg-containers.githubusercontent.com` from the
-`haku-egress-proxy` allowlist
-(`cluster/cdk8s/egress_fences.py`) by making
+to keep `ghcr.io` + `pkg-containers.githubusercontent.com` out of haku-ci's egress
+allowlist (now PolicySet `haku-ci-build-fetch`, which holds neither) by making
 haku-ci's dind pull ghcr (and ideally quay) through the in-cluster `oci-cache` Zot
 mirror — the same way Docker Hub already does (Tier 1).
 
@@ -105,7 +104,7 @@ direct ghcr, blocked) → Docker path is a dead end; go buildkit.
 **Rollout order (learned the hard way in Tier 1):** wire the client + verify a real
 pull through the mirror **before** removing ghcr/pkg-containers from the allowlist.
 Tier 1 briefly broke Docker Hub because the allowlist change landed (via the
-`haku-egress-proxy` kustomization) while the dind change was still blocked (haku-ci
+since-retired `haku-egress-proxy` kustomization) while the dind change was still blocked (haku-ci
 depends on `forgejo`, which re-reconciles on every commit).
 
 ## oci-cache reference (for whoever picks this up)

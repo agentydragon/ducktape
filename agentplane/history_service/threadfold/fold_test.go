@@ -432,6 +432,120 @@ func TestCommandsSettleCoalescedInputAndObservedModelEffect(t *testing.T) {
 	}
 }
 
+func TestBlockedQueueFailureAfterConfirmedInputPreservesOutcomeAndEvidenceAcrossPages(t *testing.T) {
+	store := newMemory(t)
+	store.apply(
+		t,
+		submitInput(1, "test-input", "hello"),
+		entry(2, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
+			HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
+				HarnessMessageId: "test-message", Text: "hello", OriginCommandIds: []string{"test-input"}, TurnId: "test-input",
+			},
+		}}),
+		entry(3, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "test-input"}}}),
+	)
+
+	result := store.apply(
+		t,
+		entry(4, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{
+			OperationId: "test-session", Kind: eventpb.ExecutionProgress_KIND_SESSION, Phase: eventpb.ExecutionProgress_PHASE_BLOCKED,
+			Detail: &eventpb.ExecutionProgress_SessionStopped_{SessionStopped: &eventpb.ExecutionProgress_SessionStopped{Reason: "lost JavaScript host"}},
+		}}}),
+		entry(5, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{TurnCompleted: &eventpb.TurnCompleted{
+			TurnId: "test-input", Status: eventpb.TurnStatus_TURN_STATUS_FAILED,
+		}}}),
+		entry(6, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{CommandFailed: &eventpb.CommandFailed{
+			CommandId: "test-input", Reason: "session blocked by unresolved effects",
+		}}}),
+	)
+
+	command := store.commands["test-input"]
+	if command.Outcome != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED || command.OutcomeCursor == nil || *command.OutcomeCursor != 2 || command.OutcomeReason != nil {
+		t.Fatalf("command = %+v, want the confirmed input effect at cursor 2", command)
+	}
+	if got := result.State.Position.ThroughCursor; got != 6 {
+		t.Fatalf("checkpoint = %d, want 6", got)
+	}
+	if len(result.LifecycleUpserts) != 1 || result.LifecycleUpserts[0].Event.GetTurnCompleted().GetStatus() != eventpb.TurnStatus_TURN_STATUS_FAILED {
+		t.Fatalf("lifecycle upserts = %+v, want the failed turn", result.LifecycleUpserts)
+	}
+	if result.State.Controls.ActiveTurnID != nil {
+		t.Fatalf("active turn after failed completion = %v, want none", result.State.Controls.ActiveTurnID)
+	}
+	var commandEvidence []uint64
+	for _, evidence := range store.evidence {
+		if evidence.EntityCursor == command.AdmissionCursor {
+			commandEvidence = append(commandEvidence, evidence.ObservationCursor)
+		}
+	}
+	if !reflect.DeepEqual(commandEvidence, []uint64{1, 2, 6}) {
+		t.Fatalf("command evidence cursors = %v, want admission, confirmation, and blocked failure [1 2 6]", commandEvidence)
+	}
+}
+
+func TestOtherContradictoryCommandFailuresStillFailTheFold(t *testing.T) {
+	blockedFailure := func(cursor uint64, commandID, reason string) *eventlogpb.EventEntry {
+		return entry(cursor, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{CommandFailed: &eventpb.CommandFailed{
+			CommandId: commandID, Reason: reason,
+		}}})
+	}
+	tests := []struct {
+		name      string
+		commandID string
+		entries   []*eventlogpb.EventEntry
+	}{
+		{
+			name:      "different failure reason",
+			commandID: "test-input",
+			entries: []*eventlogpb.EventEntry{
+				submitInput(1, "test-input", "hello"),
+				entry(2, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
+					HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
+						HarnessMessageId: "test-message", Text: "hello", OriginCommandIds: []string{"test-input"},
+					},
+				}}),
+				blockedFailure(3, "test-input", "another failure"),
+			},
+		},
+		{
+			name:      "non-input effect",
+			commandID: "test-model",
+			entries: []*eventlogpb.EventEntry{
+				changeModel(1, "test-model", "model-a"),
+				entry(2, &eventpb.Event{Observation: &eventpb.Event_ModelChanged{ModelChanged: &eventpb.ModelChanged{
+					Model: "model-a", CommandId: "test-model",
+				}}}),
+				blockedFailure(3, "test-model", "session blocked by unresolved effects"),
+			},
+		},
+		{
+			name:      "already failed input",
+			commandID: "test-input",
+			entries: []*eventlogpb.EventEntry{
+				submitInput(1, "test-input", "hello"),
+				blockedFailure(2, "test-input", "first failure"),
+				blockedFailure(3, "test-input", "session blocked by unresolved effects"),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := newMemory(t)
+			if _, err := store.tryApply(test.entries...); err == nil {
+				t.Fatal("contradictory command failure succeeded")
+			} else {
+				var contractError *ContractError
+				if !errors.As(err, &contractError) || contractError.Message != "command already settled: "+test.commandID {
+					t.Fatalf("contradictory command failure = %v, want a settled-command ContractError", err)
+				}
+			}
+			if store.state.Position.ThroughCursor != 0 || len(store.evidence) != 0 {
+				t.Fatalf("failed batch changed projection state: through=%d evidence=%v", store.state.Position.ThroughCursor, store.evidence)
+			}
+		})
+	}
+}
+
 func contractError(t *testing.T, err error) {
 	t.Helper()
 	var contract *ContractError
@@ -707,7 +821,7 @@ func TestSettledRangesAreSkippedWhenCheckingContiguity(t *testing.T) {
 func TestSamplerBoundariesPreserveDisplayProjection(t *testing.T) {
 	entries := []*eventlogpb.EventEntry{
 		entry(1, &eventpb.Event{Observation: &eventpb.Event_BoundaryRecord{BoundaryRecord: &eventpb.BoundaryRecord{Boundary: "provider", Direction: "response", Payload: []byte(`{"type":"response.output_item.added"}`)}}}),
-		entry(2, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{OperationId: "request", Kind: "provider", Phase: "response"}}}, 1),
+		entry(2, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{OperationId: "request", Kind: eventpb.ExecutionProgress_KIND_PROVIDER, Phase: eventpb.ExecutionProgress_PHASE_RECEIVED}}}, 1),
 		itemStarted(3, "answer", eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "", 1),
 		textCompleted(4, "answer", "central answer", 1),
 	}

@@ -33,6 +33,7 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY, Agent
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
 from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -67,7 +68,7 @@ def _command(*args: str) -> str:
     return shlex.join([CLI, "--json", *args])
 
 
-def _submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
+def submission(group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool) -> list[str]:
     """The `agentplane` arguments that submit one Action request under a fresh key."""
     return [
         "actions",
@@ -144,7 +145,7 @@ class ScriptedAgent:
     async def submit(
         self, group: str, action: str, arguments: dict[str, Any], *, title: str, wait: bool
     ) -> action_service_pb2.ActionRequest:
-        return await self.run(*_submission(group, action, arguments, title=title, wait=wait))
+        return await self.run(*submission(group, action, arguments, title=title, wait=wait))
 
     async def submit_echo(self, group: str, message: str, *, wait: bool) -> action_service_pb2.ActionRequest:
         return await self.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
@@ -179,28 +180,23 @@ class PolicyObjects:
     async def create_binding(
         self, name: str, *, sandbox: environment_service_pb2.EnvironmentDescriptor, policy_sets: list[str]
     ) -> str:
-        subject = {
-            "namespace": sandbox.execution_account.account.namespace,
-            "name": sandbox.execution_account.account.name,
-        }
+        subject = {"identity": {"name": sandbox.identity_name}}
         return await self._create(
             "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
         )
 
     async def ensure_basic_binding(self, sandbox: environment_service_pb2.EnvironmentDescriptor) -> None:
         inventory = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-        subject = sandbox.execution_account.account
         names = [
             binding["metadata"]["name"]
             for binding in inventory["items"]
-            if binding.get("spec", {}).get("subject", {}).get("namespace") == subject.namespace
-            and binding.get("spec", {}).get("subject", {}).get("name") == subject.name
-            and "basic" in binding.get("spec", {}).get("policySets", [])
+            if binding.get("spec", {}).get("subject", {}).get("identity", {}).get("name") == sandbox.identity_name
+            and "basic-identity" in binding.get("spec", {}).get("policySets", [])
         ]
         if not names:
             names = [
                 await self.create_binding(
-                    f"{sandbox.target.name}-delegation-basic", sandbox=sandbox, policy_sets=["basic"]
+                    f"{sandbox.target.name}-delegation-basic", sandbox=sandbox, policy_sets=["basic-identity"]
                 )
             ]
         for name in names:
@@ -209,7 +205,7 @@ class PolicyObjects:
     async def bind(
         self, sandbox: environment_service_pb2.EnvironmentDescriptor, name: str, auto_approve: list[dict[str, Any]]
     ) -> tuple[str, str]:
-        """One set bound to `sandbox`'s ServiceAccount, the binding ActionsReady: the set's and the
+        """One set bound to `sandbox`'s Identity, the binding ActionsReady: the set's and the
         binding's names."""
         suffix = uuid4().hex[:8]
         set_name = await self.create_policy_set(f"systest-{name}-{suffix}", auto_approve)
@@ -409,10 +405,10 @@ async def agent_mcp_bff_decision(
         assert decided.version == pending.version + 1
         assert decided.HasField("decision")
         assert decided.decision.verdict == verdict
-        assert decided.decision.provider == "human_operator"
-        if not decided.decision.HasField("operator") or (
-            decided.decision.operator.issuer != operator_credentials.issuer.get_secret_value()
-            or decided.decision.operator.subject != operator_credentials.subject.get_secret_value()
+        operator = decided.decision.operator.operator
+        if decided.decision.WhichOneof("decider") != "operator" or (
+            operator.issuer != operator_credentials.issuer.get_secret_value()
+            or operator.subject != operator_credentials.subject.get_secret_value()
         ):
             pytest.fail("Decision operator identity differs from the dedicated Secret", pytrace=False)
         assert decided.decision.idempotency_key == decision.idempotency_key
@@ -549,9 +545,9 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     receipt = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{approved.id}"))
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.HasField("decision")
-    assert receipt.decision.provider == "action_policy_set"
-    assert receipt.decision.HasField("policy_evidence")
-    evidence = receipt.decision.policy_evidence
+    assert receipt.decision.WhichOneof("decider") == "policy"
+    assert receipt.decision.policy.HasField("evidence")
+    evidence = receipt.decision.policy.evidence
     # Our Sandbox kind brings a PolicyBinding of its own, so the evidence may name more than ours.
     assert binding_name in {binding.name for binding in evidence.bindings}
     assert set_name in {policy_set.name for policy_set in evidence.policy_sets}
@@ -569,19 +565,15 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     await _decide_pending(operator_bff, missed.id, action_service_pb2.VERDICT_DENY)
 
     await policy_objects.expire_binding(binding_name)
-    await _wait_unbound(operator_bff, view, binding_name)
+    await _wait_unbound(agent, view.identity_name, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
     expired = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, after_expiry, wait=False)
     await _decide_pending(operator_bff, expired.id, action_service_pb2.VERDICT_DENY)
 
 
-async def _wait_unbound(
-    operator_bff: httpx.AsyncClient, sandbox: environment_service_pb2.EnvironmentDescriptor, binding_name: str
-) -> None:
-    """Until the Action Service no longer resolves `binding_name` for the Sandbox's ServiceAccount:
-    a deleted binding has no condition left to acknowledge, so ask the service itself."""
+async def _wait_unbound(agent: ScriptedAgent, identity_name: str, binding_name: str) -> None:
+    """Until the Identity caller's own Action policy no longer includes `binding_name`."""
     with tracer.start_as_current_span("system_test.mcp.policy_unbound"):
-        account = sandbox.execution_account.account
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(POLICY_READY_SECONDS),
             wait=wait_fixed(1),
@@ -589,18 +581,29 @@ async def _wait_unbound(
             reraise=True,
         ):
             with attempt:
-                response = await operator_bff.get(
-                    "/upstream/actions/v1/action-policy",
-                    params={"subject.namespace": account.namespace, "subject.name": account.name},
-                )
-                assert response.status_code == HTTPStatus.OK, response.text
-                policy = json_format.ParseDict(
-                    response.json(), action_service_pb2.GetActionPolicyResponse()
-                ).action_policy
+                policy = await _read_identity_action_policy(agent)
+                assert policy.identity.name == identity_name
                 if not policy.synced:
-                    raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
+                    raise PolicyBindingPresentError(f"Identity {identity_name}: Action policy not synced")
                 if binding_name in {effective.binding for effective in policy.auto_approve_if}:
-                    raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")
+                    raise PolicyBindingPresentError(f"Identity {identity_name} still resolves {binding_name}")
+
+
+async def _read_identity_action_policy(agent: ScriptedAgent) -> action_service_pb2.CallerActionPolicy:
+    """Run `actions policy` inside the Sandbox so the Action Service resolves its Identity caller."""
+    with tracer.start_as_current_span("system_test.mcp.identity_action_policy"):
+        call_id = f"agentplane-{uuid4().hex[:8]}"
+        async with asyncio.TaskGroup() as turns:
+            turns.create_task(agent.agent.run("Show the Action policy for this Identity."))
+            request = await agent.model.request()
+            await agent.model.reply(request, ShellCall(call_id=call_id, command=_command("actions", "policy")))
+            response = await agent.model.request()
+            output = one(output for output in response.tool_outputs if output.call_id == call_id)
+            line = one(line for block in output.blocks for line in block.splitlines() if line.startswith("{"))
+            policy = action_service_pb2.CallerActionPolicy()
+            json_format.Parse(line, policy)
+            await agent.model.reply(response, Text("Done."))
+        return policy
 
 
 async def _launcher_approved(
@@ -609,8 +612,8 @@ async def _launcher_approved(
     """The request succeeded on the launcher grant of `sandbox`, with no operator asked."""
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED, receipt
     decided = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{receipt.id}"))
-    assert decided.decision.provider == "action_policy_set"
-    assert decided.decision.policy_evidence.matched.policy_set == f"{sandbox}.launcher"
+    assert decided.decision.WhichOneof("decider") == "policy"
+    assert decided.decision.policy.evidence.matched.policy_set == f"{sandbox}.launcher"
 
 
 async def launcher_drives_only_the_sandbox_it_launched(
@@ -627,20 +630,22 @@ async def launcher_drives_only_the_sandbox_it_launched(
 ) -> None:
     """An agent launches a Sandbox through orchestration_v1, which waits for the operator; the launch's
     grants then let that agent create a Session in it, send input, wait for its turn and read the outcome
-    without asking again. The launched Sandbox's own account, another incarnation of the name and the
+    without asking again. The launched Sandbox's own Identity, another incarnation of the name and the
     deleted Sandbox still wait for the operator; a Session in a different Sandbox is refused."""
     launcher_view = await sandbox(f"{sandbox_prefix}-launcher-{harness}")
     launcher = await ScriptedAgent.create(
         client, dispatcher, launcher_view, harness=harness, model=offered_model, upstream=scripted
     )
     name = f"{sandbox_prefix}-launched-{harness}"
+    launcher_grants = ["create_session", "submit_input", "get_session", "read_turns", "wait_for_turn"]
     launch = await launcher.submit(
         ORCHESTRATION_GROUP,
         "launch_sandbox",
         {
             "name": name,
             "template": POD_TEMPLATE,
-            "launcher_grants": ["create_session", "submit_input", "get_session", "read_turns", "wait_for_turn"],
+            "policy_sets": list(LAUNCH_DEFAULT_POLICY_SETS),
+            "launcher_grants": launcher_grants,
         },
         title="Launch a test Sandbox",
         wait=False,
@@ -648,7 +653,9 @@ async def launcher_drives_only_the_sandbox_it_launched(
     await _decide_pending(operator_bff, launch.id, action_service_pb2.VERDICT_ALLOW)
     launched = await launcher.run("actions", "wait", str(launch.id))
     assert launched.state == action_service_pb2.ACTION_STATE_SUCCEEDED, launched
-    target = json_format.MessageToDict(launched.execution.result)["sandbox"]
+    result = json_format.MessageToDict(launched.execution.result)
+    target = result["sandbox"]
+    assert result["launcher_grants"] == sorted(launcher_grants)
     assert target["name"] == name
     deleted = False
     try:
@@ -657,9 +664,37 @@ async def launcher_drives_only_the_sandbox_it_launched(
         )
         view = await wait_until_running(client, environment_target)
         assert view.target.uid == target["uid"]
+        assert view.identity_name == name
         assert view.kubernetes_diagnostics.HasField("pod")
         # The Action Service holds the grant once it acknowledges the binding.
         await policy_objects.wait_actions_ready(f"{name}.launcher")
+
+        launcher_binding = json.loads(
+            await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, f"{name}.launcher", "-o", "json")
+        )
+        assert launcher_binding["spec"]["subject"] == {"identity": {"name": launcher_view.identity_name}}
+        assert launcher_binding["spec"]["policySets"] == [f"{name}.launcher"]
+        launcher_set = json.loads(await cluster.kubectl("get", POLICY_SETS_PLURAL, f"{name}.launcher", "-o", "json"))
+        assert launcher_set["spec"]["rules"] == [
+            {
+                "type": ACTION_RULE_TYPE,
+                "policy": {
+                    "type": "argument_schema",
+                    "actions": {ORCHESTRATION_GROUP: sorted(launcher_grants)},
+                    "schema": {
+                        "type": "object",
+                        "required": ["sandbox"],
+                        "properties": {"sandbox": {"const": {"name": name, "uid": target["uid"]}}},
+                    },
+                },
+            }
+        ]
+
+        identity_binding = json.loads(
+            await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, f"{name}.identity", "-o", "json")
+        )
+        assert identity_binding["spec"]["subject"] == {"identity": {"name": name}}
+        assert identity_binding["spec"]["policySets"] == sorted(LAUNCH_DEFAULT_POLICY_SETS)
 
         session_id = str(uuid4())
         session = {"sandbox": target, "session_id": session_id}
@@ -703,10 +738,10 @@ async def launcher_drives_only_the_sandbox_it_launched(
         )
         await _launcher_approved(operator_bff, sent, name)
 
-        # The launched Sandbox's turn asks for the same read with its own account, which no grant names.
+        # The launched Sandbox's turn asks for the same read with its own Identity, which no grant names.
         own = await _play_cli_turn(
             scripted.model(view.kubernetes_diagnostics.pod.name, harness),
-            *_submission(
+            *submission(
                 ORCHESTRATION_GROUP,
                 "read_turns",
                 {**session, "count": 1},
@@ -773,12 +808,12 @@ async def launcher_drives_only_the_sandbox_it_launched(
         )
         refused = _bff_request(await operator_bff.get(f"/upstream/actions/v1/action-requests/{other_session.id}"))
         assert refused.state == action_service_pb2.ACTION_STATE_FAILED, refused
-        assert refused.decision.provider == "action_policy_set"
-        assert refused.decision.policy_evidence.matched.policy_set == f"{name}.launcher"
+        assert refused.decision.WhichOneof("decider") == "policy"
+        assert refused.decision.policy.evidence.matched.policy_set == f"{name}.launcher"
 
         await suspend_and_delete(cluster, client, name, view.target.uid)
         deleted = True
-        await _wait_unbound(operator_bff, launcher_view, f"{name}.launcher")
+        await _wait_unbound(launcher, launcher_view.identity_name, f"{name}.launcher")
         revoked = await launcher.submit(
             ORCHESTRATION_GROUP, "get_session", session, title="Read a test Session", wait=False
         )

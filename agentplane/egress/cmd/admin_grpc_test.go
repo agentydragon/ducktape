@@ -16,14 +16,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/resolver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -56,7 +58,7 @@ func TestMain(m *testing.M) {
 
 type noDecisions struct{}
 
-func (noDecisions) Recent(context.Context, *decision.Subject) ([]decision.Record, error) {
+func (noDecisions) Recent(context.Context, decision.Subject) ([]decision.Record, error) {
 	return []decision.Record{}, nil
 }
 
@@ -73,7 +75,7 @@ func (noDecisions) Window() history.Window {
 // quietChanges reports once on subscribing and then nothing.
 type quietChanges struct{}
 
-func (quietChanges) Follow(ctx context.Context, _ *decision.Subject, changed func(history.Change) error) error {
+func (quietChanges) Follow(ctx context.Context, _ decision.Subject, changed func(history.Change) error) error {
 	if err := changed(history.Initial{}); err != nil {
 		return err
 	}
@@ -91,17 +93,17 @@ type idleHistory struct{}
 
 func (idleHistory) Health() history.Health { return history.Health{} }
 
+// testRulesAuth authenticates Rules callers by SVID; a plaintext admin listener carries none.
 func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 	t.Helper()
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{"test-ns"})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ca := environmentruntimetransporttesting.NewCA(t)
+	proxySVID := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
-		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
+		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	authentication, err := identity.NewAuthenticator(forward, identity.NewVerifier(resolver, nil), nil)
+	authentication, err := identity.NewAuthenticator(forward, testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,15 +140,14 @@ func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {
 	if err != nil || !health.GetReady() {
 		t.Fatalf("GetHealth: %v, %v", health, err)
 	}
-	// The same listener serves workload rules without granting the workload admin access.
+	// A workload bearer neither reads rules, which authenticate SVIDs alone, nor administers.
 	workloadToken, err := api.WorkloadToken(context.Background(), auth.Account{Namespace: "test-ns", Name: "test-sandbox"}, testAudience)
 	if err != nil {
 		t.Fatal(err)
 	}
 	workload := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+workloadToken)
-	rules, err := egressrulespb.NewEgressRulesClient(connection).GetRules(workload, &egressrulespb.GetRulesRequest{})
-	if err != nil || rules.GetSubject().GetNamespace() != "test-ns" || rules.GetSubject().GetName() != "test-sandbox" {
-		t.Fatalf("workload rules: %v, %v", rules, err)
+	if _, err := egressrulespb.NewEgressRulesClient(connection).GetRules(workload, &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("workload bearer rules access: %v, want Unauthenticated", err)
 	}
 	if _, err := egressadminpb.NewEgressAdminClient(connection).GetHealth(workload, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("workload admin access: %v, want PermissionDenied", err)
@@ -188,7 +189,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
 		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
 	}
-	workloadAuth, err := identity.NewAuthenticator(forward, identity.NewVerifier(nil, nil), testResolver(t))
+	workloadAuth, err := identity.NewAuthenticator(forward, testResolver(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +197,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		Forward: forward, AdminGRPCAudience: testAudience, AdminGRPCCallers: []string{"test-ns/test-app"},
 	}, api.TokenReviews(), admin.ServiceOptions{
 		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
-	}, workloadAuth, policy.NewIndex())
+	}, workloadAuth, identityRulesIndex())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,8 +254,28 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	}
 	defer secured.Close()
 	response, err := egressrulespb.NewEgressRulesClient(secured).GetRules(context.Background(), &egressrulespb.GetRulesRequest{})
-	if err != nil || response.GetSubject().GetNamespace() != "test-ns" || response.GetSubject().GetName() != "test-sandbox" {
+	if err != nil || response.GetIdentity().GetName() != testAgent.Name || response.GetSubject() != nil ||
+		len(response.GetPolicies()) != 1 || response.GetPolicies()[0].GetName() != "test-agent-egress" {
 		t.Fatalf("SVID Rules response: %v, %v", response, err)
+	}
+	// An Identity caller is answered with the rules of the bindings naming that Identity.
+	agentURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentCredentials, err := ca.Issue(t, agentURI).ClientCredentials(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := grpc.NewClient(adminListener.Addr().String(), grpc.WithTransportCredentials(agentCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer agent.Close()
+	response, err = egressrulespb.NewEgressRulesClient(agent).GetRules(context.Background(), &egressrulespb.GetRulesRequest{})
+	if err != nil || response.GetIdentity().GetName() != "test-agent" || response.GetSubject() != nil ||
+		len(response.GetPolicies()) != 1 || response.GetPolicies()[0].GetName() != "test-agent-egress" {
+		t.Fatalf("Identity Rules response: %v, %v", response, err)
 	}
 
 	if _, err := egressadminpb.NewEgressAdminClient(secured).GetHealth(adminContext, &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.Unauthenticated {
@@ -281,14 +302,43 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 	}
 }
 
-const runnerCredentialID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+const (
+	runnerCredentialID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	agentCredentialID  = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	testPolicyNS       = "test-policy"
+)
+
+// testAgent is the Identity test-agent's standing credential names.
+var testAgent = &policyapi.Identity{
+	ObjectMeta: metav1.ObjectMeta{Namespace: testPolicyNS, Name: "test-agent", UID: "00000000-0000-4000-8000-000000000003"},
+}
+
+// identityRulesIndex grants testAgent one policy and the runner's ServiceAccount none.
+func identityRulesIndex() *policy.Index {
+	index := policy.NewIndex()
+	index.Rules.PutIdentity(testAgent)
+	index.Rules.PutPolicySet(&policyapi.PolicySet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testPolicyNS, Name: "test-agent-egress"},
+		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{
+			{Type: resources.EgressRuleType, Hosts: []string{"api.test.invalid"}},
+		}},
+	})
+	index.Rules.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testPolicyNS, Name: "test-agent"},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: testAgent.Name}},
+			PolicySets: []string{"test-agent-egress"},
+		},
+	})
+	return index
+}
 
 // testResolver holds the record the Sandbox Controller and the issuer would write for an accepted
 // runner Pod, and its subject.
 func testResolver(t *testing.T) *resolver.Resolver {
 	t.Helper()
 	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme} {
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, workloadapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
 			t.Fatal(err)
 		}
@@ -303,13 +353,27 @@ func testResolver(t *testing.T) *resolver.Resolver {
 			APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: "test-sandbox", UID: "00000000-0000-4000-8000-000000000002", Controller: new(true),
 		}}},
 		Spec: workloadapi.WorkloadCredentialSpec{
-			Subject: workloadapi.Subject{ServiceAccount: "test-sandbox"}, Binding: pod,
+			Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: testAgent.Name, UID: testAgent.UID}}, Binding: pod,
 			Pod: &workloadapi.PodRef{Name: "runner", UID: pod.PodUID},
 		},
 		Status: workloadapi.WorkloadCredentialStatus{CredentialID: runnerCredentialID, URI: uri, AcceptedBinding: pod},
 	}
 	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", UID: types.UID("test-account-uid")}}
-	records, err := resolver.New(clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account).Build(), []string{"test-ns"})
+	agentURI, err := environment_runtime_transport.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	standing := &workloadapi.WorkloadCredential{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-agent"},
+		Spec: workloadapi.WorkloadCredentialSpec{
+			Subject: workloadapi.Subject{Identity: &workloadapi.IdentitySubject{Name: testAgent.Name, UID: testAgent.UID}},
+		},
+		Status: workloadapi.WorkloadCredentialStatus{CredentialID: agentCredentialID, URI: agentURI},
+	}
+	records, err := resolver.New(
+		clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(record, account, standing, testAgent.DeepCopy()).Build(),
+		[]string{"test-ns"}, &resolver.Identities{PolicyNamespace: testPolicyNS},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

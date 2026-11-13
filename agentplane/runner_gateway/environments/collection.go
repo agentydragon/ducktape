@@ -10,9 +10,9 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -228,6 +228,7 @@ func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList
 }
 
 func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountPrincipal, broad bool) ([]*environmentpb.EnvironmentDescriptor, error) {
+	caller := environmentCaller{serviceAccount: identity}
 	var resources []sandboxapi.Sandbox
 	if broad {
 		var list sandboxapi.SandboxList
@@ -263,7 +264,7 @@ func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountP
 		if !broad && (!found || !callerMatches(identity, execution)) {
 			continue
 		}
-		value, err := s.describe(ctx, resource, execution, identity)
+		value, err := s.describe(ctx, resource, execution, caller)
 		if status.Code(err) == codes.NotFound {
 			// The Sandbox was deleted or replaced while its eligibility was read. The
 			// already-open Kubernetes watch will deliver the corresponding update.
@@ -272,7 +273,7 @@ func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountP
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
-		_, _, visible, err := s.revalidateDescriptor(ctx, value, identity, broad)
+		_, _, visible, err := s.revalidateDescriptor(ctx, value, caller, broad)
 		if err != nil {
 			return nil, watchFailure(ctx, err)
 		}
@@ -287,6 +288,7 @@ func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountP
 // collectionItem rereads only the Sandbox affected by a source event. The returned Pod name is
 // tracked even when the item is not currently visible, so a later incarnation event can reconcile it.
 func (s *Service) collectionItem(ctx context.Context, identity *auth.ServiceAccountPrincipal, broad bool, name string) (*environmentpb.EnvironmentDescriptor, string, error) {
+	caller := environmentCaller{serviceAccount: identity}
 	if !broad && name != serviceAccountReference(identity).Name {
 		return nil, "", nil
 	}
@@ -309,7 +311,7 @@ func (s *Service) collectionItem(ctx context.Context, identity *auth.ServiceAcco
 	if !broad && (!found || !callerMatches(identity, execution)) {
 		return nil, podName, nil
 	}
-	item, err := s.describe(ctx, resource, execution, identity)
+	item, err := s.describe(ctx, resource, execution, caller)
 	if status.Code(err) == codes.NotFound {
 		// A concurrent deletion or replacement is an inventory change, not a
 		// failure of the whole collection watch. Its event will refresh this name.
@@ -318,7 +320,7 @@ func (s *Service) collectionItem(ctx context.Context, identity *auth.ServiceAcco
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}
-	_, _, visible, err := s.revalidateDescriptor(ctx, item, identity, broad)
+	_, _, visible, err := s.revalidateDescriptor(ctx, item, caller, broad)
 	if err != nil {
 		return nil, "", watchFailure(ctx, err)
 	}

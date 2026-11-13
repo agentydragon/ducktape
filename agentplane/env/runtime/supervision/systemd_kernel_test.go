@@ -524,18 +524,24 @@ func TestSystemdKernelFixture(t *testing.T) {
 		assertSystemdProofEmpty(t, ctx, conn, systemdProofUnitName(t, p))
 	})
 	t.Run("ordinary_stop_waits_for_domain", func(t *testing.T) {
-		p := startSystemdProofWithGrace(t, ctx, supervisor, dir, 50*time.Millisecond, "trap '' TERM; printf ready; sleep 60 & wait")
+		const wantStopGraceUSec uint64 = 50_000
+		stopGrace := time.Duration(wantStopGraceUSec) * time.Microsecond
+		p := startSystemdProofWithGrace(t, ctx, supervisor, dir, stopGrace, "trap '' TERM; printf ready; sleep 60 & wait")
 		ready := make([]byte, 5)
 		if _, err := io.ReadFull(p.Stdout(), ready); err != nil {
 			t.Fatal(err)
 		}
 		stdout, stderr := readProofStreams(p)
-		stopStarted := time.Now()
+		serviceProperties, err := conn.GetUnitTypePropertiesContext(ctx, systemdProofUnitName(t, p), "Service")
+		if err != nil {
+			t.Fatalf("read native unit service properties before stop: %v", err)
+		}
+		// The manager deadline is the caller grace; p.Stop also observes D-Bus and domain fencing.
+		if got := serviceProperties["TimeoutStopUSec"]; got != wantStopGraceUSec {
+			t.Fatalf("service TimeoutStopUSec=%v (%T), want %d usec for caller StopGrace=%s", got, got, wantStopGraceUSec, stopGrace)
+		}
 		if err := p.Stop(ctx); err != nil {
 			t.Fatal(err)
-		}
-		if elapsed := time.Since(stopStarted); elapsed > 3*time.Second {
-			t.Fatalf("systemd stop ignored caller's 50ms grace: elapsed=%s", elapsed)
 		}
 		if code, err := p.Wait(ctx); err != nil || code != 137 {
 			t.Fatalf("forcedstop exit=%d error=%v want137", code, err)
@@ -610,6 +616,9 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatalf("native stdin/stdout round trip=%q", got)
 		}
 		<-stderr
+		if err := readCtx.Err(); err != nil {
+			t.Fatalf("shared observation context ended before final systemd proof read: %v", err)
+		}
 		assertSystemdProofEmpty(t, readCtx, conn, systemdProofUnitName(t, p))
 	})
 	if t.Failed() {

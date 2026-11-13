@@ -25,6 +25,8 @@ from agentplane.environment_runtime_transport.config import (
     NOTIFICATIONS_URI,
     SESSION_DISPATCHER_URI,
 )
+from agentplane.identity.auth import listener
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.notification_service.settings import (
     TOKEN_AUDIENCE,
     ActionsSettings,
@@ -33,8 +35,6 @@ from agentplane.notification_service.settings import (
     SessionDispatcherSettings,
     Settings,
 )
-from agentplane.workload_auth import listener
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment

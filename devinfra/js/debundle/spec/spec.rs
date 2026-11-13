@@ -924,6 +924,10 @@ pub struct InitializerCallEffectInputContract {
     pub provider_chunk: String,
     pub provider_export: String,
     pub audited_provider_sha256: String,
+    /// The audited provider returns a normal opaque callable for the one
+    /// initialized literal-const primitive argument at this exact call site.
+    #[serde(default)]
+    pub returns_opaque_function_from_const_primitive: bool,
     /// Required when this exact export is emitted from a bundled partial
     /// vendor swap. Pins the effective replacement independently of the
     /// original provider parser input.
@@ -1203,7 +1207,9 @@ pub enum BuiltinGlobalRoot {
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum AdmissionCheck {
-    /// A1: no `eval(...)` / `(0, eval)(...)` at module top level.
+    /// A1: no `eval(...)` / `(0, eval)(...)` at module top level, and no
+    /// direct `eval(...)` in a chunk the assignment splits, reorders or
+    /// renames.
     A1Eval,
     /// A3: no dynamic `import()` of a debundled internal module
     /// (same-chunk literal target, or non-literal specifier at

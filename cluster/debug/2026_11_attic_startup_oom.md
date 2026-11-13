@@ -1,46 +1,57 @@
-# Attic restart and database-read investigation (November 2026)
+# Attic restart and garbage-collection investigation (November 2026)
 
-The `nix-cache/attic-next` container has repeatedly hit its 4 GiB memory limit.
-The cause is not established. Before this change, the container logged startup
-and listener messages but no garbage-collection lifecycle or request activity.
-Kubernetes reports that the previous container was OOM-killed at
-2026-11-09 02:10:09 UTC; its logs contain no final diagnostic message.
+The `nix-cache/attic-next` container repeatedly hit its 4 GiB memory limit on
+November 9. The OOM cause is not established. At the 01:47:07.897 UTC cAdvisor
+scrape, it used about 4,080 MiB (1,769 MiB RSS and 2,019 MiB cache); it was
+OOM-killed at 01:47:37. Its replacement reached about 2,481 MiB at
+01:48:04.512 and was killed at 01:48:23. A later OOM kill occurred at
+02:10:09; the previous-container log had no final diagnostic message.
 
-At the 2026-11-09 01:47:07.897 UTC cAdvisor scrape, the container used about
-4,080 MiB (1,769 MiB RSS and 2,019 MiB cache); it was OOM-killed at 01:47:37.
-Its replacement reached about 2,481 MiB at 01:48:04.512 and was killed at
-01:48:23. PostgreSQL's `pg_stat_database.tup_fetched` rose sharply during the
-restart period, by approximately 1.4 million, 2.26 million, and 2.26 million
-rows in the minute buckets ending at 01:48:15.513, 01:49:15.513, and
-01:50:15.513 UTC. These are database-wide counters, not query or caller
-attribution. `pg_stat_statements` was unavailable, and existing gateway
-telemetry did not expose Attic request methods or routes.
+PostgreSQL's `pg_stat_database.tup_fetched` rose by approximately 1.4 million,
+2.26 million, and 2.26 million rows in the minute buckets ending at
+01:48:15.513, 01:49:15.513, and 01:50:15.513 UTC. Those are database-wide
+counters, not query or caller attribution. `pg_stat_statements` was unavailable,
+and gateway telemetry did not identify Attic request methods or routes.
 
-The upstream Attic server's monolithic mode starts its GC task immediately
-after migrations; the configured `30 days` interval is a delay _between_ runs,
-not an initial delay. GC emits `info` messages when it starts and after its
-time-based object and orphan-NAR phases. The proposed deployment sets
-`RUST_LOG=error,attic_server::gc=info`, preserving error logs from all targets
-while surfacing those GC messages. The upstream implementation does not always
-emit a completion message when the orphan-chunk phase finds no chunks, so the
-logs cannot precisely time the end of every GC run. The image is digest-pinned;
-its registry `latest` tag resolved to the same digest on 2026-11-09, but the image
-has no source-revision label. No rollout or GC marker has been verified for
-this proposed filter; verify the expected markers after rollout.
+Monolithic Attic starts GC immediately after migrations; the configured
+`30 days` interval separates runs rather than delaying the first one. The
+November 9 deployment enabled `RUST_LOG=error,attic_server::gc=info` without
+suppressing other targets' errors. On the replacement pod, GC started at
+22:48:07.465 UTC. Its orphan-chunk phase emitted **10,328** `Deletion failed:
+Storage error: No such file or directory` warnings between 22:49:03.586 and
+22:49:03.747, then reported `Deleted 0 orphan chunks`. Earlier counts of
+1,999 were truncated by `kubectl logs --tail=10000`.
 
-For the next restart, align timestamped `attic-next` pod logs (or the retained
-Loki pod-log stream) with per-container cAdvisor RSS/cache/working-set series,
-the PostgreSQL `tup_fetched` and transaction rates, and the CI Attic push job
-timestamps. `kubectl -n nix-cache logs deploy/attic-next --previous --timestamps`
-only covers the immediately preceding container. A GC start followed by heavy
-reads with no concurrent CI push is evidence for startup GC, but it does not
-exclude requests from other clients. If the read spike follows the GC phase
-messages instead, investigate request traffic and query plans separately.
+Read-only inspection of the Attic database found exactly 10,328 chunks in
+Deleted (`D`) state, with zero holders and no `chunkref` links. Their recorded
+file sizes summed to 121,679,899 bytes. Of these, 10,278 were created on
+November 8 from 23:00 to 23:25 UTC. Every one of the 10,328 UUID `.chunk`
+paths was checked on the mounted local storage and was absent; sampled Valid
+chunk files were present. A guarded transaction loaded only those verified
+missing-file IDs, locked and rechecked their `D` state, zero holders, and lack
+of references, then deleted exactly 10,328 **metadata rows**. It removed no
+storage files or cache objects. The primary subsequently reported zero `D`
+rows, and Attic remained Ready with zero restarts. GC was not forced, so the
+next real GC pass has not yet verified that the warnings stop.
 
-HTTP request tracing is deliberately not enabled. Attic's existing Tower trace
-layer logs the full URI, including any client-supplied query string; its default
-configuration omits headers and bodies, but arbitrary query text on the public
-endpoint is not safe to retain. Aggregate gateway/network metrics and CI logs
-cannot attribute every lookup or upload to a route or client. A sanitized
-route-level counter or an upstream server change is needed for that distinction
-when GC and uploads overlap.
+The [upstream GC implementation](https://github.com/zhaofengli/attic/blob/7a19204df10d606c5070e6bb72615c3461900c05/server/src/gc.rs)
+marks orphan chunks `D`, removes their files, then deletes database rows for
+successful removals. The [local storage backend](https://github.com/zhaofengli/attic/blob/7a19204df10d606c5070e6bb72615c3461900c05/server/src/storage/local.rs)
+propagates `ENOENT` from `remove_file`, leaving an already-missing file's `D`
+row to fail again on later passes. The deployed image is digest-pinned but has
+no source-revision label; its observed behavior matches this mechanism. A
+process kill between file removal and the final database delete could produce
+such rows, but the file-loss event and originating cache cannot be established
+from the available logs or schema. The `chunk` table has no cache owner or
+state-transition timestamp. A preventive upstream change would treat `ENOENT`
+as a successful local deletion while preserving other I/O errors, with a test
+that reaps a `D` row whose file is already missing.
+
+For any new OOM, align timestamped GC logs with per-container RSS/cache and
+memory-event series, PostgreSQL query activity, and CI push times. The retained
+Loki pod-log stream can cover deleted pods; `kubectl -n nix-cache logs
+deploy/attic-next --previous --timestamps` covers only the immediately
+preceding container. HTTP tracing was not enabled because Attic's Tower layer
+logs the full URI, including arbitrary query strings. A sanitized route-level
+counter or upstream instrumentation is needed to distinguish GC database work
+from lookups and uploads when they overlap.

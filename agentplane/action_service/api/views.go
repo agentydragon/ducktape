@@ -92,14 +92,25 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 	if err != nil {
 		return nil, err
 	}
-	return &action_servicepb.ActionRequest{
+	view := &action_servicepb.ActionRequest{
 		Id: request.ID.String(), IdempotencyKey: request.IdempotencyKey,
 		Action:    &action_servicepb.ActionIdentity{Group: request.Action.Group, Name: request.Action.Name},
 		Arguments: arguments, Title: request.Title, Description: request.Description,
-		Caller: request.Caller.Proto(), CallerUid: request.CallerUID, State: request.State, Version: request.Version,
+		State: request.State, Version: request.Version,
 		CreatedAt: timestamppb.New(request.CreatedAt), UpdatedAt: timestamppb.New(request.UpdatedAt),
 		Decision: decision, Execution: execution,
-	}, nil
+	}
+	switch caller := request.Caller.(type) {
+	case store.ServiceAccountCaller:
+		view.Caller, view.CallerUid = caller.Account.Proto(), caller.UID
+	case store.IdentityCaller:
+		view.CallerIdentity = caller.Identity.Proto()
+	case store.UnknownCaller:
+		// A newer release's kind of caller: the receipt names none, as the field says.
+	default:
+		panic(fmt.Sprintf("unknown caller %T", caller))
+	}
+	return view, nil
 }
 
 func requestViews(requests []store.ActionRequest) ([]*action_servicepb.ActionRequest, error) {
@@ -122,17 +133,26 @@ func decisionView(decision *store.Decision) (*action_servicepb.Decision, error) 
 		return nil, err
 	}
 	view := &action_servicepb.Decision{
-		Id: decision.ID.String(), Verdict: verdict, Provider: decision.Provider, DecisionNote: decision.DecisionNote,
-		ReasonCode: decision.ReasonCode, ReasonDescription: decision.ReasonDescription,
+		Id: decision.ID.String(), Verdict: verdict,
 		IdempotencyKey: decision.IdempotencyKey, DecidedAt: timestamppb.New(decision.DecidedAt),
 	}
-	if decision.Operator != nil {
-		view.Operator = operator(*decision.Operator)
-	}
-	if decision.PolicyEvidence != nil {
-		if view.PolicyEvidence, err = decision.PolicyEvidence.Proto(); err != nil {
-			return nil, fmt.Errorf("%w: policy evidence: %w", errStoredRequest, err)
+	switch decider := decision.Decider.(type) {
+	case store.OperatorDecision:
+		view.Decider = &action_servicepb.Decision_Operator{Operator: &action_servicepb.OperatorDecision{
+			Operator: operator(decider.Operator), DecisionNote: decider.DecisionNote,
+		}}
+	case store.PolicyDecision:
+		policy := &action_servicepb.PolicyDecision{
+			ReasonCode: decider.ReasonCode, ReasonDescription: decider.ReasonDescription,
 		}
+		if decider.Evidence != nil {
+			if policy.Evidence, err = decider.Evidence.Proto(); err != nil {
+				return nil, fmt.Errorf("%w: policy evidence: %w", errStoredRequest, err)
+			}
+		}
+		view.Decider = &action_servicepb.Decision_Policy{Policy: policy}
+	default:
+		return nil, fmt.Errorf("%w: decision has unknown decider %T", errStoredRequest, decider)
 	}
 	return view, nil
 }
@@ -148,17 +168,11 @@ func executionView(execution *store.Execution) (*action_servicepb.Execution, err
 	view := &action_servicepb.Execution{
 		Id: execution.ID.String(), State: state, CreatedAt: timestamppb.New(execution.CreatedAt),
 		StartedAt: timestamp(execution.StartedAt), CompletedAt: timestamp(execution.CompletedAt),
-		ReconciledAt: timestamp(execution.ReconciledAt),
+		ReconciledAt: timestamp(execution.ReconciledAt), Error: execution.Error,
 	}
 	if execution.Result != nil {
 		view.Result = &structpb.Value{}
 		if err := jsonView("result", execution.Result, view.Result); err != nil {
-			return nil, err
-		}
-	}
-	if execution.Error != nil {
-		view.Error = &structpb.Struct{}
-		if err := jsonView("error", execution.Error, view.Error); err != nil {
 			return nil, err
 		}
 	}
@@ -207,8 +221,11 @@ func validateActionActor(actor *action_servicepb.Principal) error {
 			return nil
 		}
 	}
+	if identity := actor.GetCallerIdentity(); identity != nil && identity.GetName() != "" && identity.GetUid() != "" && actor.CallerUid == nil {
+		return nil
+	}
 	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" && actor.CallerUid == nil {
 		return nil
 	}
-	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
+	return fmt.Errorf("an Action actor needs a caller account, a caller Identity, or an operator issuer and subject")
 }

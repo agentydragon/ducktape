@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 )
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
@@ -32,7 +32,6 @@ forward:
 
 func TestCollectionsLoadFromTheFileAndScalarsFromTheEnvironment(t *testing.T) {
 	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [file-namespace]
-projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
 forward:
   listen_address: 127.0.0.1:5555
@@ -53,9 +52,27 @@ admin_listen_address: 127.0.0.1:1111
 	if c.Forward.ListenAddress != "127.0.0.1:5555" || !c.Forward.Has(listener.SPIFFE) ||
 		c.AdminListenAddress != "127.0.0.1:1111" ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
-		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
 		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {
 		t.Fatalf("unexpected merged config: %+v", c)
+	}
+}
+
+func TestLoadConfigAcceptsTheRetiredProjectedTokenSettingDuringRollout(t *testing.T) {
+	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [file-namespace]
+projected_token_audiences: [kubernetes]
+forward:
+  listen_address: 127.0.0.1:5555
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+`)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.ProjectedTokenAudiences, []string{"kubernetes"}) {
+		t.Fatalf("projected_token_audiences = %v, want the deployed value to parse during rollout", c.ProjectedTokenAudiences)
 	}
 }
 
@@ -139,6 +156,16 @@ forward:
     - mode: spiffe
       ca_file: /svid/ca.crt
 `,
+		"bearer beside spiffe": `allowed_service_account_namespaces: [ns]
+forward:
+  listen_address: 127.0.0.1:8888
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+    - mode: kubernetes_bearer
+      audiences: [test-non-sandbox]
+`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			environ := required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))
@@ -150,7 +177,6 @@ forward:
 	configured, err := configtest.Load(t, settingPrefix, loadConfig, required(
 		t,
 		settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-projected_token_audiences: [destination]
 forward:
   listen_address: 127.0.0.1:8888
   tls:
@@ -159,8 +185,6 @@ forward:
   auth:
     - mode: spiffe
       ca_file: /svid/ca.crt
-    - mode: kubernetes_bearer
-      audiences: [test-non-sandbox]
 `),
 	))
 	if err != nil {
@@ -168,7 +192,7 @@ forward:
 	}
 	if configured.Forward.ListenAddress != "127.0.0.1:8888" || configured.Forward.TLS == nil ||
 		configured.Forward.TLS.CertFile != "/svid/tls.crt" || configured.Forward.TLS.KeyFile != "/svid/tls.key" ||
-		!configured.Forward.Has(listener.SPIFFE) || !configured.Forward.AllowsBearerAudience("test-non-sandbox") {
+		!configured.Forward.Has(listener.SPIFFE) {
 		t.Fatalf("unexpected forward listener settings: %+v", configured.Forward)
 	}
 }

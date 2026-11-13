@@ -37,13 +37,39 @@ Before the first import, initialize an empty index database with the versioned m
 DATABASE_URL='postgresql+psycopg://…' bb run //x/ai_session_archive:migrate_database_bin
 ```
 
+The importer binary also accepts `--migrate-database` to run the same migration history without
+Restic credentials. This lets a deployment use a migrator from the same image as the importer.
+
 The migration runner applies the schema and uses a PostgreSQL advisory lock to serialize concurrent runs. Run it before starting the importer or API; those processes do not create tables. Later migrations upgrade existing indexes in place. Session-kind migration leaves unclassified rows nullable until the importer projects their first captured record, and refreshes missing Codex kinds from the latest completed metadata snapshot without reimporting transcript history.
 
 Claude JSONL under `projects/` is indexed, including nested `subagents/`; Codex JSONL under `sessions/` and `archived_sessions/` is indexed. Other `.jsonl` files are recorded as unclassified inventory rows and are not presented as conversations. Claude subagent parent paths are exposed as `parent_session_id` with `parent_link_kind="claude_path_inferred"`; `identity_inferred` marks a parent placeholder until its own transcript is captured. Codex `session_meta.payload.parent_thread_id` creates a `parent_session_id` link only when it matches exactly one captured Codex session's native metadata ID on the same machine. Native identity is read only from `session_meta.payload.id`. Conflicting native or parent IDs are exposed as candidate lists and conflict flags; such links are marked inconsistent rather than guessed. Claude subagent `sessionId` can refer to the root session, so Claude identity remains path-based. Physical files with duplicate native IDs remain separate sessions and make parent resolution ambiguous.
 
 Each physical JSONL line has its own ordinal and byte offset. Repeated identical lines at different positions remain separate events. The raw line bytes are content-addressed once and reused by version/ordinal references; malformed UTF-8 and invalid JSON retain their raw bytes and a record-level parse issue, while subsequent lines continue importing. Events expose a replacement-decoded `raw` display string and lossless base64 bytes. A file version is `complete` when extraction succeeded and every record is valid UTF-8/JSON. `capture_status` remains `unknown`: Restic snapshot existence does not prove the workstation's backup read every source file.
 
-Growing transcript versions share their unchanged record prefix and store only their divergent suffix, with a full checkpoint at least every 64 distinct versions. Import parses in batches capped at 500 records and approximately 4 MiB of source bytes; one very large physical line can exceed that bound. The exact file hash/size is computed from a temporary spool, so the full transcript is not copied into Postgres per snapshot. Restic remains the source of exact file bytes; Postgres retains deduplicated raw record bytes for all imported JSONL lines and snapshot/path provenance.
+Growing transcript versions share their unchanged record prefix and store only their divergent suffix, with a full checkpoint at least every 64 distinct versions. Import parses in batches capped at 500 records and approximately 4 MiB of source bytes; one very large physical line can exceed that bound. Each parsed batch commits deduplicated payloads and usage observations together with
+its divergent suffix mappings and durable progress in `file_version_imports` /
+`file_version_import_records`. Parsing and metadata extraction run between database
+transactions. A crash leaves resumable staging; retries reparse the spool, validate
+already committed mappings and bytes, and insert only the remaining records.
+Concurrent importers serialize each staging batch and final publication, and payload
+insertion handles concurrent content deduplication while checking raw-byte equality.
+
+A staged version has no `file_versions` row. Publication inserts that row, copies
+its divergent record mappings, updates the snapshot-file ledger and session metadata,
+and deletes staging in one transaction. Existing read APIs therefore keep serving the
+previous captured version until the entire new version commits, including when an
+older API process is still running. The publication transaction scales with the suffix
+mapping count and staging cleanup; its duration is not bounded by the parsing batch
+limit. Parent lineage is revalidated at publication; a changed parent produces a
+checkpoint reconstructed from the retained immutable parent prefix and staged suffix. Shared raw payload and usage tables include
+staged evidence before publication, so direct counts of those content pools are not
+published-event counts. Analytics must join through `file_versions` and
+`file_version_records`. Staging cleanup never deletes shared payloads. Failed stages
+remain available for retry; successful or already-published stages are removed on
+publication or the next import run. An abandoned stage whose source is no longer
+retained is not automatically expired.
+
+The exact file hash/size is computed from a temporary spool, so the full transcript is not copied into Postgres per snapshot. Restic remains the source of exact file bytes; Postgres retains deduplicated raw record bytes for all imported JSONL lines and snapshot/path provenance.
 
 The first parser is fixed at `jsonl-v1`. A parser-version change needs an explicit migration/reparse workflow; changing the constant alone does not reinterpret already imported file versions. Binary/config/cache files remain available from Restic but are not copied into this initial SQL index. Search, normalized operation tables, archive-pruning policy, live backup completeness, and an archive restore rehearsal remain outside this slice.
 
@@ -51,11 +77,27 @@ Codex display names are imported separately from each retained snapshot's `/.cod
 
 Session kind is projected separately from titles. Codex `session_meta.payload.source` classifies `cli` and `exec` as `main`, structured `subagent` sources as `subagent`, and the `other: guardian` source as `guardian`; other or missing sources are `unknown`. The SQLite snapshot reader projects `threads.source` with the latest title observations. Claude `isSidechain` records distinguish `subagent` from `main`, and inferred Claude child paths classify as `subagent`. Missing legacy values remain nullable in storage and appear as `unknown` in the API until projected.
 
-The current-title projection selects the newest observation per native ID and
-physical source path in PostgreSQL before loading candidates into Python. The
-historical observation ledger stays intact; projection memory does not grow with
-repeated captures of the same mapping. Path-specific and index-only observations
-remain separate candidates until identity/ambiguity checks resolve them.
+The current-title projection reads `codex_title_candidates`, which retains the
+newest non-null title and kind separately for each native ID and physical path.
+Database triggers maintain these candidates atomically with observation writes,
+including writes by older importers during a rolling deployment. A retry can
+replace a title, retract a field, or move a path; retractions query only the
+previous winning mapping's native-ID history. Path-specific and index-only
+candidates remain separate until identity and ambiguity checks resolve them.
+
+Migration `0005_codex_title_candidates` creates the projection tables and installs
+triggers without scanning historical observations. New imports populate candidates
+as they write observations, and later observation inserts, corrections, or deletes
+update candidates through those triggers. Routine projection reads the compact
+candidate table; the importer no longer runs a one-time historical backfill.
+
+Existing observation and candidate rows are not changed by this code update. Fresh
+databases and newly registered machines build candidates as imports write
+observations. This release does not rebuild candidates from observations that
+predate migration 0005, or finish an interrupted backfill on a database at revision
+0005 or 0006; recovery of those databases is out of scope. The change adds no
+migration and drops no tables, so rolling back to the previous importer remains
+schema-compatible.
 
 ## Read API and browser
 

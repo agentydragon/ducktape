@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"os"
 	"testing"
 )
@@ -85,3 +87,28 @@ func TestLoadOIDCRejectsInvalidStaticSettings(t *testing.T) {
 }
 
 func intPointer(value int) *int { return &value }
+
+func TestLoadOIDCPinsKeysOnlyForTestIssuers(t *testing.T) {
+	clearOIDCSecretEnv(t)
+	setOIDCSecretEnv(t)
+	public, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := []string{base64.RawURLEncoding.EncodeToString(public)}
+	config, err := LoadOIDC(&OIDCSettings{Issuer: "https://operator-tokens.test", PublicBaseURL: "https://app.example.test", StaticEd25519Keys: keys})
+	if err != nil || len(config.StaticKeys) != 1 || !config.StaticKeys[0].Equal(public) {
+		t.Fatalf("pinned test issuer = (%+v, %v)", config, err)
+	}
+	for _, settings := range []*OIDCSettings{
+		// A real issuer's keys come from discovery: production's is refused the same way.
+		{Issuer: "https://auth.example.com/application/o/agentplane/", PublicBaseURL: "https://app.example.test", StaticEd25519Keys: keys},
+		{Issuer: "https://operator-tokens.test.example.com/", PublicBaseURL: "https://app.example.test", StaticEd25519Keys: keys},
+		{Issuer: "https://operator-tokens.test", PublicBaseURL: "https://app.example.test", StaticEd25519Keys: []string{}},
+		{Issuer: "https://operator-tokens.test", PublicBaseURL: "https://app.example.test", StaticEd25519Keys: []string{"not-a-key"}},
+	} {
+		if config, err := LoadOIDC(settings); err == nil || config != nil {
+			t.Errorf("accepted pinned keys %+v: config=%+v err=%v", settings, config, err)
+		}
+	}
+}

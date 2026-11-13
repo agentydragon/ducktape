@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.selectable import CTE
 
@@ -53,16 +53,6 @@ def latest_holding_captures(account_ids: Sequence[str]) -> CTE:
         .where(ranked.c.capture_rank == 1)
         .cte("latest_holding_capture_rows")
     )
-    unlinked_rows = (
-        select(HoldingSnapshotRow.id)
-        .where(
-            HoldingSnapshotRow.item_id == latest.c.item_id,
-            HoldingSnapshotRow.capture_id.is_(None),
-            HoldingSnapshotRow.captured_at >= latest.c.captured_at,
-        )
-        .correlate(latest)
-        .exists()
-    )
     unapplied_receipts = (
         select(PlaidApiEventRow.id)
         .where(
@@ -79,7 +69,7 @@ def latest_holding_captures(account_ids: Sequence[str]) -> CTE:
         latest.c.item_id,
         latest.c.captured_at,
         latest.c.api_event_id,
-        or_(unlinked_rows, unapplied_receipts).label("has_unapplied_observations"),
+        unapplied_receipts.label("has_unapplied_observations"),
     ).cte("latest_holding_captures")
 
 

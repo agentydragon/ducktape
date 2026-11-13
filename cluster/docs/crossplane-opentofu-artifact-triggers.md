@@ -57,8 +57,6 @@ The assembly needs deliberate handling for:
   not preserve those file formats or override semantics.
 - Local module trees and files read by `file()`, `templatefile()`, or `fileset()`:
   Inline supplies one configuration file, not a filesystem archive.
-- Runtime executables: the LiteLLM sync roots use `/usr/local/bin/buildbuddy-secret-sync`.
-  That binary must exist in the provider runtime regardless of Inline versus Remote.
 - Kubernetes object size limits for large roots.
 - Flux substitution: preserve Terraform `${...}` expressions rather than treating
   them as Flux variables if a consumer enables `postBuild` substitution.

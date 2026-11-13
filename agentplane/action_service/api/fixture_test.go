@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
@@ -25,12 +26,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -52,9 +53,6 @@ const (
 	testNamespace = "test-agentplane"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
-	// callerLabel admits a ServiceAccount's workloads: sandbox_controller's ActionCallerLabel sets it, and Python's
-	// CALLER_LABEL selects it.
-	callerLabel = "agentplane.allegedly.works/use-action-service"
 )
 
 var (
@@ -118,10 +116,10 @@ func setCallerLabel(ctx context.Context, account auth.Account, labeled bool) err
 	}
 	value := "null"
 	if labeled {
-		value = `"true"`
+		value = fmt.Sprintf("%q", callers.ServiceAccountLabelValue)
 	}
 	_, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(ctx, account.Name, types.MergePatchType,
-		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callerLabel, value), metav1.PatchOptions{})
+		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callers.ServiceAccountLabelKey, value), metav1.PatchOptions{})
 	return err
 }
 
@@ -131,8 +129,11 @@ type labeledAccounts struct{}
 
 func (labeledAccounts) Admits(account auth.Account) bool {
 	found, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Get(context.Background(), account.Name, metav1.GetOptions{})
-	return err == nil && found.Labels[callerLabel] == "true"
+	return err == nil && found.Labels[callers.ServiceAccountLabelKey] == callers.ServiceAccountLabelValue
 }
+
+// AdmitsIdentity admits no Identity: this fixture's callers present bearers, which only name ServiceAccounts.
+func (labeledAccounts) AdmitsIdentity(auth.Identity) bool { return false }
 
 // served is the API over a database of its own, on a gRPC server with its HTTP facade, as main serves it.
 type served struct {

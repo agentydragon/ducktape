@@ -3,6 +3,8 @@ package dispatcher
 import (
 	"fmt"
 
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/protobuf/proto"
@@ -32,16 +34,16 @@ func dispatchState(state string) (dispatcherpb.DeliveryState, error) {
 	}
 }
 
-func dispatchOperation(operation string) (dispatcherpb.Operation, error) {
+func dispatchOperation(operation string) (commandpb.Operation, error) {
 	switch operation {
 	case "submit_input":
-		return dispatcherpb.Operation_OPERATION_SUBMIT_INPUT, nil
+		return commandpb.Operation_OPERATION_SUBMIT_INPUT, nil
 	case "change_model":
-		return dispatcherpb.Operation_OPERATION_CHANGE_MODEL, nil
+		return commandpb.Operation_OPERATION_CHANGE_MODEL, nil
 	case "change_reasoning_effort":
-		return dispatcherpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
+		return commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT, nil
 	case "interrupt_turn":
-		return dispatcherpb.Operation_OPERATION_INTERRUPT_TURN, nil
+		return commandpb.Operation_OPERATION_INTERRUPT_TURN, nil
 	default:
 		return 0, fmt.Errorf("unknown dispatch operation %q", operation)
 	}
@@ -94,6 +96,9 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 	// A name without an incarnation UID is not evidence of Session ownership.
 	if row.ExecutionPrincipal != nil && row.ExecutionPrincipal.GetAccount().GetNamespace() != "" && row.ExecutionPrincipal.GetAccount().GetName() != "" && row.ExecutionPrincipal.GetUid() != "" {
 		result.ExecutionIdentity = proto.Clone(row.ExecutionPrincipal).(*ServiceAccountIdentity)
+	}
+	if row.ExecutionIdentity != nil {
+		result.Identity = proto.Clone(row.ExecutionIdentity).(*identitypb.Identity)
 	}
 	result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_AVAILABLE
 	if row.EnvironmentDeletedAt != nil {

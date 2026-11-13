@@ -40,7 +40,7 @@ flowchart LR
         end
         runtime -->|direct lifecycle and Session calls| runner
         runtime -->|lifecycle and execution RPC| execution
-        execution -->|companion ownership| podexec
+        execution -->|companion ownership: gRPC over Unix socket| podexec
         agent[Managed agent process and CLI]
         podexec[Codex executor container]
         sidecar[Egress sidecar]
@@ -134,13 +134,17 @@ flowchart LR
     runner -.->|History mTLS through CONNECT| sidecar
     sidecar -.->|opaque History TLS| egress
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
+    agent -.->|managed CLI History gRPC :3130| sidecar
+    sidecar -.->|Sandbox SVID TLS through CONNECT; verifies History SVID| egress
     agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
     guest -.->|History mTLS through CONNECT| relay
     relay -.->|opaque History TLS| egress
+    guest_agent -.->|managed CLI History gRPC :3130| relay
+    relay -.->|Sandbox SVID TLS through CONNECT; verifies History SVID| egress
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|opaque Dispatcher SVID TLS| gw
 
-    egress -.->|opaque TLS; Rules verifies SVID or bearer :8081| egressRules
+    egress -.->|opaque TLS; Rules verifies SVID :8081| egressRules
     agent -.->|Notification HTTP| sidecar
     guest_agent -.->|Notification HTTP| relay
     sidecar -.->|Notification SVID TLS through CONNECT| egress
@@ -297,6 +301,13 @@ The opt-in Session tools also forward the effective caller to Dispatcher command
 History reads. Those receivers enforce their own same-principal checks; the existing
 `orchestration_v1` broker path retains its separate authority.
 
+Managed Pod, VM and Firecracker CLIs also receive `AGENTPLANE_HISTORY_URL`, set to the shared local
+platform gRPC listener at `http://<local gateway>:3130`. Its History method route connects to
+`history-service.<namespace>.svc.cluster.local:8080` with TLS. The sidecar presents the Sandbox
+Workload SVID and verifies `HISTORY_SERVICE_URI`; the central proxy carries that TLS connection
+opaquely. History authorizes the read against the exact Identity name and UID in the SVID. This path
+uses no History bearer credential or projected audience token and adds no `reader_accounts` grant.
+
 ## Central code-mode sampling (opt in)
 
 ```mermaid
@@ -394,7 +405,7 @@ flowchart LR
         exec[Companion container and exec-server]
         runtime -->|construct and own| host
         runtime -->|component lifecycle| execution
-        execution -->|Unix ownership connection| exec
+        execution -->|ownership gRPC over Unix socket| exec
         host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]
@@ -582,11 +593,12 @@ flowchart LR
     workload --> box_sidecar
     runner --> sidecar -->|mTLS Runtime SVID :8888| egress
     guest --> relay -->|mTLS Runtime SVID :8888| egress
-    nonSandbox[Action boxes and Haku sidecars] -->|TLS and Pod-bound bearer :8888| egress
+    nonSandbox[Action boxes] -->|mTLS box SVID :8888| egress
+    standing[Haku UI and Anki sidecars] -->|mTLS standing SVID :8888| egress
     app -->|admin API on shared TLS gRPC listener :8081| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
-    egress -.->|opaque TLS; Rules verifies SVID or bearer :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
+    egress -.->|opaque TLS; Rules verifies SVID :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
     egress -.->|opaque TLS to shared SVID RPC listener :8080| llm
     sampler -->|direct TokenReview HTTP:8080| llm
     llm -->|model API + server-held key| litellm
@@ -594,10 +606,9 @@ flowchart LR
     actions -->|REST + web push| github
 ```
 
-The required runner mTLS hop resolves the SVID's Sandbox UID and accepted credential through
-live status before using that Sandbox's own ServiceAccount as the policy subject. The plaintext
-central plaintext token hop is removed. Non-Sandbox sidecars retain explicit Pod-bound bearer
-authentication over the same verified TLS listener. Rules uses that same authentication policy
+The required mTLS hop resolves the SVID's live `WorkloadCredential` before using its subject
+ServiceAccount as the policy subject; no bearer authenticates it. Rules uses that same
+authentication policy
 and terminates TLS through an opaque central tunnel;
 the proxy never asserts the caller. History, Notification, Gateway, Action and LLM each serve
 bearer-authenticated and Sandbox-SVID RPCs on their primary TLS listener, with method-specific
@@ -607,8 +618,9 @@ Kubernetes retains its destination-scoped projected token until the later impers
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
 
-Action command/build boxes and Haku UI/Anki keep their existing ServiceAccount subjects and
-Pod-bound bearer hop over verified TLS. Their sidecars alone hold credentials. The later shared
+Action command/build boxes present their own `WorkloadCredential`'s SVID, subject their caller's
+ServiceAccount; Haku UI/Anki present their standing records' SVIDs, subject `haku-ui`. Their
+sidecars alone hold credentials. The later shared
 identity and SVID lifecycle is independent of Sandboxes; no Identity/account cutover is included
 here. Existing Sandbox processes need recreation to read the new mode/route configuration; image
 updates alone do not replace running Pods.

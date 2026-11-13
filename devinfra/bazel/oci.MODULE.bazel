@@ -60,10 +60,12 @@ oci.pull(
 # fork branch is based on (v0.16.5, runner/ untouched), which release.py's chart version names.
 oci.pull(
     name = "tf_runner",
-    digest = "sha256:7209171093907ec1d0559c682949fcee4b625205a6a058c16fe0ce0017af5f41",
+    # Match the tofu-controller commit pinned in third_party/tofu_controller. Its runner protocol
+    # changed since v0.16.5; do not roll one image without the other.
+    digest = "sha256:3fa7aa1ebd041fbdae285f5f7f3f2171d7b1e9b07c51afec5214c31cca7f4443",
     image = "ghcr.io/flux-iac/tf-runner",
     platforms = ["linux/amd64"],
-    tag = "v0.16.5",
+    tag = "main-e2db61bd",
 )
 
 # Bare-k3s fixture: published PostgreSQL 18 without LLVM JIT. CNPG supplies the
@@ -290,6 +292,7 @@ apt.install(
     packages = [
         "dbus-x11",
         "fonts-cantarell",
+        "fonts-noto-color-emoji",
         "gir1.2-secret-1",
         "gnome-shell",
         "libgdk-pixbuf2.0-bin",

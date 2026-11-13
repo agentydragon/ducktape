@@ -124,7 +124,9 @@ it, under its own token audience, and a historyless client needs only it.
    announcements must match the authenticated Runner ServiceAccount exactly. Central sampler
    announcements retain the Dispatcher-provided principal only when it matches the fixed executor
    account. Older or legacy records without that association remain unassociated; a later current
-   ServiceAccount identity is never inferred for them. Every call announces again; the first the ingress accepts adds
+   ServiceAccount identity is never inferred for them. `Attached.execution_identity`, when present, is the
+   Identity name/UID the Dispatcher recorded from the Sandbox's `spec.identity`, retained and announced the
+   same way beside `execution_principal`. Every call announces again; the first the ingress accepts adds
    the Session to its index of Sessions. The ingress answers with an `Acknowledgement` of what it
    has already committed for the Session, cursor zero for a new one.
    **Deviation:** `Attached.incarnation_uid` and `Sealed.incarnation_uid` name the incarnation that
@@ -156,7 +158,7 @@ runner would have to schedule fairly itself; and its writer binding and acknowle
 per frame instead of per call.
 
 **Writer binding.** The ingress authenticates every call's bearer for its own audience with a
-TokenReview through `workload_auth/auth.Resolver`
+TokenReview through `identity/auth/auth.Resolver`
 ([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
 and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
 first writers one is refused. A call for the Session from any other ServiceAccount fails with
@@ -302,11 +304,11 @@ cert-manager owns leaf renewal through the `agentplane-workload` ClusterIssuer, 
 the cluster internal CA. trust-manager distributes the workload CA alone, which every SVID peer
 verifies against. A Pod or KubeVirt runner's control listener verifies the Gateway's client SVID
 against it (`client_ca_file`), so a `cluster-internal-ca` leaf naming
-`spiffe://agentplane/runner-gateway` is refused. The Gateway's `runner_security` and the egress
-sidecar verify server SVIDs against it too, so the Gateway refuses a `cluster-internal-ca` leaf
-naming a runner's URI at that runner's address. **Gotcha:** a Firecracker runner reads one Workload
-API bundle per trust domain, the cluster bundle, so its control listener still accepts a
-cluster-root leaf.
+`spiffe://agentplane/runner-gateway` is refused. A Firecracker launcher serves the workload CA alone
+as the guest's Workload API bundle for the `agentplane` trust domain, so the guest's listener refuses
+that leaf too; the guest Runtime receives no cluster bundle. The Gateway's `runner_security` and the
+egress sidecar verify server SVIDs against the workload CA too, so the Gateway refuses a
+`cluster-internal-ca` leaf naming a runner's URI at that runner's address.
 Pods use projected credential files; KubeVirt guests use a mounted Secret filesystem. Firecracker
 launchers stream the same material through the host-initiated vsock Workload API to the root guest
 agent, which serves Runtime through its restricted Unix socket. Runtime retains pinned credential

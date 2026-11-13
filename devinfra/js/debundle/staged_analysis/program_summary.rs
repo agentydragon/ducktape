@@ -21,7 +21,7 @@ use analysis::analysis_inputs::{
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
     ResolvedImport, resolve_export_primitives, resolve_imported_callable_summaries,
-    resolve_imported_purities,
+    resolve_imported_purities, resolve_stable_imports,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
@@ -83,6 +83,9 @@ pub struct ReparsedEntry {
 pub struct ProgramSummary {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
+    /// Per-chunk imports of never-rebound provider cells
+    /// (`AnalysisInputs::stable_imports`).
+    pub stable_imports: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk imported values admitted to ordinary candidate execution.
     /// Each value has a matching `primitive_reads` proof for the same local
     /// binding and primitive kinds; raw exported primitive facts remain in
@@ -758,11 +761,17 @@ pub fn collect_program_summary(
                 .unwrap_or_default(),
         },
     )?;
-    let bindings = resolve_imported_purities(
-        &modules,
-        &scoped(chunk_export_purity, &modules, |p| &p.pure_exports),
-        &mut callable_summaries,
-    )?;
+    let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
+    let bindings = resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries)?;
+    // A proved imported primitive read names a provider binding declared once
+    // and never written (`StableExportValue`).
+    let mut stable_imports = resolve_stable_imports(&modules, &asserted_pure);
+    for (chunk, reads) in &primitive_reads {
+        stable_imports
+            .entry(chunk.clone())
+            .or_default()
+            .extend(reads.keys().cloned());
+    }
     for inputs in initializer_call_effect_inputs.values() {
         for input in inputs {
             if let Some((module, export, reason)) = known_original_provider_write(
@@ -825,6 +834,7 @@ pub fn collect_program_summary(
         values,
         primitive_reads,
         bindings,
+        stable_imports,
         members: members!(pure_members),
         fluent: exports!(fluent_exports),
         constructors: project_export_set(&modules, &asserted_pure_new, "pure_new_exports"),
@@ -1053,23 +1063,38 @@ fn resolve_initializer_call_effect_inputs(
                 anyhow::bail!("{request} requires a bare imported callee");
             };
             let [argument] = call.args.as_slice() else {
-                anyhow::bail!("{request} requires exactly one function argument");
-            };
-            let swc_ecma_ast::Expr::Fn(callback) = argument.expr.as_ref().unwrap_parens() else {
-                anyhow::bail!("{request} requires a fresh anonymous ordinary function argument");
+                anyhow::bail!("{request} requires exactly one argument");
             };
             ensure!(
-                argument.spread.is_none()
-                    && call.type_args.is_none()
-                    && callback.ident.is_none()
-                    && !callback.function.is_async
-                    && !callback.function.is_generator
-                    && callback.function.body.is_some()
-                    && callback.function.decorators.is_empty()
-                    && callback.function.type_params.is_none()
-                    && callback.function.return_type.is_none(),
-                "{request} requires a fresh anonymous ordinary function argument"
+                argument.spread.is_none() && call.type_args.is_none(),
+                "{request} requires a direct unspread argument"
             );
+            if contract.returns_opaque_function_from_const_primitive {
+                ensure!(
+                    matches!(
+                        argument.expr.as_ref().unwrap_parens(),
+                        swc_ecma_ast::Expr::Ident(_)
+                    ),
+                    "{request} requires a bare const-primitive binding argument"
+                );
+            } else {
+                let swc_ecma_ast::Expr::Fn(callback) = argument.expr.as_ref().unwrap_parens()
+                else {
+                    anyhow::bail!(
+                        "{request} requires a fresh anonymous ordinary function argument"
+                    );
+                };
+                ensure!(
+                    callback.ident.is_none()
+                        && !callback.function.is_async
+                        && !callback.function.is_generator
+                        && callback.function.body.is_some()
+                        && callback.function.decorators.is_empty()
+                        && callback.function.type_params.is_none()
+                        && callback.function.return_type.is_none(),
+                    "{request} requires a fresh anonymous ordinary function argument"
+                );
+            }
             // The callee is a resolved direct ESM import binding. Its immutable
             // module environment cell supplies the selected GetBindingValue;
             // attempted assignment throws and remains an actual source effect.
@@ -1106,6 +1131,8 @@ fn resolve_initializer_call_effect_inputs(
                 provider_chunk: imported.module.clone(),
                 provider_export: imported.export.clone(),
                 provider_sha256: provider_source.sha256.clone(),
+                returns_opaque_function_from_const_primitive: contract
+                    .returns_opaque_function_from_const_primitive,
                 effective_replacement,
                 provider_dependency_closure: closure,
             });

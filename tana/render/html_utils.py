@@ -62,14 +62,11 @@ class HTMLToMarkdownParser(HTMLParser):
             data = data[1:]
         self.output.write(data)
 
-    def get_markdown(self) -> str:
-        return self.output.getvalue()
-
 
 def html_to_markdown(html_text: str) -> str:
     parser = HTMLToMarkdownParser()
     parser.feed(html_text)
-    return parser.get_markdown()
+    return parser.output.getvalue()
 
 
 def find_inline_node_refs(text: str) -> list[NodeId]:

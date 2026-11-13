@@ -28,6 +28,17 @@ bb execution get <execution-id> [--output=json]
 bb download <digest>/<size> [--type=Action|Command]
 ```
 
+For result recovery, copy the complete execution ID from `bbapi execution`
+exactly, including its leading slash and instance/digest-function components.
+The response-cache key hashes that entire string; removing `/` can turn a hit
+into NotFound. Prefer `bb execution get <exact-id>`'s default display, which
+prints status and exit code explicitly. JSON omits protobuf defaults: with a
+real `result`, omitted `status.code` and `result.exitCode` mean OK/zero. A missing
+result, failed fetch, nonzero status or nonzero exit code is not success. The
+advertised CAS `executeResponseDigest` can be unavailable while this separate
+ActionCache lookup succeeds. Inspect returned `test.xml` and testcase selection;
+a passed TestRunner does not make a disconnected Bazel invocation or CI job pass.
+
 ## `bbapi` CLI
 
 `bbapi` provides API query features not available in `bb`:
@@ -123,6 +134,10 @@ bbapi tool-log download <runner-invocation-id> command.profile.gz --all -o profi
 # List remote executions for an invocation
 bbapi execution <invocation-id>
 
+# Observe an accepted action without submitting or cancelling work
+bbapi --timeout 15m execution wait <exact-execution-id>
+bbapi --json --timeout 15m execution wait <exact-execution-id>  # one JSON line per update
+
 # Search remote executions across invocations
 bbapi execution search <query>
 
@@ -159,6 +174,18 @@ bbapi trend [--days N] [--repo URL]
 All `bbapi` commands support `--json` and `--timeout <duration>` (API request timeout, default 120s).
 `status`, `first-failure`, `export`, and `events` always emit JSON; `blob cat` emits raw bytes.
 Reads retry transient failures; cancellation RPCs are sent once.
+
+`execution wait` uses only REAPI `WaitExecution` against
+`https://remote.buildbuddy.io` (override with `--target`). Its timeout bounds the
+whole observation stream. It validates every returned operation name, prints
+pending updates without inventing a result, and exposes explicit terminal
+`status_code`, `result_present` and `exit_code`. It returns nonzero for an early
+EOF, transport failure, mismatched name, missing result, provider error or
+nonzero action exit. Re-run it with the same exact execution ID to reconnect;
+it never submits or cancels work and does not retry the stream automatically.
+A successful action does not establish the whole Bazel invocation or CI verdict.
+Use `bb execution get` for retained response-cache recovery after completion;
+the provider's operation stream and cached response have different retention.
 
 `invocation list --group` scopes the search to that group; without `--repo`, it
 does not auto-detect or add a repository filter. `--all` follows every result

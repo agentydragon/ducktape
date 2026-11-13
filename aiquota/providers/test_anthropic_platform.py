@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 import pytest_bazel
 
 from aiquota.models import FetchError, FetchSuccess
@@ -105,6 +106,33 @@ async def test_organization_list_failure_is_a_provider_error(tmp_path):
 
     assert isinstance(result, FetchError)
     assert "Anthropic Platform orgs" in result.error
+
+
+@pytest.mark.parametrize("invalid_exponent", ["private-input-value", 10])
+async def test_invalid_credit_amount_is_an_organization_error_without_input_values(tmp_path, invalid_exponent):
+    token_path = tmp_path / "token"
+    token_path.write_text("read-token")
+    payload = _credits_response()
+    payload["balance"] = {"credits": {"amount_minor": 12500, "exponent": invalid_exponent}}
+
+    def response(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/api/organizations"):
+            return httpx.Response(200, json=[{"uuid": "api-org", "name": "API", "capabilities": ["api"]}])
+        return httpx.Response(200, json=payload)
+
+    provider = AnthropicPlatformProvider(
+        AnthropicPlatformSettings(enabled=True, url="https://proxy.example/proxy/anthropic", token_path=token_path),
+        provider_client(transport=httpx.MockTransport(response)),
+    )
+    result = (await provider.fetch()).result
+
+    assert isinstance(result, FetchSuccess)
+    assert result.anthropic_platform_credits is not None
+    organization = result.anthropic_platform_credits.organizations[0]
+    assert organization.balance is None
+    assert organization.error is not None
+    assert "balance.credits.exponent" in organization.error
+    assert "private-input-value" not in organization.error
 
 
 if __name__ == "__main__":

@@ -4,9 +4,9 @@ Reads a TOML configuration file that describes the grid parameters, then
 generates a parametric material test grid as a .lbrn2 file.
 
 Usage:
-    python grid_generator.py config.toml [-o output.lbrn2]
+    bb run //laser/material_test:grid_generator_bin -- "$PWD/config.toml" -o "$PWD/output.lbrn2"
 
-See SPEC.md for full documentation and example_config.toml for a complete
+See README.md for documentation and example_config.toml for a complete
 annotated example configuration.
 """
 

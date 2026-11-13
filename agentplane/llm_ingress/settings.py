@@ -3,12 +3,12 @@
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.identity.auth.listener import Listener
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
-from agentplane.workload_auth.listener import Listener
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
@@ -22,6 +22,13 @@ class Settings(YamlFileSettings):
     allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,
         description="Namespaces whose Sandbox SVIDs or backend ServiceAccount bearers may authenticate here.",
+    )
+    policy_namespace: str = Field(
+        min_length=1,
+        description=(
+            "Namespace holding the Identities a Sandbox SVID may name. "
+            "Every attribution output must then carry the `identity` claim."
+        ),
     )
     central_sampler_accounts: frozenset[str] = Field(
         default_factory=frozenset,
@@ -40,7 +47,7 @@ class Settings(YamlFileSettings):
     )
     attribution: AttributionConfig = Field(
         default_factory=default_attribution,
-        description="Literal JSON-header and W3C baggage keys mapped to verified Kubernetes principal fields.",
+        description="Literal JSON-header and W3C baggage keys mapped to verified caller fields.",
     )
 
     codex_model_catalog_file: Path | None = Field(
@@ -55,3 +62,9 @@ class Settings(YamlFileSettings):
     log_levels: LogLevels
     rpc: Listener
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+
+    @model_validator(mode="after")
+    def validate_identity_attribution(self) -> Settings:
+        if not self.attribution.names_identity():
+            raise ValueError("policy_namespace requires every attribution output to carry the identity claim")
+        return self

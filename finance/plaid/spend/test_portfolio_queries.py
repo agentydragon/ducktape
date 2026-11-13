@@ -173,7 +173,7 @@ def test_selectors_use_latest_item_capture_coverage_and_balances(postgres_engine
                     ("fake-selected", "fake-active", "fake-sold", earlier_capture_id, earlier, 30),
                     ("fake-selected", "fake-active", "fake-held", earlier_capture_id, earlier, 30),
                     ("fake-no-coverage", "fake-active", "fake-uncovered", earlier_capture_id, earlier, 50),
-                    # The capture header supplies observation time even if a legacy row timestamp drifts.
+                    # The capture header supplies observation time if a snapshot timestamp differs.
                     ("fake-selected", "fake-active", "fake-held", latest_capture_id, earlier, 25),
                     ("fake-empty", "fake-empty", "fake-sold-empty", empty_previous_capture_id, earlier, 10),
                 ]
@@ -219,73 +219,7 @@ def test_selectors_use_latest_item_capture_coverage_and_balances(postgres_engine
         assert connection.execute(select_holding_batches([])).all() == []
 
 
-def test_holding_balance_selector_flags_unlinked_rows(postgres_engine: Engine) -> None:
-    now = datetime(2026, 1, 2, tzinfo=UTC)
-    with postgres_engine.begin() as connection:
-        connection.execute(
-            insert(LinkRow),
-            {
-                "item_id": "fake-active",
-                "institution_name": "Synthetic institution",
-                "products_requested": [],
-                "products_authorized": [],
-                "products_billed": [],
-                "status": "active",
-                "access_token_secret": "fake-secret-reference",
-                "created_at": now,
-                "updated_at": now,
-            },
-        )
-        connection.execute(
-            insert(AccountRow),
-            {
-                "account_id": "fake-selected",
-                "item_id": "fake-active",
-                "name": "Synthetic account",
-                "type": "investment",
-                "iso_currency_code": "USD",
-                "raw_json": {},
-                "updated_at": now,
-            },
-        )
-        connection.execute(
-            insert(SecurityRow),
-            {
-                "security_id": "fake-held",
-                "name": "Synthetic security",
-                "ticker_symbol": "HELD",
-                "type": "equity",
-                "raw_json": {},
-                "updated_at": now,
-            },
-        )
-        capture_id = _capture(
-            connection, item_id="fake-active", captured_at=now, accounts={"fake-selected": (Decimal(25), "USD")}
-        )
-        connection.execute(
-            insert(HoldingSnapshotRow),
-            {
-                "account_id": "fake-selected",
-                "item_id": "fake-active",
-                "security_id": "fake-held",
-                "capture_id": None,
-                "captured_at": now,
-                "institution_value": 25,
-                "iso_currency_code": "USD",
-                "raw_json": {},
-            },
-        )
-
-        row = (
-            connection.execute(select_account_balances(["fake-selected"], holding_account_ids=["fake-selected"]))
-            .mappings()
-            .one()
-        )
-        assert row["holding_capture_id"] == capture_id
-        assert row["holding_capture_has_unapplied_observations"] is True
-
-
-def test_holding_balance_selector_flags_empty_legacy_receipt_until_a_new_capture(postgres_engine: Engine) -> None:
+def test_holding_balance_selector_flags_unapplied_receipt_until_a_new_capture(postgres_engine: Engine) -> None:
     now = datetime(2026, 1, 2, tzinfo=UTC)
     with postgres_engine.begin() as connection:
         connection.execute(

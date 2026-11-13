@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -20,12 +22,13 @@ type Owner struct {
 
 // Conversation is the durable provider conversation and its current execution fence.
 type Conversation struct {
-	ID              string
-	Generation      int
-	Owner           *string
-	LeaseUntil      *time.Time
-	API             protocol.APIStyle
-	Archive         protocol.Context
+	ID         string
+	Generation int
+	Owner      *string
+	LeaseUntil *time.Time
+	API        protocol.APIStyle
+	// Transcript retains the full native conversation across compaction.
+	Transcript      protocol.Context
 	Pending         *PendingIntent
 	Stopped         bool
 	ExecutorSession *string
@@ -35,18 +38,24 @@ type Conversation struct {
 	// ExecutorShell is the shell name the bound exec-server last reported.
 	ExecutorShell *string
 	// EnvironmentContext is the last model-visible environment context.
-	EnvironmentContext *EnvironmentContext
+	EnvironmentContext  *EnvironmentContext
+	transcriptContextID string
+	activeContextID     string
+	transcriptControl   json.RawMessage
+	activeControl       json.RawMessage
+	storedContexts      map[protocol.Context]contextCheckpoint
+	executionSnapshots  map[protocol.Context]*modelExecutionSnapshot
 }
 
 func (c *Conversation) Context() protocol.Context {
 	if c.ActiveContext == nil {
-		return c.Archive
+		return c.Transcript
 	}
 	return c.ActiveContext
 }
 
 func (c *Conversation) apply(change func(protocol.Context) error) error {
-	if err := change(c.Archive); err != nil {
+	if err := change(c.Transcript); err != nil {
 		return err
 	}
 	if c.ActiveContext != nil {
@@ -56,8 +65,8 @@ func (c *Conversation) apply(change func(protocol.Context) error) error {
 }
 
 func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []protocol.ContentPart) error {
-	// The archive ordinal is authoritative. Compacted active context has different local ordinals.
-	original, err := c.Archive.FindCall(call.CallID)
+	// The transcript ordinal is authoritative. Compacted active context has different local ordinals.
+	original, err := c.Transcript.FindCall(call.CallID)
 	if err != nil {
 		return err
 	}
@@ -190,15 +199,18 @@ type IntentRequest struct {
 // ProviderRequest records a provider call before dispatch. Authentication is deliberately absent:
 // it is committed in the same transaction as the pending intent, before any upstream request.
 type ProviderRequest struct {
-	API           protocol.APIStyle `json:"api"`
-	Connection    string            `json:"connection"`
-	ProviderModel string            `json:"provider_model"`
-	Method        string            `json:"method"`
-	URL           string            `json:"url"`
-	Headers       map[string]string `json:"headers"`
-	// Body and WireRequest are the same outgoing bytes, as JSON and as the exact string sent.
-	Body        json.RawMessage `json:"body"`
-	WireRequest string          `json:"wire_request"`
+	API             protocol.APIStyle    `json:"api"`
+	Connection      string               `json:"connection"`
+	ProviderModel   string               `json:"provider_model"`
+	Method          string               `json:"method"`
+	URL             string               `json:"url"`
+	Headers         map[string]string    `json:"headers"`
+	ContextID       string               `json:"context_id,omitempty"`
+	ProfileID       storage.ContentID    `json:"profile_id"`
+	SourceContextID string               `json:"source_context_id,omitempty"`
+	ProjectionKey   requestProjectionKey `json:"projection_key,omitempty"`
+	PrefixIDs       []storage.ContentID  `json:"prefix_ids,omitempty"`
+	SuffixIDs       []storage.ContentID  `json:"suffix_ids,omitempty"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested
@@ -318,15 +330,6 @@ type ExecutionState struct {
 	Processes []RemoteProcess
 }
 
-// InterruptRequest is scoped to one lease generation and, for session commands, one turn.
-type InterruptRequest struct {
-	ID             string
-	ConversationID string
-	Generation     int
-	TargetTurn     *string
-	Result         map[string]any
-}
-
 type LostOwnershipError struct{ Reason string }
 
 func (e *LostOwnershipError) Error() string {
@@ -360,3 +363,12 @@ var (
 	ErrConflict  = errors.New("resource conflicts with an existing request")
 	ErrForbidden = errors.New("resource belongs to another account")
 )
+
+// Dispatch evidence exposes the authorized execution handle, not private content IDs.
+func (request IntentRequest) dispatchEvidence(id string) any {
+	if request.ProviderRequest == nil {
+		return request
+	}
+	body := request.ProviderRequest
+	return map[string]any{"kind": request.Kind, "request_id": id, "api": body.API, "connection": body.Connection, "provider_model": body.ProviderModel, "method": body.Method, "url": body.URL, "headers": nonAuthProviderRequestHeaders(body.Headers)}
+}

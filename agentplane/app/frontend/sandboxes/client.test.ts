@@ -10,8 +10,10 @@ import {
 } from "../../../proto/session_pb";
 import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
+import { CreateEnvironmentRequestSchema } from "../../../environments/v1/environment_service_pb";
 
 import {
+  launchEnvironment,
   getEnvironmentRuntimeStatus,
   createSession,
   getSession,
@@ -20,12 +22,118 @@ import {
   resumeSandbox,
   suspendEnvironment,
   deleteEnvironment,
+  getEnvironmentIdentityRecord,
+  setEnvironmentIdentity,
   setEnvironmentIdleSuspend,
 } from "./client";
 
 const id = "b351b316-fdc4-4f50-a642-758992ae3323";
 const target = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "uid" });
 afterEach(() => vi.unstubAllGlobals());
+
+it("launches through the operator APIs with the exact picked PolicySets and Identity", async () => {
+  const request = create(CreateEnvironmentRequestSchema, {
+    name: "launched",
+    template: "test-template",
+    preset: "test-preset",
+    inboxTags: ["test-group"],
+  });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ identity: { identity: { namespace: "policies", name: "launched", uid: "identity-uid" } } })
+    )
+    .mockResolvedValueOnce(Response.json({ binding: {} }))
+    .mockResolvedValueOnce(Response.json({ namespace: "team", name: "launched", uid: "sandbox-uid" }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(launchEnvironment(request, ["test-basic", "test-packages"])).resolves.toEqual(
+    create(EnvironmentTargetSchema, { namespace: "team", name: "launched", uid: "sandbox-uid" })
+  );
+
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/policy/v1/identities",
+    "/upstream/policy/v1/identities/launched/policy-bindings",
+    "/upstream/environments/v1/environments",
+  ]);
+  expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
+    name: "launched",
+    description: "Agent of Sandbox launched, launched from the app.",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({
+    identityUid: "identity-uid",
+    policySets: ["test-basic", "test-packages"],
+  });
+  expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+    name: "launched",
+    template: "test-template",
+    preset: "test-preset",
+    inboxTags: ["test-group"],
+    identity: "launched",
+  });
+});
+
+it("leaves the Identity when the Environment create outcome is uncertain", async () => {
+  const request = create(CreateEnvironmentRequestSchema, { name: "uncertain", template: "test-template" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ identity: { identity: { namespace: "policies", name: "uncertain", uid: "identity-uid" } } })
+    )
+    .mockResolvedValueOnce(Response.json({ binding: {} }))
+    .mockResolvedValueOnce(Response.json({ code: 4, message: "unknown result" }, { status: 504 }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(launchEnvironment(request, ["test-basic"])).rejects.toMatchObject({ code: 4 });
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/policy/v1/identities",
+    "/upstream/policy/v1/identities/uncertain/policy-bindings",
+    "/upstream/environments/v1/environments",
+  ]);
+});
+
+it.each([408, 429])("keeps the Identity after an Environment create response with status %i", async (status) => {
+  const request = create(CreateEnvironmentRequestSchema, { name: `uncertain-${status}`, template: "test-template" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        identity: { identity: { namespace: "policies", name: request.name, uid: "identity-uid" } },
+      })
+    )
+    .mockResolvedValueOnce(Response.json({ binding: {} }))
+    .mockResolvedValueOnce(Response.json({ code: 4, message: "unknown result" }, { status }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(launchEnvironment(request, ["test-basic"])).rejects.toMatchObject({ code: 4 });
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/policy/v1/identities",
+    `/upstream/policy/v1/identities/${request.name}/policy-bindings`,
+    "/upstream/environments/v1/environments",
+  ]);
+});
+
+it("deletes the Identity after a definite Environment create refusal", async () => {
+  const request = create(CreateEnvironmentRequestSchema, { name: "rejected", template: "test-template" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ identity: { identity: { namespace: "policies", name: "rejected", uid: "identity-uid" } } })
+    )
+    .mockResolvedValueOnce(Response.json({ binding: {} }))
+    .mockResolvedValueOnce(Response.json({ code: 3, message: "invalid request" }, { status: 400 }))
+    .mockResolvedValueOnce(Response.json({}));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(launchEnvironment(request, ["test-basic"])).rejects.toMatchObject({ code: 3 });
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/policy/v1/identities",
+    "/upstream/policy/v1/identities/rejected/policy-bindings",
+    "/upstream/environments/v1/environments",
+    "/upstream/policy/v1/identities/policies/rejected?uid=identity-uid",
+  ]);
+  expect(fetchMock.mock.calls[3]![1].method).toBe("DELETE");
+});
 
 it("sends the generated exact target through the EnvironmentService facade", async () => {
   const target = create(EnvironmentTargetSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
@@ -57,6 +165,32 @@ it("sends the generated exact target through the EnvironmentService facade", asy
   expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
     target: { namespace: "team", name: "box", uid: "opaque-uid" },
     idleSuspendAfter: "90s",
+  });
+});
+
+it("reads the current credential and patches an exact stopped Environment identity", async () => {
+  const exact = create(EnvironmentTargetSchema, { namespace: "team", name: "box", uid: "opaque-uid" });
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ identity: { name: "prior", uid: "prior-uid" } }))
+    .mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({}));
+  vi.stubGlobal("fetch", fetchMock);
+  await expect(getEnvironmentIdentityRecord(exact)).resolves.toBe("prior");
+  await setEnvironmentIdentity(exact, "next");
+  await setEnvironmentIdentity(exact, null);
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/upstream/environments/v1/environments/team/box:identity-record?target.uid=opaque-uid",
+    "/upstream/environments/v1/environments/team/box:identity",
+    "/upstream/environments/v1/environments/team/box:identity",
+  ]);
+  expect(fetchMock.mock.calls[1]![1].method).toBe("PATCH");
+  expect(JSON.parse(fetchMock.mock.calls[1]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
+    identityName: "next",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[2]![1].body)).toEqual({
+    target: { namespace: "team", name: "box", uid: "opaque-uid" },
   });
 });
 

@@ -33,21 +33,6 @@ type Request struct {
 
 func (r Request) isConnect() bool { return r.Method == http.MethodConnect }
 
-// WorkloadContext is credential material retained only after the proxy authenticated this
-// request or tunnel. Its tokens are never printed.
-type WorkloadContext struct {
-	Caller policyapi.ServiceAccountRef
-	PodUID string
-	// Projected maps an audience to the token the sidecar presented for it, each already reviewed as
-	// belonging to the Sandbox's bound Pod. An audience that did not review is absent rather
-	// than present and unusable, so a rule naming it denies `credential-unavailable` at the point
-	// of use.
-	Projected map[string]string
-}
-
-func (WorkloadContext) String() string   { return "WorkloadContext{redacted}" }
-func (WorkloadContext) GoString() string { return "WorkloadContext{redacted}" }
-
 // Decision is the result of Evaluate: Allowed or Denied.
 type Decision interface{ isDecision() }
 
@@ -88,8 +73,8 @@ type match struct {
 // credential; one presenting none is decided by the first matching rule and is forwarded as it
 // came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
 // credential away from it.
-func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext) Decision {
-	grants := i.Rules.Grants(reader.ServiceAccount(caller))
+func (i *Index) Evaluate(caller reader.Subject, request Request) Decision {
+	grants := i.Rules.Grants(caller)
 	if len(grants) == 0 {
 		return Denied{decision.NoBinding}
 	}
@@ -139,7 +124,7 @@ func (i *Index) Evaluate(caller policyapi.ServiceAccountRef, request Request, wo
 	if impersonating && suppliesImpersonation(request.Headers) {
 		return Denied{decision.ImpersonationForbidden}
 	}
-	value, ok := i.credentialValue(credential, caller, request, workload)
+	value, ok := i.credentialValue(credential, request)
 	if !ok {
 		return Denied{decision.CredentialUnavailable}
 	}
@@ -232,14 +217,9 @@ func resolves(rule resources.Rule, presented map[string]presentation.Presentatio
 	return ok
 }
 
-// credentialValue is the real value of a credential. A projected token is the caller's own
-// identity, so it is usable only while the context still belongs to the caller being decided; a
-// Secret is the proxy's and needs no such binding. The proxy's own API server bearer goes only to
-// that server, over verified TLS.
-func (i *Index) credentialValue(
-	credential resources.Credential, caller policyapi.ServiceAccountRef, request Request, workload *WorkloadContext,
-) (string, bool) {
-	bound := workload != nil && workload.Caller == caller
+// credentialValue is the real value of a credential. A Secret is the proxy's; the API server
+// bearer is the proxy's too, and goes only to that server over verified TLS.
+func (i *Index) credentialValue(credential resources.Credential, request Request) (string, bool) {
 	switch source := credential.Source.(type) {
 	case resources.SecretKey:
 		secret, ok := i.secrets[source.Name]
@@ -247,12 +227,6 @@ func (i *Index) credentialValue(
 			return "", false
 		}
 		return secret.Value(source.Key)
-	case resources.ProjectedWorkloadToken:
-		if !bound {
-			return "", false
-		}
-		token, ok := workload.Projected[source.Audience]
-		return token, ok
 	case resources.KubernetesServiceAccount:
 		// The proxy's own bearer is for the API server LocalAPIServer configures and nowhere else.
 		server := i.LocalAPIServer

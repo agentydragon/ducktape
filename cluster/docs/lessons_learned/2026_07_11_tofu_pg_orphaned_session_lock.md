@@ -123,7 +123,7 @@ orphaned PID; do not restart CNPG or kill all `tfstate` sessions.
   10-second intervals, and six probes; see the [current database configuration](../../cdk8s/tofu_state/db.py).
 - Give tofu-controller Terraform CRs a bounded `spec.tfstate.lockTimeout` to avoid rapid
   retry churn during legitimate short overlaps. This is mitigation, not orphan eviction.
-- The current Ducktape tofu-controller fork carries merged upstream PR
+- The Ducktape tofu-controller source includes merged upstream PR
   `flux-iac/tofu-controller#1838`, which bounds runner RPC setup after runner loss.
 - After any runner-node reboot, check both stuck Terraform reconciles and advisory locks
   on the **current CNPG primary**.

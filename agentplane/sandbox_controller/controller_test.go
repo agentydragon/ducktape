@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
-	workloadapi "github.com/agentydragon/ducktape/agentplane/workload_identity/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/workload_identity/requester"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,6 +38,8 @@ const (
 	namespace    = "test-sandboxes"
 	templateName = "test-template"
 	sandboxName  = "test-sandbox"
+	// defaultTestIdentity is the Identity the fixture Sandbox acts as.
+	defaultTestIdentity = "test-agent"
 )
 
 var (
@@ -85,9 +87,16 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 		t.Fatal(err)
 	}
 	addCredentialKinds(t, scheme)
+	// A Sandbox acts as an Identity; the fixture's names a live one unless the test brings its own.
 	sandbox := &sandboxapi.Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
-		Spec:       sandboxapi.SandboxSpec{Template: templateName, Running: running},
+		Spec:       sandboxapi.SandboxSpec{Template: templateName, Running: running, Identity: &sandboxapi.IdentityRef{Name: defaultTestIdentity}},
+	}
+	if !slices.ContainsFunc(objects, func(object client.Object) bool {
+		_, identity := object.(*policyapi.Identity)
+		return identity && object.GetName() == defaultTestIdentity
+	}) {
+		objects = append(objects, testIdentity(defaultTestIdentity, testIdentityUID))
 	}
 	// A tracker without managed fields: the fake client's default one cannot convert KubeVirt's
 	// uint64 fields.

@@ -17,16 +17,16 @@ import copy
 import json
 import ssl
 import tempfile
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from enum import StrEnum
 from pathlib import Path
 from uuid import uuid4
-
-import yaml
 
 from agentplane.crd_group import GROUP
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.tls import service_root_certificates
@@ -190,20 +190,41 @@ async def _answers_http2(target: str, *, roots: bytes, certificate: tuple[bytes,
             await writer.wait_closed()
 
 
+class RunnerControlRoute(StrEnum):
+    """How a probe reaches a runner's control listener."""
+
+    # kubectl port-forward to the Pod's loopback, where a Pod runner's Runtime listens.
+    PORT_FORWARD = "port-forward"
+    # The Pod IP: a Firecracker launcher forwards only Pod-IP traffic into its guest, and
+    # port-forward's loopback connection bypasses that forwarding.
+    POD_IP = "pod-ip"
+
+
+@contextlib.asynccontextmanager
+async def _runner_control_target(cluster: Cluster, pod: str, route: RunnerControlRoute) -> AsyncIterator[str]:
+    match route:
+        case RunnerControlRoute.PORT_FORWARD:
+            forward = PortForward(
+                cluster.command("port-forward"),
+                resource=f"pod/{pod}",
+                local_address="127.0.0.1",
+                local_port=None,
+                remote_port=_RUNNER_CONTROL_PORT,
+            )
+            async with async_port_forward(forward) as target:
+                yield target
+        case RunnerControlRoute.POD_IP:
+            address = (await _object(cluster, "pod", pod))["status"]["podIP"]
+            yield f"{address}:{_RUNNER_CONTROL_PORT}"
+
+
 async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
-    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, *, route: RunnerControlRoute
 ) -> None:
     impostor = await _cluster_ca_leaf(cluster, _GATEWAY_URI)
     gateway = await _secret_pem(cluster, cluster.namespace, _GATEWAY_SECRET)
     roots = await service_root_certificates(cluster)
-    forward = PortForward(
-        cluster.command("port-forward"),
-        resource=f"pod/{view.kubernetes_diagnostics.pod.name}",
-        local_address="127.0.0.1",
-        local_port=None,
-        remote_port=_RUNNER_CONTROL_PORT,
-    )
-    async with async_port_forward(forward) as target:
+    async with _runner_control_target(cluster, view.kubernetes_diagnostics.pod.name, route) as target:
         assert await _answers_http2(target, roots=roots, certificate=gateway), "the Gateway's own SVID was refused"
         assert not await _answers_http2(target, roots=roots, certificate=impostor), (
             f"a cluster-internal-ca leaf naming {_GATEWAY_URI} authenticated to a runner's control listener"
@@ -286,10 +307,8 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
     ]
     # Kubelet holds the Pod until the Secret exists, which needs the URI the controller allocates.
     pod["volumes"].append({"name": "impostor-leaf", "secret": {"secretName": name}})
-    gateway_settings = yaml.safe_load(
-        (await _object(cluster, "configmap", "runner-gateway-settings"))["data"]["settings.yaml"]
-    )
     async with contextlib.AsyncExitStack() as cleanup:
+        identity = await cleanup.enter_async_context(scenario_identity(cluster, name, list(LAUNCH_DEFAULT_POLICY_SETS)))
         await cluster.kubectl(
             "create",
             "-f",
@@ -322,11 +341,7 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
                 "apiVersion": SANDBOX_API_VERSION,
                 "kind": "Sandbox",
                 "metadata": {"name": name, "namespace": cluster.namespace},
-                "spec": {
-                    "template": name,
-                    "running": True,
-                    "policySets": gateway_settings["environment_default_policy_sets"],
-                },
+                "spec": {"template": name, "running": True, "identity": {"name": identity}},
             },
         )
         cleanup.push_async_callback(cluster.kubectl, "delete", "secret", name, "--wait=false")

@@ -66,6 +66,80 @@ def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> st
     return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
 
 
+def format_summary_minor_currency(amount_minor: int, exponent: int, currency: str) -> str:
+    """Show provider precision below ten major units and whole amounts above."""
+    precision = 2 if currency == "USD" else exponent
+    return _format_summary_currency(Decimal(amount_minor).scaleb(-exponent), currency, precision)
+
+
+def format_summary_usd(amount: Decimal | float) -> str:
+    value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+    return _format_summary_currency(value, "USD")
+
+
+_HALF_CENT = Decimal("0.005")
+
+
+def _round_currency(value: Decimal, precision: int) -> Decimal:
+    return value.quantize(Decimal(1).scaleb(-precision), rounding=ROUND_HALF_UP)
+
+
+def _format_summary_currency(value: Decimal, currency: str, precision: int = 2) -> str:
+    sign = "-" if value < 0 else ""
+    if currency == "USD" and value != 0 and abs(value) < _HALF_CENT:
+        return f"{sign}<$0.01"
+    if value == 0:
+        digits = "0"
+    elif abs(value) < 10:
+        rounded = _round_currency(abs(value), precision)
+        digits = f"{rounded:,.{precision}f}" if rounded != rounded.to_integral_value() else f"{rounded:,.0f}"
+    else:
+        digits = f"{abs(value).quantize(Decimal(1), rounding=ROUND_HALF_UP):,}"
+    return f"{sign}${digits}" if currency == "USD" else f"{sign}{digits} {currency}"
+
+
+def summary_hides_fraction(value: Decimal, precision: int = 2) -> bool:
+    return abs(value) >= 10 and _round_currency(value, precision) != value.quantize(Decimal(1), rounding=ROUND_HALF_UP)
+
+
+def same_at_precision(first: Decimal, second: Decimal, precision: int = 2) -> bool:
+    return _round_currency(first, precision) == _round_currency(second, precision)
+
+
+def format_exact_usd(amount: Decimal) -> str:
+    if amount != 0 and abs(amount) < Decimal("1e-20"):
+        return f"{'-' if amount < 0 else ''}${str(abs(amount).normalize()).lower()}"
+    exponent = amount.as_tuple().exponent
+    places = max(2, -exponent) if isinstance(exponent, int) else 2
+    return f"{'-' if amount < 0 else ''}${abs(amount):,.{places}f}"
+
+
+def format_extra_spend(used_usd: float, limit_usd: float) -> str:
+    used, limit = Decimal(str(used_usd)), Decimal(str(limit_usd))
+    used_label, limit_label = format_summary_usd(used), format_summary_usd(limit)
+    qualifier = ""
+    if not same_at_precision(used, limit) and used_label == limit_label:
+        used_label, limit_label = _format_cents_usd(used), _format_cents_usd(limit)
+    elif used != limit and used_label == limit_label:
+        qualifier = f" · {'over' if used > limit else 'under'} by <$0.01"
+    return f"Extra spend this month: {used_label} of {limit_label} limit{qualifier}"
+
+
+def format_extra_spend_exact(used_usd: float, limit_usd: float) -> str:
+    return f"{format_exact_usd(Decimal(str(used_usd)))} of {format_exact_usd(Decimal(str(limit_usd)))} limit"
+
+
+def extra_spend_has_hidden_fraction(used_usd: float, limit_usd: float) -> bool:
+    used, limit = Decimal(str(used_usd)), Decimal(str(limit_usd))
+    if not same_at_precision(used, limit) and format_summary_usd(used) == format_summary_usd(limit):
+        return False  # The summary expands values that would otherwise collide.
+    return any(summary_hides_fraction(value) for value in (used, limit))
+
+
+def _format_cents_usd(value: Decimal) -> str:
+    return f"{'-' if value < 0 else ''}${abs(_round_currency(value, 2)):,.2f}"
+
+
 _DEADLINE_DATE_ONLY_AFTER = timedelta(days=14)
 
 
@@ -76,8 +150,8 @@ def format_deadline(when: datetime, now: datetime, tz: tzinfo | None = None, *, 
     label = local.strftime("%b %-d")
     if local.year != now.astimezone(tz).year:
         label += local.strftime(", %Y")
-    if when.astimezone(UTC) - now.astimezone(UTC) <= _DEADLINE_DATE_ONLY_AFTER:
-        label += local.strftime(", %H:%M %Z")
+    if abs(when.astimezone(UTC) - now.astimezone(UTC)) <= _DEADLINE_DATE_ONLY_AFTER:
+        label += local.strftime(", %H:%M")
     return label
 
 
@@ -171,9 +245,8 @@ def format_burn(burn: BurnStatus, now: datetime, tz: tzinfo | None = None) -> st
 
 
 def format_peak_schedule(burn: BurnStatus, tz: tzinfo | None = None) -> str | None:
-    """Upcoming windows in local time, so the expensive hours can be planned around."""
-    ahead = burn.upcoming[1:] if burn.in_peak else burn.upcoming
-    if not ahead:
+    """Show the current peak and following windows in local time for planning."""
+    if not burn.upcoming:
         return None
-    windows = "  ".join(format_peak_interval(interval, tz) for interval in ahead)
+    windows = "  ".join(format_peak_interval(interval, tz) for interval in burn.upcoming)
     return f"{format_multiplier(burn.peak_multiplier)} windows (local): {windows}"

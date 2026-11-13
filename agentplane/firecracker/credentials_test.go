@@ -13,7 +13,8 @@ func TestReadCredentialsKeepsProjectedGenerationAcrossSymlinkFlip(t *testing.T) 
 		if err := os.Mkdir(root, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"tls.crt", "tls.key", "ca.crt"} {
+		// ca.crt is the cluster bundle the projection also carries; the guest never receives it.
+		for _, name := range []string{"tls.crt", "tls.key", "ca.crt", "workload-ca.crt"} {
 			if err := os.WriteFile(filepath.Join(root, name), []byte(version+"-"+name), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -43,9 +44,9 @@ func TestReadCredentialsKeepsProjectedGenerationAcrossSymlinkFlip(t *testing.T) 
 		t.Fatal(err)
 	}
 	if !flipped || credentials != (Credentials{
-		TLSCert:  "old-tls.crt",
-		TLSKey:   "old-tls.key",
-		CABundle: "old-ca.crt",
+		TLSCert:    "old-tls.crt",
+		TLSKey:     "old-tls.key",
+		WorkloadCA: "old-workload-ca.crt",
 	}) {
 		t.Fatalf("credential generation changed during read: %+v", credentials)
 	}
@@ -53,7 +54,7 @@ func TestReadCredentialsKeepsProjectedGenerationAcrossSymlinkFlip(t *testing.T) 
 
 func TestReadCredentialsSupportsDirectDirectory(t *testing.T) {
 	directory := t.TempDir()
-	for _, name := range []string{"tls.crt", "tls.key", "ca.crt"} {
+	for _, name := range []string{"tls.crt", "tls.key", "workload-ca.crt"} {
 		if err := os.WriteFile(filepath.Join(directory, name), nil, 0o600); err != nil {
 			t.Fatal(err)
 		}

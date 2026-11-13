@@ -22,28 +22,32 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/api"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/ingress"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -64,6 +68,23 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	// queue them client-side. API Priority and Fairness bounds the load on the server.
 	kubeConfig.QPS = -1
 	return kubeConfig, nil
+}
+
+// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for delegated Identity callers.
+func kubernetesIdentityUIDs(c config) (auth.IdentityUIDReader, error) {
+	kubeConfig, err := kubernetesConfig(c)
+	if err != nil {
+		return nil, err
+	}
+	scheme := runtime.NewScheme()
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		return nil, err
+	}
+	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, err
+	}
+	return auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
 }
 
 // readOnly is the database URL with sessions that refuse writes, so the read API cannot write.
@@ -138,24 +159,33 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	if err != nil {
 		return err
 	}
-	// Reads remain bearer-only even when the shared transport also admits Sandbox certificates.
-	readerAuth, err = readerAuth.WithListenerAuthentication(listener.Config{
+	// A ServiceAccount reads with a bearer only, even when the shared transport also admits Sandbox
+	// certificates; a certificate reads only as the Identity it names.
+	readerListener := listener.Config{
 		ListenAddress: c.RPC.ListenAddress, TLS: c.RPC.TLS,
 		Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience}}},
-	}, nil)
-	if err != nil {
-		return err
 	}
-	var svids *auth.SVIDResolver
+	var svids, readerSVIDs *auth.SVIDResolver
 	if c.RPC.Has(listener.SPIFFE) {
 		base, err := kubernetesConfig(c)
 		if err != nil {
 			return err
 		}
-		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces)
+		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {
 			return err
 		}
+		readerSVIDs = svids
+		for _, method := range c.RPC.Auth {
+			if spiffe, ok := method.(*listener.SPIFFEAuth); ok {
+				readerListener.Auth = append(readerListener.Auth, spiffe)
+			}
+		}
+	}
+	readerAuth, err = readerAuth.WithListenerAuthentication(readerListener, readerSVIDs)
+	if err != nil {
+		return err
 	}
 	writerAuth, err = writerAuth.WithListenerAuthentication(c.RPC, svids)
 	if err != nil {
@@ -198,8 +228,16 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	methods := auth.HealthMethods()
 	// A watch or follow carries no deadline of its own, so the request timeout bounds its admission.
 	historyMethods := api.Methods(readerAuth)
+	var identityReader auth.IdentityUIDReader
+	if c.Delegation != nil || c.Ingress.SamplerIdentityCallers {
+		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
+			return err
+		}
+	}
 	if c.Delegation != nil {
-		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
+		delegator := auth.Delegator{
+			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
+		}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
 			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
 			if apierrors.IsNotFound(err) {
@@ -210,15 +248,22 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 			}
 			return string(serviceAccount.UID), true, nil
 		})
-		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, c.Delegation.Methods)
+		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, identityReader, c.Delegation.Methods)
 		if err != nil {
 			return fmt.Errorf("configure History delegation: %w", err)
 		}
 	}
 	maps.Copy(methods, historyMethods)
-	pushRule := auth.AnyAccount(writerAuth)
+	// SPIFFE listeners admit authenticated workload SVIDs and only named sampler accounts by bearer.
+	// A bearer-only listener admits any ServiceAccount the writer resolver accepts in its namespaces.
+	pushRule := auth.AnySubject(writerAuth)
 	if c.RPC.Has(listener.SPIFFE) {
 		pushRule = auth.SVIDOrAccounts(writerAuth, c.Ingress.SamplerAccounts)
+	}
+	if c.Ingress.SamplerIdentityCallers {
+		if pushRule, err = ingress.AllowDelegatingSamplers(pushRule, c.Ingress.SamplerAccounts, identityReader); err != nil {
+			return fmt.Errorf("configure sampler delegation: %w", err)
+		}
 	}
 	methods[session_ingresspb.SessionJournalIngress_Push_FullMethodName] = pushRule
 	options := append(methods.ServerOptions(seconds(c.RequestTimeoutSeconds)), observability.GRPCServerOption(),
@@ -282,6 +327,13 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 && os.Args[1] == "settle-history" {
+		if err := runSettleHistory(ctx, os.Args[2:]); err != nil {
+			slog.Error("History settlement backfill stopped", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if slices.Contains(os.Args[1:], "--migrate-only") {
 		timeout, err := migrationOnlyTimeout()
 		if err != nil {

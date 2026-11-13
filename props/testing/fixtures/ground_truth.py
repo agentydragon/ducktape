@@ -1,13 +1,9 @@
 """Ground truth fixtures (TPs, FPs, occurrences) for props tests."""
 
-from pathlib import Path
-
 import pytest
-from more_itertools import first
 from sqlalchemy.orm import Session
 
 from props.core.ids import SnapshotSlug
-from props.core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props.db.examples import Example
 from props.db.models import FalsePositiveOccurrenceORM, FileSet, FileSetMember, TruePositiveOccurrenceORM
 
@@ -21,48 +17,6 @@ def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> lis
         .all()
     )
     return [(row.tp_id, row.occurrence_id) for row in rows]
-
-
-def make_tp_occurrence(
-    occurrence_id: str = "occ-1",
-    files: dict[Path, list[LineRange] | None] | None = None,
-    critic_scopes_expected_to_recall: set[frozenset[Path]] | None = None,
-    note: str | None = None,
-) -> TruePositiveOccurrence:
-    """Build TruePositiveOccurrence with proper Pydantic types."""
-    if files is None:
-        files = {Path("test.py"): None}
-
-    if critic_scopes_expected_to_recall is None:
-        first_file = first(files.keys())
-        critic_scopes_expected_to_recall = {frozenset([first_file])}
-
-    return TruePositiveOccurrence(
-        occurrence_id=occurrence_id,
-        files=files,
-        note=note,
-        critic_scopes_expected_to_recall=critic_scopes_expected_to_recall,
-        match_file_restriction=None,
-    )
-
-
-def make_fp_occurrence(
-    occurrence_id: str = "occ-1",
-    files: dict[Path, list[LineRange] | None] | None = None,
-    relevant_files: set[Path] | None = None,
-    note: str | None = None,
-) -> FalsePositiveOccurrence:
-    """Build FalsePositiveOccurrence with proper Pydantic types."""
-    if files is None:
-        files = {Path("test.py"): None}
-
-    if relevant_files is None:
-        first_file = first(files.keys())
-        relevant_files = {first_file}
-
-    return FalsePositiveOccurrence(
-        occurrence_id=occurrence_id, files=files, note=note, relevant_files=relevant_files, match_file_restriction=None
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -113,18 +67,6 @@ def tp_occurrence_single(synced_test_session: Session, example_subtract_orm: Exa
     )
     assert tp_occ is not None, "Expected at least one TP occurrence in train1"
     return tp_occ.tp_id, tp_occ.occurrence_id
-
-
-@pytest.fixture
-def tp_single_id(tp_occurrence_single: tuple[str, str]) -> str:
-    """TP id for the single-occurrence TP in train1."""
-    return tp_occurrence_single[0]
-
-
-@pytest.fixture
-def tp_single_occurrence_id(tp_occurrence_single: tuple[str, str]) -> str:
-    """Occurrence id for the single-occurrence TP in train1."""
-    return tp_occurrence_single[1]
 
 
 @pytest.fixture

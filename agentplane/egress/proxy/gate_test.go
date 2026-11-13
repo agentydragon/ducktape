@@ -25,20 +25,19 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/google/uuid"
+	"golang.org/x/net/http2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var (
-	tokenCredential = resources.Credential{
-		Name: "body-token", Source: resources.SecretKey{Name: "keys", Key: "body"},
-		Targets: []resources.Target{resources.JSONField{Field: "token"}},
-	}
-	projectedCredential = resources.Credential{
-		Name: "kube", Source: resources.ProjectedWorkloadToken{Audience: projectedAudience},
-		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
-	}
-)
+var tokenCredential = resources.Credential{
+	Name: "body-token", Source: resources.SecretKey{Name: "keys", Key: "body"},
+	Targets: []resources.Target{resources.JSONField{Field: "token"}},
+}
 
 func rule(path, credential string) policyapi.Rule {
 	rule := policyapi.Rule{Type: resources.EgressRuleType, Hosts: []string{fixtureHost}, Paths: []string{path}}
@@ -174,11 +173,11 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 	})
 	response := l.send(t, "GET", portOf(upstream), "/allowed",
 		header("x-api-key", "agentplane-credential-key",
-			"X-Agentplane-Workload-Token", projectedAudience+" "+projectedToken), nil)
+			"X-Agentplane-Workload-Token", "attacker-controlled workload token"), nil)
 	record := l.records.all()[0]
 	if response.StatusCode != 200 || record.Outcome != decision.Allow || !record.Substituted ||
 		*record.Address != "127.0.0.1" || *record.Binding != "runner" || *record.Policy != "egress" || *record.Rule != 0 ||
-		*record.SourcePodUID != string(runnerPod.UID) || record.Subject.Name != runner.Name || record.Host != fixtureHost {
+		*record.SourcePodUID != string(runnerPod.UID) || record.Subject != (decision.Identity{Name: l.workload.Identity.Name}) || record.Host != fixtureHost {
 		t.Errorf("status %d, record %+v", response.StatusCode, record)
 	}
 }
@@ -237,74 +236,6 @@ func TestJSONBodyCredentialIsSubstitutedWithItsLengthUpdated(t *testing.T) {
 	l.send(t, "POST", portOf(upstream), "/upload", json, strings.NewReader(large))
 	if got := received.take(); got != large {
 		t.Errorf("upstream got %d bytes of a %d byte body", len(got), len(large))
-	}
-}
-
-func TestProjectedTokenIsSubstitutedOnlyWhenItProvesTheHopsPod(t *testing.T) {
-	l := newLab(t)
-	l.index.PutCredential(projectedCredential)
-	l.allow(rule("/kube", "kube"))
-	_, otherPodToken := runnerToken(t, projectedAudience)
-	var authorization seen
-	upstream := plainUpstream(t, func(w http.ResponseWriter, r *http.Request) { authorization.set(r.Header.Get("Authorization")) })
-	for name, c := range map[string]struct {
-		presented     string
-		status        int
-		authorization string
-	}{
-		"same pod":              {projectedAudience + " " + projectedToken, 200, "Bearer " + projectedToken},
-		"another pod":           {projectedAudience + " " + otherPodToken, 403, ""},
-		"unreviewed":            {projectedAudience + " forged", 403, ""},
-		"unconfigured audience": {"https://other.test.invalid " + projectedToken, 403, ""},
-		"malformed":             {projectedToken, 403, ""},
-	} {
-		t.Run(name, func(t *testing.T) {
-			response := l.send(t, "GET", portOf(upstream), "/kube",
-				header("Authorization", "Bearer agentplane-credential-kube",
-					"X-Agentplane-Workload-Token", c.presented), nil)
-			if got := authorization.take(); response.StatusCode != c.status || got != c.authorization {
-				t.Errorf("status %d, upstream Authorization %q", response.StatusCode, got)
-			}
-			if c.status == 403 && response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" {
-				t.Errorf("refused as %q", response.Header.Get("x-agentplane-egress"))
-			}
-		})
-	}
-}
-
-func TestTunnelRequestsInheritWhatTheConnectPresented(t *testing.T) {
-	l := newLab(t)
-	l.index.PutCredential(projectedCredential)
-	l.allow(rule("/kube", "kube"))
-	var authorization seen
-	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization.set(r.Header.Get("Authorization"))
-	}))
-	_, client := l.tunnelPresenting(t, portOf(upstream), true,
-		"X-Agentplane-Workload-Token: "+projectedAudience+" "+projectedToken+"\r\n")
-	send := func(tokens ...string) int {
-		req := request(bounded(t), portOf(upstream), "/kube", true, nil)
-		req.Header.Del("x-api-key")
-		req.Header.Set("Authorization", "Bearer agentplane-credential-kube")
-		req.Header["X-Agentplane-Workload-Token"] = tokens
-		response, err := client.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		return response.StatusCode
-	}
-
-	if status, got := send(), authorization.take(); status != 200 || got != "Bearer "+projectedToken {
-		t.Errorf("without the header: status %d, upstream Authorization %q", status, got)
-	}
-	// A request that presents the header with nothing usable in it inherits nothing.
-	if status, got := send("malformed"), authorization.take(); status != 403 || got != "" {
-		t.Errorf("with a malformed entry: status %d, upstream Authorization %q", status, got)
-	}
-	// What it presented replaces what the CONNECT did.
-	if status, got := send(projectedAudience+" "+projectedToken), authorization.take(); status != 200 || got != "Bearer "+projectedToken {
-		t.Errorf("with a fresh entry: status %d, upstream Authorization %q", status, got)
 	}
 }
 
@@ -483,7 +414,7 @@ func TestAConnectTheRulesAdmitIsAcknowledgedWithoutDialingAndRecorded(t *testing
 		t.Errorf("status %d, %d upstream TCP connections", response.StatusCode, counted.accepts.Load())
 	}
 	if admitted.Outcome != decision.Allow || admitted.Phase != decision.Connect || admitted.Method != http.MethodConnect ||
-		admitted.Reason != nil || valueOf(admitted.Subject) != (decision.Subject{Namespace: runner.Namespace, Name: runner.Name}) ||
+		admitted.Reason != nil || admitted.Subject != (decision.Identity{Name: l.workload.Identity.Name}) ||
 		valueOf(admitted.Binding) != "runner" || valueOf(admitted.Address) != "127.0.0.1" || admitted.Host != fixtureHost {
 		t.Errorf("record %+v", admitted)
 	}
@@ -584,7 +515,7 @@ func TestSVIDAuthenticatesProxyRequestsWithoutHopBearerHeaders(t *testing.T) {
 	connections := map[string]bool{}
 	for _, record := range records {
 		connections[record.ConnectionID] = true
-		if record.Outcome != decision.Allow || record.Subject == nil || record.Subject.Name != runner.Name {
+		if record.Outcome != decision.Allow || record.Subject != (decision.Identity{Name: l.workload.Identity.Name}) {
 			t.Errorf("record %+v", record)
 		}
 	}
@@ -644,7 +575,7 @@ func TestNoSecretReachesTheLogsOrTheRecordedDecisions(t *testing.T) {
 		body, _ := io.ReadAll(refused.Body)
 		t.Fatalf("forged bearer: status %d headers=%v body=%q", refused.StatusCode, refused.Header, body)
 	}
-	_, client := l.tunnelPresenting(t, port, true, "X-Agentplane-Workload-Token: "+projectedAudience+" "+forgedProjected+"\r\n")
+	_, client := l.tunnelPresenting(t, port, true, "X-Agentplane-Workload-Token: forged workload token: "+forgedProjected+"\r\n")
 	public := request(bounded(t), port, "/public/"+pathSecret+"?token="+querySecret, true, nil)
 	public.Header.Del("x-api-key")
 	public.Header.Set("X-Test-Private", headerSecret)
@@ -805,7 +736,7 @@ func TestATunnelToTheAPIServerActsAsTheAccountUntilTheRuleGoes(t *testing.T) {
 	}
 	admitted := l.records.all()[1]
 	if admitted.Outcome != decision.Allow || !admitted.Substituted || admitted.Impersonated == nil ||
-		*admitted.Impersonated != (decision.Subject{Namespace: "accounts", Name: "diagnostics"}) {
+		*admitted.Impersonated != (decision.ServiceAccount{Namespace: "accounts", Name: "diagnostics"}) {
 		t.Errorf("record %+v, want the impersonated account beside the subject", admitted)
 	}
 
@@ -862,5 +793,137 @@ func TestTheAccountsBearerIsNotSentInPlaintext(t *testing.T) {
 	response := l.send(t, "GET", portOf(upstream), "/api/v1/namespaces", header("Authorization", "Bearer "+account.Placeholder()), nil)
 	if response.StatusCode != 403 || response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" {
 		t.Errorf("status %d, %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	}
+}
+
+// identityCaller is a workload running as a new Identity in the lab's policy namespace, which the
+// policy reader knows as its informer would, and the TLS a client presenting its SVID dials with.
+type identityCaller struct {
+	workloadauthtesting.IdentityWorkload
+	proxyTLS *tls.Config
+}
+
+func (l *lab) identityCaller(t *testing.T) identityCaller {
+	t.Helper()
+	name := "agent-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, runner.Namespace, name, policyNamespace)
+	l.index.Rules.PutIdentity(workload.Identity)
+	proxyTLS, err := l.proxyCA.Issue(t, workload.URI).ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxyTLS.NextProtos = []string{"http/1.1"}
+	return identityCaller{IdentityWorkload: workload, proxyTLS: proxyTLS}
+}
+
+func (c identityCaller) client(l *lab) *http.Client {
+	return &http.Client{Transport: l.clientTransport(c.proxyTLS, &tls.Config{RootCAs: l.roots})}
+}
+
+// bind grants the Identity sets by the binding named binding.
+func (c identityCaller) bind(l *lab, binding string, sets ...string) {
+	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: binding, Namespace: policyNamespace},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: c.Identity.Name}}, PolicySets: sets,
+		},
+	})
+}
+
+func TestAnIdentityIsDecidedByItsOwnBindingsAndRecordedByName(t *testing.T) {
+	l := newLab(t)
+	var key, authorization seen
+	upstream := plainUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		key.set(r.Header.Get("x-api-key"))
+		authorization.set(r.Header.Get("Authorization"))
+	})
+	agent := l.identityCaller(t)
+	client := agent.client(l)
+	send := func(path string, header http.Header) *http.Response {
+		t.Helper()
+		return l.sendOn(t, client, "GET", portOf(upstream), path, header, nil)
+	}
+	presenting := header("x-api-key", "agentplane-credential-key")
+
+	// Its workload's ServiceAccount, of the same name, is not the Identity: nor is the runner's binding.
+	l.index.Rules.PutBinding(&policyapi.PolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "namesake", Namespace: policyNamespace},
+		Spec: policyapi.PolicyBindingSpec{
+			Subject: policyapi.Subject{Namespace: runner.Namespace, Name: agent.Identity.Name}, PolicySets: []string{"egress"},
+		},
+	})
+	if response := send("/allowed", presenting); response.StatusCode != 403 ||
+		response.Header.Get("x-agentplane-egress") != "denied; reason=no-binding" || key.take() != "" {
+		t.Fatalf("unbound Identity: status %d, %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	}
+
+	agent.bind(l, "agent", "egress")
+	if response := send("/allowed", presenting); response.StatusCode != 200 || key.take() != "real-secret" {
+		t.Fatalf("bound Identity: status %d, %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	}
+	records := l.records.all()
+	for _, record := range records {
+		if record.Subject != (decision.Identity{Name: agent.Identity.Name}) || valueOf(record.SourcePodUID) != agent.Subject.PodUID {
+			t.Errorf("record %+v, want the Identity by name and its Pod as provenance", record)
+		}
+	}
+	if admitted := records[1]; admitted.Outcome != decision.Allow || valueOf(admitted.Binding) != "agent" || !admitted.Substituted {
+		t.Errorf("admitted %+v", admitted)
+	}
+}
+
+// Two Identities act as one Kubernetes account, each by a use rule of its own: taking one's away
+// leaves the other acting as the account, on the tunnel it already holds.
+func TestTwoIdentitiesActAsOneAccountUntilOneLosesItsUseRule(t *testing.T) {
+	l := newLab(t)
+	var authorization, impersonated seen
+	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization.set(r.Header.Get("Authorization"))
+		impersonated.set(strings.Join(r.Header.Values("Impersonate-User"), ","))
+	}))
+	port, _ := strconv.Atoi(portOf(upstream))
+	account := actAsAccount(t, l, port)
+	first, second := l.identityCaller(t), l.identityCaller(t)
+	first.bind(l, "first-uses-diagnostics", "egress")
+	second.bind(l, "second-uses-diagnostics", "egress")
+	_, firstTunnel := l.tunnelWith(t, first.proxyTLS, portOf(upstream), true, "")
+	_, secondTunnel := l.tunnelWith(t, second.proxyTLS, portOf(upstream), true, "")
+	actsAsTheAccount := func(tunnel *http2.ClientConn) bool {
+		t.Helper()
+		req := request(bounded(t), portOf(upstream), "/api/v1/namespaces", true, nil)
+		req.Header.Del("x-api-key")
+		req.Header.Set("Authorization", "Bearer "+account.Placeholder())
+		response, err := tunnel.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		reached := authorization.take() == "Bearer proxy-own-token" && impersonated.take() == "system:serviceaccount:accounts:diagnostics"
+		return response.StatusCode == 200 && reached
+	}
+
+	if !actsAsTheAccount(firstTunnel) || !actsAsTheAccount(secondTunnel) {
+		t.Fatal("both Identities should act as the account")
+	}
+	l.index.Rules.DeleteBinding("first-uses-diagnostics")
+	if actsAsTheAccount(firstTunnel) {
+		t.Error("the first Identity still acts as the account after its use rule went")
+	}
+	if !actsAsTheAccount(secondTunnel) {
+		t.Error("the second Identity lost the account with the first's use rule")
+	}
+	last := map[decision.Subject]decision.Outcome{}
+	for _, record := range l.records.all() {
+		if record.Phase != decision.HTTPRequest {
+			continue
+		}
+		if record.Outcome == decision.Allow &&
+			(record.Impersonated == nil || *record.Impersonated != (decision.ServiceAccount{Namespace: "accounts", Name: "diagnostics"})) {
+			t.Errorf("admitted %+v without the impersonated account", record)
+		}
+		last[record.Subject] = record.Outcome
+	}
+	if last[decision.Identity{Name: first.Identity.Name}] != decision.Deny || last[decision.Identity{Name: second.Identity.Name}] != decision.Allow {
+		t.Errorf("last outcome by subject %v", last)
 	}
 }

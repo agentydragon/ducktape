@@ -31,24 +31,24 @@ func testStore(t *testing.T, capacity int) *Store {
 }
 
 // uniqueSubject keeps tests that share a database out of each other's reads.
-func uniqueSubject() *decision.Subject {
-	return &decision.Subject{Namespace: "test-" + uuid.NewString(), Name: "test-workload"}
+func uniqueSubject() decision.ServiceAccount {
+	return decision.ServiceAccount{Namespace: "test-" + uuid.NewString(), Name: "test-workload"}
 }
 
 // stored is a record as the database round-trips it: microsecond precision, no monotonic clock.
-func stored(subject *decision.Subject, at time.Time) decision.Record {
+func stored(subject decision.Subject, at time.Time) decision.Record {
 	record := testRecord(at.UTC().Truncate(time.Microsecond))
 	record.Subject = subject
 	return record
 }
 
-func fullyPopulated(subject *decision.Subject, at time.Time) decision.Record {
+func fullyPopulated(subject decision.Subject, at time.Time) decision.Record {
 	record := stored(subject, at)
 	pod, binding, policy, address, rule := "test-pod-uid", "test-binding", "test-policy", "203.0.113.7", 3
 	deny := decision.NoRule
 	record.SourcePodUID, record.Binding, record.Policy, record.Address, record.Rule = &pod, &binding, &policy, &address, &rule
 	record.Outcome, record.Reason, record.Substituted = decision.Deny, &deny, true
-	record.Impersonated = &decision.Subject{Namespace: "test-accounts", Name: "test-account"}
+	record.Impersonated = &decision.ServiceAccount{Namespace: "test-accounts", Name: "test-account"}
 	return record
 }
 
@@ -98,14 +98,14 @@ func TestSharedHistorySurvivesReplacementAndSeparatesSubjects(t *testing.T) {
 	}
 	equal(t, got, []decision.Record{a, b})
 	// Every field survives the round trip.
-	if got[0].Subject == nil || *got[0].Subject != *subject || *got[0].Address != "203.0.113.7" || *got[0].Rule != 3 ||
+	if got[0].Subject != subject || *got[0].Address != "203.0.113.7" || *got[0].Rule != 3 ||
 		*got[0].Reason != decision.NoRule || !got[0].Substituted || *got[0].SourcePodUID != "test-pod-uid" ||
 		*got[0].Binding != "test-binding" || *got[0].Policy != "test-policy" ||
 		got[0].Impersonated == nil || *got[0].Impersonated != *a.Impersonated ||
 		got[1].Reason != nil || got[1].Address != nil || got[1].Impersonated != nil {
 		t.Fatalf("record did not round-trip: %+v", got[0])
 	}
-	if absent, err := replacement.Recent(ctx, &decision.Subject{Namespace: subject.Namespace, Name: "absent"}); err != nil || len(absent) != 0 {
+	if absent, err := replacement.Recent(ctx, decision.ServiceAccount{Namespace: subject.Namespace, Name: "absent"}); err != nil || len(absent) != 0 {
 		t.Fatalf("absent name: %v, %v", absent, err)
 	}
 	if elsewhere, err := replacement.Recent(ctx, other); err != nil || len(elsewhere) != 0 {
@@ -117,6 +117,74 @@ func TestSharedHistorySurvivesReplacementAndSeparatesSubjects(t *testing.T) {
 	}
 	if i := indexOf(unauthenticated, refusal.EventID); i < 0 || unauthenticated[i].Subject != nil {
 		t.Fatalf("refusal that never authenticated is missing or has a subject: %+v", unauthenticated)
+	}
+}
+
+// An Identity is a subject of its own: not the ServiceAccount of the same name, nor the
+// unauthenticated, and its watchers hear of its decisions alone.
+func TestAnIdentitysDecisionsAreItsOwn(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	account := uniqueSubject()
+	identity := decision.Identity{Name: account.Name + "-" + uuid.NewString()}
+	namesake := decision.ServiceAccount{Namespace: account.Namespace, Name: identity.Name}
+	store := testStore(t, 200)
+	changes, err := NewChanges(integrationDatabase.URL, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	following := make(chan struct{})
+	updates := make(chan Change, 4)
+	ended := make(chan error, 1)
+	go func() {
+		ended <- changes.Follow(ctx, identity, func(change Change) error {
+			if _, initial := change.(Initial); initial {
+				close(following)
+			} else {
+				updates <- change
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-following:
+	case <-ctx.Done():
+		t.Fatal("follow did not start")
+	}
+
+	now := time.Now()
+	acted := fullyPopulated(identity, now.Add(-time.Second))
+	if err := store.Append(ctx, []decision.Record{stored(namesake, now.Add(-2*time.Second)), acted, stored(nil, now)}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Recent(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	equal(t, got, []decision.Record{acted})
+	if got[0].Subject != identity || *got[0].Impersonated != *acted.Impersonated || *got[0].SourcePodUID != "test-pod-uid" {
+		t.Fatalf("record did not round-trip: %+v", got[0])
+	}
+	if same, err := store.Recent(ctx, namesake); err != nil || len(same) != 1 || same[0].Subject != namesake {
+		t.Fatalf("the ServiceAccount of the same name: %+v, %v", same, err)
+	}
+	unauthenticated, err := store.Recent(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if indexOf(unauthenticated, acted.EventID) >= 0 {
+		t.Fatalf("an Identity's decision is listed as unauthenticated: %+v", unauthenticated)
+	}
+	select {
+	case change := <-updates:
+		events, ok := change.(Events)
+		if !ok || len(events.EventIDs) != 1 || events.EventIDs[0] != acted.EventID {
+			t.Fatalf("change = %#v, want only the Identity's event", change)
+		}
+	case err := <-ended:
+		t.Fatalf("feed ended: %v", err)
+	case <-ctx.Done():
+		t.Fatal("the Identity's decision was not notified")
 	}
 }
 

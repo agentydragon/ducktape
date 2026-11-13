@@ -1,5 +1,5 @@
 """
-bazel run //finance/reconcile
+bb run //finance/reconcile
 
 To auto-add transactions:
 

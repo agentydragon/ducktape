@@ -22,8 +22,8 @@ from grocy_mcp.eval.cases import EvalCase
 from grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
 from grocy_mcp.eval.result_types import EvalResult
 from grocy_mcp.mcp_types import ServerSettings
+from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
 from grocy_mcp.server import build_mcp
-from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from util.net import listen_tcp
 
 logger = logging.getLogger(__name__)

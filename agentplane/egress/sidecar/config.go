@@ -10,8 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"gopkg.in/yaml.v3"
 )
@@ -21,9 +20,8 @@ const configFileEnv = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 type platformRouteMode string
 
 const (
-	platformRoutePlaintext        platformRouteMode = "plaintext"
-	platformRouteTLSConnect       platformRouteMode = "tls_connect"
-	platformRouteTLSBearerConnect platformRouteMode = "tls_bearer_connect"
+	platformRoutePlaintext  platformRouteMode = "plaintext"
+	platformRouteTLSConnect platformRouteMode = "tls_connect"
 )
 
 type platformRouteTransportConfig interface {
@@ -37,12 +35,6 @@ func (plaintextRouteTransportConfig) mode() platformRouteMode { return platformR
 type tlsConnectRouteTransportConfig struct{ ServerURI string }
 
 func (tlsConnectRouteTransportConfig) mode() platformRouteMode { return platformRouteTLSConnect }
-
-type tlsBearerConnectRouteTransportConfig struct{ ServerURI, TokenFile string }
-
-func (tlsBearerConnectRouteTransportConfig) mode() platformRouteMode {
-	return platformRouteTLSBearerConnect
-}
 
 type platformRouteConfig struct {
 	ServicePrefixes []string                     `yaml:"service_prefixes"`
@@ -108,74 +100,28 @@ func decodePlatformRouteTransport(node *yaml.Node) (platformRouteTransportConfig
 			return nil, err
 		}
 		return tlsConnectRouteTransportConfig{ServerURI: serverURI}, nil
-	case platformRouteTLSBearerConnect:
-		serverURI, err := requiredYAMLString(&transport.ServerURI, "server_uri")
-		if err != nil {
-			return nil, err
-		}
-		tokenFile, err := requiredYAMLString(&transport.TokenFile, "token_file")
-		if err != nil {
-			return nil, err
-		}
-		return tlsBearerConnectRouteTransportConfig{ServerURI: serverURI, TokenFile: tokenFile}, nil
 	default:
 		return nil, fmt.Errorf("unsupported platform route mode %q", transport.Mode)
 	}
 }
 
-type proxyAuth interface {
-	mode() listener.Mode
-	requestToken() (string, error)
-}
-
+// spiffeProxyAuth is the workload SVID the sidecar presents to the central proxy, the only hop
+// authentication it accepts.
 type spiffeProxyAuth struct {
 	CertFile string
 	KeyFile  string
 }
 
-func (spiffeProxyAuth) mode() listener.Mode           { return listener.SPIFFE }
-func (spiffeProxyAuth) requestToken() (string, error) { return "", nil }
-
-// CLEANUP(added 2026-11-09): Remove the bearer proxy-hop auth and plaintext transport once no non-Sandbox workload (Action command/build boxes, Haku UI/Anki) projects a proxy-hop bearer and the proxy's `forward.auth` lists only `spiffe`.
-type kubernetesBearerProxyAuth struct {
-	TokenFile string
-}
-
-func (kubernetesBearerProxyAuth) mode() listener.Mode { return listener.KubernetesBearer }
-func (auth kubernetesBearerProxyAuth) requestToken() (string, error) {
-	return readToken(auth.TokenFile)
-}
-
-type proxyTransportMode string
-
-const (
-	proxyTransportPlaintext proxyTransportMode = "plaintext"
-	proxyTransportTLS       proxyTransportMode = "tls"
-)
-
-type proxyTransportConfig interface {
-	mode() proxyTransportMode
-	auth() proxyAuth
-}
-
-type plaintextProxyTransportConfig struct {
-	Auth kubernetesBearerProxyAuth
-}
-
-func (plaintextProxyTransportConfig) mode() proxyTransportMode  { return proxyTransportPlaintext }
-func (transport plaintextProxyTransportConfig) auth() proxyAuth { return transport.Auth }
-
+// tlsProxyTransportConfig keeps the YAML's tagged `transport.mode: tls` and `auth.mode: spiffe`, the
+// only variants, so existing settings files load unchanged.
 type tlsProxyTransportConfig struct {
 	CAFile string
-	Auth   proxyAuth
+	Auth   spiffeProxyAuth
 }
-
-func (tlsProxyTransportConfig) mode() proxyTransportMode  { return proxyTransportTLS }
-func (transport tlsProxyTransportConfig) auth() proxyAuth { return transport.Auth }
 
 type proxyConfig struct {
 	Address   string
-	Transport proxyTransportConfig
+	Transport tlsProxyTransportConfig
 }
 
 // UnmarshalYAML is the narrow boundary that converts the tagged YAML auth and
@@ -212,42 +158,27 @@ func decodeKnownFields(node *yaml.Node, result any) error {
 	return decoder.Decode(result)
 }
 
-func decodeProxyAuth(node *yaml.Node) (proxyAuth, error) {
+func decodeProxyAuth(node *yaml.Node) (spiffeProxyAuth, error) {
 	var auth struct {
-		Mode      listener.Mode `yaml:"mode"`
-		CertFile  yaml.Node     `yaml:"cert_file"`
-		KeyFile   yaml.Node     `yaml:"key_file"`
-		TokenFile yaml.Node     `yaml:"token_file"`
+		Mode     listener.Mode `yaml:"mode"`
+		CertFile yaml.Node     `yaml:"cert_file"`
+		KeyFile  yaml.Node     `yaml:"key_file"`
 	}
 	if err := decodeKnownFields(node, &auth); err != nil {
-		return nil, err
+		return spiffeProxyAuth{}, err
 	}
-	switch auth.Mode {
-	case listener.SPIFFE:
-		if auth.TokenFile.Kind != 0 {
-			return nil, errors.New("SPIFFE authentication cannot set token_file")
-		}
-		certFile, err := requiredYAMLString(&auth.CertFile, "cert_file")
-		if err != nil {
-			return nil, err
-		}
-		keyFile, err := requiredYAMLString(&auth.KeyFile, "key_file")
-		if err != nil {
-			return nil, err
-		}
-		return spiffeProxyAuth{CertFile: certFile, KeyFile: keyFile}, nil
-	case listener.KubernetesBearer:
-		if auth.CertFile.Kind != 0 || auth.KeyFile.Kind != 0 {
-			return nil, errors.New("kubernetes_bearer authentication cannot set SPIFFE certificate files")
-		}
-		tokenFile, err := requiredYAMLString(&auth.TokenFile, "token_file")
-		if err != nil {
-			return nil, err
-		}
-		return kubernetesBearerProxyAuth{TokenFile: tokenFile}, nil
-	default:
-		return nil, fmt.Errorf("mode must be %q or %q: %q", listener.SPIFFE, listener.KubernetesBearer, auth.Mode)
+	if auth.Mode != listener.SPIFFE {
+		return spiffeProxyAuth{}, fmt.Errorf("mode must be %q: %q", listener.SPIFFE, auth.Mode)
 	}
+	certFile, err := requiredYAMLString(&auth.CertFile, "cert_file")
+	if err != nil {
+		return spiffeProxyAuth{}, err
+	}
+	keyFile, err := requiredYAMLString(&auth.KeyFile, "key_file")
+	if err != nil {
+		return spiffeProxyAuth{}, err
+	}
+	return spiffeProxyAuth{CertFile: certFile, KeyFile: keyFile}, nil
 }
 
 func requiredYAMLString(node *yaml.Node, name string) (string, error) {
@@ -264,52 +195,37 @@ func requiredYAMLString(node *yaml.Node, name string) (string, error) {
 	return value, nil
 }
 
-func decodeProxyTransport(node *yaml.Node) (proxyTransportConfig, error) {
+const proxyTransportTLS = "tls"
+
+func decodeProxyTransport(node *yaml.Node) (tlsProxyTransportConfig, error) {
 	var transport struct {
-		Mode   proxyTransportMode `yaml:"mode"`
-		CAFile yaml.Node          `yaml:"ca_file"`
-		Auth   yaml.Node          `yaml:"auth"`
+		Mode   string    `yaml:"mode"`
+		CAFile yaml.Node `yaml:"ca_file"`
+		Auth   yaml.Node `yaml:"auth"`
 	}
 	if err := decodeKnownFields(node, &transport); err != nil {
-		return nil, err
+		return tlsProxyTransportConfig{}, err
 	}
-	switch transport.Mode {
-	case proxyTransportPlaintext:
-		if transport.CAFile.Kind != 0 {
-			return nil, errors.New("plaintext transport cannot set ca_file")
-		}
-		if transport.Auth.Kind == 0 {
-			return nil, errors.New("plaintext transport requires bearer auth")
-		}
-		auth, err := decodeProxyAuth(&transport.Auth)
-		if err != nil {
-			return nil, fmt.Errorf("auth: %w", err)
-		}
-		bearer, okay := auth.(kubernetesBearerProxyAuth)
-		if !okay {
-			return nil, errors.New("plaintext transport only supports kubernetes_bearer auth")
-		}
-		return plaintextProxyTransportConfig{Auth: bearer}, nil
-	case proxyTransportTLS:
-		caFile, err := requiredYAMLString(&transport.CAFile, "ca_file")
-		if err != nil {
-			return nil, err
-		}
-		if transport.Auth.Kind == 0 {
-			return nil, errors.New("TLS transport requires auth")
-		}
-		auth, err := decodeProxyAuth(&transport.Auth)
-		if err != nil {
-			return nil, fmt.Errorf("auth: %w", err)
-		}
-		return tlsProxyTransportConfig{CAFile: caFile, Auth: auth}, nil
-	default:
-		return nil, fmt.Errorf("mode must be %q or %q: %q", proxyTransportPlaintext, proxyTransportTLS, transport.Mode)
+	if transport.Mode != proxyTransportTLS {
+		return tlsProxyTransportConfig{}, fmt.Errorf("mode must be %q: %q", proxyTransportTLS, transport.Mode)
 	}
+	caFile, err := requiredYAMLString(&transport.CAFile, "ca_file")
+	if err != nil {
+		return tlsProxyTransportConfig{}, err
+	}
+	if transport.Auth.Kind == 0 {
+		return tlsProxyTransportConfig{}, errors.New("TLS transport requires auth")
+	}
+	auth, err := decodeProxyAuth(&transport.Auth)
+	if err != nil {
+		return tlsProxyTransportConfig{}, fmt.Errorf("auth: %w", err)
+	}
+	return tlsProxyTransportConfig{CAFile: caFile, Auth: auth}, nil
 }
 
 type config struct {
-	Proxy                  proxyConfig                    `yaml:"proxy"`
+	Proxy proxyConfig `yaml:"proxy"`
+	// CLEANUP(added 2026-11-12): remove after staging sidecar ConfigMaps are observed without this key.
 	AudienceTokenFiles     map[string]string              `yaml:"audience_token_files"`
 	WorkloadRoutes         map[string]workloadRouteConfig `yaml:"workload_routes"`
 	PlatformRoutes         *platformRoutesConfig          `yaml:"platform_routes"`
@@ -324,7 +240,6 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("%s must name the YAML settings file", configFileEnv)
 	}
 	c := config{
-		AudienceTokenFiles:     map[string]string{},
 		WorkloadRoutes:         map[string]workloadRouteConfig{},
 		PlatformRoutes:         &platformRoutesConfig{Routes: map[string]platformRouteConfig{}},
 		ListenAddress:          "127.0.0.1:3128",
@@ -378,27 +293,9 @@ func (c config) validate() error {
 		}
 		switch routeTransport := route.Transport.(type) {
 		case tlsConnectRouteTransportConfig:
-			proxyTransport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
-			if !ok {
-				return fmt.Errorf("platform route %q TLS CONNECT requires TLS proxy transport", name)
-			}
-			if _, ok := proxyTransport.Auth.(spiffeProxyAuth); !ok {
-				return fmt.Errorf("platform route %q TLS CONNECT requires SPIFFE proxy authentication", name)
-			}
 			serverID, err := spiffeid.FromString(routeTransport.ServerURI)
 			if err != nil || serverID.String() != routeTransport.ServerURI {
 				return fmt.Errorf("platform route %q server_uri must be an exact SPIFFE ID: %q", name, routeTransport.ServerURI)
-			}
-		case tlsBearerConnectRouteTransportConfig:
-			proxyTransport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
-			if !ok {
-				return fmt.Errorf("platform route %q TLS bearer CONNECT requires TLS proxy transport", name)
-			}
-			if !filepath.IsAbs(routeTransport.TokenFile) {
-				return fmt.Errorf("platform route %q token_file must be absolute", name)
-			}
-			if err := (environment_runtime_transport.ClientTLS{CAFile: proxyTransport.CAFile, ServerURI: routeTransport.ServerURI}).Validate(); err != nil {
-				return fmt.Errorf("platform route %q TLS: %w", name, err)
 			}
 		case plaintextRouteTransportConfig:
 			if routeTransport.TokenFile != "" && !filepath.IsAbs(routeTransport.TokenFile) {
@@ -410,15 +307,6 @@ func (c config) validate() error {
 	}
 	if c.WorkloadRoutes == nil {
 		return errors.New("workload_routes must be an object")
-	}
-	if len(c.WorkloadRoutes) > 0 {
-		transport, ok := c.Proxy.Transport.(tlsProxyTransportConfig)
-		if !ok {
-			return errors.New("workload routes require TLS proxy transport")
-		}
-		if _, ok := transport.Auth.(spiffeProxyAuth); !ok {
-			return errors.New("workload routes require SPIFFE proxy authentication")
-		}
 	}
 	for authority, route := range c.WorkloadRoutes {
 		if err := validateWorkloadRoute(authority, route); err != nil {
@@ -451,35 +339,12 @@ func (p proxyConfig) validate() error {
 	if err := validateAuthority(p.Address); err != nil {
 		return fmt.Errorf("proxy.address: %w", err)
 	}
-	if p.Transport == nil {
-		return errors.New("proxy.transport is required")
-	}
-	switch transport := p.Transport.(type) {
-	case plaintextProxyTransportConfig:
-		auth := transport.Auth
-		if auth.TokenFile == "" || !filepath.IsAbs(auth.TokenFile) {
-			return errors.New("kubernetes_bearer authentication requires an absolute token_file")
+	for name, path := range map[string]string{
+		"ca_file": p.Transport.CAFile, "cert_file": p.Transport.Auth.CertFile, "key_file": p.Transport.Auth.KeyFile,
+	} {
+		if path == "" || !filepath.IsAbs(path) {
+			return fmt.Errorf("TLS proxy transport requires an absolute %s", name)
 		}
-	case tlsProxyTransportConfig:
-		if transport.CAFile == "" || !filepath.IsAbs(transport.CAFile) {
-			return errors.New("TLS transport requires an absolute ca_file")
-		}
-		switch auth := transport.Auth.(type) {
-		case spiffeProxyAuth:
-			for name, path := range map[string]string{"cert_file": auth.CertFile, "key_file": auth.KeyFile} {
-				if path == "" || !filepath.IsAbs(path) {
-					return fmt.Errorf("SPIFFE authentication requires an absolute %s", name)
-				}
-			}
-		case kubernetesBearerProxyAuth:
-			if auth.TokenFile == "" || !filepath.IsAbs(auth.TokenFile) {
-				return errors.New("kubernetes_bearer authentication requires an absolute token_file")
-			}
-		default:
-			return fmt.Errorf("unsupported proxy authentication type %T", auth)
-		}
-	default:
-		return fmt.Errorf("unsupported proxy transport type %T", transport)
 	}
 	return nil
 }

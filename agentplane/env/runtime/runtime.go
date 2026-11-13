@@ -62,6 +62,7 @@ type Config struct {
 	SessionReconcileConcurrency int
 	Claude, Codex               *harness.LaunchConfig
 	CodexAppServerReadiness     codexappserver.Readiness
+	CodexTurnDiffNotifications  bool
 	WorkspaceRoot               string
 	DebugCheckpoint             *session.DebugCheckpointConfig
 	ModelConfigTarget           *string
@@ -155,7 +156,6 @@ type Runtime struct {
 	idleSince              *timestamppb.Timestamp
 	startupComplete        bool
 	harnessSupervisor      *supervision.Supervisor
-	workspaceSupervisor    *supervision.Supervisor
 	executionSupervisor    *supervision.Supervisor
 	harnessProcesses       *supervision.Host
 	sessionWorkers         sync.WaitGroup

@@ -4,7 +4,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 PLATFORM_ROUTES_PORT = 3130
 PLATFORM_ROUTES_LISTEN_ADDRESS = f"127.0.0.1:{PLATFORM_ROUTES_PORT}"
@@ -13,7 +13,6 @@ PLATFORM_ROUTES_LISTEN_ADDRESS = f"127.0.0.1:{PLATFORM_ROUTES_PORT}"
 class RouteTransportMode(StrEnum):
     PLAINTEXT = "plaintext"
     TLS_CONNECT = "tls_connect"
-    TLS_BEARER_CONNECT = "tls_bearer_connect"
 
 
 class PlaintextRouteTransport(BaseModel):
@@ -34,26 +33,7 @@ class TLSConnectRouteTransport(BaseModel):
     server_uri: str = Field(min_length=1, description="Exact SPIFFE identity the destination must present.")
 
 
-class TLSBearerConnectRouteTransport(BaseModel):
-    """Verified service TLS through CONNECT, with a sidecar-held bearer and no client SVID."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    mode: Literal[RouteTransportMode.TLS_BEARER_CONNECT] = RouteTransportMode.TLS_BEARER_CONNECT
-    server_uri: str = Field(min_length=1)
-    token_file: Path
-
-    @field_validator("token_file")
-    @classmethod
-    def absolute_token_file(cls, value: Path) -> Path:
-        if not value.is_absolute():
-            raise ValueError("TLS bearer route token_file must be absolute")
-        return value
-
-
-PlatformRouteTransport = Annotated[
-    PlaintextRouteTransport | TLSConnectRouteTransport | TLSBearerConnectRouteTransport, Field(discriminator="mode")
-]
+PlatformRouteTransport = Annotated[PlaintextRouteTransport | TLSConnectRouteTransport, Field(discriminator="mode")]
 
 
 class PlatformRoute(BaseModel):

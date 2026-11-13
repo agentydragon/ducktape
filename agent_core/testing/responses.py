@@ -9,7 +9,6 @@ Provides declarative test response building:
 from __future__ import annotations
 
 import logging
-import os
 from abc import abstractmethod
 from collections.abc import Callable, Generator
 from typing import Any
@@ -51,16 +50,13 @@ def _make_response(*items: ResponseOutItem) -> ResponsesResult:
 
 
 class ResponsesFactory(ItemFactory):
-    """Convenience adapter response builders bound to a model name.
+    """Convenience adapter response builders.
 
     Provides methods to build mock ResponsesResult objects for testing.
-    For the MCP-aware method mcp_tool_call, use MCPResponsesFactory from
-    agent_core.testing.mcp.responses.
     """
 
-    def __init__(self, model: str):
+    def __init__(self) -> None:
         super().__init__(call_id_prefix="test")
-        self.model = model
 
     def make_assistant_message(self, text: str) -> ResponsesResult:
         return ResponsesResult(
@@ -115,8 +111,6 @@ class GeneratorMock(ItemFactory, Model):
     Model for use as a mock client.
 
     Subclass and override play() to provide the generator.
-    For MCP-aware methods,
-    use MCPDecoratorMock from agent_core.testing.mcp.responses.
     """
 
     model = "test-model"
@@ -192,12 +186,5 @@ class DecoratorMock(GeneratorMock):
 
 
 @pytest.fixture(scope="session")
-def reasoning_model() -> str:
-    """Default reasoning-capable model for adapter fixtures.
-
-    Tests may override via RESPONSES_TEST_MODEL env.
-    """
-    return os.environ.get("RESPONSES_TEST_MODEL", "gpt-5-nano")
-
-
-# responses_factory fixture lives in agent_core.testing.mcp.responses (returns MCPResponsesFactory)
+def responses_factory() -> ResponsesFactory:
+    return ResponsesFactory()

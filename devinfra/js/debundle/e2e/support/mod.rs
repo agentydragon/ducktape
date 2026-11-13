@@ -348,6 +348,51 @@ fn copy_generated_tree(source: &Path, destination: &Path) -> std::io::Result<()>
     Ok(())
 }
 
+/// What the authoritative gate decided for a fixture, and how its source and
+/// the entry emitted for that spec run under Node.
+pub struct GateOutcome {
+    pub accepted: bool,
+    pub source: CommandResult,
+    pub emitted: CommandResult,
+    /// The entry chunk's `candidate_relocation_assessment.json`.
+    pub assessment: Value,
+}
+
+/// `debundle run --emit-on-rejection` over a spec the gate may accept or
+/// refuse: any exit other than acceptance or the gate-only rejection panics.
+pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
+    let setup = prepare_fixture(&opts);
+    let result = spawn_transform_with_args(&setup.spec_path, &["--graphs", "--emit-on-rejection"]);
+    let accepted = match result.status.code() {
+        Some(0) => true,
+        Some(3) => false,
+        code => {
+            preserve_failed_fixture_reports(&setup, opts.chunk_id);
+            panic!(
+                "debundler exited {code:?}\nstdout:\n{}\nstderr:\n{}",
+                result.stdout, result.stderr
+            )
+        }
+    };
+    let app_root = setup.out_root.join(APP_DIR);
+    mirror_runtime_extra_files(&app_root, opts.extra_files, true);
+    GateOutcome {
+        accepted,
+        source: run_node_script(&setup.snapshot_root.join(format!("{}.js", opts.chunk_id))),
+        emitted: run_node_script(
+            &app_root
+                .join(path_from_module_path(opts.chunk_id))
+                .join("entry.js"),
+        ),
+        assessment: read_json(
+            &setup
+                .report_root
+                .join(opts.chunk_id)
+                .join("candidate_relocation_assessment.json"),
+        ),
+    }
+}
+
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
 /// `cycles.json` whose modules include every one of `modules`.
 pub fn expect_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) -> Value {
@@ -435,6 +480,31 @@ pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
 /// [`RejectedFixture::app_root`] marked unrunnable.
 pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3)
+}
+
+/// The xfail form of a positive the gate still refuses: the split is valid
+/// (the tree emitted on rejection prints `expected_stdout`, the source's
+/// output) but not provable yet, and today's refusal is the typed candidate
+/// status `pending`, returned with the assessment for the caller's own typed
+/// reason. Once the gate accepts the split this fails so the caller
+/// is converted to a positive.
+pub fn assert_pending_split_preserves_output(
+    opts: FixtureOpts<'_>,
+    pending: &str,
+    expected_stdout: &str,
+) -> Value {
+    let rejected = run_rejection_fixture_with_options(
+        opts,
+        &["--emit-on-rejection"],
+        3,
+        true,
+        "capability landed: convert this pending split to a positive",
+    );
+    assert_node_output(&rejected.entry_path(), expected_stdout, "");
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+    assert_eq!(assessment["status"], pending, "{assessment:#}");
+    assessment
 }
 
 /// `debundle run --emit-on-rejection` over a spec that fails for more than
@@ -545,7 +615,13 @@ pub fn run_rejection_fixture_with_args(
     extra_args: &[&str],
     exit_code: i32,
 ) -> RejectedFixture {
-    run_rejection_fixture_with_options(opts, extra_args, exit_code, true)
+    run_rejection_fixture_with_options(
+        opts,
+        extra_args,
+        exit_code,
+        true,
+        "expected spec to be rejected",
+    )
 }
 
 /// Run a rejected fixture without `--graphs`, for CLI options that conflict
@@ -555,7 +631,13 @@ pub fn run_rejection_fixture_without_graphs_with_args(
     extra_args: &[&str],
     exit_code: i32,
 ) -> RejectedFixture {
-    run_rejection_fixture_with_options(opts, extra_args, exit_code, false)
+    run_rejection_fixture_with_options(
+        opts,
+        extra_args,
+        exit_code,
+        false,
+        "expected spec to be rejected",
+    )
 }
 
 fn run_rejection_fixture_with_options(
@@ -563,6 +645,7 @@ fn run_rejection_fixture_with_options(
     extra_args: &[&str],
     exit_code: i32,
     graphs: bool,
+    unexpected_status: &str,
 ) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
 
@@ -583,7 +666,7 @@ fn run_rejection_fixture_with_options(
     assert_eq!(
         result.status.code(),
         Some(exit_code),
-        "expected spec to be rejected\nstdout:\n{}\nstderr:\n{}",
+        "{unexpected_status}\nstdout:\n{}\nstderr:\n{}",
         result.stdout,
         result.stderr,
     );
@@ -653,6 +736,28 @@ pub fn run_spec_validate(spec_path: &Path, extra_args: &[&str]) -> CommandResult
             .output()
             .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
     )
+}
+
+/// Run `debundle spec lint --spec <path> --format json <extra_args>` and parse
+/// its report; panics on a non-zero exit.
+pub fn spec_lint_json(spec_path: &Path, extra_args: &[&str]) -> Value {
+    let bin = debundler_path();
+    let out = command_result(
+        Command::new(&bin)
+            .args(["spec", "lint", "--spec"])
+            .arg(spec_path)
+            .args(["--format", "json"])
+            .args(extra_args)
+            .output()
+            .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display())),
+    );
+    assert!(
+        out.status.success(),
+        "spec lint exited non-zero: {}",
+        out.stderr
+    );
+    serde_json::from_str(&out.stdout)
+        .unwrap_or_else(|err| panic!("parse spec lint json: {err}\nstdout:\n{}", out.stdout))
 }
 
 pub fn assert_entry_output(fixture: &Fixture, expected_stdout: &str) {
@@ -847,6 +952,39 @@ pub fn assert_module_exports(
             !exported.contains(*name),
             "expected {module_path} to not export {name}; actual exports: {summary}",
         );
+    }
+}
+
+/// Every file below `left` and `right` has the same bytes: two runs emitted
+/// the same tree.
+pub fn assert_same_tree(left: &Path, right: &Path) {
+    fn files(root: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(dir) = pending.pop() {
+            for entry in
+                fs::read_dir(&dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            {
+                let path = entry.expect("directory entry").path();
+                if path.is_dir() {
+                    pending.push(path);
+                } else {
+                    let bytes =
+                        fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+                    out.insert(path.strip_prefix(root).unwrap().to_path_buf(), bytes);
+                }
+            }
+        }
+        out
+    }
+    let (left, right) = (files(left), files(right));
+    assert_eq!(
+        left.keys().collect::<Vec<_>>(),
+        right.keys().collect::<Vec<_>>(),
+        "emitted file sets differ"
+    );
+    for (file, bytes) in &left {
+        assert!(right[file] == *bytes, "{} differs", file.display());
     }
 }
 
@@ -1547,9 +1685,18 @@ fn spawn_transform_with_args(spec_path: &Path, extra_args: &[&str]) -> CommandRe
 /// captured stdio + exit status. Used by tests that exercise pipeline stages
 /// outside the logical-modules harness in [`run_fixture`].
 pub fn run_debundler(spec_path: &Path, package_roots: &[(&str, &Path)]) -> CommandResult {
+    run_debundler_with_args(spec_path, package_roots, &[])
+}
+
+pub fn run_debundler_with_args(
+    spec_path: &Path,
+    package_roots: &[(&str, &Path)],
+    extra_args: &[&str],
+) -> CommandResult {
     let bin = debundler_path();
     let mut command = Command::new(&bin);
     command.arg("run").arg("--spec").arg(spec_path);
+    command.args(extra_args);
     for (name, dir) in package_roots {
         command
             .arg("--package-root")

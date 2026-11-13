@@ -45,6 +45,13 @@ corrections, using [`finance.yaml_decimal`](../../yaml_decimal.py).
   shifts its next monthly credit instant; review that effect before rollout.
 - `GET /api/v1/view` returns the card and allowance view. Optional `estimate_period_id=rolling_7d|rolling_30d`
   selects the allowance forecast and spending signal; omission uses the policy default.
+- `GET /api/v1/pace-history` returns 30 daily points for 7- and 30-day recorded flexible-purchase averages and the
+  current daily leash. A point is null when its full window lacks account-history coverage, and an unavailable or
+  stale spending source has no series. It uses the same positive-purchase accounting as the allowance, including
+  pending and provisional purchases and holding unconfirmed credits outside spend. The latest incomplete day is
+  included. The series is reconstructed with current rules and reconciliations, not saved historical snapshots;
+  earlier values can change. Coverage is inferred from first recorded activity unless stronger account evidence is
+  configured, and provider data can lag. The endpoint returns null if no allowance is configured.
 - `GET /api/v1/transactions?period=rolling_30d` returns transaction explanations and a period summary. If a requested
   credit cycle is unavailable, the response identifies the actual `rolling_30d` period. Each row groups displayed
   transaction data under `transaction`, allowance classification and effects under `allowance`, and card statement
@@ -164,6 +171,10 @@ tax assumption, funding and withdrawal percentages remain unavailable; consumpti
 Rates are finite decimal fractions and are serialized as JSON strings; currency amounts remain integer minor units.
 The reference markers are scenarios, not guarantees of lifetime sustainability.
 
+If a portfolio valuation is unavailable, complete spending history remains visible in dollars. The chart can include
+modeled withdrawal taxes when a tax assumption exists; withdrawal percentages and reference comparisons remain hidden
+until a usable portfolio is available. Missing spending history is still shown as a gap.
+
 Reversal reconciliation is shared with private reports through typed reason codes, matched record references,
 purchase days and posting selector bounds. Resolve all retained history before selecting a report period.
 An unresolved assertion excludes neither leg: ordinary classification and refund handling continue. Affected
@@ -257,11 +268,10 @@ complete capture has value zero. An uncovered or never-captured account remains 
 accounts usable with transaction-only freshness while requiring a coherent holding observation wherever policy
 adjustments depend on positions.
 
-During rollout, an unlinked holding row (`capture_id IS NULL`) whose timestamp is at or after the latest complete
-capture makes a required holding read unavailable. A newer successful `/investments/holdings/get` receipt without a
-linked capture also makes it unavailable, including the case where an older writer returned an empty response and
-appended no rows. A later complete capture supersedes older unlinked rows and receipts. The timestamp comparison
-only bounds ambiguous orphan rows; capture IDs remain the identity for selecting holdings.
+A successful `/investments/holdings/get` API event whose ID is greater than the selected capture's API event ID is
+treated as unapplied and makes a required holding read unavailable. This catches responses with no positions or whose
+application did not commit; a later complete capture moves the boundary past that event. Every holding row references
+a capture, and capture IDs identify batches.
 
 Every historical spending point uses **today's** eligible portfolio; historical asset values are not reconstructed.
 Partial windows annualize only their contiguous covered days and are labeled. Inferred transaction boundaries are

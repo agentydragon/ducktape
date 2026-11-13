@@ -210,17 +210,6 @@ def migrated_sessions(migrated_engine: AsyncEngine) -> async_sessionmaker[AsyncS
 
 
 @pytest.fixture
-def migrated_identity_store(migrated_sessions: async_sessionmaker[AsyncSession]) -> PostgresOperatorIdentityStore:
-    """Operator identity store bound to the shared migrated test engine."""
-    return PostgresOperatorIdentityStore(
-        migrated_sessions,
-        OperatorIdentityTrust(
-            trust_domain=TEST_OPERATOR_IDENTITY.trust_domain, trusted_issuers=frozenset({TEST_OPERATOR_OIDC.issuer})
-        ),
-    )
-
-
-@pytest.fixture
 def make_client(migrated_db_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
     """Factory: a TestClient over the console app on a fresh migrated database, with optional
     ``Settings`` overrides (e.g. ``config_file=...``)."""

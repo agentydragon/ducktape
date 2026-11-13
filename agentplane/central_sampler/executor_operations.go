@@ -1,26 +1,20 @@
 package centralsampler
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
-// The sampler works with semantic operation values. Native JSON frames are evidence only and
-// are deliberately never decoded here.
 type (
 	executorEmpty   struct{}
 	executorStarted struct {
@@ -131,381 +125,6 @@ type executorFSClose struct {
 	HandleID string `json:"handleId"`
 }
 
-type executorSessionStream interface {
-	Recv() (*executorpb.OpenSessionResponse, error)
-}
-type executorClient interface {
-	OpenSession(context.Context, *executorpb.OpenSessionRequest, ...grpc.CallOption) (executorSessionStream, error)
-	StartProcess(context.Context, *executorpb.StartProcessRequest, ...grpc.CallOption) (*executorpb.StartProcessResponse, error)
-	ReadProcess(context.Context, *executorpb.ReadProcessRequest, ...grpc.CallOption) (*executorpb.ReadProcessResponse, error)
-	WriteProcess(context.Context, *executorpb.WriteProcessRequest, ...grpc.CallOption) (*executorpb.WriteProcessResponse, error)
-	SignalProcess(context.Context, *executorpb.SignalProcessRequest, ...grpc.CallOption) (*executorpb.SignalProcessResponse, error)
-	TerminateProcess(context.Context, *executorpb.TerminateProcessRequest, ...grpc.CallOption) (*executorpb.TerminateProcessResponse, error)
-	GetFileMetadata(context.Context, *executorpb.GetFileMetadataRequest, ...grpc.CallOption) (*executorpb.GetFileMetadataResponse, error)
-	OpenFile(context.Context, *executorpb.OpenFileRequest, ...grpc.CallOption) (*executorpb.OpenFileResponse, error)
-	ReadFile(context.Context, *executorpb.ReadFileRequest, ...grpc.CallOption) (*executorpb.ReadFileResponse, error)
-	CloseFile(context.Context, *executorpb.CloseFileRequest, ...grpc.CallOption) (*executorpb.CloseFileResponse, error)
-}
-
-// typedExecutorClient keeps the sampler's narrow stream interface injectable in tests while
-// using the same generated Executor client for direct Runner and Gateway targets.
-type typedExecutorClient struct{ executorpb.ExecutorClient }
-
-func (c typedExecutorClient) OpenSession(ctx context.Context, req *executorpb.OpenSessionRequest, opts ...grpc.CallOption) (executorSessionStream, error) {
-	return c.ExecutorClient.OpenSession(ctx, req, opts...)
-}
-
-// openSession follows a verified incarnation change only at the session-open boundary. Process
-// mutations are never replayed; old handles are retired before opening a fresh native session.
-func (e *Executor) openSession(ctx context.Context, resume *string) error {
-	err := e.openSessionAtScope(ctx, resume)
-	if err == nil {
-		return nil
-	}
-	var fence *executorIncarnationFenceError
-	if errors.As(err, &fence) {
-		if !fence.recorded {
-			return fence
-		}
-		if _, explicitlyFenced := expectedIncarnationUIDFromContext(ctx); explicitlyFenced {
-			return fence
-		}
-		scope := e.scopeSnapshot()
-		if err := e.store.RebindExecutorIncarnation(ctx, e.owner, scope.GetDestination().GetTarget().GetUid(), scope.GetExpectedIncarnationUid(), fence.currentIncarnationUID, ""); err != nil {
-			return fmt.Errorf("record execution Sandbox incarnation change: %w", err)
-		}
-		scope.ExpectedIncarnationUid = fence.currentIncarnationUID
-		e.setScope(scope)
-		e.sessionID, e.shell = "", nil
-		e.workspacePrepared = false
-		e.lostSessionConfirmed = false
-		// One fresh open, with no retained process or file handles and no recursive retries.
-		if err := e.openSessionAtScope(ctx, nil); err != nil {
-			return err
-		}
-		return &executorIncarnationReplacedError{}
-	}
-	return err
-}
-
-func (e *Executor) openSessionAtScope(ctx context.Context, resume *string) error {
-	scope := executionScopeFromContext(ctx, e.scopeSnapshot())
-	handshakeCtx, cancelHandshake := context.WithTimeout(ctx, e.initializeTimeout)
-	defer cancelHandshake()
-	intentRequest := map[string]any{"method": executorMethodInitialize, "resume_session_id": resume}
-	if scope.GetDestination().GetTarget().GetUid() != "" {
-		intentRequest["execution_scope"] = map[string]any{
-			"sandbox_uid": scope.GetDestination().GetTarget().GetUid(), "expected_incarnation_uid": scope.GetExpectedIncarnationUid(),
-		}
-	}
-	if rebind, ok := incarnationRebindFromContext(ctx); ok {
-		intentRequest["incarnation_rebind_from"] = rebind.previousUID
-	}
-	intent, err := e.store.RecordNested(ctx, e.owner, IntentExecutor, intentRequest)
-	if err != nil {
-		return err
-	}
-	streamCtx, cancel := context.WithCancel(e.lifetime)
-	stream, err := e.client.OpenSession(streamCtx, &executorpb.OpenSessionRequest{Scope: scope, RequestId: intent, ResumeSessionId: resume})
-	if err != nil {
-		cancel()
-		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
-				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
-			}
-			return environmentFailure
-		}
-		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, fence.intentEvidence()); finishErr != nil {
-				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
-			}
-			fence.recorded = true
-			return fence
-		}
-		transport := &executorTransportError{method: executorMethodInitialize, phase: "open", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
-			return fmt.Errorf("record OpenSession transport outcome after %v: %w", transport, finishErr)
-		}
-		return transport
-	}
-	first := make(chan struct {
-		response *executorpb.OpenSessionResponse
-		err      error
-	}, 1)
-	go func() {
-		response, recvErr := stream.Recv()
-		first <- struct {
-			response *executorpb.OpenSessionResponse
-			err      error
-		}{response, recvErr}
-	}()
-	var opened *executorpb.OpenSessionResponse
-	select {
-	case result := <-first:
-		opened, err = result.response, result.err
-	case <-handshakeCtx.Done():
-		cancel()
-		select {
-		case result := <-first:
-			opened, err = result.response, result.err
-		default:
-			err = handshakeCtx.Err()
-		}
-	}
-	if err != nil {
-		cancel()
-		if environmentFailure := e.newEnvironmentFailure(executorMethodInitialize, intent, "", "", nil, nil, err); environmentFailure != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environmentFailure.intentEvidence()); finishErr != nil {
-				return fmt.Errorf("record known OpenSession refusal after %v: %w", environmentFailure, finishErr)
-			}
-			return environmentFailure
-		}
-		if fence := e.incarnationFenceError(err, scope, executorMethodInitialize, intent, "", "", nil, nil, NestedNotDispatched); fence != nil {
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, fence.intentEvidence()); finishErr != nil {
-				return errors.Join(fence, fmt.Errorf("record stale OpenSession fence: %w", finishErr))
-			}
-			fence.recorded = true
-			return fence
-		}
-		transport := &executorTransportError{method: executorMethodInitialize, phase: "receive", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: err}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
-			return fmt.Errorf("record OpenSession receive outcome after %v: %w", transport, finishErr)
-		}
-		return transport
-	}
-	if opened == nil {
-		cancel()
-		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor OpenSession returned an empty response")}
-		if err := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); err != nil {
-			return fmt.Errorf("record empty OpenSession response: %w", err)
-		}
-		return transport
-	}
-	frameErr := e.recordNativeFrames(ctx, intent, opened.ExecutionSessionId, executorMethodInitialize, opened.NativeFrames)
-	if opened.Status == nil || opened.Status.Outcome != executorpb.ExecutionStatus_OUTCOME_COMPLETED {
-		cancel()
-		return e.finishOpenFailure(ctx, intent, opened, frameErr)
-	}
-	if opened.ExecutionSessionId == "" || resume != nil && opened.ExecutionSessionId != *resume {
-		cancel()
-		transport := &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New("executor resumed a different or empty execution session")}
-		finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession))
-		if frameErr != nil || finishErr != nil {
-			return fmt.Errorf("record mismatched OpenSession response: %w", errors.Join(frameErr, finishErr))
-		}
-		return transport
-	}
-	var shellName *string
-	var shell *execShell
-	if opened.Shell != nil {
-		shell = &execShell{Name: opened.Shell.Name, Path: opened.Shell.Path}
-		shellName = &opened.Shell.Name
-	}
-	var environmentInfo any
-	if opened.Shell != nil {
-		environmentInfo = map[string]any{"shell": map[string]any{"name": opened.Shell.Name, "path": opened.Shell.Path}}
-	}
-	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{
-		"outcome": NestedCompleted, "request_id": intent, "execution_session_id": opened.ExecutionSessionId,
-		"sessionId": opened.ExecutionSessionId, "environmentInfo": environmentInfo,
-	}); err != nil {
-		cancel()
-		return errors.Join(frameErr, err)
-	}
-	if frameErr != nil {
-		cancel()
-		return fmt.Errorf("record OpenSession native evidence: %w", frameErr)
-	}
-	if rebind, ok := incarnationRebindFromContext(ctx); ok {
-		e.setReconnectRequired(true)
-		if err := e.stopCurrentSessionStream(ctx); err != nil {
-			cancel()
-			return fmt.Errorf("stop old execution session after verified incarnation change: %w", err)
-		}
-		if err := e.store.RebindExecutorIncarnationWithSession(ctx, e.owner,
-			scope.GetDestination().GetTarget().GetUid(), rebind.previousUID, scope.GetExpectedIncarnationUid(),
-			opened.ExecutionSessionId, shellName); err != nil {
-			cancel()
-			return fmt.Errorf("record verified execution Sandbox incarnation change: %w", err)
-		}
-		e.setScope(scope)
-		e.workspacePrepared = false
-		e.lostSessionConfirmed = false
-	} else if err := e.store.SetExecutorSession(ctx, e.owner, opened.ExecutionSessionId, shellName); err != nil {
-		cancel()
-		return err
-	}
-	done := make(chan struct{})
-	e.sessionID, e.sessionStream, e.sessionCancel, e.sessionDone, e.shell = opened.ExecutionSessionId, stream, cancel, done, shell
-	e.sessionStateMu.Lock()
-	e.sessionGeneration++
-	generation := e.sessionGeneration
-	e.reconnectRequired = false
-	if resume == nil && e.lostSessionConfirmed {
-		e.lostSessionConfirmed = false
-	}
-	e.sessionStateMu.Unlock()
-	go e.watchSession(streamCtx, stream, intent, opened.ExecutionSessionId, generation, cancel, done)
-	return nil
-}
-
-func (e *Executor) finishOpenFailure(ctx context.Context, intent string, response *executorpb.OpenSessionResponse, nativeEvidenceErr error) error {
-	if response.Status != nil && response.Status.Outcome == executorpb.ExecutionStatus_OUTCOME_REJECTED {
-		message := response.Status.Message
-		if message == "" {
-			message = "session open rejected"
-		}
-		rejectedError := &executorRejectedError{method: executorMethodInitialize, code: int(response.Status.GetUpstreamCode()), message: message}
-		rejected := map[string]any{"code": response.Status.UpstreamCode, "message": message}
-		if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "rejected": rejected}); err != nil {
-			return fmt.Errorf("record rejected OpenSession result: %w", errors.Join(nativeEvidenceErr, err))
-		}
-		// A typed rejection alone is insufficient if accompanying native frames failed to
-		// persist. Session-loss recovery requires the complete response evidence boundary.
-		if nativeEvidenceErr != nil {
-			return fmt.Errorf("record rejected OpenSession native evidence: %w", nativeEvidenceErr)
-		}
-		rejectedError.recorded = true
-		return rejectedError
-	}
-	message := "execution session open outcome is unknown"
-	if response.Status != nil && response.Status.Message != "" {
-		message = response.Status.Message
-	}
-	if err := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedUnknown, "request_id": intent, "message": message}); err != nil {
-		return errors.Join(nativeEvidenceErr, errors.New(message), fmt.Errorf("record unknown OpenSession outcome: %w", err))
-	}
-	if nativeEvidenceErr != nil {
-		return fmt.Errorf("record unknown OpenSession native evidence: %w", nativeEvidenceErr)
-	}
-	return &executorTransportError{method: executorMethodInitialize, phase: "response", intentID: intent, retainedSession: e.retainedSessionID(ctx), cause: errors.New(message)}
-}
-
-func (e *Executor) watchSession(streamCtx context.Context, stream executorSessionStream, operationID, sessionID string, generation uint64, cancel context.CancelFunc, done chan struct{}) {
-	defer close(done)
-	for {
-		response, err := stream.Recv()
-		if err != nil {
-			e.sessionStateMu.Lock()
-			if !e.closing && e.sessionGeneration == generation {
-				e.reconnectRequired = true
-			}
-			e.sessionStateMu.Unlock()
-			return
-		}
-		// Reconnect cancels streamCtx while this watcher may already be recording a
-		// received notification. Keep that evidence write alive for a bounded time.
-		journalCtx, cancelJournal := context.WithTimeout(context.WithoutCancel(streamCtx), 5*time.Second)
-		err = e.recordNativeFrames(journalCtx, operationID, sessionID, executorMethodSessionNotice, response.NativeFrames)
-		cancelJournal()
-		if err != nil {
-			e.sessionStateMu.Lock()
-			if e.sessionGeneration == generation {
-				e.sessionError = fmt.Errorf("record execution session notification evidence: %w", err)
-				e.reconnectRequired = true
-			}
-			e.sessionStateMu.Unlock()
-			cancel()
-			return
-		}
-		if response.Status != nil {
-			e.sessionStateMu.Lock()
-			if !e.closing && e.sessionGeneration == generation {
-				e.reconnectRequired = true
-			}
-			e.sessionStateMu.Unlock()
-			cancel()
-			return
-		}
-		if response.ExecutionSessionId != "" && response.ExecutionSessionId != sessionID {
-			e.sessionStateMu.Lock()
-			if e.sessionGeneration == generation {
-				e.reconnectRequired = true
-			}
-			e.sessionStateMu.Unlock()
-			cancel()
-			return
-		}
-	}
-}
-
-func (e *Executor) recordNativeFrames(ctx context.Context, operationID, sessionID string, method executionMethod, frames []*executorpb.ExecutionNativeFrame) error {
-	if ctx.Err() != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-	for _, frame := range frames {
-		if frame == nil {
-			continue
-		}
-		payload := map[string]any{"request_id": operationID, "execution_session_id": sessionID, "payload": frame.Payload}
-		if method == executorMethodFSReadBlock {
-			digest := sha256.Sum256(frame.Payload)
-			payload["payload_digest_sha256"] = hex.EncodeToString(digest[:])
-			payload["payload_bytes"] = len(frame.Payload)
-			delete(payload, "payload")
-		}
-		if err := e.store.ProtocolEvent(ctx, e.owner, operationID, "executor", frame.Direction, payload); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// ensureSessionLocked is called with rpcMu held before a typed operation is admitted. A
-// connection failure rejects that operation without poisoning the JavaScript session. Evidence
-// and ownership failures remain operational errors and must never masquerade as remote failures.
-func (e *Executor) ensureSessionLocked(ctx context.Context, method executionMethod, processID string) error {
-	e.sessionStateMu.Lock()
-	sessionError, reconnectRequired := e.sessionError, e.reconnectRequired
-	e.sessionStateMu.Unlock()
-	if sessionError != nil {
-		return fmt.Errorf("execution session evidence journal failed; refusing further dispatch: %w", sessionError)
-	}
-	if expectedUID, explicit := expectedIncarnationUIDFromContext(ctx); explicit {
-		currentScope := e.scopeSnapshot()
-		if expectedUID != currentScope.GetExpectedIncarnationUid() {
-			if currentScope.GetExpectedIncarnationUid() == "" || currentScope.GetDestination().GetTarget().GetUid() == "" {
-				return &toolError{"cannot fence execution because the retained scope has no incarnation or Sandbox UID"}
-			}
-			candidateScope := proto.Clone(currentScope).(*executorpb.ExecutionScope)
-			candidateScope.ExpectedIncarnationUid = expectedUID
-			candidateCtx := withExecutionScope(ctx, candidateScope)
-			candidateCtx = withIncarnationRebind(candidateCtx, currentScope.GetExpectedIncarnationUid())
-			if err := e.openSessionAtScope(candidateCtx, nil); err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-	var err error
-	if e.sessionID == "" {
-		err = e.openSession(ctx, nil)
-	} else if reconnectRequired {
-		err = e.reconnectLocked(ctx, processID)
-	}
-	// Workspace preparation has no native handle or previously dispatched mutation. It can
-	// continue immediately after the durable incarnation notice and fresh session open.
-	var changed *executorIncarnationReplacedError
-	if errors.As(err, &changed) && method == executorMethodProcessStart && processID == "" {
-		return nil
-	}
-	if err == nil || !isExecutorConnectionFailure(err) {
-		return err
-	}
-	return &executorNotDispatchedError{method: method, processID: processID, retainedSession: e.retainedSessionID(ctx), cause: err}
-}
-
-func isExecutorConnectionFailure(err error) bool {
-	var transport *executorTransportError
-	var environment *executorEnvironmentFailureError
-	var rejected *executorRejectedError
-	var replaced *executorSessionReplacedError
-	var changed *executorIncarnationReplacedError
-	return errors.As(err, &changed) || errors.As(err, &transport) || errors.As(err, &environment) || errors.As(err, &rejected) || errors.As(err, &replaced)
-}
-
 func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, resultEvidence func(map[string]any) map[string]any) (json.RawMessage, error) {
 	e.rpcMu.Lock()
 	defer e.rpcMu.Unlock()
@@ -514,10 +133,14 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	if e.rpcTimeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, e.rpcTimeout)
+		timeout := e.rpcTimeout
+		if method == executorMethodProcessRead {
+			timeout = e.readBudget(timeout)
+		}
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	requestJSON, err := protocolObject(map[string]any{"method": method, "params": params})
+	requestJSON, err := protocol.Object(map[string]any{"method": method, "params": params})
 	if err != nil {
 		return nil, err
 	}
@@ -527,10 +150,10 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	request, err := e.typedRequest(ctx, method, params, intent)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedNotDispatched, "request_id": intent, "method": method, "reason": err.Error()})
 		return nil, errors.Join(err, finishErr)
 	}
-	response, err := e.call(ctx, method, request)
+	response, err := e.callWithReadDeadline(ctx, method, request)
 	readRetried := false
 	if err != nil {
 		remoteOutcome := NestedNotDispatched
@@ -545,7 +168,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				fence.afterSequence, fence.output = read.AfterSeq, read.ObservedOutput
 			}
 			e.setReconnectRequired(true)
-			if finishErr := e.finishUnknownIntent(ctx, intent, fence.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, fence.intentEvidence()); finishErr != nil {
 				return nil, fmt.Errorf("record stale execution incarnation for %s after %v: %w", method, fence, finishErr)
 			}
 			fence.recorded = true
@@ -558,9 +181,9 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		if method == executorMethodProcessRead && ctx.Err() == nil {
 			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
-				response, err = e.call(ctx, method, request)
+				response, err = e.callWithReadDeadline(ctx, method, request)
 			} else if !isExecutorConnectionFailure(reconnectErr) {
-				finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID))
+				finishErr := e.finishNested(ctx, intent, transport.evidence(e.sessionID))
 				return nil, fmt.Errorf("resume executor state after %v: %w", transport, errors.Join(reconnectErr, finishErr))
 			} else {
 				transport.cause = errors.Join(transport.cause, fmt.Errorf("resume executor session: %w", reconnectErr))
@@ -580,7 +203,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				environment.remoteOutcome = NestedUnknown
 			}
 			e.setReconnectRequired(true)
-			if finishErr := e.store.FinishNested(ctx, e.owner, intent, environment.intentEvidence()); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, environment.intentEvidence()); finishErr != nil {
 				return nil, fmt.Errorf("record known typed execution %s refusal after %v: %w", method, environment, finishErr)
 			}
 			return nil, environment
@@ -589,7 +212,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			transport.intentID, transport.processID = intent, executorProcessID(params)
 			transport.retainedSession = e.retainedSessionID(ctx)
 			e.setReconnectRequired(true)
-			if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
+			if finishErr := e.finishNested(ctx, intent, transport.evidence(transport.retainedSession)); finishErr != nil {
 				return nil, fmt.Errorf("record unknown typed execution %s outcome after %v: %w", method, transport, finishErr)
 			}
 		}
@@ -612,7 +235,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			e.setReconnectRequired(true)
 			if reconnectErr := e.reconnectLocked(ctx, executorProcessID(params)); reconnectErr == nil {
 				readRetried = true
-				response, err = e.call(ctx, method, request)
+				response, err = e.callWithReadDeadline(ctx, method, request)
 				if err == nil {
 					statusValue = executionStatus(response)
 					frames = executionFrames(response)
@@ -627,7 +250,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 				}
 			} else if !isExecutorConnectionFailure(reconnectErr) {
 				transport := &executorTransportError{method: method, phase: "native", intentID: intent, processID: executorProcessID(params), retainedSession: e.sessionID, cause: errors.New(statusValue.Message)}
-				finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID))
+				finishErr := e.finishNested(ctx, intent, transport.evidence(e.sessionID))
 				return nil, fmt.Errorf("resume executor state after %v: %w", transport, errors.Join(reconnectErr, finishErr))
 			} else if statusValue.Message == "" {
 				statusValue.Message = reconnectErr.Error()
@@ -643,7 +266,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			message = "request rejected"
 		}
 		rejected := map[string]any{"code": statusValue.UpstreamCode, "message": message}
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedRejected, "request_id": intent, "execution_session_id": e.sessionID, "rejected": rejected})
 		if frameJournalErr != nil {
 			return nil, errors.Join(frameJournalErr, finishErr)
 		}
@@ -666,7 +289,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 			message = "remote execution outcome is unknown; operation was not replayed"
 		}
 		transport = &executorTransportError{method: method, phase: "native", intentID: intent, processID: executorProcessID(params), retainedSession: e.sessionID, cause: errors.New(message)}
-		if finishErr := e.finishUnknownIntent(ctx, intent, transport.evidence(e.sessionID)); finishErr != nil {
+		if finishErr := e.finishNested(ctx, intent, transport.evidence(e.sessionID)); finishErr != nil {
 			return nil, fmt.Errorf("record unknown typed execution outcome after %v: %w", transport, errors.Join(frameJournalErr, finishErr))
 		}
 		e.setReconnectRequired(true)
@@ -677,12 +300,12 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	}
 	result, err := responseObject(method, response)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_decode_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
-		finishErr := e.store.FinishNested(ctx, e.owner, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
+		finishErr := e.finishNested(ctx, intent, map[string]any{"outcome": NestedCompleted, "request_id": intent, "execution_session_id": e.sessionID, "result_encoding_error": err.Error()})
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	evidenceResult := make(map[string]any, len(result))
@@ -694,7 +317,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	evidence["outcome"] = NestedCompleted
 	evidence["request_id"] = intent
 	evidence["execution_session_id"] = e.sessionID
-	if err := e.store.FinishNested(ctx, e.owner, intent, evidence); err != nil {
+	if err := e.finishNested(ctx, intent, evidence); err != nil {
 		return nil, errors.Join(frameJournalErr, fmt.Errorf("record completed typed execution %s result: %w", method, err))
 	}
 	if frameJournalErr != nil {
@@ -703,90 +326,41 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 	return encoded, nil
 }
 
-func (e *Executor) reconnectLocked(ctx context.Context, notDispatchedProcessID string) error {
-	e.setReconnectRequired(true)
-	conversation, err := e.store.Read(ctx, e.owner)
-	if err != nil {
-		return err
+type executorReadAttemptTimeoutKey struct{}
+
+func (e *Executor) callWithReadDeadline(ctx context.Context, method executionMethod, request proto.Message) (proto.Message, error) {
+	if method != executorMethodProcessRead {
+		return e.call(ctx, method, request)
 	}
-	previousSession := e.sessionID
-	if e.sessionCancel != nil {
-		e.sessionCancel()
-		e.sessionCancel = nil
-		if e.sessionDone != nil {
-			select {
-			case <-e.sessionDone:
-			case <-ctx.Done():
-				return fmt.Errorf("wait for previous execution session stream to end: %w", ctx.Err())
-			}
-			e.sessionDone = nil
+	attemptTimeout := e.rpcTimeout
+	if pageTimeout, ok := ctx.Value(executorReadAttemptTimeoutKey{}).(time.Duration); ok {
+		if attemptTimeout <= 0 || pageTimeout < attemptTimeout {
+			attemptTimeout = pageTimeout
 		}
 	}
-	if conversation.ExecutorSession == nil {
-		if !e.lostSessionConfirmed {
-			return errors.New("cannot open a fresh executor session without definitive loss of the retained session")
-		}
-		if err := e.openSession(ctx, nil); err != nil {
-			return err
-		}
-		return &executorSessionReplacedError{previousSession: previousSession}
+	if attemptTimeout <= 0 {
+		return e.call(ctx, method, request)
 	}
-	retainedSession := *conversation.ExecutorSession
-	if err := e.openSession(ctx, &retainedSession); err != nil {
-		var rejected *executorRejectedError
-		if !errors.As(err, &rejected) || !isDefinitiveLostExecutorSession(rejected, retainedSession) {
-			return err
-		}
-		if retireErr := e.store.RetireLostExecutorSession(ctx, e.owner, retainedSession, notDispatchedProcessID); retireErr != nil {
-			return fmt.Errorf("retire lost executor session after %v: %w", err, retireErr)
-		}
-		e.lostSessionConfirmed = true
-		e.shell = nil
-		if freshErr := e.openSession(ctx, nil); freshErr != nil {
-			return fmt.Errorf("open fresh executor session after definitive session loss (%v): %w", err, freshErr)
-		}
-		return &executorSessionReplacedError{previousSession: retainedSession}
-	}
-	return nil
+	readCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+	defer cancel()
+	return e.call(readCtx, method, request)
 }
 
-func (e *Executor) close() error {
-	e.rpcMu.Lock()
-	defer e.rpcMu.Unlock()
-	e.sessionStateMu.Lock()
-	e.closing = true
-	e.sessionStateMu.Unlock()
-	var streamErr error
-	if e.sessionCancel != nil {
-		e.sessionCancel()
-		e.sessionCancel = nil
-		if e.sessionDone != nil {
-			select {
-			case <-e.sessionDone:
-			case <-time.After(5 * time.Second):
-				streamErr = errors.New("timed out waiting for execution session stream to close")
-			}
-			e.sessionDone = nil
-		}
+func addTimeout(base, extra time.Duration) time.Duration {
+	const maxDuration = time.Duration(1<<63 - 1)
+	if extra > 0 && base > maxDuration-extra {
+		return maxDuration
 	}
-	if e.connection != nil {
-		return errors.Join(streamErr, e.connection.Close())
-	}
-	return streamErr
+	return base + extra
 }
 
-func (e *Executor) setReconnectRequired(value bool) {
-	e.sessionStateMu.Lock()
-	e.reconnectRequired = value
-	e.sessionStateMu.Unlock()
-}
-
-func (e *Executor) setSessionError(err error) {
-	e.sessionStateMu.Lock()
-	if e.sessionError == nil {
-		e.sessionError = err
+func (e *Executor) readBudget(normal time.Duration) time.Duration {
+	if normal <= 0 {
+		return normal
 	}
-	e.sessionStateMu.Unlock()
+	// Leave room for the original read, a retained-session reconnect, and
+	// either a retried read or a fresh open after definitive native loss.
+	return addTimeout(addTimeout(max(normal, e.rpcTimeout), e.reconnectTimeout), addTimeout(max(e.rpcTimeout, e.initializeTimeout), 5*time.Second))
 }
 
 type executorTransportError struct {
@@ -962,26 +536,12 @@ func executorProcessID(params any) string {
 	return ""
 }
 
-func (e *Executor) retainedSessionID(ctx context.Context) string {
-	if ctx.Err() != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-	c, err := e.store.Read(ctx, e.owner)
-	if err != nil || c.ExecutorSession == nil {
-		return ""
-	}
-	return *c.ExecutorSession
-}
-
-func (e *Executor) finishUnknownIntent(ctx context.Context, intent string, evidence any) error {
-	if ctx.Err() != nil {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-	}
-	return e.store.FinishNested(ctx, e.owner, intent, evidence)
+func (e *Executor) finishNested(ctx context.Context, intent string, evidence any) error {
+	// Once an outcome is known, give its journal write a bounded window independent
+	// of the RPC deadline. FinishNested still verifies the Session lease.
+	journalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return e.store.FinishNested(journalCtx, e.owner, intent, evidence)
 }
 
 func (e *Executor) typedRequest(ctx context.Context, method executionMethod, params any, id string) (proto.Message, error) {
@@ -1126,7 +686,7 @@ func responseObject(method executionMethod, response proto.Message) (map[string]
 			x := int(*r.ExitCode)
 			code = &x
 		}
-		return protocolObject(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
+		return protocol.Object(executorReadResult{Chunks: chunks, NextSeq: r.NextSeq, Exited: r.Exited, ExitCode: code, Closed: r.Closed, Failure: r.Failure})
 	case *executorpb.WriteProcessResponse:
 		return map[string]any{"status": r.WriteStatus}, nil
 	case *executorpb.SignalProcessResponse:
@@ -1134,44 +694,16 @@ func responseObject(method executionMethod, response proto.Message) (map[string]
 	case *executorpb.TerminateProcessResponse:
 		return map[string]any{"running": r.Running}, nil
 	case *executorpb.GetFileMetadataResponse:
-		return protocolObject(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
+		return protocol.Object(executorFSMetadata{IsDirectory: r.IsDirectory, IsFile: r.IsFile, IsSymlink: r.IsSymlink, Size: r.Size})
 	case *executorpb.OpenFileResponse:
 		return map[string]any{"handleId": r.HandleId}, nil
 	case *executorpb.ReadFileResponse:
-		return protocolObject(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
+		return protocol.Object(executorFSBlock{Chunk: append([]byte{}, r.Data...), EOF: r.Eof})
 	case *executorpb.CloseFileResponse:
 		return map[string]any{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported typed execution response for %s", method)
 	}
-}
-
-func decodeProtocolObject(data []byte, value any) error {
-	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return errors.New("protocol payload must be a JSON object")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(trimmed))
-	decoder.UseNumber()
-	if err := decoder.Decode(value); err != nil {
-		return err
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return errors.New("protocol payload has trailing JSON")
-	}
-	return nil
-}
-
-func protocolObject(value any) (map[string]any, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var object map[string]any
-	if err := decodeProtocolObject(data, &object); err != nil {
-		return nil, err
-	}
-	return object, nil
 }
 
 func executorRPC[R any, P any](ctx context.Context, e *Executor, method executionMethod, params P) (*R, error) {
@@ -1184,7 +716,7 @@ func executorRPCWithEvidence[R any, P any](ctx context.Context, e *Executor, met
 		return nil, err
 	}
 	var result R
-	if err := decodeProtocolObject(raw, &result); err != nil {
+	if err := protocol.DecodeObject(raw, &result); err != nil {
 		return nil, fmt.Errorf("decode typed execution %s result: %w", method, err)
 	}
 	return &result, nil

@@ -10,7 +10,11 @@ import type { AllQuotasView, BalanceView, BurnStatus, GrantView, ProviderView, W
 import {
   formatAge,
   formatExtraSpend,
+  formatExtraSpendExact,
+  extraSpendHasHiddenFraction,
   refreshWindowTiming,
+  showResetCredits,
+  quotaActivity,
   staleObservationAt,
   formatClock,
   formatDeadline,
@@ -90,15 +94,23 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
   const staleSince = providerStaleSince(provider, quota, now);
   const isStale = staleSince !== null;
   const windows = quota.windows.map((window) => presentWindow(window, now, isStale));
-  const resetPending = windows.some(({ resetPending }) => resetPending);
-  const status = resetPending ? "Reset time passed · awaiting updated usage" : (provider.status ?? null);
+  const { resetPending, overPlan, status } = quotaActivity(
+    windows.map(({ window, resetPending }) => ({ exhausted: window.exhausted, resetPending })),
+    isStale,
+    provider.currently_over_plan,
+    provider.paid_credits_active,
+    quota.extraSpend !== null
+  );
   const hasReadings =
     quota.windows.length > 0 ||
     balances.length > 0 ||
     grants.length > 0 ||
     quota.extraSpend !== null ||
     (quota.resetCredits ?? 0) > 0;
-  const quotaExhausted = windows.some(({ window, resetPending: pending }) => window.exhausted && !pending);
+  const showResetSummary = showResetCredits(
+    quota.resetCredits,
+    windows.map(({ window, resetPending: pending }) => ({ exhausted: window.exhausted, resetPending: pending }))
+  );
 
   return (
     <Paper
@@ -129,16 +141,26 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       </header>
 
       {errorSummary !== null && errorDetail !== null && <ErrorDetails summary="Error details" detail={errorDetail} />}
-      {status && <p className="aiquota-status-row">{status}</p>}
+      {status && (
+        <p className={`aiquota-status-row${!isStale && !resetPending ? " aiquota-status-urgent" : ""}`}>{status}</p>
+      )}
       {(balances.length > 0 || grants.length > 0) && <Readings balances={balances} grants={grants} now={now} />}
-      {quota.resetCredits !== null && (quota.resetCredits > 0 || quotaExhausted) && (
-        <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} />
+      {quota.resetCredits !== null && (
+        <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} showSummary={showResetSummary} />
       )}
       {provider.burn && hasReadings && <BurnSummary burn={provider.burn} now={now} />}
-      {quota.extraSpend && provider.extra_status !== "none" && (
-        <p className="aiquota-extra-usage">
-          {formatExtraSpend(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd)}
-        </p>
+      {quota.extraSpend && (
+        <>
+          <p className="aiquota-extra-usage">
+            {formatExtraSpend(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd, overPlan)}
+          </p>
+          {extraSpendHasHiddenFraction(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd) && (
+            <details className="aiquota-details">
+              <summary>Extra spend details</summary>
+              <p>Exact: {formatExtraSpendExact(quota.extraSpend.used_usd, quota.extraSpend.monthly_limit_usd)}</p>
+            </details>
+          )}
+        </>
       )}
 
       {windows.length > 0
@@ -214,12 +236,33 @@ function BalanceRow({ balance, now }: { balance: BalanceView; now: number }): JS
         </span>
       )}
       {balance.error && <ErrorDetails summary="Balance lookup failed" detail={balance.error} />}
+      {(balance.exact_value || balance.pool_detail) && (
+        <details className="aiquota-details">
+          <summary>Balance details</summary>
+          <dl className="aiquota-detail-list">
+            {balance.pool_detail && (
+              <>
+                <dt>Pool</dt>
+                <dd>{balance.pool_detail}</dd>
+              </>
+            )}
+            {balance.exact_value && (
+              <>
+                <dt>Exact balance</dt>
+                <dd>{balance.exact_value}</dd>
+              </>
+            )}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }
 
 function GrantRow({ grant, now }: { grant: GrantView; now: number }): JSX.Element {
   const expiry = grant.expires_at ? formatDeadline(grant.expires_at, new Date(now)) : null;
+  const hasDetails =
+    !grant.original_repeats_remaining || grant.exact_remaining || grant.scope_detail || grant.expires_at;
   const notes = [
     grant.status ?? null,
     grant.scope ? `Scope: ${grant.scope}` : null,
@@ -230,25 +273,37 @@ function GrantRow({ grant, now }: { grant: GrantView; now: number }): JSX.Elemen
       <dt>{grant.label}</dt>
       <dd>{grant.remaining} remaining</dd>
       <span className="aiquota-reading-note">{notes.join(" · ")}</span>
-      <details className="aiquota-details">
-        <summary>Grant details</summary>
-        <dl className="aiquota-detail-list">
-          <dt>Original amount</dt>
-          <dd>{grant.original}</dd>
-          {grant.scope_detail && (
-            <>
-              <dt>Scope</dt>
-              <dd>{grant.scope_detail}</dd>
-            </>
-          )}
-          {grant.expires_at && (
-            <>
-              <dt>Expiry time</dt>
-              <dd>{formatDeadline(grant.expires_at, new Date(now), true)}</dd>
-            </>
-          )}
-        </dl>
-      </details>
+      {hasDetails && (
+        <details className="aiquota-details">
+          <summary>Grant details</summary>
+          <dl className="aiquota-detail-list">
+            {!grant.original_repeats_remaining && (
+              <>
+                <dt>Original amount</dt>
+                <dd>{grant.original}</dd>
+              </>
+            )}
+            {grant.exact_remaining && (
+              <>
+                <dt>Exact remaining</dt>
+                <dd>{grant.exact_remaining}</dd>
+              </>
+            )}
+            {grant.scope_detail && (
+              <>
+                <dt>Scope</dt>
+                <dd>{grant.scope_detail}</dd>
+              </>
+            )}
+            {grant.expires_at && (
+              <>
+                <dt>Expiry time</dt>
+                <dd>{formatDeadline(grant.expires_at, new Date(now), true)}</dd>
+              </>
+            )}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }
@@ -315,9 +370,10 @@ function WindowRow({
       </div>
       <Meter
         usedPercent={window.used_percent}
+        displayedPercent={window.used}
         elapsed={window.elapsed}
         tint={tint}
-        label={`${window.label}: ${window.used}% used, ${roundHalfToEven(window.elapsed * 100)}% of the window elapsed`}
+        label={`${window.label} quota usage`}
       />
       <div className="aiquota-window-meta">
         <span>{resetPending ? "Awaiting updated usage" : `Resets in ${window.reset}`}</span>
@@ -336,11 +392,13 @@ function WindowRow({
 
 function Meter({
   usedPercent,
+  displayedPercent,
   elapsed,
   tint,
   label,
 }: {
   usedPercent: number;
+  displayedPercent: number;
   elapsed: number;
   tint: Tint;
   label: string;
@@ -352,7 +410,8 @@ function Meter({
       className={`aiquota-meter aiquota-tint-${tint}`}
       role="meter"
       aria-label={label}
-      aria-valuenow={roundHalfToEven(usedPercent)}
+      aria-valuenow={Math.max(0, Math.min(100, displayedPercent))}
+      aria-valuetext={`${displayedPercent}% used, ${roundHalfToEven(elapsed * 100)}% of the window elapsed`}
       aria-valuemin={0}
       aria-valuemax={100}
     >
@@ -369,21 +428,32 @@ function Meter({
   );
 }
 
-function ResetCredits({ count, quota, now }: { count: number; quota: EffectiveQuota; now: Date }): JSX.Element {
+function ResetCredits({
+  count,
+  quota,
+  now,
+  showSummary,
+}: {
+  count: number;
+  quota: EffectiveQuota;
+  now: Date;
+  showSummary: boolean;
+}): JSX.Element {
   return (
     <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
-      <p className="aiquota-strip-line">
-        Banked resets:{" "}
-        {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now)}
-      </p>
-      {count > 0 && (
-        <details className="aiquota-details">
-          <summary>Reset expiry details</summary>
-          <p>
-            {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now, true)}
-          </p>
-        </details>
+      {showSummary && (
+        <p className="aiquota-strip-line">
+          Banked resets:{" "}
+          {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now)}
+        </p>
       )}
+      <details className="aiquota-details">
+        <summary>{count > 0 ? "Reset expiry details" : "Details"}</summary>
+        <p>
+          {count === 0 && "Banked resets: "}
+          {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now, true)}
+        </p>
+      </details>
     </div>
   );
 }

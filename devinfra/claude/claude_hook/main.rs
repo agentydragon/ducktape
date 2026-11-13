@@ -77,16 +77,12 @@ enum Command {
 // Session paths (mirrors devinfra/claude/session_paths.py)
 // ---------------------------------------------------------------------------
 
-fn short_session_dir(session_id: &str) -> PathBuf {
+pub(crate) fn daemon_dir_path(session_id: &str) -> PathBuf {
     PathBuf::from("/tmp/claude-hd").join(session_id)
 }
 
 pub(crate) fn daemon_sock_path(session_id: &str) -> PathBuf {
-    short_session_dir(session_id).join("d.sock")
-}
-
-pub(crate) fn daemon_dir_path(session_id: &str) -> PathBuf {
-    short_session_dir(session_id)
+    daemon_dir_path(session_id).join("d.sock")
 }
 
 fn session_id_from_env() -> Option<String> {

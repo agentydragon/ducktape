@@ -116,8 +116,9 @@ type SandboxSpec struct {
 	// Omitted is false so older Sandbox manifests keep automatic wake disabled.
 	// +kubebuilder:default=false
 	WakeOnSend bool `json:"wakeOnSend,omitempty"`
-	// ResumePolicy controls whether the exact live execution ServiceAccount may request resume.
-	// Omitted policy and fields default to deny.
+	// ResumePolicy controls whether the Sandbox's own principal, its exact live execution
+	// ServiceAccount or the Identity it acts as, may request resume. Omitted policy and fields
+	// default to deny.
 	ResumePolicy *ResumePolicy `json:"resumePolicy,omitempty"`
 	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
 	// differs from the generation it was suspended at.
@@ -130,10 +131,10 @@ type SandboxSpec struct {
 	// +kubebuilder:validation:MaxLength=32
 	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1m')",message="idleSuspendAfter is at least one minute"
 	IdleSuspendAfter *metav1.Duration `json:"idleSuspendAfter,omitempty"`
-	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
-	// +listType=set
-	// +kubebuilder:validation:items:MinLength=1
-	PolicySets []string `json:"policySets,omitempty"`
+	// Identity is who the Sandbox's workloads act as. It may be set, changed or cleared only while
+	// nothing runs, so an incarnation never changes identity; the next start acts as the new one.
+	// "Nothing runs" is the controller's last status report: never reconciled, or stopStage Stopped.
+	Identity *IdentityRef `json:"identity,omitempty"`
 	// InboxTags are the groups the Sandbox's Session inboxes take messages as: a `session_inbox_access` rule
 	// targeting one of them covers the Sandbox while it holds the tag.
 	// +listType=set
@@ -145,10 +146,17 @@ type SandboxSpec struct {
 	Bootstrap string `json:"bootstrap,omitempty"`
 }
 
-// ResumePolicy contains independent explicit-resume permissions for an ordinary execution account.
+// IdentityRef names an Identity in the Sandbox's namespace.
+type IdentityRef struct {
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+}
+
+// ResumePolicy contains independent resume permissions for the Sandbox's own principal.
 type ResumePolicy struct {
 	// AllowOwnServiceAccount permits the Sandbox's exact live execution ServiceAccount to request
-	// resume while the Sandbox is idle-suspended. It does not authorize overriding a requested stop.
+	// resume while the Sandbox is idle-suspended, and queued work of the Identity the Sandbox acts
+	// as to wake it then. It does not authorize overriding a requested stop.
 	// +kubebuilder:default=false
 	// +kubebuilder:validation:Optional
 	AllowOwnServiceAccount bool `json:"allowOwnServiceAccount,omitempty"`
@@ -353,6 +361,7 @@ const (
 // +kubebuilder:printcolumn:name="Running",type=string,JSONPath=".status.conditions[?(@.type==\"Running\")].reason"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="a Sandbox name is at most 63 characters"
+// +kubebuilder:validation:XValidation:rule="(has(self.spec.identity) == has(oldSelf.spec.identity) && (!has(self.spec.identity) || self.spec.identity == oldSelf.spec.identity)) || !has(oldSelf.status) || !has(oldSelf.status.operatingMode) || (has(oldSelf.status.stopStage) && oldSelf.status.stopStage == 'Stopped')",message="spec.identity changes only while nothing runs"
 type Sandbox struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

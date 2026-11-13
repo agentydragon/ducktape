@@ -24,6 +24,7 @@ import (
 
 const (
 	defaultExecutorInitializeTimeoutSeconds = 30
+	defaultExecutorReconnectTimeoutSeconds  = 120
 	defaultShutdownDrainSeconds             = 40
 	defaultShutdownBudgetSeconds            = 55
 	maxExecutorInitializeTimeoutSeconds     = int64((1<<63 - 1) / int64(time.Second))
@@ -32,8 +33,12 @@ const (
 type AuthType string
 
 const (
-	AuthTypeBearer          AuthType = "bearer"
-	AuthTypeAnthropicAPIKey AuthType = "anthropic_api_key"
+	AuthTypeBearer AuthType = "bearer"
+	// AuthTypeAgentplaneIngress is Agentplane's LLM ingress: the credential is the sampler's
+	// projected workload token, and a Session executing as an Identity is sampled as a delegating
+	// actor for that Identity (providerAuthorization).
+	AuthTypeAgentplaneIngress AuthType = "agentplane_ingress"
+	AuthTypeAnthropicAPIKey   AuthType = "anthropic_api_key"
 )
 
 // ModelConfig contains the wire and tool-call encodings supported by one model route.
@@ -93,14 +98,17 @@ func (c ModelConfig) Validate() error {
 }
 
 func (c ModelConfig) Compatible(other ModelConfig) bool {
-	if c.Connection != other.Connection || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
+	// Matching wire formats do not establish that another model can consume retained
+	// signed thinking, encrypted reasoning or compaction items. Keep the provider
+	// model fixed until the adapter has an explicit cross-model continuation contract.
+	if c.Connection != other.Connection || c.ProviderModel != other.ProviderModel || c.API != other.API || c.ExecEncoding != other.ExecEncoding {
 		return false
 	}
 	switch c.API {
 	case protocol.APIStyleResponses:
 		return c.Responses.Compatible(other.Responses)
 	case protocol.APIStyleAnthropicMessages:
-		return c.ProviderModel == other.ProviderModel && c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
+		return c.Responses == other.Responses && c.AnthropicMessages.Compatible(other.AnthropicMessages)
 	default:
 		return false
 	}
@@ -166,9 +174,9 @@ func (c ConnectionConfig) Validate() error {
 		return errors.New("connection auth requires exactly one of credential and credential_file")
 	}
 	switch c.Auth.Type {
-	case AuthTypeBearer, AuthTypeAnthropicAPIKey:
+	case AuthTypeBearer, AuthTypeAgentplaneIngress, AuthTypeAnthropicAPIKey:
 	default:
-		return errors.New("connection auth.type must be bearer or anthropic_api_key")
+		return errors.New("connection auth.type must be bearer, agentplane_ingress or anthropic_api_key")
 	}
 	return nil
 }
@@ -214,6 +222,7 @@ type Settings struct {
 	TurnTimeoutSeconds               int                                      `json:"turn_timeout_seconds"`
 	RPCTimeoutSeconds                int                                      `json:"rpc_timeout_seconds"`
 	ExecutorInitializeTimeoutSeconds *int                                     `json:"executor_initialize_timeout_seconds,omitempty"`
+	ExecutorReconnectTimeoutSeconds  *int                                     `json:"executor_reconnect_timeout_seconds,omitempty"`
 	ShutdownDrainSeconds             *int                                     `json:"shutdown_drain_seconds,omitempty"`
 	ShutdownBudgetSeconds            *int                                     `json:"shutdown_budget_seconds,omitempty"`
 	LeaseSeconds                     int                                      `json:"lease_seconds"`
@@ -301,8 +310,8 @@ func (s Settings) Validate() error {
 		if !ok {
 			return fmt.Errorf("model %s references unknown connection %s", model, config.Connection)
 		}
-		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer {
-			return fmt.Errorf("model %s responses API requires bearer connection auth", model)
+		if config.API == protocol.APIStyleResponses && connection.Auth.Type != AuthTypeBearer && connection.Auth.Type != AuthTypeAgentplaneIngress {
+			return fmt.Errorf("model %s responses API requires bearer or agentplane_ingress connection auth", model)
 		}
 		if config.API == protocol.APIStyleAnthropicMessages && connection.Auth.Type != AuthTypeAnthropicAPIKey {
 			return fmt.Errorf("model %s anthropic_messages API requires anthropic_api_key connection auth", model)
@@ -347,6 +356,12 @@ func (s Settings) Validate() error {
 			return errors.New("executor_initialize_timeout_seconds must be positive and fit in time.Duration")
 		}
 	}
+	if s.ExecutorReconnectTimeoutSeconds != nil {
+		seconds := int64(*s.ExecutorReconnectTimeoutSeconds)
+		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {
+			return errors.New("executor_reconnect_timeout_seconds must be positive and fit in time.Duration")
+		}
+	}
 	for name, seconds := range map[string]*int{"shutdown_drain_seconds": s.ShutdownDrainSeconds, "shutdown_budget_seconds": s.ShutdownBudgetSeconds} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
 			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
@@ -377,6 +392,14 @@ func (s Settings) ExecutorInitializeTimeout() time.Duration {
 	seconds := defaultExecutorInitializeTimeoutSeconds
 	if s.ExecutorInitializeTimeoutSeconds != nil {
 		seconds = *s.ExecutorInitializeTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (s Settings) ExecutorReconnectTimeout() time.Duration {
+	seconds := defaultExecutorReconnectTimeoutSeconds
+	if s.ExecutorReconnectTimeoutSeconds != nil {
+		seconds = *s.ExecutorReconnectTimeoutSeconds
 	}
 	return time.Duration(seconds) * time.Second
 }

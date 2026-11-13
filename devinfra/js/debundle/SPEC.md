@@ -188,6 +188,11 @@ replacement. Syntax placement must agree with the validated assignment, includin
 whole-statement moves and repeated declarations. Emission consumes an immutable
 validated plan.
 
+Final validation rejects a reconstructed file when a source global reference
+is proven to resolve to an emitted binding. This check runs even in dry runs
+and without a report directory; incomplete global-resolution evidence remains
+diagnostic.
+
 Generated module headers inline source-unit and binding lists only when each
 line fits within 160 bytes. Larger lists use a count and point to
 `reports/tree/<chunk>/chunk.json` at the output root; its `selected_module_lowerings`
@@ -393,6 +398,21 @@ construction source unit reports the consumed input references in
 configured inputs that the proof did not consume are not reported. Empty uses
 are omitted from JSON and default to empty when reading older reports.
 This adds no author flag or purity exemption.
+An exact direct top-level `X = new Map([[key, value], …])` initializer has a
+separate source-derived heap receipt when every entry is a dense two-element
+array of primitive literals. The Map and all entry arrays are fresh; no source
+expression between their creation and native iteration can mutate, escape or
+install accessors on them. The receipt requires an unshadowed, unreassigned
+global `Map`, no dynamic scope, and complete-program native-integrity evidence
+for the Map binding, `Map.prototype` and its adder, `Array.prototype`, and
+`%ArrayIteratorPrototype%`. It omits only this constructor's generic opaque
+heap read/write and argument-escape contribution. The collector still records
+the literal arrays' allocation cells, and ordinary binding, allocation,
+callback, purity and synchronous-execution analysis remains authoritative.
+Aliased/escaped iterables, sparse or spread entries, getters, nonprimitive
+entry expressions, nested calls and unsupported native slots retain the
+opaque path. The consumed native dependencies appear on that exact source unit
+in `heap_native_integrity_uses`.
 The census tracks `ArrayLit` source origins, not arbitrary arrays returned by
 `Array()`, `Object.entries`, or foreign imports; it does not claim full heap
 ordering coverage.
@@ -1408,9 +1428,11 @@ member fails closed. The two SHA-256 values pin the parser input bytes of the
 importer and original provider. The selected declaration must have one direct
 initializer call to a bare named ESM import of that exact provider export,
 with exactly one freshly written, anonymous, ordinary `function` expression
-argument. Spreads, other arities, named/async/generator callbacks, mutated or
-indirect callees, and ambiguous declarations are rejected. Prepared comma-list
-declarations may select one declarator; sibling declarators gain no assertion.
+argument by default. The separately described const-primitive result form admits
+one bare initialized binding instead. Spreads, other arities, named/async/generator
+callbacks in the default form, mutated or indirect callees, and ambiguous
+declarations are rejected. Prepared comma-list declarations may select one
+declarator; sibling declarators gain no assertion.
 The provider's resolved ordinary static dependency closure must finish before
 the importer, without an importer backedge or ambiguous/nonordinary request.
 
@@ -1445,7 +1467,7 @@ effects. Effective replacement behavior is likewise author audited against
 the pinned bundle bytes and export mapping, not inferred from the original
 provider's callable facts.
 
-The assertion grants no normal completion, result shape, lexical coverage,
+By default, the assertion grants no normal completion, result shape, lexical coverage,
 callback nonpublication or invocation timing, carrier lifetime, operand/callee
 purity, or later-use effect. Actual operand evaluation and known effects
 compose in order. An independent `initializer_purity: pure` assertion and
@@ -1467,6 +1489,21 @@ unknown or mixed targets, spreads, and member receivers retain their ordinary
 fallback. The callback remains reachable through the carrier on later use.
 This transfer adds no operation-domain, lexical, or completion assertion by
 itself; the normal root still needs every independent premise above.
+
+An entry may set `returns_opaque_function_from_const_primitive: true` only after
+auditing the pinned provider and any effective replacement to return normally
+with a fresh callable function object for the selected call. This changes the
+admitted argument shape to one bare binding of a direct top-level `const`
+initialized from a primitive literal. The ordered transfer additionally
+requires that binding to be initialized at this prefix, never rebound,
+unambiguous under dynamic scope, and evaluated to a nonempty set of primitive
+values. It uses the already evaluated argument and direct import; no expression
+is replayed. The provider
+must also have a separate `no_reentry_exports` assertion and the selected
+initializer must have `initializer_purity: pure`. The returned value is an
+opaque capability: later calls, property reads, mutation, and escape keep
+their ordinary unknown effects. The assertion does not identify the function
+body, guarantee an output, or suppress provider-private or later host effects.
 
 ## Static-import and host-loader queries
 
@@ -2092,6 +2129,16 @@ the declaration. Later writes to that binding do not replace the superclass
 captured by the class. Unsupported or uncertain heritage retains the generic
 fallback.
 
+For a superclass expression `(helper(value), base)` whose call result is
+discarded, the capture fallback need not publish argument values when the
+callee is a stable top-level function whose simple parameters and empty or
+literal-return body cannot inspect or retain them. The call arguments must be
+tracked lexical reads or primitive literals without spreads, and `base` must be
+an unmodified top-level function declaration with one known identity. The
+helper, base and all normal evaluation effects remain tracked.
+Rebinding, dynamic scope, defaults, other argument expressions or uncertain
+function identity keep the conservative heritage-input fallback.
+
 A pure initializer that calls a uniquely known local function can retain an
 unpublished callback graph in a fresh ordinary record without making that
 initializer a speculative reachability root. The function must have simple
@@ -2156,8 +2203,8 @@ is insufficient: an inherited data value can retain an unrepresented callback.
 This assertion can override conservative prototype-mutation census blockers;
 it does not declare the factory pure or native identities intact.
 
-Admission requires a direct unary call of the selected stable top-level hoisted
-factory with a fresh literal data record. The canonical AST check excludes
+Top-level admission requires a direct unary call of the selected stable
+top-level hoisted factory with a fresh literal data record. The canonical AST check excludes
 assignment/sequence-wrapped records, spreads, computed keys, accessors,
 `__proto__`, duplicate keys, array holes and other eager calls. Nested dense
 arrays, literal values, inline callbacks, method definitions and independently
@@ -2195,6 +2242,22 @@ the conservative path records one typed reason in
 `synchronous_execution.local_record_factory_rejections`: the refused record
 shape with its outermost property, or the checked-proof condition that failed
 (with the constructor check for `constructor_proof`).
+
+A direct unary call of that annotated factory inside a local wrapper may use
+the same assertion at its nested call site. The selected runtime target must be
+the exact hoisted factory; the already evaluated argument must be the exact
+fresh, settled plain-data object checked by the canonical AST record check.
+Template substitutions in this nested form must be initialized primitive
+bindings, so coercion cannot invoke user code. The factory must have a
+source-checked return-only constructor body with no other calls or writes;
+additional nested `new` allocations must be inert. A conditional or indirect
+callee, accessor, spread, possible argument reentry, mutated class or escaped
+factory stays on the conservative path. The prototype assertion is scoped to
+that invocation and to its checked class and input object, and its consumed
+properties are reported for that call. The wrapper and argument evaluation,
+constructor lexical reads and heap effects, subsequent calls, and any
+publication remain in the ordinary execution and dependency analysis. This
+nested receipt does not issue the top-level call-site purity certificate.
 
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
@@ -2330,6 +2393,60 @@ The per-chunk `modules.json.redundant_purity_hints` report disables each tested
 on retaining other chunk-local purity hints. These diagnostics do not change
 acceptance or edit the spec. Remove hints individually and revalidate. A missing
 entry is inconclusive. Probe scope: <docs/purity_soundness.md#redundant-purity-hints>.
+`spec lint` lists these hints as `inconclusive` (§ Spec lint).
+
+## Spec lint
+
+`debundle spec lint` lists the author annotations the engine may already
+infer, for one exact source/spec pair. It runs the `spec validate` pass (the
+ordinary dry-run pipeline with the shared resolver and gate) once and reads each
+chunk's `spec_lint.json`, which `run` writes whenever it writes a report
+directory. Every finding has `rule: inferable_annotation`, the chunk, the
+annotation by authored identity (`kind` ∈ `purity_hint`, `admission_override`,
+`commuting_statements`) and a `verdict`:
+
+- `inferable`: withholding the annotation leaves the dependency graph, and so
+  the gate verdict and emitted order, unchanged. An unused
+  `commuting_statements` entry (§ Commuting statements;
+  `reason` `no_sequenced_edge` or `summarized_endpoints`) and an
+  `admission_overrides` check the chunk does not violate
+  (`no_admission_violation`) are inferable.
+- `inferable` (`never_consumed`): a `host_behavior.reentry_free_operations`
+  entry no chunk's analysis consumed. Its only reader records every use it
+  grants, so an absent record means no fact used it
+  (<docs/premise_provenance.md>). These findings are program-wide (no `chunk`). Likewise `chunk_analysis_options.<chunk>.trusted_dataflow_summaries` is `inferable` when it discharged no statement's havoc in that chunk. The loader keys (`loader_result_for_evaluating_module`, `synchronous_load_runs_app_callbacks`, `synchronous_load_drains_microtasks`, each `reentry_free_embedded_loaders` entry and `program_premises.non_literal_loader_calls`) are `inferable` when no target's export-reentry loader closure consumed them; a closure that sets a `reentry_through` policy marks every loader key consumed, and `non_literal_loader_calls` beside an `napi` loader is always consumed.
+- `inconclusive`: a probe suggests the annotation is unnecessary but does not
+  establish that. A consumed `reentry_free_operations` entry or `trusted_dataflow_summaries` option is `consumed`:
+  the fact it supported may have another derivation. While any chunk is
+  unlinted, every entry is `unlinted_chunks`. A `purity: pure` hint whose name no statement of its chunk reads is `inferable` (`never_consumed`): the classifier consults a hint only at a direct call of the name and the code graph only at a read of the name as an import. A read hint the classifier infers without the hint
+  (§ Purity hint diagnostics) is inconclusive: other analysis consumers of the
+  hint are not rerun.
+
+`spec lint --probe-analysis` decides `purity: pure` hints (logical-module and
+`chunk_renames` annotations) and consumed `reentry_free_operations` entries
+instead of leaving them as leads. It
+prepares the input once, runs the whole program as a baseline and then once per
+hint with only that hint withheld from an in-memory copy of the spec, each run
+writing its reports and full graphs to a fresh directory. A hint is `inferable`
+(`withheld_run_unchanged`) when its run is accepted and every report is
+identical to the baseline's: dependency graphs with their precision losses,
+atomic groups and module contents. Only the hint diagnostics a withheld hint
+changes by construction (`spec_lint.json`, `modules.json`'s
+`redundant_purity_hints`) are excluded. A rejected or different run means the
+hint is used and produces no finding. A baseline that is not accepted
+(`baseline_not_accepted`), a run that cannot execute (`probe_failed`) and a hint
+past `--max-probes` (`not_probed`) are `inconclusive`; `--probe-chunk` limits
+probing to named chunks and skips program-wide entries. Each probe costs one full pipeline run on the prepared
+input, reported per hint under `probes`. One hint is withheld at a time: two
+hints each reported inferable are not proven jointly removable.
+
+Findings are warnings: lint exits 0 whenever the pass produced reports, never
+edits the spec, and removal stays a reviewed edit followed by validation. A
+chunk the pass stopped before is listed in `unlinted_chunks`; its annotations
+are unchecked, not clean. When the pass itself failed after linting (a gate
+rejection, a selector error), its error is reported as `pass_error`. Annotations a run consumes, and the other premise
+kinds, produce no finding; no finding is not a verdict that an annotation is
+needed.
 
 ## Chunk-export contract audit
 
@@ -3137,9 +3254,15 @@ themselves, so inerting an edge to a fallback effect never releases an
 observed write/read order. An entry whose endpoints share no
 `sequenced` edge, or only `strict_chain` edges between two summarized effects
 on disjoint cells (which `dataflow_aware_s_chain` already leaves unordered), is
-unused and fails validation. Both failures fail `spec validate` and `run` with
-a diagnostic naming the entry, both source units and, for a contradiction,
-each conflicting effect. This is explicit author input, not an inferred fact:
+unused. A contradiction fails `spec validate` and `run` with a diagnostic naming
+the entry, both source units and each conflicting effect. An unused entry is a
+warning, never a failure: an engine improvement that makes a premise unnecessary
+must not reject a spec that passed. The graph, gate verdict and emitted output
+are exactly those of the spec without the entry; the warning names the entry's
+spec location and each endpoint's authored selector, the logical-module members
+resolving to it and its input source location, and suggests removing the entry
+in a reviewed spec edit. It does not stop `--emit-on-rejection` from writing its
+tree; a contradiction does, since no graph exists to lower. This is explicit author input, not an inferred fact:
 A1–A11 and every other contract still apply, and it grants no purity,
 no-reentry or receiver guarantee.
 
@@ -3315,9 +3438,26 @@ calls or a call with a field-value operand, and has no direct
 binding/global/property writes or dynamic scope.
 Every call must initially select a synchronous local callable;
 member callees require a present ordinary data slot and
-an unused implicit receiver. Native and imported whole-owner proof families
-retain their established dispatch until their value transfers accept evaluated
-operands. Evaluated return values pass directly to initializer publication;
+an unused implicit receiver. A root may mix such local calls with direct calls
+of imported bindings that have a published summary, and uses the ordered plan
+too: each imported call is replaced by its summary, and under the summary's
+premises the effect verdict treats the call as touching no global property,
+heap, host or importer lexical cell. A summarized body invokes no argument, so
+a callback passed to it is only created at the call. An import whose
+callback-factory evidence is source-inferred is replaced the same way when it
+is called with one inline function, its summary returns only a fresh allocation
+and its body reads no private provider cell: the evidence keeps the call's
+timing and result consumers, the result retains the callback, and every later
+use of the result still reaches it. An author-asserted factory keeps its
+contract's consumers alone. A summary whose body reads a private provider cell
+carries no such receipt. A callback that
+captures a live cell of the activation creating it leaves the receiving call
+without a receipt (`callback_captures_live_cell`). A substituted call is a call edge of the root's lexical receipt, so a
+root whose every operation is covered seals its binding effects.
+Construction of an imported class keeps its established dispatch, since the
+class binding can be in its TDZ. Other native and imported whole-owner proof
+families retain their established dispatch until their value transfers accept
+evaluated operands. Evaluated return values pass directly to initializer publication;
 the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths
@@ -4242,6 +4382,16 @@ a callback-pool record also gives the pool size. An `unsupported_construction`
 record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
+
+When a graph-level unresolved-call fallback expands a source-unit read closure,
+both its traversal and promoted effects use the indexed synchronous prefix for
+owners with complete callable coverage. A read only after a definite `await`
+cannot constrain module initialization through that callback. Closures created
+or published before suspension, callable getters, and paths that may skip an
+`await` retain their synchronous reads. Owners without complete coverage and
+dynamic lexical scope keep conservative lazy effects. The fallback still
+records its precision loss and all other reachable effect domains.
+
 `missing_call_result` identifies an ordered call whose synchronous-effect proof
 completed without supplying a return-value transfer. The body still truncates
 conservatively at that call. This does not report an unknown target or certify
@@ -4251,6 +4401,13 @@ required to continue. A call rejected by the ordered operand path retains its
 `ordered_call_admission_refusal`: `unknown_target`, `multiple_targets`,
 `non_local_target`, or `unsupported_receiver`. It names
 the first ordered admission check that refused the already evaluated operands.
+An `unsupported_operation` / `array_iteration` reason names why a selected
+`Array.prototype` iteration method was not executed: `array_iteration_row_unsupported`
+(`some`, `every`, `find`, `findIndex`, `flatMap`, or `reduce` without an initial
+value), `array_iteration_intrinsics_changed`, `array_iteration_receiver_unproved`,
+`array_iteration_callback_unsupported`, `array_iteration_capturing_callback`, or
+`array_iteration_callback_incomplete`. Callbacks that already ran keep their
+effects; the remainder is summarized.
 Unknown-target classification remains a separate precision loss where the
 existing target rules produce it. Incomplete invocation and missing result
 transfer do not carry this admission reason.
@@ -4265,6 +4422,41 @@ site from another reason freshness was not established. This explanation does
 not change effect promotion.
 The ordered call-admission explanation does not change target admission,
 fallback effects, reachability, gate acceptance, or emitted JavaScript.
+
+An exact top-level call to a checked local constructor factory may receive a
+separate heap-locality receipt after ordinary synchronous execution completes.
+The receipt requires a single direct call with a fresh plain-data record
+argument, closed input values, stable local factory and class identities, and
+constructors whose checked bodies only retain arguments or read own fields of
+those fresh records. Implicit constructors with independently evaluated default
+fields are excluded. At that call site, the heap summary retains argument and
+callee evaluation, including nested allocations and reads, but does not treat
+retained arrays or captured callbacks as immediate reads and writes. The
+factory and constructor source bodies keep their conservative summaries for
+other calls. Prototype or getter uncertainty, an unknown call, incomplete
+execution, or an unsupported argument preserves the ordinary heap frontier.
+This receipt is independent of the call's purity certificate; later operations
+on retained values retain their own heap effects.
+
+A checked factory result kept in one private top-level binding may also retain
+its known own data field across a single direct member read in another
+top-level binding initializer. This requires that the receiver binding has no
+other reference, write, export, alias, or dynamic-scope use, and that the read
+executes eagerly once rather than inside a callable. Only that read avoids
+publishing the receiver through unrelated class accessors. A later or repeated
+read, a field deletion or redefinition, or a read of an actual accessor keeps
+the ordinary conservative effects. An abstract instance shape alone does not
+prove that an own field still exists.
+
+The same private own-field check can discharge the classifier's member-read
+purity reason at the exact evaluated top-level read site. The completed owner
+must have no unknown call, precision loss, or uninitialized read, and every
+joined execution path must carry that read's proof. The discharge removes only
+one matching member-read reason at that span; other reads, calls, and writes
+retain their purity obligations. A conditional or short-circuited read without
+proof on every path keeps the conservative reason. A read nested under a
+conditional expression, short-circuit or logical assignment, or optional
+chain cannot mint this receipt even if one abstract execution visits it.
 
 An annotated local constructor-factory call kept on the conservative path records
 its first typed refusal in `synchronous_execution.local_record_factory_rejections`.

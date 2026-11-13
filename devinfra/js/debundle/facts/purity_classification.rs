@@ -40,6 +40,16 @@ impl StatementPurityContext<'_> {
             &self.proofs,
             !fact.local_effects.is_empty(),
         );
+        // An author assertion about this statement covers its reads.
+        let author_asserted = !fact.local_effects.is_empty()
+            || (fact.kind == StatementKind::VarDecl
+                && has_trusted_initializer_purity(item, self.hints));
+        if fact.kind != StatementKind::Import && !author_asserted {
+            effects = effects.then(
+                self.graph
+                    .order_dependent_read_effects(|finder| item.visit_with(finder)),
+            );
+        }
         if !fact.var_initializers.is_disjoint(self.shared_vars) {
             effects = effects.then(Effects::of_detail(
                 Effect::Write,
@@ -107,22 +117,26 @@ impl PreparedPurity {
     pub(crate) fn complete(
         self,
         certificate: Option<&LocalRecordFactoryPurityCertificate>,
+        private_own_field_reads: &[Span],
+        read_dependencies: &ProofDependencies,
     ) -> (
         CompletedPurity,
         Option<crate::reports::schema::PurityCompletionDisagreement>,
     ) {
-        let Some(certificate) =
-            certificate.filter(|certificate| !certificate.checked_owners.is_empty())
-        else {
-            // Both facts have exactly the same projection without a discharge.
+        let certificate = certificate.filter(|certificate| !certificate.checked_owners.is_empty());
+        if certificate.is_none() && private_own_field_reads.is_empty() {
             return (CompletedPurity::unrefined(self.0), None);
-        };
+        }
         // A disagreement is possible only for a previously pure owner.
         // Preserve that exact diagnostic projection only on this rare path.
         let prepared = self.is_pure().then(|| self.0.clone().project());
-        let effects = self
-            .0
-            .discharge_call(certificate.call_span, &certificate.dependencies);
+        let effects = if let Some(certificate) = certificate {
+            self.0
+                .discharge_call(certificate.call_span, &certificate.dependencies)
+        } else {
+            self.0
+        }
+        .discharge_private_own_field_reads(private_own_field_reads, read_dependencies);
         let dependencies = effects.proof_dependencies();
         let completed = effects.project();
         let disagreement = prepared.filter(|_| !completed.is_pure()).map(|prepared| {

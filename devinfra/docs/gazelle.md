@@ -3,6 +3,8 @@
 Python BUILD files are gazelle-managed. `bb run //devinfra:gazelle` regenerates them;
 a run over a converged tree is a no-op, so `--mode=diff` (exit nonzero on any diff or
 unresolvable import) is the drift check, and CI runs it on every PR (§ Drift check).
+For generator changes, `bb run //devinfra:gazelle -- -mode=diff` builds the
+current generator and checks the local tree in one invocation.
 Code-shape conventions (per-file libraries, `main_module` binaries, test-glob
 reservation, the conftest chain) live in <../../STYLE.md> § Gazelle.
 
@@ -14,10 +16,14 @@ tree.
 
 ## Plugin and patch
 
-`rules_python_gazelle_plugin` 2.3.3 under per-file generation mode, plus
-<../../patches/rules_python_gazelle_ducktape.patch> (`single_version_override`):
+`rules_python_gazelle_plugin` 2.5.0-rc4 uses the official tree-sitter Go and
+Python parsers, replacing the older `smacker/go-tree-sitter` parser. Its release
+is [published upstream](https://github.com/bazel-contrib/rules_python/releases/tag/2.5.0-rc4)
+but is not yet in BCR, so <../../MODULE.bazel> checksum-pins the official archive
+until the registry entry is available. The plugin runs in per-file generation mode,
+with <../../patches/rules_python_gazelle_ducktape.patch> applied:
 
-1. Per-file mode generates a `py_library` for every `.py` file. The 2.3.3 plugin
+1. Per-file mode generates a `py_library` for every `.py` file. The 2.5.0-rc4 plugin
    still splits files containing `if __name__ == "__main__"` into `py_binary`
    targets, stealing the module's library. The closest upstream tracker is
    [rules_python issue #1815](https://github.com/bazel-contrib/rules_python/issues/1815),
@@ -29,6 +35,9 @@ tree.
    (gazelle rejects `py_library py_library <bzl>` as a kind loop), and 2.x's
    `alias_kind` directive only registers differently-named wrappers for rule
    _recognition_ — it rejects same-name aliases and does not affect emitted loads.
+3. The parser migration substantially reduces parse warnings in the repository.
+   The RC4 `bb run //devinfra:gazelle -- -mode=diff` check converges, with one
+   remaining parse warning for `grocy_mcp/request_scoped_openapi.py`.
 
 No root `map_kind py_binary py_library` directive: gazelle applies map_kind to
 existing rules too, rewriting hand-written binaries' kind.

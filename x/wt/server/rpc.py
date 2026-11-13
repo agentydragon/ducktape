@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, overload
 
 from pydantic import BaseModel, ValidationError
@@ -11,7 +12,9 @@ from pydantic import BaseModel, ValidationError
 from x.wt.server.git_manager import GitManager
 from x.wt.server.git_refs_watcher import GitRefsWatcher
 from x.wt.server.github_watcher import GitHubWatcher
-from x.wt.server.services import DiscoveryService, GitstatusdService, WorktreeCoordinator, WorktreeIndexService
+from x.wt.server.gitstatusd_listener import GitstatusdListener
+from x.wt.server.services import WorktreeCoordinator
+from x.wt.server.worktree_index import WorktreeIndex
 from x.wt.server.worktree_service import WorktreeService
 from x.wt.shared.configuration import Configuration
 from x.wt.shared.protocol import ErrorCodes, ErrorResponse, Request, Response, create_error_response
@@ -22,7 +25,6 @@ logger = logging.getLogger(__name__)
 class Stream:
     def __init__(self, writer: asyncio.StreamWriter | Any):
         self._writer = writer
-        self._error_logged = False
         # TODO(mpokorny): consider async emit with backpressure for large/continuous streams
 
     def emit(self, event: BaseModel) -> None:
@@ -42,11 +44,12 @@ class RpcError(Exception):
 class ServiceDependencies:
     config: Configuration
     git_manager: GitManager
-    index: WorktreeIndexService
-    gitstatusd: GitstatusdService
+    index: WorktreeIndex
+    run_discovery_once: Callable[[], Coroutine[Any, Any, None]]
+    gitstatusd_client: Callable[[Path], GitstatusdListener | None]
     github_watcher: GitHubWatcher | None
     git_refs_watcher: GitRefsWatcher
-    discovery: DiscoveryService
+    discovery_scanning: Callable[[], bool]
     coordinator: WorktreeCoordinator
     worktree_service: WorktreeService
 

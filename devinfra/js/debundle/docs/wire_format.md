@@ -244,13 +244,14 @@ must appear exactly once in that chunk's final files, at the same span and
 spelling, and still resolve to no binding when the final AST is resolved
 afresh. `preserved` means all sites passed, or were removed together with
 their statement by a vendor residual strip (`elided_use_count`); `changed`
-means a site is `captured_by_binding` (an emitted import or local) or
-`renamed`; `incomplete` names the missing evidence (no inventory, a missing
+means a site is `renamed`; `incomplete` names the missing evidence (no
+inventory, a missing
 or duplicated final site or entry, a raw entry whose bytes changed, or
 `dynamic_scope` from `with`/direct `eval` in a transformed body). It proves
 binding correspondence only, not value or effect equivalence, and says
-nothing about identifiers emission introduced without a source site. The
-report never changes acceptance.
+nothing about identifiers emission introduced without a source site. Final
+validation rejects `captured_by_binding` findings even when reports are disabled
+or the run is a dry run; other findings remain diagnostic.
 
 `counts` includes every conflicting swapped pair, cell incidence, Havoc pair
 and premise disposition. `legacy_edge_comparison` separately counts
@@ -540,7 +541,10 @@ existing target rules.
 may include `reason.ordered_call_admission_refusal` for a call whose already
 evaluated operands were declined by the ordered path. The values are
 `unknown_target`, `multiple_targets`, `non_local_target`,
-and `unsupported_receiver`. The reason retains only the
+and `unsupported_receiver`; an `array_iteration` operation uses
+`array_iteration_row_unsupported`, `array_iteration_intrinsics_changed`,
+`array_iteration_receiver_unproved`, `array_iteration_callback_unsupported`,
+`array_iteration_capturing_callback` and `array_iteration_callback_incomplete`. The reason retains only the
 first failed admission category, with the existing call source site and
 fallback reach. It does not retain target identities or alter call admission,
 effect promotion, reachability, or gate acceptance. A complete effects-only

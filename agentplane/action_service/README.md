@@ -12,9 +12,10 @@ not routes on the Action Service listener.
 
 All Action, operator, linkage, Web Push and health RPCs use one listener on 8080.
 It accepts the existing Kubernetes bearer credentials and, for ActionService methods,
-the Sandbox's service-owned SVID. The service resolves a verified leaf to the live
-Sandbox's ServiceAccount and UID; caller-label, request ownership, approval policy
-and watch rechecks are unchanged. Operator APIs still require their configured OIDC
+the Sandbox's service-owned SVID. The service resolves a verified leaf to the subject its
+WorkloadCredential names. A ServiceAccount's caller-label, request ownership, approval policy and
+watch rechecks are unchanged; an Identity is admitted and decided by the PolicyBindings naming it and
+owns its requests by incarnation ([SPEC](SPEC.md#caller-admission-and-connection-authority)). Operator APIs still require their configured OIDC
 issuer, and linkage callbacks retain their existing single-use state authorization.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
@@ -51,8 +52,8 @@ The executable contract is deliberately small:
 - caller-own and operator-all reads that return the same request view to every reader;
 - a human operator Decision route, with expected-version and idempotency protection and one
   `decision_note` (optional, at most 2000 characters), shared unchanged with caller and operator;
-  optional synchronous non-human `DecisionProvider`s run first and carry bounded
-  `reason_code`/`reason_description` outcome evidence, with `decision_note=None`;
+  Action policy evaluation runs first, and a policy Decision carries a `reason_code`, a bounded
+  `reason_description` and the policy evidence instead of an operator and note;
 - automatic dispatch after allow, exactly one `Execution`, and no retry after dispatch may begin;
 - owner-only cancellation before the atomic dispatch claim, with no expected-version requirement;
 - restart recovery: pending dispatches resume immediately; dispatching/running work is left alone
@@ -65,7 +66,7 @@ The executable contract is deliberately small:
   state, and every submit/Decision/dispatch/terminal/`execution_unknown` transition appends exactly
   one ordered event.
 
-Notes are not a secret channel: do not put credentials in them. Human decisions leave provider reason fields null.
+Notes are not a secret channel: do not put credentials in them.
 
 ## Consent transactions
 
@@ -397,11 +398,10 @@ survive a settings change. Other input constraints agree across advertisement an
 
 ### Execution schema-check diagnostics
 
-A failed execution-time `tools/list` keeps `kind=mcp_unavailable` and adds the exception type,
-elapsed schema-check time and connection age (since client initialization) to the retained execution
-error and a warning log. A directly raised HTTP status exception also supplies its status code.
-SDK-wrapped exceptions remain opaque; use the HTTP client's existing status log for correlation
-rather than traversing arbitrary exception graphs. No exception text, headers, URLs, response bodies
+A failed execution-time `tools/list` fails as `EXECUTION_ERROR_KIND_MCP_UNAVAILABLE` and adds the
+elapsed schema-check time and connection age (since client initialization) to the execution error's
+`McpUnavailable` diagnostics and a warning log; only the log names the error's Go type. SDK-wrapped errors remain opaque; use
+the HTTP client's existing status log for correlation rather than traversing arbitrary error graphs. No exception text, headers, URLs, response bodies
 or raw MCP session IDs are copied into these diagnostics.
 
 This is observability, not a retry or network-policy change. For an operator-authorized reproduction,
@@ -447,9 +447,10 @@ a matching allow records `PolicyEvidence`, including the matched rule and any re
 repository. A set has no deny form: no match leaves the request for a human. The Go
 [`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
 
-The Go integration app reads PolicySet inventory from Kubernetes through its
-[`policyaccess` package](../app/go/policyaccess/policyaccess.go). Its effective action-policy view comes
-from the Action Service's generated `WatchActionPolicy` response. The Python
+The Go integration app obtains PolicySet names from the Policy Controller's
+`ListPolicySetNames` gRPC API through [`AppService.GetSandboxForm`](../app/go/appconfigapi.go).
+Its effective action-policy view comes from the Action Service's generated `WatchActionPolicy`
+response. The Python
 `policies/resources` parser remains in cdk8s policy authoring and Python test support; Python Pydantic
 models are used by test clients, not by the app runtime. Policy resolution and admission remain in the
 Go informer and provider. Staging's network policy admits `api.github.com:443` for the Go provider's
@@ -474,7 +475,7 @@ through an authorized CONNECT, removes caller Authorization, and presents the cu
 certificate to the service. The service resolves that SVID against live Sandbox state before
 authorization. External callers are not admitted by this Sandbox-only route.
 
-At the destination, the [workload resolver](../workload_auth/auth/) performs the TokenReview. Actions
+At the destination, the [workload resolver](../identity/auth/auth/) performs the TokenReview. Actions
 uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and
 ServiceAccount UID are required; a Pod binding is optional, and partial or duplicate Pod claims are
 rejected. This admits account tokens for the planned MCP edge while ordinary Sandbox tokens retain

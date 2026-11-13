@@ -217,7 +217,12 @@ async def test_spending_decision_render(
     await expect(page.get_by_text("30 days", exact=True)).to_have_count(1)
     await expect(page.get_by_text("$13 / day", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional leash ~$23 / day.", exact=True)).to_have_count(1)
-    await expect(page.get_by_text("Below provisional leash", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Pace ≤ provisional leash", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("Oldest linked sync", exact=False)).to_have_count(1)
+    sync_help = page.get_by_role("button", name="About Linked sync time")
+    await sync_help.click()
+    await expect(page.get_by_text("The oldest successful sync of a Plaid Item", exact=False)).to_be_visible()
+    await sync_help.click()
     await expect(page.get_by_text("Unmatched in selected window: 1 ($15)", exact=False)).to_have_count(1)
     await expect(page.get_by_text("$75", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Provisional card total since", exact=False)).to_have_count(1)
@@ -249,7 +254,7 @@ async def test_spending_decision_render(
     await expect(page.get_by_text("$175 short before", exact=False)).to_have_count(1)
     view.errors.assert_none(context="Spend")
     await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
-    await expect(page.get_by_text("-<$1", exact=True)).to_have_count(1)
+    await expect(page.get_by_text("-$0.01", exact=True)).to_have_count(1)
     await expect(page.locator('span[title="-$0.01"]')).to_have_count(1)
     exceeded = f"dashboard-{width}-purchase.png"
     await view.capture(
@@ -310,7 +315,7 @@ async def test_spending_decision_dark_theme(
         initial.removesuffix(".png"), label=f"{width}px dark theme", full_page=True, animations="disabled"
     )
     await page.get_by_label("Hypothetical flexible purchase").fill("100")
-    await page.get_by_text("Pace warning", exact=True).last.wait_for()
+    await page.get_by_text("Forecast or pace warning", exact=True).last.wait_for()
     view.errors.assert_none(context="Spend")
     warning = f"dashboard-dark-{width}-warning.png"
     await view.capture(
@@ -346,6 +351,18 @@ async def test_new_allowance_has_no_fake_zero_pace(page: Page, view: VisualPage,
 
 
 @pytest.mark.asyncio
+async def test_purchase_check_distinguishes_exhausted_and_over_allowance(page: Page, dashboard_url: str) -> None:
+    await page.goto(dashboard_url, wait_until="domcontentloaded")
+    await page.get_by_text("$200", exact=True).wait_for()
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("200")
+    await expect(page.get_by_text("Allowance exhausted", exact=True)).to_have_count(1)
+
+    await page.get_by_label("Hypothetical flexible purchase").fill("200.01")
+    await expect(page.get_by_text("Over allowance", exact=True)).to_have_count(1)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("width", "height"), [(1280, 960), (390, 844)])
 async def test_review_rule_configuration_render(
     page: Page, view: VisualPage, dashboard_url: str, width: int, height: int
@@ -360,13 +377,18 @@ async def test_review_rule_configuration_render(
     await rule_notes.locator("summary").click()
     await page.get_by_text("Unverified credit; inspect the earlier purchase before netting it.").wait_for()
     await expect(page.get_by_text("Review", exact=True)).to_have_count(2)
-    await expect(page.get_by_text("Amount is negative AND (Transaction name starts with", exact=False)).to_have_count(1)
+    await expect(page.get_by_text('amount < 0 && (starts_with(name, "EXAMPLE") ||', exact=False)).to_have_count(1)
     await expect(page.get_by_text("One-off", exact=True)).to_have_count(2)
-    await page.get_by_text("example-funding-transfer", exact=True).wait_for()
+    one_off_id = page.get_by_text("example-funding-transfer", exact=True)
+    await one_off_id.wait_for()
+    # Long selectors need a readable column even when the badges wrap on mobile.
+    one_off_box = await one_off_id.bounding_box()
+    assert one_off_box is not None
+    assert one_off_box["width"] >= 160
     await expect(
         page.get_by_text("Own-account funding leg, confirmed by the owner 2026-10-04.", exact=True)
     ).to_have_count(1)
-    await expect(page.get_by_text("Date is 2026-10-03", exact=False)).to_have_count(1)
+    await expect(page.get_by_text('date == "2026-10-03"', exact=False)).to_have_count(1)
     await page.get_by_text("Full reversal pairs", exact=True).wait_for()
     await page.get_by_text("example-full-reversal", exact=True).wait_for()
     await page.get_by_text("example-reversal-needs-review", exact=True).wait_for()
@@ -1082,8 +1104,8 @@ async def test_sustainability_scenario_tooltip_explains_unmodeled_tax(
     await expect(tooltip).to_contain_text("Spending comparison unavailable; withdrawal taxes are not modeled.")
     await page.mouse.move(0, 0)
     history = page.get_by_role("region", name="Spending and funding history")
-    await expect(history.get_by_role("img")).to_have_count(0)
-    await history.get_by_label("Include withdrawal taxes in dollar amounts").uncheck()
+    await expect(history.get_by_label("Include withdrawal taxes in dollar amounts")).to_be_disabled()
+    await expect(history.get_by_label("Include withdrawal taxes in dollar amounts")).not_to_be_checked()
     await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
     await expect(history.get_by_text("Reference withdrawal scenarios", exact=True)).to_have_count(0)
     await view.capture(
@@ -1193,12 +1215,29 @@ async def test_sustainability_stale_and_unavailable_render(
     await page.set_viewport_size({"width": width, "height": height})
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
-    await page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False).wait_for()
+    await page.get_by_role("alert").get_by_text("Withdrawal rate unavailable", exact=False).wait_for()
     await expect(page.get_by_text("Portfolio used in the estimate", exact=True)).to_be_visible()
     await expect(page.get_by_text("Valuation unavailable", exact=True)).to_be_visible()
     await expect(page.get_by_text("ANNUALIZED SPENDING", exact=True)).to_be_visible()
     await expect(page.get_by_text("$49,511", exact=True)).to_be_visible()
     await expect(page.locator('[role="img"][aria-label*="gauge"]')).to_have_count(0)
+    history = page.get_by_role("region", name="Spending and funding history")
+    await expect(history.get_by_role("img", name="Annual funding including taxes by day")).to_be_visible()
+    await expect(history.get_by_text("Portfolio value is unavailable or non-positive", exact=False)).to_be_visible()
+    await expect(history.get_by_text("Reference withdrawal scenarios", exact=True)).to_have_count(0)
+    await history.get_by_label("Include withdrawal taxes in dollar amounts").uncheck()
+    await expect(history.get_by_role("img", name="Annual spending excluding taxes by day")).to_be_visible()
+    await history.get_by_label("Include withdrawal taxes in dollar amounts").check()
+    if width == 1280:
+        canvas = history.get_by_role("img", name="Annual funding including taxes by day")
+        bounds = await canvas.bounding_box()
+        assert bounds is not None
+        await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
+        tooltip = page.get_by_role("tooltip", name="History ending October 13, 2026")
+        await expect(tooltip).to_contain_text("Annual spending excluding taxes: $48,500")
+        await expect(tooltip).to_contain_text("Annual funding including taxes: $55,114")
+        await expect(tooltip).to_contain_text("Required withdrawal rate including taxes: unavailable")
+        await page.mouse.move(0, 0)
     if variant == "stale":
         await page.get_by_text("Synthetic valuation has not refreshed recently.", exact=True).wait_for()
         await expect(page.get_by_text("46 days old", exact=False)).to_be_visible()

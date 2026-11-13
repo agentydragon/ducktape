@@ -20,7 +20,9 @@ mod chunk_constraining_module_edges_tests {
     }
 
     fn parse_and_build(source: &str) -> DependencyGraph {
-        build_dependency_graph_with(&parse_facts(source), Default::default(), &[]).unwrap()
+        build_dependency_graph_with(&parse_facts(source), Default::default(), &[])
+            .unwrap()
+            .0
     }
 
     #[test]

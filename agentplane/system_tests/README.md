@@ -28,21 +28,26 @@ changes are compatible. `test_dispatcher` owns a separate stack because it scale
 and deletes a controller Pod. The external MCP delegation acceptance owns another stack because it
 scales the app to zero after OAuth consent.
 
-| Target                                                                                             | Coverage                                              |
-| -------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `//agentplane/system_tests/suites:test_pod`                                                        | Pod Sandbox scenarios                                 |
-| `//agentplane/system_tests/suites:test_session_deletion`                                           | Session deletion and replacement                      |
-| `//agentplane/system_tests/suites:test_dispatcher`                                                 | Dispatcher queue, wake and replicas                   |
-| `//agentplane/system_tests/suites/mcp:test_actions`                                                | MCP Actions and operator decisions                    |
-| `//agentplane/system_tests/suites/mcp:test_services`                                               | MCP services and central sampler                      |
-| `//agentplane/system_tests/suites/mcp:test_delegation`                                             | External MCP delegation                               |
-| `//agentplane/system_tests/suites/mcp:test_parent_delegation`                                      | Parent-to-child Session CLI flow                      |
-| `//agentplane/system_tests/suites:test_vm`                                                         | VM Sandbox scenarios on the software-emulated stack   |
-| `//agentplane/system_tests/suites:test_real_model`                                                 | Real-model egress and Session instructions            |
-| `//agentplane/system_tests/suites:test_vm_manual`                                                  | Manual VM storage, ownership and suspend/resume cases |
-| `//agentplane/system_tests/suites:test_vm_kvm`, `//agentplane/system_tests/suites:test_vm_profile` | Manual KVM and profiling variants                     |
+| Target                                                                 | Coverage                                              |
+| ---------------------------------------------------------------------- | ----------------------------------------------------- |
+| `//agentplane/system_tests/suites:test_pod`                            | Pod Sandbox scenarios                                 |
+| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
+| `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
+| `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
+| `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
+| `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
+| `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read       |
+| `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
+| `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
+| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
+| `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
+| `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
+| `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                  |
+| `//agentplane/system_tests/suites:test_vm_profile`                     | Manual tool-OOM probe with guest profiling            |
+| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Experimental KVM variant, manual                      |
 
-`test_vm_manual`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
+`test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
@@ -79,6 +84,30 @@ for VM image layout and lifecycle.
 - Test markers must agree with the selected stack backend; deployment setup rejects scripted-model
   cases on the real-model stack and vice versa ([`system_test_target.py`](deployment/system_test_target.py)).
 
+### Abrupt Gateway loss
+
+`test_gateway_crash` must kill the exact Gateway process without orderly Lease release. Killing
+before scale-down allows kubelet to restart the container in the same Pod; the restarted Gateway
+can claim a new epoch and gracefully release it on scale-down. Kubernetes Pod status can still
+show the original container ID after the replacement has claimed the Lease.
+
+The fixture sends `SIGSTOP`, confirms the captured process is stopped, scales the Deployment to
+zero, waits for that Pod's deletion timestamp and pending `SIGTERM`, then sends `SIGKILL` to the same
+container ID. The pending signal shows kubelet has begun termination; the API timestamp alone
+cannot. An open process status file guards against PID reuse, and cleanup kills the stopped
+process even when an intermediate step fails. The original Lease UID, holder, epoch and
+no-ready-endpoint assertions remain required.
+
+The `gateway-crash-{before,process,terminating,deleted}.json` undeclared outputs retain the process
+and Lease phases. Read runtime logs alongside Pod status to identify restarts. The
+[old-ordering control](https://app.buildbuddy.io/invocation/28f0f32f-62f4-4055-be66-ea3f60d885b7)
+reproduced the missing holder after epoch `1` became `2`; the
+[repaired control](https://app.buildbuddy.io/invocation/17352c08-b9bb-4bd6-9676-32be63a8b4bb)
+retained epoch `1` through Pod deletion, with `SIGTERM` pending on the stopped original process,
+and passed the active read, exactly-once mutation and next-input checks. The
+[final helper CI run](https://app.buildbuddy.io/invocation/c6a1a753-6505-5820-9de8-9f0e39ab8372)
+also passed this scenario and retained both stopped and pending-signal process states.
+
 ## Model and egress evidence
 
 Model-driven scenarios use either a scripted model served by the scenario or the real-provider
@@ -102,6 +131,18 @@ The k3s case checks the deployed Dispatcher, Gateway, LLM ingress and authentica
 together. Its setup and requested shell command must reach the same executor workspace
 ([`central_sampler.py`](scenarios/central_sampler.py)); the [service guide](../central_sampler/README.md)
 covers the image and runtime contract.
+
+`test_sampler_roll` owns a separate stack. It abruptly replaces the sampler Pod during a confirmed
+turn with a live JavaScript cell and running executor process, then checks abandonment ordering,
+retained history, one turn settlement, and a subsequent input projected by authenticated History.
+The Gateway Pod and executor incarnation stay fixed. This checks successful lost-host reconciliation;
+it does not inject the successor startup failure before the driver loads its durable active command.
+
+`test_history_outage` owns another stack. It confirms a central-sampler turn is active, scales only
+History down, verifies its ready endpoints disappear and an authenticated History read fails, then
+finishes the same model response while the other service Pods and Sandbox runner remain ready. It
+compares the sampler journal cursor across the outage with History's committed and folded cursors,
+checks ACTIVE projection and exactly-once command settlement, then completes another input.
 
 ## Dispatcher queue and replicas
 

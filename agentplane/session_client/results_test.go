@@ -389,6 +389,74 @@ func TestReadTurnsReturnsHistoryErrorsInsteadOfEmptySuccess(t *testing.T) {
 	}
 }
 
+func TestReadTurnsMergesReplayedInputOriginsAndKeepsDistinctMessages(t *testing.T) {
+	confirmation := func(message string, origins ...string) *eventpb.Event {
+		return &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
+			TurnId: "test-turn", HarnessMessageId: message, Text: "same text", OriginCommandIds: origins,
+		}}}
+	}
+	entries := []*eventlogpb.EventEntry{
+		turnEntry(1, confirmation("test-message", "test-command-a")),
+		turnEntry(2, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "test-turn"}}}),
+		turnEntry(3, confirmation("test-message", "test-command-a", "test-command-b")),
+		turnEntry(4, confirmation("test-other-message")),
+		turnEntry(5, confirmation("")),
+		turnEntry(6, confirmation("")),
+		turnEntry(7, completedTurn("test-turn", eventpb.TurnStatus_TURN_STATUS_COMPLETED, "")),
+	}
+	history := &resultHistoryStub{read: func(request *historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error) {
+		response := &historypb.ReadSessionEventsResponse{LastCursor: 7}
+		for _, entry := range entries {
+			if entry.GetCursor() > request.GetAfterCursor() && uint32(len(response.Entries)) < request.GetLimit() {
+				response.Entries = append(response.Entries, entry)
+			}
+		}
+		return response, nil
+	}}
+	page, err := ReadTurns(t.Context(), history, ReadTurnsRequest{SessionID: resultSessionID, Count: 1})
+	if err != nil || page.Error != nil || len(page.Turns) != 1 {
+		t.Fatalf("ReadTurns = %+v, %v", page, err)
+	}
+	inputs := page.Turns[0].Input
+	if len(inputs) != 4 || len(inputs[0].CommandIDs) != 2 || inputs[0].CommandIDs[0] != "test-command-a" || inputs[0].CommandIDs[1] != "test-command-b" {
+		t.Fatalf("replayed input origins = %+v", inputs)
+	}
+	for _, input := range inputs[1:] {
+		if input.Text != "same text" || input.CommandIDs == nil || len(input.CommandIDs) != 0 {
+			t.Fatalf("unattributed input = %+v", input)
+		}
+	}
+}
+
+func TestTurnProjectionRetainsDetachedPartialOnInconsistentHistory(t *testing.T) {
+	var projection TurnProjection
+	start := turnEntry(1, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{TurnStarted: &eventpb.TurnStarted{TurnId: "test-turn"}}})
+	if completed, err := projection.Add(start); err != nil || completed != nil {
+		t.Fatalf("start = %+v, %v", completed, err)
+	}
+	snapshot := projection.Partial()
+	if snapshot == nil || snapshot.Status != nil || snapshot.Input == nil || snapshot.ToolCalls == nil {
+		t.Fatalf("unfinished turn = %+v", snapshot)
+	}
+	snapshot.TurnID = "modified-snapshot"
+	for _, bad := range []*eventlogpb.EventEntry{
+		nil,
+		turnEntry(2, completedTurn("different-turn", eventpb.TurnStatus_TURN_STATUS_COMPLETED, "")),
+		turnEntry(2, completedTurn("test-turn", eventpb.TurnStatus(999), "")),
+	} {
+		if _, err := projection.Add(bad); err == nil {
+			t.Fatalf("accepted inconsistent History entry %v", bad)
+		}
+		if partial := projection.Partial(); partial.TurnID != "test-turn" || partial.Status != nil {
+			t.Fatalf("corrupted observed facts = %+v", partial)
+		}
+	}
+	completed, err := projection.Add(turnEntry(2, completedTurn("test-turn", eventpb.TurnStatus_TURN_STATUS_COMPLETED, "")))
+	if err != nil || completed == nil || completed.Status == nil || projection.Partial() != nil {
+		t.Fatalf("completion = %+v, %v; partial = %+v", completed, err, projection.Partial())
+	}
+}
+
 func turnEntry(cursor uint64, event *eventpb.Event) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{Cursor: cursor, Event: event}
 }

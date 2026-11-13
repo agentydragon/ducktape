@@ -11,12 +11,15 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
+from typing import cast, override
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
+import grpc
 import pytest
 import pytest_bazel
 from google.protobuf import json_format
+from google.protobuf.empty_pb2 import Empty
 from playwright.async_api import (
     APIResponse,
     Locator,
@@ -46,6 +49,7 @@ from agentplane.app.testing.thread_browser import (
     scripted_runner,
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
+from agentplane.grpc.serving import serving
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
@@ -61,6 +65,7 @@ from agentplane.history_service.fold.models import (
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
+from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
@@ -221,6 +226,129 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         ).to_be_visible()
         await review_view.capture(label="Archived Thread after reload")
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
+
+
+async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_admission(
+    review_view: VisualPage,
+    db_url: str,
+    event_logs: SessionHistory,
+    electric: ElectricService,
+    certificate: BrowserCertificate,
+    sandbox: SandboxCluster,
+    gateway_access: GatewayAccess,
+    tmp_path: Path,
+) -> None:
+    """The browser uses real BFF, Gateway, PostgreSQL and Kubernetes mutation paths."""
+    identity = await sandbox.custom_objects.create_namespaced_custom_object(
+        "agentplane.allegedly.works",
+        "v1alpha1",
+        sandbox.namespace,
+        "identities",
+        {
+            "apiVersion": "agentplane.allegedly.works/v1alpha1",
+            "kind": "Identity",
+            "metadata": {"name": "browser-identity"},
+            "spec": {"description": "Browser identity change"},
+        },
+    )
+    assert identity["metadata"]["uid"]
+
+    # Policy watches supply the identity picker and the page's unrelated empty policy tables.
+    # The change request continues through the real app, Gateway, database, and API server.
+    class IdentityWatch(policy_service_pb2_grpc.PolicyServiceServicer):
+        @override
+        async def WatchIdentities(
+            self, request: policy_service_pb2.WatchIdentitiesRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[policy_service_pb2.WatchIdentitiesResponse]:
+            yield policy_service_pb2.WatchIdentitiesResponse(
+                snapshot=policy_service_pb2.IdentityChunk(
+                    identities=[
+                        policy_service_pb2.Identity(
+                            identity=policy_service_pb2.PolicyResourceIdentity(
+                                namespace=sandbox.namespace, name="browser-identity", uid=identity["metadata"]["uid"]
+                            )
+                        )
+                    ]
+                )
+            )
+            yield policy_service_pb2.WatchIdentitiesResponse(snapshot_complete=Empty())
+            await asyncio.Event().wait()
+
+        @override
+        async def WatchPolicyBindings(
+            self, request: policy_service_pb2.WatchPolicyBindingsRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[policy_service_pb2.WatchPolicyBindingsResponse]:
+            yield policy_service_pb2.WatchPolicyBindingsResponse(snapshot=policy_service_pb2.PolicyBindingChunk())
+            yield policy_service_pb2.WatchPolicyBindingsResponse(snapshot_complete=Empty())
+            await asyncio.Event().wait()
+
+        @override
+        async def WatchPolicySets(
+            self, request: policy_service_pb2.WatchPolicySetsRequest, context: grpc.aio.ServicerContext
+        ) -> AsyncIterator[policy_service_pb2.WatchPolicySetsResponse]:
+            yield policy_service_pb2.WatchPolicySetsResponse(snapshot=policy_service_pb2.PolicySetChunk())
+            yield policy_service_pb2.WatchPolicySetsResponse(snapshot_complete=Empty())
+            await asyncio.Event().wait()
+
+    policy = grpc.aio.server()
+    policy_service_pb2_grpc.add_PolicyServiceServicer_to_server(IdentityWatch(), policy)
+    policy_token = tmp_path / "identity-watch-token"
+    policy_token.write_text("test-policy-service-token")
+    async with (
+        serving(policy, "127.0.0.1:0", grace_s=0) as policy_port,
+        app_process(
+            db_url,
+            history=event_logs.reader,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+            gateway=gateway_access,
+            browser_login=True,
+            certificate=certificate,
+            electric_url=electric.url,
+            config={
+                "policy_service_target": f"127.0.0.1:{policy_port}",
+                "policy_service_token_file": str(policy_token),
+            },
+        ) as app,
+        http2_proxy(app.url, certificate) as ingress,
+    ):
+        page = review_view.page
+        await app.login(page)
+        await page.goto(f"{ingress.url}/#/sandboxes/{sandbox.name}?tab=status")
+        panel = page.get_by_role("region", name="Environment identity")
+        initial_identity = f"{sandbox.name}-identity"
+        await expect(panel.get_by_role("link", name=initial_identity)).to_be_visible()
+        await expect(panel.get_by_text(f"Credential at last check: {initial_identity}", exact=True)).to_be_visible()
+        await expect(panel.get_by_role("button", name="Change identity")).to_have_count(0)
+
+        async def change() -> dict[str, object]:
+            return cast(
+                dict[str, object],
+                await page.evaluate(
+                    """async ({namespace, name, uid}) => {
+                  const response = await fetch(`/upstream/environments/v1/environments/${namespace}/${name}:identity`, {
+                    method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({target: {namespace, name, uid}, identityName: 'browser-identity'})
+                  });
+                  return {status: response.status, body: await response.json()};
+                }""",
+                    {"namespace": sandbox.namespace, "name": sandbox.name, "uid": sandbox.uid},
+                ),
+            )
+
+        refused = await change()
+        assert refused["status"] == 400
+        assert "nothing runs" in str(refused["body"])
+        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": initial_identity}
+
+        await sandbox.patch_sandbox_status({"status": {"stopStage": "Stopped"}})
+        selector = panel.get_by_role("combobox", name="Identity for next start")
+        await expect(selector).to_be_visible()
+        await selector.click()
+        await page.get_by_role("option", name="browser-identity").click()
+        await expect(panel.get_by_text("The next identity can read anything earlier agents left")).to_be_visible()
+        await panel.get_by_role("button", name="Change identity").click()
+        await expect(panel.get_by_text("Current: browser-identity")).to_be_visible()
+        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": "browser-identity"}
 
 
 async def _seed_navigation_threads(

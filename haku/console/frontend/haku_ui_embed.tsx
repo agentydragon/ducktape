@@ -222,15 +222,10 @@ export function HakuUiEmbed({
     openCapabilityRequestQueue();
   }
 
-  function removeGeolocationApproval(id: string): GeolocationApproval[] {
+  function removeGeolocationApproval(id: string) {
     const remaining = geolocationApprovalsRef.current.filter((approval) => approval.id !== id);
     geolocationApprovalsRef.current = remaining;
     setGeolocationApprovals(remaining);
-    return remaining;
-  }
-
-  function advanceAfterGeolocation(id: string) {
-    removeGeolocationApproval(id);
   }
 
   function addScreenshotApproval(id: string) {
@@ -241,15 +236,10 @@ export function HakuUiEmbed({
     openCapabilityRequestQueue();
   }
 
-  function removeScreenshotApproval(id: string): ScreenshotApproval[] {
+  function removeScreenshotApproval(id: string) {
     const remaining = screenshotApprovalsRef.current.filter((approval) => approval.id !== id);
     screenshotApprovalsRef.current = remaining;
     setScreenshotApprovals(remaining);
-    return remaining;
-  }
-
-  function advanceAfterScreenshot(id: string) {
-    removeScreenshotApproval(id);
   }
 
   const pendingCapabilityRequestCount = geolocationApprovals.length + screenshotApprovals.length;
@@ -412,7 +402,7 @@ export function HakuUiEmbed({
     if (approval.mode === "geolocationWatch") startWatch(approval.id, approval.options);
     else geolocateAndReply(approval.id, approval.options);
     setCapabilityRequestDeciding(approvalId, false);
-    advanceAfterGeolocation(approval.id);
+    removeGeolocationApproval(approval.id);
   }
 
   function denyGeolocationApproval(approval: GeolocationApproval) {
@@ -420,7 +410,7 @@ export function HakuUiEmbed({
     setCapabilityRequestDeciding(approvalId, true);
     reply({ type: "geolocationResult", id: approval.id, ok: false, code: GEO_PERMISSION_DENIED, reason: "declined" });
     setCapabilityRequestDeciding(approvalId, false);
-    advanceAfterGeolocation(approval.id);
+    removeGeolocationApproval(approval.id);
   }
 
   function approveScreenshotApproval(approval: ScreenshotApproval) {
@@ -438,7 +428,7 @@ export function HakuUiEmbed({
         reply({ type: "screenshotResult", id: approval.id, ok: false, reason: r.reason });
       }
       setCapabilityRequestDeciding(approvalId, false);
-      advanceAfterScreenshot(approval.id);
+      removeScreenshotApproval(approval.id);
     });
   }
 
@@ -447,7 +437,7 @@ export function HakuUiEmbed({
     setCapabilityRequestDeciding(approvalId, true);
     reply({ type: "screenshotResult", id: approval.id, ok: false, reason: "declined" });
     setCapabilityRequestDeciding(approvalId, false);
-    advanceAfterScreenshot(approval.id);
+    removeScreenshotApproval(approval.id);
   }
 
   return (

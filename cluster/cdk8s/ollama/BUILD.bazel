@@ -9,8 +9,7 @@ py_library(
 
 py_binary(
     name = "derive_qwen38_template",
-    srcs = ["derive_qwen38_template_cli.py"],
-    main = "derive_qwen38_template_cli.py",
+    main_module = "cluster.cdk8s.ollama.patch_qwen38_template",
     deps = [":patch_qwen38_template"],
 )
 

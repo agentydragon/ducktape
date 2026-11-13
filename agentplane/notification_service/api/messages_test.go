@@ -238,6 +238,8 @@ func TestAMessageNeedsACompleteDispatcherSession(t *testing.T) {
 }
 
 func TestSessionTargetUsesTypedPlacement(t *testing.T) {
+	// Placement is read without a server, so the UID is any exact one.
+	const sandboxUID = "test-sandbox-uid"
 	central := &dispatcherpb.Session{
 		SessionId: testSession,
 		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{

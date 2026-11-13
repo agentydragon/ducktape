@@ -19,17 +19,6 @@ func newNativeContext(api protocol.APIStyle) (protocol.Context, error) {
 	}
 }
 
-func decodeNativeContext(api protocol.APIStyle, raw []byte) (protocol.Context, error) {
-	state, err := newNativeContext(api)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(raw, state); err != nil {
-		return nil, err
-	}
-	return state, nil
-}
-
 func decodeNativeRecords(api protocol.APIStyle, records []json.RawMessage) (protocol.Context, error) {
 	state, err := newNativeContext(api)
 	if err != nil {
@@ -42,9 +31,5 @@ func decodeNativeRecords(api protocol.APIStyle, records []json.RawMessage) (prot
 }
 
 func cloneNativeContext(state protocol.Context) (protocol.Context, error) {
-	wire, err := json.Marshal(state)
-	if err != nil {
-		return nil, err
-	}
-	return decodeNativeContext(state.API(), wire)
+	return state.Clone(), nil
 }

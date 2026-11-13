@@ -324,7 +324,7 @@ pub(super) fn run(args: AuditContractsArgs) -> Result<()> {
         "audit-contracts always runs a dry-run full acceptance probe; omit --dry-run and --fail-fast"
     );
     let mut checkpoint = CheckpointSession::open(&args)?;
-    let cli = args.transform.clone().resolve()?;
+    let cli = args.transform.context.clone().resolve()?;
     let spec = load_transform_spec_source(&cli.spec_source)?;
     let policy = spec
         .chunk_export_purity

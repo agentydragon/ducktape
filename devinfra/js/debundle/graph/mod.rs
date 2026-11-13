@@ -29,8 +29,9 @@ mod quotient;
 mod tests;
 
 pub use build::{
-    CommutingStatementsDiagnostic, DependencyGraphBuildError, DuplicateTopLevelDeclaration,
-    GraphOptions, KnownConflict, PremiseVerdict, build_dependency_graph_with,
+    CommutingStatementsDiagnostic, CommutingStatementsUnused, DependencyGraphBuildError,
+    DuplicateTopLevelDeclaration, GraphOptions, KnownConflict, PremiseVerdict,
+    UnusedCommutingEndpoint, UnusedPremiseReason, build_dependency_graph_with,
 };
 pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
 pub use dependency_graph::{

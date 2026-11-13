@@ -21,6 +21,7 @@ mod selector_input;
 mod snapshot;
 mod source_unit_refine;
 mod spec_commands;
+mod spec_lint;
 mod static_imports;
 
 use analyze_command::AnalyzeArgs;
@@ -567,7 +568,7 @@ fn run_debundle_cli(
             });
             let output = args.run_output()?;
             let keep_going = !args.fail_fast;
-            let cli = args.resolve()?;
+            let cli = args.context.resolve()?;
             run_transform_with_analysis(
                 &cli,
                 TransformRunOptions {
@@ -894,7 +895,7 @@ mod tests {
                 "--packages-root",
                 "/tmp/packages",
             ]);
-            let cli = args.resolve().expect("resolve cli");
+            let cli = args.context.resolve().expect("resolve cli");
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
         });
     }

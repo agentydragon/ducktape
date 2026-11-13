@@ -8,14 +8,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 )
 
 const (
-	ProviderName      = "action_policy_set"
-	AutoApproveReason = "policy_set_auto_approve"
-	NoMatchReason     = "no_auto_approve_match"
 	// descriptionLimit is the stored bound on a reason description, in code points; object names alone can approach
 	// it.
 	descriptionLimit = 500
@@ -46,7 +44,7 @@ type Decision interface{ isDecision() }
 type Allow struct{ Vote store.ProviderVote }
 
 // NoOpinion leaves the request to a human. ReasonDescription says why each policy listing the Action did not match, or
-// that none lists it; its reason code is NoMatchReason.
+// that none lists it.
 type NoOpinion struct{ ReasonDescription string }
 
 func (Allow) isDecision()     {}
@@ -75,18 +73,19 @@ func (p *Provider) Decide(ctx context.Context, bindings []Binding, action store.
 						binding.Namespace, binding.Name, set.Name, store.PolicySourceRules, numbered.Number,
 						policy.Kind.Type(), outcome.Explanation))
 					return Allow{Vote: store.ProviderVote{
-						Provider:          ProviderName,
-						Verdict:           store.VerdictAllow,
-						ReasonCode:        AutoApproveReason,
-						ReasonDescription: &description,
-						Evidence: evidence(bindings, store.MatchedPolicy{
-							Namespace:  set.Namespace,
-							PolicySet:  set.Name,
-							Source:     store.PolicySourceRules,
-							Index:      int64(numbered.Number),
-							Type:       policy.Kind.Type(),
-							Repository: outcome.Repository,
-						}),
+						Verdict: store.VerdictAllow,
+						Policy: store.PolicyDecision{
+							ReasonCode:        action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE,
+							ReasonDescription: &description,
+							Evidence: evidence(bindings, store.MatchedPolicy{
+								Namespace:  set.Namespace,
+								PolicySet:  set.Name,
+								Source:     store.PolicySourceRules,
+								Index:      int64(numbered.Number),
+								Type:       policy.Kind.Type(),
+								Repository: outcome.Repository,
+							}),
+						},
 					}}
 				case NotMatched:
 					if policy.lists(action) {

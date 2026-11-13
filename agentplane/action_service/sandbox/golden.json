@@ -387,11 +387,11 @@
    "box": "test-box",
    "caller": {
     "name": "test-caller",
-    "namespace": "test-namespace"
+    "uid": "test-caller-uid"
    },
    "labels": {
-    "sandbox-actions.agentplane.allegedly.works/caller": "test-caller",
-    "sandbox-actions.agentplane.allegedly.works/caller-namespace": "test-namespace",
+    "sandbox-actions.agentplane.allegedly.works/caller-identity": "test-caller",
+    "sandbox-actions.agentplane.allegedly.works/caller-identity-uid": "test-caller-uid",
     "sandbox-actions.agentplane.allegedly.works/managed": "true",
     "sandbox-actions.agentplane.allegedly.works/name": "test-box",
     "sandbox-actions.agentplane.allegedly.works/template": "test-template"
@@ -403,11 +403,11 @@
    "box": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
    "caller": {
     "name": "cccccccccccccccccccccccccccccccccccccccc",
-    "namespace": "test-namespace"
+    "uid": "test-caller-uid"
    },
    "labels": {
-    "sandbox-actions.agentplane.allegedly.works/caller": "cccccccccccccccccccccccccccccccccccccccc",
-    "sandbox-actions.agentplane.allegedly.works/caller-namespace": "test-namespace",
+    "sandbox-actions.agentplane.allegedly.works/caller-identity": "cccccccccccccccccccccccccccccccccccccccc",
+    "sandbox-actions.agentplane.allegedly.works/caller-identity-uid": "test-caller-uid",
     "sandbox-actions.agentplane.allegedly.works/managed": "true",
     "sandbox-actions.agentplane.allegedly.works/name": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "sandbox-actions.agentplane.allegedly.works/template": "test-template"
@@ -419,11 +419,11 @@
    "box": "box",
    "caller": {
     "name": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "namespace": "test-namespace"
+    "uid": "test-caller-uid"
    },
    "labels": {
-    "sandbox-actions.agentplane.allegedly.works/caller": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    "sandbox-actions.agentplane.allegedly.works/caller-namespace": "test-namespace",
+    "sandbox-actions.agentplane.allegedly.works/caller-identity": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "sandbox-actions.agentplane.allegedly.works/caller-identity-uid": "test-caller-uid",
     "sandbox-actions.agentplane.allegedly.works/managed": "true",
     "sandbox-actions.agentplane.allegedly.works/name": "box",
     "sandbox-actions.agentplane.allegedly.works/template": "test-template"

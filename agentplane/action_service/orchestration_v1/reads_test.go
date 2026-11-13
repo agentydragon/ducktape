@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -66,7 +68,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 		commands = append(commands, command)
 		f.dispatcher.hold(nil, &dispatcherpb.Dispatch{
 			CommandId: command, SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID),
-			Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+			Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
 			State:     dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED, CreatedAt: at, UpdatedAt: at,
 		})
 	}
@@ -136,7 +138,7 @@ func TestGetSessionRefusesASessionItCannotTieToTheIncarnation(t *testing.T) {
 			attempt := f.attempt(t, f.caller, contract.ActionGetSession,
 				fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}, "session_id": %q}`, launched.Name, launched.UID, session))
 			if !test.found {
-				if kind := attempt.failure(); kind != "session_not_found" {
+				if kind := attempt.failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SESSION_NOT_FOUND {
 					t.Errorf("get_session failed %q, want session_not_found", kind)
 				}
 				return
@@ -173,7 +175,7 @@ func TestListSessionsListsTheIncarnationsSessionsNewestFirst(t *testing.T) {
 	}
 
 	f.history.refuse(status.Error(codes.Unavailable, "history or authentication unavailable"))
-	if kind := f.attempt(t, f.caller, contract.ActionListSessions, sandbox).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionListSessions, sandbox).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_READ_FAILED {
 		t.Errorf("a refused read failed %q, want read_failed", kind)
 	}
 }
@@ -284,7 +286,7 @@ func TestGetSessionDoesNotMaskHistoryReadFailure(t *testing.T) {
 	f.history.follow = func(_ *historypb.FollowSessionRequest, _ grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
 		return status.Error(codes.DeadlineExceeded, "test History read timeout")
 	}
-	if kind := f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_READ_FAILED {
 		t.Errorf("read failure = %s", kind)
 	}
 }
@@ -300,7 +302,7 @@ func TestGetSessionBeforeHistoryHasArrived(t *testing.T) {
 		t.Fatalf("opening-only Session = %+v", state)
 	}
 	f.dispatcher.openings[session].Status = nil
-	if kind := f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)).failure(); kind != "read_failed" {
+	if kind := f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_READ_FAILED {
 		t.Errorf("missing Session status = %s, want read_failed", kind)
 	}
 }

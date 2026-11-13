@@ -4,8 +4,8 @@ This is the authenticated Sandbox-facing hop in front of the existing LiteLLM de
 authoring and the runner-facing model-config contract. Inference HTTP and native ModelConfig gRPC
 share one TLS HTTP/2 listener for Sandbox and backend callers. Sandbox requests arrive through an exact-origin
 sidecar route over opaque proxy CONNECT; the listener resolves the verified Runtime SVID against the
-live Sandbox and accepted credential before deriving the Sandbox's own ServiceAccount and Pod
-principal. The same listener accepts configured backend TokenReview bearers; clients verify the
+live Sandbox and accepted credential before deriving the subject its `WorkloadCredential` names (the
+Sandbox's ServiceAccount, or an `Identity`) and the Pod. The same listener accepts configured backend TokenReview bearers; clients verify the
 service SPIFFE URI and hold no SVID. Supplying both a certificate and bearer is rejected, and a failed
 credential never enables another mode. Caller identity headers are never trusted.
 Only inference requests forward provider-native traffic to LiteLLM with one server-held virtual key.
@@ -27,9 +27,11 @@ object is:
 }
 ```
 
-`attribution` maps literal output keys to one of four verified Kubernetes principal fields:
-`namespace`, `service_account`, `pod_name`, or `pod_uid`. The default sends the four
-`agentplane.*` JSON members in `x-litellm-spend-logs-metadata`. Staging also configures
+`attribution` maps literal output keys to verified caller fields: `namespace`, `service_account`,
+`pod_name`, `pod_uid`, `identity` or `identity_uid`. A ServiceAccount caller has no `identity*`
+fields and an Identity caller no `namespace` or `service_account`; a field the caller lacks is
+omitted, never sent empty. The default sends all six as `agentplane.*` JSON members in
+`x-litellm-spend-logs-metadata`. Staging also configures
 four `litellm.metadata.spend_logs_metadata.agentplane.*` W3C baggage members, which
 LiteLLM places on its normal request span before the upstream call. For example, a custom
 JSON field can be configured as:
@@ -62,7 +64,13 @@ hop. Neither credential is logged, placed in errors, returned to callers, or mou
 or harness container.
 
 The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
-with `spiffe` roots and `kubernetes_bearer.audiences`. TLS is required because inference HTTP and
+with `spiffe` roots and `kubernetes_bearer.audiences`.
+
+The required `policy_namespace` names the namespace holding Identities. An SVID whose
+`WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an `Identity` is
+served only while that live Identity is the incarnation the credential names. Any Identity there may
+infer, as any ServiceAccount in the allowed namespaces may; it is attributed by `identity`,
+`identity_uid` and its Pod, so every attribution output must carry `identity`. Only a listed ServiceAccount may claim a central Session. TLS is required because inference HTTP and
 native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
 health service.
 
@@ -124,7 +132,7 @@ restrict access and retention while enabled. Authorization and other request hea
 
 Backend transport failures and forwarding-slot acquisition timeouts also emit warnings when request
 body logging is disabled. Each warning carries the request `id`, method, path without its query, and
-verified namespace and pod when available. Transport warnings include the inner error text, such as a
+verified subject kind and name (plus namespace for a ServiceAccount) and Pod when available. Transport warnings include the inner error text, such as a
 DNS lookup or connection failure; the `url.Error` wrapper is unwrapped so its URL, credentials, and
 query are not logged. The caller's request query, body, and headers are omitted. A request canceled
 while waiting for a forwarding slot exits without writing a gateway error.
@@ -158,3 +166,15 @@ This is an asserted conversation identity from an explicitly trusted shared samp
 replace TokenReview or authorize arbitrary Session reads. LiteLLM promotes the configured Session
 metadata into exported traces; the frontend's metadata-key setting selects the matching Langfuse
 filter. Existing wrapped harness attribution continues to use its Sandbox identity.
+
+With `central_sampler_identity_callers: true` (requires `policy_namespace` and
+`central_sampler_accounts`), those accounts may also call as delegating actors under the
+[delegated authorization contract](../docs/delegated_authorization.md): `Authorization:
+Agentplane-Delegated <sampler token>` plus the base64 `agentplane-delegation-bin` envelope naming
+an Identity of the policy namespace and the Session it serves. The ingress verifies the sampler's
+token and its grant, reads the Identity live and refuses a stale or missing incarnation, then
+attributes the call to that Identity: `identity` and `identity_uid` are the Identity's, `pod_name`
+and `pod_uid` the sampler's Pod, the one that made the call, and `agentplane.session_id` comes from
+the envelope, so a delegated call may not also claim a Session by header. The envelope is stripped
+like every other caller header. A sampler calling for a Session with no Identity keeps using the
+bearer path above. Claiming a Session never implies this grant.

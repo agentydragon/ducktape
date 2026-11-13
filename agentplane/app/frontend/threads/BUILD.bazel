@@ -42,18 +42,6 @@ ts_library(
 )
 
 ts_library(
-    name = "thread_view_recorder_tools",
-    srcs = ["thread_view_recorder_tools.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":thread_view_recorder",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//util/frontend/transcript:history_recorder_tools",
-    ],
-)
-
-ts_library(
     name = "thread_view_recorder",
     srcs = ["thread_view_recorder.ts"],
     tsconfig = TSCONFIG,
@@ -258,6 +246,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -392,6 +381,7 @@ ts_library(
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:shell_command_view",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
         "//util/frontend:code_block",
         "//util/frontend:disclosure",
@@ -420,6 +410,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
@@ -454,6 +445,17 @@ ts_library(
 )
 
 agentplane_vitest_test(
+    name = "live_test",
+    srcs = ["live.test.ts"],
+    # `live` reaches `@mantine/core` through `stream_status`; its hooks import react-dom at load.
+    data = ["//:node_modules/react-dom"],
+    deps = [
+        ":live",
+        "//:node_modules/vitest",
+    ],
+)
+
+agentplane_vitest_test(
     name = "command_delivery_test",
     srcs = ["command_delivery.test.ts"],
     deps = [
@@ -477,6 +479,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
@@ -571,6 +574,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/threads/testing:electric_entity",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -738,11 +742,43 @@ ts_library(
 )
 
 ts_library(
+    name = "environment_identity",
+    srcs = ["environment_identity.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend/bindings:table",
+        "//agentplane/app/frontend/policy:watch",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "environment_identity_test",
+    srcs = ["environment_identity.test.tsx"],
+    deps = [
+        ":environment_identity",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+ts_library(
     name = "new_thread_form",
     srcs = ["new_thread_form.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":environment_identity",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",

@@ -34,6 +34,7 @@ from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, runt
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
+    DEFAULT_POLICIES,
     GITHUB_ACTIONS_LOGS_POLICY,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     GITHUB_CLONE_POLICY,
@@ -93,18 +94,25 @@ def assignable_set_egress_rules() -> dict[str, list[PolicySetSpecRules]]:
 
 
 def preset_role_sets(preset: str) -> list[str]:
-    """In the identity catalog, the role sets granted to `preset`'s own Kubernetes account: those its
-    launch grants today, plus cluster diagnostics, so the account covers the shared one's reads."""
+    """The role sets granted to `preset`'s Kubernetes account: its launch roles plus cluster
+    diagnostics, so the account covers the shared account's reads."""
     sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
     return list(dict.fromkeys([*sets, agent_access_profiles.CLUSTER_DIAGNOSTICS_POLICY]))
 
 
 def _launch_sets(preset: str, *, namespace: str, identity_catalog: bool) -> list[str]:
-    """The assignable sets a `preset` launch binds. In the identity catalog a launch binds only their
-    `PolicySet` halves and the use set of the preset's own Kubernetes account."""
+    """Identity-supported egress sets for a preset, plus its own Kubernetes account use set.
+
+    In the mixed catalog, legacy bindings keep the original Kubernetes-bearing PolicySets while
+    new launches use their pure-egress `-identity` variants.
+    """
     sets = agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS[preset])
     if not identity_catalog:
-        return sets
+        identity_egress_sets = assignable_set_egress_rules()
+        return [
+            *(f"{name}-identity" for name in sets if name in identity_egress_sets),
+            kubernetes_account_ref.account(namespace, preset).credential_name,
+        ]
     return [
         *(name for name in sets if name in assignable_set_egress_rules()),
         kubernetes_account_ref.account(namespace, preset).credential_name,
@@ -125,6 +133,7 @@ def config(
     electric_url: HttpEndpointUrl,
     identity_catalog: bool,
 ) -> Settings:
+    basic_policy_set = BASIC_POLICY
     if runtime is None:
         runtime = runtime_catalog(
             models, templates=(sandbox_template,), central_sampler_enabled=central_sampler_enabled
@@ -139,14 +148,15 @@ def config(
         action_federation=action_federation,
         connection_service_url=connection_service_url,
         app_origin=app_origin,
+        basic_policy_set=basic_policy_set,
         oidc_issuer=oidc_issuer,
         electric_url=electric_url,
         public_coder_policy_sets=[
             COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
-            # Its boxes run as the Sandbox's own ServiceAccount, so they hold its egress, the write-capable
-            # agentydragon-agent GitHub token included, and nothing more (operator, 2026-10-24).
+            # This preset explicitly grants its Sandbox Identity the reviewed egress and Action sets,
+            # including the write-capable agentydragon-agent GitHub token (operator, 2026-10-24).
             SANDBOX_SELF_SET,
             *_launch_sets("public-coder", namespace=namespace, identity_catalog=identity_catalog),
         ],
@@ -206,14 +216,13 @@ def config(
         title="Haku",
         template=sandbox_template,
         # These policies are what a *launch* is granted, independent of which
-        # caller/ServiceAccount stamps it.
+        # Identity launches it.
         policy_sets=[
-            BASIC_POLICY,
+            basic_policy_set,
             *HAKU_SHARED_CORE_POLICIES,
             *HAKU_SHARED_GITHUB_POLICIES,
-            # Bound at launch rather than by a static account: a managed runner Pod runs as its own
-            # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
-            # and the preset is the only thing that decides what this Haku may do without the operator.
+            # Bound at launch on the Sandbox Identity rather than through the standing `haku-agent`
+            # binding; this preset determines what a managed Haku may do without the operator.
             *HAKU_ACTION_POLICY_SETS,
             *_launch_sets("haku", namespace=namespace, identity_catalog=identity_catalog),
         ],
@@ -234,7 +243,7 @@ def config(
         title="Finance agent",
         template=sandbox_template,
         policy_sets=[
-            BASIC_POLICY,
+            basic_policy_set,
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
@@ -269,6 +278,15 @@ def config(
         for name in presets:
             cfg.sandbox_presets[name].inbox_tags = [group]
             cfg.sandbox_presets[name].policy_sets += [send_to(group)]
+    # Every preset grants the defaults itself, so a preset shows all a launch of it grants: the
+    # baseline sets and the shared diagnostics account (operator, 2026-11-12).
+    defaults = [
+        basic_policy_set,
+        *DEFAULT_POLICIES[1:],
+        kubernetes_account_ref.shared_diagnostics(namespace).credential_name,
+    ]
+    for sandbox_preset in cfg.sandbox_presets.values():
+        sandbox_preset.policy_sets = list(dict.fromkeys([*defaults, *sandbox_preset.policy_sets]))
     # A new staging Sandbox suspends after 15 idle minutes and wakes for a message (operator, 2026-10-24).
     cfg.new_sandbox_defaults = NewSandboxDefaults(wake_on_send=True, idle_suspend_after_seconds=15 * 60)
     return cfg

@@ -17,18 +17,6 @@ from pydantic import BaseModel
 from openai_utils.model import AssistantMessageOut, FunctionCallItem, OutputText, ReasoningItem
 
 
-def make_item_tool_call(*, call_id: str, name: str, arguments: dict[str, Any] | BaseModel) -> FunctionCallItem:
-    """Create a function call item with JSON-serialized arguments."""
-    args_dict = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
-    return FunctionCallItem(
-        call_id=call_id, name=name, arguments=pydantic_core.to_json(args_dict, fallback=str).decode("utf-8")
-    )
-
-
-def make_item_assistant_text(text: str) -> AssistantMessageOut:
-    return AssistantMessageOut(content=[OutputText(text=text)])
-
-
 class ItemFactory:
     """Helper for constructing adapter items with convenient ID handling."""
 
@@ -49,10 +37,13 @@ class ItemFactory:
         self, name: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         cid = call_id or self.next_call_id()
-        return make_item_tool_call(call_id=cid, name=name, arguments=arguments)
+        args_dict = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
+        return FunctionCallItem(
+            call_id=cid, name=name, arguments=pydantic_core.to_json(args_dict, fallback=str).decode("utf-8")
+        )
 
     def assistant_text(self, text: str) -> AssistantMessageOut:
-        return make_item_assistant_text(text)
+        return AssistantMessageOut(content=[OutputText(text=text)])
 
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
         return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")

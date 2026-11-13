@@ -12,14 +12,16 @@ Its discovery and resume method paths are:
 - `/agentplane.environments.v1.EnvironmentService/WatchEnvironment`
 - `/agentplane.environments.v1.EnvironmentService/ResumeEnvironment`
 
-All methods accept direct TokenReview-verified ServiceAccount credentials. Discovery and resume
-also accept explicitly configured Actions delegation. Management requires its own direct Pod-bound
-manager or launcher grant. Delegated calls use the existing Dispatcher audience and are opted
-into by exact full RPC method name. The handler checks the admitted effective caller's namespace,
-name, and immutable ServiceAccount UID. Ordinary callers see only Sandboxes whose live, controller-owned
-execution ServiceAccount has that exact identity; explicitly configured direct readers see the namespace. A Sandbox's namespace/name or labels alone do
-not establish access. A target handle is the Sandbox namespace, name, and UID; get returns
-`NOT_FOUND` for an absent or replaced target, and for a deleting or foreign target for ordinary callers.
+Methods retain direct TokenReview-verified ServiceAccount credentials. List/Get also admit workload
+credentials naming an Identity and explicitly configured Actions delegation. Watch, resume, and
+management keep their existing ServiceAccount gates; management requires its own direct Pod-bound
+manager or launcher grant. Delegated calls use the existing Dispatcher audience and are opted into
+by exact full RPC method name. ServiceAccount callers are checked by namespace, name, and immutable
+UID. Identity callers can list/get only Sandboxes whose current `spec.identity.name` names that
+Identity, with its exact current UID. A same-name replacement follows the Sandbox's deliberate
+name-based binding, while a credential for the old UID is refused. A target handle is the Sandbox
+namespace, name, and UID; get returns `NOT_FOUND` for an absent or replaced target and for an
+unauthorized Identity.
 
 `GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
 exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
@@ -34,8 +36,10 @@ a lost Kubernetes source ends it with `UNAVAILABLE`. Clients retain their last o
 and reconnect to observe again. Waiting for readiness is a client operation over this stream;
 neither get nor watch requests resume. CLI and Action/MCP wait adapters are separate work.
 
-List requires a limit from 1..100. Ordinary callers resolve their same-name candidate and receive no
-continuation token; broad readers may page over the namespace using a Kubernetes continuation token.
+List requires a limit from 1..100. Account callers resolve their same-name candidate. Identity callers
+page through their visible Sandboxes with a lexical Sandbox-name cursor; it only skips entries and
+cannot widen access. Broad direct readers may page over the namespace using a Kubernetes
+continuation token.
 
 `ResumeEnvironment` separately checks the exact target and execution account, resume opt-in policy,
 and operator authority through the shared [lifecycle manager](lifecycle/README.md). Listing or
@@ -83,5 +87,9 @@ use `EnvironmentDescriptor`, with configuration, observed state, caller-specific
 Kubernetes diagnostics grouped into separate submessages. Reconnection starts a new snapshot;
 intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
 `environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
-not inherited by delegated callers. Ordinary callers remain restricted to their exact owned Sandbox.
+not inherited by delegated callers. Ordinary ServiceAccount callers remain restricted to their
+exact owned Sandbox. Identity callers see only Sandboxes bound to that Identity; their descriptors
+omit the execution ServiceAccount, resume eligibility, wake generation, resume token, and
+automatic-wake eligibility. A delegated Action's component reader grant is never inherited by the
+effective Identity.
 An idle stream stays open while its credential remains valid and closes when revalidation fails.

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
@@ -61,10 +61,8 @@ func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
 	return nil
 }
 
-var sessionSandboxName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-
 func validateSessionIdentity(name, id string) (uuid.UUID, error) {
-	if len(name) < 1 || len(name) > 57 || !sessionSandboxName.MatchString(name) {
+	if !sandboxapi.IsValidSandboxName(name) {
 		return uuid.Nil, status.Error(codes.InvalidArgument, "invalid Sandbox name")
 	}
 	parsed, err := uuid.Parse(id)

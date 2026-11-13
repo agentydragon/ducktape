@@ -10,13 +10,13 @@ Configuration lives in `~/.config/worthy/config.yaml`.
 
 ```bash
 # Snapshot (default): fetch assets + exchange rates, save JSON, print FIRE model
-bazel run //finance/worthy:rust_main
+bb run //finance/worthy:rust_main
 
 # Remodel last snapshot without network calls
-bazel run //finance/worthy:rust_main -- --command=modellastsnapshot
+bb run //finance/worthy:rust_main -- --command=modellastsnapshot
 
 # Export all historical snapshots to CSV
-bazel run //finance/worthy:rust_main -- --command=csv
+bb run //finance/worthy:rust_main -- --command=csv
 ```
 
 Enable trace logging with `RUST_LOG=rust_main=trace`.

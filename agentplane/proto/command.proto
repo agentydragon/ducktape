@@ -35,3 +35,15 @@ message Command {
     Compact compact = 7;
   }
 }
+
+// Which `Command.operation` a command carries.
+enum Operation {
+  OPERATION_UNSPECIFIED = 0;
+  OPERATION_SUBMIT_INPUT = 1;
+  OPERATION_CHANGE_MODEL = 2;
+  OPERATION_CHANGE_REASONING_EFFORT = 3;
+  OPERATION_INTERRUPT_TURN = 5;
+  OPERATION_COMPACT = 6;
+  reserved 4;
+  reserved "OPERATION_STOP_RUNNER_SESSION";
+}

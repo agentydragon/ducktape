@@ -60,6 +60,8 @@ minting fresh values for fields you can't recover (i.e. rotate).
 
 - Add `metadata.annotations.description` where name + namespace doesn't make the purpose
   obvious.
+- In-cluster VMs should forward guest logs to a destination the cluster already collects;
+  see <docs/troubleshooting.md> § Loki for the KubeVirt path and query.
 - YAML consumed by `configMapGenerator` stays `.yaml` (never disguised as `.txt`): add
   `cluster-manifest-ignored=true` in root `.gitattributes`, add the path to the kubeconform
   exclusion in `.pre-commit-config.yaml`, and mark the file as a `configMapGenerator` input.

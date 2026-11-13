@@ -89,7 +89,7 @@ class EmberRuntime:
             self._settings.openai.model, reasoning_effort=self._settings.openai.reasoning_effort
         )
 
-        self._agent = await Agent.create(
+        self._agent = Agent(
             tool_provider=MCPToolProvider(self._client_group),
             client=model_client,
             handlers=handlers,

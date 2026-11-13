@@ -12,7 +12,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
@@ -24,7 +25,6 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -37,7 +37,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -47,10 +46,7 @@ const (
 	callDeadline = 30 * time.Second
 
 	sandboxName      = "test-sandbox"
-	sandboxUID       = "test-sandbox-uid"
-	successorUID     = "test-successor-sandbox-uid" // the test Sandbox's incarnation after recreateSandbox
 	otherSandboxName = "other-sandbox"
-	otherSandboxUID  = "other-sandbox-uid"
 	operatorName     = "test-operator"
 	testSession      = "test-session"
 )
@@ -61,6 +57,9 @@ var (
 	// those of the two Sandboxes, operatorToken the operator's, and outsiderToken one named like the
 	// first Sandbox's in another namespace.
 	sandboxToken, otherSandboxToken, operatorToken, outsiderToken string
+	// sandboxUID and otherSandboxUID are the UIDs of the two Sandboxes newServer creates for the current test,
+	// and successorUID that of the test Sandbox recreateSandbox puts in its place. Tests run one at a time.
+	sandboxUID, otherSandboxUID, successorUID string
 )
 
 func useAPIServer(server *kubeapiserver.Server) (err error) {
@@ -118,7 +117,7 @@ func (r *fakeRunner) questions() []*sandboxreader.Identity {
 }
 
 type actionsCall struct {
-	owner         model.ServiceAccount
+	owner         store.Owner
 	requestID     uuid.UUID
 	afterSequence int64
 }
@@ -130,7 +129,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64, _ string) ([]storagecodec.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -269,7 +268,8 @@ type testServer struct {
 }
 
 // newServer serves the API over the shared database, emptied of earlier tests' inboxes, with a hub listening to
-// the channel the watches follow. Sandboxes are read through the real reader over a fake Kubernetes client.
+// the channel the watches follow. Sandboxes are read through the real reader from the API server, where newServer
+// replaces the earlier test's with fresh ones.
 func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	t.Helper()
 	config := serverConfig{
@@ -297,10 +297,14 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err := sandboxapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	kube := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID}},
-		&sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: otherSandboxName, UID: otherSandboxUID}},
-	).Build()
+	kube, err := client.New(kube.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := kube.DeleteAllOf(t.Context(), &sandboxapi.Sandbox{}, client.InNamespace(testNamespace)); err != nil {
+		t.Fatal(err)
+	}
+	sandboxUID, otherSandboxUID, successorUID = createSandbox(t, kube, sandboxName), createSandbox(t, kube, otherSandboxName), ""
 	sandboxes, err := sandboxreader.New(testNamespace, kube)
 	if err != nil {
 		t.Fatal(err)
@@ -407,16 +411,27 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	return response.GetSubscription()
 }
 
-// recreateSandbox deletes the test Sandbox and creates another under its name, whose UID is successorUID.
+// createSandbox creates the named Sandbox in testNamespace and returns the UID the API server gave it.
+func createSandbox(t *testing.T, kube client.Client, name string) string {
+	t.Helper()
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: name},
+		Spec:       sandboxapi.SandboxSpec{Template: "test-template"},
+	}
+	if err := kube.Create(t.Context(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	return string(sandbox.UID)
+}
+
+// recreateSandbox deletes the test Sandbox and creates another under its name, whose UID becomes successorUID.
 func (s testServer) recreateSandbox(t *testing.T) {
 	t.Helper()
 	if err := s.kube.Delete(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.kube.Create(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: successorUID}}); err != nil {
-		t.Fatal(err)
-	}
-	s.openings.placements["another-session"] = nativeSession("another-session", sandboxName, string(successorUID))
+	successorUID = createSandbox(t, s.kube, sandboxName)
+	s.openings.placements["another-session"] = nativeSession("another-session", sandboxName, successorUID)
 }
 
 // grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.

@@ -58,6 +58,7 @@ py_library(
     srcs = ["collector.py"],
     data = [
         "001_ci_feedback.sql",
+        "002_ci_feedback_optimization.sql",
         "collector.toml",
         "github_policy.vrl",
         "grants.sql",
@@ -138,6 +139,7 @@ py_test(
     srcs = ["test_ingestion_visual.py"],
     data = [
         "001_ci_feedback.sql",
+        "002_ci_feedback_optimization.sql",
         "collector.toml",
         "dashboard.json",
         "feedback-dashboard.json",

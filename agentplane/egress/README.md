@@ -1,7 +1,7 @@
 # Agentplane egress proxy
 
 The central proxy of Agentplane's credentialless egress: a Go forward proxy that proves each
-Sandbox caller's Runtime SVID or an existing non-Sandbox caller's Pod-bound bearer over verified TLS, decides the request from the `egress` rules of `PolicySet`s a
+caller's workload SVID over mTLS, decides the request from the `egress` rules of `PolicySet`s a
 `PolicyBinding` grants it, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the kinds compose into
 one decision is in <../docs/egress_composition.md>. Transport choices and rejected alternatives are in
 <docs/design.md>.
@@ -20,10 +20,9 @@ One Go package per concern:
 - `cmd`: the `egress-proxy` entry point and its settings.
 - `proxy`: CONNECT tunnels intercepted with a forged leaf, and plain HTTP proxying, on `net/http`.
   Every request passes identity, policy, credential and address checks before anything is dialed.
-  One forward listener on port 8888 accepts an explicit list of hop authentication modes.
-- `identity`: the shared `workload_auth` resolver behind the existing token hop, translating a
-  refused bearer into the reason the client sees. SVID requests resolve the URI to a live Sandbox
-  before using its ServiceAccount as the policy subject.
+  One forward listener on port 8888 authenticates workload SVIDs.
+- `identity`: resolves each request's SVID to its live `WorkloadCredential`; its required Identity
+  subject is the policy subject.
 - `policy`: the pure decision over an in-memory `Index` — the matching egress rule the request's
   placeholder directs it to, and substitution. The bindings and their egress rules are a
   `../policy/reader` index. No I/O.
@@ -45,17 +44,13 @@ One Go package per concern:
 
 Also here:
 
-- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. Its tagged
-  `proxy.transport.auth` selects hop authentication: `spiffe` presents the sidecar-held SVID in the
-  TLS handshake, while `kubernetes_bearer` sends the Pod-bound token as `Proxy-Authorization`.
-  Plaintext proxy transport supports only bearer auth; TLS verifies the proxy's certificate trust
-  and fixed SPIFFE identity, `spiffe://agentplane/egress-proxy`, with either auth mode. The sidecar
-  validates a bearer token at startup and rereads it for each request. Its
-  projected Kubernetes-audience tokens in `audience_token_files` remain separate destination
-  credentials for central egress-rule substitution; they never authenticate the proxy hop.
+- `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. It presents the
+  sidecar-held SVID in the TLS handshake to the proxy, whose certificate trust and fixed SPIFFE
+  identity, `spiffe://agentplane/egress-proxy`, it verifies; `proxy.transport` keeps its tagged
+  `mode: tls` and `auth.mode: spiffe`, their only values. The sidecar sends no workload bearer to
+  the central proxy.
   It also hosts local generic gRPC routes to Agentplane services, each with an explicit transport:
-  `plaintext`, `tls_connect` with the sidecar SVID, or `tls_bearer_connect` with a route-specific
-  bearer token. The runtime uses no Python interpreter. Its
+  `plaintext`, or `tls_connect` with the sidecar SVID. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and accepts no flags.
 - Workload HTTP routes carry only the upstream authority and exact service URI. Their destination
@@ -95,18 +90,19 @@ The deployment supplies proxy settings through its YAML file and `AGENTPLANE_EGR
 The `forward` listener requires serving TLS files and an `auth` list containing SPIFFE with its
 trust bundle. The proxy presents `spiffe://agentplane/egress-proxy` and requires a Runtime SVID
 with explicit clientAuth. Every request checks the live Sandbox UID, accepted credential and Pod
-binding before reading policy. The subject is always that Sandbox's own ServiceAccount. Clearing
+binding before reading policy. The subject is the record's Identity in `rules_namespace`, fenced on
+its UID. Clearing
 or replacing acceptance, changing the binding, or removing the Sandbox revokes access; quiescence
 keeps the accepted credential available for final History sealing. Caller headers cannot select a
 subject, and bearer credentials cannot authenticate the hop.
 
-The Kubernetes-audience projected token remains a destination credential. It is independently
-reviewed against the Sandbox's account and bound Pod UID. History, Notification, Dispatcher,
+The retired `X-Agentplane-Workload-Token` header is discarded by both forwarding hops and never
+participates in authentication or credential substitution. History, Notification, Dispatcher,
 Action, LLM and Rules verify workload SVIDs themselves; central carries their TLS opaquely and
 never asserts the caller.
 
-The real-binary `test_proxy.py` harness checks accepted SVIDs, revocation, wrong-Pod destination
-tokens, forged subjects, expired and forged leaves, and refusal of bearer-only hop authentication.
+The real-binary `test_proxy.py` harness checks accepted SVIDs, revocation, forged subjects, expired
+and forged leaves, untrusted workload-token header stripping, and refusal of bearer hop authentication.
 
 ## BuildBuddy clients
 
@@ -149,13 +145,6 @@ would remain inert there. Do not configure credentialless `bb remote` until Buil
 runner-side credential reference or Agentplane owns an equivalent broker at that boundary; the
 boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
-## Projected workload credentials
-
-Kubernetes uses `projectedWorkloadToken` with its explicit API-server audience. The sidecar
-projects that token and sends it under `X-Agentplane-Workload-Token`. Central reviews it against
-the SVID's live Sandbox binding and substitutes it only at a matching rule's declared target and
-placeholder. Missing, stale or mismatched projected context fails closed.
-
 ## Kubernetes accounts
 
 A `kubernetesServiceAccount` credential acts as a ServiceAccount on the proxy's own API server by
@@ -192,7 +181,7 @@ sends no bearer; `GetHealth` does not. `Watch` is not served.
 
 The shared gRPC listener also serves Rules under the forward hop's shared authentication policy.
 
-The shared port serves native gRPC over TLS; Rules accepts the same explicitly configured SVID or bearer authentication as the forward hop, while probes and
+The shared port serves native gRPC over TLS; Rules accepts the same SVID authentication as the forward hop, while probes and
 operator bearer methods use the same verified TLS listener with their own method policy. On shutdown it ends the open watches, then stops gracefully: the
 other calls in flight finish within the drain deadline.
 
@@ -227,7 +216,7 @@ request including cache hits, stops a token copied out of its Pod from being rep
 the cluster. It costs a `pods` read in every `allowed_service_account_namespaces` entry, the grant
 the rule above keeps at nothing. Without it the exposure is bounded (<SPEC.md> § Identity): one
 in-cluster workload borrowing another's egress rules, not a way past the egress policy. Restore it if that
-borrowing becomes a real concern — a compromised sidecar reading another Pod's projected token, or
+borrowing becomes a real concern — for example, where workloads can obtain another subject's SVID or
 a namespace whose Pod specs are not ours — with a pod IP on the principal, the check in `identity`,
 the peer-address read in `proxy`, and that `pods` read.
 
@@ -254,6 +243,8 @@ The API's `at` field is the `decided_at` column; `ingested_at` is the row's inse
 1,000) inside the retention window and returns them oldest first.
 
 The schema is Goose SQL in `history_migrations/history/`, tracked by `egress_goose_version`.
+TODO: a row names an Identity subject by name alone, as it does a ServiceAccount, so a recreated
+Identity of the same name shares its predecessor's history; a UID column is the additive fix.
 Staging and testing each hold an `egress` database in their CNPG cluster. Both use Goose; existing
 history rows and the inert `egress_alembic_version` table remain in place. The proxy migrates before starting its
 listeners or workers, so a failed migration keeps that Pod unready while previous proxies keep enforcing.

@@ -9,6 +9,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -16,8 +17,8 @@ import (
 )
 
 // The views below are what the tools answer: the core's records under the tool schemas' snake_case names and
-// lower-case enum values. Free-form values (arguments, schemas, errors) stay structpb values, which marshal
-// themselves.
+// lower-case enum values. Free-form values (arguments, schemas) stay structpb values, which marshal
+// themselves; an Execution's error is its ProtoJSON.
 
 var defaultReceiptFields = []string{"id", "state", "version", "created_at", "updated_at"}
 
@@ -64,17 +65,25 @@ type operator struct {
 	Subject string `json:"subject"`
 }
 
+// decision has exactly one of Operator and Policy.
 type decision struct {
-	ID                uuid.UUID       `json:"id"`
-	Verdict           string          `json:"verdict"`
-	Provider          string          `json:"provider"`
-	Operator          *operator       `json:"operator"`
-	DecisionNote      *string         `json:"decision_note"`
-	ReasonCode        *string         `json:"reason_code"`
+	ID             uuid.UUID         `json:"id"`
+	Verdict        string            `json:"verdict"`
+	Operator       *operatorDecision `json:"operator"`
+	Policy         *policyDecision   `json:"policy"`
+	IdempotencyKey string            `json:"idempotency_key"`
+	DecidedAt      time.Time         `json:"decided_at"`
+}
+
+type operatorDecision struct {
+	Operator     operator `json:"operator"`
+	DecisionNote *string  `json:"decision_note"`
+}
+
+type policyDecision struct {
+	ReasonCode        string          `json:"reason_code"`
 	ReasonDescription *string         `json:"reason_description"`
-	PolicyEvidence    *policyEvidence `json:"policy_evidence"`
-	IdempotencyKey    string          `json:"idempotency_key"`
-	DecidedAt         time.Time       `json:"decided_at"`
+	Evidence          *policyEvidence `json:"evidence"`
 }
 
 type policyEvidence struct {
@@ -112,13 +121,13 @@ type matchedRepository struct {
 
 // execution is an Execution as a receipt reports it: never its result, which only the tool answer carries.
 type execution struct {
-	ID           uuid.UUID        `json:"id"`
-	State        string           `json:"state"`
-	Error        *structpb.Struct `json:"error"`
-	CreatedAt    time.Time        `json:"created_at"`
-	StartedAt    *time.Time       `json:"started_at"`
-	CompletedAt  *time.Time       `json:"completed_at"`
-	ReconciledAt *time.Time       `json:"reconciled_at"`
+	ID           uuid.UUID       `json:"id"`
+	State        string          `json:"state"`
+	Error        json.RawMessage `json:"error"`
+	CreatedAt    time.Time       `json:"created_at"`
+	StartedAt    *time.Time      `json:"started_at"`
+	CompletedAt  *time.Time      `json:"completed_at"`
+	ReconciledAt *time.Time      `json:"reconciled_at"`
 }
 
 type event struct {
@@ -288,22 +297,29 @@ func (d *viewDecoder) decisionView(from *pb.Decision) *decision {
 	if from == nil {
 		return nil
 	}
-	var by *operator
-	if from.GetOperator() != nil {
-		by = &operator{Issuer: from.GetOperator().GetIssuer(), Subject: from.GetOperator().GetSubject()}
+	view := &decision{
+		ID:             d.uuid(from.GetId()),
+		Verdict:        enum(d, from.GetVerdict(), "VERDICT_"),
+		IdempotencyKey: from.GetIdempotencyKey(),
+		DecidedAt:      d.time(from.GetDecidedAt()),
 	}
-	return &decision{
-		ID:                d.uuid(from.GetId()),
-		Verdict:           enum(d, from.GetVerdict(), "VERDICT_"),
-		Provider:          from.GetProvider(),
-		Operator:          by,
-		DecisionNote:      from.DecisionNote,
-		ReasonCode:        from.ReasonCode,
-		ReasonDescription: from.ReasonDescription,
-		PolicyEvidence:    d.evidenceView(from.GetPolicyEvidence()),
-		IdempotencyKey:    from.GetIdempotencyKey(),
-		DecidedAt:         d.time(from.GetDecidedAt()),
+	switch decider := from.GetDecider().(type) {
+	case *pb.Decision_Operator:
+		by := decider.Operator.GetOperator()
+		view.Operator = &operatorDecision{
+			Operator:     operator{Issuer: by.GetIssuer(), Subject: by.GetSubject()},
+			DecisionNote: decider.Operator.DecisionNote,
+		}
+	case *pb.Decision_Policy:
+		view.Policy = &policyDecision{
+			ReasonCode:        enum(d, decider.Policy.GetReasonCode(), "REASON_CODE_"),
+			ReasonDescription: decider.Policy.ReasonDescription,
+			Evidence:          d.evidenceView(decider.Policy.GetEvidence()),
+		}
+	default:
+		d.fail("core answered decision %s without a decider", from.GetId())
 	}
+	return view
 }
 
 func (d *viewDecoder) evidenceView(from *pb.PolicyEvidence) *policyEvidence {
@@ -353,12 +369,24 @@ func (d *viewDecoder) executionView(from *pb.Execution) *execution {
 	return &execution{
 		ID:           d.uuid(from.GetId()),
 		State:        enum(d, from.GetState(), "EXECUTION_STATE_"),
-		Error:        from.GetError(),
+		Error:        d.executionErrorView(from.GetError()),
 		CreatedAt:    d.time(from.GetCreatedAt()),
 		StartedAt:    d.optionalTime(from.GetStartedAt()),
 		CompletedAt:  d.optionalTime(from.GetCompletedAt()),
 		ReconciledAt: d.optionalTime(from.GetReconciledAt()),
 	}
+}
+
+// executionErrorView is an Execution's error as its ProtoJSON; nil, which marshals as null, when there is none.
+func (d *viewDecoder) executionErrorView(from *pb.ExecutionError) json.RawMessage {
+	if from == nil {
+		return nil
+	}
+	encoded, err := protojson.Marshal(from)
+	if err != nil {
+		d.fail("core answered an execution error that does not marshal: %w", err)
+	}
+	return encoded
 }
 
 func (d *viewDecoder) eventView(from *pb.ActionEvent) event {

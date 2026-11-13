@@ -16,9 +16,10 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
-	"github.com/agentydragon/ducktape/agentplane/history_service/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -26,7 +27,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -62,7 +62,7 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 	return err
 }
 
-var testWriter = storage.Writer{Namespace: testNamespace, Name: "test-writer", UID: "test-writer-uid"}
+var testWriter = storage.ServiceAccountWriter{Namespace: testNamespace, Name: "test-writer", UID: "test-writer-uid"}
 
 type testServer struct {
 	service *Service
@@ -80,7 +80,7 @@ func newServer(t *testing.T, lease time.Duration) testServer {
 // newServerTimingOut serves the API over the shared database with a hub listening to the channels the watch
 // follows.
 func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testServer {
-	return newServerWithDelegation(t, lease, requestTimeout, nil, nil)
+	return newServerWithDelegation(t, lease, requestTimeout, nil, nil, nil)
 }
 
 func newDelegatingServer(t *testing.T, lease time.Duration) testServer {
@@ -96,7 +96,7 @@ func newDelegatingServer(t *testing.T, lease time.Duration) testServer {
 		return string(serviceAccount.UID), true, nil
 	})
 	return newServerWithDelegation(t, lease, callDeadline,
-		&auth.Delegator{Account: actor, CallerNamespaces: []string{testNamespace}}, uidReader)
+		&auth.Delegator{Account: actor, CallerNamespaces: []string{testNamespace}}, uidReader, nil)
 }
 
 func newServerWithDelegation(
@@ -104,6 +104,7 @@ func newServerWithDelegation(
 	lease, requestTimeout time.Duration,
 	delegator *auth.Delegator,
 	uidReader auth.ServiceAccountUIDReader,
+	identities auth.IdentityUIDReader,
 ) testServer {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
@@ -133,7 +134,7 @@ func newServerWithDelegation(
 			delegatedMethods = append(delegatedMethods, method)
 		}
 		sort.Strings(delegatedMethods)
-		methods, err = MethodsWithDelegation(resolver, *delegator, uidReader, delegatedMethods)
+		methods, err = MethodsWithDelegation(resolver, *delegator, uidReader, identities, delegatedMethods)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -191,10 +192,10 @@ func (s testServer) recordFor(t *testing.T, principal storage.ExecutionPrincipal
 func delegated(t *testing.T, token string, caller auth.Account, uid string) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
-		},
-		ActionRequestId: uuid.NewString(), ActionExecutionId: uuid.NewString(),
+		}},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -545,5 +546,70 @@ func TestACallThatOutlastsTheRequestTimeoutIsAbandoned(t *testing.T) {
 	_, err := server.client.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
 	if got := status.Code(err); got != codes.DeadlineExceeded {
 		t.Errorf("%v, want DeadlineExceeded", got)
+	}
+}
+
+type liveIdentities map[string]string
+
+func (live liveIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
+	uid, found := live[name]
+	return uid, found, nil
+}
+
+// A platform component acting for an Identity reads exactly the Sessions recorded with that
+// Identity incarnation, as the Identity's own workload would.
+func TestDelegatedIdentityReadsOnlyItsIdentitysSessions(t *testing.T) {
+	owner := storage.Identity{Name: "test-delegated-owner", UID: uuid.NewString()}
+	other := storage.Identity{Name: "test-delegated-other", UID: uuid.NewString()}
+	server := newServerWithDelegation(t, time.Second, callDeadline,
+		&auth.Delegator{Account: auth.Account{Namespace: testNamespace, Name: "test-reader"}, IdentityCallers: true},
+		auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) { return "", false, nil }),
+		liveIdentities{owner.Name: owner.UID, other.Name: other.UID})
+	recordAs := func(identity storage.Identity) uuid.UUID {
+		sessionID := uuid.New()
+		if _, err := server.history.BindSamplerWriter(t.Context(), sessionID, testWriter,
+			storage.Sandbox{Namespace: testNamespace, Name: testWriter.Name, UID: uuid.NewString()}, nil, &identity); err != nil {
+			t.Fatal(err)
+		}
+		return sessionID
+	}
+	owned, foreign := recordAs(owner), recordAs(other)
+	account, _ := server.recordFor(t, storage.ExecutionPrincipal{Namespace: testNamespace, Name: "test-delegated-account", UID: uuid.NewString()})
+	for _, sessionID := range []uuid.UUID{owned, foreign, account} {
+		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	actingFor := func(identity storage.Identity) context.Context {
+		encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
+			EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+			Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
+			"authorization", "Agentplane-Delegated "+readerToken, auth.DelegationMetadataKey, string(encoded),
+		))
+	}
+
+	response, err := server.client.ReadSessionEvents(actingFor(owner), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10})
+	if err != nil || len(response.GetEntries()) != 1 {
+		t.Fatalf("delegated Identity read of its Session: %+v %v", response, err)
+	}
+	for _, sessionID := range []uuid.UUID{foreign, account} {
+		if _, err := server.client.ReadSessionEvents(actingFor(owner), &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10}); status.Code(err) != codes.NotFound {
+			t.Errorf("delegated Identity read of another's Session = %v, want NotFound", err)
+		}
+	}
+	batch, err := server.client.BatchGetSessionSummaries(actingFor(owner), &historypb.BatchGetSessionSummariesRequest{
+		SessionIds: []string{owned.String(), foreign.String(), account.String()},
+	})
+	if err != nil || len(batch.GetSummaries()) != 1 || batch.GetSummaries()[0].GetSessionId() != owned.String() {
+		t.Fatalf("delegated Identity summary batch: %+v %v", batch, err)
+	}
+	stale := storage.Identity{Name: owner.Name, UID: uuid.NewString()}
+	if _, err := server.client.ReadSessionEvents(actingFor(stale), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("delegation naming another incarnation = %v, want PermissionDenied", err)
 	}
 }

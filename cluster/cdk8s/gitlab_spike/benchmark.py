@@ -20,9 +20,9 @@ from cluster.cdk8s import pod_policy
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
-NAME = "gitlab-spike-benchmark"
+NAME = "benchmark"
 _FORGEJO_NAME = "forgejo-spike-benchmark"
-_SCRIPTS = "gitlab-spike-benchmark-scripts"
+_SCRIPTS = "benchmark-scripts"
 # The v0.13 Dockerfile installs git, curl and jq; both scripts use this exact client image.
 # https://github.com/nicolaka/netshoot/blob/v0.13/Dockerfile
 _IMAGE = "nicolaka/netshoot:v0.13@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b"
@@ -118,7 +118,7 @@ def chart(app_instance: App) -> Chart:
     NetworkPolicy(
         chart,
         "fault-isolation",
-        metadata=ApiObjectMetadata(name="gitlab-spike-fault-isolation", namespace=app.NAMESPACE),
+        metadata=ApiObjectMetadata(name="fault-isolation", namespace=app.NAMESPACE),
         endpoint_selector={"app": "gitaly", "release": app.NAME, "gitlab-spike.ducktape.io/fault": "isolated"},
         ingress_deny=[
             CiliumNetworkPolicySpecIngressDeny(from_entities=[CiliumNetworkPolicySpecIngressDenyFromEntities.ALL])

@@ -3,12 +3,16 @@
 Agent workflow: [Session delegation](../docs/agents/session_delegation.md), available with
 `agentplane actions guide session_delegation` and MCP `get_guide(name="session_delegation")`.
 
-The `session_delegation` executor forwards the ServiceAccount identity retained with an Action
-request to Environment Service, Session Dispatcher and History. These APIs enforce their normal
-caller-scoped target and Session checks. Actions authenticates with its own projected token for each
-destination audience; it carries the original caller's verified namespace, name and UID plus the
-durable Action request and execution UUIDs in the shared delegation envelope. Tool arguments never
-select the caller. An absent caller UID fails closed.
+The `session_delegation` executor forwards the caller identity retained with an Action request, a
+ServiceAccount or an Identity incarnation, to Environment Service, Session Dispatcher and History.
+These APIs enforce their normal caller-scoped target and Session checks. Actions authenticates with
+its own projected token for each destination audience; it carries the original caller's verified
+namespace, name and UID (an Identity's name and UID) plus the durable Action request and execution
+UUIDs in the shared delegation envelope. Tool arguments never select the caller. An absent caller UID
+fails closed. A ServiceAccount caller's `target.namespace` must be its own; an Identity has no
+namespace, and the backends scope it to the Sessions recorded with its incarnation. The Environment
+Service admits no Identity caller, and Dispatcher opens no Session for one, so an Identity's
+`environments/*` and `sessions/create` requests fail with that refusal.
 
 ## Reviewed operations
 

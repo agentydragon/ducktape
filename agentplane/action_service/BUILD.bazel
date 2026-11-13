@@ -57,15 +57,6 @@ py_test(
 )
 
 py_library(
-    name = "policy_view",
-    srcs = ["policy_view.py"],
-    deps = [
-        ":models",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "mcp_settings",
     srcs = ["mcp_settings.py"],
     visibility = [
@@ -112,7 +103,7 @@ py_library(
         "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/action_service/session_delegation:binding",
         "//agentplane/environment_runtime_transport:config",
-        "//agentplane/workload_auth:listener",
+        "//agentplane/identity/auth:listener",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -132,12 +123,25 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 proto_library(
     name = "action_service_proto",
     srcs = ["action_service.proto"],
     deps = [
+        "//agentplane/proto:environment_lifecycle_proto",
         "//agentplane/proto:identity_proto",
         "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/rpc:code_proto",
         "@protobuf//:empty_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
@@ -146,7 +150,10 @@ proto_library(
 
 py_proto_library_with_mypy_stubs(
     name = "action_service_pb2",
-    deps = [":action_service_proto"],
+    deps = [
+        ":action_service_proto",
+        "@googleapis//google/rpc:code_proto",
+    ],
 )
 
 py_grpc_service_library(
@@ -166,8 +173,10 @@ go_proto_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb",
     proto = ":action_service_proto",
     deps = [
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//code",
     ],
 )
 
@@ -176,7 +185,10 @@ ts_proto_library(
     copy_files = False,
     node_modules = "//:node_modules",
     proto = ":action_service_proto",
+    protoc_gen_options = {"rewrite_imports": "./google/rpc/*_pb.js:./agentplane/proto"},
     deps = [
+        "//agentplane/proto:code_pb",
+        "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:identity_pb",
         "//google/api:annotations_pb",
     ],
@@ -293,6 +305,12 @@ go_library(
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/grpc",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/credentials/api/v1alpha1",
+        "//agentplane/identity/credentials/requester",
+        "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
@@ -303,9 +321,6 @@ go_library(
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/watchhealth",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/grpc",
-        "//agentplane/workload_auth/listener",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_spf13_viper//:viper",
@@ -356,8 +371,8 @@ go_test(
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/push",
+        "//agentplane/identity/auth/auth",
         "//agentplane/testing/configtest",
-        "//agentplane/workload_auth/auth",
     ],
 )
 
@@ -374,8 +389,8 @@ go_test(
         "//agentplane/action_service/store",
         "//agentplane/action_service/testing/nettest",
         "//agentplane/action_service/worker",
+        "//agentplane/identity/auth/auth",
         "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/auth",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -399,6 +414,7 @@ go_test(
         ":linkage_service_go_proto",
         ":operator_action_service_go_proto",
         ":web_push_service_go_proto",
+        "//agentplane/action_service/callers",
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/migrations",
@@ -409,13 +425,16 @@ go_test(
         "//agentplane/action_service/testing/oauthprovider",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/testing",
+        "//agentplane/identity/credentials/api/v1alpha1",
+        "//agentplane/identity/credentials/testing",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/postgres/probes",
         "//agentplane/postgres/wakeups",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/testing/postgres",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/testing",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
         "@com_github_modelcontextprotocol_go_sdk//mcp",

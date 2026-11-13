@@ -18,13 +18,13 @@ from python.runfiles import Runfiles
 
 from agentplane.environment_runtime_transport import config as runtime_transport
 from agentplane.grpc.calls import ServiceError
+from agentplane.identity.auth import listener as workload_listener
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
-from agentplane.workload_auth import listener as workload_listener
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
@@ -206,6 +206,7 @@ async def run_gateway(
             )
             effective_settings = Settings(
                 sandbox_namespace=namespace,
+                policy_namespace=namespace,
                 dispatcher_database_url=database_url,
                 pod_name=workload.name,
                 pod_ip="192.0.2.10",

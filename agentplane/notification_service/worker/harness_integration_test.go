@@ -42,7 +42,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 func ptr[T any](v T) *T { return &v }
 
@@ -158,10 +158,13 @@ func (h *fakeHistory) readRequests() []*historypb.ReadSessionEventsRequest {
 
 // fakeDispatcher records what is submitted to it, and says the command is queued unless a test says otherwise.
 type fakeDispatcher struct {
+	// accountUID is the ServiceAccount the Session is recorded as executing as; empty records none.
 	accountUID string
-	mu         sync.Mutex
-	requests   []*dispatcherpb.SubmitInputRequest
-	respond    func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
+	// identity is the Identity the Session is recorded as executing as, if any.
+	identity *identitypb.Identity
+	mu       sync.Mutex
+	requests []*dispatcherpb.SubmitInputRequest
+	respond  func(context.Context, *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error)
 }
 
 func (d *fakeDispatcher) SubmitInput(ctx context.Context, in *dispatcherpb.SubmitInputRequest, _ ...grpc.CallOption) (*dispatcherpb.SubmitInputResponse, error) {
@@ -548,9 +551,13 @@ func unrelatedEntry(cursor uint64) *eventlogpb.EventEntry {
 func (d *fakeDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
-		SessionId:         request.GetSessionId(),
-		ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: d.accountUID},
-		Placement:         &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}},
-	}}, nil
+	session := &dispatcherpb.Session{
+		SessionId: request.GetSessionId(),
+		Identity:  d.identity,
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: testSandboxUID}}}},
+	}
+	if d.accountUID != "" {
+		session.ExecutionIdentity = &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: d.accountUID}
+	}
+	return &dispatcherpb.GetSessionResponse{Session: session}, nil
 }

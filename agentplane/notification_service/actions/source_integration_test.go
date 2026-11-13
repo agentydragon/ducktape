@@ -18,6 +18,7 @@ import (
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
@@ -41,7 +42,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
+var testIncarnation = store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -370,7 +371,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	})
 	request := uuid.New()
 
-	events, err := f.source.Events(t.Context(), testOwner, request, 1, "test-account-uid")
+	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +383,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0, "test-account-uid")
+	_, err = f.source.Events(t.Context(), store.AccountOwner{Account: model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, request, 0)
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
@@ -408,7 +409,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 		}
 	})
 
-	events, err := f.source.Events(t.Context(), testOwner, uuid.New(), 0, "test-account-uid")
+	events, err := f.source.Events(t.Context(), store.AccountOwner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, uuid.New(), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -630,5 +631,32 @@ func TestActionsRequireTheExactRecordedCallerUID(t *testing.T) {
 				t.Fatalf("entries = %v", entries)
 			}
 		})
+	}
+}
+
+func TestIdentityCancellationActorSurvivesSourceAndInboxStorage(t *testing.T) {
+	f := newFixture(t)
+	subscription := f.subscribe(t)
+	actor := &actionpb.Principal{Principal: &actionpb.Principal_CallerIdentity{CallerIdentity: &identitypb.Identity{Name: "cancelling-identity", Uid: "original-canceller-uid"}}}
+	f.service.set(func(s *fakeActionService) {
+		event := wireActionEvent(1)
+		event.State = actionpb.ActionState_ACTION_STATE_CANCELLED
+		event.Actor = actor
+		s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
+	})
+	claim := f.claim(t)
+	if err := f.reconcile(t, claim); err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.store.Read(t.Context(), claim.Holder(), subscription.InboxID, 0, 128)
+	if err != nil || len(page.Entries) != 1 {
+		t.Fatalf("inbox = %+v, %v", page, err)
+	}
+	var event storagecodec.ActionEvent
+	if err := json.Unmarshal(page.Entries[0].Payload, &event); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(event.Actor, actor) || event.State != actionpb.ActionState_ACTION_STATE_CANCELLED {
+		t.Fatalf("stored cancellation = %+v", event)
 	}
 }

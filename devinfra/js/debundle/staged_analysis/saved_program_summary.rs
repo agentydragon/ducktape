@@ -46,6 +46,7 @@ pub(super) struct SavedProgramSummary<'a> {
     stable_set_spreads: BTreeMap<String, BTreeMap<u32, SavedStableSetIterableUse>>,
     inferred_set_constructions: BTreeMap<String, BTreeMap<u32, SavedInferredSetConstruction>>,
     argument_inputs: BTreeMap<String, Vec<SavedArgumentInput>>,
+    stable_imports: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     inline_callback_factories: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     callback_factory_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     retained_callback_factories: Cow<'a, BTreeMap<String, RetainedCallbackSignatures>>,
@@ -214,6 +215,7 @@ impl<'a> SavedProgramSummary<'a> {
             stable_set_spreads,
             inferred_set_constructions,
             argument_inputs,
+            stable_imports: Cow::Borrowed(&summary.stable_imports),
             inline_callback_factories: Cow::Borrowed(&summary.inline_callback_factories),
             callback_factory_members: Cow::Borrowed(&summary.callback_factory_members),
             retained_callback_factories: Cow::Borrowed(&summary.retained_callback_factories),
@@ -371,6 +373,7 @@ impl<'a> SavedProgramSummary<'a> {
             stable_set_spreads,
             inferred_set_constructions,
             argument_inputs,
+            stable_imports: self.stable_imports.into_owned(),
             inline_callback_factories: self.inline_callback_factories.into_owned(),
             callback_factory_members: self.callback_factory_members.into_owned(),
             retained_callback_factories: self.retained_callback_factories.into_owned(),
@@ -451,6 +454,8 @@ struct SavedInitializerCallEffectInput {
     provider_chunk: String,
     provider_export: String,
     provider_sha256: String,
+    #[serde(default)]
+    returns_opaque_function_from_const_primitive: bool,
     effective_replacement: Option<analysis::analysis_inputs::EffectiveInitializerCallReplacement>,
     provider_dependency_closure: BTreeSet<String>,
 }
@@ -469,6 +474,8 @@ impl SavedInitializerCallEffectInput {
             provider_chunk: input.provider_chunk.clone(),
             provider_export: input.provider_export.clone(),
             provider_sha256: input.provider_sha256.clone(),
+            returns_opaque_function_from_const_primitive: input
+                .returns_opaque_function_from_const_primitive,
             effective_replacement: input.effective_replacement.clone(),
             provider_dependency_closure: input.provider_dependency_closure.clone(),
         })
@@ -484,6 +491,8 @@ impl SavedInitializerCallEffectInput {
             provider_chunk: self.provider_chunk,
             provider_export: self.provider_export,
             provider_sha256: self.provider_sha256,
+            returns_opaque_function_from_const_primitive: self
+                .returns_opaque_function_from_const_primitive,
             effective_replacement: self.effective_replacement,
             provider_dependency_closure: self.provider_dependency_closure,
         })
@@ -709,6 +718,7 @@ mod tests {
             stable_set_spreads: BTreeMap::new(),
             inferred_set_constructions: BTreeMap::new(),
             argument_inputs: BTreeMap::new(),
+            stable_imports: BTreeMap::new(),
             inline_callback_factories: BTreeMap::new(),
             callback_factory_members: BTreeMap::new(),
             retained_callback_factories: BTreeMap::new(),

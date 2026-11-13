@@ -1,20 +1,29 @@
 # History Service
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
-public Session ID. Readers authenticate with a projected ServiceAccount token (TokenReview),
-and can read only Sessions whose retained execution principal has the same
-ServiceAccount namespace, name and UID. This read authority does not depend on a live Sandbox.
-Configured backend readers retain their explicit Pod-bound, service-wide read path; a ServiceAccount
-token alone does not grant it. A Session UUID by itself grants nothing. Consumers use `client.py`;
-`testing/go_service.py` runs the built Go service over a test database. Tests can inspect the fold's
-storage through `fold/models.py` and use the generated Thread entity messages for semantic reads.
+public Session ID. A projected ServiceAccount token (TokenReview) reads Sessions whose retained
+execution principal has the same ServiceAccount namespace, name and UID. A Sandbox Workload SVID
+naming an Identity reads Sessions retained under that exact Identity name and UID. Neither read scope
+depends on the original Sandbox remaining. Configured backend readers retain their explicit Pod-bound, service-wide
+read path; a ServiceAccount token alone does not grant it. A Session UUID by itself grants nothing.
+Consumers use `client.py`; `testing/go_service.py` runs the built Go service over a test database.
+Tests can inspect the fold's storage through `fold/models.py` and use the generated Thread entity
+messages for semantic reads.
 
-An optional, separate `delegation` setting names the Actions actor, caller namespaces and exact full
-History RPC method names that admit delegated reads. The shared workload-auth middleware rechecks the
-asserted caller's current ServiceAccount UID. Delegated Actions calls retain ordinary execution-principal
+An optional, separate `delegation` setting names the Actions actor, caller namespaces, whether it may
+assert Identities (`identity_callers`, which requires `policy_namespace`) and exact full History RPC
+method names that admit delegated reads. The shared workload-auth middleware rechecks the asserted
+caller's current ServiceAccount or Identity UID; a delegated Identity reads only the Sessions recorded
+with that incarnation, as its own workload does. Delegated Actions calls retain ordinary execution-principal
 read scope even if the actor is also a configured backend reader; actor Pod proof does not widen the read.
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.
+
+Managed Pod, VM and Firecracker CLI environments set `AGENTPLANE_HISTORY_URL` to the shared local
+platform gRPC listener, `http://<local gateway>:3130`. The listener routes History RPCs through an
+mTLS CONNECT to the History Service; the sidecar presents the Sandbox workload SVID, and this
+service scopes the read to the Identity name and UID in that credential. No projected History token
+or `reader_accounts` grant is needed for this path.
 
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
@@ -54,10 +63,21 @@ The runner-ingress projected-token audience is absent from Sandbox templates and
 
 `rpc` configures the shared native gRPC listener, its server TLS files and explicit authentication modes.
 With SPIFFE enabled, `Push` admits Sandbox SVIDs and configured sampler bearer accounts; bearer-only
-listeners retain namespace-scoped writer admission. Reads require their existing bearer audience and
-resource authorization. Presenting a certificate together with bearer or delegation metadata is refused.
+listeners retain namespace-scoped writer admission. A ServiceAccount reads only with a bearer of the read
+audience, never with an SVID. Presenting a certificate together with bearer or delegation metadata is refused.
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
-UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
+UID) in `session_history`; other accounts get `PERMISSION_DENIED`.
+
+The required `policy_namespace` lets `Push` admit a Sandbox SVID whose WorkloadCredential
+names an Identity in that namespace (absent, such a writer is refused). The record must be in
+`ingress.writer_namespaces` and controlled by a Sandbox: the Session binds to the Identity
+incarnation (name, UID) and is pinned to that Sandbox, so a successor Identity of the same name, the
+same Identity running another Sandbox, or a ServiceAccount writer is refused, and an Identity writer
+cannot take a ServiceAccount-bound Session. The read API admits a Sandbox SVID naming an Identity
+and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
+be its own Identity, and its `execution_principal`, when present, the ServiceAccount its Sandbox
+controls. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
+replica predating Identity writers cannot bind a ServiceAccount over one. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
@@ -159,7 +179,9 @@ fill an older record; a different UID is refused. `FindSessions` supports both n
 exact UID lookup, including deleted Sandboxes. Legacy rows and ServiceAccounts without a Sandbox
 controller owner remain without a UID.
 
-A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+An Identity writer's Sandbox is the controller owner of its WorkloadCredential.
+
+A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. A nullable retained execution Identity (`Attached.execution_identity`, the Identity incarnation the Dispatcher recorded) is retained from an Identity runner running as it or a configured central sampler relaying it, never from a ServiceAccount runner, which cannot vouch for it; it is immutable like the execution principal, and a read scoped to an Identity incarnation lists exactly the Sessions retained as executing as it, whether or not their Sandbox still exists. The read API admits an Identity SVID (with `policy_namespace` set) and scopes it to that Identity incarnation. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 
 ## Delta settlement
 
@@ -167,16 +189,54 @@ Each `Store.Append` batch that completes an item drops that
 item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
 the same transaction, when every frame matches an exact versioned template
 (`storage/delta_templates.go`) and the retained completion holds exactly their
-concatenation. Anything else in the span keeps every entry. The dropped cursors are recorded as a
+concatenation. Malformed frames, failed commands, harness exits and recovery boundaries keep the
+span whole. Harness stderr remains stored at its original cursor but does not prevent settlement
+of otherwise redundant deltas. The dropped cursors are recorded as a
 `SettledDeltas` with its ranges, and read pages report the settlements that cover or complete in
 them; the fold and the app's raw-history readers treat a settled cursor as absent. The runner
 journal keeps every entry. On by default; setting `ingress.settle_deltas` to false keeps every
 stored entry, for debugging. Why and what it drops:
 [delta settlement ADR](../docs/adr_delta_settlement.md).
 
+### Historical settlement
+
+The same image supports `history-service settle-history --session UUID --dry-run` and `--apply`.
+Use `--all` instead of `--session UUID` to visit retained Sessions in recording order. Both the scope
+and mode are required. This command needs only `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`; it does
+not start the service, run migrations, restart runners or call providers.
+
+Each Session is scanned in pages of at most 128 entries / 1 MiB, with an oversized entry alone.
+The scan retains completion cursors and the last observation referencing each source cursor, not
+event bodies. Memory grows with the number of source references in one Session. Each eligible
+completion uses the ordinary settlement checks, including the 20,000-entry span limit. A later
+observation citing a chunk keeps that item's deltas. Dry runs use read-only transactions and log
+eligible rows and `pg_column_size(payload)` bytes; those exclude row/index overhead and unused space.
+
+Apply commits one completion per transaction, with a 30-second deadline and a 1-second lock timeout.
+It checks eligibility in a read-only transaction before taking any write lease; ineligible or
+already settled completions leave the projector alone.
+It acquires the projection lease and locks the Session against appends. A changed prefix or a live
+projection lease stops that Session's pass; `--all` visits the other Sessions before exiting nonzero.
+Rerun after the Session quiets or the fold catches up. Earlier commits remain applied. Recorded
+settlements are skipped on rerun.
+The transaction removes the deltas and their projection evidence, records settlement metadata and
+cleanup ranges, and wakes History followers. Cleanup ranges correct readers already past the old
+completion; item bodies, checkpoints and stderr stay intact. A projector holding an old fetched
+page loses its lease fence and cannot restore deleted evidence.
+
+For staging, copy [the manual Job template](ops/settle-history-job.yaml), replace its image with the
+deployed History image containing this command, and create it with `kubectl create -f`.
+The template starts with a dry run of the measured reasoning Session. Inspect the Job's logs,
+then create a new Job with `--apply`. Verify History page/sequence reads, completion/stderr retention,
+and projection evidence before replacing the Session scope with `--all`. The Job uses the existing
+History ServiceAccount, network-policy label and database Secret; no new RBAC or permanent workload.
+It is not included in Flux. Kubernetes retries are safe; cancel by deleting the Job. Cancellation
+keeps already committed settlements. Reverting the code does not restore deleted chunk boundaries.
+Ordinary PostgreSQL vacuum makes freed space reusable; this command does not shrink relation files.
+
 ## Removed ranges
 
-A cleanup migration that deletes entries from `session_event` records their cursors in
+A cleanup that deletes entries from `session_event` records their cursors in
 `session_event_removed_range` and keeps nothing of their content, so a reader can tell a removed
 cursor from a missing one. Read pages report the ranges (`removed`) that intersect them, and
 observation pages fold them into `settled`; readers treat both as covered, and the fold treats
@@ -262,7 +322,20 @@ The listener accepts TCP addresses or inherited descriptors as documented by
 identities fixed. A central execution principal is retained only from the Dispatcher-provided
 identity on the admitted sampler path; the executor account name is not used to guess its UID.
 Native announcements cannot claim central metadata. The same cursor, exact-replay,
-writer fencing and commit-before-ack rules apply. Central outboxes retain evidence in sampler
+writer fencing and commit-before-ack rules apply.
+
+When the Agentplane chart configures a central sampler, it also enables
+`ingress.sampler_identity_callers`. Direct History deployments must opt in explicitly.
+
+`ingress.sampler_identity_callers` (requires sampler accounts and the SPIFFE listener, on which `Push`
+admits Identity writers) additionally lets those accounts push as
+delegating actors under the [delegated authorization contract](../docs/delegated_authorization.md),
+naming the Identity a Session executes as and the Session itself. The middleware verifies the
+sampler's token and grant and reads the Identity live, so a stale or missing incarnation is refused
+before the handler; the sampler stays the writer, and the Identity is retained as the Session's
+execution Identity only when the announcement names the same one and the same Session, in a
+`sampler_announce`. A sampler pushing as itself keeps relaying the recorded Identity as above.
+Announcing a central Session never implies this grant. Central outboxes retain evidence in sampler
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
 not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
@@ -271,5 +344,17 @@ The SessionSpec placement cutover's History migration 8 moved a legacy archived
 `SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when
 the old record had no exact placement to report. It did not invent an environment identity or
 change raw events, cursors or event ordering. New live openings use the typed placement in
-`SessionSpec`; historical evidence remains available. A database that has not completed the old
-migrations must run the previous image before adopting the current baseline.
+`SessionSpec`; historical evidence remains available.
+
+Migration 15 is the selected Goose baseline. It creates the current schema on a fresh database and
+adopts a completed version-14 database after validating its schema. Adoption preserves existing rows,
+schema object identities, and Goose history. A deployed database below version 14 must first run the
+previous History image through migration 14 and finish that rollout; version 15 fails closed for
+older or partial predecessors. Migration 14 removes the temporary command-operation bridge, so
+starting version 15 while an older rollout is still active is unsupported.
+
+Use a version-15-compatible image for fresh databases. Their ledger records version 15 without
+versions 11-14, so a version-14 image would reject that ledger as missing out-of-order migrations.
+On a database adopted from version 14, the prior migration rows remain present and the version-14
+Goose provider sees no pending migrations after version 15. That check covers migration startup;
+runtime rollback to an older image is unsupported.

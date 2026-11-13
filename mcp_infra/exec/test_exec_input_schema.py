@@ -4,9 +4,9 @@ import pytest
 import pytest_bazel
 from fastmcp.client import Client
 
-from mcp_infra.constants import WORKING_DIR
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig
+from mcp_infra.testing.fixtures import WORKING_DIR
 from util.exec.models import MAX_EXEC_TIMEOUT_MS, BaseExecResult, Exited
 
 

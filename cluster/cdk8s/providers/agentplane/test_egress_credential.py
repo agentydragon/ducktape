@@ -25,18 +25,5 @@ def test_source_secret_ref(scratch_chart: Chart) -> None:
     assert manifest["spec"]["source"] == {"secretRef": {"name": "my-secret", "key": "token"}}
 
 
-def test_source_projected_workload_token(scratch_chart: Chart) -> None:
-    EgressCredential(
-        scratch_chart,
-        "test",
-        metadata=ApiObjectMetadata(name="test-credential"),
-        description="test",
-        source=Source.projected_workload_token(audience="https://example.com"),
-        targets=_TARGETS,
-    )
-    (manifest,) = Cdk8sTesting.synth(scratch_chart)
-    assert manifest["spec"]["source"] == {"projectedWorkloadToken": {"audience": "https://example.com"}}
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

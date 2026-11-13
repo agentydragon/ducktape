@@ -43,6 +43,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -53,9 +59,6 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadgrpc "github.com/agentydragon/ducktape/agentplane/workload_auth/grpc"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/listener"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -165,25 +168,39 @@ func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckReque
 }
 
 // sandboxExecutors builds the Executor of each sandbox group, and gives the group the Actions it offers: they are
-// declared, not discovered, so a direct tool the roster lacks is a typo found now. The offered templates are read once,
-// here, so that a missing or unsafe one stops the service rather than failing each create.
+// declared, not discovered, so a direct tool the roster lacks is a typo found now. Each group requests its boxes'
+// WorkloadCredentials. The offered templates are read once, here, so that a missing or unsafe one stops the service
+// rather than failing each create.
 func sandboxExecutors(ctx context.Context, groups *catalog.Catalog, kube *rest.Config) (map[string]worker.Executor, error) {
 	byGroup := map[string]worker.Executor{}
 	var exec sandbox.Exec
-	var client kubernetes.Interface
+	var kubeClient kubernetes.Interface
+	var records client.Client
+	var credentials requester.Requester
 	for key, group := range groups.Groups() {
 		binding, isSandbox := group.Executor.(catalog.PodBinding)
 		if !isSandbox {
 			continue
 		}
-		if client == nil {
+		if kubeClient == nil {
 			var err error
-			if client, err = kubernetes.NewForConfig(kube); err != nil {
+			if kubeClient, err = kubernetes.NewForConfig(kube); err != nil {
 				return nil, err
 			}
-			exec = sandbox.KubernetesExec(kube, client)
+			exec = sandbox.KubernetesExec(kube, kubeClient)
+			scheme := runtime.NewScheme()
+			if err := workloadapi.AddToScheme(scheme); err != nil {
+				return nil, err
+			}
+			// Uncached: a box's credential is read back as the API server holds it.
+			if records, err = client.New(kube, client.Options{Scheme: scheme}); err != nil {
+				return nil, err
+			}
+			if credentials, err = requester.New(records, records); err != nil {
+				return nil, err
+			}
 		}
-		inventory := sandbox.NewInventory(binding, client, exec)
+		inventory := sandbox.NewInventory(binding, kubeClient, exec, credentials, records)
 		if err := inventory.CheckTemplates(ctx); err != nil {
 			return nil, fmt.Errorf("ActionGroup %s: %w", key, err)
 		}
@@ -313,7 +330,8 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 	return identity, notifier, err
 }
 
-// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount.
+// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount, or, by
+// SVID, its Identity of the policy namespace.
 func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	workloads, err := auth.NewResolver(d.Reviews, c.tokenAudience(), c.CallerServiceAccountNamespaces)
 	if err != nil {
@@ -321,7 +339,8 @@ func gate(c config, d deps, callers api.Callers) (*api.Gate, error) {
 	}
 	options := api.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
 	if c.RPC.Has(listener.SPIFFE) {
-		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces)
+		options.SVID, err = auth.NewKubernetesSVIDResolver(d.Kube, c.CallerServiceAccountNamespaces,
+			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 		if err != nil {
 			return nil, err
 		}
@@ -404,6 +423,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			c.SessionDelegationDispatcher.Target, c.SessionDelegationDispatcher.TokenFile,
 			time.Duration(c.SessionDelegationDispatcher.RequestTimeoutSeconds*float64(time.Second)),
 			c.SessionDelegationDispatcher.TLS,
+			workloadgrpc.ClientInterceptors{},
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated Environment Service and Session Dispatcher: %w", err)
@@ -413,6 +433,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 			c.SessionDelegationHistory.Target, c.SessionDelegationHistory.TokenFile,
 			time.Duration(c.SessionDelegationHistory.RequestTimeoutSeconds*float64(time.Second)),
 			c.SessionDelegationHistory.TLS,
+			workloadgrpc.ClientInterceptors{},
 		)
 		if err != nil {
 			return fmt.Errorf("dial delegated History Service: %w", err)
@@ -455,9 +476,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	visibility, err := policies.NewVisibility(
-		c.GitHubVisibility.APIBaseURL, time.Duration(c.GitHubVisibility.CacheTTLSeconds*float64(time.Second)),
-	)
+	visibility, err := policies.NewVisibility(policies.GitHubAPIBaseURL, policies.VisibilityTTL)
 	if err != nil {
 		return err
 	}

@@ -88,6 +88,12 @@ the process receiver filters attributes to keep credentials and request content 
 The bundled containerd does not register its upstream tracing plugin; imports have driver OTel spans
 and the existing Go CPU/runtime profiles.
 
+Suites call the app as the fixture's test operator, with the OIDC ID token in `Stack.token`. A plain
+fixture names a test-only issuer under the reserved `.test` domain, and the app pins a key the stack
+generates (`oidc.static_ed25519_keys`); the test process signs the token, so no issuer runs. MCP
+fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
+grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
+
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The
@@ -224,7 +230,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 ## VM Sandboxes
 
-VM stacks, `test_vm` and the opt-in `test_vm_manual`,
+VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
 (`rendered/local-model-vm.json`), so [`sandboxes.py`](../vm/sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
@@ -262,9 +268,8 @@ success receipt from that guest's own console. No separate root image or extra V
 Workspace ownership, native identity/security settings, systemd and kernel resource properties, and
 detached-child cleanup run through ordinary Session setup and retained History in both harness
 scenarios. Their turns also verify the runner certificate and identity, authenticated session,
-command admission and retained History. The two turn guests and one Codex sandbox/OOM guest boot together.
-The suite requests an 8-unit worker so the guests and k3s services fit without waiting for another
-group to exit.
+command admission and retained History. The two turn guests boot together. The manual
+`test_vm_oom` target runs the Codex tool-OOM survival probe separately.
 
 The guest loads the ACPI button/evdev drivers and runs BusyBox `acpid`. On a power-button event,
 the listener requests `systemctl poweroff`. Systemd signals Environment Runtime first; Runtime
@@ -299,11 +304,10 @@ victim counter proves the single kill: either the aggregate or leaf limit can tr
 This exercises the test guest's kernel, shared production systemd units, and production Runner/Codex
 binaries; it does not boot the production NixOS image or force exec-server death/restart.
 
-Only this OOM sandbox selects the cloned `environment-vm-codex-oom` template. Its guest RAM, service,
-aggregate, and process budgets match `environment-vm`; only the native executor leaf's `memory.max` is
-96 MiB. This keeps the exec-server startup path intact while reducing the memory the selected tool
-must charge before the kernel kills it. The rendered fixture test checks this is the sole resource
-difference; see [the measured budget probe](../debug/vm_oom_budget.md).
+Only this OOM sandbox selects the cloned `environment-vm-codex-oom` template to enable the guest
+cgroup observer. Its guest RAM and all resource budgets match `environment-vm`, including the
+256 MiB native executor leaf. The command grows above that limit so the kernel exercises the OOM
+path while the Codex session remains active; see [the measured budget probe](../debug/vm_oom_budget.md).
 
 KubeVirt's and Kyverno's images are Bazel-pulled layouts (`vm_sandboxes/`, pinned in `MODULE.bazel`),
 imported before their releases are applied, so no Pod pulls them; the releases roll out while the
@@ -334,7 +338,7 @@ skip this additional assertion while retaining their logs. Launcher `compute` lo
 namespace's `virt-handler` logs are retained under `vm-artifacts/launchers/` and
 `vm-artifacts/handlers/`, respectively, for graceful-shutdown and domain-exit evidence.
 
-The normal `test_vm` target also selects block-device boot evidence on its OOM guest only. An early
+The manual `test_vm_oom` target selects block-device boot evidence on its OOM guest. An early
 guest unit runs `udevadm monitor --kernel --udev --property --subsystem-match=block`; it reports
 `AGENTPLANE_UDEV_MONITOR_READY` after both monitor sockets are bound and before systemd coldplug.
 This captures coldplug and udev rule completion for block devices, including their serial and

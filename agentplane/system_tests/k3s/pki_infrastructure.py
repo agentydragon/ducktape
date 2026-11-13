@@ -37,6 +37,26 @@ def _wait_for_api(kubectl: Kubectl, resource: dict[str, Any]) -> None:
             kubectl("create", "--dry-run=server", "-f", "-", input_text=yaml.safe_dump(resource))
 
 
+def _admission_probes() -> tuple[dict[str, Any], dict[str, Any]]:
+    return (
+        {
+            "apiVersion": "cert-manager.io/v1",
+            "kind": "ClusterIssuer",
+            "metadata": {"name": "test-cert-manager-admission"},
+            "spec": {"selfSigned": {}},
+        },
+        {
+            "apiVersion": "trust.cert-manager.io/v1alpha1",
+            "kind": "Bundle",
+            "metadata": {"name": "test-trust-manager-admission"},
+            "spec": {
+                "sources": [{"secret": {"name": "test-runner-root", "key": "ca.crt"}}],
+                "target": {"configMap": {"key": "ca-certificates.crt"}},
+            },
+        },
+    )
+
+
 def _install(kubectl: Kubectl, objects: list[dict[str, Any]], probe: dict[str, Any]) -> None:
     kubectl("apply", "--server-side", "-f", "-", input_text=yaml.safe_dump_all(objects))
     crds = [f"crd/{doc['metadata']['name']}" for doc in objects if doc["kind"] == "CustomResourceDefinition"]
@@ -66,29 +86,9 @@ def _install(kubectl: Kubectl, objects: list[dict[str, Any]], probe: dict[str, A
 
 @tracer.start_as_current_span("system_test.pki.controllers")
 def install(kubectl: Kubectl, cert_manager: list[dict[str, Any]], trust_manager: list[dict[str, Any]]) -> None:
-    _install(
-        kubectl,
-        cert_manager,
-        {
-            "apiVersion": "cert-manager.io/v1",
-            "kind": "ClusterIssuer",
-            "metadata": {"name": "test-cert-manager-admission"},
-            "spec": {"selfSigned": {}},
-        },
-    )
-    _install(
-        kubectl,
-        trust_manager,
-        {
-            "apiVersion": "trust.cert-manager.io/v1alpha1",
-            "kind": "Bundle",
-            "metadata": {"name": "test-trust-manager-admission"},
-            "spec": {
-                "sources": [{"secret": {"name": "test-runner-root", "key": "ca.crt"}}],
-                "target": {"configMap": {"key": "ca-certificates.crt"}},
-            },
-        },
-    )
+    cert_manager_probe, trust_manager_probe = _admission_probes()
+    _install(kubectl, cert_manager, cert_manager_probe)
+    _install(kubectl, trust_manager, trust_manager_probe)
 
 
 def prepare(
@@ -103,3 +103,5 @@ def prepare(
                     "-n", NAMESPACE, "rollout", "status", f"deployment/{doc['metadata']['name']}",
                     f"--timeout={READY_SECONDS}s",
                 )  # fmt: skip
+        for probe in _admission_probes():
+            _wait_for_api(kubectl, probe)

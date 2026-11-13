@@ -5,10 +5,10 @@ environments: a `EnvironmentSandboxTemplate` takes the SandboxTemplate name it o
 a deployment adds as many as it offers (staging one, on the ducktape tools image; the k3s fixture one,
 on an image of its own). Every one of them shares this module's fence, which selects Pods by label.
 
-A runner template names no ServiceAccount, and the environment creates none for them: the Sandbox
-controller runs every Sandbox's Pod as the Sandbox's own account, which it owns and creates before
-the Pod (agentplane/sandbox_controller/identity.go), so an account named in a template is never
-used and would only invite the assumption that runner Pods share one.
+A runner template names no ServiceAccount, and the environment creates none for it. The Sandbox
+controller runs each Pod as the namespace's default account with token automount disabled, so a
+template cannot give a Sandbox a ServiceAccount identity; its explicit projected volumes are the
+workload's credentials.
 
 The templates' container images carry the same `unset` placeholder tag as the app's Deployment:
 kustomize's `images:` transformer patches by image name across every resource in the Kustomization,
@@ -32,6 +32,7 @@ from agentplane.env import config as configuration
 from agentplane.env.config import (
     CONFIG_FILE,
     LAUNCH_FILE,
+    Codex,
     CodexReadiness,
     Configuration,
     ContainerExecutor,
@@ -447,7 +448,7 @@ class EnvironmentSandboxTemplate(Construct):
                 values={"HOME": _HOME_DIR},
             ),
             claude=Harness(binary="/bin/claude", base_url=llm_url, token_env="ANTHROPIC_AUTH_TOKEN"),
-            codex=Harness(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
+            codex=Codex(binary="/bin/codex", base_url=f"{llm_url}/v1", token_env="OPENAI_API_KEY"),
             environment=PodEnvironment(
                 supervision="pid1",
                 executor=ContainerExecutor(url=_EXECUTOR_URL, socket=_EXECUTOR_SOCKET)

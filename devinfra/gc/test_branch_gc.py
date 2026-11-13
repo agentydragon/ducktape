@@ -9,7 +9,7 @@ from devinfra.gc import branch_gc as bg
 from devinfra.gc.conftest import GitRepo
 from devinfra.gc.git_repo import Worktree
 from devinfra.gc.pull_request import PrInfo, PrState
-from devinfra.gc.removal import Failed, Removed, Skipped
+from devinfra.gc.removal import Failed, Removed
 from devinfra.gc.worktree_gc import RetainedWorktree, RetainedWorktreeReason
 
 
@@ -26,7 +26,6 @@ def test_ancestor_branch_is_prunable(repo: GitRepo) -> None:
     result = _classify(repo, "feature")
     assert isinstance(result, bg.PrunableBranch)
     assert (result.reason, result.main) == (bg.PrunableBranchReason.CONTENT_IN_MAIN, "main")
-    assert result.tip == repo.rev("feature")
 
 
 def test_empty_branch_is_prunable(repo: GitRepo) -> None:
@@ -157,24 +156,13 @@ def test_branch_in_retained_worktree_is_kept(repo: GitRepo) -> None:
 
 def test_delete_branch_removes_it(repo: GitRepo) -> None:
     repo.branch("feature")
-    assert bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")) == Removed("feature")
+    assert bg.delete_branch(repo.path, "feature") == Removed("feature")
     assert not repo.has_branch("feature")
-
-
-def test_delete_branch_skips_a_branch_that_moved_since_it_was_classified(repo: GitRepo) -> None:
-    wt = repo.worktree("wt", "feature")
-    classified_tip = repo.rev("feature")
-    wt.commit("f", "new work\n", "commit after the scan")
-
-    result = bg.delete_branch(repo.path, "feature", expected_tip=classified_tip)
-
-    assert isinstance(result, Skipped)
-    assert repo.has_branch("feature")
 
 
 def test_delete_branch_fails_when_checked_out(repo: GitRepo) -> None:
     repo.worktree("wt", "feature")
-    assert isinstance(bg.delete_branch(repo.path, "feature", expected_tip=repo.rev("feature")), Failed)
+    assert isinstance(bg.delete_branch(repo.path, "feature"), Failed)
 
 
 def test_cherry_picked_branch_past_the_tree_check_is_prunable(repo: GitRepo) -> None:
@@ -212,10 +200,10 @@ _PR = PrInfo(7421, PrState.MERGED)
 
 def _populated(reason: StrEnum) -> bg.BranchClassification:
     """The classification `reason` belongs to, carrying all the evidence a reason can cite."""
-    branch = bg.Branch("feature")
+    branch = "feature"
     match reason:
         case bg.PrunableBranchReason():
-            return bg.PrunableBranch(branch, reason, Path("/wt"), _MAIN, "0" * 40, _PR)
+            return bg.PrunableBranch(branch, reason, Path("/wt"), _MAIN, _PR)
         case bg.RetainedBranchReason():
             return bg.RetainedBranch(branch, reason, Path("/wt"), _PR)
         case bg.ReviewBranchReason():

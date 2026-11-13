@@ -1,0 +1,631 @@
+//! Facts about the other chunks of the program a chunk belongs to: whether
+//! the chunk is on an import cycle, and what any chunk writes on globals.
+
+use std::collections::BTreeMap;
+use std::path::{Component, Path, PathBuf};
+
+use anyhow::{Context, Result};
+use rustc_hash::{FxHashMap, FxHashSet};
+use swc_common::SyntaxContext;
+use swc_ecma_ast::*;
+use swc_ecma_visit::{Visit, VisitWith};
+
+use crate::helpers::prepass;
+use crate::intrinsics::{Census, census};
+
+pub struct ProgramFacts {
+    pub chunks: usize,
+    /// The analysed chunk's path among `modules`, and whether another chunk
+    /// can run while it initializes and reach it: a static import cycle
+    /// through the chunk, or a dynamic `import()` in the chunk's static
+    /// dependencies that may load it. `retarget` changes these; every other
+    /// fact is the program's.
+    place: std::cell::RefCell<(PathBuf, bool)>,
+    /// What any chunk of the program writes on globals.
+    pub census: Census,
+    /// Every chunk, parsed, by the path imports resolve to.
+    pub modules: Vec<(PathBuf, js_ast::ParsedJsModule)>,
+    /// Top-level `await` sites in any chunk of the program.
+    pub top_level_awaits: usize,
+    /// Chunks that did not parse. Each is taken to write every global, to
+    /// await at its top level, and to load any chunk.
+    pub unparsed_chunks: usize,
+    /// Relative or rooted static import specifiers, in any chunk, that name
+    /// no chunk read. Such a chunk runs before its importer and was not
+    /// seen: with any, the program is taken to write every global and the
+    /// chunk to be on an import cycle.
+    pub unresolved_static_specifiers: usize,
+    /// The same for literal `import()` specifiers. A chunk loaded that way
+    /// runs in a later job than the module graph that loads it, which
+    /// without a top-level `await` has finished evaluating by then: it is
+    /// not part of what the facts here describe.
+    pub unresolved_dynamic_specifiers: usize,
+    /// Exports, in any chunk, that only ever hold one string.
+    pub string_exports: usize,
+    /// Literal specifiers, static or dynamic, that are neither relative nor
+    /// under a declared root: packages, `node:` built-ins, URLs. They are
+    /// taken to name no chunk of the program, which holds unless an import
+    /// map or a bundler alias maps one onto a chunk.
+    pub external_specifiers: std::collections::BTreeSet<String>,
+    /// Per chunk path, the exports that are a `const` initialized with a
+    /// string literal, and the string.
+    exported_strings: FxHashMap<PathBuf, FxHashMap<String, String>>,
+    resolution: Resolution,
+    /// What each chunk imports.
+    graph: BTreeMap<PathBuf, Imports>,
+    root: PathBuf,
+}
+
+/// Whether any chunk statically imports itself through others.
+fn has_static_cycle(graph: &BTreeMap<PathBuf, Imports>, resolution: &Resolution) -> bool {
+    let edges = |path: &PathBuf| -> Vec<PathBuf> {
+        graph[path]
+            .statics
+            .iter()
+            .filter_map(|specifier| resolve(path, specifier, resolution))
+            .filter(|target| graph.contains_key(target))
+            .collect()
+    };
+    // Depth-first, each chunk entered once: an edge to a chunk still being
+    // visited closes a cycle.
+    let mut state: FxHashMap<&PathBuf, bool> = FxHashMap::default();
+    for start in graph.keys() {
+        if state.contains_key(start) {
+            continue;
+        }
+        let mut stack: Vec<(PathBuf, Vec<PathBuf>)> = vec![(start.clone(), edges(start))];
+        state.insert(start, false);
+        while let Some((path, pending)) = stack.last_mut() {
+            let Some(next) = pending.pop() else {
+                let (done, _) = graph.get_key_value(&*path).expect("a chunk of the graph");
+                state.insert(done, true);
+                stack.pop();
+                continue;
+            };
+            let (next, _) = graph.get_key_value(&next).expect("a chunk of the graph");
+            match state.get(next) {
+                Some(false) => return true,
+                Some(true) => {}
+                None => {
+                    state.insert(next, false);
+                    stack.push((next.clone(), edges(next)));
+                }
+            }
+        }
+    }
+    false
+}
+
+/// How an import specifier names a chunk file.
+#[derive(Default)]
+struct Resolution {
+    /// Imported file name to the name the chunk is stored under.
+    aliases: FxHashMap<PathBuf, PathBuf>,
+    /// Prefixes of absolute specifiers that stand for the chunk directory.
+    roots: Vec<String>,
+    directory: PathBuf,
+}
+
+impl ProgramFacts {
+    /// The index in `modules` of the chunk `specifier` names in `from`.
+    pub fn resolve(&self, from: &Path, specifier: &str) -> Option<usize> {
+        let target = resolve(from, specifier, &self.resolution)?;
+        self.modules.iter().position(|(path, _)| *path == target)
+    }
+
+    /// Makes `chunk` the analysed chunk: decides whether it is on an import
+    /// cycle. The other facts are the program's and stay.
+    pub fn retarget(&self, chunk: &Path) -> Result<()> {
+        let chunk = chunk
+            .canonicalize()
+            .with_context(|| format!("resolving {}", chunk.display()))?;
+        let (graph, resolution) = (&self.graph, &self.resolution);
+        anyhow::ensure!(
+            graph.contains_key(&chunk),
+            "{} is not under {}",
+            chunk.display(),
+            self.root.display()
+        );
+        let static_closure = |start: &Path| -> FxHashSet<PathBuf> {
+            let mut seen = FxHashSet::default();
+            let mut pending = vec![start.to_path_buf()];
+            while let Some(path) = pending.pop() {
+                let Some(imports) = graph.get(&path) else {
+                    continue;
+                };
+                for specifier in &imports.statics {
+                    if let Some(target) = resolve(&path, specifier, resolution)
+                        && seen.insert(target.clone())
+                    {
+                        pending.push(target);
+                    }
+                }
+            }
+            seen
+        };
+        let dependencies = static_closure(&chunk);
+        let static_cycle = dependencies.contains(&chunk);
+        // A dynamic `import()` settles in a later job. Without a top-level
+        // `await` anywhere in the program, a module graph evaluates in one
+        // job, so that job cannot run while this chunk is half evaluated.
+        // With one, evaluation suspends, and a dependency that dynamically
+        // imports this chunk, or a chunk that statically reaches it, or an
+        // unknown specifier, may run against it.
+        let dynamic_cycle = self.top_level_awaits > 0
+            && dependencies.iter().any(|dependency| {
+                graph.get(dependency).is_some_and(|imports| {
+                    imports.dynamics.iter().any(|specifier| {
+                        match specifier
+                            .as_deref()
+                            .and_then(|specifier| resolve(dependency, specifier, resolution))
+                        {
+                            Some(target) => {
+                                target == chunk || static_closure(&target).contains(&chunk)
+                            }
+                            None => true,
+                        }
+                    })
+                })
+            });
+        // A synchronous load of an unknown chunk, by this chunk or one it
+        // has loaded, may be of a chunk that imports this one.
+        let unknown_require = std::iter::once(&chunk).chain(&dependencies).any(|path| {
+            graph
+                .get(path)
+                .is_some_and(|imports| imports.unknown_requires > 0)
+        });
+        let on_import_cycle = static_cycle
+            || dynamic_cycle
+            || unknown_require
+            || self.unresolved_static_specifiers > 0;
+        *self.place.borrow_mut() = (chunk, on_import_cycle);
+        Ok(())
+    }
+
+    /// The analysed chunk's path.
+    pub fn chunk(&self) -> PathBuf {
+        self.place.borrow().0.clone()
+    }
+
+    pub fn on_import_cycle(&self) -> bool {
+        self.place.borrow().1
+    }
+
+    /// The imported bindings of `module`, the chunk at `from`, that only
+    /// ever hold one string.
+    pub fn imported_strings(&self, from: &Path, module: &Module) -> FxHashMap<Id, String> {
+        imported_strings(from, module, &self.exported_strings, &self.resolution)
+    }
+}
+
+/// The exports of `module` that are a `const`, or a `let` the module never
+/// assigns, initialized with a string literal. Before its declaration runs
+/// such a binding cannot be read, so a reader in any chunk sees that string.
+/// A `var` reads as `undefined` until then: it counts only with
+/// `settled_vars`, when no chunk can run before a chunk it imports has.
+///
+/// `imported` holds the module's imports already known to be such strings:
+/// re-exporting one exports the string.
+fn exported_strings(
+    module: &Module,
+    imported: &FxHashMap<Id, String>,
+    assigned: &FxHashSet<Id>,
+    settled_vars: bool,
+) -> FxHashMap<String, String> {
+    let string = |declarator: &VarDeclarator| {
+        let value = match declarator.init.as_deref()? {
+            Expr::Lit(Lit::Str(value)) => js_ast::str_value(value),
+            // A template without substitutions.
+            Expr::Tpl(template) if template.exprs.is_empty() => template
+                .quasis
+                .first()?
+                .cooked
+                .as_ref()?
+                .as_str()?
+                .to_string(),
+            _ => return None,
+        };
+        match &declarator.name {
+            Pat::Ident(name) => Some((name.id.to_id(), value)),
+            _ => None,
+        }
+    };
+    let constants = |var: &VarDecl| {
+        let decls = if var.kind == VarDeclKind::Var && !settled_vars {
+            &[]
+        } else {
+            var.decls.as_slice()
+        };
+        decls
+            .iter()
+            .filter_map(string)
+            .filter(|(id, _)| !assigned.contains(id))
+            .collect::<Vec<_>>()
+    };
+    let mut locals: FxHashMap<Id, String> = imported.clone();
+    let mut out = FxHashMap::default();
+    for item in &module.body {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => locals.extend(constants(var)),
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(var),
+                ..
+            })) => {
+                for (id, value) in constants(var) {
+                    out.insert(id.0.to_string(), value.clone());
+                    locals.insert(id, value);
+                }
+            }
+            _ => {}
+        }
+    }
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport {
+            src: None,
+            specifiers,
+            ..
+        })) = item
+        else {
+            continue;
+        };
+        for specifier in specifiers {
+            if let ExportSpecifier::Named(ExportNamedSpecifier {
+                orig: ModuleExportName::Ident(local),
+                exported,
+                ..
+            }) = specifier
+                && let Some(value) = locals.get(&local.to_id())
+            {
+                let name = match exported {
+                    None => local.sym.to_string(),
+                    Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                    Some(ModuleExportName::Str(name)) => js_ast::str_value(name),
+                };
+                out.insert(name, value.clone());
+            }
+        }
+    }
+    out
+}
+
+fn imported_strings(
+    from: &Path,
+    module: &Module,
+    exported: &FxHashMap<PathBuf, FxHashMap<String, String>>,
+    resolution: &Resolution,
+) -> FxHashMap<Id, String> {
+    let mut out = FxHashMap::default();
+    for item in &module.body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let Some(strings) = resolve(from, &js_ast::str_value(&import.src), resolution)
+            .and_then(|target| exported.get(&target))
+        else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            let ImportSpecifier::Named(named) = specifier else {
+                continue;
+            };
+            let name = match &named.imported {
+                None => named.local.sym.to_string(),
+                Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                Some(ModuleExportName::Str(name)) => js_ast::str_value(name),
+            };
+            if let Some(value) = strings.get(&name) {
+                out.insert(named.local.to_id(), value.clone());
+            }
+        }
+    }
+    out
+}
+
+#[derive(Default)]
+struct Imports {
+    statics: Vec<String>,
+    /// `None` for a specifier that is not a string literal.
+    dynamics: Vec<Option<String>>,
+    /// `import.meta.require` of something other than a string literal.
+    unknown_requires: usize,
+    /// `await` and `for await` outside any function.
+    top_level_awaits: usize,
+    function_depth: usize,
+    /// `import()` calls already accounted for in `dynamics`, by position.
+    wrapped: FxHashSet<u32>,
+}
+
+impl Visit for Imports {
+    fn visit_function(&mut self, function: &Function) {
+        self.function_depth += 1;
+        function.visit_children_with(self);
+        self.function_depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.function_depth += 1;
+        arrow.visit_children_with(self);
+        self.function_depth -= 1;
+    }
+
+    fn visit_await_expr(&mut self, awaited: &AwaitExpr) {
+        self.top_level_awaits += usize::from(self.function_depth == 0);
+        awaited.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, looped: &ForOfStmt) {
+        self.top_level_awaits += usize::from(looped.is_await && self.function_depth == 0);
+        looped.visit_children_with(self);
+    }
+
+    fn visit_import_decl(&mut self, import: &ImportDecl) {
+        self.statics.push(js_ast::str_value(&import.src));
+    }
+
+    fn visit_named_export(&mut self, export: &NamedExport) {
+        if let Some(source) = &export.src {
+            self.statics.push(js_ast::str_value(source));
+        }
+    }
+
+    fn visit_export_all(&mut self, export: &ExportAll) {
+        self.statics.push(js_ast::str_value(&export.src));
+    }
+
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        // `import.meta.require("./x.js")` evaluates the chunk before it
+        // returns, wherever the call is written.
+        let requires = matches!(&call.callee, Callee::Expr(callee)
+            if matches!(&**callee, Expr::Member(MemberExpr {
+                obj,
+                prop: MemberProp::Ident(method),
+                ..
+            }) if &*method.sym == "require"
+                && matches!(&**obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)));
+        if requires {
+            match call.args.first().map(|arg| &*arg.expr) {
+                Some(Expr::Lit(Lit::Str(specifier))) => {
+                    self.statics.push(js_ast::str_value(specifier));
+                }
+                _ => self.unknown_requires += 1,
+            }
+        }
+        if matches!(call.callee, Callee::Import(_)) && !self.wrapped.contains(&call.span.lo.0) {
+            self.dynamics
+                .push(match call.args.first().map(|arg| &*arg.expr) {
+                    Some(Expr::Lit(Lit::Str(specifier))) => Some(js_ast::str_value(specifier)),
+                    _ => None,
+                });
+        }
+        call.visit_children_with(self);
+    }
+}
+
+/// The chunk file a specifier names, without touching the file system:
+/// `from`'s directory joined with a relative specifier, or the chunk
+/// directory joined with what follows a declared root prefix. `None` for
+/// any other (package) specifier.
+fn resolve(from: &Path, specifier: &str, resolution: &Resolution) -> Option<PathBuf> {
+    let rooted = resolution
+        .roots
+        .iter()
+        .find_map(|root| specifier.strip_prefix(root.as_str()));
+    let joined = match rooted {
+        Some(rest) => resolution.directory.join(rest.trim_start_matches('/')),
+        None if specifier.starts_with('.') => {
+            from.parent().unwrap_or(Path::new("")).join(specifier)
+        }
+        None => return None,
+    };
+    let mut out = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    if let Some(alias) = resolution.aliases.get(&out) {
+        return Some(alias.clone());
+    }
+    Some(out)
+}
+
+fn files(root: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(root).with_context(|| format!("listing {}", root.display()))? {
+        let path = entry?.path();
+        if path.is_dir() {
+            files(&path, out)?;
+        } else if path.extension().is_some_and(|extension| extension == "js") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// Reads every `.js` file under `root` and relates them to `chunk`.
+/// `file_list` is the pipeline's `js-files.txt`: its `alias<TAB>original`
+/// lines name chunks stored under `alias` that imports name `original`.
+/// `specifier_roots` are prefixes of absolute import specifiers that stand
+/// for `root`.
+pub fn load(
+    root: &Path,
+    chunk: &Path,
+    file_list: Option<&Path>,
+    specifier_roots: &[String],
+) -> Result<ProgramFacts> {
+    let mut paths = Vec::new();
+    files(root, &mut paths)?;
+    paths.sort();
+    let canonical_root = root
+        .canonicalize()
+        .with_context(|| format!("resolving {}", root.display()))?;
+    let mut aliases = FxHashMap::default();
+    if let Some(list) = file_list {
+        let text =
+            std::fs::read_to_string(list).with_context(|| format!("reading {}", list.display()))?;
+        // The list names the program's chunks; other files in the
+        // directory are not part of it.
+        paths.clear();
+        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+            let stored = match line.split_once('\t') {
+                Some((alias, original)) => {
+                    aliases.insert(canonical_root.join(original), canonical_root.join(alias));
+                    alias
+                }
+                None => line,
+            };
+            if stored.ends_with(".js") {
+                paths.push(root.join(stored));
+            }
+        }
+        paths.sort();
+    }
+    let resolution = Resolution {
+        aliases,
+        roots: specifier_roots.to_vec(),
+        directory: canonical_root,
+    };
+    let mut modules = Vec::new();
+    let mut unparsed_chunks = 0;
+    let chunk = chunk
+        .canonicalize()
+        .with_context(|| format!("resolving {}", chunk.display()))?;
+    let mut graph: BTreeMap<PathBuf, Imports> = BTreeMap::new();
+    let mut merged = Census::default();
+    for path in &paths {
+        let path = path.canonicalize()?;
+        // A chunk may embed bytes that are not UTF-8 in a string.
+        let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+        let source = String::from_utf8_lossy(&bytes);
+        // A chunk that does not parse may do anything: write any global,
+        // await, and load any chunk.
+        let Ok(parsed) = js_ast::parse_js_module(&path.display().to_string(), &source) else {
+            anyhow::ensure!(path != chunk, "{} does not parse", path.display());
+            unparsed_chunks += 1;
+            merged.refuse_everything();
+            graph.insert(
+                path,
+                Imports {
+                    unknown_requires: 1,
+                    top_level_awaits: 1,
+                    ..Imports::default()
+                },
+            );
+            continue;
+        };
+        // An `import(param)` of a wrapper only ever called with literals
+        // loads those literals.
+        let wrappers = crate::derive::import_wrappers(&parsed.module);
+        let mut imports = Imports {
+            wrapped: wrappers.consumed,
+            dynamics: wrappers.specifiers.into_iter().map(Some).collect(),
+            ..Imports::default()
+        };
+        parsed.module.visit_with(&mut imports);
+        graph.insert(path.clone(), imports);
+        modules.push((path, parsed));
+    }
+    // Without a static import cycle, a chunk that did not parse, an unknown
+    // synchronous load or an import of a chunk not read, every chunk a
+    // chunk imports has finished evaluating before the importer starts.
+    let cyclic = unparsed_chunks > 0
+        || graph.values().any(|imports| imports.unknown_requires > 0)
+        || has_static_cycle(&graph, &resolution)
+        || graph.iter().any(|(path, imports)| {
+            imports.statics.iter().any(|specifier| {
+                resolve(path, specifier, &resolution)
+                    .is_some_and(|target| !graph.contains_key(&target))
+            })
+        });
+    // What each chunk assigns does not change between rounds.
+    let assigned: Vec<FxHashSet<Id>> = modules
+        .iter()
+        .map(|(_, parsed)| crate::derive::assigned_bindings(&parsed.module))
+        .collect();
+    // A chunk may re-export a string it imports: read until none is new.
+    let mut exported: FxHashMap<PathBuf, FxHashMap<String, String>> = FxHashMap::default();
+    loop {
+        let next: FxHashMap<PathBuf, FxHashMap<String, String>> = modules
+            .iter()
+            .zip(&assigned)
+            .map(|((path, parsed), assigned)| {
+                let imported = imported_strings(path, &parsed.module, &exported, &resolution);
+                (
+                    path.clone(),
+                    exported_strings(&parsed.module, &imported, assigned, !cyclic),
+                )
+            })
+            .collect();
+        if next == exported {
+            break;
+        }
+        exported = next;
+    }
+    for (index, (path, parsed)) in modules.iter().enumerate() {
+        let unresolved = SyntaxContext::empty().apply_mark(parsed.unresolved_mark);
+        let object_aliases = prepass(&parsed.module, unresolved).object_aliases;
+        let strings = imported_strings(path, &parsed.module, &exported, &resolution);
+        let mut written = census(&parsed.module, unresolved, &object_aliases, &strings);
+        written.locate(index);
+        merged.merge(written);
+    }
+    let unresolved = |dynamic: bool| {
+        graph
+            .iter()
+            .flat_map(|(path, imports)| {
+                let specifiers: Vec<&String> = if dynamic {
+                    imports.dynamics.iter().flatten().collect()
+                } else {
+                    imports.statics.iter().collect()
+                };
+                specifiers
+                    .into_iter()
+                    .map(move |specifier| (path, specifier))
+            })
+            .filter(|(path, specifier)| {
+                resolve(path, specifier, &resolution)
+                    .is_some_and(|target| !graph.contains_key(&target))
+            })
+            .count()
+    };
+    let (unresolved_static_specifiers, unresolved_dynamic_specifiers) =
+        (unresolved(false), unresolved(true));
+    if unresolved_static_specifiers > 0 {
+        merged.refuse_everything();
+    }
+    let top_level_awaits: usize = graph.values().map(|imports| imports.top_level_awaits).sum();
+    let external_specifiers: std::collections::BTreeSet<String> = graph
+        .iter()
+        .flat_map(|(path, imports)| {
+            let dynamics = imports.dynamics.iter().flatten();
+            imports
+                .statics
+                .iter()
+                .chain(dynamics)
+                .filter(|specifier| resolve(path, specifier, &resolution).is_none())
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let program = ProgramFacts {
+        chunks: graph.len(),
+        place: std::cell::RefCell::new((PathBuf::new(), true)),
+        census: merged,
+        modules,
+        graph,
+        root: root.to_path_buf(),
+        top_level_awaits,
+        unparsed_chunks,
+        unresolved_static_specifiers,
+        unresolved_dynamic_specifiers,
+        string_exports: exported.values().map(FxHashMap::len).sum(),
+        external_specifiers,
+        exported_strings: exported,
+        resolution,
+    };
+    program.retarget(&chunk)?;
+    Ok(program)
+}

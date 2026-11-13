@@ -25,7 +25,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.native.codex import driver, scenarios, wire
+from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import EFFORT, MODEL
@@ -70,7 +70,7 @@ async def server(codex: CodexHarness, model: OpenAIResponses, incarnation: str) 
             clientInfo={"name": "agentplane-v2-probe", "version": "0.1"},
             capabilities={"experimentalApi": True},
         )
-        await process.send(driver.initialized())
+        await process.send(wire.InitializedNotification())
         yield process
 
 

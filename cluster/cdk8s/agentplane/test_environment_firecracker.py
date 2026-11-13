@@ -10,11 +10,13 @@ import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, staging
+from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
+from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI
+from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
 from cluster.cdk8s.pod_policy import harden, pod_spec
 
 
-def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App) -> None:
+def test_firecracker_mounts_stay_on_the_correct_side(scratch_app: App) -> None:
     chart = Chart(scratch_app, "firecracker-test")
     state = {
         "name": "state",
@@ -43,11 +45,6 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     assert relay["securityContext"]["runAsNonRoot"] is True
     assert relay["securityContext"]["runAsUser"] == 1000
     assert pod["automountServiceAccountToken"] is False
-    host_mounts = {m["name"] for m in host["volumeMounts"]}
-    token_volumes = {v["name"] for v in pod["volumes"] if "projected" in v}
-    assert token_volumes
-    assert not host_mounts & token_volumes
-    assert token_volumes <= {m["name"] for m in relay["volumeMounts"]}
     assert pod["restartPolicy"] == "Never"
     assert host["readinessProbe"]["httpGet"] == {"path": "/readyz", "port": 9092}
     guest_config = one(
@@ -108,6 +105,18 @@ def test_firecracker_native_grpc_urls_use_the_guest_relay_gateway(scratch_app: A
     ):
         target = urlsplit(url)
         assert (target.hostname, target.port) == (environment_firecracker.GATEWAY, listener.port)
+    history = history_service.service(staging.ENV.namespace)
+    origin = f"{history.fqdn}:{history.port.number}"
+    assert listener.port == PLATFORM_ROUTES_PORT
+    assert harness["AGENTPLANE_HISTORY_URL"] == f"http://{environment_firecracker.GATEWAY}:{listener.port}"
+    relay_settings = yaml.safe_load(relay["data"]["settings.yaml"])
+    assert origin not in relay_settings["workload_routes"]
+    route = relay_settings["platform_routes"]["routes"]["history"]
+    assert route == {
+        "service_prefixes": ["/agentplane.history_service.HistoryService/"],
+        "upstream": f"{history.fqdn}:{history.pod_port}",
+        "transport": {"mode": "tls_connect", "server_uri": HISTORY_SERVICE_URI},
+    }
 
 
 def test_staging_keeps_firecracker_disabled(staging_manifests: list[dict[str, Any]]) -> None:

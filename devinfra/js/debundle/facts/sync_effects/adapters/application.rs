@@ -2,7 +2,7 @@
 //! application `Executor`, for ordered root initializers and callable bodies.
 
 use super::super::alternatives::execution_state::ExecutionPath;
-use super::super::array_transfer::{self, ArrayPushSelection};
+use super::super::array_transfer::{self, ArrayMethodSelection};
 use super::super::effect_coverage::{EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt};
 use super::super::execution_index::{
     Call, CallKind, ExecutionIndex, MemberValueWrite, native_own_data_read_slots,
@@ -33,6 +33,7 @@ use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
 };
+use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::builtins;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
@@ -46,7 +47,8 @@ use swc_ecma_ast::*;
 #[derive(Clone, Copy)]
 pub(in crate::facts::sync_effects) enum LocalExecutionScope {
     Callable(u32),
-    RootInitializer,
+    /// A root owner's variable initializer or expression statement.
+    Root,
     /// The lowered base-constructor body of this class, run by the kernel's
     /// construct rule. It has no call operation of its own.
     Constructor(u32),
@@ -56,7 +58,7 @@ impl LocalExecutionScope {
     pub(in crate::facts::sync_effects) fn caller(self) -> Option<u32> {
         match self {
             Self::Callable(key) => Some(key),
-            Self::RootInitializer | Self::Constructor(_) => None,
+            Self::Root | Self::Constructor(_) => None,
         }
     }
 }
@@ -92,12 +94,10 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
-    fn calls(&self) -> &'source [Call] {
+    pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Call] {
         match self.scope {
             LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
-            LocalExecutionScope::RootInitializer => {
-                &self.executor.inputs.index.top_calls[self.owner.0]
-            }
+            LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
             LocalExecutionScope::Constructor(_) => &[],
         }
     }
@@ -153,7 +153,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             LocalExecutionScope::Callable(key) => {
                 &self.executor.inputs.index.callables[&key].member_value_writes
             }
-            LocalExecutionScope::RootInitializer => {
+            LocalExecutionScope::Root => {
                 &self.executor.inputs.index.top_member_value_writes[self.owner.0]
             }
             LocalExecutionScope::Constructor(_) => &[],
@@ -213,6 +213,41 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         );
     }
 
+    /// The summarized remainder of the truncated body may read, store and
+    /// pass anything it mentions before it completes: the current values of
+    /// the bindings it references, and the functions it creates (a
+    /// descriptor's `value`, a stored callback), none of which has a value
+    /// yet. Kept out of line for the kernel's recursion depth.
+    #[inline(never)]
+    fn extend_with_remainder(&self, frame: &LocalFrame, span: Span, reached: &mut Values) {
+        let index = self.executor.inputs.index;
+        // A constructor body lies inside its statement.
+        let body = self
+            .scope
+            .caller()
+            .and_then(|key| index.callable_spans.get(&key).copied())
+            .unwrap_or_else(|| index.statement_span(self.owner));
+        reached.extend(
+            index
+                .callable_spans
+                .iter()
+                .filter(|(key, callable)| {
+                    callable.lo >= span.hi
+                        && callable.hi <= body.hi
+                        && index
+                            .callables
+                            .get(key)
+                            .is_some_and(|callable| callable.owner == self.owner)
+                })
+                .map(|(key, _)| AbstractValue::Value(Value::Alloc(Kind::Function, *key))),
+        );
+        for binding in index.references_within(span.hi.0, body.hi.0) {
+            if let Some(values) = self.binding_values(binding, frame) {
+                reached.extend(values.iter().cloned());
+            }
+        }
+    }
+
     pub(in crate::facts::sync_effects) fn fallback(
         &mut self,
         frame: &LocalFrame,
@@ -221,6 +256,8 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         span: Span,
     ) {
         self.retain_global_fallback_accesses(frame, &reason, span);
+        let mut reached = reached;
+        self.extend_with_remainder(frame, span, &mut reached);
         self.executor.local_operation_fallback(
             frame,
             reached,
@@ -256,6 +293,33 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalExecutionContext<'_, '_, '_> {
+    /// The foreign call summary whose substitution is also the call's effect
+    /// receipt. A body that reads a private provider cell gets none: the
+    /// summary proves nothing about that cell's writers.
+    fn substituted_summary(
+        &self,
+        kind: CallKind,
+        callee: &ValueExpr,
+    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+        self.executor
+            .foreign_call_summary(kind, callee)
+            .filter(|summary| summary.provider_cell_reads.is_empty())
+    }
+
+    /// As `substituted_summary`, for the call itself: a retaining factory's
+    /// summary is the receipt only for the call shape its transfer
+    /// substitutes.
+    fn substituted_call_summary(
+        &self,
+        call: &super::super::execution_index::Call,
+    ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
+        if call.has_spread {
+            return None;
+        }
+        self.substituted_summary(call.kind, &call.callee)
+            .or_else(|| self.executor.retaining_factory_summary(call).cloned())
+    }
+
     /// The kernel evaluated `new`'s callee and arguments in order. A checked
     /// local class runs its lowered body through the kernel's construct rule;
     /// a refused construction keeps the flat lane's typed loss; any other
@@ -349,8 +413,44 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         // separately by the ordered operation that produced it.
         EffectCoverageFragment::no_effects()
     }
-    fn module_prefix_receiver(&self, binding: &Id, _receivers: &Values) -> bool {
+    /// Only an admitted root statement stores to a module binding: a root
+    /// initializer has its own binding identity, and a callable's store
+    /// would need the closure's view of the binding.
+    fn store_module_binding(
+        &mut self,
+        binding: &Id,
+        values: &Values,
+    ) -> Option<EffectCoverageFragment> {
+        if !matches!(self.scope, LocalExecutionScope::Root)
+            || self.outcome.root_binding_effect_identity.is_some()
+            || !self.executor.inputs.top_bindings.contains(binding)
+            || self
+                .executor
+                .module_binding_store_refusal(binding)
+                .is_some()
+        {
+            return None;
+        }
+        // The flattened lane's join, which the owner's assignment phase
+        // repeats: the statement may be one of several writers.
+        if self.executor.inputs.needed_bindings.contains(binding) {
+            let world = self.executor.state.world_mut();
+            let possible = world.module.prefix_values.entry_or_default(binding);
+            let before = possible.len();
+            possible.extend(values.iter().cloned());
+            if possible.len() != before {
+                world.revision.bump_prefix();
+            }
+        }
+        Some(EffectCoverageFragment::module_binding_store())
+    }
+    fn prefix_tracked_receiver(&self, binding: &Id, receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
+            || (!receivers.is_empty()
+                && receivers.iter().all(|value| {
+                    matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, record))
+                        if self.executor.state.iteration_element_records.contains(record))
+                }))
     }
     fn read_binding(
         &mut self,
@@ -456,7 +556,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition> {
         let mut result = self.read_binding(binding, frame)?;
-        let selected = matches!(self.scope, LocalExecutionScope::RootInitializer)
+        let selected = matches!(self.scope, LocalExecutionScope::Root)
             && self
                 .outcome
                 .root_binding_effect_identity
@@ -474,6 +574,23 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                             )
                             .is_some()
                 });
+        // A published foreign call summary has proved the provider binding
+        // available to this importer, so reading it as a callee is a normal
+        // declarative read under the summary's premises.
+        let summary = self
+            .calls()
+            .iter()
+            .find(|call| call.kind == CallKind::Call && call.span == call_span)
+            .and_then(|call| self.substituted_call_summary(call));
+        if let Some(summary) = summary
+            && !result
+                .allocation
+                .values
+                .contains(&AbstractValue::Value(Value::Unavailable))
+        {
+            result.effects = EffectCoverageFragment::initialized_module_read();
+            result.effects.depend_on(&summary.dependencies);
+        }
         if selected
             && !result.allocation.values.is_empty()
             && !result
@@ -501,11 +618,17 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         } = request;
         let span = *span;
         if let EvaluatedCallee::Member {
-            array_push: Some(selection),
+            array_method: Some(selection),
             receiver,
             ..
         } = callee
         {
+            let selection = match selection.as_ref() {
+                ArrayMethodSelection::Push(selection) => selection,
+                ArrayMethodSelection::Iteration(selection) => {
+                    return self.iterate_array(frame, selection, arguments, span);
+                }
+            };
             let args: Vec<_> = arguments
                 .iter()
                 .map(|argument| argument.values.clone())
@@ -587,8 +710,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 .root_binding_effect_identity
                 .as_ref()
                 .filter(|identity| {
-                    matches!(self.scope, LocalExecutionScope::RootInitializer)
-                        && identity.owner == self.owner
+                    matches!(self.scope, LocalExecutionScope::Root) && identity.owner == self.owner
                 })
                 .and_then(|identity| match &call.callee {
                     ValueExpr::Binding(callee) => self
@@ -596,8 +718,10 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         .inputs
                         .initializer_call_effect_input(self.owner, &identity.binding, callee, span),
                     _ => None,
-                })
-                .map(|input| input.reference.clone());
+                });
+        let selected_const_factory_result =
+            audited_input.is_some_and(|input| input.returns_opaque_function_from_const_primitive);
+        let audited_input = audited_input.map(|input| input.reference.clone());
         let pure_initializer = audited_input.is_some()
             && self
                 .outcome
@@ -609,6 +733,8 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                         .declared_pure_initializers
                         .contains(identity.binding.0.as_ref())
                 });
+        let substituted_summary = self.substituted_call_summary(&call);
+        let caller = self.executor.local_body_identity_for_call(&call);
         let result = self.executor.request(RuntimeOperation::Call {
             call,
             environment: frame.environment.clone(),
@@ -628,6 +754,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     .map(|argument| argument.selection.clone())
                     .collect(),
                 selected_pure_initializer_call: pure_initializer,
+                selected_const_factory_result,
             })),
         });
         let RuntimeValue::Call {
@@ -686,6 +813,27 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     );
                     effects.normal_completion_from_pure_initializer();
                     effects
+                } else if let Some(summary) = &substituted_summary {
+                    // The call transfer replaced the provider body by this
+                    // summary and ran nothing.
+                    let mut effects =
+                        EffectCoverageFragment::provider_summary(&summary.dependencies);
+                    if !normal_value {
+                        // An unavailable operand throws before the body runs.
+                        effects.uncertain_completion();
+                    }
+                    if let Some(caller) = caller {
+                        effects.selected_local_call(LocalCallReceipt {
+                            caller,
+                            call_span: span,
+                            target: LocalBodyIdentity::Imported {
+                                defining_module: summary.defining_module.clone(),
+                                export: summary.export.clone(),
+                            },
+                            dependencies: Box::new(summary.dependencies.clone()),
+                        });
+                    }
+                    effects
                 } else {
                     outcome.effect_coverage
                 };
@@ -705,7 +853,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 ),
                 // This canonical root has one direct zero-argument call and
                 // no suffix. Other root expressions retain remainder fallback.
-                LocalExecutionScope::RootInitializer => {
+                LocalExecutionScope::Root => {
                     self.body.single_identifier_call_initializer() == Some(span)
                 }
                 // A constructor body is admitted without calls.
@@ -801,14 +949,14 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
                 creation,
                 super::super::local_operations::DeferredCallableCreation::Function(_)
             )
-            && matches!(self.scope, LocalExecutionScope::RootInitializer)
+            && matches!(self.scope, LocalExecutionScope::Root)
             && self
                 .outcome
                 .root_binding_effect_identity
                 .as_ref()
                 .is_some_and(|identity| {
                     identity.owner == self.owner
-                        && identity.initializer_span == self.body.initializer_span()
+                        && identity.initializer_span == self.body.root_span()
                         && self
                             .body
                             .single_identifier_call_with_function_argument_initializer()
@@ -841,6 +989,11 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
             effects.depend_on(&self.executor.settled_prefix_dependencies());
             effects
         } else {
+            if !captures.cells.is_empty() {
+                self.executor.observations.refuse_owner_coverage(
+                    OwnerInitializationCoverageRefusalReason::CallbackCapturesLiveCell,
+                );
+            }
             EffectCoverageFragment::default()
         };
         Ok(ClosureAdmission {
@@ -888,13 +1041,14 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         &mut self,
         receivers: &Values,
         property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
-        let (selection, effects) = array_transfer::select_push(self.executor, receivers, property)?;
+    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
+        let (selection, effects) =
+            array_transfer::select_method(self.executor, receivers, property)?;
         for cell in [
-            crate::facts::EffectCell::ObjectShape(selection.object),
+            crate::facts::EffectCell::ObjectShape(selection.object()),
             crate::facts::EffectCell::OwnProperty {
-                origin: selection.object,
-                property: "push".into(),
+                origin: selection.object(),
+                property: selection.property().into(),
             },
         ] {
             self.outcome
@@ -910,7 +1064,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         call_span: Span,
     ) -> Option<LocalValueResult> {
         // Only the exact canonical root call has an ordered execution witness.
-        if !matches!(self.scope, LocalExecutionScope::RootInitializer) {
+        if !matches!(self.scope, LocalExecutionScope::Root) {
             return None;
         }
         let callee = ValueExpr::Member(
@@ -942,7 +1096,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         span: Span,
     ) -> Option<LocalValueResult> {
         // Only the exact canonical root read has an ordered execution witness.
-        if !matches!(self.scope, LocalExecutionScope::RootInitializer) {
+        if !matches!(self.scope, LocalExecutionScope::Root) {
             return None;
         }
         let callee = ValueExpr::Member(
@@ -1042,7 +1196,7 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 span,
                 refusal,
             } => {
-                if matches!(self.scope, LocalExecutionScope::RootInitializer)
+                if matches!(self.scope, LocalExecutionScope::Root)
                     && let Some(read) = self.executor.present_own_data_read(receivers, property)
                 {
                     self.outcome

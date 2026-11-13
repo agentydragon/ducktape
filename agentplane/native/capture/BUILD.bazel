@@ -1,0 +1,55 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "demo_live_capture_bin",
+    testonly = True,
+    main_module = "agentplane.native.capture.demo_live_capture",
+    deps = [":demo_live_capture"],
+)
+
+py_library(
+    name = "llm_recording_proxy",
+    srcs = ["llm_recording_proxy.py"],
+    deps = [":records"],
+)
+
+py_library(
+    name = "demo_live_capture",
+    testonly = True,
+    srcs = ["demo_live_capture.py"],
+    deps = [
+        ":codex_hook",
+        ":llm_recording_proxy",
+        ":records",
+        "//agentplane/native/claude:scenarios",
+        "//agentplane/native/claude:wire",
+        "//agentplane/native/claude/testing:async_run",
+        "//agentplane/native/codex:scenarios",
+        "//agentplane/native/codex/testing:async_run",
+        "//agentplane/native/testing:async_process",
+    ],
+)
+
+py_library(
+    name = "records",
+    srcs = ["records.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_llm_recording_proxy",
+    srcs = ["test_llm_recording_proxy.py"],
+    deps = [
+        ":llm_recording_proxy",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "codex_hook",
+    srcs = ["codex_hook.py"],
+)

@@ -6,12 +6,12 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Configuration
 
-The forward listener is configured by `forward.listen_address`, serving `forward.tls`, and an
-explicit `forward.auth` list containing `spiffe` with trust roots and/or `kubernetes_bearer`
-with its TokenReview audience. These structured settings
-are file-only. The sidecar names its central proxy as `proxy.address` (`host:port`) and selects
-TLS with an explicit SPIFFE certificate or projected bearer authentication mode. Unknown fields, unsupported or duplicate modes, incomplete
-credentials and incompatible transport/auth combinations fail startup.
+The forward listener is configured by `forward.listen_address`, serving `forward.tls`, and a
+`forward.auth` list naming `spiffe` alone, with its trust roots. These structured settings are
+file-only. The sidecar names its central proxy as `proxy.address` (`host:port`) and its
+`proxy.transport`: `mode: tls` with the CA file and `auth.mode: spiffe` with its certificate and key
+files. Unknown fields, unsupported or duplicate modes, any other `forward.auth` mode and incomplete
+credentials fail startup.
 
 The sidecar uses Go's `http.Server` parser and `httputil.ReverseProxy` for ordinary HTTP requests.
 Malformed request lines receive the standard `400` response without the sidecar refusal header;
@@ -21,16 +21,14 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
 
 ## Identity
 
-- The single forward listener requires TLS. Its authentication allowlist explicitly admits SPIFFE
-  trusting the Agentplane workload CA alone, and Pod-bound Kubernetes bearers for existing
-  non-Sandbox callers; a leaf of the cluster's internal CA naming a Runtime URI does not
+- The single forward listener requires mTLS and authenticates SPIFFE alone, trusting the Agentplane
+  workload CA alone; a leaf of the cluster's internal CA naming a Runtime URI does not
   authenticate. It presents `spiffe://agentplane/egress-proxy`, issued by the workload CA
   with serverAuth. The sidecar's `proxy.transport.ca_file` holds the workload CA alone; it verifies
   this SVID and the service SVIDs behind workload and platform routes. Clients require clientAuth and
   the canonical URI `spiffe://agentplane/<namespace>/<name>/<credential-id>` of a `WorkloadCredential`.
-  Plaintext is refused. Presenting both a certificate and bearer is refused; an invalid credential
-  never falls back to another authentication method. A bearer is reviewed for the configured audience
-  and allowed namespace, and its ServiceAccount is the unchanged policy subject.
+  Plaintext and a connection without a client certificate are refused. A request carrying
+  `Proxy-Authorization` is refused, whatever certificate the connection presented.
 - Each SVID-authenticated request, including requests inherited through a CONNECT tunnel, checks
   the leaf's validity and EKU again and resolves it through the shared resolver
   ([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)):
@@ -40,21 +38,17 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   stay authenticated while it quiesces and seals final Session history. Revocation takes effect when
   the record is removed, with its Sandbox or on stop, or its binding is cleared or replaced.
   Replaced or stale credentials fail before policy evaluation. There is no cached identity.
-- The resulting policy subject is exactly the record's subject ServiceAccount, for a Sandbox its own
-  at `Sandbox.namespace/Sandbox.name`, read live for its UID. Neither a certificate subject DN nor a
-  caller-supplied header selects the subject, and the proxy does not read Pods or Sandboxes for it. A
-  forwarded projected token must be bound to the record's `spec.pod`; a bound record that names no
-  Pod yet does not authenticate. A ServiceAccount no binding names reaches no rule.
+- The resulting policy subject is exactly the record's Identity in the proxy's policy namespace
+  (`rules_namespace`), read live and fenced on the UID the record names. Neither a
+  certificate subject DN nor a caller-supplied header selects the subject, and the proxy does not
+  read Pods or Sandboxes for it. A bound record that names no Pod yet does not authenticate. An
+  Identity's Pod is provenance, never its subject. A subject no binding names reaches no rule.
 - A standing record, with no owner and no binding, authenticates its subject and proves no Pod:
   every replica presenting its SVID is the same caller, and decisions record no source Pod. No
-  forwarded projected token can be bound to it, so the proxy drops every one unreviewed and a rule
-  needing one refuses with `credential-unavailable`. Deleting the record revokes it.
-- A request authenticated with SPIFFE does not need a hop bearer and must not carry one. A sidecar's
-  separately projected Kubernetes token is forwarded under `X-Agentplane-Workload-Token` for a
-  `projectedWorkloadToken` credential. The proxy keeps it only when TokenReview proves the same
-  ServiceAccount and Pod UID as the live Sandbox binding and the credential names its configured
-  audience; a mismatched token is dropped and a rule needing it refuses with
-  `credential-unavailable`.
+  projected Pod token participates in authentication or credential substitution. Deleting the
+  record revokes it.
+- The retired `X-Agentplane-Workload-Token` header is discarded by both the sidecar and central
+  proxy. It cannot select the authenticated subject or supply a destination credential.
 - A copied SVID proves only the live record named by that SVID and, for a bound record, its current binding.
   Each request, including one inherited through a tunnel, repeats validity and live-state checks.
 
@@ -65,14 +59,20 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   Central cannot read these calls or assert their caller. Other destinations retain normal rules
   and credential substitution.
 
-- A subject's egress rules come from `PolicyBinding`s. A `PolicyBinding` names one namespaced
-  ServiceAccount and `PolicySet` names, and grants the sets' `egress` rules by existing: creating one
-  is the whole act of allowing, deleting it the whole act of taking that back, and the Policy
-  Controller deletes it at its `expiresAt` (`agentplane/policy_controller/SPEC.md`). A set that is
-  missing takes nothing from the binding's other sets. The same name in two namespaces is two subjects. A
-  subject is every Pod running as that account, so bind only an account dedicated to one workload;
-  the integration app gives each sandbox an account of its own, owned by it, so deleting the sandbox
-  collects the account and the bindings naming it alike.
+- A subject's egress rules come from `PolicyBinding`s. A `PolicyBinding` names one subject -- a
+  namespaced ServiceAccount, or `identity: {name}` -- and `PolicySet` names, and grants the sets'
+  `egress` rules by existing: creating one is the whole act of allowing, deleting it the whole act of
+  taking that back, and the Policy Controller deletes it at its `expiresAt`
+  (`agentplane/policy_controller/SPEC.md`). A set that is missing takes nothing from the binding's
+  other sets. The same name in two namespaces is two subjects, and an Identity is never the
+  ServiceAccount of its name. A ServiceAccount subject is every Pod running as that account, so bind
+  only an account dedicated to one workload; the integration app gives each sandbox an account of its
+  own, owned by it, so deleting the sandbox collects the account and the bindings naming it alike. An
+  Identity binding answers only while the live Identity of its name is the one the caller's record
+  names: a record naming the Identity's UID binds that incarnation, so a credential of a deleted
+  Identity gains nothing from a same-named successor, while a record naming no UID (a standing
+  record rendered from git) follows a same-name replacement
+  ([workload authentication](../docs/workload_authentication.md) § Standing workloads).
 - Hosts admit exact names, `*.` suffix wildcards (not their apex), or `*` for any public
   destination. A blanket `*` rule cannot set `credentialRef` or `clusterInternal`, enforced by
   both CRD admission and runtime parsing. It grants no credential substitution or private-address
@@ -86,10 +86,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; `projectedWorkloadToken`, naming the
-  audience of a token the sidecar presented on the hop; or `kubernetesServiceAccount`, naming an
-  account the proxy acts as on its own API server. Absent, stale or mismatched context refuses
-  with `credential-unavailable`.
+  `secretRef`, preserving the central-held Secret behavior, or `kubernetesServiceAccount`, naming
+  an account the proxy acts as on its own API server.
 - **A Kubernetes account is acted as by impersonation.** A `kubernetesServiceAccount` credential
   names a namespace and a ServiceAccount on the API server the proxy's own credential reaches. A
   named API server is the intended extension for remote clusters, not modelled for lack of a use
@@ -106,18 +104,14 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   configured local API server host and port over TLS the proxy verifies; plaintext, another
   admitted host or another port refuses with `credential-unavailable`. No token is minted or cached
   for the account. What the proxy may impersonate is its RBAC: `impersonate` on `serviceaccounts`
-  in one accounts namespace. Revocation is the use rule going, enforced from the next request,
-  including the next one inside an established tunnel; the account's own roles are revoked only
-  when their RoleBindings go. The decision records the impersonated account beside the subject,
-  and the API server's audit log names the proxy as the original user.
-- **Kubernetes keeps its projected workload credential.** The sidecar sends it as
-  `X-Agentplane-Workload-Token: <audience> <token>`, and central consumes this header rather than
-  forwarding it. TokenReview must resolve it to the record's subject and the Pod UID of its
-  `spec.pod` for SVID callers; a standing record has none, so none is kept. For bearer callers it must match the
-  authenticated hop's full TokenReview principal. Both require a configured audience. A failed review drops that token;
-  a rule requiring it refuses with `credential-unavailable`. The sidecar replaces caller-supplied
-  copies of the header, and the workload cannot read the projection. A tunnel's inner requests
-  inherit the reviewed token from CONNECT. Other platform services verify SVIDs themselves.
+  in one accounts namespace. Which subjects act as an account is which subjects hold a use rule:
+  a rule naming its credential, granted by a binding. Several Identities or ServiceAccounts may
+  hold one, each by a binding of its own, and nothing else ties a subject to an account; the
+  account's `ServiceAccountGrant`s decide what the account may do, not who acts as it. Revocation
+  is a subject's use rule going, enforced from its next request, including the next one inside an
+  established tunnel, and leaving every other holder acting as the account; the account's own roles
+  are revoked only when their RoleBindings go. The decision records the impersonated account beside
+  the subject, and the API server's audit log names the proxy as the original user.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
@@ -173,7 +167,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   certificate and trust roots. The sidecar establishes destination
   TLS through an exact opaque CONNECT route; the destination verifies the actual peer and live
   Sandbox credential. No caller header selects the subject.
-  The response contains only that ServiceAccount and its redacted rules: hosts, methods, paths,
+  The response contains only the caller -- its ServiceAccount, or its Identity by name -- and its
+  redacted rules: hosts, methods, paths,
   credential descriptions, placeholders and presentation targets, never Secret names, keys or
   values. Missing, ambiguous, invalid or stale credentials fail before reading rules; unavailable
   verification returns gRPC `Unavailable`. The response is an informational snapshot of the
@@ -202,7 +197,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   server; a destination it does not cover fails the connection rather than being carried unverified.
 - The connection is made to the address that was checked: a name is resolved once per admission
   window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
-  between the check and the connect. A dial for a target the gate did not admit is not made.
+  between the check and the connect. A dial for a target the gate did not admit is not made. An
+  upstream connection is reused only for a request whose admission pinned the same authority and
+  address.
 - The operator may exempt networks from the reachability rule (`--exempt-networks`); production
   exempts none.
 
@@ -238,8 +235,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   raw exceptions, and Kubernetes object payloads are not recorded. An unauthenticated attempt has
   no claimed identity; a recorded Pod UID is a snapshot, not a reference to a live object.
 - Recent history is shared PostgreSQL state, not a per-replica ring. Replacing a proxy does not
-  remove committed history. `ListDecisions` selects one subject (`at` is decision time) or the
-  requests that never authenticated. A lookup spans every workload that has run as that account.
+  remove committed history. `ListDecisions` selects one subject -- a ServiceAccount or an Identity by
+  name (`at` is decision time) -- or the requests that never authenticated. A lookup spans every
+  workload that has run as that account, or every incarnation of that Identity name.
 - `WatchDecisions` sends a complete snapshot on subscribing, then added decisions and removed event
   IDs as the bounded window changes. Records are immutable and ordered by decision time and event ID;
   removals include expiry and capacity eviction. A quiet, healthy history feed sends heartbeats; a lost feed or failed history read ends the stream

@@ -140,6 +140,9 @@ func validateRecord(r *Record) error {
 	if p := r.ExecutionPrincipal; p != nil && (p.GetAccount().GetNamespace() == "" || p.GetAccount().GetName() == "" || p.GetUid() == "") {
 		return errors.New("invalid persisted execution principal")
 	}
+	if i := r.ExecutionIdentity; i != nil && (i.GetName() == "" || i.GetUid() == "") {
+		return errors.New("invalid persisted execution identity")
+	}
 	return nil
 }
 

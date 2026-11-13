@@ -3,10 +3,12 @@
 package admin
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
@@ -14,9 +16,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -32,7 +35,7 @@ const watchWriteTimeout = 5 * time.Second
 // Decisions reads a subject's retained decisions; a nil subject selects the refusals that never
 // authenticated.
 type Decisions interface {
-	Recent(ctx context.Context, subject *decision.Subject) ([]decision.Record, error)
+	Recent(ctx context.Context, subject decision.Subject) ([]decision.Record, error)
 	ByEventIDs(ctx context.Context, eventIDs []uuid.UUID) ([]decision.Record, error)
 	Readable(ctx context.Context) error
 	Window() history.Window
@@ -40,7 +43,7 @@ type Decisions interface {
 
 // Changes follows decision commits; see history.Changes.Follow.
 type Changes interface {
-	Follow(ctx context.Context, subject *decision.Subject, changed func(history.Change) error) error
+	Follow(ctx context.Context, subject decision.Subject, changed func(history.Change) error) error
 }
 
 // HistoryHealth reports the decision writer's counters.
@@ -116,10 +119,11 @@ func historyFailure(err error) error {
 func (s *Service) GetHealth(ctx context.Context, _ *egressadminpb.GetHealthRequest) (*egressadminpb.GetHealthResponse, error) {
 	index := s.index.Status()
 	counters := s.historyHealth.Health()
-	failing := make(map[string]*egressadminpb.KindFailure, len(index.Failing))
+	failing := make([]*egressadminpb.KindFailure, 0, len(index.Failing))
 	for kind, failure := range index.Failing {
-		failing[string(kind)] = &egressadminpb.KindFailure{Error: failure.Error, Since: timestamppb.New(failure.Since)}
+		failing = append(failing, &egressadminpb.KindFailure{Kind: kindOf(kind), Error: failure.Error, Since: timestamppb.New(failure.Since)})
 	}
+	slices.SortFunc(failing, func(a, b *egressadminpb.KindFailure) int { return cmp.Compare(a.GetKind(), b.GetKind()) })
 	return &egressadminpb.GetHealthResponse{
 		Ready: index.Available, Synced: index.Synced, Draining: index.Draining,
 		DecisionHistory: &egressadminpb.DecisionHistoryHealth{
@@ -261,17 +265,22 @@ func decisionDelta(previous, current []*egressadminpb.Decision) *egressadminpb.D
 
 // subjectOf is the decisions' subject the filter selects; nil selects the refusals that never
 // authenticated.
-func subjectOf(filter *egressadminpb.DecisionFilter) (*decision.Subject, error) {
+func subjectOf(filter *egressadminpb.DecisionFilter) (decision.Subject, error) {
 	switch scope := filter.GetScope().(type) {
 	case *egressadminpb.DecisionFilter_Subject:
 		if scope.Subject.GetNamespace() == "" || scope.Subject.GetName() == "" {
 			return nil, status.Error(codes.InvalidArgument, "subject needs a namespace and a name")
 		}
-		return &decision.Subject{Namespace: scope.Subject.GetNamespace(), Name: scope.Subject.GetName()}, nil
+		return decision.ServiceAccount{Namespace: scope.Subject.GetNamespace(), Name: scope.Subject.GetName()}, nil
+	case *egressadminpb.DecisionFilter_Identity:
+		if scope.Identity.GetName() == "" {
+			return nil, status.Error(codes.InvalidArgument, "identity needs a name")
+		}
+		return decision.Identity{Name: scope.Identity.GetName()}, nil
 	case *egressadminpb.DecisionFilter_Unauthenticated:
 		return nil, nil
 	default:
-		return nil, status.Error(codes.InvalidArgument, "filter must select a subject or the unauthenticated")
+		return nil, status.Error(codes.InvalidArgument, "filter must select a subject, an identity or the unauthenticated")
 	}
 }
 
@@ -289,7 +298,7 @@ func decisionsOf(records []decision.Record) []*egressadminpb.Decision {
 			}
 		}
 		if record.Reason != nil {
-			decisions[i].Reason = proto.String(string(*record.Reason))
+			decisions[i].Reason = reasonOf(*record.Reason).Enum()
 		}
 		if record.Rule != nil {
 			decisions[i].Rule = proto.Int32(int32(*record.Rule))
@@ -307,4 +316,52 @@ func outcomeOf(outcome decision.Outcome) egressadminpb.Decision_Outcome {
 	}
 	// A replica of a newer release may have recorded an outcome this one does not name.
 	return egressadminpb.Decision_OUTCOME_UNSPECIFIED
+}
+
+func reasonOf(reason decision.Reason) egressadminpb.Decision_Reason {
+	switch reason {
+	case decision.TokenMissing:
+		return egressadminpb.Decision_REASON_TOKEN_MISSING
+	case decision.TokenRejected:
+		return egressadminpb.Decision_REASON_TOKEN_REJECTED
+	case decision.PodMismatch:
+		return egressadminpb.Decision_REASON_POD_MISMATCH
+	case decision.NoBinding:
+		return egressadminpb.Decision_REASON_NO_BINDING
+	case decision.NoRule:
+		return egressadminpb.Decision_REASON_NO_RULE
+	case decision.InvalidBody:
+		return egressadminpb.Decision_REASON_INVALID_BODY
+	case decision.PlaceholderUnresolved:
+		return egressadminpb.Decision_REASON_PLACEHOLDER_UNRESOLVED
+	case decision.CredentialUnavailable:
+		return egressadminpb.Decision_REASON_CREDENTIAL_UNAVAILABLE
+	case decision.ImpersonationForbidden:
+		return egressadminpb.Decision_REASON_IMPERSONATION_FORBIDDEN
+	case decision.AddressForbidden:
+		return egressadminpb.Decision_REASON_ADDRESS_FORBIDDEN
+	case decision.HostUnresolved:
+		return egressadminpb.Decision_REASON_HOST_UNRESOLVED
+	case decision.Unavailable:
+		return egressadminpb.Decision_REASON_UNAVAILABLE
+	}
+	// A replica of a newer release may have recorded a reason this one does not name.
+	return egressadminpb.Decision_REASON_UNKNOWN
+}
+
+func kindOf(kind watchhealth.Kind) egressadminpb.KindFailure_Kind {
+	switch kind {
+	case reader.PolicySets:
+		return egressadminpb.KindFailure_KIND_POLICY_SETS
+	case reader.PolicyBindings:
+		return egressadminpb.KindFailure_KIND_POLICY_BINDINGS
+	case reader.Identities:
+		return egressadminpb.KindFailure_KIND_IDENTITIES
+	case policy.Credentials:
+		return egressadminpb.KindFailure_KIND_EGRESS_CREDENTIALS
+	case policy.Secrets:
+		return egressadminpb.KindFailure_KIND_SECRETS
+	}
+	// The informers' kinds are named by request path; its error says which request failed.
+	return egressadminpb.KindFailure_KIND_UNKNOWN
 }

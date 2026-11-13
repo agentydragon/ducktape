@@ -69,6 +69,12 @@ pub(super) enum LocalBodyIdentity {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
     },
+    /// An imported callable whose call the importer replaced by its derived
+    /// foreign call summary.
+    Imported {
+        defining_module: String,
+        export: String,
+    },
 }
 
 /// One selected direct local invocation. The flat edge set avoids expanding
@@ -327,6 +333,13 @@ impl LocalBodyIdentity {
                 intrinsic: *intrinsic,
                 property: property.clone(),
             },
+            Self::Imported {
+                defining_module,
+                export,
+            } => LexicalBindingEffectBody::Imported {
+                defining_module: defining_module.clone(),
+                export: export.clone(),
+            },
         }
     }
 }
@@ -443,6 +456,28 @@ impl EffectCoverageFragment {
         fragment
     }
 
+    /// A provider body replaced by its derived foreign call summary. Under the
+    /// summary's premises the body runs no other code, reads only its
+    /// arguments and provider-private cells, and writes only its own
+    /// allocations, so it touches no domain and no importer lexical cell.
+    /// Callee and operand evaluation remain with the caller.
+    pub(super) fn provider_summary(dependencies: &ProofDependencies) -> Self {
+        let covered = || DomainCoverage::Covered(Box::new(dependencies.clone()));
+        Self {
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: covered(),
+                general_heap: covered(),
+                host_effects: covered(),
+            })),
+            lexical: Some(Box::new(LexicalEffectCoverage {
+                reads: covered(),
+                rebinds: covered(),
+                calls: BTreeMap::new(),
+            })),
+            completion: Completion::Normal(()),
+        }
+    }
+
     /// A top-level module-cell read has no global/heap/host effect, and its
     /// lexical read/rebind behavior is accounted for by the caller.
     pub(super) fn initialized_module_read() -> Self {
@@ -455,18 +490,19 @@ impl EffectCoverageFragment {
         fragment
     }
 
-    /// An executed lexical operation whose global, heap, and host effects
-    /// remain outside this receipt family. Keeping those domains Unknown is
-    /// deliberate: this proof can seal binding-effect coverage only.
-    pub(super) fn lexical_operation() -> Self {
+    /// SetMutableBinding of an initialized, mutable, unexported module
+    /// binding no closure reads: no global, heap or host effect. The rebind
+    /// is the owner's syntactic binding write; lexical coverage stays
+    /// unknown, so this never seals a lexical binding-effect receipt.
+    pub(super) fn module_binding_store() -> Self {
         Self {
-            lexical: Some(Box::new(LexicalEffectCoverage {
-                reads: DomainCoverage::Covered(Box::default()),
-                rebinds: DomainCoverage::Covered(Box::default()),
-                calls: BTreeMap::new(),
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: DomainCoverage::Covered(Box::default()),
+                general_heap: DomainCoverage::Covered(Box::default()),
+                host_effects: DomainCoverage::Covered(Box::default()),
             })),
+            lexical: None,
             completion: Completion::Normal(()),
-            ..Self::default()
         }
     }
 
@@ -751,6 +787,10 @@ enum LocalBodyKey {
         intrinsic: NativeIntrinsic,
         property: Option<String>,
     },
+    Imported {
+        defining_module: String,
+        export: String,
+    },
 }
 
 /// Exact identity for a flat local call edge. Span coordinates are used
@@ -787,6 +827,13 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
         } => LocalBodyKey::Native {
             intrinsic: *intrinsic,
             property: property.clone(),
+        },
+        LocalBodyIdentity::Imported {
+            defining_module,
+            export,
+        } => LocalBodyKey::Imported {
+            defining_module: defining_module.clone(),
+            export: export.clone(),
         },
     }
 }

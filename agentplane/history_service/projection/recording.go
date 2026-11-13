@@ -185,7 +185,7 @@ func RecordThreadFold(
 			}
 		}
 	}
-	if err := forgetSettled(ctx, tx, threadID, result.State.Position.ProjectionEpoch, page.GetSettlements()); err != nil {
+	if err := ForgetSettled(ctx, tx, threadID, result.State.Position.ProjectionEpoch, page.GetSettlements()); err != nil {
 		return err
 	}
 	position := result.State.Position
@@ -217,10 +217,9 @@ func SkipRemovedSuffix(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, thro
 	return err
 }
 
-// forgetSettled drops the evidence of deltas folded before their item settled; their cursors are gone. A
-// settlement commits with its completion entry, so the page that first carries that entry carries the
-// settlement too, whatever an earlier page folded.
-func forgetSettled(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projectionEpoch string, settlements []*historypb.SettledDeltas) error {
+// ForgetSettled drops evidence of deltas folded before their item settled. The normal fold calls it
+// with the completion's page; historical settlement calls it under the Session's projection lease.
+func ForgetSettled(ctx context.Context, tx *sql.Tx, threadID uuid.UUID, projectionEpoch string, settlements []*historypb.SettledDeltas) error {
 	for _, settlement := range settlements {
 		var entityCursor uint64
 		err := tx.QueryRowContext(ctx, `SELECT cursor FROM thread_entity

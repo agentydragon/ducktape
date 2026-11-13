@@ -27,6 +27,7 @@ use super::frame::{
     LocalFrame, LocalTransferResult, LocalValueResult, RemainderDisposition, SelectedValue,
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
+use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeMap;
@@ -135,7 +136,7 @@ enum Step {
     },
     StoreField {
         receivers: Values,
-        module_prefix: bool,
+        prefix_tracked: bool,
         property: String,
         span: Span,
     },
@@ -825,7 +826,7 @@ impl LocalContinuation {
             }
             Step::StoreField {
                 receivers,
-                module_prefix,
+                prefix_tracked,
                 property,
                 span,
             } => {
@@ -838,7 +839,7 @@ impl LocalContinuation {
                     context,
                     &mut self.frame,
                     &receivers,
-                    module_prefix,
+                    prefix_tracked,
                     &property,
                     &selected.values,
                     span,
@@ -1068,10 +1069,14 @@ impl LocalContinuation {
                 value,
                 span,
             } => {
-                self.frame
-                    .ledger
-                    .effects
-                    .compose(&EffectCoverageFragment::default());
+                // A store to a binding outside this body composes its own
+                // fragment in `store_binding`.
+                if body.bindings.contains_key(&binding) {
+                    self.frame
+                        .ledger
+                        .effects
+                        .compose(&EffectCoverageFragment::default());
+                }
                 self.steps.push(Step::Assign(binding, span));
                 self.steps.push(Step::Expression(value.as_ref().clone()));
             }
@@ -1096,7 +1101,7 @@ impl LocalContinuation {
                     && !matches!(
                         &callee,
                         EvaluatedCallee::Member {
-                            array_push: Some(_),
+                            array_method: Some(_),
                             ..
                         }
                     )
@@ -1162,13 +1167,16 @@ impl LocalContinuation {
                     self.frame.stop_normal_path();
                     return Ok(None);
                 }
-                // Capture the applicable module-prefix lane alongside the LHS
+                // Capture the applicable prefix-tracked lane alongside the LHS
                 // reference. The RHS may rebind the source cell, but JavaScript
-                // has already evaluated the original receiver value.
-                let module_prefix = context.module_prefix_receiver(&receiver, &receivers);
+                // has already evaluated the original receiver value. Only a
+                // module binding's value stores through the prefix: an element
+                // record a frame local holds is tracked for reads alone.
+                let prefix_tracked = !self.frame.environment.contains_key(&receiver)
+                    && context.prefix_tracked_receiver(&receiver, &receivers);
                 self.steps.push(Step::StoreField {
                     receivers,
-                    module_prefix,
+                    prefix_tracked,
                     property,
                     span,
                 });
@@ -1521,8 +1529,8 @@ fn read_field(
     property: &str,
     span: Span,
 ) -> Result<LocalValueResult, RemainderDisposition> {
-    let module_prefix = context.module_prefix_receiver(receiver, receivers);
-    let slot = if module_prefix {
+    let prefix_tracked = context.prefix_tracked_receiver(receiver, receivers);
+    let slot = if prefix_tracked {
         own_data_transfer::resolve_slot(
             context,
             receivers,
@@ -1539,8 +1547,11 @@ fn read_field(
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
             frame.ledger.heap_accesses.reads.insert(read.cell);
-            let mut effects = EffectCoverageFragment::lexical_operation();
-            if module_prefix {
+            // [[Get]] of a present own data property runs no getter,
+            // prototype lookup, global or host operation; its one heap
+            // effect is the slot cell recorded above.
+            let mut effects = EffectCoverageFragment::no_effects();
+            if prefix_tracked {
                 effects.depend_on(selection_dependencies.as_ref());
             }
             Ok(LocalValueResult {
@@ -1597,12 +1608,12 @@ fn store_field(
     context: &mut impl KernelContext,
     frame: &mut LocalFrame,
     receivers: &Values,
-    module_prefix: bool,
+    prefix_tracked: bool,
     property: &str,
     values: &Values,
     span: Span,
 ) -> Result<(), RemainderDisposition> {
-    let slot = if module_prefix {
+    let slot = if prefix_tracked {
         own_data_transfer::resolve_writable_slot(context, receivers, property)
     } else {
         own_data_field(context, receivers, property, frame).ok()
@@ -1628,14 +1639,25 @@ fn store_field(
         .property_is_writable(slot.object, property)
         .then(|| context.current_prerequisites());
     frame.ledger.heap_accesses.writes.insert(slot.cell());
+    // Writability is an attribute of the object's shape: a later
+    // redefinition or integrity change must stay ordered after this store.
+    frame
+        .ledger
+        .heap_accesses
+        .reads
+        .insert(EffectCell::ObjectShape(slot.object));
     context.world_mut().literal_heap().write_property(
         slot.object,
         Some(property.to_owned()),
         values,
     );
+    // [[Set]] on an existing writable own data property of an ordinary
+    // object with settled accessors replaces its value: no setter, prototype
+    // lookup, global or host operation runs. The one heap effect is the
+    // slot cell recorded above.
     let effects = match write_dependencies {
         Some(dependencies) => {
-            let mut effects = EffectCoverageFragment::lexical_operation();
+            let mut effects = EffectCoverageFragment::no_effects();
             effects.depend_on(dependencies.as_ref());
             effects
         }
@@ -1664,15 +1686,30 @@ fn store_binding(
 ) -> Result<SelectedValue, RemainderDisposition> {
     let values = selected.values;
     if values.is_empty() {
+        // No store happens, but the ledger stays open for a binding outside
+        // the body exactly as if the store had been attempted: a join over
+        // this leaf must not see a closed fragment for it.
+        if !body.bindings.contains_key(binding) {
+            frame
+                .ledger
+                .effects
+                .compose(&EffectCoverageFragment::default());
+        }
         frame.stop_normal_path();
         return Ok(SelectedValue::raw(values));
     }
     let Some(kind) = body.bindings.get(binding) else {
+        frame.binding_selections.remove(binding);
+        if !context.world().active_cells.contains_key(binding)
+            && let Some(effects) = context.store_module_binding(binding, &values)
+        {
+            frame.ledger.effects.compose(&effects);
+            return Ok(completing_selected(SelectedValue::raw(values), frame));
+        }
         frame
             .ledger
             .effects
             .compose(&EffectCoverageFragment::default());
-        frame.binding_selections.remove(binding);
         let result = cells::store_captured(context, frame, binding, &values, span)?;
         frame.ledger.allocation.compose(&result.judgment);
         return Ok(completing_selected(
@@ -1784,7 +1821,7 @@ fn evaluated_callee(
                     receiver: Values::new(),
                     targets: completing(result.allocation.values, frame),
                     selection_dependencies: None,
-                    array_push: None,
+                    array_method: None,
                 });
             }
             let result = value_of(context, frame, &ValueExpr::Binding(receiver.clone()))?;
@@ -1795,16 +1832,16 @@ fn evaluated_callee(
                     receiver: receivers,
                     targets: Values::new(),
                     selection_dependencies: None,
-                    array_push: None,
+                    array_method: None,
                 });
             }
             frame.inputs.extend(receivers.iter().cloned());
-            let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-            let mut array_push = None;
+            let prefix_tracked = context.prefix_tracked_receiver(receiver, &receivers);
+            let mut array_method = None;
             let result = if let Some((selection, effects)) =
                 context.array_method_callee(&receivers, property)
             {
-                array_push = Some(Box::new(selection));
+                array_method = Some(Box::new(selection));
                 LocalValueResult {
                     allocation: AllocationValue::opaque(Values::new()),
                     effects,
@@ -1813,7 +1850,7 @@ fn evaluated_callee(
             } else {
                 read_field(context, frame, receiver, &receivers, property, *member_span)?
             };
-            let selection_dependencies = module_prefix
+            let selection_dependencies = prefix_tracked
                 .then(|| result.effects.lexical_selection_dependencies())
                 .flatten();
             // Selection/GetValue is an executed lexical operation and
@@ -1825,7 +1862,7 @@ fn evaluated_callee(
                 receiver: receivers,
                 targets: completing(result.allocation.values, frame),
                 selection_dependencies,
-                array_push,
+                array_method,
             })
         }
     }

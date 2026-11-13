@@ -55,7 +55,7 @@ pub(super) fn assign(
                             identity.owner == owner
                                 && identity.binding == *id
                                 && ordered_initializer.is_some_and(|body| {
-                                    identity.initializer_span == body.initializer_span()
+                                    identity.initializer_span == body.root_span()
                                 })
                         })
             });
@@ -120,8 +120,7 @@ pub(super) fn assign(
                 .world_mut()
                 .module
                 .prefix_values
-                .entry(id.clone())
-                .or_default()
+                .entry_or_default(id)
                 .extend(values);
             if let Some(selection) = selection
                 && selection.matches(&executor.state.world.module.prefix_values[id])

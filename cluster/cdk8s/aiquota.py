@@ -266,7 +266,9 @@ class Aiquota(Construct):
                 memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
             ),
             readiness=http_probe("/readyz", port=SERVICE.pod_port, initial_delay_seconds=5, failure_threshold=12),
-            liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20),
+            liveness=http_probe(
+                "/healthz", port=SERVICE.pod_port, initial_delay_seconds=10, period_seconds=20, timeout_seconds=5
+            ),
             security_context=ContainerSecurityContextProps(
                 capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 read_only_root_filesystem=False,

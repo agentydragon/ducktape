@@ -20,13 +20,11 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import App, Chart, Testing as Cdk8sTesting
 from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s import baseline
 from agentplane.system_tests.vm import boot_rcu, guest_logs, host_qemu, infrastructure, shutdown_diagnostic
-from cluster.cdk8s.agentplane import launcher_relay
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _NAMESPACE_PREFIX = "vm-tcg-shutdown-"
@@ -206,42 +204,20 @@ def _state_claim(namespace: str) -> dict[str, Any]:
 
 
 def _virtiofs_shutdown_policy(namespace: str) -> dict[str, Any]:
-    """Install only the real launcher's generated virtiofs native-sidecar mutation, scoped to this test."""
-    chart = Chart(App(), "standalone-vmi-tcg")
-    runner_pod = {
-        "spec": {
-            "initContainers": [
-                {"name": launcher_relay.sidecar_config.CONTAINER_NAME, "securityContext": {}, "volumeMounts": []}
-            ],
-            "volumes": [
-                {
-                    "name": launcher_relay.sandbox_pod.EGRESS_TOKEN_VOLUME_NAME,
-                    "projected": {"sources": [{"serviceAccountToken": {"audience": "unused", "path": "token"}}]},
-                },
-                {
-                    "name": launcher_relay.sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
-                    "configMap": {"name": "unused-by-virtiofs-only-policy"},
-                },
-            ],
-        }
-    }
-    launcher_relay.LauncherRelayPolicy(
-        chart,
-        "launcher-relay",
-        namespace=namespace,
-        runner_pod=runner_pod,
-        settings_config_map="unused-by-virtiofs-only-policy",
-    )
-    policy = cast(dict[str, Any], Cdk8sTesting.synth(chart)[0])
+    """Fill in this test's namespace on the build-rendered production policy."""
+    runfiles = Runfiles.CreateOrRaise()
+    path = runfiles.root() / os.environ["TCG_VMI_POLICY_RLOCATION"]
+    rendered = json.loads(path.read_text())
+    template = json.dumps(rendered["policy"])
+    if rendered["namespace"] not in template:
+        raise ValueError("rendered policy lacks the namespace placeholder")
+    # Namespaces are known only when the test runs. Escape them as JSON string contents.
+    policy = cast(dict[str, Any], json.loads(template.replace(rendered["namespace"], json.dumps(namespace)[1:-1])))
     policy["metadata"]["name"] = namespace + _POLICY_SUFFIX
     policy["metadata"].setdefault("labels", {}).update(
         {_OWNER_LABEL: _owner_value(namespace), _OWNER_NAMESPACE_LABEL: namespace}
     )
-    rule = next(rule for rule in policy["spec"]["rules"] if rule["name"] == "keep-virtiofs-through-guest-shutdown")
-    # The direct VMI has no VirtualMachine/Sandbox chain. Keep the production rule's exact
-    # VMI lookup and mutation while excluding relay authentication/injection and unrelated rules.
-    rule["context"] = [entry for entry in rule["context"] if entry["name"] in {"vmiOwner", "vmi"}]
-    return {**policy, "spec": {**policy["spec"], "rules": [rule]}}
+    return policy
 
 
 def _create_cluster_policy(k3s: baseline.K3s, namespace: str) -> dict[str, Any]:
@@ -1103,8 +1079,9 @@ def _write_failure_report(k3s: baseline.K3s, namespace: str, output: Path) -> No
         (output / "k3s-report.txt").write_text(f"report capture failed: {error!r}\n")
 
 
-def test_virtiofs_shutdown_policy_is_the_production_rule_scoped_to_one_namespace() -> None:
-    namespace = _NAMESPACE_PREFIX + "unit-test"
+@pytest.mark.parametrize("suffix", ["unit-test", "other-cycle"])
+def test_virtiofs_shutdown_policy_is_the_production_rule_scoped_to_one_namespace(suffix: str) -> None:
+    namespace = _NAMESPACE_PREFIX + suffix
 
     policy = _virtiofs_shutdown_policy(namespace)
 
@@ -1116,7 +1093,10 @@ def test_virtiofs_shutdown_policy_is_the_production_rule_scoped_to_one_namespace
     assert rule["name"] == "keep-virtiofs-through-guest-shutdown"
     resources = rule["match"]["any"][0]["resources"]
     assert resources["namespaces"] == [namespace]
-    assert resources["selector"]["matchLabels"] == launcher_relay.LAUNCHER_LABELS
+    assert resources["selector"]["matchLabels"] == {"kubevirt.io": "virt-launcher"}
+    conditions = policy["spec"]["webhookConfiguration"]["matchConditions"]
+    assert len(conditions) == 1
+    assert f"request.namespace == '{namespace}'" in conditions[0]["expression"]
     assert [entry["name"] for entry in rule["context"]] == ["vmiOwner", "vmi"]
     foreach = rule["mutate"]["foreach"]
     assert len(foreach) == 1

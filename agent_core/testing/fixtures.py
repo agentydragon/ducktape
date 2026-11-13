@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 import pytest
 
 from agent_core.events import AssistantText, SystemText, ToolCall, ToolCallOutput, UserText
@@ -49,15 +47,3 @@ def test_handlers(recording_handler: RecordingHandler) -> list:
     - RecordingHandler: Capture events for assertions
     """
     return [FinishOnTextMessageHandler(), recording_handler]
-
-
-@pytest.fixture
-def call_id_gen() -> Callable[[], str]:
-    """Lightweight call_id generator for tests."""
-    counter = {"count": 0}
-
-    def _gen() -> str:
-        counter["count"] += 1
-        return f"test_call:{counter['count']}"
-
-    return _gen

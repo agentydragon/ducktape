@@ -17,6 +17,7 @@ pub(crate) struct HeapContentProofs<'a> {
     pub fresh_freeze: &'a sync_effects::interpreter::FreshRecordFreezeHeapProof,
     pub native_reads: &'a sync_effects::interpreter::PreparedSynchronousCallIndex,
     pub native_facts: &'a ValidatedNativeOperationFacts,
+    pub shadowed: &'a BTreeSet<&'static str>,
 }
 
 /// The heap-content cells of a chunk's bodies, and the report uses of the
@@ -25,6 +26,9 @@ pub(crate) struct ChunkHeapContents {
     /// First-order pre-await body cells of each callable, keyed like the
     /// execution index's callables (the body's span start).
     pub callables: BTreeMap<u32, HeapContentCells>,
+    /// Root syntax with the call's conservative argument-escape contribution
+    /// removed. Used only after that exact call earns a heap-local receipt.
+    pub checked_factory_arguments: BTreeMap<u32, HeapContentCells>,
     pub native_read_uses: Vec<(
         Vec<crate::analysis_provenance::InferenceUse>,
         Vec<crate::reports::schema::NativeOperationInputUse>,
@@ -51,8 +55,22 @@ pub(crate) fn annotate_heap_contents(
     );
     let reachability = value_flow.candidate_object_index(&candidates);
     let mut callables = BTreeMap::new();
+    let mut checked_factory_arguments = BTreeMap::new();
     let mut native_read_uses = Vec::with_capacity(body.len());
     for (item, fact) in body.iter().zip(facts) {
+        let direct_root_new_site =
+            var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+                let [declarator] = declaration.decls.as_slice() else {
+                    return None;
+                };
+                if !matches!(declarator.name, Pat::Ident(_)) {
+                    return None;
+                }
+                let Expr::New(construction) = declarator.init.as_deref()?.unwrap_parens() else {
+                    return None;
+                };
+                Some(construction.span.lo.0)
+            });
         let mut collector = ArrayContentCollector {
             value_flow,
             statement_owner: fact.ordinal,
@@ -61,6 +79,7 @@ pub(crate) fn annotate_heap_contents(
             fresh_freeze_proof: proofs.fresh_freeze,
             native_reads: proofs.native_reads,
             native_facts: proofs.native_facts,
+            shadowed: proofs.shadowed,
             array_reachability: &reachability,
             array_origins: &origins.0,
             eager: HeapContentCells::default(),
@@ -73,6 +92,8 @@ pub(crate) fn annotate_heap_contents(
             lazy_depth: 0,
             past_await: false,
             may_skip_await_depth: 0,
+            checked_factory_call: None,
+            direct_root_new_site,
         };
         item.as_module_item().visit_with(&mut collector);
         // A local export list wires live bindings without evaluating their
@@ -120,9 +141,61 @@ pub(crate) fn annotate_heap_contents(
             collector.native_read_inferences.into_values().collect(),
             collector.native_read_inputs.into_values().collect(),
         ));
+        // Prepare an argument-evaluation projection only for the small direct
+        // fresh-record call shape. Its own collector cannot change generic
+        // callable summaries, deferred allocations, or native observations.
+        if let Some(span) = var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+            match declaration.decls.as_slice() {
+                [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
+                    match declarator.init.as_deref()?.unwrap_parens() {
+                        Expr::Call(call)
+                            if matches!(&call.callee, Callee::Expr(callee)
+                                if matches!(callee.unwrap_parens(), Expr::Ident(_)))
+                                && call.args.iter().all(|arg| arg.spread.is_none())
+                                && call.args.iter().any(|arg| {
+                                    matches!(arg.expr.unwrap_parens(), Expr::Object(_))
+                                }) =>
+                        {
+                            Some(call.span.lo.0)
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }) {
+            let mut unused_callables = BTreeMap::new();
+            let mut projection = ArrayContentCollector {
+                value_flow,
+                statement_owner: fact.ordinal,
+                local_class_heap_proof: proofs.local_class,
+                set_iterable_proof: proofs.set_iterable,
+                fresh_freeze_proof: proofs.fresh_freeze,
+                native_reads: proofs.native_reads,
+                native_facts: proofs.native_facts,
+                shadowed: proofs.shadowed,
+                array_reachability: &reachability,
+                array_origins: &origins.0,
+                eager: HeapContentCells::default(),
+                callables: &mut unused_callables,
+                deferred_allocations: BTreeSet::new(),
+                bodies: Vec::new(),
+                heap_native_integrity_uses: BTreeSet::new(),
+                native_read_inferences: BTreeMap::new(),
+                native_read_inputs: BTreeMap::new(),
+                lazy_depth: 0,
+                past_await: false,
+                may_skip_await_depth: 0,
+                checked_factory_call: Some(span),
+                direct_root_new_site: None,
+            };
+            item.as_module_item().visit_with(&mut projection);
+            checked_factory_arguments.insert(span, projection.eager);
+        }
     }
     ChunkHeapContents {
         callables,
+        checked_factory_arguments,
         native_read_uses,
     }
 }
@@ -161,6 +234,7 @@ struct ArrayContentCollector<'a> {
     fresh_freeze_proof: &'a sync_effects::interpreter::FreshRecordFreezeHeapProof,
     native_reads: &'a super::sync_effects::interpreter::PreparedSynchronousCallIndex,
     native_facts: &'a ValidatedNativeOperationFacts,
+    shadowed: &'a BTreeSet<&'static str>,
     array_reachability: &'a CandidateObjectIndex<'a>,
     array_origins: &'a BTreeSet<u32>,
     /// The statement's own at-init cells.
@@ -181,6 +255,8 @@ struct ArrayContentCollector<'a> {
     lazy_depth: u32,
     past_await: bool,
     may_skip_await_depth: u32,
+    checked_factory_call: Option<u32>,
+    direct_root_new_site: Option<u32>,
 }
 
 impl ArrayContentCollector<'_> {
@@ -360,6 +436,24 @@ impl ArrayContentCollector<'_> {
         }
     }
 
+    /// One exact native input this summary consumed at `span`. The opaque
+    /// at-init call finder (`at_init_fallback.rs`) consults the same site
+    /// proofs at sites this collector also visits, so this record covers it.
+    fn record_native_input_use(
+        &mut self,
+        evidence: crate::analysis_inputs::NativeOperationInputEvidence,
+        span: swc_common::Span,
+    ) {
+        self.native_read_inputs.insert(
+            span.lo.0,
+            crate::reports::schema::NativeOperationInputUse {
+                evidence,
+                source_location: None,
+                span,
+            },
+        );
+    }
+
     fn record_member_read(&mut self, member: &MemberExpr) {
         if let Some((proof, evidence, _)) = self.native_reads.native_own_data_read(member.span) {
             if self.native_reads.primitive_class_key_read(member.span) {
@@ -449,7 +543,7 @@ impl Visit for ArrayContentCollector<'_> {
 
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         if let Some(binding_targets::SimpleWriteTarget::Member(member)) =
-            binding_targets::simple_update_target(&node.arg)
+            binding_targets::simple_write_target_expr(&node.arg)
         {
             self.record_member_write(member, true);
             self.visit_member_children(member);
@@ -470,10 +564,11 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        if self.fresh_freeze_proof.contains(node)
+        if let Some(evidence) = self.fresh_freeze_proof.input_evidence(node)
             && let Callee::Expr(callee) = &node.callee
             && let Expr::Member(member) = callee.unwrap_parens()
         {
+            self.record_native_input_use(evidence.clone(), node.span);
             // The selected original Object.freeze observes only this new
             // accessor-free record. Its callee slots are author-certified;
             // visit the callee's children and property values to retain every
@@ -486,7 +581,16 @@ impl Visit for ArrayContentCollector<'_> {
         }
         // This exact original native call cannot touch array contents or
         // invoke a callback. The same validated site proves item purity.
-        if self.native_facts.symbol_literal_proof(node).is_some() {
+        if let Some(input) = self.native_facts.symbol_literal_proof(node) {
+            self.record_native_input_use(input.evidence.clone(), node.span);
+            return;
+        }
+        if self.checked_factory_call == Some(node.span.lo.0) {
+            // The later receipt certifies that this exact call only retains
+            // its argument graph. Visit evaluation normally so nested reads,
+            // allocations and effects are still present in the root summary.
+            node.callee.visit_with(self);
+            node.args.visit_with(self);
             return;
         }
         match &node.callee {
@@ -535,13 +639,35 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if self
-            .native_facts
-            .empty_native_constructor_proof(node)
-            .is_some()
-        {
+        if let Some(input) = self.native_facts.empty_native_constructor_proof(node) {
+            self.record_native_input_use(input.evidence.clone(), node.span);
             // Its exact global data binding and empty operand list are checked;
             // the platform result remains opaque to every subsequent use.
+            return;
+        }
+        if self.direct_root_new_site == Some(node.span.lo.0)
+            && let Some(dependencies) = self.native_reads.primitive_map_literal_heap_proof(
+                node,
+                self.value_flow,
+                self.shadowed,
+            )
+        {
+            self.heap_native_integrity_uses
+                .insert(crate::reports::schema::NativeIntegrityUse {
+                    guard: crate::reports::schema::NativeIntegrityGuard::NativeCallIdentity,
+                    value_input_refs: dependencies.value_inputs,
+                    no_accessor_install_refs: dependencies.no_accessor_install_callables,
+                    program_premises: dependencies.program_premises,
+                });
+            // Keep the nested fresh arrays as allocation cells. Their
+            // primitive elements have no evaluation effects or escape path;
+            // the native constructor's Map allocation remains in execution.
+            node.callee.visit_with(self);
+            if let Some(arguments) = &node.args {
+                for argument in arguments {
+                    argument.visit_with(self);
+                }
+            }
             return;
         }
         // The projection constrains exact literal sites when present. Keep

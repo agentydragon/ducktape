@@ -15,7 +15,9 @@ use source_identity::SourceUnitOrdinal;
 impl Executor<'_, '_> {
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
         let mut root = operands::prepare(self, owner);
-        let body = body::execute(self, &mut root);
+        let mut body = body::execute(self, &mut root);
+        self.publish_top_sources(owner, &root.top_env, &root.top_captures);
+        self.iterate_top_sources(owner, &root.top_env, &root.top_captures, &mut body.outcome);
         let assigned = assignment::assign(self, &mut root, body);
         let Executor {
             inputs,

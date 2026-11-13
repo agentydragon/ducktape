@@ -15,11 +15,11 @@ import (
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -81,7 +81,7 @@ func run(ctx context.Context, settings centralsampler.Settings) error {
 		return err
 	}
 	defer unsubscribe()
-	runtime := centralsampler.NewRuntime(store, settings)
+	runtime := centralsampler.NewRuntime(store, settings, centralsampler.NewCodeModeHost(context.Background(), settings, store))
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(64*1024*1024), grpc.MaxSendMsgSize(64*1024*1024))
 	samplerpb.RegisterSamplerServer(server, &centralsampler.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
 	healthServer := health.NewServer()

@@ -177,7 +177,7 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *identity
 
 func podIsReadyForSandbox(pod *corev1.Pod, sandbox sandboxView) bool {
 	if pod == nil || pod.UID == "" || string(pod.UID) != sandbox.incarnation.UID || pod.Namespace != sandbox.identity.Namespace ||
-		pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() || pod.Spec.ServiceAccountName != sandbox.identity.Name || pod.Status.Phase != corev1.PodRunning {
+		pod.DeletionTimestamp != nil && !pod.DeletionTimestamp.IsZero() || pod.Status.Phase != corev1.PodRunning {
 		return false
 	}
 	ready := false

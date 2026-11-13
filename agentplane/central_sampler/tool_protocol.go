@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 // Codex rust-v0.162.1 core/src/tools/code_mode/wait_handler.rs ExecWaitArgs.
@@ -23,7 +25,7 @@ type execPragma struct {
 // Tools have a closed schema. Explicit null is invalid for every supported input field.
 func decodeToolInput(data []byte, value any) error {
 	var fields map[string]json.RawMessage
-	if err := decodeProtocolObject(data, &fields); err != nil {
+	if err := protocol.DecodeObject(data, &fields); err != nil {
 		return err
 	}
 	for field, raw := range fields {

@@ -132,6 +132,11 @@ pub enum PurityRule {
     /// parameter) — object patterns fire `[[Get]]`, array patterns
     /// fire the iterator protocol on the bound value.
     DestructuringPattern,
+    /// A read of another chunk's cell: an import whose provider binding can
+    /// be rebound, or, inside an exported function, module state of its own
+    /// chunk. The reader's dependency graph has no node for that cell's
+    /// writers, so the read is ordered with every impure statement.
+    OrderDependentRead,
     Other,
 }
 
@@ -275,6 +280,28 @@ impl Effects {
         self
     }
 
+    /// Remove only the classifier's member-read obligation at an exact
+    /// runtime-certified site. Ambiguous duplicate events retain the reason.
+    pub(crate) fn discharge_private_own_field_reads(
+        mut self,
+        spans: &[Span],
+        dependencies: &ProofDependencies,
+    ) -> Self {
+        for span in spans {
+            let matches = |event: &EffectEvent| {
+                matches!(event, EffectEvent::Effect {
+                    effect: Effect::Invoke(InvokeSite::MemberRead),
+                    span: site, ..
+                } if site == span)
+            };
+            if self.events.iter().filter(|event| matches(event)).count() == 1 {
+                self.events.retain(|event| !matches(event));
+                self.dependencies.extend(dependencies);
+            }
+        }
+        self
+    }
+
     /// Every binding a coercion's resolution reads.
     pub(crate) fn coerce_bindings(&self, bindings: &mut BTreeSet<Id>) {
         for event in &self.events {
@@ -402,6 +429,7 @@ fn rule(effect: Effect) -> PurityRule {
         Effect::Havoc(HavocCause::Debugger) => PurityRule::DebuggerStmt,
         Effect::Havoc(HavocCause::ControlFlow) => PurityRule::BareControlFlow,
         Effect::Havoc(HavocCause::CoverInitializedName) => PurityRule::ObjectAssignProp,
+        Effect::ObservesForeignCell => PurityRule::OrderDependentRead,
     }
 }
 

@@ -23,7 +23,6 @@ import { useSearchParams } from "react-router";
 import { displayableError } from "../client";
 import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
 import {
-  deleteEnvironment,
   getSession,
   createSession,
   resumeSandbox,
@@ -33,6 +32,7 @@ import {
 } from "./client";
 import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "./egress";
+import { EnvironmentIdentity } from "./identity";
 import { useEnvironmentWatch, sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
@@ -119,7 +119,9 @@ export function SandboxPage({
     setPendingCreate(attempt);
   }
   const [launching, setLaunching] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<{ target: EnvironmentTarget; identityName: string } | null>(
+    null
+  );
   const [includeArchived, setIncludeArchived] = useState(false);
   const [threadLimit, setThreadLimit] = useState(200);
 
@@ -216,19 +218,6 @@ export function SandboxPage({
     } catch (failure: unknown) {
       setError(displayableError(failure));
     }
-  }
-
-  /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */
-  async function remove(target: EnvironmentTarget): Promise<void> {
-    const failure = await deleteEnvironment(target).then(
-      () => null,
-      (reason: unknown) => reason
-    );
-    if (!failure) {
-      onBack();
-      return;
-    }
-    setError(displayableError(failure));
   }
 
   async function createThread(spec: SessionSpec, setupScript: string): Promise<void> {
@@ -415,7 +404,12 @@ export function SandboxPage({
                 color="red"
                 leftSection={<IconTrash size={15} />}
                 disabled={!deletable(sandbox)}
-                onClick={() => setConfirmingDelete(clone(EnvironmentTargetSchema, sandbox.target!))}
+                onClick={() =>
+                  setConfirmingDelete({
+                    target: clone(EnvironmentTargetSchema, sandbox.target!),
+                    identityName: sandbox.identityName ?? "",
+                  })
+                }
               >
                 Delete
                 {!deletable(sandbox) && (
@@ -430,11 +424,12 @@ export function SandboxPage({
       )}
       {confirmingDelete && (
         <ConfirmDelete
-          name={name}
+          target={confirmingDelete.target}
+          identityName={confirmingDelete.identityName}
           onCancel={() => setConfirmingDelete(null)}
-          onConfirm={() => {
-            void remove(confirmingDelete);
+          onDeleted={() => {
             setConfirmingDelete(null);
+            onBack();
           }}
         />
       )}
@@ -525,7 +520,12 @@ export function SandboxPage({
           </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
-          {sandbox && <StatusView sandbox={sandbox} threads={threads} active={tab === "status"} onError={setError} />}
+          {sandbox && tab === "status" && (
+            <Stack>
+              <EnvironmentIdentity sandbox={sandbox} />
+              <StatusView sandbox={sandbox} threads={threads} active={tab === "status"} onError={setError} />
+            </Stack>
+          )}
         </Tabs.Panel>
         {vmConsoleAvailable && (
           <Tabs.Panel value="console" pt="sm">
@@ -559,6 +559,8 @@ export function SandboxPage({
             <div hidden={!launching}>
               <NewThreadForm
                 target={sandbox?.target ?? null}
+                identityName={sandbox ? (sandbox.identityName ?? null) : undefined}
+                showIdentity={launching}
                 presetName={sandbox?.configuration?.preset ?? null}
                 unavailableReason={threadUnavailableReason}
                 creating={creatingThread}

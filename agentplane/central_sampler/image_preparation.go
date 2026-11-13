@@ -88,7 +88,7 @@ func prepareOutputImages(parts []protocol.ContentPart) ([]protocol.ContentPart, 
 // Codex rust-v0.162.1 core/src/image_preparation.rs resize_image.
 func prepareOutputImage(part protocol.ContentPart) (protocol.ContentPart, error) {
 	var fields map[string]json.RawMessage
-	if err := decodeProtocolObject(part.Raw, &fields); err != nil {
+	if err := protocol.DecodeObject(part.Raw, &fields); err != nil {
 		return protocol.ContentPart{}, err
 	}
 	rawURL, inline := fields["image_url"]

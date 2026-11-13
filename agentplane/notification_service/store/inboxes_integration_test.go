@@ -71,7 +71,7 @@ func TestOverlappingSubscriptionsCommitOnePrefixAndReadDoesNotAcknowledge(t *tes
 	if _, err := f.Acknowledge(t.Context(), f.incarnation(), a.InboxID, 4); !errors.Is(err, ErrCursorOutOfRange) {
 		t.Fatalf("error = %v, want ErrCursorOutOfRange", err)
 	}
-	if _, err := f.Acknowledge(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
+	if _, err := f.Acknowledge(t.Context(), AccountOwner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, a.InboxID, 1); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
 }
@@ -214,7 +214,7 @@ func TestRetirementStopsWorkWithoutErasingEntries(t *testing.T) {
 	event := model.ActionsEvent{RequestID: creation.Source.(model.ActionsSource).RequestID, Sequence: 1}
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 
-	if err := f.Retire(t.Context(), Owner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
+	if err := f.Retire(t.Context(), AccountOwner{Account: newOwner(), AccountUID: "test-account-uid", SandboxUID: testSandboxUID}, subscription.InboxID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account retired the inbox: %v", err)
 	}
 	if err := f.Retire(t.Context(), f.incarnation(), subscription.InboxID); err != nil {
@@ -401,7 +401,7 @@ func TestASandboxRecreatedUnderTheNameOwnsNoneOfItsPredecessorsInboxes(t *testin
 	quotas.InboxesPerAccount = 1
 	f := newFixture(t, quotas)
 	predecessor := f.subscribe(t, f.body("predecessor"))
-	successor := Owner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: "test-successor-uid"}
+	successor := AccountOwner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: "test-successor-uid"}
 
 	if inboxes, err := f.ListInboxes(t.Context(), successor); err != nil || len(inboxes) != 0 {
 		t.Fatalf("listed %+v, %v", inboxes, err)
@@ -491,5 +491,46 @@ func TestEstablishInboxOwnerRequiresEveryOriginalIdentityComponent(t *testing.T)
 	}
 	if _, err := f.Read(t.Context(), f.incarnation(), subscription.InboxID, 0, 10); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAnIdentityOwnsExactlyTheInboxesEstablishedForItsIncarnationAndSandbox(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	body := f.body("identity-owner")
+	sub := f.subscribe(t, body)
+	identity := model.Identity{Name: "test-agent", UID: "test-agent-uid"}
+	owner := IdentityOwner{Identity: identity, SandboxUID: body.DestinationRef.UID}
+	listed := func(owner Owner) int {
+		t.Helper()
+		inboxes, err := f.ListInboxes(t.Context(), owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(inboxes)
+	}
+	if listed(owner) != 0 {
+		t.Fatal("an Identity owns an inbox before the Session authority established it")
+	}
+	if err := f.EstablishInboxIdentity(t.Context(), body.DestinationRef, f.sessionID, identity); err != nil {
+		t.Fatal(err)
+	}
+	successor := owner
+	successor.Identity.UID = "test-successor-uid"
+	otherSandbox := owner
+	otherSandbox.SandboxUID = "test-other-sandbox-uid"
+	if listed(owner) != 1 || listed(successor) != 0 || listed(otherSandbox) != 0 {
+		t.Fatal("an inbox is owned by exactly its established Identity incarnation in its Sandbox")
+	}
+	if listed(f.incarnation()) != 1 {
+		t.Fatal("establishing an Identity changed the ServiceAccount owner's inboxes")
+	}
+	if _, err := f.Acknowledge(t.Context(), owner, sub.InboxID, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Acknowledge(t.Context(), successor, sub.InboxID, 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a successor Identity acknowledged the inbox: %v", err)
+	}
+	if err := f.EstablishInboxIdentity(t.Context(), body.DestinationRef, f.sessionID, successor.Identity); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("re-establishing another Identity: %v", err)
 	}
 }

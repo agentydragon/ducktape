@@ -572,7 +572,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "3"
         },
@@ -593,7 +593,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "2"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "3"
         },
@@ -720,7 +720,7 @@
        },
        {
         "command": {
-         "operation": "change_model",
+         "operation": "OPERATION_CHANGE_MODEL",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "16",
          "requestedValue": "model-b"
@@ -920,7 +920,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "1",
@@ -1015,7 +1015,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "2"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "2",
@@ -1136,7 +1136,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "3"
         },
@@ -1157,7 +1157,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "2"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "3"
         },
@@ -2309,7 +2309,7 @@
       "rows": [
        {
         "command": {
-         "operation": "change_model",
+         "operation": "OPERATION_CHANGE_MODEL",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING",
          "requestedValue": "model-b"
         },
@@ -2376,7 +2376,7 @@
       "rows": [
        {
         "command": {
-         "operation": "change_model",
+         "operation": "OPERATION_CHANGE_MODEL",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "16",
          "requestedValue": "model-b"
@@ -8704,7 +8704,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "1",
@@ -8799,7 +8799,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "2"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "2",
@@ -8872,7 +8872,7 @@
       "rows": [
        {
         "command": {
-         "operation": "change_model",
+         "operation": "OPERATION_CHANGE_MODEL",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING",
          "requestedValue": "model-x"
         },
@@ -8934,7 +8934,7 @@
       "rows": [
        {
         "command": {
-         "operation": "change_reasoning_effort",
+         "operation": "OPERATION_CHANGE_REASONING_EFFORT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING",
          "requestedValue": "low"
         },
@@ -8996,7 +8996,7 @@
       "rows": [
        {
         "command": {
-         "operation": "interrupt_turn",
+         "operation": "OPERATION_INTERRUPT_TURN",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "5",
@@ -9123,7 +9123,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_FAILED",
          "outcomeCursor": "7",
          "outcomeReason": "no harness"
@@ -9204,7 +9204,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "2"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_NOOP",
          "outcomeCursor": "8",
          "outcomeReason": ""
@@ -9284,7 +9284,7 @@
       "rows": [
        {
         "command": {
-         "operation": "interrupt_turn",
+         "operation": "OPERATION_INTERRUPT_TURN",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "9"
         },
@@ -9389,7 +9389,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "1",
@@ -9495,7 +9495,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_EFFECTED",
          "outcomeCursor": "2"
         },
@@ -11367,7 +11367,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "1",
@@ -11493,7 +11493,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_PENDING"
         },
         "cursor": "1",
@@ -11571,7 +11571,7 @@
           "projectionEpoch": "test-epoch",
           "revisionCursor": "1"
          },
-         "operation": "submit_input",
+         "operation": "OPERATION_SUBMIT_INPUT",
          "outcome": "THREAD_COMMAND_OUTCOME_FAILED",
          "outcomeCursor": "2",
          "outcomeReason": "x"

@@ -2,14 +2,21 @@ package centralsampler
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
@@ -17,14 +24,12 @@ import (
 )
 
 type fakeCodeModePeer struct {
-	host       *Host
-	input      *io.PipeReader
-	output     *io.PipeWriter
-	writeMu    sync.Mutex
-	closeOnce  sync.Once
-	frames     chan map[string]json.RawMessage
-	closed     chan struct{}
-	closeError error
+	input     io.ReadCloser
+	output    io.WriteCloser
+	writeMu   sync.Mutex
+	closeOnce sync.Once
+	frames    chan map[string]json.RawMessage
+	closed    chan struct{}
 	// acknowledge lists the offered optional capabilities this host supports.
 	acknowledge []string
 }
@@ -32,12 +37,13 @@ type fakeCodeModePeer struct {
 func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	source := "// @exec: is just a JavaScript comment in JSON code\nconst value = `quotes: \" and ${1 + 2}`;\ntext(value);"
 	input := protocol.CanonicalJSON(map[string]any{"code": source, "yield_time_ms": 0, "max_output_tokens": 123})
-	runtime := &CodeMode{sessionID: "fixture"}
+	manager, _ := newFakeCodeModeManager(t)
+	runtime := openFakeSession(t, manager, "fixture")
 	prepared, err := runtime.prepareCall(context.Background(), protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "call", Input: input})
 	if err != nil {
 		t.Fatal(err)
 	}
-	operation := prepared.operation.(codeExecuteOperation)
+	operation := prepared.operation.(codemode.ExecuteOperation)
 	if operation.Request.Source != source || operation.Request.ToolCallID != "call" || operation.Request.YieldTimeMS != 0 || *operation.Request.MaxOutputTokens != 123 {
 		t.Fatalf("JSON source or options changed: %+v", operation.Request)
 	}
@@ -45,7 +51,7 @@ func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.operation.(codeExecuteOperation).Request.YieldTimeMS != defaultExecYieldTimeMS {
+	if prepared.operation.(codemode.ExecuteOperation).Request.YieldTimeMS != defaultExecYieldTimeMS {
 		t.Fatal("JSON exec lost default yield time")
 	}
 }
@@ -99,7 +105,7 @@ func TestCodeModeInvalidCellPreservesOtherLiveWork(t *testing.T) {
 	if err := store.CellResult(t.Context(), owner, "fixture:live-cell", "live"); err != nil {
 		t.Fatal(err)
 	}
-	runtime := &CodeMode{store: store, owner: owner, sessionID: "fixture"}
+	runtime := &CodeMode{store: store, owner: owner}
 	output, err := runtime.Execute(t.Context(), protocol.ToolInvocation{
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "bad-wait",
 		Input: `{"cell_id":"executor-session-id","terminate":true}`,
@@ -121,7 +127,7 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 	if err := store.DB().Close(); err != nil {
 		t.Fatal(err)
 	}
-	runtime := &CodeMode{store: store, owner: owner, sessionID: "fixture"}
+	runtime := &CodeMode{store: store, owner: owner}
 	output, err := runtime.Execute(t.Context(), protocol.ToolInvocation{
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", Input: `{"cell_id":"fixture:cell"}`,
 	})
@@ -130,16 +136,8 @@ func TestCodeModeStoreFailureIsNotModelInputError(t *testing.T) {
 	}
 }
 
-func newFakeCodeModePeer(acknowledge []string) *fakeCodeModePeer {
-	input, hostInput := io.Pipe()
-	hostOutput, output := io.Pipe()
-	peer := &fakeCodeModePeer{
-		input: input, output: output,
-		frames: make(chan map[string]json.RawMessage, 32), closed: make(chan struct{}),
-		acknowledge: acknowledge,
-	}
-	peer.host = &Host{stdin: hostInput, stdout: hostOutput, done: make(chan struct{})}
-	go peer.serve()
+func newFakeCodeModePeer(connection net.Conn, acknowledge []string) *fakeCodeModePeer {
+	peer := &fakeCodeModePeer{input: connection, output: connection, frames: make(chan map[string]json.RawMessage, 32), closed: make(chan struct{}), acknowledge: acknowledge}
 	return peer
 }
 
@@ -148,8 +146,8 @@ func (p *fakeCodeModePeer) serve() {
 	if err != nil {
 		return
 	}
-	var hello codeHello
-	if decodeProtocolObject(payload, &hello) != nil || hello.Type != "connection/hello" {
+	var hello codemode.Hello
+	if protocol.DecodeObject(payload, &hello) != nil || hello.Type != "connection/hello" {
 		return
 	}
 	granted := []string{}
@@ -158,14 +156,14 @@ func (p *fakeCodeModePeer) serve() {
 			granted = append(granted, capability)
 		}
 	}
-	_ = p.send(codeFrame{Type: codeReady, SelectedVersion: 1, Capabilities: granted})
+	_ = p.send(codemode.Frame{Type: codemode.Ready, SelectedVersion: 1, Capabilities: granted})
 	for {
 		payload, err = readHostFrame(p.input)
 		if err != nil {
 			return
 		}
 		var fields map[string]json.RawMessage
-		if decodeProtocolObject(payload, &fields) != nil {
+		if protocol.DecodeObject(payload, &fields) != nil {
 			return
 		}
 		select {
@@ -177,18 +175,18 @@ func (p *fakeCodeModePeer) serve() {
 			ID      int64           `json:"id"`
 			Request json.RawMessage `json:"request"`
 		}
-		if decodeProtocolObject(payload, &frame) != nil || frame.Type != "operation/request" {
+		if protocol.DecodeObject(payload, &frame) != nil || frame.Type != "operation/request" {
 			continue
 		}
 		var request struct {
 			Method    string `json:"method"`
 			SessionID string `json:"sessionId"`
 		}
-		if decodeProtocolObject(frame.Request, &request) != nil || request.Method != "session/open" {
+		if protocol.DecodeObject(frame.Request, &request) != nil || request.Method != "session/open" {
 			continue
 		}
-		value, _ := json.Marshal(codeHostResponse{Type: "session/ready", SessionID: request.SessionID})
-		_ = p.send(codeFrame{Type: codeResponse, ID: &frame.ID, Result: &codeWireResult{Status: "ok", Value: value}})
+		value, _ := json.Marshal(codemode.HostResponse{Type: "session/ready", SessionID: request.SessionID})
+		_ = p.send(codemode.Frame{Type: codemode.Response, ID: &frame.ID, Result: &codemode.WireResult{Status: "ok", Value: value}})
 	}
 }
 
@@ -208,9 +206,9 @@ func (p *fakeCodeModePeer) sendDelegate(id int64, sessionID string) error {
 }
 
 func (p *fakeCodeModePeer) sendNotification(id int64, sessionID, cellID, text string) error {
-	return p.send(codeFrame{
-		Type: codeDelegateRequest, ID: &id, SessionID: sessionID,
-		Request: &codeDelegate{Type: "notification/send", CallID: "exec-call", CellID: cellID, Text: text},
+	return p.send(codemode.Frame{
+		Type: codemode.DelegateRequest, ID: &id, SessionID: sessionID,
+		Request: &codemode.Delegate{Type: "notification/send", CallID: "exec-call", CellID: cellID, Text: text},
 	})
 }
 
@@ -222,40 +220,53 @@ func (p *fakeCodeModePeer) close() error {
 	p.closeOnce.Do(func() {
 		_ = p.input.Close()
 		_ = p.output.Close()
-		_ = p.host.stdin.Close()
-		_ = p.host.stdout.Close()
-		close(p.host.done)
 		close(p.closed)
 	})
-	return p.closeError
+	return nil
 }
 
 func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
 	t.Helper()
-	manager := NewCodeModeHost(context.Background(), Settings{CodeModeHost: "fake", Logs: t.TempDir(), RPCTimeoutSeconds: 2}, nil)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "host")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := fmt.Sprintf("#!/bin/sh\nCODEMODE_TEST_PEER=%s exec %q \"$@\"\n", listener.Addr(), executable)
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewCodeModeHost(context.Background(), Settings{CodeModeHost: binary, Logs: directory, RPCTimeoutSeconds: 2}, nil)
 	var mu sync.Mutex
 	var peers []*fakeCodeModePeer
-	manager.startProcess = func(context.Context, string, string) (*Host, error) {
-		peer := newFakeCodeModePeer(acknowledge)
-		mu.Lock()
-		peers = append(peers, peer)
-		mu.Unlock()
-		return peer.host, nil
-	}
-	manager.closeProcess = func(host *Host) error {
-		mu.Lock()
-		defer mu.Unlock()
-		for _, peer := range peers {
-			if peer.host == host {
-				return peer.close()
+	go func() {
+		for {
+			connection, err := listener.Accept()
+			if err != nil {
+				return
 			}
+			peer := newFakeCodeModePeer(connection, acknowledge)
+			mu.Lock()
+			peers = append(peers, peer)
+			mu.Unlock()
+			go peer.serve()
 		}
-		return errors.New("fake host has no peer")
-	}
+	}()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = manager.Close(ctx)
+		mu.Lock()
+		defer mu.Unlock()
+		for _, peer := range peers {
+			_ = peer.close()
+		}
 	})
 	return manager, func() []*fakeCodeModePeer {
 		mu.Lock()
@@ -290,21 +301,10 @@ func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager := NewCodeModeHost(context.Background(), Settings{CodeModeHost: "fake", Logs: t.TempDir(), RPCTimeoutSeconds: 2}, store)
+	manager, peers := newFakeCodeModeManager(t)
 	atStamp := make(chan struct{})
 	allowStamp := make(chan struct{})
-	peerReady := make(chan *fakeCodeModePeer, 1)
-	manager.startProcess = func(context.Context, string, string) (*Host, error) {
-		peer := newFakeCodeModePeer(nil)
-		peerReady <- peer
-		return peer.host, nil
-	}
-	manager.closeProcess = func(*Host) error { return nil }
-	manager.stampHostInstance = func(ctx context.Context, owner Owner, instanceID string) error {
-		close(atStamp)
-		<-allowStamp
-		return store.StampCodeHostInstance(ctx, owner, instanceID)
-	}
+	journal := blockingStampJournal{codeJournal: codeJournal{store: store, owner: owner}, atStamp: atStamp, allowStamp: allowStamp}
 	t.Cleanup(func() {
 		select {
 		case <-allowStamp:
@@ -318,20 +318,15 @@ func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 	openedID := manager.InstanceID()
 	opened := make(chan error, 1)
 	go func() {
-		_, err := manager.OpenSession(t.Context(), session.ConversationID, owner, &Executor{})
+		_, err := manager.Manager.OpenSession(t.Context(), session.ConversationID, journal, (&CodeMode{}).delegate)
 		opened <- err
 	}()
-	var peer *fakeCodeModePeer
-	select {
-	case peer = <-peerReady:
-	case <-time.After(3 * time.Second):
-		t.Fatal("fake host did not start")
-	}
 	select {
 	case <-atStamp:
 	case <-time.After(3 * time.Second):
 		t.Fatal("host did not reach the post-ready stamp")
 	}
+	peer := peers()[0]
 	// Hold the stamp after session/ready while the actual host exits.
 	if err := peer.close(); err != nil {
 		t.Fatal(err)
@@ -346,7 +341,7 @@ func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 	close(allowStamp)
 	select {
 	case err := <-opened:
-		if !errors.Is(err, errCodeHostInstanceChanged) {
+		if !errors.Is(err, codemode.ErrHostInstanceChanged) {
 			t.Fatalf("dead host returned a usable binding: %v", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -383,7 +378,7 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CellResult(t.Context(), owner, first.cellHandle("old-cell"), "live"); err != nil {
+	if err := store.CellResult(t.Context(), owner, first.CellHandle("old-cell"), "live"); err != nil {
 		t.Fatal(err)
 	}
 	if err := first.Detach(t.Context()); err != nil {
@@ -410,15 +405,15 @@ func TestRecoveryUsesNewLogicalSessionWithoutRestartingSharedHost(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second.sessionID == first.sessionID {
+	if second.ID() == first.ID() {
 		t.Fatal("recovery reused the detached JavaScript session")
 	}
-	if second.host != first.host || len(peers()) != 1 {
+	if len(peers()) != 1 {
 		t.Fatal("recovery restarted the shared host rather than replacing one logical session")
 	}
 	// A late request from the retired logical session cannot reach the new binding.
 	peer := peers()[0]
-	if err := peer.sendDelegate(9001, first.sessionID); err != nil {
+	if err := peer.sendDelegate(9001, first.ID()); err != nil {
 		t.Fatal(err)
 	}
 	assertDelegateResponse(t, receivePeerFrame(t, peer), 9001, "error")
@@ -451,21 +446,18 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 	if got := len(peers()); got != 1 {
 		t.Fatalf("host starts=%d, want one shared host", got)
 	}
-	if first.host != second.host {
-		t.Fatal("logical sessions do not share the same host process")
-	}
-	if first.sessionID == second.sessionID {
+	if first.ID() == second.ID() {
 		t.Fatal("logical sessions share a protocol session ID")
 	}
 	peer := peers()[0]
 
-	if err := peer.sendDelegate(1001, first.sessionID); err != nil {
+	if err := peer.sendDelegate(1001, first.ID()); err != nil {
 		t.Fatal(err)
 	}
 	responseA := receivePeerFrame(t, peer)
 	assertDelegateResponse(t, responseA, 1001, "ok")
-	var notification codeDelegateResponse
-	if err := decodeProtocolObject(mustMarshalFields(t, responseA), &notification); err != nil {
+	var notification codemode.DelegateResponse
+	if err := protocol.DecodeObject(mustMarshalFields(t, responseA), &notification); err != nil {
 		t.Fatal(err)
 	}
 	notificationJSON, err := json.Marshal(notification.Result.Value)
@@ -473,7 +465,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 	var notificationFields map[string]json.RawMessage
-	if err := decodeProtocolObject(notificationJSON, &notificationFields); err != nil {
+	if err := protocol.DecodeObject(notificationJSON, &notificationFields); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := notificationFields["result"]; exists {
@@ -483,7 +475,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 	if err := first.Detach(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := peer.sendDelegate(1002, first.sessionID); err != nil {
+	if err := peer.sendDelegate(1002, first.ID()); err != nil {
 		t.Fatal(err)
 	}
 	responseDetached := receivePeerFrame(t, peer)
@@ -492,7 +484,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatalf("detaching session A failed its binding: %v", first.Err())
 	}
 
-	if err := peer.sendDelegate(2001, second.sessionID); err != nil {
+	if err := peer.sendDelegate(2001, second.ID()); err != nil {
 		t.Fatal(err)
 	}
 	responseB := receivePeerFrame(t, peer)
@@ -503,29 +495,36 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 }
 
 func TestCodeModeDelegateCancelUsesGlobalIDWithoutSessionID(t *testing.T) {
-	manager, _ := newFakeCodeModeManager(t)
-	runtime := openFakeSession(t, manager, "conversation-a")
-	const delegateID = 3001
-	if !runtime.beginDelegate(delegateID) {
-		t.Fatal("could not register active delegate")
+	manager, peers := newFakeCodeModeManager(t)
+	started := make(chan context.Context, 1)
+	finished := make(chan struct{})
+	code, err := manager.Manager.OpenSession(t.Context(), "conversation", nil, func(ctx context.Context, _ *codemode.Session, _ codemode.Delegate) (codemode.DelegateResult, codemode.DelegateResult, error) {
+		started <- ctx
+		<-ctx.Done()
+		close(finished)
+		return codemode.DelegateResult{}, codemode.DelegateResult{}, ctx.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	ctx := runtime.delegateCtx[delegateID]
-	manager.mu.Lock()
-	manager.delegates[delegateID] = runtime
-	manager.mu.Unlock()
-
-	frame := codeFrame{Type: codeDelegateCancel, ID: int64Pointer(delegateID)}
-	raw := []byte(`{"type":"delegate/cancel","id":3001}`)
-	if err := manager.dispatch(runtime.host, &frame, raw); err != nil {
+	peer := peers()[0]
+	if err := peer.sendDelegate(3001, code.ID()); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case <-ctx.Done():
-	case <-time.After(2 * time.Second):
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("delegate did not start")
+	}
+	if err := peer.send(codemode.Frame{Type: codemode.DelegateCancel, ID: int64Pointer(3001)}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
 		t.Fatal("delegate/cancel did not cancel the delegate routed by global ID")
 	}
-	runtime.delegateWG.Done()
-	if err := runtime.Detach(context.Background()); err != nil {
+	if err := code.Detach(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -541,10 +540,10 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 	ctx, cancel := context.WithCancel(context.Background())
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := first.request(ctx, codeSessionOperation{Method: "session/wait", SessionID: first.sessionID}, false)
+		_, err := first.Request(ctx, codemode.SessionOperation{Method: "session/wait", SessionID: first.ID()}, false)
 		firstDone <- err
 	}()
-	firstID := receiveOperationRequest(t, peer, first.sessionID)
+	firstID := receiveOperationRequest(t, peer, first.ID())
 	cancel()
 	select {
 	case err := <-firstDone:
@@ -560,7 +559,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 			Type string `json:"type"`
 			ID   int64  `json:"id"`
 		}
-		if err := decodeProtocolObject(mustMarshalFields(t, fields), &cancelFrame); err != nil {
+		if err := protocol.DecodeObject(mustMarshalFields(t, fields), &cancelFrame); err != nil {
 			t.Fatal(err)
 		}
 		if cancelFrame.Type != "operation/cancel" || cancelFrame.ID != firstID {
@@ -569,31 +568,27 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 	case <-time.After(3 * time.Second):
 		t.Fatal("caller cancellation did not send operation/cancel")
 	}
-	if first.host != second.host || first.Err() != nil || second.Err() != nil {
+	if len(peers()) != 1 || first.Err() != nil || second.Err() != nil {
 		t.Fatal("canceling one request damaged the shared host or a logical session")
 	}
 
 	lateValue := json.RawMessage(`{"type":"late"}`)
-	late := codeFrame{Type: codeResponse, ID: int64Pointer(firstID), Result: &codeWireResult{Status: "ok", Value: lateValue}}
-	lateRaw, err := json.Marshal(late)
-	if err != nil {
+	late := codemode.Frame{Type: codemode.Response, ID: int64Pointer(firstID), Result: &codemode.WireResult{Status: "ok", Value: lateValue}}
+	if err := peer.send(late); err != nil {
 		t.Fatal(err)
-	}
-	if err := manager.dispatch(first.host, &late, lateRaw); err != nil {
-		t.Fatalf("late canceled response should be discarded: %v", err)
 	}
 
 	secondDone := make(chan error, 1)
 	go func() {
-		_, err := second.request(context.Background(), codeSessionOperation{Method: "session/wait", SessionID: second.sessionID}, false)
+		_, err := second.Request(context.Background(), codemode.SessionOperation{Method: "session/wait", SessionID: second.ID()}, false)
 		secondDone <- err
 	}()
-	secondID := receiveOperationRequest(t, peer, second.sessionID)
+	secondID := receiveOperationRequest(t, peer, second.ID())
 	if secondID <= firstID {
 		t.Fatalf("request IDs did not remain globally increasing: A=%d B=%d", firstID, secondID)
 	}
-	value, _ := json.Marshal(codeHostResponse{Type: "wait/completed", SessionID: second.sessionID})
-	if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(secondID), Result: &codeWireResult{Status: "ok", Value: value}}); err != nil {
+	value, _ := json.Marshal(codemode.HostResponse{Type: "wait/completed", SessionID: second.ID()})
+	if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(secondID), Result: &codemode.WireResult{Status: "ok", Value: value}}); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -611,15 +606,15 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 		Encoding: protocol.ExecEncodingJSON, Name: "exec", CallID: "rejected-call", Input: `{"code":"text(1)"}`,
 	}
 	store, owner, runtime, live, code, peer := newCodeModeAdvanceFixture(t, call)
-	originalHost := code.host
-	unrelatedCell := code.cellHandle("unrelated-cell")
+	originalHost := runtime.codeHost.InstanceID()
+	unrelatedCell := code.CellHandle("unrelated-cell")
 	if err := store.CellResult(t.Context(), owner, unrelatedCell, "live"); err != nil {
 		t.Fatal(err)
 	}
 
 	result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
-		if err := peer.send(codeFrame{
-			Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "host admission rejected"},
+		if err := peer.send(codemode.Frame{
+			Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -631,7 +626,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := responsesItems(t, conversation.Archive)
+	items := responsesItems(t, conversation.Transcript)
 	if conversation.Pending != nil || len(items) < 2 {
 		t.Fatalf("rejected exec left pending work or no output: pending=%+v items=%+v", conversation.Pending, items)
 	}
@@ -645,7 +640,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if len(state.Cells) != 1 || state.Cells[0].ID != unrelatedCell || state.Cells[0].Status != "live" {
 		t.Fatalf("unrelated live cell changed after rejection: %+v", state.Cells)
 	}
-	if code.Err() != nil || code.host != originalHost {
+	if code.Err() != nil || runtime.codeHost.InstanceID() != originalHost {
 		t.Fatalf("host binding changed after rejection: binding error=%v", code.Err())
 	}
 	assertToolResultSucceeded(t, store, owner, call.CallID, false)
@@ -659,7 +654,7 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 		t.Fatal(err)
 	}
 	hostResponse, ok := rejectedResult["code_mode_host_response"].(map[string]any)
-	if !ok || hostResponse["method"] != "session/execute" || hostResponse["phase"] != string(codeOperationResponsePhase) || hostResponse["execution_started"] != false {
+	if !ok || hostResponse["method"] != "session/execute" || hostResponse["phase"] != string(codemode.OperationResponsePhase) || hostResponse["execution_started"] != false {
 		t.Fatalf("rejection evidence=%+v", rejectedResult["code_mode_host_response"])
 	}
 
@@ -668,15 +663,15 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	}
 	appendModelToolCall(t, store, owner, nextCall)
 	result, advanceErr = advanceWithFakeOperation(t, runtime, live, code, peer, "session/execute", func(id int64) {
-		started, err := json.Marshal(codeHostResponse{Type: "execution/started", CellID: "next-cell"})
+		started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "next-cell"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "ok", Value: started}}); err != nil {
+		if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 			t.Fatal(err)
 		}
 		observation := json.RawMessage(`{"Result":{"cell_id":"next-cell","content_items":[{"type":"input_text","text":"retained"}]}}`)
-		if err := peer.send(codeFrame{Type: codeInitialResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "ok", Value: observation}}); err != nil {
+		if err := peer.send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: observation}}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -687,12 +682,12 @@ func TestHostAdmissionRejectionPreservesLiveCodeModeSessionForNextExec(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	items = responsesItems(t, conversation.Archive)
+	items = responsesItems(t, conversation.Transcript)
 	if output := items[len(items)-1]; output.CallID != nextCall.CallID || len(output.Output) < 2 || output.Output[len(output.Output)-1].Text != "retained" {
 		t.Fatalf("next exec did not run through the retained logical session: %+v", output)
 	}
 	assertToolResultSucceeded(t, store, owner, nextCall.CallID, true)
-	if code.Err() != nil || live.code.sessionID != code.sessionID {
+	if code.Err() != nil || live.code.ID() != code.ID() {
 		t.Fatalf("next exec replaced or failed the logical Code Mode session: err=%v", code.Err())
 	}
 }
@@ -709,13 +704,13 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			call := protocol.ToolInvocation{Encoding: protocol.ExecEncodingJSON, Name: "wait", CallID: "wait-call", Input: test.input}
 			store, owner, runtime, live, code, peer := newCodeModeAdvanceFixture(t, call)
-			cell := code.cellHandle("cell")
+			cell := code.CellHandle("cell")
 			if err := store.CellResult(t.Context(), owner, cell, "live"); err != nil {
 				t.Fatal(err)
 			}
 			result, advanceErr := advanceWithFakeOperation(t, runtime, live, code, peer, test.method, func(id int64) {
-				if err := peer.send(codeFrame{
-					Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "host operation returned an error"},
+				if err := peer.send(codemode.Frame{
+					Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host operation returned an error"},
 				}); err != nil {
 					t.Fatal(err)
 				}
@@ -727,7 +722,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
-			items := responsesItems(t, conversation.Archive)
+			items := responsesItems(t, conversation.Transcript)
 			output := items[len(items)-1]
 			if !output.IsToolOutput() || output.CallID != call.CallID || len(output.Output) != 1 || output.Output[0].Text != "host operation returned an error" {
 				t.Fatalf("%s error output=%+v", test.name, output)
@@ -753,7 +748,7 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 				t.Fatal(err)
 			}
 			hostResponse, ok := intentResult["code_mode_host_response"].(map[string]any)
-			if !ok || hostResponse["method"] != test.method || hostResponse["phase"] != string(codeOperationResponsePhase) {
+			if !ok || hostResponse["method"] != test.method || hostResponse["phase"] != string(codemode.OperationResponsePhase) {
 				t.Fatalf("%s response evidence=%+v", test.name, intentResult["code_mode_host_response"])
 			}
 			if _, claimedStarted := hostResponse["execution_started"]; claimedStarted || intentResult["status"] == "terminated" {
@@ -777,7 +772,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		{
 			name: "unknown response status",
 			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
-				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "unexpected"}}); err != nil {
+				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "unexpected"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -785,7 +780,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		{
 			name: "empty host error message",
 			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
-				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error"}}); err != nil {
+				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -793,14 +788,14 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		{
 			name: "initial response host error after execution started",
 			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
-				started, err := json.Marshal(codeHostResponse{Type: "execution/started", CellID: "started-cell"})
+				started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "started-cell"})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "ok", Value: started}}); err != nil {
+				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "ok", Value: started}}); err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codeFrame{Type: codeInitialResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
+				if err := peer.send(codemode.Frame{Type: codemode.InitialResponse, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "initial observation failed"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -811,7 +806,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET owner=$2 WHERE id=$1`, owner.ConversationID, "00000000-0000-4000-8000-000000000001"); err != nil {
 					t.Fatal(err)
 				}
-				if err := peer.send(codeFrame{Type: codeResponse, ID: int64Pointer(id), Result: &codeWireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
+				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error", Message: "host admission rejected"}}); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -825,7 +820,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 				_, err := runtime.advance(t.Context(), owner, live, nil, &Session{Model: "fixture-model"})
 				advanceDone <- err
 			}()
-			request := receiveCodeOperationRequest(t, peer, live.code.sessionID, "session/execute")
+			request := receiveCodeOperationRequest(t, peer, live.code.ID(), "session/execute")
 			test.respond(t, peer, request.id, owner, store)
 			select {
 			case err := <-advanceDone:
@@ -892,7 +887,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 		if err := json.Unmarshal([]byte(call.Input), &input); err != nil {
 			t.Fatal(err)
 		}
-		input.CellID = code.cellHandle("cell")
+		input.CellID = code.CellHandle("cell")
 		encoded, err := json.Marshal(input)
 		if err != nil {
 			t.Fatal(err)
@@ -916,13 +911,13 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 		},
 		RPCTimeoutSeconds: 2,
 	}
-	runtime := NewRuntime(store, settings)
+	runtime := NewRuntime(store, settings, manager)
 	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
 }
 
 func appendModelToolCall(t *testing.T, store *Store, owner Owner, call protocol.ToolInvocation) {
 	t.Helper()
-	intentID, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling})
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -962,7 +957,7 @@ func advanceWithFakeOperation(
 			err    error
 		}{result: result, err: err}
 	}()
-	request := receiveCodeOperationRequest(t, peer, code.sessionID, wantMethod)
+	request := receiveCodeOperationRequest(t, peer, code.ID(), wantMethod)
 	respond(request.id)
 	select {
 	case result := <-done:
@@ -979,6 +974,8 @@ type fakeCodeOperationRequest struct {
 	sessionID string
 }
 
+// receiveCodeOperationRequest returns the next request for method; an empty sessionID matches
+// any logical session, which lets a test learn the ID the host manager allocated.
 func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID, method string) fakeCodeOperationRequest {
 	t.Helper()
 	deadline := time.After(3 * time.Second)
@@ -990,7 +987,7 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 				ID      int64           `json:"id"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := decodeProtocolObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type != "operation/request" {
@@ -1000,10 +997,10 @@ func receiveCodeOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID
 				Method    string `json:"method"`
 				SessionID string `json:"sessionId"`
 			}
-			if err := decodeProtocolObject(envelope.Request, &request); err != nil {
+			if err := protocol.DecodeObject(envelope.Request, &request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Method == method && request.SessionID == sessionID {
+			if request.Method == method && (sessionID == "" || request.SessionID == sessionID) {
 				return fakeCodeOperationRequest{id: envelope.ID, method: request.Method, sessionID: request.SessionID}
 			}
 		case <-deadline:
@@ -1020,8 +1017,8 @@ func receiveOperationRequest(t *testing.T, peer *fakeCodeModePeer, sessionID str
 
 func assertDelegateResponse(t *testing.T, fields map[string]json.RawMessage, wantID int64, wantStatus string) {
 	t.Helper()
-	var response codeDelegateResponse
-	if err := decodeProtocolObject(mustMarshalFields(t, fields), &response); err != nil {
+	var response codemode.DelegateResponse
+	if err := protocol.DecodeObject(mustMarshalFields(t, fields), &response); err != nil {
 		t.Fatal(err)
 	}
 	if response.Type != "delegate/response" || response.ID != wantID || response.Result.Status != wantStatus {
@@ -1042,13 +1039,13 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 	manager, peers := newFakeCodeModeManager(t)
 	first := openFakeSession(t, manager, "conversation-a")
 	second := openFakeSession(t, manager, "conversation-b")
-	oldSessionID := first.sessionID
+	oldSessionID := first.ID()
 	peer := peers()[0]
 
 	requestDone := make(chan error, 2)
 	for _, runtime := range []*CodeMode{first, second} {
 		go func(runtime *CodeMode) {
-			_, err := runtime.request(context.Background(), codeSessionOperation{Method: "session/wait", SessionID: runtime.sessionID}, false)
+			_, err := runtime.Request(context.Background(), codemode.SessionOperation{Method: "session/wait", SessionID: runtime.ID()}, false)
 			requestDone <- err
 		}(runtime)
 	}
@@ -1061,14 +1058,14 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := decodeProtocolObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
 				var request struct {
 					Method string `json:"method"`
 				}
-				if err := decodeProtocolObject(envelope.Request, &request); err != nil {
+				if err := protocol.DecodeObject(envelope.Request, &request); err != nil {
 					t.Fatal(err)
 				}
 				if request.Method == "session/wait" {
@@ -1095,7 +1092,7 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 	}
 
 	third := openFakeSession(t, manager, "conversation-a")
-	if third.sessionID == oldSessionID {
+	if third.ID() == oldSessionID {
 		t.Fatalf("restarted host reused uncertain protocol session ID %q", oldSessionID)
 	}
 	if got := len(peers()); got != 2 {
@@ -1111,14 +1108,14 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := decodeProtocolObject(mustMarshalFields(t, fields), &envelope); err != nil {
+			if err := protocol.DecodeObject(mustMarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
 				var request struct {
 					Method string `json:"method"`
 				}
-				if err := decodeProtocolObject(envelope.Request, &request); err != nil {
+				if err := protocol.DecodeObject(envelope.Request, &request); err != nil {
 					t.Fatal(err)
 				}
 				switch request.Method {
@@ -1146,7 +1143,7 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 		acknowledge []string
 		next        string
 	}{
-		{name: "acknowledged", acknowledge: []string{yieldObservationCapability}, next: "operation/yield"},
+		{name: "acknowledged", acknowledge: []string{codemode.YieldObservationCapability}, next: "operation/yield"},
 		// Without the capability the input waits for the observation; the request ends uncancelled.
 		{name: "not acknowledged", next: "operation/cancel"},
 	} {
@@ -1157,10 +1154,10 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() {
-				_, _ = code.request(ctx, codeSessionOperation{Method: "session/wait", SessionID: code.sessionID}, false)
+				_, _ = code.Request(ctx, codemode.SessionOperation{Method: "session/wait", SessionID: code.ID()}, false)
 				close(done)
 			}()
-			id := receiveOperationRequest(t, peer, code.sessionID)
+			id := receiveOperationRequest(t, peer, code.ID())
 			deadline := time.Now().Add(3 * time.Second)
 			for test.next == "operation/yield" && !code.HasForeground() {
 				if time.Now().After(deadline) {
@@ -1180,7 +1177,7 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 					Type string `json:"type"`
 					ID   int64  `json:"id"`
 				}
-				if err := decodeProtocolObject(mustMarshalFields(t, fields), &frame); err != nil {
+				if err := protocol.DecodeObject(mustMarshalFields(t, fields), &frame); err != nil {
 					t.Fatal(err)
 				}
 				if frame.Type != test.next || frame.ID != id {
@@ -1191,4 +1188,50 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 			}
 		})
 	}
+}
+
+type blockingStampJournal struct {
+	codeJournal
+	atStamp    chan struct{}
+	allowStamp chan struct{}
+}
+
+func (j blockingStampJournal) StampHost(ctx context.Context, instanceID string) error {
+	close(j.atStamp)
+	<-j.allowStamp
+	return j.codeJournal.StampHost(ctx, instanceID)
+}
+
+// The fake child proxies its stdio to the test peer, exercising the real process lifecycle.
+func runCodeModePeer() bool {
+	address := os.Getenv("CODEMODE_TEST_PEER")
+	if address == "" {
+		return false
+	}
+	connection, err := net.Dial("tcp", address)
+	if err != nil {
+		panic(err)
+	}
+	defer connection.Close()
+	go func() { _, _ = io.Copy(connection, os.Stdin) }()
+	_, _ = io.Copy(os.Stdout, connection)
+	return true
+}
+
+func readHostFrame(reader io.Reader) ([]byte, error) {
+	var size uint32
+	if err := binary.Read(reader, binary.LittleEndian, &size); err != nil {
+		return nil, err
+	}
+	data := make([]byte, int(size))
+	_, err := io.ReadFull(reader, data)
+	return data, err
+}
+
+func writeHostFrame(writer io.Writer, payload []byte) error {
+	if err := binary.Write(writer, binary.LittleEndian, uint32(len(payload))); err != nil {
+		return err
+	}
+	_, err := io.Copy(writer, strings.NewReader(string(payload)))
+	return err
 }

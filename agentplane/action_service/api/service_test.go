@@ -54,8 +54,8 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		IdempotencyKey: "test-voted", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{"test": ["argument", 1]}`), Title: "test title", Description: &description,
 	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{
-		Provider: "test-provider", Verdict: store.VerdictAllow, ReasonCode: "test_reason", ReasonDescription: &reason,
-		Evidence: evidence,
+		Verdict: store.VerdictAllow,
+		Policy:  store.PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE, ReasonDescription: &reason, Evidence: evidence},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 	}
 	if err := s.store.FinishExecution(t.Context(), submitted.ID, claim.Lease, store.ExecutionOutcome{
 		State: store.ExecutionFailed, Result: json.RawMessage(`["test-partial", 1]`),
-		Error: json.RawMessage(`{"kind": "test_failure", "message": "test message"}`),
+		Error: &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -96,23 +96,25 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		State:     action_servicepb.ActionState_ACTION_STATE_FAILED, Version: stored.Version,
 		CreatedAt: timestamppb.New(stored.CreatedAt), UpdatedAt: timestamppb.New(stored.UpdatedAt),
 		Decision: &action_servicepb.Decision{
-			Id: stored.Decision.ID.String(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, Provider: "test-provider",
-			ReasonCode: proto.String("test_reason"), ReasonDescription: &reason,
-			PolicyEvidence: &action_servicepb.PolicyEvidence{
-				Bindings:   []*action_servicepb.BindingEvidence{{Namespace: testNamespace, Name: "test-binding", ResourceVersion: "7"}},
-				PolicySets: []*action_servicepb.PolicySetEvidence{{Namespace: testNamespace, Name: "test-set", Generation: 4}},
-				Matched: &action_servicepb.MatchedPolicy{
-					Namespace: testNamespace, PolicySet: "test-set", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
-					Index: 2, Type: action_servicepb.PolicyKind_POLICY_KIND_GITHUB_REPOSITORY,
-					Repository: &action_servicepb.MatchedRepository{Owner: "test-owner", Repository: "test-repository", ConfirmedPublic: true},
+			Id: stored.Decision.ID.String(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW,
+			Decider: &action_servicepb.Decision_Policy{Policy: &action_servicepb.PolicyDecision{
+				ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE, ReasonDescription: &reason,
+				Evidence: &action_servicepb.PolicyEvidence{
+					Bindings:   []*action_servicepb.BindingEvidence{{Namespace: testNamespace, Name: "test-binding", ResourceVersion: "7"}},
+					PolicySets: []*action_servicepb.PolicySetEvidence{{Namespace: testNamespace, Name: "test-set", Generation: 4}},
+					Matched: &action_servicepb.MatchedPolicy{
+						Namespace: testNamespace, PolicySet: "test-set", Source: action_servicepb.PolicySource_POLICY_SOURCE_RULES,
+						Index: 2, Type: action_servicepb.PolicyKind_POLICY_KIND_GITHUB_REPOSITORY,
+						Repository: &action_servicepb.MatchedRepository{Owner: "test-owner", Repository: "test-repository", ConfirmedPublic: true},
+					},
 				},
-			},
+			}},
 			IdempotencyKey: stored.Decision.IdempotencyKey, DecidedAt: timestamppb.New(stored.Decision.DecidedAt),
 		},
 		Execution: &action_servicepb.Execution{
 			Id: stored.Execution.ID.String(), State: action_servicepb.ExecutionState_EXECUTION_STATE_FAILED,
 			Result:    structpb.NewListValue(result),
-			Error:     structOf(t, map[string]any{"kind": "test_failure", "message": "test message"}),
+			Error:     &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"},
 			CreatedAt: timestamppb.New(stored.Execution.CreatedAt), StartedAt: timestamppb.New(*stored.Execution.StartedAt),
 			CompletedAt: timestamppb.New(*stored.Execution.CompletedAt),
 		},
@@ -132,7 +134,7 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 	decision := got.GetActionRequest().GetDecision()
 	if got.GetActionRequest().GetState() != action_servicepb.ActionState_ACTION_STATE_DENIED ||
 		decision.GetVerdict() != action_servicepb.Verdict_VERDICT_DENY ||
-		!proto.Equal(decision.GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) {
+		!proto.Equal(decision.GetOperator().GetOperator(), &action_servicepb.Operator{Issuer: s.issuer.url, Subject: operatorSubject}) {
 		t.Errorf("operator's decision: %v", got.GetActionRequest())
 	}
 
@@ -210,7 +212,9 @@ func TestHistoryPagesTheDecidedRequestsAndCanLeaveOutThoseAPolicyAllowed(t *test
 	auto, err := s.store.Submit(t.Context(), caller, store.ActionRequestInput{
 		IdempotencyKey: "test-auto-allowed", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{}`), Title: "test title",
-	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{Provider: "test-provider", Verdict: store.VerdictAllow, ReasonCode: "test_reason"}})
+	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{
+		Verdict: store.VerdictAllow, Policy: store.PolicyDecision{ReasonCode: action_servicepb.PolicyDecision_REASON_CODE_AUTO_APPROVE},
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}

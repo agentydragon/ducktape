@@ -1,5 +1,5 @@
 """The launcher relay policy in the real Kyverno CLI. The CLI loads no API reads, so the test supplies
-the VMI, VirtualMachine, Sandbox, WorkloadCredential and ServiceAccount the policy would read; the ownership checks still run."""
+the VMI, VirtualMachine, Sandbox and WorkloadCredential the policy would read; the ownership checks still run."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -21,11 +21,10 @@ from cluster.cdk8s.agentplane.launcher_relay import (
     RUNNER_TLS_VOLUME_NAME,
     LauncherRelayPolicy,
 )
-from cluster.cdk8s.agentplane.sandbox_pod import EGRESS_TOKEN_VOLUME_NAME, SIDECAR_SETTINGS_VOLUME_NAME
+from cluster.cdk8s.agentplane.sandbox_pod import SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.cdk8s.kyverno.apply import KyvernoApplyResult, apply_policy
 
 NAMESPACE = "launcher-relay-test"
-TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME
 RELAY_SETTINGS = "relay-test-relay-settings"
 RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 RUNNER_SECRET = f"svid-sandbox-a-{RUNNER_CREDENTIAL_ID}"
@@ -44,18 +43,13 @@ RUNNER_POD = {
                 "env": [{"name": "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE", "value": "/etc/relay-test/settings.yaml"}],
                 "securityContext": {"allowPrivilegeEscalation": False},
                 "volumeMounts": [
-                    {"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test", "readOnly": True},
-                    {"name": SIDECAR_SETTINGS_VOLUME_NAME, "mountPath": "/etc/relay-test", "readOnly": True},
+                    {"name": SIDECAR_SETTINGS_VOLUME_NAME, "mountPath": "/etc/relay-test", "readOnly": True}
                 ],
             }
         ],
         "volumes": [
             {"name": "unrelated", "configMap": {"name": "relay-test-config"}},
             {"name": SIDECAR_SETTINGS_VOLUME_NAME, "configMap": {"name": "relay-test-settings"}},
-            {
-                "name": TOKEN_VOLUME,
-                "projected": {"sources": [{"serviceAccountToken": {"audience": "relay-test", "path": "token"}}]},
-            },
         ],
     },
 }
@@ -108,7 +102,6 @@ def policy_file(
     *,
     vm_uid: str,
     vm_owner_kind: str,
-    account_owner_uid: str,
     vmi_volumes: list[dict] | None,
     vmi_filesystems: list[dict] | None,
     credential_kind: str = "VM",
@@ -156,18 +149,15 @@ def policy_file(
                 "name": "sandbox-a",
                 "ownerReferences": [owner(f"{GROUP}/{VERSION}", "Sandbox", record_owner_uid)],
             },
-            "spec": {"subject": {"serviceAccount": "sandbox-a"}, "binding": {"vmiUID": binding_vmi_uid}},
+            "spec": {
+                "subject": {"identity": {"name": "agent-a", "uid": "agent-uid"}},
+                "binding": {"vmiUID": binding_vmi_uid},
+            },
             "status": {
                 "credentialID": record_credential_id,
                 "secretName": f"svid-sandbox-a-{record_credential_id}",
                 "acceptedBinding": {"vmiUID": accepted_vmi_uid},
             },
-        },
-        "account": {
-            "metadata": {
-                "name": "sandbox-a",
-                "ownerReferences": [owner(f"{GROUP}/{VERSION}", "Sandbox", account_owner_uid)],
-            }
         },
     }
     for rule in policy["spec"]["rules"]:
@@ -203,7 +193,6 @@ def apply(
     operation: str = "CREATE",
     vm_uid: str = "vm-uid",
     vm_owner_kind: str = "Sandbox",
-    account_owner_uid: str = "sb-uid",
     vmi_volumes: tuple[dict, ...] | None = (),
     vmi_filesystems: tuple[dict, ...] | None = (),
     credential_kind: str = "VM",
@@ -225,7 +214,6 @@ def apply(
             policy,
             vm_uid=vm_uid,
             vm_owner_kind=vm_owner_kind,
-            account_owner_uid=account_owner_uid,
             vmi_volumes=list(vmi_volumes) if vmi_volumes is not None else None,
             vmi_filesystems=list(vmi_filesystems) if vmi_filesystems is not None else None,
             credential_kind=credential_kind,
@@ -254,19 +242,15 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert second.mutated_resources == first.mutated_resources
 
     spec = mutated["spec"]
-    assert spec["serviceAccountName"] == "sandbox-a"
+    assert spec["serviceAccountName"] == "default"
     assert spec["automountServiceAccountToken"] is False
     assert spec["imagePullSecrets"] == [{"name": "relay-test-pull"}]
-    assert [v["name"] for v in spec["volumes"]] == [TOKEN_VOLUME, SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME]
+    assert [v["name"] for v in spec["volumes"]] == [SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME]
     assert not any(c["name"] == "egress-sidecar" for c in spec["containers"])
     relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
     assert relay["restartPolicy"] == "Always"
     assert relay["image"] == "sidecar:test"
-    assert {mount["name"] for mount in relay["volumeMounts"]} == {
-        TOKEN_VOLUME,
-        SIDECAR_SETTINGS_VOLUME_NAME,
-        RUNNER_TLS_VOLUME_NAME,
-    }
+    assert {mount["name"] for mount in relay["volumeMounts"]} == {SIDECAR_SETTINGS_VOLUME_NAME, RUNNER_TLS_VOLUME_NAME}
     # The runner's settings listen on loopback; the guest dials the relay from outside it.
     assert one(v for v in spec["volumes"] if v["name"] == SIDECAR_SETTINGS_VOLUME_NAME)["configMap"] == {
         "name": RELAY_SETTINGS
@@ -520,7 +504,6 @@ def test_omitted_vmi_arrays_have_no_eligible_daemon(
         pytest.param({"username": "system:serviceaccount:attacker:creator"}, id="not-kubevirt"),
         pytest.param({"vm_uid": "replaced-vm"}, id="stale-vm"),
         pytest.param({"vm_owner_kind": "NotASandbox"}, id="vm-not-a-sandbox"),
-        pytest.param({"account_owner_uid": "other-sandbox"}, id="account-of-another-sandbox"),
         pytest.param(
             {"vmi_volumes": ({"name": "sa", "serviceAccount": {"serviceAccountName": "x"}},)}, id="guest-token"
         ),
@@ -560,7 +543,7 @@ def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -
         {
             "name": "egress-sidecar",
             "image": "sidecar:test",
-            "volumeMounts": [{"name": TOKEN_VOLUME, "mountPath": "/var/run/relay-test"}],
+            "volumeMounts": [{"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/run/agentplane/workload-svid"}],
         }
     )
     assert apply(tmp_path, policy, resource).failed > 0
@@ -569,10 +552,16 @@ def test_rejects_relay_in_both_container_classes(tmp_path: Path, policy: dict) -
 @pytest.mark.parametrize(
     ("field", "operation"), [("containers", "CREATE"), ("initContainers", "CREATE"), ("ephemeralContainers", "UPDATE")]
 )
-def test_rejects_token_mount_outside_relay(tmp_path: Path, policy: dict, field: str, operation: str) -> None:
+def test_rejects_runner_credential_mount_outside_relay(
+    tmp_path: Path, policy: dict, field: str, operation: str
+) -> None:
     resource = launcher()
     resource["spec"].setdefault(field, []).append(
-        {"name": "intruder", "image": "probe:test", "volumeMounts": [{"name": TOKEN_VOLUME, "mountPath": "/t"}]}
+        {
+            "name": "intruder",
+            "image": "probe:test",
+            "volumeMounts": [{"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/t"}],
+        }
     )
     assert apply(tmp_path, policy, resource, operation=operation).failed > 0
 

@@ -3,16 +3,17 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -90,11 +91,11 @@ func (s *Manager) Eligibility(ctx context.Context, target *Target) (*environment
 // RequestWake evaluates automatic-wake authority for an already admitted effective caller and,
 // when allowed, performs one guarded desired-state mutation. Expected policy and operational
 // outcomes are returned as WakeAssessment values; Go errors indicate malformed invocation.
-func (s *Manager) RequestWake(ctx context.Context, target *Target, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Manager) RequestWake(ctx context.Context, target *Target, caller WakeCaller) (*environmentlifecyclepb.WakeAssessment, error) {
 	if !validTarget(target) {
 		return nil, errInvalidTarget
 	}
-	if !validServiceAccount(caller) {
+	if !validWakeCaller(caller) {
 		return nil, errInvalidCaller
 	}
 	return s.requestWake(ctx, target, caller)
@@ -102,11 +103,11 @@ func (s *Manager) RequestWake(ctx context.Context, target *Target, caller *Servi
 
 // AssessAutomaticWake reports current automatic-wake policy without reserving budget or changing
 // Sandbox state. Discovery uses it to describe whether a suspended target may wake on delivery.
-func (s *Manager) AssessAutomaticWake(ctx context.Context, target *Target, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Manager) AssessAutomaticWake(ctx context.Context, target *Target, caller WakeCaller) (*environmentlifecyclepb.WakeAssessment, error) {
 	if !validTarget(target) || target.Namespace != s.namespace {
 		return assessment(environmentlifecyclepb.WakeState_WAKE_STATE_FAILED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, nil), nil
 	}
-	if !validServiceAccount(caller) {
+	if !validWakeCaller(caller) {
 		return nil, errInvalidCaller
 	}
 	view, err := s.readTarget(ctx, target)
@@ -159,7 +160,7 @@ func (s *Manager) ResumeEnvironment(
 		// observed generation anyway so conflict retries cannot silently advance a later one.
 		resumeToken = NewResumeToken(target, view.Spec.WakeGeneration)
 	}
-	assessment, err := s.applyResume(ctx, target, caller, resumeToken, operator, false)
+	assessment, err := s.applyResume(ctx, target, AccountWakeCaller{Account: caller}, resumeToken, operator, false)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +195,7 @@ func (s *Manager) ResumeEnvironment(
 	}
 }
 
-func (s *Manager) requestWake(ctx context.Context, target *Target, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, error) {
+func (s *Manager) requestWake(ctx context.Context, target *Target, caller WakeCaller) (*environmentlifecyclepb.WakeAssessment, error) {
 	if !validTarget(target) || target.Namespace != s.namespace {
 		return assessment(environmentlifecyclepb.WakeState_WAKE_STATE_FAILED, environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, nil), nil
 	}
@@ -205,7 +206,7 @@ func (s *Manager) requestWake(ctx context.Context, target *Target, caller *Servi
 func (s *Manager) applyResume(
 	ctx context.Context,
 	target *Target,
-	caller *ServiceAccountIdentity,
+	caller WakeCaller,
 	resumeToken string,
 	operator bool,
 	automatic bool,
@@ -217,7 +218,12 @@ func (s *Manager) applyResume(
 		}
 		var eligibility *environmentlifecyclepb.ResumeEligibility
 		if !automatic {
-			eligibility, err = s.eligibilityFor(ctx, view, caller, operator)
+			// Explicit resume is EnvironmentService's, which admits no Identity caller.
+			account, ok := caller.(AccountWakeCaller)
+			if !ok {
+				return nil, errInvalidCaller
+			}
+			eligibility, err = s.eligibilityFor(ctx, view, account.Account, operator)
 			if err != nil {
 				return failureAssessment(codes.Unavailable, "caller or execution account state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
 			}
@@ -258,7 +264,7 @@ func (s *Manager) applyResume(
 		}
 
 		nextGeneration := view.Spec.WakeGeneration + 1
-		delay, err := s.wakeBudget.ReserveWakeAttempt(ctx, caller, target.Uid, nextGeneration)
+		delay, err := s.wakeBudget.ReserveWakeAttempt(ctx, s.budgetKey(caller), target.Uid, nextGeneration)
 		if err != nil {
 			return failureAssessment(codes.Unavailable, "shared wake budget is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
 		}
@@ -284,7 +290,7 @@ func (s *Manager) applyResume(
 	return failureAssessment(codes.Aborted, "Sandbox changed during all guarded resume attempts", environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED, -1), nil
 }
 
-func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, bool) {
+func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller WakeCaller) (*environmentlifecyclepb.WakeAssessment, bool) {
 	generation := view.Spec.WakeGeneration
 	if view.Status.StopStage == sandboxapi.StopStageDeleting || view.DeletionTimestamp != nil {
 		return failureAssessment(codes.NotFound, "Sandbox is deleting", environmentlifecyclepb.WakeReason_WAKE_REASON_DELETING, generation), false
@@ -298,6 +304,18 @@ func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.
 	if !view.Spec.WakeOnSend {
 		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_AUTOMATIC_WAKE_DISABLED, environmentlifecyclepb.WakeReason_WAKE_REASON_RESUME_POLICY_DISABLED, generation), false
 	}
+	switch caller := caller.(type) {
+	case AccountWakeCaller:
+		return s.accountWakeAssessment(ctx, view, caller.Account)
+	case IdentityWakeCaller:
+		return s.identityWakeAssessment(ctx, view, caller.Identity)
+	default:
+		panic(fmt.Sprintf("unknown wake caller %T", caller))
+	}
+}
+
+func (s *Manager) accountWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, bool) {
+	generation := view.Spec.WakeGeneration
 	live, err := s.callerAccountCurrent(ctx, caller)
 	if err != nil {
 		return failureAssessment(codes.Unavailable, "caller ServiceAccount state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, generation), false
@@ -305,7 +323,7 @@ func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.
 	if !live {
 		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, generation), false
 	}
-	if s.isWakeBroker(caller) {
+	if s.isWakeBroker(AccountWakeCaller{Account: caller}) {
 		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_ALLOWED_WAKE_BROKER, generation), true
 	}
 	eligibility, err := s.eligibilityFor(ctx, view, caller, false)
@@ -316,6 +334,44 @@ func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.
 		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, wakeReasonForEligibility(eligibility), generation), false
 	}
 	return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, generation), true
+}
+
+// identityWakeAssessment authorizes an Identity caller's automatic wake exactly as the Sandbox's own
+// ServiceAccount's: the Sandbox must act as that live Identity incarnation now, and its
+// `resumePolicy.allowOwnServiceAccount` must permit its own principal to resume it. No broker grant
+// names an Identity.
+func (s *Manager) identityWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller *identitypb.Identity) (*environmentlifecyclepb.WakeAssessment, bool) {
+	generation := view.Spec.WakeGeneration
+	named, found, err := s.sandboxes.ExecutionIdentity(ctx, &sandboxreader.Identity{
+		Namespace: view.Namespace, Name: view.Name, Uid: string(view.UID),
+	})
+	if err != nil {
+		return failureAssessment(codes.Unavailable, "execution Identity state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, generation), false
+	}
+	switch {
+	case !found || named == nil || named.GetName() != caller.GetName():
+		// The Sandbox acts as no live Identity, or as another: the caller is not its execution principal.
+		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, generation), false
+	case named.GetUid() != caller.GetUid():
+		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_EXECUTION_ACCOUNT_CHANGED, generation), false
+	case view.Spec.ResumePolicy == nil || !view.Spec.ResumePolicy.AllowOwnServiceAccount:
+		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_RESUME_POLICY_DISABLED, generation), false
+	}
+	return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, generation), true
+}
+
+// budgetKey is whose wake budget caller spends. An Identity is keyed in the namespace the manager
+// reads Identities in; its UID keeps it apart from a same-named ServiceAccount.
+func (s *Manager) budgetKey(caller WakeCaller) WakeBudgetKey {
+	switch caller := caller.(type) {
+	case AccountWakeCaller:
+		account := caller.Account.GetAccount()
+		return WakeBudgetKey{Namespace: account.GetNamespace(), Name: account.GetName(), UID: caller.Account.GetUid()}
+	case IdentityWakeCaller:
+		return WakeBudgetKey{Namespace: s.namespace, Name: caller.Identity.GetName(), UID: caller.Identity.GetUid()}
+	default:
+		panic(fmt.Sprintf("unknown wake caller %T", caller))
+	}
 }
 
 func (s *Manager) eligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, caller *ServiceAccountIdentity, operator bool) (*environmentlifecyclepb.ResumeEligibility, error) {
@@ -355,13 +411,18 @@ func requestedStop(view *sandboxapi.Sandbox) bool {
 	return !view.Spec.Running || (view.Status.SuspendedBy != nil && *view.Status.SuspendedBy == sandboxapi.SuspendedByRequested)
 }
 
-func (s *Manager) isWakeBroker(caller *ServiceAccountIdentity) bool {
-	account := caller.GetAccount()
+// isWakeBroker reports whether caller is a configured automatic-wake broker, which only a
+// ServiceAccount can be.
+func (s *Manager) isWakeBroker(caller WakeCaller) bool {
+	accountCaller, ok := caller.(AccountWakeCaller)
+	if !ok {
+		return false
+	}
+	account := accountCaller.Account.GetAccount()
 	if account == nil {
 		return false
 	}
-	trustedBroker := s.wakeCallers.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()})
-	return trustedBroker
+	return s.wakeCallers.Has(auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()})
 }
 
 func (s *Manager) directOperator(ctx context.Context, caller *ServiceAccountIdentity) bool {
@@ -432,6 +493,17 @@ func validTarget(target *Target) bool {
 
 func validServiceAccount(account *ServiceAccountIdentity) bool {
 	return account != nil && account.GetAccount() != nil && account.GetAccount().GetNamespace() != "" && account.GetAccount().GetName() != "" && account.GetUid() != ""
+}
+
+func validWakeCaller(caller WakeCaller) bool {
+	switch caller := caller.(type) {
+	case AccountWakeCaller:
+		return validServiceAccount(caller.Account)
+	case IdentityWakeCaller:
+		return caller.Identity.GetName() != "" && caller.Identity.GetUid() != ""
+	default:
+		return false
+	}
 }
 
 func targetFromProto(target *identitypb.EnvironmentTarget) *Target {

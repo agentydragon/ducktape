@@ -7,6 +7,7 @@ import (
 	"time"
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/google/uuid"
@@ -23,11 +24,11 @@ type callbackWake struct {
 func (w *callbackWake) RequestWake(
 	ctx context.Context,
 	target *lifecycle.Target,
-	caller *lifecycle.ServiceAccountIdentity,
+	caller lifecycle.WakeCaller,
 ) (*environmentpb.WakeAssessment, error) {
 	w.calls++
-	w.callers = append(w.callers, caller)
-	wait, err := w.store.ReserveWakeAttempt(ctx, caller, target.GetUid(), 41)
+	w.callers = append(w.callers, wakeAccount(caller))
+	wait, err := w.store.ReserveWakeAttempt(ctx, wakeKey(wakeAccount(caller)), target.GetUid(), 41)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +48,10 @@ func (w *callbackWake) RequestWake(
 type executionAccountCatalog struct {
 	*growingCatalog
 	accountUID string
+}
+
+func (*executionAccountCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
 }
 
 func (c *executionAccountCatalog) GetExecutionAccount(_ context.Context, sandbox SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -71,7 +76,7 @@ func openWakeableSession(
 	attribution := wakeAttribution(actor, effective)
 	effectiveAccount := accountOfIdentity(effective)
 	if _, err := store.CreateSessionForCaller(context.Background(), sessionID, sandboxName, sandboxUID,
-		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution}); err != nil {
+		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution}); err != nil {
 		t.Fatal("open wakeable Session:", err)
 	}
 	return attribution
@@ -89,19 +94,19 @@ func TestMixedVersionWakeWritersShareCapAndGenerationDedup(t *testing.T) {
 		if generation%2 == 1 {
 			wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, caller, uid, generation)
 		} else {
-			wait, err = store.ReserveWakeAttempt(ctx, caller, uid, generation)
+			wait, err = store.ReserveWakeAttempt(ctx, wakeKey(caller), uid, generation)
 		}
 		if err != nil || wait != 0 {
 			t.Fatalf("mixed writer reservation %d: wait=%s error=%v", generation, wait, err)
 		}
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, caller, uid, WakeLimit+1); err != nil || wait == 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), uid, WakeLimit+1); err != nil || wait == 0 {
 		t.Fatalf("current writer did not count legacy rows: wait=%s error=%v", wait, err)
 	}
 	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, caller, uid, 2); err != nil || wait != 0 {
 		t.Fatalf("previous writer did not deduplicate current row: wait=%s error=%v", wait, err)
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, caller, uid, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), uid, 1); err != nil || wait != 0 {
 		t.Fatalf("current writer did not deduplicate legacy row: wait=%s error=%v", wait, err)
 	}
 	var total, legacy, current int
@@ -141,7 +146,7 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		var ready bool
 		var prepareErr error
 		if kind == "dispatch" {
-			caller := CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution}
+			caller := ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution}
 			effectiveAccount := accountOfIdentity(effective)
 			row, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID,
 				input("uid-wake-command", "hello"), &effectiveAccount, caller)
@@ -261,12 +266,12 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			write := func(wakeCaller *Account) error {
 				if kind == "opening" {
 					_, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox", sandboxUID,
-						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution})
+						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution})
 					return err
 				}
 				_, err := store.EnqueueForCaller(ctx, sessionID, "sandbox", sandboxUID,
 					input(commandID, "hello"), wakeCaller,
-					CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution})
+					ServiceAccountCaller{ServiceAccountIdentity: effective, Attribution: attribution})
 				return err
 			}
 			actorAccount := accountOfIdentity(actor)
@@ -300,8 +305,76 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 
 func TestWakeBudgetRejectsMissingUID(t *testing.T) {
 	store := testStore(t, 3)
-	if _, err := store.ReserveWakeAttempt(context.Background(), serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "missing-uid"}, ""),
+	if _, err := store.ReserveWakeAttempt(context.Background(), wakeKey(serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "missing-uid"}, "")),
 		"00000000-0000-4000-8000-000000000093", 1); err == nil {
 		t.Fatal("wake reservation accepted an identity without a UID")
+	}
+}
+
+// identityWake records whom Dispatcher asks the lifecycle manager to wake for, and grants it.
+type identityWake struct {
+	callers []lifecycle.WakeCaller
+}
+
+func (w *identityWake) RequestWake(_ context.Context, _ *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, caller)
+	return &environmentpb.WakeAssessment{
+		State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(1),
+	}, nil
+}
+
+// Queued input from an Identity sender, its own workload or a component acting for it, wakes the
+// suspended recipient Sandbox as that Identity: the lifecycle manager is asked for the Identity,
+// as it is asked for a ServiceAccount sender's account.
+func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
+	ctx := context.Background()
+	identity := &identitypb.Identity{Name: "identity-sender", Uid: uuid.NewString()}
+	actor := serviceAccountIdentityFor(Account{Namespace: "agentplane", Name: "actions"}, "actions-uid")
+	for name, proof := range map[string]IdentityProof{
+		"own workload": IdentitySVID{Pod: &PodIdentity{Name: "sender-pod", UID: "sender-pod-uid"}},
+		"acted for": IdentityDelegation{
+			Actor: actor, ActorPod: PodIdentity{Name: "actions-pod", UID: "actions-pod-uid"},
+			Action: ActionCorrelation{RequestID: uuid.NewString(), ExecutionID: uuid.NewString()},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := testStore(t, 3)
+			sessionID, sandboxName, sandboxUID := "identity-wake-session-"+uuid.NewString()[:8], "identity-wake-sandbox", uuid.NewString()
+			spec := &sessionpb.SessionSpec{}
+			// Only the Identity's own workload opens the Session here (a seed: in production a privileged
+			// caller does); the sender under test then queues input to it.
+			if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID,
+				testPlacement(spec, sandboxName, sandboxUID), spec, nil, nil, SessionExecution{Identity: identity},
+				IdentityCaller{Identity: identity, Proof: IdentitySVID{}}); err != nil {
+				t.Fatal("open the Identity-run Session:", err)
+			}
+			sender := IdentityCaller{Identity: identity, Proof: proof}
+			row, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input("identity-wake-command-"+uuid.NewString()[:8], "hello"), nil, sender)
+			if err != nil {
+				t.Fatal("enqueue the Identity sender's input:", err)
+			}
+			owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "identity-wake-lease", 1, "replica", 0)
+			if err != nil || owner == nil {
+				t.Fatalf("claim owner: owner=%+v error=%v", owner, err)
+			}
+			wake := &identityWake{}
+			worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
+			worker.init()
+			defer worker.queue.ShutDown()
+			ready, err := worker.prepareDispatch(ctx, row, SandboxSnapshot{
+				Name: sandboxName, Namespace: "agentplane", UID: sandboxUID,
+				Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
+			}, *owner)
+			if err != nil || ready {
+				t.Fatalf("prepare the Identity sender's input: ready=%v error=%v", ready, err)
+			}
+			if len(wake.callers) != 1 || !proto.Equal(wake.callers[0].(lifecycle.IdentityWakeCaller).Identity, identity) {
+				t.Fatalf("lifecycle asked to wake for %+v, want the sender's Identity %v", wake.callers, identity)
+			}
+			stored, err := store.GetDispatch(ctx, row.CommandID)
+			if err != nil || stored.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_REQUESTED || stored.WakeRequestedAt == nil {
+				t.Fatalf("queued input after the wake: %+v, %v; want a requested wake", stored, err)
+			}
+		})
 	}
 }

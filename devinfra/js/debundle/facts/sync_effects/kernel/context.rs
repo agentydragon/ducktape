@@ -3,7 +3,7 @@
 
 use super::super::allocation_transfer::AllocationValue;
 use super::super::alternatives::PathState;
-use super::super::array_transfer::ArrayPushSelection;
+use super::super::array_transfer::ArrayMethodSelection;
 use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::execution_index::ExecutionIndex;
 use super::super::local_operations::DeferredCallableCreation;
@@ -25,11 +25,24 @@ pub(in crate::facts::sync_effects) trait BindingContext {
         binding: &Id,
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition>;
-    /// Whether this exact evaluated receiver came from an initialized,
-    /// non-imported module binding at the current prefix. Strict provider
+    /// Whether this exact evaluated receiver is an object the current prefix
+    /// tracks for a covered own-data read: the value of an initialized,
+    /// non-imported module binding, or an element record an active iteration
+    /// row's snapshot checked before its first callback. Strict provider
     /// queries keep the default false and require fresh-local ownership.
-    fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
+    fn prefix_tracked_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
         false
+    }
+    /// Store to a module-level binding that this body does not declare and
+    /// no active cell holds. The adapter checks the binding before recording
+    /// anything and returns the store's effects; `None` refuses the store, and
+    /// the kernel reports it as `Unproved::CaptureStore`.
+    fn store_module_binding(
+        &mut self,
+        _binding: &Id,
+        _values: &Values,
+    ) -> Option<EffectCoverageFragment> {
+        None
     }
     /// Which of this body's bindings the kernel gives `World` cells.
     fn cell_policy(&self) -> CellPolicy<'_>;
@@ -124,12 +137,16 @@ pub(in crate::facts::sync_effects) trait NativeContext {
     ) -> Option<NativeIterableReceipt> {
         None
     }
-    /// Select `Array.prototype.push` on this receiver before arguments run.
+    /// Select an original `Array.prototype` method (`push` or an iteration
+    /// row) on this receiver at GetValue, before the arguments run. The
+    /// adapter's `call` executes the selection: it rechecks the receiver
+    /// after the arguments and, for an iteration row, invokes the callback
+    /// once per element. `None` leaves the read to the own-data path.
     fn array_method_callee(
         &mut self,
         _receivers: &Values,
         _property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+    ) -> Option<(ArrayMethodSelection, EffectCoverageFragment)> {
         None
     }
     /// An exact native callee (`Object.freeze`) read from an unshadowed

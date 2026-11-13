@@ -184,7 +184,7 @@ func run(ctx context.Context, config Config) error {
 			return fmt.Errorf("configure Action Service federation: %w", err)
 		}
 	}
-	appAuth, err := auth.NewWithContext(ctx, auth.Config{
+	appAuth, err := auth.New(auth.Config{
 		OIDC: oidc, Database: db, TokenReviews: kube.AuthenticationV1().TokenReviews(),
 		TokenAudience: config.TokenAudience, TokenSubjects: config.TokenSubjects,
 		StoreFederationTokens: federator != nil, SessionChanges: wakeupHub,
@@ -469,7 +469,6 @@ type processWorker struct {
 }
 
 func serve(ctx context.Context, config Config, app *HTTPServer, appAuth *auth.Auth, workers []processWorker) error {
-	defer app.Close()
 	listener, err := netlistener.Open(config.ListenAddress)
 	if err != nil {
 		return fmt.Errorf("listen for app HTTP: %w", err)

@@ -40,7 +40,6 @@ class ClickHouseSnapshotSink:
         password: str,
         database: str = "aiquota",
         raw_table: str = "raw_http_observations",
-        windows_table: str = "aiquota_windows",
         timeout: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -49,7 +48,6 @@ class ClickHouseSnapshotSink:
         self._password = password
         self._database = database
         self._raw_table = raw_table
-        self._windows_table = windows_table
         self._timeout = timeout
         self._transport = transport
 
@@ -143,7 +141,7 @@ def _raw_row(snapshot: QuotaSnapshot, provider_name: str) -> dict[str, object]:
         "source": provider_name,
         "observed_at": provider.last_output.fetched_at.isoformat(),
         # Keep retries byte-for-byte stable so ReplicatedMergeTree insert
-        # deduplication can discard a replay after a partial two-table write.
+        # deduplication can discard a replay after an uncertain insert.
         "ingested_at": snapshot.quotas.fetched_at.astimezone(UTC).isoformat(),
         "status_code": raw.status_code if raw else 0,
         "content_type": (raw.content_type or "") if raw else "",

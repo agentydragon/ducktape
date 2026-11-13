@@ -325,7 +325,7 @@ assumption, so an invocation's outcome and memo stay relative to it, and
 `absorb_binding_effects` re-tags a nested outcome under the merging path. The
 per-statement fallback accumulator (`fallback_outcome`) merges under
 `fallback_summary` at the statement's end. Graph build tags the
-`UnresolvedCallFallback` closure's eager uses for the shared-`var` order. A
+unresolved-call read closure's eager uses for the shared-`var` order. A
 path whose code the statement definitely runs (an applied accessor, an
 unsupported construction's body, a named setter) stays `Observed`, which only
 rejects more premises. `promote_at_init_calls` also offers each binding's
@@ -811,6 +811,34 @@ linearization of the constraining edges ("Lemma 2: entry-side import
 ordering"); acyclicity of the constraining subgraph `R ∪ S` guarantees one
 exists. The gate's I-graph (`ChunkConstrainingEdgeSet::i_successors`)
 therefore holds every non-rebind cross-module edge, `I` and `S` alike.
+
+#### Reads of another chunk's cells
+
+A `Pure` statement is left off the S-chain because the cells it reads are
+ordered by the graph's own binding and heap timelines. Those timelines hold
+the reading chunk's cells only: an importer's graph has no node for a
+provider's module state or for that state's writers. A read of such a cell is
+therefore an effect (`PurityRule::OrderDependentRead`,
+`purity/order_dependent_reads.rs`), which puts the reading statement on the
+S-chain with every other impure statement:
+
+- **In an exported function** (the cross-module purity oracle): a reference
+  to any binding its chunk declares outside a function body, unless that
+  binding is declared once, never written, and holds a function, a class or a
+  proved primitive; and a member read through any such binding, since a
+  function or class object has properties too. Reads in nested function
+  bodies do not count (creating a closure reads nothing), except an
+  immediately invoked function expression.
+- **Anywhere** (exported functions, local functions and top-level
+  statements): a reference to a named or default import, unless the import is
+  **stable**: it resolves, through local re-exports of imports, to a binding
+  of an analyzed chunk that is declared once and never written; it has a
+  proved imported primitive read; or an author purity assertion (A9) names
+  it. An import of a module outside the analyzed program is not stable.
+
+The rule is deliberately coarse: it does not model which writer a read
+conflicts with, so two readers of the same provider cell keep their source
+order as well.
 
 #### Emission modes
 
@@ -1659,7 +1687,7 @@ first-order closure above.
 dynamic member calls, IIFEs, optional-chain calls, tagged templates,
 conditional or externally supplied function values, and calls into
 resolvable functions whose own first-order bodies contain such calls — take a
-conservative fallback (`UnresolvedCallFallback` in `graph/build.rs`). The
+conservative fallback (in `graph/build.rs`). The
 fallback's premise: whatever function value the call invokes must
 have reached the call site through a binding the call expression
 mentions (callee root, arguments, computed keys) or through an
@@ -2250,17 +2278,26 @@ production bundlers (esbuild, rollup, webpack with `output.module:
 true`) emit by default, so it covers the Svelte/SvelteKit
 output, the Vite ecosystem, and most React/Vue/Angular SPAs.
 
-- **A1. No `eval` at module-top reading cross-module bindings
-  dynamically.** `eval` opens an arbitrary read into the lexical
-  scope at the call site; the static analyzer cannot see what it
-  references; `I` would be incomplete. **Enforced (partially)**: the
+- **A1. No direct `eval`, and no `eval` at module top level.** A
+  direct `eval` runs string code in the lexical scope at the call
+  site, where it can read and write any binding visible by name; the
+  static analyzer cannot see what it references, so `I` and every
+  effect summary would be incomplete. **Enforced (partially)**: the
   input-chunk admission scan (`chunk_admission`, run by
   `chunk_analysis::compute_chunk_facts` next to the A2 bail)
-  rejects direct `eval(...)` and seq-indirect `(0, eval)(...)` calls
-  at module top level (looking through parens and comma sequences to
-  the callee), with the offending statement ordinal in the
-  diagnostic. Function-body `eval` and aliased `eval`
-  (`const e = eval`) remain unchecked — see §"Coverage gaps".
+  rejects a direct `eval(...)` at module top level and a seq-indirect
+  `(0, eval)(...)` call there (looking through parens and comma
+  sequences to the callee), with the offending statement ordinal in
+  the diagnostic. A direct `eval` in a lazy body is refused once the
+  chunk's assignment is known, if the emitted tree splits the chunk
+  across modules, reorders it or renames a binding
+  (`chunk_analysis::check_transformed_chunk_admission`); an unchanged
+  chunk keeps every name the string code may use. An indirect `eval`, `Function(...)` or
+  `new Function(...)` in a lazy body runs in global scope: every
+  input chunk is parsed and emitted as an ES module, so no module
+  binding is visible to it and it is an ordinary opaque call. Aliased
+  `eval` (`const e = eval`) remains unchecked — see §"Coverage
+  gaps".
 - **A2. No top-level `await` in any emitted module.** TLA changes
   the linker's evaluation algorithm to AsyncCycleRoot semantics
   (TC39 §16.2.1.5.4 + §16.2.1.5.5). The proof's reverse-DFS
@@ -2748,16 +2785,11 @@ It does not establish:
 - **Dynamic eval / reflection bypassing the static graph (A1, A5
   violations).** The `I` graph is incomplete in this case;
   cycle-freeness in `I` doesn't imply cycle-freeness in the
-  actual evaluation graph. The admission scan rejects the
-  module-top shapes (direct / seq-indirect `eval` calls,
+  actual evaluation graph. The admission scan rejects direct `eval`
+  calls in a transformed chunk and the module-top shapes (seq-indirect `eval` calls,
   non-`url` `import.meta` use, eager non-literal `import()`),
   but cannot rule out the rest statically. The shapes that remain
   pure input-shape contracts on the bundler:
-  - `eval` in function bodies and other lazy positions — A1's
-    wording only bans module-top eval, but a lazy direct `eval`
-    still reads its lexical scope dynamically when the enclosing
-    function is called after the split, and the split may have
-    moved the bindings it names into other modules.
   - aliased eval (`const e = eval; e(...)`) and `eval` reached
     through any value flow.
   - non-literal dynamic-import specifiers in lazy positions,
@@ -3518,7 +3550,8 @@ validation, and writing:
   and preload targets, bootstrap, rewritten HTML, and asset destinations before
   final acceptance, including in dry runs.
 - **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
-  partial-swap consumers, duplicate public exports, and unresolved claims. Return
+  partial-swap consumers, duplicate public exports, unresolved claims, and
+  source globals captured by emitted bindings. Return
   an immutable `ValidatedPlan` only on acceptance. These final checks supplement
   assignment realizability and input-space vendor checks.
 - **Write.** Tree and browser writers require `ValidatedPlan`; vendor assets and
@@ -3932,14 +3965,14 @@ this remains separate from the prepared/completed publication boundary.
 
 `facts/sync_effects/` is laid out by role:
 
-| Module          | Owns                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ. |
-| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                              |
-| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                    |
-| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), driven by the strict provider query (`strict_provider.rs`).                         |
-| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer.                                             |
-| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                      |
+| Module          | Owns                                                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kernel/`       | The ordered `LocalBody` interpreter (`continuation`, `driver::drive`) and its rules: operand order, aggregates, lexical cells, closure creation, own-data reads and TDZ.               |
+| `world/`        | `World`, the per-prefix execution state, and `World::join`.                                                                                                                            |
+| `alternatives/` | `Family`, the leaves of a forked body, and the join of their path states: `ExecutionPath::join` (application) over `World::join` and `Outcome::join`.                                  |
+| `adapters/`     | The application adapter (`application.rs`) and the provider adapter (`provider.rs`), which runs every provider body; `strict_provider.rs` projects a sealed body onto its summary.     |
+| `roots/`        | One source owner's execution as phases (operands, body, assignment, finalization), plus the operands-supplied call transfer; root `x.p = v` and `x = v` statements as kernel attempts. |
+| `legacy/`       | The self-evaluating evaluator and call transfer that the flattened lanes still use. Each item carries a `CLEANUP` tombstone naming its last caller.                                    |
 
 **Adapters implement only five narrow traits** (`kernel/context.rs`):
 `BindingContext`, `CallContext`, `HeapContext`, `NativeContext` and
@@ -3948,6 +3981,50 @@ the kernel, so the application and provider modes cannot drift on it. A
 policy difference is a trait method: which bindings get cells, capture
 snapshots, closure admission, the native rows, and the disposition of an
 unproved operation (summarize or refuse).
+
+**Array methods are selected at GetValue and executed by the call.**
+`NativeContext::array_method_callee` selects an original `Array.prototype`
+method on a literal array before the arguments run: `push`, or an iteration
+row (`forEach`, `map`, `filter`, `reduce`). The selection proves the method
+slot intact and the receiver free of an own property of that name; the
+adapter's `call` rechecks the rest of the row (element reads,
+`ArraySpeciesCreate`, the receiver's exact length and dense slots) after the
+arguments. An iteration row invokes its callback through `Executor::invoke`
+once per element, so a callback with an ordered plan and no live captures
+runs in the kernel, and rechecks the receiver after every invocation. Its
+fresh result commits through the native `plan`/`commit` path. A refusal at any
+check keeps the effects of the callbacks that already ran and summarizes the
+remainder. Only depth-zero invocations take the kernel prologue, so a row
+inside the callback of a legacy array-iteration row stays legacy.
+
+A store to a module-level binding that the body does not declare, and that no
+active cell holds, goes to `BindingContext::store_module_binding`. The
+adapter checks the binding before recording anything and returns the store's
+effects; `None` refuses it as `Unproved::CaptureStore`, which is the provider
+adapter's only answer. The application adapter accepts only a root expression
+statement (`roots/operands.rs` admits `binding = value`). The binding must be
+an unimported, non-`const` binding that is initialized at the prefix (or a
+`var`), that no closure body reads or writes anywhere (including after an
+`await`, which `CallableFacts::{reads,rebinds}` stop recording), and that is
+not exported. Its
+fragment covers the global, heap and host domains and leaves lexical coverage
+unknown, so it seals the statement but never a lexical binding-effect receipt.
+The rebind is the owner's syntactic write of the binding's cell, the cell its
+readers record.
+
+**A covered own-data read needs a prefix-tracked receiver.**
+`BindingContext::prefix_tracked_receiver` answers whether an evaluated
+receiver is an object the current prefix tracks: an initialized,
+non-imported module binding's value, or an element record of the innermost
+active iteration row, which checked it settled and source-shaped before its
+first callback. Its reads resolve against the current `World` at each read
+(`resolve_slot` with `CurrentPrefix`) and depend on the current
+prerequisites; every other receiver needs fresh-local ownership. A root over
+record elements is filtered only by row, receiver and callback admission
+(`roots/operands.rs`, `root_array_iteration`): it runs on the attempted lane
+and is kept only if it seals, and each field read in the callback, whatever
+the field holds, is checked by `resolve_slot` against the current `World` at
+that read.
 
 **Stores are mutated, observations are returned.** Heap, lexical cells,
 object surface and descriptors are mutated in place through `&mut World`; a
@@ -3969,6 +4046,35 @@ behind an `Arc` with copy-on-write (`make_mut`), uses `imbl` maps and shares
 one lexical-cell id allocator, so a fork clones a handle rather than the
 contents. Callers name the owner (`world.surface`, `world.module`); there is
 no `Deref` to a store.
+
+**A provider body is run in one place, and replaced by its summary where
+one exists.** The provider adapter seals a body in a fresh `World` of the
+isolated provider scope. The scope gives its closures their own addresses and
+proves no literal writability, and the adapter keeps the ledger's heap cells
+private. An importer holds only the summary, so a call of a summarized import
+is a substitution: the application adapter covers the callee read and the call
+under the summary's premises and runs nothing. A summary whose body reads a
+private provider cell is substituted without that receipt, because the summary
+says nothing about the cell's writers. A provider body without a summary stays
+an unknown call in the importer.
+
+**A callback handed to a summarized call is a deferred effect.** The summary
+proves the provider body invokes no argument and writes only its own
+allocations, so the call's receipt covers creating and retaining the callback
+and nothing the callback does. A callback-factory import with
+source-inferred evidence and a derived summary that reads no provider cell is
+substituted on the ordered lane
+(`roots/call_operands.rs`, `retaining_factory_result`): its result is the
+audited carrier of the callback, and a later call, read or publication of the
+result reaches the callback through that carrier with no receipt of its own.
+A substituted call is a call edge of the caller's lexical receipt
+(`LocalBodyIdentity::Imported`). A root that mixes local and substituted
+calls, or calls a retaining factory, is attempted on the kernel and kept only
+if it seals; otherwise the flattened lane runs it as before. A sealed root
+whose result is such a private carrier is no reachability root, as on the
+flattened lane. A callback that captures a live activation cell withholds
+the receiving call's receipt and names
+`callback_captures_live_cell` as the owner's coverage refusal.
 
 **An undecided test forks the body; the family is joined when it
 completes.** A conditional or a short-circuiting logical operator whose

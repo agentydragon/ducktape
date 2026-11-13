@@ -10,6 +10,7 @@ go_library(
         "cmd_cache.go",
         "cmd_ci.go",
         "cmd_execution.go",
+        "cmd_execution_wait.go",
         "cmd_invocation.go",
         "cmd_invocation_watch.go",
         "cmd_target.go",
@@ -69,6 +70,7 @@ go_test(
     srcs = [
         "cmd_artifact_test.go",
         "cmd_ci_test.go",
+        "cmd_execution_wait_test.go",
         "cmd_invocation_list_test.go",
         "cmd_invocation_watch_test.go",
         "cmd_target_test.go",
@@ -77,5 +79,10 @@ go_test(
         "invocation_export_test.go",
     ],
     embed = [":bbapi_lib"],
-    deps = ["@buildbuddy_protos//:acl_go_proto"],
+    deps = [
+        "@buildbuddy_protos//:acl_go_proto",
+        "@buildbuddy_protos//:google_longrunning_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
 )

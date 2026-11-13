@@ -11,11 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
@@ -23,7 +25,6 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -54,7 +55,7 @@ func (r launchTokenReview) Create(_ context.Context, request *authenticationv1.T
 
 type unusedWakeBudget struct{}
 
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, *lifecycle.ServiceAccountIdentity, string, int64) (time.Duration, error) {
+func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
 	return 0, nil
 }
 
@@ -131,7 +132,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service, err := environments.New(namespace, objects, runtimeconfig.Catalog{}, manager, nil, environments.ManagementOptions{
-		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}), DefaultPolicySets: []string{testDefaultPolicy},
+		Launchers: sets.New(auth.Account{Namespace: namespace, Name: "actions"}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +192,7 @@ func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, argu
 	t.Helper()
 	outcome, err := f.executor.attempt(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: testGroup, Name: action},
-		Arguments: json.RawMessage(arguments), Caller: caller,
+		Arguments: json.RawMessage(arguments), Caller: store.ServiceAccountCaller{Account: caller},
 	})
 	return attempted{t, outcome, err}
 }
@@ -220,18 +221,12 @@ func resultOf[T any](a attempted) T {
 }
 
 // failure is the kind of an attempt that failed with a reason the caller can act on.
-func (a attempted) failure() string {
+func (a attempted) failure() action_servicepb.ExecutionErrorKind {
 	a.t.Helper()
 	if a.err != nil || a.outcome.State != store.ExecutionFailed {
 		a.t.Fatalf("attempt = %s %s, %v; want it to fail", a.outcome.State, a.outcome.Result, a.err)
 	}
-	var failure struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(a.outcome.Error, &failure); err != nil {
-		a.t.Fatal(err)
-	}
-	return failure.Kind
+	return a.outcome.Error.GetKind()
 }
 
 // recordingDispatcher is a Session Dispatcher that records each command and answers with a Dispatch of it, or with

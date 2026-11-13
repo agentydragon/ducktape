@@ -15,7 +15,7 @@ export function bindingState(binding: PolicyBinding, sets: ReadonlyMap<string, P
       .filter((name) => !sets.has(name))
       .map((name) => `PolicySet ${name} is not present in the current view`),
     ...conditions
-      .filter((condition) => condition.status === "False")
+      .filter((condition) => condition.status === "False" && condition.observedGeneration === binding.generation)
       .map((condition) => `${condition.type}: ${condition.message || condition.reason}`),
   ];
   if (refusals.length > 0) return { kind: "refused", title: "Refused", reasons: refusals };

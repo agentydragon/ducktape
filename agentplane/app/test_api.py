@@ -85,8 +85,21 @@ async def test_go_app_serves_environment_and_thread_views_from_generated_contrac
 async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     http: httpx.AsyncClient, sandbox: SandboxCluster
 ) -> None:
+    await sandbox.custom_objects.create_namespaced_custom_object(
+        GROUP,
+        VERSION,
+        sandbox.namespace,
+        "identities",
+        {
+            "apiVersion": f"{GROUP}/{VERSION}",
+            "kind": "Identity",
+            "metadata": {"name": "route-identity"},
+            "spec": {"description": "Environment API test identity"},
+        },
+    )
     response = await http.post(
-        "/upstream/environments/v1/environments", json={"name": "created", "template": "test-template"}
+        "/upstream/environments/v1/environments",
+        json={"name": "created", "template": "test-template", "identity": "route-identity"},
     )
     assert response.status_code == 200, response.text
     assert response.json()["name"] == "created"
@@ -101,6 +114,16 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert created.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_UNSPECIFIED
     assert not created.kubernetes_diagnostics.HasField("pod")
     assert created.configuration.wake_on_send is False
+
+    # The Environment names an Identity created separately, and the browser-facing ProtoJSON
+    # descriptor carries that name through the existing GetEnvironment route.
+    identity_response = await http.get(route, params=params)
+    assert identity_response.status_code == 200, identity_response.text
+    assert identity_response.json()["identityName"] == "route-identity"
+    identity_descriptor = ParseDict(identity_response.json(), environment_service_pb2.EnvironmentDescriptor())
+    assert identity_descriptor.HasField("identity_name")
+    assert identity_descriptor.identity_name == "route-identity"
+
     missing = await http.get(
         f"/upstream/environments/v1/environments/{target.namespace}/missing", params={"target.uid": "missing-uid"}
     )
@@ -141,7 +164,9 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
     assert deleted.status_code == 200, deleted.text
     assert (await http.get(route, params=params)).status_code == 404
 
-    invalid = await http.post("/upstream/environments/v1/environments", json={"name": "missing-template"})
+    invalid = await http.post(
+        "/upstream/environments/v1/environments", json={"name": "missing-template", "identity": "route-identity"}
+    )
     assert invalid.status_code == 400
 
 

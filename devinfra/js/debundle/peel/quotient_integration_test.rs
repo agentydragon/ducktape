@@ -288,7 +288,7 @@ fn seed_skips_unrealizable_spec_module_contraction_and_reports() {
 
 // ---------- Gate-ladder pinning tests. ----------
 //
-// These pin the module-level gate predicate that `check_merge_boolean`
+// These pin the module-level gate predicate that `merge_preserves_invariants`
 // routes through.
 
 /// A 3-owner atomic group whose members form a constraining cycle

@@ -11,7 +11,6 @@ import (
 // operation declarations without invoking handlers.
 func exportOpenAPI(writer io.Writer) error {
 	server := NewHTTPServer(nil)
-	defer server.Close()
 	RegisterOperatorRoutes(server, nil)
 	RegisterStatusRoutes(server, nil)
 

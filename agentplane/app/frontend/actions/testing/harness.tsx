@@ -13,6 +13,7 @@ import {
   ActionState,
   ActionIdentitySchema,
   DecisionSchema,
+  ExecutionErrorKind,
   ExecutionSchema,
   ExecutionState,
   Verdict,
@@ -84,9 +85,13 @@ export function request(state: ActionState, index: number): ActionRequest {
       ? create(DecisionSchema, {
           id: `20000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
           verdict: state === ActionState.DENIED ? Verdict.DENY : Verdict.ALLOW,
-          provider: "human_operator",
-          operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
-          decisionNote: DECISION_NOTE,
+          decider: {
+            case: "operator",
+            value: {
+              operator: { issuer: "https://test-operator.example/oidc", subject: "test-operator" },
+              decisionNote: DECISION_NOTE,
+            },
+          },
           idempotencyKey: `decision-${index}`,
           decidedAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
         })
@@ -99,7 +104,7 @@ export function request(state: ActionState, index: number): ActionRequest {
             state: executionState,
             result: state === ActionState.SUCCEEDED ? fromJson(ValueSchema, { ok: true }) : undefined,
             error: [ActionState.FAILED, ActionState.CANCELLED, ActionState.EXECUTION_UNKNOWN].includes(state)
-              ? { kind: name }
+              ? { kind: ExecutionErrorKind.INVALID_ARGUMENTS, message: name }
               : undefined,
             createdAt: fromJson(TimestampSchema, "2026-09-05T12:00:00Z"),
             startedAt: fromJson(TimestampSchema, "2026-09-05T12:00:01Z"),

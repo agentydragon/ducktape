@@ -36,15 +36,20 @@ default external-command wait. HDD satellites set `ExtCmd/WaitTimeout=180000`.
 
 ## Storage classes
 
-| Class                       | Pool  | Copies | Access                                                                                             |
-| --------------------------- | ----- | -----: | -------------------------------------------------------------------------------------------------- |
-| `piraeus-ssd-local`         | `ssd` |      1 | Strict-local: the PV pins its node; remote access disabled                                         |
-| `piraeus-hdd-local`         | `hdd` |      1 | Strict-local                                                                                       |
-| `piraeus-ssd-2-autodiskful` | `ssd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
-| `piraeus-hdd-2`             | `hdd` |      2 | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
+| Class                       | Pool  | Copies | Reclaim | Access / use                                                                                       |
+| --------------------------- | ----- | -----: | ------- | -------------------------------------------------------------------------------------------------- |
+| `piraeus-ssd-local`         | `ssd` |      1 | Retain  | Strict-local: the PV pins its node; remote access disabled                                         |
+| `piraeus-ssd-local-delete`  | `ssd` |      1 | Delete  | Strict-local; rebuildable BuildBuddy executor work/cache disks                                     |
+| `piraeus-hdd-local`         | `hdd` |      1 | Retain  | Strict-local                                                                                       |
+| `piraeus-ssd-2-autodiskful` | `ssd` |      2 | Retain  | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
+| `piraeus-hdd-2`             | `hdd` |      2 | Retain  | Synchronous copies on distinct OVH nodes, diskless attach in-zone, auto-diskful, quorum suspend-io |
 
-All are WaitForFirstConsumer, Retain and expandable; none is the cluster default.
-The strict-local classes keep the default DRBD layer and rely on the
+All are WaitForFirstConsumer and expandable; none is the cluster default.
+Use `piraeus-ssd-local-delete` only for rebuildable BuildBuddy executor work/cache data:
+deleting its PVC deletes the local LINSTOR volume and frees that node's SSD space. A
+running worker keeps its disk for as long as its PVC exists. This class must not hold
+user-authored or otherwise irreplaceable data. The other strict-local classes retain
+volumes and keep the default DRBD layer; they rely on the
 application's own replication (CNPG, Seaweed, ClickHouse, Valkey, Mimir/Loki
 peers) or backups for durability. Do not add a second Piraeus copy under an
 application that already replicates.

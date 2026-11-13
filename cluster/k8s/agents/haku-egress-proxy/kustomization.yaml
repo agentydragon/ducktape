@@ -1,6 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  # cdk8s-generated (cluster/cdk8s/haku_egress_proxy.py, egress_fences.py) -- see
-  # cluster/docs/cdk8s.md.
-  - haku-egress-proxy.k8s.yaml

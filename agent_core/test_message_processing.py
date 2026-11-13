@@ -37,7 +37,7 @@ class _ApiRequestRecorder(BaseHandler):
 
 async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
     recorder = _ApiRequestRecorder()
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider,
         client=FakeOpenAIModel(outputs=[ResponsesResult(id="resp_0"), ResponsesResult(id="resp_1")]),
         handlers=[recorder],
@@ -45,8 +45,8 @@ async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
     )
     agent.process_message(UserMessage.text("start"))
 
-    await agent.step()
-    await agent.step()
+    assert await agent.step() is False
+    assert await agent.step() is False
 
     assert [request.phase_number for request in recorder.requests] == [0, 1]
 
@@ -54,7 +54,7 @@ async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
 @pytest.fixture
 async def noop_agent(mcp_tool_provider, recording_handler):
     """Agent with NoopOpenAIClient for testing message processing without sampling."""
-    return await Agent.create(
+    return Agent(
         tool_provider=mcp_tool_provider,
         client=NoopOpenAIClient(),
         handlers=[recording_handler],
@@ -107,17 +107,19 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
-        # Single response with reasoning + tool call + text - agent finishes immediately
+        # Text marks completion; the next step observes the handler's abort decision.
         yield [m.make_item_reasoning(), m.echo_call("hi"), m.assistant_text("done")]
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
         tool_policy=AllowAnyToolOrTextMessage(),
     )
     agent.process_message(UserMessage.text("start"))
-    await agent.run()
+    assert await agent.step() is False
+    assert await agent.step() is True
+    assert not agent.finished
 
     messages = agent.to_openai_messages()
     assert_items_include_instances(messages, ReasoningItem, FunctionCallItem, FunctionCallOutputItem, AssistantMessage)
@@ -180,7 +182,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
 
         yield m.assistant_text("done")
 
-    agent = await Agent.create(
+    agent = Agent(
         tool_provider=mcp_tool_provider_echo,
         client=mock,
         handlers=[FinishOnTextMessageHandler()],
@@ -189,7 +191,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
     agent.process_message(UserMessage.text("say hi"))
 
     res = await agent.run()
-    assert res.text.strip() == "done"
+    assert res.strip() == "done"
 
 
 if __name__ == "__main__":

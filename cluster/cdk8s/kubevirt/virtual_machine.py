@@ -138,7 +138,7 @@ def container_disk_vm(
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachine:
     """A VM (always running by default) on `container_disk_template`, which takes the remaining
-    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)` too.
+    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)`.
     """
     labels = {"app.kubernetes.io/name": name}
     return VirtualMachine(

@@ -15,8 +15,9 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     def resource(kind, name):
         return next(item for item in objects if item["kind"] == kind and item["metadata"]["name"] == name)
 
-    gateway = resource("Deployment", remote.GATEWAY)["spec"]
+    gateway = resource("Deployment", "gateway")["spec"]
     assert gateway["strategy"]["type"] == "Recreate"
+    assert resource("Certificate", "gateway")["spec"]["dnsNames"] == [f"gateway.{remote.NAMESPACE}.svc"]
     gateway_pod = gateway["template"]["spec"]
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
     public_objects = Cdk8sTesting.synth(app.chart(scratch_app))
@@ -32,7 +33,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert json.loads(remote.CONFIG.data["bearers.json"]) == config.BEARERS
     assert {
-        resource("Deployment", f"platform-sessions-{instance}")["spec"]["template"]["spec"]["containers"][0]["image"]
+        resource("Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
     } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
     assert (
@@ -44,7 +45,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     )
     for instance, connection in connections.items():
         name = f"platform-sessions-{instance}"
-        provider = resource("Deployment", name)["spec"]
+        provider = resource("Deployment", instance)["spec"]
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
         expected_image = remote._provider_image(instance)
@@ -53,17 +54,21 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         claims = [
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v
         ]
-        assert claims == [name]
+        assert claims == [f"{name}-piraeus"]
+        claim = resource("PersistentVolumeClaim", f"{name}-piraeus")
+        assert claim["spec"]["storageClassName"] == "piraeus-ssd-2-autodiskful"
+        assert claim["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
+        mount = next(mount for mount in provider_pod["containers"][0]["volumeMounts"] if mount["name"] == "data")
+        assert mount["subPath"] == "state"
         assert json.loads(remote.CONFIG.data[f"{instance}-integration.json"])["integrations"][0]["id"] == instance
 
         host = urlsplit(connection["origin"]).hostname
-        service = resource("Service", name)["spec"]
+        service = resource("Service", instance)["spec"]
         assert service["selector"] == provider["template"]["metadata"]["labels"]
         assert {p["name"]: p["port"] for p in service["ports"]} == {"https": 8443, "grpc": 8444}
         assert connection["control_target"] == f"{host}:8444"
-        assert host in resource("Certificate", name)["spec"]["dnsNames"]
-        monitor_name = f"{name}-provider" if instance == "quest" else name
-        monitor = resource("PodMonitor", monitor_name)["spec"]
+        assert resource("Certificate", instance)["spec"]["dnsNames"] == [host]
+        monitor = resource("PodMonitor", instance)["spec"]
         assert monitor["selector"]["matchLabels"] == service["selector"]
         assert monitor["podMetricsEndpoints"][0]["port"] == "metrics"
         if instance == "quest":
@@ -81,12 +86,12 @@ def test_recording_wires_each_provider_to_its_private_hdd_capture(scratch_app: A
     assert config.RECORD_UPSTREAM_TRAFFIC
     for instance in remote.PROVIDERS:
         name = f"platform-sessions-{instance}"
-        pod = resource("Deployment", name)["spec"]["template"]["spec"]
+        pod = resource("Deployment", instance)["spec"]["template"]["spec"]
         containers = {container["name"]: container for container in pod["containers"]}
         assert set(containers) == {"provider"}
         init = pod["initContainers"]
         assert [container["name"] for container in init] == ["recorder-ca-init", "upstream-recorder"]
-        recorder = init[1]
+        recorder = init[-1]
         assert recorder["restartPolicy"] == "Always"
         assert "startupProbe" in recorder
         env = {item["name"]: item["value"] for item in containers["provider"]["env"]}
@@ -107,7 +112,7 @@ def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App)
     objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
     for instance in remote.PROVIDERS:
         name = f"platform-sessions-{instance}"
-        pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == name)[
+        pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == instance)[
             "spec"
         ]["template"]["spec"]
         assert [item["name"] for item in pod["containers"]] == ["provider"]

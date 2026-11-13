@@ -16,10 +16,10 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.harness_pair import run_harness_pair
+from agentplane.system_tests.driver.harness_pair import run_harness_pair_in_own_sandboxes
 from agentplane.system_tests.driver.mcp_connection import connected_session
 from agentplane.system_tests.driver.operator_login import OperatorCredentials
-from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import central_sampler, dcr, mcp
 
@@ -56,15 +56,16 @@ async def test_external_mcp_connection_uses_its_consented_account(
 @pytest.mark.scripted_model
 async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
+    cluster: Cluster,
     client: Client,
     dispatcher: SessionDispatcherClient,
-    sandbox: Sandboxes,
     scripted: ScriptedUpstream,
     policy_objects: mcp.PolicyObjects,
 ) -> None:
-    await run_harness_pair(
+    await run_harness_pair_in_own_sandboxes(
+        cluster,
         client,
-        lambda harness, offered_model: mcp.policy_binding_auto_approves_the_bound_sandbox(
+        lambda harness, offered_model, sandbox: mcp.policy_binding_auto_approves_the_bound_sandbox(
             operator_bff, client, dispatcher, sandbox, harness, offered_model, scripted, policy_objects
         ),
     )
@@ -87,6 +88,29 @@ async def test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume(
 ) -> None:
     await central_sampler.pod_exec_session_rebinds_after_sandbox_suspend_resume(
         cluster, client, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-resume")
+    )
+
+
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_gateway_roll_keeps_live_central_read_and_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.gateway_roll_keeps_live_central_read_and_turn(
+        cluster, tmp_path, scripted, Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-roll")
+    )
+
+
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
+async def test_gateway_exec_server_loss_notifies_active_central_turn(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream
+) -> None:
+    await central_sampler.gateway_outage_restarts_exec_server_then_notifies_model(
+        cluster,
+        tmp_path,
+        scripted,
+        Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-native-loss"),
     )
 
 

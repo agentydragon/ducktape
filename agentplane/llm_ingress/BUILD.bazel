@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
@@ -26,7 +26,7 @@ py_library(
     deps = [
         ":models",
         "//agentplane:log_levels",
-        "//agentplane/workload_auth:listener",
+        "//agentplane/identity/auth:listener",
         "//util:urls",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
@@ -69,16 +69,20 @@ go_library(
     deps = [
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/graceful",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/credentials/resolver",
         "//agentplane/kubeclient",
         "//agentplane/llm_ingress/v1:model_config_go_proto",
         "//agentplane/observability",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/listener",
+        "//agentplane/policy/api/v1alpha1",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_google_uuid//:uuid",
         "@com_github_spf13_viper//:viper",
+        "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_opentelemetry_go_otel//baggage",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
@@ -99,6 +103,7 @@ go_test(
     srcs = [
         "codex_catalog_test.go",
         "config_test.go",
+        "delegated_attribution_test.go",
         "ingress_test.go",
         "model_config_test.go",
         "model_config_workload_test.go",
@@ -109,12 +114,16 @@ go_test(
     x_defs = {"github.com/agentydragon/ducktape/agentplane/llm_ingress.ingressServerRlocation": "$(rlocationpath :server)"},
     deps = [
         "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/identity/auth/auth",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/auth/testing",
+        "//agentplane/identity/credentials/resolver",
         "//agentplane/llm_ingress/v1:model_config_go_proto",
+        "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/testing/configtest",
         "//agentplane/testing/kubeapiserver",
-        "//agentplane/workload_auth/auth",
-        "//agentplane/workload_auth/listener",
-        "//agentplane/workload_auth/testing",
+        "@com_github_google_uuid//:uuid",
         "@io_bazel_rules_go//go/runfiles",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",
@@ -127,5 +136,15 @@ go_test(
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+py_test(
+    name = "test_models",
+    srcs = ["test_models.py"],
+    deps = [
+        ":models",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )

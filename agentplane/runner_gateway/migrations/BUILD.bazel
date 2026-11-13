@@ -6,7 +6,11 @@ go_library(
     srcs = ["migrations.go"],
     embedsrcs = glob(["dispatcher/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations",
-    visibility = ["//agentplane/runner_gateway:__subpackages__"],
+    visibility = [
+        # The Session-delegation executor's test runs it against a real Dispatcher.
+        "//agentplane/action_service/session_delegation:__pkg__",
+        "//agentplane/runner_gateway:__subpackages__",
+    ],
     deps = ["//agentplane/postgres/migrate"],
 )
 

@@ -13,17 +13,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -76,6 +78,7 @@ type authorityInventory struct {
 	sandbox      SandboxSnapshot
 	account      *ServiceAccountIdentity
 	accountFound bool
+	identity     *identitypb.Identity
 	sandboxErr   error
 }
 
@@ -95,6 +98,15 @@ func (i *authorityInventory) GetExecutionAccount(_ context.Context, sandbox Sand
 		return nil, false, nil
 	}
 	return i.account, i.accountFound, nil
+}
+
+func (i *authorityInventory) GetExecutionIdentity(_ context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if sandbox.Name != i.sandbox.Name || sandbox.UID != i.sandbox.UID {
+		return nil, false, nil
+	}
+	return i.identity, true, nil
 }
 
 func (i *authorityInventory) setAccount(account *ServiceAccountIdentity) {
@@ -194,10 +206,10 @@ func delegatedAuthorityContext(
 ) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		Caller: &identitypb.ServiceAccountIdentity{
+		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
 			Account: &identitypb.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, Uid: uid,
-		},
-		ActionRequestId: actionRequestID, ActionExecutionId: actionExecutionID,
+		}},
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -233,7 +245,7 @@ func authorityClientWithDelegation(
 	})
 	methods, err := MethodsWithDelegation(resolver, auth.Delegator{
 		Account: actor, CallerNamespaces: []string{effective.Namespace},
-	}, reader, delegatedMethods)
+	}, reader, nil, delegatedMethods)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +273,7 @@ func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDisp
 	}
 }
 
-func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
+func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testing.T) {
 	api, err := kubeapiserver.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -271,13 +283,17 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	owner := workloadauthtesting.NewWorkload(t, api, caller.Namespace, caller.Name)
-	foreign := workloadauthtesting.NewWorkload(t, api, caller.Namespace, "test-foreign-caller")
+	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, caller.Name, caller.Namespace).Workload
+	foreign := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "test-foreign-caller", caller.Namespace).Workload
 	ownerAccount := owner.Principal.Account
-	ownerIdentity := serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID)
+	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	ownerSandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
-	inventory := &authorityInventory{sandbox: ownerSandbox, account: ownerIdentity, accountFound: true}
-	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace})
+	inventory := &authorityInventory{
+		sandbox: ownerSandbox,
+		account: serviceAccountIdentityFor(ownerAccount, owner.Principal.ServiceAccountUID), accountFound: true,
+		identity: ownerIdentity,
+	}
+	svids, err := auth.NewSVIDResolver(owner.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: caller.Namespace})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,7 +304,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 		Sandboxes: inventory, Hub: hub, WatchLease: 10 * time.Second,
 	}
 	counted := &countingAuthorityDispatcher{SessionDispatcherServer: service}
-	methods := Methods(auth.AnyAccount(svids))
+	methods := Methods(auth.AnySubject(svids))
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.Issue(t, environment_runtime_transport.SessionDispatcherURI)
 	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)
@@ -325,7 +341,7 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 
 	ownerClient := authoritySVIDClient(t, listener.Addr().String(), owner.URI, ca, validOwnerLeaf)
 	sessionID := uuid.NewString()
-	opened, err := ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.CreateSessionRequest{
+	_, err = ownerClient.CreateSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID,
 		Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
@@ -334,19 +350,12 @@ func TestDispatcherServiceAuthorizesSandboxSVIDSessionOwner(t *testing.T) {
 			},
 		}}},
 	})
-	if err != nil {
-		t.Fatalf("Sandbox SVID owner CreateSession with a foreign bearer: %v", err)
-	}
-	if !proto.Equal(opened.GetSession().GetExecutionIdentity(), ownerIdentity) {
-		t.Fatalf("SVID-owned Session execution identity = %v, want %v", opened.GetSession().GetExecutionIdentity(), ownerIdentity)
-	}
-	owned, err := ownerClient.GetSession(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.GetSessionRequest{SessionId: sessionID})
-	if err != nil || !proto.Equal(owned.GetSession().GetExecutionIdentity(), ownerIdentity) {
-		t.Fatalf("Sandbox SVID owner GetSession = %v, %v; want owner identity %v", owned, err, ownerIdentity)
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("Identity SVID inherited its same-named ServiceAccount's CreateSession authority: %v", err)
 	}
 	listed, err := ownerClient.ListSessions(authoritySVIDContext(t, "foreign-bearer"), &dispatcherpb.ListSessionsRequest{})
-	if err != nil || len(listed.GetSessions()) != 1 || listed.GetSessions()[0].GetSessionId() != sessionID {
-		t.Fatalf("Sandbox SVID owner ListSessions = %v, %v; want its Session", listed, err)
+	if err != nil || len(listed.GetSessions()) != 0 {
+		t.Fatalf("Identity SVID listed a Session through its same-named ServiceAccount: %v, %v", listed, err)
 	}
 	if calls := counted.listCalls.Load(); calls != 1 {
 		t.Fatalf("valid owner ListSessions handler calls = %d, want 1", calls)
@@ -562,8 +571,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 	inventory.failSandboxRead(nil)
 	opening, err := store.GetSession(ctx, sessionID)
-	if err != nil || opening.Creator == nil || accountOfIdentity(opening.Creator) != Account(effective) || opening.Attribution == nil ||
-		accountOfIdentity(opening.Attribution.Actor) != Account(effective) || accountOfIdentity(opening.Attribution.EffectiveCaller) != Account(effective) || opening.Attribution.Action != nil {
+	if err != nil || opening.Creator == nil || accountOfIdentity(opening.Creator) != Account(effective) || admissionAttribution(opening.Attribution) == nil ||
+		accountOfIdentity(admissionAttribution(opening.Attribution).Actor) != Account(effective) || accountOfIdentity(admissionAttribution(opening.Attribution).EffectiveCaller) != Account(effective) || admissionAttribution(opening.Attribution).Action != nil {
 		t.Fatalf("delegated retry replaced direct opening admission evidence: %#v %v", opening, err)
 	}
 	if directSession.GetSession().GetSessionId() != sessionID || opening.WakeEligible {
@@ -587,8 +596,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("direct-to-delegated operation retry was not reconciled: first=%+v second=%+v err=%v", first, second, err)
 	}
 	directRetry, err := store.GetDispatch(ctx, "direct-to-action-retry")
-	if err != nil || directRetry.Position != firstStored.Position || directRetry.Attribution == nil || accountOfIdentity(directRetry.Attribution.Actor) != Account(effective) ||
-		accountOfIdentity(directRetry.Attribution.EffectiveCaller) != Account(effective) || directRetry.Attribution.Action != nil {
+	if err != nil || directRetry.Position != firstStored.Position || admissionAttribution(directRetry.Attribution) == nil || accountOfIdentity(admissionAttribution(directRetry.Attribution).Actor) != Account(effective) ||
+		accountOfIdentity(admissionAttribution(directRetry.Attribution).EffectiveCaller) != Account(effective) || admissionAttribution(directRetry.Attribution).Action != nil {
 		t.Fatalf("Action retry replaced original direct admission evidence: %+v %v", directRetry, err)
 	}
 
@@ -599,10 +608,10 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatalf("delegated effective caller command: %v", err)
 	}
 	stored, err := store.GetDispatch(ctx, created.GetDispatch().GetCommandId())
-	if err != nil || stored.Attribution == nil || accountOfIdentity(stored.Attribution.Actor) != Account(caller) ||
-		stored.Attribution.Actor.GetUid() != actorUID || stored.Attribution.ActorPod == nil ||
-		accountOfIdentity(stored.Attribution.EffectiveCaller) != Account(effective) || stored.Attribution.EffectiveCaller.GetUid() != effectiveUID ||
-		stored.Attribution.Action == nil || stored.Attribution.Action.RequestID != requestID || stored.Attribution.Action.ExecutionID != executionID {
+	if err != nil || admissionAttribution(stored.Attribution) == nil || accountOfIdentity(admissionAttribution(stored.Attribution).Actor) != Account(caller) ||
+		admissionAttribution(stored.Attribution).Actor.GetUid() != actorUID || admissionAttribution(stored.Attribution).ActorPod == nil ||
+		accountOfIdentity(admissionAttribution(stored.Attribution).EffectiveCaller) != Account(effective) || admissionAttribution(stored.Attribution).EffectiveCaller.GetUid() != effectiveUID ||
+		admissionAttribution(stored.Attribution).Action == nil || admissionAttribution(stored.Attribution).Action.RequestID != requestID || admissionAttribution(stored.Attribution).Action.ExecutionID != executionID {
 		t.Fatalf("delegated admission evidence was not durably retained distinctly: %+v %v", stored, err)
 	}
 	if stored.WakeEligible || stored.WakeCaller != nil {
@@ -650,12 +659,12 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	foreignID := "delegated-foreign-session"
 	foreignIdentity := serviceAccountIdentityFor(Account(foreign), "foreign-caller-uid")
 	foreignSession, err := store.CreateSessionForCaller(ctx, foreignID, snapshot.Name, snapshot.UID,
-		&sessionpb.SessionSpec{}, nil, nil, foreignIdentity, CallerIdentity{ServiceAccountIdentity: foreignIdentity, Attribution: &AdmissionAttribution{Actor: foreignIdentity, EffectiveCaller: foreignIdentity}})
+		&sessionpb.SessionSpec{}, nil, nil, foreignIdentity, ServiceAccountCaller{ServiceAccountIdentity: foreignIdentity, Attribution: &AdmissionAttribution{Actor: foreignIdentity, EffectiveCaller: foreignIdentity}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	foreignDispatch, err := store.EnqueueForCaller(ctx, foreignID, snapshot.Name, snapshot.UID,
-		input("delegated-foreign-command", "foreign"), nil, CallerIdentity{
+		input("delegated-foreign-command", "foreign"), nil, ServiceAccountCaller{
 			ServiceAccountIdentity: foreignIdentity,
 			Attribution:            &AdmissionAttribution{Actor: foreignIdentity, EffectiveCaller: foreignIdentity},
 		})
@@ -730,10 +739,20 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 }
 
+// admissionAttribution is a row's ServiceAccount attribution, nil when it has none.
+func admissionAttribution(attribution Attribution) *AdmissionAttribution {
+	account, _ := attribution.(*AdmissionAttribution)
+	return account
+}
+
 type changingExecutionCatalog struct {
 	testCatalog
 	accounts []*ServiceAccountIdentity
 	calls    int
+}
+
+func (*changingExecutionCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
 }
 
 func (c *changingExecutionCatalog) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
@@ -759,7 +778,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 		nil,
 		nil,
 		pending,
-		CallerIdentity{Privileged: true, Attribution: &AdmissionAttribution{Actor: serviceAccountIdentityFor(Account(caller), "creator-uid"), EffectiveCaller: serviceAccountIdentityFor(Account(caller), "creator-uid")}},
+		ServiceAccountCaller{Privileged: true, Attribution: &AdmissionAttribution{Actor: serviceAccountIdentityFor(Account(caller), "creator-uid"), EffectiveCaller: serviceAccountIdentityFor(Account(caller), "creator-uid")}},
 	)
 	if err != nil || opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.GetUid() != "" {
 		t.Fatalf("seed pending opening: %#v %v", opening, err)
@@ -936,8 +955,8 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	store := testStore(t, 3)
 	owner := serviceAccountIdentityFor(caller, "transaction-owner-uid")
 	foreign := serviceAccountIdentityFor(Account{Namespace: caller.Namespace, Name: "transaction-foreign"}, "foreign-uid")
-	ownerCaller := CallerIdentity{ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}
-	foreignCaller := CallerIdentity{ServiceAccountIdentity: foreign, Attribution: &AdmissionAttribution{Actor: foreign, EffectiveCaller: foreign}}
+	ownerCaller := ServiceAccountCaller{ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}
+	foreignCaller := ServiceAccountCaller{ServiceAccountIdentity: foreign, Attribution: &AdmissionAttribution{Actor: foreign, EffectiveCaller: foreign}}
 	id, uid := uuid.NewString(), uuid.NewString()
 	if _, err := store.CreateSessionForCaller(t.Context(), id, "transaction-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil, owner, ownerCaller); err != nil {
 		t.Fatal(err)
@@ -977,7 +996,7 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 			spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}}}}
 		}
 		if _, err := store.CreateSessionForCaller(t.Context(), row.id, "discovery-sandbox", uid,
-			spec, nil, nil, row.principal, CallerIdentity{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
+			spec, nil, nil, row.principal, ServiceAccountCaller{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
 			t.Fatal(err)
 		}
 	}

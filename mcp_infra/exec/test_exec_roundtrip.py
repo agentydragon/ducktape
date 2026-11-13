@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest_bazel
 from fastmcp.client import Client
 
-from agent_core.agent import Agent, AgentResult
+from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.handlers import FinishOnTextMessageHandler
@@ -33,7 +33,7 @@ async def test_llm_exec_echo(mock_or_live, docker_exec_server) -> None:
         yield m.assistant_text("hello")
 
     async with Client(docker_exec_server) as mcp_client:
-        agent = await Agent.create(
+        agent = Agent(
             tool_provider=MCPToolProvider(mcp_client),
             client=client,
             # Simple echo roundtrip shouldn't need more than ~3 turns; 10 is a generous safety margin.
@@ -43,8 +43,8 @@ async def test_llm_exec_echo(mock_or_live, docker_exec_server) -> None:
         agent.process_message(
             UserMessage.text(f"Call the exec tool with cmd={ECHO_CMD!r} and return exactly the stdout.")
         )
-        res: AgentResult = await agent.run()
-        assert "hello" in (res.text or "")
+        res = await agent.run()
+        assert "hello" in res
 
 
 if __name__ == "__main__":

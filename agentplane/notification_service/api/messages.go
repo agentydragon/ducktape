@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -10,13 +11,14 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func (s *Notifications) SendMessage(ctx context.Context, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
@@ -25,7 +27,7 @@ func (s *Notifications) SendMessage(ctx context.Context, request *notificationsp
 
 // sendMessage resolves the Session's live placement before checking the sender's grant against its exact Sandbox.
 // Revoking a grant later never withdraws an accepted message.
-func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAccount, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
+func (s *Notifications) sendMessage(ctx context.Context, caller actor, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
 	// Native gRPC retains unknown fields. Reject the retired Sandbox address so an old client's
 	// explicit name or UID fence cannot be silently discarded by the new Session-only request.
 	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
@@ -41,9 +43,6 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
 		return nil, err
 	}
-	if !s.policy.Health.Available() {
-		return nil, errSendPolicyUnavailable
-	}
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: request.GetSessionId()})
 	if status.Code(err) == codes.NotFound {
 		return nil, errNoSession
@@ -55,13 +54,22 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if target == nil {
 		return nil, unavailable("Session", errors.New("incomplete Session placement"))
 	}
-	principal, err := auth.Caller(ctx)
-	if err != nil {
-		return nil, admissionRefused{err}
+	// The sender's grant is looked up by the bindings naming it: its ServiceAccount, or its exact Identity
+	// incarnation. An Identity sender is named to recipients by the Sandbox it sends from.
+	var sender store.Sender
+	var grantee reader.Subject
+	switch caller := caller.(type) {
+	case accountActor:
+		sender = store.AccountSender{Account: caller.account, UID: caller.uid}
+		grantee = reader.ServiceAccount(policyapi.ServiceAccountRef(caller.account))
+	case identityActor:
+		sender = store.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
+		grantee = reader.Identity{Name: caller.identity.Name, UID: types.UID(caller.identity.UID)}
+	default:
+		panic(fmt.Sprintf("unknown actor %T", caller))
 	}
 	message := store.Message{
-		SenderUID: principal.ServiceAccountUID,
-		Sender:    sender,
+		Sender: sender,
 		DestinationRef: model.DestinationRef{
 			Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid(),
 		},
@@ -75,26 +83,45 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err != nil {
 		return nil, err
 	}
-	if !s.policy.PermitsSend(policyapi.ServiceAccountRef(sender), view.Resource) {
-		return nil, errSendDenied
+	// A Session of the sender's own Identity takes its messages without a grant: the recipient could
+	// learn the same itself. Any other recipient needs a `session_inbox_access` rule bound to the sender.
+	// TODO(SESSION_IDENTITY_AUTHZ): target that grant at the recipient Session's Identity, not the
+	// Sandbox hosting it (agentplane/plans/task_dag.md).
+	if !sameIdentity(caller, session.GetSession(), message.SessionID, message.DestinationRef) {
+		if !s.policy.Health.Available() {
+			return nil, errSendPolicyUnavailable
+		}
+		if !s.policy.PermitsSend(grantee, view.Resource) {
+			return nil, errSendDenied
+		}
 	}
 	sandbox := view.Identity
 	message.DestinationRef.UID = sandbox.Uid
-	// A Sandbox runs as the ServiceAccount of its own name.
-	message.Recipient = model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
-	message.RecipientUID, err = sessionidentity.AccountUID(session.GetSession(), message.SessionID, message.DestinationRef, message.Recipient)
-	if err != nil {
-		return nil, err
+	// The recipient is what the Session authority recorded the Session as executing as: the ServiceAccount
+	// of the destination Sandbox's name, or an Identity alone, which the destination Sandbox must still name.
+	if identity, ok := sessionidentity.IdentityRun(session.GetSession(), message.SessionID, message.DestinationRef); ok {
+		message.Recipient = store.IdentityOwner{Identity: identity, SandboxUID: sandbox.Uid}
+	} else {
+		// A Sandbox runs as the ServiceAccount of its own name.
+		recipient := model.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}
+		recipientUID, err := sessionidentity.AccountUID(session.GetSession(), message.SessionID, message.DestinationRef, recipient)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.store.EstablishInboxOwner(ctx, recipient, message.DestinationRef, message.SessionID, recipientUID); err != nil {
+			return nil, err
+		}
+		message.Recipient = store.AccountOwner{Account: recipient, AccountUID: recipientUID, SandboxUID: sandbox.Uid}
 	}
-	if err := s.store.EstablishInboxOwner(ctx, message.Recipient, message.DestinationRef, message.SessionID, message.RecipientUID); err != nil {
-		return nil, err
+	if !runsAs(view, message.Recipient) {
+		return nil, errSandboxMissing
 	}
 	sent, err := s.store.Send(ctx, message)
 	if errors.Is(err, store.ErrNoInbox) {
 		if err := s.confirmSession(ctx, sandbox, message.SessionID); err != nil {
 			return nil, err
 		}
-		if err := s.store.OpenInbox(ctx, message.Recipient, message.DestinationRef, message.SessionID, message.RecipientUID); err != nil {
+		if err := s.store.OpenInbox(ctx, message.Recipient, message.DestinationRef, message.SessionID); err != nil {
 			return nil, err
 		}
 		sent, err = s.store.Send(ctx, message)
@@ -102,7 +129,22 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err != nil {
 		return nil, err
 	}
+	if err := s.establishIdentity(ctx, session.GetSession(), message.DestinationRef, message.SessionID); err != nil {
+		return nil, err
+	}
 	return &notificationspb.SendMessageResponse{Message: sentMessageView(sent)}, nil
+}
+
+// sameIdentity reports whether caller acts as the Identity incarnation the Session authority recorded the
+// recipient Session as executing as, by name and UID: an Identity recreated under the name is another
+// sender, as its credentials are another incarnation's.
+func sameIdentity(caller actor, session *dispatcherpb.Session, sessionID string, ref model.DestinationRef) bool {
+	sender, ok := caller.(identityActor)
+	if !ok {
+		return false
+	}
+	recorded, ok := sessionidentity.Identity(session, sessionID, ref)
+	return ok && recorded == sender.identity
 }
 
 // confirmSession checks that History recorded the Session against this exact Sandbox incarnation, so a sender
@@ -131,16 +173,21 @@ func (s *Notifications) GetMessage(ctx context.Context, request *notificationspb
 	return serve(ctx, s, request, s.getMessage)
 }
 
-func (s *Notifications) getMessage(ctx context.Context, sender model.ServiceAccount, request *notificationspb.GetMessageRequest) (*notificationspb.GetMessageResponse, error) {
+func (s *Notifications) getMessage(ctx context.Context, caller actor, request *notificationspb.GetMessageRequest) (*notificationspb.GetMessageResponse, error) {
 	id, err := parseID("message_id", request.GetMessageId())
 	if err != nil {
 		return nil, err
 	}
-	principal, err := auth.Caller(ctx)
-	if err != nil {
-		return nil, admissionRefused{err}
+	var sender store.Sender
+	switch caller := caller.(type) {
+	case accountActor:
+		sender = store.AccountSender{Account: caller.account, UID: caller.uid}
+	case identityActor:
+		sender = store.IdentitySender{Identity: caller.identity, Sandbox: model.ServiceAccount{Namespace: caller.sandbox.Namespace, Name: caller.sandbox.Name}}
+	default:
+		panic(fmt.Sprintf("unknown actor %T", caller))
 	}
-	sent, err := s.store.SentMessage(ctx, sender, id, principal.ServiceAccountUID)
+	sent, err := s.store.SentMessage(ctx, sender, id)
 	if err != nil {
 		return nil, err
 	}

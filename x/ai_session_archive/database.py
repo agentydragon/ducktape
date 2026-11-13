@@ -14,6 +14,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     LargeBinary,
@@ -28,6 +29,13 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from util.db_url import render_postgresql_url
+from x.ai_session_archive.statuses import (
+    CodexMetadataStatus,
+    SnapshotCaptureStatus,
+    SnapshotFileStatus,
+    SnapshotInventoryStatus,
+    SnapshotProcessingStatus,
+)
 
 
 class Base(DeclarativeBase):
@@ -54,13 +62,13 @@ class ResticSnapshotRow(Base):
     tree_id: Mapped[str | None] = mapped_column(String(64))
     paths: Mapped[list[str]] = mapped_column(JsonType, nullable=False)
     comparison_snapshot_id: Mapped[str | None] = mapped_column(String(64))
-    inventory_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    inventory_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotInventoryStatus.PENDING)
     inventory_error: Mapped[str | None] = mapped_column(String)
-    processing_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    codex_metadata_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    processing_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotProcessingStatus.PENDING)
+    codex_metadata_status: Mapped[str] = mapped_column(String(20), nullable=False, default=CodexMetadataStatus.PENDING)
     codex_metadata_error: Mapped[str | None] = mapped_column(String)
     # Restic snapshot metadata does not establish whether the workstation capture skipped unreadable files.
-    capture_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
+    capture_status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotCaptureStatus.UNKNOWN)
     __table_args__ = (
         CheckConstraint(
             "inventory_status IN ('pending', 'complete', 'failed')", name="ck_restic_snapshots_inventory_status"
@@ -153,6 +161,41 @@ class CodexTitleObservationRow(Base):
     )
 
 
+class CodexTitleCandidateRow(Base):
+    """Latest non-null observation for one native ID, physical path and field."""
+
+    __tablename__ = "codex_title_candidates"
+
+    # Paths can exceed PostgreSQL's btree tuple limit. Writers serialize per machine
+    # instead of imposing a unique index containing the unbounded source path.
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    machine_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    native_session_id: Mapped[str] = mapped_column(String, nullable=False)
+    source_path: Mapped[str] = mapped_column(String, nullable=False)
+    field: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # No FK: backfill must not acquire source-row locks while holding the machine
+    # lock. Older metadata writers lock the snapshot before their trigger runs.
+    snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    __table_args__ = (
+        CheckConstraint("field IN ('title', 'session_kind')", name="ck_codex_title_candidates_field"),
+        Index("idx_codex_title_candidates_machine_native", "machine_id", "native_session_id"),
+    )
+
+
+class CodexTitleBackfillRow(Base):
+    """Retained migration state for existing databases and older importer rollback."""
+
+    __tablename__ = "codex_title_backfill"
+
+    machine_id: Mapped[str] = mapped_column(ForeignKey("machines.id", ondelete="RESTRICT"), primary_key=True)
+    snapshot_id: Mapped[str | None] = mapped_column(String(64))
+    native_session_id: Mapped[str | None] = mapped_column(String)
+    latest_snapshot_seeded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
 class FileVersionRow(Base):
     __tablename__ = "file_versions"
 
@@ -193,7 +236,7 @@ class SnapshotFileRow(Base):
     file_type: Mapped[str] = mapped_column(String(30), nullable=False)
     byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     modified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=SnapshotFileStatus.PENDING)
     file_version_id: Mapped[UUID | None] = mapped_column(ForeignKey("file_versions.id", ondelete="RESTRICT"))
     error: Mapped[str | None] = mapped_column(String)
     __table_args__ = (
@@ -264,6 +307,52 @@ class FileVersionRecordRow(Base):
         CheckConstraint("ordinal >= 0", name="ck_file_version_records_ordinal"),
         CheckConstraint("byte_offset >= 0", name="ck_file_version_records_offset"),
         Index("idx_file_version_records_payload", "payload_id"),
+    )
+
+
+class FileVersionImportRow(Base):
+    """Durable progress; absence from file_versions keeps staged work invisible to readers."""
+
+    __tablename__ = "file_version_imports"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    session_id: Mapped[UUID] = mapped_column(ForeignKey("sessions.id", ondelete="RESTRICT"), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    parser_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    imported_record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    parse_issue_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_version_id: Mapped[UUID | None] = mapped_column(ForeignKey("file_versions.id", ondelete="RESTRICT"))
+    shared_prefix_record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    __table_args__ = (
+        UniqueConstraint("session_id", "sha256", name="uq_file_version_imports_session_sha256"),
+        CheckConstraint("byte_size >= 0", name="ck_file_version_imports_byte_size"),
+        CheckConstraint(
+            "imported_record_count >= 0 AND imported_record_count <= record_count",
+            name="ck_file_version_imports_progress",
+        ),
+        CheckConstraint(
+            "parse_issue_count >= 0 AND parse_issue_count <= imported_record_count",
+            name="ck_file_version_imports_issues",
+        ),
+        CheckConstraint(
+            "shared_prefix_record_count >= 0 AND shared_prefix_record_count <= imported_record_count",
+            name="ck_file_version_imports_prefix",
+        ),
+    )
+
+
+class FileVersionImportRecordRow(Base):
+    __tablename__ = "file_version_import_records"
+
+    import_id: Mapped[UUID] = mapped_column(ForeignKey("file_version_imports.id", ondelete="CASCADE"), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    byte_offset: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    payload_id: Mapped[UUID] = mapped_column(ForeignKey("record_payloads.id", ondelete="RESTRICT"), nullable=False)
+    __table_args__ = (
+        CheckConstraint("ordinal >= 0", name="ck_file_version_import_records_ordinal"),
+        CheckConstraint("byte_offset >= 0", name="ck_file_version_import_records_offset"),
     )
 
 

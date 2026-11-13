@@ -70,6 +70,7 @@ oci_image(
     visibility = [
         "//agentplane/system_tests/suites:__pkg__",
         "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
     ],
 )
 
@@ -404,6 +405,7 @@ oci_image(
     visibility = [
         "//agentplane/system_tests/suites:__pkg__",
         "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/system_tests/x/vm_kvm:__pkg__",
     ],
 )
 

@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -40,7 +39,6 @@ type peer struct {
 	acquireGate <-chan struct{}
 	acquireWait chan<- struct{}
 	initialized chan struct{}
-	nextSession atomic.Int32
 	handle      func(context.Context, *websocket.Conn, nativeRequest) bool
 	sessionID   func(nativeRequest) string
 }

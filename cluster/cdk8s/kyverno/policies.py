@@ -25,7 +25,6 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
-from cluster.cdk8s.kyverno import proxy_injection
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import VPA_RESOURCE_POLICY_ANNOTATION, VPA_UPDATE_MODE_LABEL, Vpa
 from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Validate, match_resources
@@ -121,6 +120,15 @@ def require_gitops_chart(app: App) -> Chart:
                                 ]
                             )
                             for name, namespace in exempt_service_accounts
+                        ),
+                        # Crossplane installs provider Deployments from GitOps-managed packages.
+                        ClusterPolicySpecRulesExcludeAny(
+                            subjects=[
+                                ClusterPolicySpecRulesExcludeAnySubjects(
+                                    kind="ServiceAccount", name="crossplane", namespace="crossplane-system"
+                                )
+                            ],
+                            resources=ClusterPolicySpecRulesExcludeAnyResources(namespaces=["crossplane-system"]),
                         ),
                         # System namespaces
                         ClusterPolicySpecRulesExcludeAny(
@@ -538,7 +546,6 @@ CHARTS = (
     default_revision_history_limit_chart,
     default_disable_service_links_chart,
     default_vpa_requests_only_chart,
-    proxy_injection.inject_haku_egress_proxy_chart,
     restrict_agent_gateway_routes_chart,
     require_secret_store_conditions_chart,
     cleanup_controller_jobs_chart,

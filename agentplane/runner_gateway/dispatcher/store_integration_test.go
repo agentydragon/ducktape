@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -20,7 +21,6 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
@@ -105,6 +105,10 @@ func admitted(t *testing.T) context.Context {
 
 type oneSandbox struct{}
 
+func (oneSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
+}
+
 func (oneSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
 }
@@ -117,6 +121,10 @@ func (oneSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapshot, b
 }
 
 type blockedSandbox struct{}
+
+func (blockedSandbox) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
+}
 
 func (blockedSandbox) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
@@ -143,7 +151,7 @@ func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 	return nil, r.err
 }
 
-func (r *rejectingRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (r *rejectingRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	return r.err
 }
 
@@ -414,7 +422,7 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		wakeWG.Add(1)
 		go func(i int) {
 			defer wakeWG.Done()
-			wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, int64(i+1))
+			wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, int64(i+1))
 			wakeErrs <- err
 			wakeDurations <- wait > 0
 			if err == nil && wait == 0 {
@@ -445,12 +453,12 @@ func TestConcurrentSessionCapAndWakeBudget(t *testing.T) {
 		acceptedGeneration = generation
 		break
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, caller, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(caller), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("same-generation retry: %v %v", wait, err)
 	}
 	callerAccount := accountOfIdentity(caller)
 	replacement := wakeBudgetCaller(callerAccount.Namespace, callerAccount.Name, "replacement-wake-budget-app-uid")
-	if wait, err := store.ReserveWakeAttempt(ctx, replacement, sandboxUID, acceptedGeneration); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replacement), sandboxUID, acceptedGeneration); err != nil || wait != 0 {
 		t.Fatalf("replacement ServiceAccount inherited old budget: %v %v", wait, err)
 	}
 }
@@ -466,14 +474,14 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, legacyFirst, legacySandboxUID, 1); err != nil || wait != 0 {
 		t.Fatalf("legacy first reservation: %v %v", wait, err)
 	}
-	if wait, err := store.ReserveWakeAttempt(ctx, currentFirst, legacySandboxUID, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentFirst), legacySandboxUID, 1); err != nil || wait != 0 {
 		t.Fatalf("current reader did not recognize legacy same-generation reservation: %v %v", wait, err)
 	}
 	assertWakeAttemptCount(t, store, legacyFirst, legacySandboxUID, 1)
 
 	currentThenLegacy := wakeBudgetCaller("mixed-writer", "current-first", "current-first-uid")
 	currentSandboxUID := uuid.NewString()
-	if wait, err := store.ReserveWakeAttempt(ctx, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(currentThenLegacy), currentSandboxUID, 1); err != nil || wait != 0 {
 		t.Fatalf("current first reservation: %v %v", wait, err)
 	}
 	if wait, err := reserveWakeAttemptAsPreviousWriter(ctx, store, currentThenLegacy, currentSandboxUID, 1); err != nil || wait != 0 {
@@ -499,7 +507,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	newWriterStarted := make(chan struct{})
 	go func() {
 		close(newWriterStarted)
-		_, err := store.ReserveWakeAttempt(ctx, lockCaller, lockSandboxUID, 1)
+		_, err := store.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
 		newWriterDone <- err
 	}()
 	<-newWriterStarted
@@ -541,7 +549,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 			if i%2 == 0 {
 				wait, err = reserveWakeAttemptAsPreviousWriter(ctx, store, mixedCaller, mixedSandboxUID, int64(i+1))
 			} else {
-				wait, err = store.ReserveWakeAttempt(ctx, mixedCaller, mixedSandboxUID, int64(i+1))
+				wait, err = store.ReserveWakeAttempt(ctx, wakeKey(mixedCaller), mixedSandboxUID, int64(i+1))
 			}
 			results <- reservationResult{limited: wait > 0, err: err}
 		}(i)
@@ -570,7 +578,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	replaced := wakeBudgetCaller("mixed-writer", "uid-replacement", "old-uid")
 	replacementSandboxUID := uuid.NewString()
 	for generation := int64(1); generation <= WakeLimit; generation++ {
-		if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, generation); err != nil || wait != 0 {
+		if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, generation); err != nil || wait != 0 {
 			t.Fatalf("old UID reservation %d: %v %v", generation, wait, err)
 		}
 	}
@@ -578,7 +586,7 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 		t.Fatalf("previous writer did not count all nonempty UIDs: %v %v", wait, err)
 	}
 	replaced.Uid = "replacement-uid"
-	if wait, err := store.ReserveWakeAttempt(ctx, replaced, replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(ctx, wakeKey(replaced), replacementSandboxUID, WakeLimit+1); err != nil || wait != 0 {
 		t.Fatalf("replacement UID inherited another nonempty UID's budget: %v %v", wait, err)
 	}
 }
@@ -586,6 +594,16 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 // reserveWakeAttemptAsPreviousWriter reproduces the SQL shape deployed before
 // caller_uid existed: namespace/name locking, all-UID reads, and an INSERT that
 // relies on the migration's empty-UID default.
+// wakeAccount is the ServiceAccount a wake caller is, for the tests whose callers are all accounts.
+func wakeAccount(caller lifecycle.WakeCaller) *ServiceAccountIdentity {
+	return caller.(lifecycle.AccountWakeCaller).Account
+}
+
+// wakeKey is the budget key the lifecycle manager derives for a ServiceAccount caller.
+func wakeKey(caller *ServiceAccountIdentity) lifecycle.WakeBudgetKey {
+	return lifecycle.WakeBudgetKey{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(), UID: caller.GetUid()}
+}
+
 func reserveWakeAttemptAsPreviousWriter(
 	ctx context.Context,
 	store *Store,
@@ -1155,7 +1173,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
 	}
 	first, err := service.InterruptTurn(ctx, request)
-	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != dispatcherpb.Operation_OPERATION_INTERRUPT_TURN {
+	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != commandpb.Operation_OPERATION_INTERRUPT_TURN {
 		t.Fatalf("queued interrupt: %v %v", first, err)
 	}
 	retry, err := service.InterruptTurn(ctx, request)
@@ -1231,7 +1249,7 @@ func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}
 
-func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (testWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_NOT_NEEDED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(0),
@@ -1242,7 +1260,7 @@ type rateLimitedWake struct {
 	calls int
 }
 
-func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *rateLimitedWake) RequestWake(_ context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	return &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_RATE_LIMITED,
@@ -1258,8 +1276,8 @@ type scriptedWake struct {
 	targets     []*lifecycle.Target
 }
 
-func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
-	w.callers = append(w.callers, caller)
+func (w *scriptedWake) RequestWake(_ context.Context, target *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, wakeAccount(caller))
 	w.targets = append(w.targets, target)
 	if len(w.assessments) == 0 {
 		return nil, errors.New("unexpected lifecycle wake request")
@@ -1294,12 +1312,12 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	actorIdentity := proto.Clone(actor).(*ServiceAccountIdentity)
 	attribution := &AdmissionAttribution{Actor: actorIdentity, EffectiveCaller: callerIdentity}
 	opening, err := store.CreateSessionForCaller(ctx, sessionID, sandboxName, sandboxUID, spec, nil, nil,
-		callerIdentity, CallerIdentity{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+		callerIdentity, ServiceAccountCaller{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
 	dispatch, err := store.EnqueueForCaller(ctx, sessionID, sandboxName, sandboxUID, input(commandID, "hello"), nil,
-		CallerIdentity{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
+		ServiceAccountCaller{ServiceAccountIdentity: callerIdentity, Attribution: attribution})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1542,7 +1560,7 @@ func (r *acceptingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (r *acceptingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ *identitypb.ServiceAccountIdentity) error {
+func (r *acceptingRunner) CreateSession(_ context.Context, _ SandboxSnapshot, sessionID string, _ *sessionpb.SessionSpec, _ *string, _ SessionExecution) error {
 	r.calls <- "opening:" + sessionID
 	return nil
 }
@@ -1917,7 +1935,7 @@ func (r *retryRunner) Deliver(_ context.Context, sandbox SandboxSnapshot, _ stri
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*retryRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (*retryRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	return errors.New("unexpected opening")
 }
 
@@ -1994,7 +2012,7 @@ func (r *orderedRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, 
 	return &eventlogpb.EventEntry{Cursor: 1}, nil
 }
 
-func (*orderedRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+func (*orderedRunner) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error {
 	return errors.New("unexpected opening")
 }
 
@@ -2159,6 +2177,10 @@ func (s deletedDuringLookup) GetSandbox(context.Context, string) (SandboxSnapsho
 	return s.snapshot, true, nil
 }
 
+func (deletedDuringLookup) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
+}
+
 func (deletedDuringLookup) GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	return nil, false, nil
 }
@@ -2211,7 +2233,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				t.Fatalf("opening resurrected: %v", err)
 			}
 			if existing {
-				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, CallerIdentity{Privileged: true})
+				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, ServiceAccountCaller{Privileged: true})
 				if err != nil || len(retained) != 1 || retained[0].EnvironmentDeletedAt == nil || retained[0].State != SessionFailedState {
 					t.Fatalf("Session lost during cleanup: %+v %v", retained, err)
 				}
@@ -2374,7 +2396,7 @@ type openingOutcomeRunner struct {
 	err error
 }
 
-func (r *openingOutcomeRunner) CreateSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ *identitypb.ServiceAccountIdentity) error {
+func (r *openingOutcomeRunner) CreateSession(_ context.Context, _ SandboxSnapshot, id string, _ *sessionpb.SessionSpec, _ *string, _ SessionExecution) error {
 	r.calls <- "opening:" + id
 	return r.err
 }
@@ -2647,7 +2669,7 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 			t.Fatalf("missing Session command: %v", err)
 		}
 	}
-	for _, identity := range []*CallerIdentity{nil, {Privileged: true}, {ServiceAccountIdentity: serviceAccountIdentityFor(Account(caller), "test-account-uid")}} {
+	for _, identity := range []Caller{nil, ServiceAccountCaller{Privileged: true}, ServiceAccountCaller{ServiceAccountIdentity: serviceAccountIdentityFor(Account(caller), "test-account-uid")}} {
 		if _, err := store.enqueue(ctx, "missing", "sandbox-api", sandboxUID, input(uuid.NewString(), "input"), nil, identity); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("store missing Session: %v", err)
 		}
@@ -2699,7 +2721,7 @@ func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			identity := serviceAccountIdentityFor(Account(caller), "test-owner-uid")
-			admission := CallerIdentity{Privileged: privileged, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+			admission := ServiceAccountCaller{Privileged: privileged, ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
 			sessionID := uuid.NewString()
 			if _, err := store.CreateSessionForCaller(ctx, sessionID, "test-deletion", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
 				t.Fatal(err)
@@ -2770,6 +2792,10 @@ type deletingSessionInventory struct {
 	sessionID string
 }
 
+func (deletingSessionInventory) GetExecutionIdentity(context.Context, SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	return nil, true, nil
+}
+
 func (i deletingSessionInventory) GetExecutionAccount(ctx context.Context, _ SandboxSnapshot) (*ServiceAccountIdentity, bool, error) {
 	_, err := i.store.DB.ExecContext(ctx, "DELETE FROM session WHERE session_id=$1", i.sessionID)
 	return serviceAccountIdentityFor(Account(caller), "test-account-uid"), true, err
@@ -2779,7 +2805,7 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
 	identity := serviceAccountIdentityFor(Account(caller), "test-account-uid")
-	admission := CallerIdentity{ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
+	admission := ServiceAccountCaller{ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
 	sessionID := uuid.NewString()
 	if _, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
 		t.Fatal(err)
@@ -2855,7 +2881,7 @@ func TestSessionWakeCannotBypassCancelledCommandAssessmentAfterRestart(t *testin
 			if _, err := fixture.store.Cancel(ctx, fixture.dispatch.CommandID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, CallerIdentity{ServiceAccountIdentity: fixture.caller, Attribution: fixture.dispatch.Attribution}); err != nil {
+			if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later authorized notice"), nil, ServiceAccountCaller{ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 				t.Fatal(err)
 			}
 			for range 2 {
@@ -2883,7 +2909,7 @@ type cancelDuringWake struct {
 	calls     int
 }
 
-func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
+func (w *cancelDuringWake) RequestWake(ctx context.Context, _ *lifecycle.Target, _ lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
 	w.calls++
 	if _, err := w.store.Cancel(ctx, w.commandID); err != nil {
 		return nil, err
@@ -2903,7 +2929,7 @@ func TestCancellationDuringWakeRetainsUncertaintyForSession(t *testing.T) {
 	if err != nil || row.State != CancelledState || row.WakeAssessment.GetState() != environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || row.WakeAssessment.GetTargetGeneration() != fixture.sandbox.WakeGeneration {
 		t.Fatalf("lost in-flight wake marker: %+v %v", row, err)
 	}
-	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, CallerIdentity{ServiceAccountIdentity: fixture.caller, Attribution: fixture.dispatch.Attribution}); err != nil {
+	if _, err := fixture.store.EnqueueForCaller(ctx, fixture.opening.SessionID, fixture.sandbox.Name, fixture.sandbox.UID, input(uuid.NewString(), "later notice"), nil, ServiceAccountCaller{ServiceAccountIdentity: fixture.caller, Attribution: admissionAttribution(fixture.dispatch.Attribution)}); err != nil {
 		t.Fatal(err)
 	}
 	worker := &DeliveryWorker{Store: NewStore(fixture.store.DB, 3), Wake: wake, Leases: testLease{store: fixture.store}}
@@ -2924,9 +2950,9 @@ type changingWakeGrant struct {
 	callers []*ServiceAccountIdentity
 }
 
-func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller *lifecycle.ServiceAccountIdentity) (*environmentpb.WakeAssessment, error) {
-	w.callers = append(w.callers, caller)
-	if sameServiceAccountIdentity(caller, w.opener) {
+func (w *changingWakeGrant) RequestWake(ctx context.Context, target *lifecycle.Target, caller lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error) {
+	w.callers = append(w.callers, wakeAccount(caller))
+	if sameServiceAccountIdentity(wakeAccount(caller), w.opener) {
 		if w.allowed {
 			return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED}, nil
 		}

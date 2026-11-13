@@ -33,6 +33,28 @@ def _configuration() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("enabled", [None, False, True])
+def test_codex_turn_diff_notifications_are_optional_and_codex_only(enabled: bool | None) -> None:
+    values = _configuration()
+    codex: dict[str, object] = {
+        "binary": "/test/codex",
+        "base_url": "http://models.test/v1",
+        "token_env": "TEST_PROVIDER_TOKEN",
+    }
+    if enabled is not None:
+        codex["turn_diff_notifications"] = enabled
+    values["codex"] = codex
+    config = Configuration.model_validate(values)
+    assert config.codex is not None
+    assert config.codex.turn_diff_notifications is enabled
+    serialized = json.loads(config.model_dump_json(exclude_none=True))["codex"]
+    assert serialized == codex
+
+    values["claude"] = {**codex, "turn_diff_notifications": True}
+    with pytest.raises(ValidationError):
+        Configuration.model_validate(values)
+
+
 def test_codex_readiness_serializes_explicit_values_and_omits_unset_fields() -> None:
     config = Configuration.model_validate(
         _configuration()

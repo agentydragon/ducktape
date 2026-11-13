@@ -246,9 +246,16 @@ kubectl get workspace route53-domain-delegation  # domain registration/delegatio
 only works for live pods; the moment a pod is deleted, evicted, or its Job is reaped
 (short `ttlSecondsAfterFinished`, `backoffLimit`/`activeDeadlineSeconds` failures,
 rolled-out ReplicaSets, OOM-killed/CrashLoopBackOff pods that got replaced), its logs
-are only in Loki. Alloy ships every pod's stdout/stderr to Loki, retained far longer
+are only in Loki. Promtail ships every pod's stdout/stderr to Loki, retained far longer
 than the pods themselves — so for any postmortem of a failed Job, a crashed exporter, a
 previous Deployment revision, etc., query Loki instead of giving up on "pod not found".
+
+In-cluster VMs should forward logs into a destination the cluster already collects. For
+KubeVirt, guest journald can write to the serial console; KubeVirt exposes that output as
+the `guest-console-log` stream under the `virt-launcher` pod, and the pod-log Promtail
+DaemonSet ships it to Loki. The CPAP gateway uses this path (<../../cpap/README.md>).
+Keep credentials and application payloads out of guest logs, since serial output becomes
+queryable through Loki.
 
 Loki runs in SimpleScalable mode — there is **no `deploy/loki`**. Query the read path
 (`svc/loki-read:3100`) over the HTTP API. Port-forward + `curl` from your workstation:
@@ -282,14 +289,25 @@ Grafana also has Loki as a datasource for interactive log exploration (Explore v
 
 ### Nix Cache
 
-```bash
-# Verify signing key
-cd terraform/main && tofu output nix_signing_public_key && cd -
+Attic architecture, credentials, and bootstrap: [Nix Binary Cache](nix_cache.md).
 
-# In-cluster connectivity
-kubectl run -it --rm debug --image=curlimages/curl:latest --restart=Never -- \
-  curl http://harmonia.nix-cache.svc.cluster.local:5000/nix-cache-info
-```
+For a NAR hash mismatch during substitution, compare the authenticated current
+narinfo's `NarHash` with the hash of the downloaded NAR after decompression,
+using the narinfo's compression metadata. If the current metadata and NAR agree
+but the client expects a different hash, append
+`--option narinfo-cache-positive-ttl 0 --option narinfo-cache-negative-ttl 0`
+to the affected Nix command. If the metadata and NAR disagree, investigate the
+cache response before retrying.
+
+This refreshes metadata for that client without deleting its local store or
+changing global Nix configuration. Other clients may have their own cached
+metadata and need the same refresh. In a November 2026 OpenVINO refill, the
+authenticated `main` narinfo and decompressed NAR agreed, and a fresh
+substitution succeeded with both TTLs set to zero. The previous metadata was
+not captured, so stale client metadata is a plausible cause, not a proven one;
+the check covered that path, not the full cache. An input-addressed output may
+also differ if its build is not reproducible, so a hash mismatch alone does not
+establish stale client metadata.
 
 ## A Failed Job Wedges Its Flux Kustomization
 

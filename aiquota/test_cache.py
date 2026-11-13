@@ -7,6 +7,7 @@ import pytest_bazel
 from aiquota.cache import QuotaCache, _assemble
 from aiquota.models import (
     AllQuotas,
+    ExtraSpend,
     FetchError,
     FetchSuccess,
     ProviderFetch,
@@ -175,6 +176,33 @@ def test_assemble_carries_prior_last_success_forward_on_error() -> None:
     pq = _assemble("claude", errored, prior=prior)
     assert pq.last_output is errored
     assert pq.last_success is prior_success
+
+
+def test_spend_only_observation_replaces_old_windows_without_relabeling_them_fresh() -> None:
+    observed = datetime(2026, 1, 15, 12, tzinfo=UTC)
+    prior = _assemble(
+        "claude",
+        _success(
+            observed - timedelta(minutes=5),
+            short_window=QuotaWindow(used_percent=60, reset_seconds=3600, window_seconds=18000),
+        ),
+        prior=None,
+    )
+    spend = ExtraSpend(is_enabled=False, monthly_limit_usd=100, used_usd=25.5, utilization=25.5)
+    current = _assemble(
+        "claude", ProviderFetch(fetched_at=observed, result=FetchSuccess(extra_spend=spend)), prior=prior
+    )
+    fresh = to_view(AllQuotas(providers=[current], fetched_at=observed), observed).providers[0]
+    assert fresh.monthly_extra_spend == spend
+    assert fresh.display.observed_at == observed
+    assert fresh.display_windows == []
+    failed_at = observed + timedelta(minutes=1)
+    failed = _assemble("claude", _error(failed_at, "offline"), prior=current)
+    fallback = to_view(AllQuotas(providers=[failed], fetched_at=failed_at), failed_at).providers[0]
+    assert fallback.monthly_extra_spend == spend
+    assert fallback.display.observed_at == observed
+    assert fallback.stale_since == observed
+    assert fallback.display_windows == []
 
 
 def test_assemble_clears_last_success_when_no_prior() -> None:

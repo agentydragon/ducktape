@@ -5,8 +5,10 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
+	workloadidentitytesting "github.com/agentydragon/ducktape/agentplane/identity/credentials/testing"
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,17 +24,20 @@ type attempted struct {
 
 // attempt runs one attempt at action as caller. Execute is attempt under worker.Hold, whose lease only the worker
 // makes, once the caller is one a box can be given.
-func (f fixture) attempt(t *testing.T, caller store.ServiceAccount, action, arguments string) attempted {
+func (f fixture) attempt(t *testing.T, caller Identity, action, arguments string) attempted {
 	t.Helper()
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
 		t.Fatal(err)
 	}
-	outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
-		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
-		Arguments: json.RawMessage(arguments), Caller: caller,
+	// A create waits for its box's credential.
+	return workloadidentitytesting.While(t, f.issuance, func() attempted {
+		outcome, err := executor.attempt(t.Context(), store.ExecutionRequest{
+			RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: action},
+			Arguments: json.RawMessage(arguments),
+		}, caller)
+		return attempted{t, outcome, err}
 	})
-	return attempted{t, outcome, err}
 }
 
 // resultOf is the result of an attempt that succeeded.
@@ -49,29 +54,23 @@ func resultOf[T any](a attempted) T {
 }
 
 // failure is the kind of an attempt that failed with a reason the caller can act on.
-func (a attempted) failure() string {
+func (a attempted) failure() action_servicepb.ExecutionErrorKind {
 	a.t.Helper()
 	if a.err != nil || a.outcome.State != store.ExecutionFailed {
 		a.t.Fatalf("attempt = %s %s, %v; want it to fail", a.outcome.State, a.outcome.Result, a.err)
 	}
-	var failure struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(a.outcome.Error, &failure); err != nil {
-		a.t.Fatal(err)
-	}
-	return failure.Kind
+	return a.outcome.Error.GetKind()
 }
 
-// The identity comes from the authenticated request and never from an argument, so a caller cannot reach another
-// account's boxes by asking for them.
+// The effective Identity comes from reviewed request delegation and never from an argument, so a platform
+// ServiceAccount actor cannot silently become the workload subject.
 func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 	f := newFixture(t, nil)
-	other := account(t, f.binding.Namespace, "test-other")
-	for _, caller := range []store.ServiceAccount{f.caller, other} {
+	other := workloadIdentity(t, f.identityNamespace, "test-other")
+	for _, caller := range []Identity{f.caller, other} {
 		resultOf[Info](f.attempt(t, caller, string(contract.Create), `{"name": "box", "template": "test-template"}`))
-		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != caller.Name {
-			t.Errorf("%s's box runs as %q", caller.Name, pod.Spec.ServiceAccountName)
+		if pod := f.pod(t, caller, "box"); pod.Spec.ServiceAccountName != defaultServiceAccount {
+			t.Errorf("%s's box runs as %q, want %q", caller.Name, pod.Spec.ServiceAccountName, defaultServiceAccount)
 		}
 	}
 	if listed := resultOf[SandboxList](f.attempt(t, f.caller, string(contract.List), `{}`)); len(listed.Sandboxes) != 1 {
@@ -86,23 +85,22 @@ func TestEveryActionActsAsTheRequestCaller(t *testing.T) {
 // No argument names an account: one that tries is refused rather than quietly ignored.
 func TestAnAccountNamedInArgumentsIsNotRead(t *testing.T) {
 	f := newFixture(t, nil)
-	other := account(t, f.binding.Namespace, "test-other")
+	other := workloadIdentity(t, f.identityNamespace, "test-other")
 	arguments := `{"name": "box", "template": "test-template", "caller": "test-other", "namespace": "` + f.binding.Namespace + `"}`
-	if kind := f.attempt(t, f.caller, string(contract.Create), arguments).failure(); kind != "invalid_arguments" {
+	if kind := f.attempt(t, f.caller, string(contract.Create), arguments).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS {
 		t.Errorf("kind = %q, want invalid_arguments", kind)
 	}
-	for _, caller := range []store.ServiceAccount{f.caller, other} {
+	for _, caller := range []Identity{f.caller, other} {
 		if boxes, err := f.inventory().List(t.Context(), caller); err != nil || len(boxes) != 0 {
 			t.Errorf("%s has boxes %v, %v", caller.Name, boxes, err)
 		}
 	}
 }
 
-// A Pod runs as an account of its own namespace or not at all, so a caller from elsewhere cannot be given a box that
-// is it, and must not be given one that is somebody else.
-func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
+// An authenticated platform component account is not an implicit workload subject. It must name an effective
+// Identity through reviewed delegation before this executor can create a box.
+func TestServiceAccountActorMustDelegateAnIdentity(t *testing.T) {
 	f := newFixture(t, nil)
-	elsewhere := account(t, f.binding.Namespace+"-elsewhere", f.caller.Name)
 	executor, err := NewExecutor(f.binding, f.inventory())
 	if err != nil {
 		t.Fatal(err)
@@ -110,10 +108,31 @@ func TestACallerFromAnotherNamespaceIsRefused(t *testing.T) {
 	// The refusal comes before any lease is held, so it needs none.
 	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
 		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
-		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: elsewhere,
+		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`),
+		Caller:    store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: "agentplane", Name: "action-service"}},
 	}, nil)
-	if kind := (attempted{t, outcome, err}).failure(); kind != "caller_not_local" {
-		t.Errorf("kind = %q, want caller_not_local", kind)
+	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
+		t.Errorf("kind = %q, want caller_unknown", kind)
+	}
+	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
+	if err != nil || len(pods.Items) != 0 {
+		t.Errorf("the namespace holds Pods %v, %v", pods, err)
+	}
+}
+
+// A caller of a kind this release does not know is given no box.
+func TestAnUnknownCallerIsRefused(t *testing.T) {
+	f := newFixture(t, nil)
+	executor, err := NewExecutor(f.binding, f.inventory())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := executor.Execute(t.Context(), store.ExecutionRequest{
+		RequestID: uuid.New(), Action: store.ActionIdentity{Group: "sandbox", Name: string(contract.Create)},
+		Arguments: json.RawMessage(`{"name": "box", "template": "test-template"}`), Caller: store.UnknownCaller{},
+	}, nil)
+	if kind := (attempted{t, outcome, err}).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_UNKNOWN {
+		t.Errorf("kind = %v, want caller_unknown", kind)
 	}
 	pods, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).List(t.Context(), metav1.ListOptions{})
 	if err != nil || len(pods.Items) != 0 {
@@ -168,7 +187,7 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 		resultOf[Info](f.attempt(t, f.caller, string(contract.Create), `{"name": "`+name+`", "template": "test-template"}`))
 	}
 	f.report(t, f.caller, "box", ready)
-	other := account(t, f.binding.Namespace, "test-other")
+	other := workloadIdentity(t, f.identityNamespace, "test-other")
 	if _, err := server.Clientset.CoreV1().Pods(f.binding.Namespace).Create(t.Context(), &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: objectName(other, "taken"), Labels: map[string]string{nameLabel: "taken"}},
 		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "workspace", Image: "registry.test/unused"}}},
@@ -180,21 +199,21 @@ func TestARefusalBecomesAReasonTheCallerCanActOn(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name      string
-		caller    store.ServiceAccount
+		caller    Identity
 		action    string
 		arguments string
-		kind      string
+		kind      action_servicepb.ExecutionErrorKind
 	}{
-		{"an absent box", f.caller, string(contract.Get), `{"name": "absent"}`, "sandbox_unavailable"},
-		{"a template not offered", f.caller, string(contract.Create), `{"name": "box", "template": "unoffered"}`, "sandbox_unavailable"},
-		{"a box that is not ready", f.caller, string(contract.Exec), run("unready"), "sandbox_unavailable"},
-		{"a Pod that is not the caller's", other, string(contract.Get), `{"name": "taken"}`, "sandbox_not_yours"},
-		{"an exec Kubernetes cannot run", f.caller, string(contract.Exec), run("box"), "exec_failed"},
-		{"an Action this executor lacks", f.caller, "unoffered", `{}`, "unknown_action"},
+		{"an absent box", f.caller, string(contract.Get), `{"name": "absent"}`, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE},
+		{"a template not offered", f.caller, string(contract.Create), `{"name": "box", "template": "unoffered"}`, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE},
+		{"a box that is not ready", f.caller, string(contract.Exec), run("unready"), action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_UNAVAILABLE},
+		{"a Pod that is not the caller's", other, string(contract.Get), `{"name": "taken"}`, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_YOURS},
+		{"an exec Kubernetes cannot run", f.caller, string(contract.Exec), run("box"), action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_EXEC_FAILED},
+		{"an Action this executor lacks", f.caller, "unoffered", `{}`, action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_ACTION},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if kind := f.attempt(t, test.caller, test.action, test.arguments).failure(); kind != test.kind {
-				t.Errorf("kind = %q, want %q", kind, test.kind)
+				t.Errorf("kind = %v, want %v", kind, test.kind)
 			}
 		})
 	}

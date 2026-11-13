@@ -214,13 +214,6 @@ def _render(output: OutputObservation) -> Render:
     return Render(output.key.target, output.key.case_id, output.key.checkpoint, output.key.role)
 
 
-def _roster_id(result: ResultCoverage) -> tuple[str, str, str, int] | None:
-    source = result.result
-    if source.configuration is None or source.run is None:
-        return None
-    return source.invocation, source.target, source.configuration, source.run
-
-
 def from_collection(
     collected: CollectedOutputs,
     invocations: list[str],

@@ -256,6 +256,7 @@ pub struct SavedChunkFactAnalysis<'a> {
     top_level_await: Option<SourceUnitOrdinal>,
     redundant_purity_hints: Cow<'a, [RedundantPurityHint]>,
     redundant_pure_member_hints: Cow<'a, [RedundantPureMemberHint]>,
+    unconsulted_purity_hints: Cow<'a, BTreeSet<String>>,
 }
 
 impl<'a> SavedChunkFactAnalysis<'a> {
@@ -273,6 +274,7 @@ impl<'a> SavedChunkFactAnalysis<'a> {
             top_level_await: analysis.top_level_await,
             redundant_purity_hints: Cow::Borrowed(&analysis.redundant_purity_hints),
             redundant_pure_member_hints: Cow::Borrowed(&analysis.redundant_pure_member_hints),
+            unconsulted_purity_hints: Cow::Borrowed(&analysis.unconsulted_purity_hints),
         })
     }
 
@@ -290,6 +292,7 @@ impl<'a> SavedChunkFactAnalysis<'a> {
             top_level_await: self.top_level_await,
             redundant_purity_hints: self.redundant_purity_hints.into_owned(),
             redundant_pure_member_hints: self.redundant_pure_member_hints.into_owned(),
+            unconsulted_purity_hints: self.unconsulted_purity_hints.into_owned(),
         })
     }
 }
@@ -313,6 +316,8 @@ struct SavedStatementFacts<'a> {
     calls: PositionBucketed<BTreeSet<SavedBinding>>,
     constructor: Option<SavedConstructorFacts>,
     synchronous_calls: Option<SavedSynchronousCalls<'a>>,
+    #[serde(default)]
+    synchronous_prefix_effects: Option<(BTreeSet<SavedBinding>, BTreeSet<SavedBinding>)>,
     at_init_unresolved_sources: BTreeSet<SavedBinding>,
     at_init_unresolved_inline_fn: bool,
     first_order_unresolved_sources: BTreeSet<SavedBinding>,
@@ -321,6 +326,7 @@ struct SavedStatementFacts<'a> {
     global_writes: Cow<'a, BTreeSet<String>>,
     global_reads: Cow<'a, BTreeSet<String>>,
     havoc: Cow<'a, BTreeSet<DataflowOpacityCause>>,
+    trusted_summary_discharged: Cow<'a, BTreeSet<DataflowOpacityCause>>,
     heap_contents: SavedHeapContentCells,
     heap_one_shot_allocation: Option<SavedEffectCell>,
     deferred_heap_allocations: BTreeSet<SavedEffectCell>,
@@ -360,6 +366,16 @@ impl<'a> SavedStatementFacts<'a> {
                 .as_ref()
                 .map(|calls| SavedSynchronousCalls::snapshot(calls, ordinals, purities))
                 .transpose()?,
+            synchronous_prefix_effects: fact
+                .synchronous_prefix_effects
+                .as_ref()
+                .map(|(reads, rebinds)| -> Result<_> {
+                    Ok((
+                        snapshot_bindings(reads, ordinals)?,
+                        snapshot_bindings(rebinds, ordinals)?,
+                    ))
+                })
+                .transpose()?,
             at_init_unresolved_sources: snapshot_bindings(
                 &fact.at_init_unresolved_sources,
                 ordinals,
@@ -374,6 +390,7 @@ impl<'a> SavedStatementFacts<'a> {
             global_writes: Cow::Borrowed(&fact.global_writes),
             global_reads: Cow::Borrowed(&fact.global_reads),
             havoc: Cow::Borrowed(&fact.havoc),
+            trusted_summary_discharged: Cow::Borrowed(&fact.trusted_summary_discharged),
             heap_contents: SavedHeapContentCells::snapshot(&fact.heap_contents, ordinals)?,
             heap_one_shot_allocation: fact
                 .heap_one_shot_allocation
@@ -419,6 +436,15 @@ impl<'a> SavedStatementFacts<'a> {
                 .synchronous_calls
                 .map(|calls| calls.restore(ordinals, purities))
                 .transpose()?,
+            synchronous_prefix_effects: self
+                .synchronous_prefix_effects
+                .map(|(reads, rebinds)| -> Result<_> {
+                    Ok((
+                        restore_bindings(reads, ordinals)?,
+                        restore_bindings(rebinds, ordinals)?,
+                    ))
+                })
+                .transpose()?,
             at_init_unresolved_sources: restore_bindings(
                 self.at_init_unresolved_sources,
                 ordinals,
@@ -433,6 +459,7 @@ impl<'a> SavedStatementFacts<'a> {
             global_writes: self.global_writes.into_owned(),
             global_reads: self.global_reads.into_owned(),
             havoc: self.havoc.into_owned(),
+            trusted_summary_discharged: self.trusted_summary_discharged.into_owned(),
             heap_contents: self.heap_contents.restore(ordinals)?,
             heap_one_shot_allocation: self
                 .heap_one_shot_allocation
@@ -459,10 +486,14 @@ struct SavedSynchronousCalls<'a> {
         Cow<'a, Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>>,
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
+    root_attempt: Option<crate::facts::RootAttempt>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
     local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
     local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
     local_record_factory_purity: Cow<'a, Option<super::LocalRecordFactoryPurityCertificate>>,
+    #[serde(default)]
+    proven_private_own_field_reads: Cow<'a, [(SourceUnitOrdinal, swc_common::Span)]>,
+    local_record_factory_heap_call: Option<swc_common::Span>,
     reads: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
     rebinds: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
     uninitialized_reads: BTreeSet<SavedBinding>,
@@ -505,6 +536,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             initializer_binding_effects: Cow::Borrowed(&calls.initializer_binding_effects),
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
+            root_attempt: calls.root_attempt,
             evaluation_effects: Cow::Borrowed(&calls.evaluation_effects),
             local_record_factory_uses: calls
                 .local_record_factory_uses
@@ -517,6 +549,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedLocalRecordFactoryRejection::snapshot)
                 .collect(),
             local_record_factory_purity: Cow::Borrowed(&calls.local_record_factory_purity),
+            proven_private_own_field_reads: Cow::Borrowed(&calls.proven_private_own_field_reads),
+            local_record_factory_heap_call: calls.local_record_factory_heap_call,
             reads: calls
                 .reads
                 .iter()
@@ -593,6 +627,7 @@ impl<'a> SavedSynchronousCalls<'a> {
             initializer_binding_effects: self.initializer_binding_effects.into_owned(),
             completed_initialization: self.completed_initialization.into_owned(),
             initialization_coverage_refusal: self.initialization_coverage_refusal.into_owned(),
+            root_attempt: self.root_attempt,
             evaluation_effects: self.evaluation_effects.into_owned(),
             purity_disagreement: self
                 .purity_disagreement
@@ -614,6 +649,8 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .map(SavedLocalRecordFactoryRejection::restore)
                 .collect(),
             local_record_factory_purity: self.local_record_factory_purity.into_owned(),
+            proven_private_own_field_reads: self.proven_private_own_field_reads.into_owned(),
+            local_record_factory_heap_call: self.local_record_factory_heap_call,
             reads: self
                 .reads
                 .into_iter()

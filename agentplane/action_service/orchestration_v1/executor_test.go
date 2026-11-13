@@ -2,6 +2,7 @@ package orchestrationv1
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,16 +11,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
+	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -71,8 +76,22 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	spec := sandbox.Spec
 	if spec.Template != "test-template" || !spec.Running || !spec.WakeOnSend || spec.Bootstrap != "true" ||
 		spec.IdleSuspendAfter == nil || spec.IdleSuspendAfter.Duration != 10*time.Minute ||
-		!slices.Equal(spec.PolicySets, []string{testDefaultPolicy, testExtraPolicy}) || !slices.Equal(spec.InboxTags, []string{"test-tag"}) {
+		spec.Identity == nil || spec.Identity.Name != "test-worker" || !slices.Equal(spec.InboxTags, []string{"test-tag"}) {
 		t.Errorf("the Sandbox's spec is %+v", spec)
+	}
+	// The launch created the Identity the Sandbox acts as and granted it exactly the requested sets.
+	var identity policyapi.Identity
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &identity); err != nil {
+		t.Fatal(err)
+	}
+	var grant policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.identity"}, &grant); err != nil {
+		t.Fatal(err)
+	}
+	if grant.Spec.Subject.Identity == nil || grant.Spec.Subject.Identity.Name != "test-worker" ||
+		!slices.Equal(grant.Spec.PolicySets, []string{testExtraPolicy}) ||
+		len(grant.OwnerReferences) != 1 || grant.OwnerReferences[0].UID != identity.UID {
+		t.Errorf("the Identity grant is %+v owned by %v", grant.Spec, grant.OwnerReferences)
 	}
 
 	var binding policyapi.PolicyBinding
@@ -131,6 +150,83 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	}
 }
 
+func TestIdentityLauncherRetriesAndGrantsRemainBoundToItsIncarnation(t *testing.T) {
+	f := newFixture(t)
+	launcher := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-launcher", Namespace: f.namespace},
+		Spec:       policyapi.IdentitySpec{Description: "Test launcher."},
+	}
+	if err := kube.Create(t.Context(), launcher); err != nil {
+		t.Fatal(err)
+	}
+	caller := store.IdentityCaller{Identity: store.Identity{Name: launcher.Name, UID: string(launcher.UID)}}
+	launch := func(caller store.Caller) attempted {
+		outcome, err := f.executor.attempt(t.Context(), store.ExecutionRequest{
+			RequestID: uuid.New(), Action: store.ActionIdentity{Group: testGroup, Name: contract.ActionLaunchSandbox},
+			Arguments: json.RawMessage(`{"name":"test-worker","template":"test-template","launcher_grants":["submit_input"]}`), Caller: caller,
+		})
+		return attempted{t, outcome, err}
+	}
+	first := resultOf[Launched](launch(caller))
+	if again := resultOf[Launched](launch(caller)); again.Sandbox != first.Sandbox {
+		t.Fatalf("retry launched %+v, want %+v", again.Sandbox, first.Sandbox)
+	}
+	var binding policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.launcher"}, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding.Spec.Subject.Identity == nil || binding.Spec.Subject.Identity.Name != launcher.Name || binding.Spec.Subject.Namespace != "" || binding.Spec.Subject.Name != "" {
+		t.Fatalf("launcher grant subject = %+v", binding.Spec.Subject)
+	}
+	if len(binding.OwnerReferences) != 2 || binding.OwnerReferences[0].Kind != sandboxapi.SandboxKind || binding.OwnerReferences[0].UID != first.Sandbox.UID ||
+		binding.OwnerReferences[1].Kind != "Identity" || binding.OwnerReferences[1].Name != launcher.Name || binding.OwnerReferences[1].UID != launcher.UID {
+		t.Fatalf("launcher grant owners = %+v", binding.OwnerReferences)
+	}
+	var sandbox sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &sandbox); err != nil {
+		t.Fatal(err)
+	}
+	var intent struct {
+		Caller  struct{ Namespace, Name string } `json:"caller"`
+		Request struct {
+			LaunchOrigin struct {
+				CallerIdentity store.Identity `json:"caller_identity"`
+			} `json:"launch_origin"`
+		} `json:"request"`
+	}
+	if err := json.Unmarshal([]byte(sandbox.Annotations[sandboxapi.CreateIntentAnnotation]), &intent); err != nil {
+		t.Fatal(err)
+	}
+	if intent.Caller.Namespace != f.namespace || intent.Caller.Name != "actions" || intent.Request.LaunchOrigin.CallerIdentity != caller.Identity {
+		t.Fatalf("actor and effective launcher attribution = %+v", intent)
+	}
+	if err := kube.Delete(t.Context(), launcher); err != nil {
+		t.Fatal(err)
+	}
+	replacement := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Name: launcher.Name, Namespace: f.namespace},
+		Spec:       policyapi.IdentitySpec{Description: "Replacement test launcher."},
+	}
+	if err := kube.Create(t.Context(), replacement); err != nil {
+		t.Fatal(err)
+	}
+	if kind := launch(caller).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ENVIRONMENT_REFUSED {
+		t.Fatalf("stale Identity caller failure = %v", kind)
+	}
+	successor := store.IdentityCaller{Identity: store.Identity{Name: replacement.Name, UID: string(replacement.UID)}}
+	if kind := launch(successor).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("replacement Identity adopted old launch: %v", kind)
+	}
+	// No garbage collector runs in this fixture: the old grant must retain its original UID pin.
+	var retained policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKeyFromObject(&binding), &retained); err != nil {
+		t.Fatal(err)
+	}
+	if retained.OwnerReferences[1].UID != launcher.UID {
+		t.Fatalf("replacement caller changed old grant: %+v", retained.OwnerReferences)
+	}
+}
+
 func TestALaunchWithoutGrantsWritesNone(t *testing.T) {
 	f := newFixture(t)
 	if launched := f.launch(t, "test-worker"); launched.UID == "" {
@@ -145,8 +241,90 @@ func TestALaunchWithoutGrantsWritesNone(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(sets.Items) != 2 || len(bindings.Items) != 0 {
-		t.Errorf("after a launch without grants there are %d PolicySets and %d PolicyBindings, want the fixture's 2 and none",
+		t.Errorf("after a launch without grants there are %d PolicySets and %d PolicyBindings, want the fixture's 2 sets and no bindings",
 			len(sets.Items), len(bindings.Items))
+	}
+}
+
+func TestRefusedChangedLaunchPreservesItsAdoptedIdentity(t *testing.T) {
+	f := newFixture(t)
+	launch := `{"name":"test-worker","template":"test-template","policy_sets":["test-extra-policy"]%s}`
+	first := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, "")))
+	key := client.ObjectKey{Namespace: f.namespace, Name: first.Sandbox.Name}
+	var identity policyapi.Identity
+	if err := kube.Get(t.Context(), key, &identity); err != nil {
+		t.Fatal(err)
+	}
+	uid := identity.UID
+	changed := fmt.Sprintf(launch, `,"bootstrap":"different launch"`)
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, changed).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("changed launch failed %v, want sandbox_exists", kind)
+	}
+	if err := kube.Get(t.Context(), key, &identity); err != nil || identity.UID != uid {
+		t.Fatalf("refused changed launch removed or replaced the adopted Identity: %v", err)
+	}
+	var binding policyapi.PolicyBinding
+	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker.identity"}, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if len(binding.OwnerReferences) != 1 || binding.OwnerReferences[0].UID != uid {
+		t.Fatalf("Identity binding owners = %v, want the original Identity", binding.OwnerReferences)
+	}
+	var sandbox sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), key, &sandbox); err != nil || sandbox.UID != first.Sandbox.UID || sandbox.Spec.Identity == nil || sandbox.Spec.Identity.Name != identity.Name {
+		t.Fatalf("refused changed launch altered the original Sandbox: %+v, %v", sandbox.Spec, err)
+	}
+}
+
+func TestRefusedNewLaunchRollsBackItsNewIdentity(t *testing.T) {
+	f := newFixture(t)
+	sandbox := &sandboxapi.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-worker", Namespace: f.namespace},
+		Spec:       sandboxapi.SandboxSpec{Template: "test-template", Identity: &sandboxapi.IdentityRef{Name: "another-identity"}},
+	}
+	if err := kube.Create(t.Context(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, `{"name":"test-worker","template":"test-template"}`).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("new launch failed %v, want sandbox_exists", kind)
+	}
+	key := client.ObjectKeyFromObject(sandbox)
+	if err := kube.Get(t.Context(), key, &policyapi.Identity{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("new Identity after refused launch: %v, want NotFound", err)
+	}
+	var preserved sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), key, &preserved); err != nil || preserved.UID != sandbox.UID {
+		t.Fatalf("refused new launch altered the existing Sandbox: %v", err)
+	}
+}
+
+type competingLaunchEnvironment struct {
+	environmentpb.EnvironmentServiceClient
+}
+
+func (e competingLaunchEnvironment) CreateEnvironment(ctx context.Context, request *environmentpb.CreateEnvironmentRequest, options ...grpc.CallOption) (*identitypb.EnvironmentTarget, error) {
+	competing := proto.Clone(request).(*environmentpb.CreateEnvironmentRequest)
+	competing.Bootstrap = "competing launch"
+	if _, err := e.EnvironmentServiceClient.CreateEnvironment(ctx, competing, options...); err != nil {
+		return nil, err
+	}
+	return e.EnvironmentServiceClient.CreateEnvironment(ctx, request, options...)
+}
+
+func TestRefusedLaunchPreservesItsIdentityAdoptedByACompetingLaunch(t *testing.T) {
+	f := newFixture(t)
+	f.executor.environment = competingLaunchEnvironment{f.executor.environment}
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, `{"name":"test-worker","template":"test-template"}`).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Fatalf("losing launch failed %v, want sandbox_exists", kind)
+	}
+	key := client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}
+	var identity policyapi.Identity
+	if err := kube.Get(t.Context(), key, &identity); err != nil {
+		t.Fatalf("losing launch deleted the winning launch's Identity: %v", err)
+	}
+	var sandbox sandboxapi.Sandbox
+	if err := kube.Get(t.Context(), key, &sandbox); err != nil || sandbox.Spec.Identity == nil || sandbox.Spec.Identity.Name != identity.Name || sandbox.Spec.Bootstrap != "competing launch" {
+		t.Fatalf("winning launch = %+v, %v", sandbox.Spec, err)
 	}
 }
 
@@ -167,25 +345,28 @@ func TestTheSameLaunchAdoptsItsSandboxAndAnotherIsRefused(t *testing.T) {
 		t.Errorf("the same launch did not restore its launcher grant: %v", err)
 	}
 	other := store.ServiceAccount{Namespace: f.namespace, Name: "test-other-caller"}
-	if kind := f.attempt(t, other, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != "sandbox_exists" {
-		t.Errorf("another caller's launch of the name failed %q, want sandbox_exists", kind)
+	if kind := f.attempt(t, other, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-extra-policy"`)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Errorf("another caller's launch of the name failed %v, want sandbox_exists", kind)
 	}
-	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy"`)).failure(); kind != "sandbox_exists" {
-		t.Errorf("another launch of the name failed %q, want sandbox_exists", kind)
+	if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, fmt.Sprintf(launch, `"test-default-policy"`)).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_EXISTS {
+		t.Errorf("another launch of the name failed %v, want sandbox_exists", kind)
 	}
 }
 
 func TestALaunchNamingAPolicySetItCannotBindIsRefused(t *testing.T) {
 	f := newFixture(t)
 	f.launch(t, "test-worker", contract.GrantSendMessage)
-	for _, test := range []struct{ policySet, kind string }{
-		{"test-absent-policy", "unknown_policy_set"},
+	for _, test := range []struct {
+		policySet string
+		kind      action_servicepb.ExecutionErrorKind
+	}{
+		{"test-absent-policy", action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_UNKNOWN_POLICY_SET},
 		// Bound to the new Sandbox's account, it would give that account the first launcher's grant.
-		{"test-worker.launcher", "launcher_policy_set"},
+		{"test-worker.launcher", action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_LAUNCHER_POLICY_SET},
 	} {
 		arguments := fmt.Sprintf(`{"name": "test-second", "template": "test-template", "policy_sets": [%q]}`, test.policySet)
 		if kind := f.attempt(t, f.caller, contract.ActionLaunchSandbox, arguments).failure(); kind != test.kind {
-			t.Errorf("a launch naming %s failed %q, want %s", test.policySet, kind, test.kind)
+			t.Errorf("a launch naming %s failed %v, want %v", test.policySet, kind, test.kind)
 		}
 	}
 	err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-second"}, &sandboxapi.Sandbox{})
@@ -229,10 +410,10 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 
 	replaced := fmt.Sprintf(`{"name": %q, "uid": "00000000-0000-0000-0000-000000000000"}`, launched.Name)
 	absent := fmt.Sprintf(`{"name": "test-absent", "uid": %q}`, launched.UID)
-	for target, kind := range map[string]string{replaced: "sandbox_replaced", absent: "sandbox_not_found"} {
+	for target, kind := range map[string]action_servicepb.ExecutionErrorKind{replaced: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_REPLACED, absent: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SANDBOX_NOT_FOUND} {
 		arguments := fmt.Sprintf(`{"sandbox": %s, "session_id": %q, "command_id": %q, "turn_id": "test-turn"}`, target, session, command)
 		if failed := f.attempt(t, f.caller, contract.ActionInterruptTurn, arguments).failure(); failed != kind {
-			t.Errorf("interrupt_turn of %s failed %q, want %s", target, failed, kind)
+			t.Errorf("interrupt_turn of %s failed %v, want %v", target, failed, kind)
 		}
 	}
 	if received := f.dispatcher.received(); len(received) != len(want) {
@@ -265,7 +446,7 @@ func TestADispatcherRefusalFailsAndAnyOtherErrorLeavesTheOutcomeUnknown(t *testi
 	arguments := fmt.Sprintf(`{"sandbox": {"name": %q, "uid": %q}, "session_id": %q, "command_id": %q, "text": "hello"}`,
 		launched.Name, launched.UID, uuid.NewString(), uuid.NewString())
 	f.dispatcher.refuse(status.Error(codes.AlreadyExists, "command_id was used for other work"))
-	if kind := f.attempt(t, f.caller, contract.ActionSubmitInput, arguments).failure(); kind != "id_reused" {
+	if kind := f.attempt(t, f.caller, contract.ActionSubmitInput, arguments).failure(); kind != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_ID_REUSED {
 		t.Errorf("a refused submit_input failed %q, want id_reused", kind)
 	}
 	f.dispatcher.refuse(status.Error(codes.Unavailable, "dispatcher storage unavailable"))

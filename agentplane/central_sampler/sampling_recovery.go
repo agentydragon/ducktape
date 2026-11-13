@@ -8,7 +8,6 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	"google.golang.org/protobuf/proto"
 )
 
 func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, intentID string) (*eventpb.Event, error) {
@@ -71,7 +70,7 @@ func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, i
 }
 
 func recoveryEventsBefore(ctx context.Context, tx *sql.Tx, sessionID string, before uint64) ([]*eventlogpb.EventEntry, error) {
-	// Bound each query even when the Session has a long archive: closing a PostgreSQL
+	// Bound each query even when the Session has a long transcript: closing a PostgreSQL
 	// result early must not drain all earlier entries from the connection.
 	rows, err := tx.QueryContext(ctx, `SELECT entry FROM sampler_event
 		WHERE session_id=$1 AND sequence<$2 ORDER BY sequence DESC LIMIT 256`, sessionID, before)
@@ -86,7 +85,7 @@ func recoveryEventsBefore(ctx context.Context, tx *sql.Tx, sessionID string, bef
 			return nil, err
 		}
 		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
+		if err := decodeStoredEvent(wire, entry); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)

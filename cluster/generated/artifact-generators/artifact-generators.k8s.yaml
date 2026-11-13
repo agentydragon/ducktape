@@ -38,6 +38,11 @@ spec:
       name: buildbuddy-kvm-worker
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/buildbuddy-kvm-worker-autoscaler/**"
+          to: "@artifact/cluster/generated/buildbuddy-kvm-worker-autoscaler/"
+      name: buildbuddy-kvm-worker-autoscaler
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/k8s/ntfy/**"
           to: "@artifact/cluster/k8s/ntfy/"
       name: ntfy
@@ -178,9 +183,16 @@ spec:
       name: litellm-crossplane-keys
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/litellm/buildbuddy-sync/**"
-          to: "@artifact/cluster/k8s/litellm/buildbuddy-sync/"
-      name: litellm-buildbuddy-sync
+        - from: "@repo/cluster/generated/crossplane-provider-buildbuddy/**"
+          to: "@artifact/cluster/generated/crossplane-provider-buildbuddy/"
+        - from: "@repo/cluster/k8s/crossplane-provider-buildbuddy-image-pins/**"
+          to: "@artifact/cluster/k8s/crossplane-provider-buildbuddy-image-pins/"
+      name: crossplane-provider-buildbuddy
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/litellm-buildbuddy-crossplane/**"
+          to: "@artifact/cluster/generated/litellm-buildbuddy-crossplane/"
+      name: litellm-buildbuddy-crossplane
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/reflector/**"
@@ -278,11 +290,6 @@ spec:
         - from: "@repo/cluster/generated/monitoring/grafana-instance/**"
           to: "@artifact/cluster/generated/monitoring/grafana-instance/"
       name: grafana-instance
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/haku-egress-proxy/**"
-          to: "@artifact/cluster/k8s/agents/haku-egress-proxy/"
-      name: haku-egress-proxy
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/haku/rbac/**"
@@ -690,6 +697,11 @@ spec:
       name: haku-workspaces-app
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/k8s/host-firewall/**"
+          to: "@artifact/cluster/k8s/host-firewall/"
+      name: host-firewall
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/haku-ci/**"
           to: "@artifact/cluster/generated/haku-ci/"
       name: haku-ci
@@ -899,11 +911,6 @@ spec:
         - from: "@repo/tf/gitops/gitlab-spike/**"
           to: "@artifact/tf/gitops/gitlab-spike/"
       name: tf-gitops-gitlab-spike
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/tf/gitops/litellm-buildbuddy-sync/**"
-          to: "@artifact/tf/gitops/litellm-buildbuddy-sync/"
-      name: tf-gitops-litellm-buildbuddy-sync
       originRevision: "@repo"
   sources:
     - alias: repo

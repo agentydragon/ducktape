@@ -17,6 +17,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+const blockedInputFailureReason = "session blocked by unresolved effects"
+
 // silentObservations advance the projection without a row.
 var silentObservations = map[string]bool{
 	"native": true, "harness_stderr": true, "debug_checkpoint": true, "journal_reopened": true,
@@ -372,29 +374,33 @@ func (f *folder) admit(cursor uint64, command *commandpb.Command) error {
 	if _, admitted := f.commands.get(commandID); admitted || prior != nil {
 		return fmt.Errorf("duplicate command admission: %s", commandID)
 	}
-	operation := oneofName(command, "operation")
-	if operation == "" {
-		return &ObservationNotUnderstoodError{cursor, "command_admitted.operation"}
-	}
 	summary := CommandSummary{
 		ProjectionEpoch: f.state.Position.ProjectionEpoch,
 		CommandID:       commandID,
 		AdmissionCursor: cursor,
-		Operation:       operation,
 		Outcome:         historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING,
 	}
-	switch operation {
-	case "change_model":
-		summary.RequestedValue = proto.String(command.GetChangeModel().GetModel())
-	case "change_reasoning_effort":
-		summary.RequestedValue = proto.String(command.GetChangeReasoningEffort().GetEffort())
-	case "submit_input":
+	switch operation := command.GetOperation().(type) {
+	case *commandpb.Command_SubmitInput:
+		summary.Operation = commandpb.Operation_OPERATION_SUBMIT_INPUT
 		owner := PayloadOwner{summary.ProjectionEpoch, cursor, commandID, cursor}
-		input, err := f.write(owner, nil, cursor, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, command.GetSubmitInput().GetText(), false)
+		input, err := f.write(owner, nil, cursor, historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_COMMAND_INPUT, operation.SubmitInput.GetText(), false)
 		if err != nil {
 			return err
 		}
 		summary.Input = &input
+	case *commandpb.Command_ChangeModel:
+		summary.Operation = commandpb.Operation_OPERATION_CHANGE_MODEL
+		summary.RequestedValue = proto.String(operation.ChangeModel.GetModel())
+	case *commandpb.Command_ChangeReasoningEffort:
+		summary.Operation = commandpb.Operation_OPERATION_CHANGE_REASONING_EFFORT
+		summary.RequestedValue = proto.String(operation.ChangeReasoningEffort.GetEffort())
+	case *commandpb.Command_InterruptTurn:
+		summary.Operation = commandpb.Operation_OPERATION_INTERRUPT_TURN
+	case *commandpb.Command_Compact:
+		summary.Operation = commandpb.Operation_OPERATION_COMPACT
+	default:
+		return &ObservationNotUnderstoodError{cursor, "command_admitted.operation"}
 	}
 	f.commands.set(commandID, summary)
 	return nil
@@ -571,6 +577,17 @@ func (f *folder) fold(entry *eventlogpb.EventEntry) error {
 		f.recordEvidence(cursor, entry)
 	case "command_failed":
 		failed := event.GetCommandFailed()
+		summary, err := f.command(failed.GetCommandId())
+		if err != nil {
+			return err
+		}
+		if summary.Operation == commandpb.Operation_OPERATION_SUBMIT_INPUT && summary.Input != nil &&
+			summary.Outcome == historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED &&
+			summary.OutcomeCursor != nil && *summary.OutcomeCursor < cursor && failed.GetReason() == blockedInputFailureReason {
+			// A later blocked-queue failure does not undo an input already confirmed by the harness.
+			f.recordEvidence(summary.AdmissionCursor, entry)
+			return nil
+		}
 		return f.settle(entry, failed.GetCommandId(), historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED, proto.String(failed.GetReason()))
 	case "command_noop":
 		noop := event.GetCommandNoop()

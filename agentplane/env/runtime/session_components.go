@@ -37,7 +37,8 @@ func (r *Runtime) initializeSessions() error {
 			HarnessEnvironment: r.config.HarnessEnvironment, StateDir: r.config.StateDir,
 			RequestAdmission: r.admitCodexRequest, Admission: r.admitLifecycleEffect,
 			ExecServerURL: execURL, ExecutionReady: r.executionReady,
-			Readiness: r.config.CodexAppServerReadiness, OnError: r.fail, OnChange: r.changed,
+			TurnDiffNotifications: r.config.CodexTurnDiffNotifications,
+			Readiness:             r.config.CodexAppServerReadiness, OnError: r.fail, OnChange: r.changed,
 		})
 		if err != nil {
 			return err
