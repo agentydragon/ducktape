@@ -171,6 +171,7 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
         "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
