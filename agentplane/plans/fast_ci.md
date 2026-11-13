@@ -42,10 +42,17 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   journal, History outage/cursor and authority contracts. Avoid the inherited
   `system_tests/conftest` app dependency. Start with named callers rather than a
   general fixture framework.
+  Split the reused launch helper's runtime artifacts by harness: this Claude-only
+  pilot currently brings both pinned Claude and Codex bundles. Aggregate artifact
+  metrics are not transferred bytes, but this is a concrete remaining dependency.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
   Inspect the configured closure and run retained real packaged-image acceptance.
+  First candidate: a central-only profile for MCP Gateway crash, retry-budget,
+  sampler-roll and History-outage targets. Keep all four fault contracts separate;
+  omit Dex/MCP OAuth workloads only after the rendered object/image closure proves
+  they are unused. This retains actual Kubernetes faults while reducing setup.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
   acceptance and existing controller fake-clock matrix. Trace producer/watch timing
