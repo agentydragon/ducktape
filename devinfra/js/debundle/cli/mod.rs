@@ -1127,7 +1127,7 @@ mod output_failure_tests {
     #[test]
     fn purity_completion_disagreement_is_rendered_when_analysis_fails() {
         let mut stderr = Vec::new();
-        let result = command_diagnostics::run(&mut stderr, |diagnostics| {
+        let result: Result<()> = command_diagnostics::run(&mut stderr, |diagnostics| {
             diagnostics.record_chunk("main", purity_disagreement_diagnostic());
             Err(Error::msg("analysis failed"))
         });
