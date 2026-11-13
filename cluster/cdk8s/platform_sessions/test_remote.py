@@ -33,9 +33,7 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
     assert set(connections) == {item["id"] for item in gateway_integrations}
     assert json.loads(remote.CONFIG.data["bearers.json"]) == config.BEARERS
     assert {
-        resource("Deployment", instance)["spec"]["template"]["spec"]["containers"][0][
-            "image"
-        ]
+        resource("Deployment", instance)["spec"]["template"]["spec"]["containers"][0]["image"]
         for instance in ("openai", "anthropic", "thrive")
     } == {f"{remote.REGISTRY}/{remote.SHARED_PROVIDERS_IMAGE}:unset"}
     assert (
@@ -133,11 +131,9 @@ def test_disabled_recording_keeps_capture_claims_without_proxy(scratch_app: App)
     objects = Cdk8sTesting.synth(remote.chart(scratch_app, record_upstream_traffic=False))
     for instance in remote.PROVIDERS:
         name = remote._provider_name(instance)
-        pod = next(
-            item
-            for item in objects
-            if item["kind"] == "Deployment" and item["metadata"]["name"] == instance
-        )["spec"]["template"]["spec"]
+        pod = next(item for item in objects if item["kind"] == "Deployment" and item["metadata"]["name"] == instance)[
+            "spec"
+        ]["template"]["spec"]
         assert [item["name"] for item in pod["containers"]] == ["provider"]
         assert not any(item["name"] == "HTTPS_PROXY" for item in pod["containers"][0]["env"])
         assert any(
