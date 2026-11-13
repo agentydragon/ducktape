@@ -1,4 +1,4 @@
-package centralsampler
+package rpc
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -31,7 +32,7 @@ import (
 type Sampler struct {
 	samplerpb.UnimplementedSamplerServer
 	Store    *sessionstore.Store
-	Runtime  *Runtime
+	Runtime  *centralsampler.Runtime
 	Resolver *auth.Resolver
 	Settings samplersettings.Settings
 	Wakeups  *wakeups.Hub

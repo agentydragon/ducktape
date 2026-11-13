@@ -15,6 +15,7 @@ import (
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
+	samplerrpc "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
@@ -130,7 +131,7 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	defer unsubscribe()
 	runtime := centralsampler.NewRuntime(store, settings, centralsampler.NewCodeModeHost(context.Background(), settings, store))
 	server := grpc.NewServer(grpc.MaxRecvMsgSize(64*1024*1024), grpc.MaxSendMsgSize(64*1024*1024))
-	samplerpb.RegisterSamplerServer(server, &centralsampler.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
+	samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	listener, err := netlistener.Open(settings.Listen)
