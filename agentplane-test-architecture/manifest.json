@@ -3,7 +3,7 @@
   "audited_at_utc": "2026-11-13T22:27:42Z",
   "published_at_utc": null,
   "scope": "Iteration10 supplemental architecture and guest-contract evidence; existing latency/reliability populations, windows, rates and denominators are retained. Required gate and test frequency unchanged.",
-  "report_sha256": "f5a786714427e93f6c97dd27868322b8f0334b3790ec4b42c4ec8cfc55086478",
+  "report_sha256": "7a90256c8730d4faf4c276479f508de9619922cdbc9dc177690daf2a76205adb",
   "evidence_sha256": "f680395bac6a31e6f31b98516c4ea2ce7c367dd4b3c54a5ee1e2f76fd3cac6a4",
   "previous_gh_pages_commit": "b03106b455d64b2aa154ab68fbf6df83a64e15fd",
   "pilot_branch": "agent/test-architecture-pivot",
@@ -124,5 +124,5 @@
   },
   "source_devel_commit_scope": "The devel base integrated into snapshot source194; this is distinct from its tested synthetic-merge base and the separately recorded fetched origin/devel.",
   "publication_base_gh_pages_commit": "58719ab4f4",
-  "root_navigation_sha256": "ec2c42e5f7778f1f263ac95a11202a773cfa9e746896b046fc633b79e4877d69"
+  "root_navigation_sha256": "9e6429dfb8691e0d08fb67c0aa6c757d538f13b593555382357349dd4f831fff"
 }

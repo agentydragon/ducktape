@@ -5,7 +5,7 @@
   "published_at_utc": "2026-11-13T03:43:49.914251+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "ad8485746e69a34ab94c577e0a5834879fae2ee0fdeac62baf63ddfd79e4b302",
+  "report_sha256": "2208ff1811e01ae6ed38b89b62c9a6a83a52cdb4443bddc9d76ed0f4ea654e87",
   "evidence_sha256": "6c36e06f307d40fb1921b581af2f55d0f64cd64218bdef1e56e339de23b1d746",
   "evidence_schema_version": 3,
   "population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
@@ -15,7 +15,10 @@
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
   "supplemental_followup_scope": "Selected Nov 12 investigations through 23:20 UTC; original population window, source pin, denominators and rates are unchanged.",
-  "earlier_all_pr_window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
+  "earlier_all_pr_window_utc": [
+    "2026-11-11T07:20:00Z",
+    "2026-11-12T07:20:00Z"
+  ],
   "earlier_all_pr_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "backend_collection_started_at_utc": "2026-11-13T03:03:35Z",
   "backend_observed_at_utc": "2026-11-13T03:04:30.559122+00:00",

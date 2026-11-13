@@ -850,7 +850,7 @@
             >Historical iteration 3: ${iteration3TopSummary}<//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · observed origin/devel ${manifest.iteration10?.refreshed_origin_devel_head?.slice(0, 10) || "unrecorded"} (not confirmed as PR tested base) · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} (tested merge base is recorded separately) · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
@@ -876,11 +876,11 @@
           <//>
           <${Alert} color="yellow" title="Current architecture evidence">
             ${iteration10?.required_checks || "Loading current source evidence…"}
-            Current head 1948106 is witness-only; all three required checks
+            Snapshot head 1948106 is witness-only; all three required checks
             passed by 22:10:16Z. The real Egress/Notification composition is
             uncommitted and excluded from this commit; no physical/JUnit cohort
             is curated for 1948106. Selected K3s summaries are metadata-only,
-            and current origin/devel 2d2be67 is not established as the tested
+            and observed origin/devel 2d2be67 is not established as the tested
             base.
           <//>
           <${Section}
@@ -888,7 +888,7 @@
             title="Iteration 10: exact-head checks, packaged guest proof, and port disposition"
           >
             ${p(
-              "PR #16102 exact head 194810646c5122f5574ae7d6ad9fe02044cc7113 passed all three required checks by 22:10:16Z. No current-head physical/JUnit cohort is curated. The earlier fully curated checkpoint 2196229 remains historical and is not a matched saving. Separately, 13 selected K3s target summaries passed: the Pod target ended 51.265s after VM within those summary clocks, while targets outside this selected-summary set are not represented. Three real-CLI runs executed both guests and all failed; six NEW physical TestRunner records are audited. The first run failed on an array-parser assumption; the second had one contaminated host-reminder parse and one 10s shutdown failure. Both latest bodies in the third run failed at the unchanged 10s Notification shutdown deadline; a later wrapper-disabled packaged run passed. Both latest bodies passed CLI, setup, History, sameBootId, host identity, old-SVID revocation and fixed WorkloadCredential/same-Pod-UID assertions before teardown. The shell delimiter and stdout drain did not fix shutdown. A Python-only fixture then reproduced the 10s TERM failure without Gateway, Runtime, Egress or guest; its child GO_TEST_WRAP=0 control passed, supporting but not proving the rules_go XML-wrapper hypothesis. The subsequent uncommitted full packaged guest run d68330b6 passed 2/2 NEW actions in 239.693s (Codex 140.3s; Claude 198.4s). This is not covered by current-head CI, a fleet reliability rate or a speed comparison. The independent wrong-server-URI negative then returned an error object instead of the seeded subscription; teardown completed normally, and the exact TLS error payload was not inspected.",
+              "PR #16102 exact head 194810646c5122f5574ae7d6ad9fe02044cc7113 passed all three required checks by 22:10:16Z. No current-head physical/JUnit cohort is curated. The earlier fully curated checkpoint 2196229 remains historical and is not a matched saving. Separately, 13 selected K3s target summaries passed: the Pod target ended 51.265s after VM within those summary clocks, while targets outside this selected-summary set are not represented. Three real-CLI runs executed both guests and all failed; six NEW physical TestRunner records are audited. The first run failed on an array-parser assumption; the second had one contaminated host-reminder parse and one 10s shutdown failure. Both tests in the third run failed during teardown at the unchanged 10s Notification shutdown deadline; a later wrapper-disabled packaged run passed. Their bodies passed CLI, setup, History, sameBootId, host identity, old-SVID revocation and fixed WorkloadCredential/same-Pod-UID assertions before teardown. The shell delimiter and stdout drain did not fix shutdown. A Python-only fixture then reproduced the 10s TERM failure without Gateway, Runtime, Egress or guest; its child GO_TEST_WRAP=0 control passed, supporting but not proving the rules_go XML-wrapper hypothesis. The subsequent uncommitted full packaged guest run d68330b6 passed 2/2 NEW actions in 239.693s (Codex 140.3s; Claude 198.4s). This is not covered by current-head CI, a fleet reliability rate or a speed comparison. The independent wrong-server-URI negative then returned an error object instead of the seeded subscription; teardown completed normally, and the exact TLS error payload was not inspected.",
             )}
             <${Rows}
               headers=${["Evidence", "Observed result", "Boundary"]}
@@ -896,7 +896,7 @@
                 [
                   html`<${Anchor}
                     href="https://github.com/agentydragon/ducktape/commit/194810646c5122f5574ae7d6ad9fe02044cc7113"
-                    >Current PR head · 1948106<//
+                    >Snapshot PR head · 1948106<//
                   >`,
                   html`Nix
                     <${Anchor}
@@ -927,7 +927,7 @@
                       href="https://app.buildbuddy.io/invocation/657b546d-1a27-599f-8f0a-ff2bd114ad28"
                       >657b546d<//
                     >.`,
-                  "This is the last fully curated source checkpoint; snapshot head 1948106 also passed all three required checks. Full test-action/JUnit details are not curated here; K3s metadata summaries are linked separately.",
+                  "This is a prior required-check checkpoint with selected K3s metadata. The last complete physical/JUnit audit is historical 2196229; snapshot head 1948106 also passed all three required checks.",
                 ],
                 [
                   html`<${Anchor} href="required-542-k3s-summary.json"
@@ -1155,7 +1155,7 @@
             <//>
             ${p("Do not make a concurrency recommendation or promote test frequency from that screen. Qualification still requires 30 qualified source pairs, 100 honest fresh contract actions, three busy windows and a four-PR burst.")}
             <${Title} order=${3} mt="lg">What remains and exact triggers<//>
-            ${p("Correct and rerun the wrong-server-URI negative. d2cba508 returned an error object instead of the seeded subscription, then tore down normally; the exact TLS error payload has not been inspected, so no transport cause is inferred. Keep d68330b6’s two passing actions and the six earlier failed actions separate. The positive composition remains uncommitted and outside current-head CI, fleet reliability rates and speed evidence. Preserve deployed VM setup assertions, issued identity, launcher relay and mount, private guest kernel and OOM ownership until equivalent proof is collected.")}
+            ${p("Strengthen the wrong-server-URI control to assert the intended authentication failure before gate qualification. d2cba508 returned an error object instead of the seeded subscription, then tore down normally; the exact TLS error payload has not been inspected, so no transport cause is inferred. Keep d68330b6’s two passing actions and the six earlier failed actions separate. The positive composition remains uncommitted and outside current-head CI, fleet reliability rates and speed evidence. Preserve deployed VM setup assertions, issued identity, launcher relay and mount, private guest kernel and OOM ownership until equivalent proof is collected.")}
             ${p("By 20 November, record the naturally selected backend head with warm/cold conditions, last-gate CPU and retries (#16028), and complete the CaseBatch/PVC follow-up (#16034). The full selected graph must account for both Pod and VM tails. Existing balanced Pod slices keep 21 cases but duplicate setup CPU. No full-graph tail bound is established; selected-graph timing must include both Pod and VM tails. Keep deployed VM identity, real launcher, mount/relay, private guest kernel and OOM ownership until faithful proof transfer. Before changing test frequency or promoting a gate, finish 30 qualified source pairs, 100 honest fresh contract actions, three busy windows and a four-PR burst. None is complete; do not claim diminishing returns or change the devel gate.")}
             <${Group} gap="md" my="sm">
               <${Anchor}
