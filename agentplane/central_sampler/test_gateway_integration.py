@@ -137,7 +137,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
         async with (
             postgres_async_engine(database_url) as engine,
             Endpoint() as endpoint,
-            serve_gateway() as runner_gateway,
+            serve_gateway(sandbox, tmp_path) as runner_gateway,
             run_gateway(
                 api_server.kubeconfig,
                 database_url=gateway_database,
