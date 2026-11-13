@@ -9,6 +9,7 @@ def _settings_source() -> dict[str, object]:
     return {
         "database_url": "postgresql://edge:edge@postgres.invalid/edge",
         "actions_target": "actions:8080",
+        "policy_namespace": "test-policy",
         "caller_service_account_namespaces": ["test-callers"],
         "operator_oidc": {
             "issuer": "https://operator.example",
@@ -18,13 +19,12 @@ def _settings_source() -> dict[str, object]:
     }
 
 
-def test_identity_cutover_settings_are_optional_and_accepted() -> None:
+def test_identity_cutover_settings_are_accepted() -> None:
     source = _settings_source()
     settings = Settings.model_validate(source)
-    assert settings.policy_namespace is None
+    assert settings.policy_namespace == "test-policy"
     assert settings.actions_token_file is None
 
-    source["policy_namespace"] = "test-policy"
     source["actions_token_file"] = "/var/run/actions"
     settings = Settings.model_validate(source)
     assert settings.policy_namespace == "test-policy"
