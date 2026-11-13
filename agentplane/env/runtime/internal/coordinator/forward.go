@@ -3,7 +3,7 @@ package coordinator
 import (
 	"context"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"

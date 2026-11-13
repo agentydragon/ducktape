@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate/persistentpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"

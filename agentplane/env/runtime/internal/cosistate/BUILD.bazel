@@ -10,11 +10,11 @@ go_library(
         "environment_seal.go",
         "state.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate",
-    visibility = ["//agentplane/env:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate",
+    visibility = ["//agentplane/env/runtime:__subpackages__"],
     deps = [
-        "//agentplane/env/runtime/cosistate:persistent_go_proto",
-        "//agentplane/env/runtime/lifecycle",
+        "//agentplane/env/runtime/internal/cosistate:persistent_go_proto",
+        "//agentplane/env/runtime/internal/lifecycle",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
@@ -33,7 +33,7 @@ go_library(
 proto_library(
     name = "persistent_proto",
     srcs = ["persistent.proto"],
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = ["//agentplane/env/runtime:__subpackages__"],
     deps = [
         "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
@@ -42,9 +42,9 @@ proto_library(
 
 go_proto_library(
     name = "persistent_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb",
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate/persistentpb",
     proto = ":persistent_proto",
-    visibility = ["//agentplane:__subpackages__"],
+    visibility = ["//agentplane/env/runtime:__subpackages__"],
     deps = [
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",

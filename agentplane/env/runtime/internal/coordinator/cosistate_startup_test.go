@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"go.etcd.io/bbolt"
 )

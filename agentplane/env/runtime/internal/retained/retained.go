@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"sync"
 
-	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate/persistentpb"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	persistencepb "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosistate/persistentpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
