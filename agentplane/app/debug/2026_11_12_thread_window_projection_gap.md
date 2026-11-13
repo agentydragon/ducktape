@@ -106,3 +106,31 @@ passed at code commit `0c3306453e`, with one uncached remote test execution in
 61.100 seconds. That verifies the final fixture's normal lifetime separately from
 the deliberately failing diagnostic probe. PR #15913's final-head CI is separate
 from these focused executions.
+
+On 2026-11-13 UTC, a [five-run repetition](https://app.buildbuddy.io/invocation/17344c27-a61c-429e-8195-3f5613e47c75)
+of only `test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_reader_s_place`
+passed on `devel` commit `93f2ba8eeff36265d6e7887836b615c39b4ad985`.
+The invocation used `--noremote_accept_cached --runs_per_test=5` with a pytest `-k`
+filter. The target summary records five runs and five passes; all five result
+events have `strategy=remote`, and their test logs each report one passed and five
+deselected tests. The five completed TestRunner execution IDs are distinct:
+
+- `/uploads/ab1d769a-c8c5-4727-aedc-2f2822c447c7/blobs/ffb672d8278194dfd7626ea5861c57af24256fac60c0744c7c110bc86a1de338/841`
+- `/uploads/7ca14dc4-a78e-47e3-84b6-162ede28b841/blobs/574f6380cfc2cc5163e0465e158e365b4aeca6d61779cc8902bfec6d15a98bd0/841`
+- `/uploads/94b885c3-8bbe-42f6-ad7e-8a13ae68f3c8/blobs/0dd9377eb4a8604722edc7b919204baa04c36f63bd043d18f4cbd0671a39fef6/841`
+- `/uploads/88cb195f-a187-4ac3-8bb6-579a3c27414b/blobs/da7fa2261c31d82ed2b5471d0a23825cd46b5f6fa77201d8a67a91f4c2238edb/841`
+- `/uploads/d470dd5c-e472-4d4a-96a7-f8fe7d594997/blobs/8b91e5384f383220e12eda441753a10a49c4610323b22c4e0cb3f5e356fa6baf/841`
+
+The Bazel invocation completed successfully. No projection failure occurred, so the new
+failure artifacts did not fire and this sample supplies no new delivery-boundary
+evidence or runtime repair.
+
+The canonical-repository BuildBuddy target-history index queried over the preceding
+168 hours returned 760 `PASSED`, 15 `FAILED_TO_BUILD`, and one `FAILED` entry; the
+failure is the 2026-11-07 invocation above. This index includes cached outcomes
+and excludes some PR/manual runs, and its build failures are not test verdicts.
+These counts therefore do not measure the scenario's physical failure rate. The
+next discriminating observation is still a naturally failing run with the direct
+view, fresh Electric snapshot, Chromium entity-stream metadata, and browser cursor
+captured together. Only then can we distinguish replication, stream delivery, and
+client application before changing the runtime path.
