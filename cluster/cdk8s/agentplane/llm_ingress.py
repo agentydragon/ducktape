@@ -12,7 +12,6 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
-    EnvValue,
     MemoryResources,
     Role,
     RoleBinding,
@@ -20,6 +19,7 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
+from pydantic import AnyHttpUrl
 
 from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -38,7 +38,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _NAME = "llm-ingress"
@@ -113,16 +112,12 @@ class LlmIngress(Construct):
                 "secret.reloader.stakater.com/reload": env.llm_ingress.litellm_key_secret_name,
             },
             env_variables={
-                **{
-                    env_name(Settings, field): EnvValue.from_value(str(checked_value(Settings, field, value)))
-                    for field, value in {"token_audience": WORKLOAD_TOKEN_AUDIENCE, "litellm_url": litellm_url}.items()
-                },
                 # The only real model credential in this service; runners never mount it.
-                env_name(Settings, "litellm_key"): SecretRef(
+                Settings.litellm_key_env: SecretRef(
                     namespace=env.namespace, name=env.llm_ingress.litellm_key_secret_name
                 )
                 .key("api-key")
-                .env_value(self, "litellm-key-secret"),
+                .env_value(self, "litellm-key-secret")
             },
             readiness=tls_grpc_probe(
                 port=self.service.pod_port,
@@ -187,39 +182,42 @@ class LlmIngress(Construct):
                 Volume.from_config_map(self, "codex-models-volume", catalog_map),
                 read_only=True,
             )
-        # Settings this deployment supplies as YAML rather than flags, so a list is a list.
-        content = {
-            "allowed_service_account_namespaces": [env.namespace],
-            "policy_namespace": env.namespace,
-            **(
-                {"central_sampler_accounts": [f"{env.namespace}/{central_sampler.NAME}"]}
-                if env.central_sampler is not None
-                else {}
-            ),
-            "log_llm_requests": env.llm_ingress.log_llm_requests,
-            "models": [item.model_dump(mode="json") for item in env.llm_ingress.models],
-            "attribution": env.llm_ingress.attribution.model_dump(mode="json"),
-            **({} if catalog_map is None else {"codex_model_catalog_file": str(_CODEX_CATALOG_PATH)}),
-        }
         serving_tls = workload_tls.serving_certificate(
             self, env, container=workload.container, name=_NAME, uri=LLM_INGRESS_URI
         )
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        content["rpc"] = Listener(
-            listen_address=f"0.0.0.0:{self.service.pod_port}",
-            tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[
-                SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-            ],
-        ).model_dump(mode="json")
+        static_settings = Settings(
+            allowed_service_account_namespaces=frozenset({env.namespace}),
+            policy_namespace=env.namespace,
+            central_sampler_accounts=(
+                frozenset({f"{env.namespace}/{central_sampler.NAME}"})
+                if env.central_sampler is not None
+                else frozenset()
+            ),
+            central_sampler_identity_callers=False,
+            token_audience=WORKLOAD_TOKEN_AUDIENCE,
+            log_llm_requests=env.llm_ingress.log_llm_requests,
+            models=list(env.llm_ingress.models),
+            attribution=env.llm_ingress.attribution,
+            codex_model_catalog_file=None if catalog_map is None else Path(str(_CODEX_CATALOG_PATH)),
+            litellm_url=AnyHttpUrl(litellm_url),
+            log_levels={},
+            rpc=Listener(
+                listen_address=f"0.0.0.0:{self.service.pod_port}",
+                tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[
+                    SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+                    KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
+                ],
+            ),
+        )
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(static_settings),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
