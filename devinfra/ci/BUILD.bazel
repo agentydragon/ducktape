@@ -3,6 +3,23 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # === Libraries ===
 
 py_library(
+    name = "nix_attic_build_and_push",
+    srcs = ["nix_attic_build_and_push.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_test(
+    name = "test_nix_attic_build_and_push",
+    srcs = ["test_nix_attic_build_and_push.py"],
+    deps = [
+        ":nix_attic_build_and_push",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "artifacts",
     srcs = ["artifacts.py"],
     data = [
