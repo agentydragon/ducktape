@@ -176,9 +176,10 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   required-CI saving.
   Egress already has a real subprocess seam with caller-owned settings/API/CA;
   its own-SVID and credential-revocation case passes. The Notification subprocess
-  driver must share the caller's API/CA/database, return a seeded owned subscription
-  and reject a revoked credential before the packaged CLI composition can replace
-  those assertions. An empty subscription list is insufficient.
+  driver passes with the caller's API/CA/database: it returns a seeded owned
+  subscription and rejects an unrecorded trusted SVID. Same-workload credential
+  revocation and real sidecar/packaged CLI composition remain before replacing
+  deployed assertions. An empty subscription list is insufficient.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
