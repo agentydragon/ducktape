@@ -179,7 +179,7 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
     assert history["policy_namespace"] == namespace
     gateway_delegation = gateway["delegation"]
     assert gateway_delegation["actor"] == actions_account
-    assert gateway_delegation["caller_namespaces"] == [namespace]
+    assert "caller_namespaces" not in gateway_delegation
     assert gateway_delegation["identity_callers"] is True
     assert gateway_delegation["methods"] == [
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
@@ -199,7 +199,7 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
     ]
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
-    assert history_delegation["caller_namespaces"] == [namespace]
+    assert "caller_namespaces" not in history_delegation
     assert history_delegation["identity_callers"] is True
     assert history_delegation["methods"] == [
         "/agentplane.history_service.HistoryService/ReadSessionEvents",

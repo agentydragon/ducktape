@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -61,8 +62,8 @@ func (configTestTokenReviews) Create(
 		Authenticated: true,
 		Audiences:     request.Spec.Audiences,
 		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:agentplane:workspace",
-			UID:      "execution-account-uid",
+			Username: "system:serviceaccount:agentplane:app",
+			UID:      "app-account-uid",
 		},
 	}}, nil
 }
@@ -93,7 +94,7 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
+	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  identity_callers: true\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
@@ -105,6 +106,7 @@ func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t 
 		!slices.Equal(c.GatewayCallers, []auth.Account{{Namespace: "agentplane", Name: "runner-gateway"}}) ||
 		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
 		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
+		!c.Delegation.IdentityCallers ||
 		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
 		!slices.Equal(c.Delegation.Methods, []string{
 			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
@@ -159,7 +161,7 @@ func TestOperatorCallersMustAlsoBeAuthenticatedDispatcherCallers(t *testing.T) {
 }
 
 func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) {
-	settings := requiredFile + `
+	settings := requiredFile + `environment_readers: [agentplane/app]
 runtime_catalog:
   models:
     models:
@@ -209,7 +211,10 @@ runtime_catalog:
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := environments.New("agentplane", objects, config.RuntimeCatalog, lifecycleManager, nil, environments.ManagementOptions{})
+	service, err := environments.New(
+		"agentplane", objects, config.RuntimeCatalog, lifecycleManager,
+		sets.New(config.EnvironmentReaders...), environments.ManagementOptions{},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

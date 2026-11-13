@@ -77,18 +77,18 @@ follows it; code that differs converges on it.
   its method Rule and typed context accessor must admit that proof; it does not resolve the request's
   credentials a second time.
 
-Calls made on behalf of another SA follow the approved
-[delegated authorization design](delegated_authorization.md): preserve authenticated actor and
-effective caller separately and apply the caller's ordinary authorization. `AllowDelegationFrom`
-adds that mode only to an authenticated `Rule` explicitly installed for the method; the direct mode
-remains available. `Admitted` returns a typed direct or delegated admission, while
-`EffectiveCaller` returns only the SA identity handlers use for ordinary resource checks. The
-legacy `Caller` accessor stays Pod-bound and is not populated for delegated requests. The
-`identity/auth/grpc` client reads its destination token for each call and has no ordinary Bearer
-fallback. These shared primitives do not opt a production method or client into delegation by
-themselves. The Runner Gateway's explicitly configured method list includes the `EnvironmentService`
-list/get methods; `ResumeEnvironment` remains separately configured, and Action Service adapter
-integration remains separate.
+Calls made on behalf of an Identity follow the approved
+[delegated authorization design](delegated_authorization.md): preserve the authenticated component
+actor and effective Identity separately, then apply the Identity's ordinary authorization.
+`AllowDelegationFrom` adds that mode only to an authenticated `Rule` explicitly installed for the
+method; the direct mode remains available. `Admitted` returns a typed direct or delegated admission.
+`EffectiveCaller` returns only a directly authenticated ServiceAccount for ordinary resource checks;
+handlers read an effective Identity from `DelegatedIdentityAdmission`. The legacy `Caller` accessor
+stays Pod-bound and is not populated for delegated requests. The `identity/auth/grpc` client reads its
+destination token for each call and has no ordinary Bearer fallback. These shared primitives do not
+opt a production method or client into delegation by themselves. The Runner Gateway's explicitly
+configured method list includes the `EnvironmentService` list/get methods; `ResumeEnvironment` remains
+separately configured, and Action Service adapter integration remains separate.
 
 ## Errors
 
