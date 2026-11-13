@@ -13,7 +13,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/history_service:history_service_pb",
+        "//agentplane/history_service/api/history:history_service_pb",
     ],
 )
 
@@ -23,7 +23,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/history_service:history_service_pb",
+        "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -40,7 +40,7 @@ ts_library(
         "//agentplane/app/frontend:schema",
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads:thread_sync",
-        "//agentplane/history_service:history_service_pb",
+        "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:session_pb",
     ],
 )

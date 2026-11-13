@@ -1,6 +1,6 @@
 """Ranges a History read page reports as deleted from stored history."""
 
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 
 # The generated protobuf stubs need the protobuf runtime as a direct mypy dependency.
 # gazelle:include_dep @pypi//protobuf

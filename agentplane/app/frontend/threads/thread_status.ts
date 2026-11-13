@@ -1,7 +1,7 @@
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 /** One status decision for a Thread, shared by every page that lists Threads from a live snapshot. */
 import type { ThreadView } from "./client";
-import { FeedStatus } from "../../../history_service/history_service_pb";
+import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { HarnessState, SetupState } from "../../../proto/session_pb";
 import type { Live } from "../live";
 import type { ThreadTabStatus } from "../tab_metadata";

@@ -1,6 +1,6 @@
 import { type JSX, type ReactNode, memo, useCallback } from "react";
 import { VirtualizedHistory as History } from "../../../../util/frontend/transcript/virtualized_history";
-import type { ThreadEntity } from "../../../history_service/history_service_pb";
+import type { ThreadEntity } from "../../../history_service/api/history/history_service_pb";
 import { type ThreadWindow } from "./thread_sync";
 import { rowKey, type HistoryRow } from "./history_rows";
 import { HistoryRowView } from "./history_row_views";

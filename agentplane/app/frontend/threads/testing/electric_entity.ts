@@ -8,7 +8,7 @@ import {
   ThreadLifecycleSchema,
   ThreadViewStateSchema,
   type ThreadEntity,
-} from "../../../../history_service/history_service_pb";
+} from "../../../../history_service/api/history/history_service_pb";
 
 /** Encode a protobuf variant as the indexed columns of an Electric entity row. */
 export function electricEntityVariant(entity: ThreadEntity["entity"]): {

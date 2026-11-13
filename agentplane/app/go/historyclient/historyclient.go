@@ -11,7 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"google.golang.org/grpc"
 )
 

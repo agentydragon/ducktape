@@ -7,7 +7,7 @@ go_library(
     srcs = ["settlement.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/backfill",
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/storage",
         "//agentplane/postgres",
@@ -24,7 +24,7 @@ go_test(
     embed = [":backfill"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/storage",
         "//agentplane/history_service/testing:integration_migrations",

@@ -11,7 +11,7 @@ import {
   ThreadCommandOutcome,
   type ThreadCommand,
   type ThreadEntity,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 import { Operation } from "../../../proto/command_pb";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 

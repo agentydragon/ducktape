@@ -8,7 +8,7 @@ import { backoff, type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
 import { followWatch } from "../watch_stream";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
-import { WatchSessionSummariesResponseSchema } from "../../../history_service/history_service_pb";
+import { WatchSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
 
 import { type ThreadView, listThreadWindow, type ThreadListing } from "./client";
 

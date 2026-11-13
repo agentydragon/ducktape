@@ -7,7 +7,7 @@ import {
   type ThreadEntity,
   type ThreadItem,
   type ThreadPayloadReference,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 
 import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";

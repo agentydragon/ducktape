@@ -16,7 +16,7 @@ from agentplane.app.testing.client import Client
 from agentplane.central_sampler import sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2

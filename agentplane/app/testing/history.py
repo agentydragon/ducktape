@@ -5,13 +5,13 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import grpc
 
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/history_service:history_service_pb2
+# gazelle:include_dep //agentplane/history_service/api/history:history_service_pb2
 
 SANDBOX_NAMESPACE = "test-history-sandbox-namespace"
 

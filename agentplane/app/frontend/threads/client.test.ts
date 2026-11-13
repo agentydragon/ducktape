@@ -26,7 +26,7 @@ import {
   ReadSessionObservationsRequestSchema,
   ThreadEntityKind,
   SessionSummarySchema,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 import { Harness, HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { ListThreadMetadataResponseSchema, ThreadMetadataSchema } from "../../app_service_pb";
 

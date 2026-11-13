@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"

@@ -304,7 +304,7 @@ go_library(
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/grpc/bearer",
         "//agentplane/grpc/graceful",
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/identity/auth/auth",
         "//agentplane/identity/auth/grpc",
         "//agentplane/identity/auth/listener",

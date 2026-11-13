@@ -19,7 +19,7 @@ from tenacity import AsyncRetrying, retry_if_exception, retry_if_exception_type,
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
 from agentplane.grpc.calls import dial
-from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
+from agentplane.history_service.api.history import history_service_pb2, history_service_pb2_grpc
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway import api
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc

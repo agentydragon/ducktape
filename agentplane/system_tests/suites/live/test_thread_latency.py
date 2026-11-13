@@ -48,7 +48,7 @@ from pydantic import BaseModel, Field
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SUBSET_ROW_LIMIT, SubsetRequest
 from agentplane.env.runtime.harness import Harness
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire

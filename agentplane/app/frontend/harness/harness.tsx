@@ -148,7 +148,7 @@ import {
   WatchSessionSummariesResponseSchema,
   type ThreadEntity,
   type ThreadPayloadReference,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";

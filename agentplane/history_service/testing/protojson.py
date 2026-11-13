@@ -9,7 +9,7 @@ from typing import Any
 from google.protobuf.json_format import MessageToDict, ParseDict
 from google.protobuf.message import Message
 
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 
 _VARIANT_BY_KIND = {
     "view_state": "viewState",

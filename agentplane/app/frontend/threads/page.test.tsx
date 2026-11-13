@@ -6,7 +6,7 @@ import {
   ThreadFeedStatus,
   FeedStatus,
   type ThreadEntity,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 import { DurationSchema, TimestampSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";

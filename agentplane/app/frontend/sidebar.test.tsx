@@ -20,7 +20,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { listThreadWindow } from "./threads/client";
-import { FeedStatus } from "../../history_service/history_service_pb";
+import { FeedStatus } from "../../history_service/api/history/history_service_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../proto/session_pb";
 import { RoutedThreadsLiveProvider } from "./threads/live";
 import { SandboxesLiveProvider } from "./sandboxes/live";

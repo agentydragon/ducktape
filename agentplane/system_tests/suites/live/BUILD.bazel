@@ -77,7 +77,7 @@ py_test(
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:models",
         "//agentplane/env/runtime:harness",
-        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/history_service/testing:protojson",
         "//agentplane/native/claude:wire",
         "//agentplane/native/codex:wire",

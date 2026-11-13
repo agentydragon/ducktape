@@ -14,7 +14,7 @@ import {
   SandboxRefSchema,
   type SessionSummary,
   SessionSummarySchema,
-} from "../../../../history_service/history_service_pb";
+} from "../../../../history_service/api/history/history_service_pb";
 import { ThreadMetadataSchema, type ThreadMetadata } from "../../../app_service_pb";
 import {
   AttachedSchema,

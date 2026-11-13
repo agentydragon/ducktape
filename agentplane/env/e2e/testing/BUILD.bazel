@@ -114,7 +114,7 @@ py_library(
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
-        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/history_service/testing:unstored_ranges",
         "//agentplane/proto:environment_runtime_state_pb2",

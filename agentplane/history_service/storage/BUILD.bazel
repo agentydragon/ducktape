@@ -17,7 +17,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/storage",
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/postgres",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
@@ -39,7 +39,7 @@ go_test(
     ],
     embed = [":storage"],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/testing/spans",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
@@ -58,7 +58,7 @@ go_test(
     embed = [":storage"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
         "//agentplane/postgres",

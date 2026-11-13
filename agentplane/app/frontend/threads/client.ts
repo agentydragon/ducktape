@@ -43,7 +43,7 @@ import {
   type SessionSummary,
   type ReadSessionObservationsResponse,
   type ReadThreadEntitiesResponse,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 import {
   ChangeModelRequestSchema,
   ChangeModelResponseSchema,

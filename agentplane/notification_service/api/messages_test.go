@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/sessionidentity"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"

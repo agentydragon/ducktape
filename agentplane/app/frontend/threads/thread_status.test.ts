@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { FeedStatus } from "../../../history_service/history_service_pb";
+import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { TurnStatus } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { threadView, type ThreadViewInit } from "./testing/state";

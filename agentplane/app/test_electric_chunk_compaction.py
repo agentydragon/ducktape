@@ -42,7 +42,7 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import BrowserProxy, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.fold.models import ThreadPayloadChunk
 from agentplane.history_service.testing.electric_service import electric_service
 from agentplane.history_service.testing.history import History

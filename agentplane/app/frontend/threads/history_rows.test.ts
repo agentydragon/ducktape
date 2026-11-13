@@ -11,7 +11,7 @@ import {
   setupProgress,
 } from "./history_rows";
 import { testEntity, testItem } from "./testing/entity";
-import type { ThreadEntity } from "../../../history_service/history_service_pb";
+import type { ThreadEntity } from "../../../history_service/api/history/history_service_pb";
 
 /** A lifecycle entity carrying a real, parseable `Event`: grouping a lifecycle observation depends
  * on what it says, not just its kind. */

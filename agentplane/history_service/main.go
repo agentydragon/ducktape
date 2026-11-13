@@ -20,7 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/history_service/api"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/ingress"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"

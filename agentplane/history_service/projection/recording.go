@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"slices"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/settledcursors"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/google/uuid"

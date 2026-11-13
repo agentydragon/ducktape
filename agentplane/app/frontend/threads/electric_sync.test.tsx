@@ -27,7 +27,7 @@ import {
   type ReadThreadEntitiesRequest,
   type ThreadEntity,
   type ThreadPayloadReference,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 
 type Json = Record<string, unknown>;
 
