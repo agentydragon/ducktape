@@ -113,8 +113,15 @@ passed on `devel` commit `93f2ba8eeff36265d6e7887836b615c39b4ad985`.
 The invocation used `--noremote_accept_cached --runs_per_test=5` with a pytest `-k`
 filter. The target summary records five runs and five passes; all five result
 events have `strategy=remote`, and their test logs each report one passed and five
-deselected tests. The five TestRunner execution IDs are distinct. The Bazel
-invocation completed successfully. No projection failure occurred, so the new
+deselected tests. The five completed TestRunner execution IDs are distinct:
+
+- `/uploads/ab1d769a-c8c5-4727-aedc-2f2822c447c7/blobs/ffb672d8278194dfd7626ea5861c57af24256fac60c0744c7c110bc86a1de338/841`
+- `/uploads/7ca14dc4-a78e-47e3-84b6-162ede28b841/blobs/574f6380cfc2cc5163e0465e158e365b4aeca6d61779cc8902bfec6d15a98bd0/841`
+- `/uploads/94b885c3-8bbe-42f6-ad7e-8a13ae68f3c8/blobs/0dd9377eb4a8604722edc7b919204baa04c36f63bd043d18f4cbd0671a39fef6/841`
+- `/uploads/88cb195f-a187-4ac3-8bb6-579a3c27414b/blobs/da7fa2261c31d82ed2b5471d0a23825cd46b5f6fa77201d8a67a91f4c2238edb/841`
+- `/uploads/d470dd5c-e472-4d4a-96a7-f8fe7d594997/blobs/8b91e5384f383220e12eda441753a10a49c4610323b22c4e0cb3f5e356fa6baf/841`
+
+The Bazel invocation completed successfully. No projection failure occurred, so the new
 failure artifacts did not fire and this sample supplies no new delivery-boundary
 evidence or runtime repair.
 
