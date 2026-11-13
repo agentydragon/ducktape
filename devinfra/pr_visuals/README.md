@@ -13,12 +13,17 @@ target the run covered — this needs a download-mode flag
 (<devinfra/docs/bazel_caching.md> § Undeclared test outputs under BwoB).
 
 The comment leads with CI/baseline warnings and change counts, then groups changed
-targets by impact (top two expanded), linking each to its gallery page and CI run;
-it is capped at 55,000 characters, with omitted targets in the gallery. The gallery
-index uses the same ordering (sortable by name or changed-screenshot count); per-test
-pages show Before beside After in fixed-aspect frames, and explain the missing diff
-overlay when dimensions change. `//devinfra/pr_visuals:test_gallery_visual` captures
-the index and a test page on desktop and mobile.
+targets by impact (top two expanded) and links each target to its gallery page and CI
+run. It reserves room for every target summary, then allocates screenshot comparisons
+one at a time in impact order across targets; an oversized screenshot is skipped so
+later smaller comparisons can still appear. The 55,000-character limit includes the
+publisher metadata marker, unchanged-target summary, and omission counts. Long labels
+are shortened in the comment, and omitted screenshots or target summaries are counted
+with a full-gallery link. The gallery index uses the same ordering (sortable by name
+or changed-screenshot count); per-test pages show Before beside After in fixed-aspect
+frames, and explain the missing diff overlay when dimensions change.
+`//devinfra/pr_visuals:test_gallery_visual` captures the index and a test page on
+desktop and mobile.
 
 Publisher internals — invocation selection, PR resolution, cancelled-run handling,
 baseline resolution, check-runs, storage layout, releases: <docs/publisher.md>.

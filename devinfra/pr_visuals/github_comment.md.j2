@@ -97,19 +97,22 @@
 {% endif %}
 {%- endmacro %}
 
-{% macro target(test, impact, gallery_url, ci_details_url, assets, open_section, inline_limit, issue_invocation_labels, issue_configuration_labels) -%}
+{% macro target_start(test, impact, gallery_url, ci_details_url, omitted_issue_count, open_section, issue_invocation_labels, issue_configuration_labels) -%}
 <details{% if open_section %} open{% endif %}>
-<summary><code>{{ test.target_label }}</code> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %}{% if test.title != test.target_label %} · {{ test.title }}{% endif %} · <a href="{{ gallery_url }}">link</a>{% if ci_details_url %} · <a href="{{ ci_details_url }}">request rerun</a>{% endif %}</summary>
+<summary><a href="{{ gallery_url }}"><code>{{ test.target_label }}</code></a> — {{ counts(test) }}{% if impact is not none %} · largest change {{ '%.1f' | format(impact * 100) }}%{% endif %}{% if test.title != test.target_label %} · {{ test.title }}{% endif %}{% if ci_details_url %} · <a href="{{ ci_details_url }}">request rerun</a>{% endif %}</summary>
 
 {% if test.issues %}
 <ul>{% for problem in test.issues %}<li>⚠️ {{ provenance.issue_details(problem, issue_invocation_labels[problem.source.invocation] if problem.source else none, issue_configuration_labels[problem.source.configuration] if problem.source and problem.source.configuration else none) }}</li>{% endfor %}</ul>
 {% endif %}
-{% for item in assets %}
-{% if assets | length <= inline_limit %}
+{% if omitted_issue_count %}<p>{{ omitted_issue_count }} additional issue details omitted from the comment; see the full gallery.</p>{% endif %}
+{%- endmacro %}
+
+{% macro target_asset(item, asset_count, open_asset, open_target, inline_limit) -%}
+{% if asset_count <= inline_limit %}
 {{ asset_body(item, true) }}
 
 {% else %}
-<details{% if open_section and loop.first %} open{% endif %}>
+<details{% if open_target and open_asset %} open{% endif %}>
 <summary>{{ item.asset.label }}{% if item.asset.classification == 'modified' and item.asset.changed_fraction is not none %} — {{ '%.1f' | format(item.asset.changed_fraction * 100) }}% changed{% elif item.asset.classification is not none %} — {{ item.asset.classification }}{% endif %}{% if item.asset.baseline_stale %} — ⚠️ stale baseline{% endif %} · <a href="{{ item.anchor }}">link</a></summary>
 
 {{ asset_body(item, false) }}
@@ -117,7 +120,9 @@
 </details>
 
 {% endif %}
-{% endfor %}
+{%- endmacro %}
+
+{% macro target_end() -%}
 </details>
 {%- endmacro %}
 
@@ -129,12 +134,12 @@
 </details>
 {%- endmacro %}
 
-{% macro omitted(count, url) -%}
-<p>{{ count }} changed test section{% if count != 1 %}s{% endif %} omitted for length. <a href="{{ url }}index.html">Full gallery</a>.</p>
+{% macro omitted(screenshot_count, target_count, gallery_url) -%}
+<p>{% if screenshot_count %}{{ screenshot_count }} screenshot comparison{% if screenshot_count != 1 %}s{% endif %}{% endif %}{% if screenshot_count and target_count %} and {% endif %}{% if target_count %}{{ target_count }} changed target summar{% if target_count != 1 %}ies{% else %}y{% endif %}{% endif %} omitted for length. <a href="{{ gallery_url }}">Full gallery</a>.</p>
 {%- endmacro %}
 
-{% macro unchanged_omitted(count) -%}
-<p>{{ count }} unchanged targets; see the full gallery.</p>
+{% macro unchanged_omitted(count, gallery_url) -%}
+<p>{{ count }} unchanged target{% if count != 1 %}s{% endif %}; <a href="{{ gallery_url }}">Full gallery</a>.</p>
 {%- endmacro %}
 
 {% macro no_visual(details_url) -%}
