@@ -74,7 +74,22 @@ k3s_suite(
     ],
 )
 
-# Each target starts exactly one stack. Per-test clients and Sandbox cleanup remain isolated.
+_POD_DEPS = [
+    ":pod_cases",
+    ":pod_runners",
+    "//:conftest",
+    "//agentplane/system_tests:conftest",
+    "//agentplane/system_tests/driver:case_batch",
+    "//agentplane/system_tests/driver:cluster",
+    "//agentplane/system_tests/driver:dispatcher_transport",
+    "//agentplane/system_tests/driver:scripted_upstream",
+    "//util:net",
+    "@pypi//pytest",
+    "@pypi//pytest_asyncio",
+    "@pypi//pytest_bazel",
+]
+
+# Gazelle owns the required target's deps; it retains all 21 cases on one stack.
 k3s_suite(
     name = "test_pod",
     srcs = ["test_pod.py"],
@@ -93,6 +108,43 @@ k3s_suite(
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
+)
+
+# Manual comparison: historical case spans put about 212s here and 228s in the
+# complementary lane. Storage still runs exclusively first. Each target owns a
+# fresh stack; case ordering and the two-slot runner pool remain unchanged.
+_POD_BALANCED_A = " or ".join([
+    "operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control",
+    "an_agent_messages_another_which_reads_and_acknowledges_it",
+    "the_model_call_itself_goes_through_the_proxy",
+    "pod_mtls_session_survives_replacement_and_keeps_history",
+    "fresh_workspace_storage_survives_replacement",
+])
+
+k3s_suite(
+    name = "test_pod_balanced_a_spike",
+    srcs = ["test_pod.py"],
+    args = [
+        "-k",
+        "'" + _POD_BALANCED_A + "'",
+    ],
+    main = "test_pod.py",
+    stack = "pod",
+    tags = ["manual"],
+    deps = _POD_DEPS,
+)
+
+k3s_suite(
+    name = "test_pod_balanced_b_spike",
+    srcs = ["test_pod.py"],
+    args = [
+        "-k",
+        "'not (" + _POD_BALANCED_A + ")'",
+    ],
+    main = "test_pod.py",
+    stack = "pod",
+    tags = ["manual"],
+    deps = _POD_DEPS,
 )
 
 # This suite scales the Dispatcher and deletes controller Pods; it needs its own stack.
