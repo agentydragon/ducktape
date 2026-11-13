@@ -10,7 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"

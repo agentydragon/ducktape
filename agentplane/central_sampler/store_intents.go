@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"maps"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"

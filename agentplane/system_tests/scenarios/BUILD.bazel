@@ -1,6 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-# gazelle:resolve py agentplane.central_sampler.sampler_pb2 //agentplane/central_sampler:sampler_pb2
+# gazelle:resolve py agentplane.central_sampler.api.sampler_pb2 //agentplane/central_sampler/api:sampler_pb2
 
 package(
     default_testonly = True,
@@ -57,7 +57,7 @@ py_library(
     srcs = ["central_sampler.py"],
     deps = [
         "//agentplane/app/testing:client",
-        "//agentplane/central_sampler:sampler_pb2",
+        "//agentplane/central_sampler/api:sampler_pb2",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
         "//agentplane/history_service/api/history:history_service_pb2",

@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"google.golang.org/grpc"

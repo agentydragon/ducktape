@@ -17,7 +17,7 @@ import pytest
 import pytest_bazel
 from pydantic import SecretStr
 
-from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import (
     AnthropicBlockBindingConfig,
     AnthropicCompactionConfig,

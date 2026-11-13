@@ -13,7 +13,7 @@ import grpc
 import pytest
 
 from agentplane.app.testing.client import Client
-from agentplane.central_sampler import sampler_pb2
+from agentplane.central_sampler.api import sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2

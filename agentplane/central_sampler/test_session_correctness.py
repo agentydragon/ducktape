@@ -20,7 +20,7 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.central_sampler import sampler_pb2
+from agentplane.central_sampler.api import sampler_pb2
 from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings, turn_completed
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2

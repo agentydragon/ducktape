@@ -15,7 +15,7 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from agentplane.central_sampler import sampler_pb2
+from agentplane.central_sampler.api import sampler_pb2
 from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env import config as configuration

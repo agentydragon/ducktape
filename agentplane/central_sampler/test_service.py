@@ -17,7 +17,7 @@ import pytest_bazel
 from PIL import Image
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
-from agentplane.central_sampler import sampler_pb2
+from agentplane.central_sampler.api import sampler_pb2
 from agentplane.central_sampler.settings import ModelConfig, ResponsesConfig
 from agentplane.central_sampler.testing import (
     METADATA,

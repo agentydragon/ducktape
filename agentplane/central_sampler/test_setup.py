@@ -11,7 +11,7 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
+from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.testing import METADATA, Endpoint, Request, create_request, service, settings
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
