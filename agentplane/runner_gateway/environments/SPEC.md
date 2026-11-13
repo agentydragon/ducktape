@@ -29,24 +29,25 @@ diagnostics while suspended.
 
 ## Caller and object authorization
 
-- Methods admit a direct TokenReview-verified ServiceAccount, or (for list/get only) a workload
+- List, get, and both watches admit a direct TokenReview-verified ServiceAccount or workload
   credential naming an Identity. The composition root may add Actions delegation to selected
   methods through the Runner Gateway's existing Dispatcher audience and served namespace set.
-  `WatchEnvironment`, `WatchEnvironments`, and mutations retain their existing direct
-  ServiceAccount gates. `ResumeEnvironment` is separately authorized through the lifecycle
-  manager; read permission grants no Dispatcher write or Gateway proxy access.
-- Handlers read typed workload authentication. The ServiceAccount path requires its exact live UID.
-  The Identity path requires the exact live Identity name and UID and is limited to Sandboxes whose
-  `spec.identity.name` names that Identity. It never receives the delegated actor's component
-  reader grants.
+  Mutations retain their existing direct ServiceAccount gates. `ResumeEnvironment` is separately
+  authorized through the lifecycle manager; read permission grants no Dispatcher write or Gateway
+  proxy access.
+- Handlers read typed workload authentication. A broad reader ServiceAccount requires its exact live
+  UID and explicit `environment_readers` grant. The Identity path requires the exact live Identity
+  name and UID and is limited to Sandboxes whose `spec.identity.name` names that Identity. It never
+  receives the delegated actor's component reader grants.
 - Identity access follows the Sandbox's name-based `spec.identity` binding: the current live
   same-name Identity may act, while a credential naming an older UID is rejected at admission.
   This read path does not infer or migrate retained Sessions, Connections, or grants.
 - A directly authenticated ServiceAccount explicitly listed in `environment_readers` may read the entire configured
   Sandbox namespace. This grant does not confer mutation or wake authority and never passes through
   delegation, including delegation to an Identity.
-- Resume independently checks the exact target and execution account, `resumePolicy`, and direct
-  operator authority through the lifecycle manager. Read permission alone does not authorize resume.
+- Resume independently checks the exact target, `resumePolicy`, and direct operator authority
+  through the lifecycle manager. Read permission alone does not authorize resume. Ordinary
+  ServiceAccount self-resume has been retired; Identity callers have no explicit-resume grant.
 - Management methods require a direct Pod-bound ServiceAccount explicitly listed as a manager.
   The Action Service may be listed separately as a launcher, which permits only Create with a
   complete Action caller and group origin. Delegation, a read grant, and a launcher grant never
@@ -68,20 +69,20 @@ diagnostics while suspended.
   rechecks the live Sandbox and execution Identity after acquiring it. The selected Identity is
   revalidated by UID during the patch, but deletion and same-name recreation after that read
   remain a cross-resource race because the Sandbox spec stores only a name.
-- Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for ordinary callers.
+- Get and watch require the complete Sandbox namespace/name/UID handle. Missing, replaced, deleting, or foreign targets are hidden as `NOT_FOUND` for Identity callers.
   Broad readers may see a deleting target and targets whose execution account is not yet present.
-- Account-scoped callers resolve their same-name Sandbox candidate. Identity list filters the
-  configured namespace to current Sandboxes bound to that Identity and uses the last visible
-  Sandbox name as a lexical cursor; the cursor only skips entries and cannot widen visibility.
+- Ordinary ServiceAccount callers no longer discover Sandboxes through same-name account ownership.
+  Their list is empty and get/watch hide targets as `NOT_FOUND`. Identity list filters the configured
+  namespace to current Sandboxes bound to that Identity and uses the last visible Sandbox name as a
+  lexical cursor; the cursor only skips entries and cannot widen visibility.
   Identity descriptors omit execution-account and lifecycle authority facts. Broad direct readers
   may continue a page using the Kubernetes continuation token because their grant covers that
   namespace.
 
-Delegated calls keep the Actions actor separate from the effective caller. ServiceAccount calls
-receive the same live Sandbox-owned account UID checks as direct calls; Identity calls receive the
-same current `spec.identity` name and UID checks as direct Identity calls. The dispatcher still
-rechecks identity at Session admission. Discovery is not an authorization lease and is not a
-substitute for mutation-time checks.
+Delegated calls keep the Actions actor separate from the effective Identity. They receive the same
+current `spec.identity` name and UID checks as direct Identity calls. The dispatcher still rechecks
+identity at Session admission. Discovery is not an authorization lease and is not a substitute for
+mutation-time checks.
 
 ## Snapshot reads and watches
 
@@ -98,12 +99,13 @@ snapshots when descriptor facts change. Changes only to `observed_at` or unproje
 metadata do not emit a new snapshot. There is no readiness predicate or server-side readiness wait.
 
 Observation depends on the control plane, not on a connection to the environment Runtime;
-suspended targets remain observable. Target, execution-ServiceAccount, and namespace Pod watches are established
-before reading the initial snapshot. Kubernetes collection resource versions bridge list/watch
-setup; notifications trigger uncached reads and the same live UID/ownership checks as get.
-The service rechecks target UID and execution ownership after assembling a descriptor.
-An already admitted stream never follows a replacement target or execution account. Credentials
-are reviewed before sends and periodically while idle; a valid credential keeps its stream open.
+suspended targets remain observable. Target and namespace Pod watches are established before reading
+the initial snapshot. Broad direct readers also watch execution ServiceAccounts. Kubernetes
+collection resource versions bridge list/watch setup; notifications trigger uncached reads and the
+same live UID/ownership checks as get. The service rechecks target UID and Identity ownership after
+assembling a descriptor. An already admitted Identity stream never follows a replacement target or
+Identity. Credentials are reviewed before sends and periodically while idle; a valid credential
+keeps its stream open.
 
 This is a current-state subscription, not retained transition history. Intermediate states may be
 coalesced. Reconnecting starts with a current snapshot and has no cursor. Source closure, expiration,
@@ -124,8 +126,8 @@ Intermediate changes may be coalesced. Reconnecting starts a fresh snapshot; the
 or transition history. The assembled view draws from multiple Kubernetes resources and does not
 promise a globally atomic point-in-time read.
 
-The service starts Sandbox, account, and Pod watches before reading the initial snapshot, and
-rereads affected Sandboxes on notifications. It indexes current incarnation Pod names, including VM
+The service starts Sandbox and Pod watches before reading the initial snapshot, and broad direct
+readers additionally start account watches. It rereads affected Sandboxes on notifications. It indexes current incarnation Pod names, including VM
 Pods; unrelated Pod events do not reread the inventory. Ordinary callers see only their exact live
 owned target; explicitly granted direct readers see all targets, including creation and deletion
 before or after the account exists. A missing or stale Pod is never substituted for the
@@ -140,15 +142,15 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 - Diagnostic fields include creation time, bootstrap binding, preset, controller lifecycle phase, idle
   suspension settings and blockers, raw Sandbox status, and the current Pod. Pod diagnostics are
   present only when name, namespace, and UID match the controller-reported incarnation.
-- `execution_account` is resolved from the live controller-owned ServiceAccount for account callers
-  and broad readers. Identity callers do not receive this component-owned fact.
+- `execution_account` is resolved from the live controller-owned ServiceAccount only for broad
+  readers. Identity callers do not receive this component-owned fact.
 - Readiness and operating state come from the current Sandbox status; `observed_at` records when the
   descriptor was assembled.
-- Explicit-resume eligibility includes a denial reason and is evaluated for the effective account
-  caller against its exact live ServiceAccount identity, the Sandbox `resumePolicy`, and applicable
-  direct operator authority. Identity callers receive no resume eligibility, wake generation, token,
-  or automatic-wake eligibility. Deleting environments remain visible to broad readers without
-  explicit-resume eligibility or a resume token.
+- Explicit-resume eligibility includes a denial reason and is evaluated for a direct ServiceAccount
+  against its exact live UID and configured operator authority. Ordinary ServiceAccount self-resume
+  and Identity explicit resume are denied. Identity callers receive no resume eligibility, wake
+  generation, token, or automatic-wake eligibility. Deleting environments remain visible to broad
+  readers without explicit-resume eligibility or a resume token.
 - Automatic wake eligibility remains a separate assessment using `wakeOnSend` and the configured
   wake-caller policy.
 - The descriptor's wake generation and opaque resume token bind an ordinary resume precondition to
@@ -168,10 +170,9 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
 ## Pagination and errors
 
 `ListEnvironments.limit` is required and ranges from 1 through 100. The request and response retain
-the approved paged contract. The current Sandbox-owned account mapping looks up only the reviewed
-account's same-name candidate. Identity callers page over visible Sandboxes with a lexical name
-cursor; it cannot grant access to another Sandbox. Broad readers can continue namespace pages; their
-grant permits seeing all names.
+the approved paged contract. Ordinary ServiceAccount callers receive an empty inventory. Identity
+callers page over visible Sandboxes with a lexical name cursor; it cannot grant access to another
+Sandbox. Broad readers can continue namespace pages; their grant permits seeing all names.
 
 Malformed requests and nonempty cursors from ordinary callers fail `INVALID_ARGUMENT`. Object authorization failures fail
 `NOT_FOUND`. Kubernetes reads for the exact candidate or its live ownership fail closed with
@@ -192,7 +193,8 @@ input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up
 ## Resume and ownership
 
 `ResumeEnvironment` uses the shared [lifecycle contract](lifecycle/SPEC.md), including exact
-ServiceAccount UID checks, policy opt-in, generation-bound preconditions, shared budget and unknown
-outcome handling. List/get/watch remain read-only; resume permission is evaluated independently.
+ServiceAccount UID checks for direct operators, policy opt-in, generation-bound preconditions,
+shared budget and unknown outcome handling. List/get/watch remain read-only; resume permission is
+evaluated independently.
 `REQUESTED` means the desired running state was accepted, not that the environment is ready. The
 Sandbox Controller remains responsible for startup and readiness.

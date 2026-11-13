@@ -114,9 +114,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	for method := range dispatcher.Methods(auth.Rule{}) {
 		methods = append(methods, method)
 	}
-	served, err := dispatcher.MethodsWithDelegation(resolver, auth.Delegator{Account: integrationActor, IdentityCallers: true},
-		auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) { return "", false, nil }),
-		identities, methods)
+	served, err := dispatcher.MethodsWithDelegation(resolver, auth.Delegator{Account: integrationActor, IdentityCallers: true}, identities, methods)
 	if err != nil {
 		t.Fatal(err)
 	}

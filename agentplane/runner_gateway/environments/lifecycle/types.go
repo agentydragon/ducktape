@@ -18,16 +18,16 @@ type Target = identitypb.EnvironmentTarget
 // ServiceAccountIdentity pins the effective caller to its live Kubernetes account incarnation.
 type ServiceAccountIdentity = identitypb.ServiceAccountIdentity
 
-// WakeCaller is the retained effective caller a wake is assessed for: an AccountWakeCaller or an
-// IdentityWakeCaller.
+// WakeCaller is the caller a wake is assessed for: an explicitly configured ServiceAccount broker
+// or an Identity acting for its bound Sandbox.
 type WakeCaller interface{ isWakeCaller() }
 
-// AccountWakeCaller is a ServiceAccount incarnation.
+// AccountWakeCaller is a ServiceAccount incarnation. It can wake only through the explicit broker
+// grant; same-name workload self-wake is retired.
 type AccountWakeCaller struct{ Account *ServiceAccountIdentity }
 
 // IdentityWakeCaller is an Identity incarnation, whether its own workload or a component acting for
-// it. It wakes only a Sandbox acting as it, under that Sandbox's resume policy, as an
-// AccountWakeCaller wakes the Sandbox running as it.
+// it. It wakes only a Sandbox acting as it, under that Sandbox's existing resume policy opt-in.
 type IdentityWakeCaller struct{ Identity *identitypb.Identity }
 
 func (AccountWakeCaller) isWakeCaller()  {}

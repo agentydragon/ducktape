@@ -40,20 +40,22 @@ import (
 )
 
 const (
-	discoveryNamespace = "test-envs"
-	foreignNamespace   = "other-envs"
-	dispatcherAudience = "session-dispatcher-test"
-	actionsToken       = "trusted-actions"
-	launcherToken      = "trusted-launcher"
-	untrustedToken     = "untrusted-actions"
-	sandboxName        = "workspace"
-	sandboxUID         = "sandbox-uid-current"
-	executionUID       = "service-account-uid-current"
-	matchingToken      = "matching-account"
-	recreatedToken     = "same-name-recreated-account"
-	foreignToken       = "foreign-account"
-	actionRequestID    = "00000000-0000-4000-8000-000000000001"
-	actionExecutionID  = "00000000-0000-4000-8000-000000000002"
+	discoveryNamespace    = "test-envs"
+	foreignNamespace      = "other-envs"
+	dispatcherAudience    = "session-dispatcher-test"
+	actionsToken          = "trusted-actions"
+	launcherToken         = "trusted-launcher"
+	untrustedToken        = "untrusted-actions"
+	sandboxName           = "workspace"
+	sandboxUID            = "sandbox-uid-current"
+	executionUID          = "service-account-uid-current"
+	matchingToken         = "matching-account"
+	recreatedToken        = "same-name-recreated-account"
+	foreignToken          = "foreign-account"
+	actionRequestID       = "00000000-0000-4000-8000-000000000001"
+	actionExecutionID     = "00000000-0000-4000-8000-000000000002"
+	delegatedIdentityName = "delegated-agent"
+	delegatedIdentityUID  = "delegated-identity-uid"
 )
 
 type tokenReviewStub map[string]authenticationv1.UserInfo
@@ -159,15 +161,14 @@ func serveDiscoveryWithOptions(
 	}
 	methods := Methods(resolver)
 	if delegatedMethods != nil {
+		configureDelegatedIdentity(t, objects, sandboxName, delegatedIdentityName, delegatedIdentityUID)
+		identities, err := auth.KubernetesIdentityUIDs(objects, discoveryNamespace)
+		if err != nil {
+			t.Fatal(err)
+		}
 		methods, err = methods.WithDelegation(delegatedMethods, []auth.Delegator{{
-			Account:          auth.Account{Namespace: discoveryNamespace, Name: "actions"},
-			CallerNamespaces: []string{discoveryNamespace},
-		}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, account auth.Account) (string, bool, error) {
-			if account != (auth.Account{Namespace: discoveryNamespace, Name: sandboxName}) {
-				return "", false, nil
-			}
-			return executionUID, true, nil
-		}), nil)
+			Account: auth.Account{Namespace: discoveryNamespace, Name: "actions"}, IdentityCallers: true,
+		}}, identities)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -177,6 +178,23 @@ func serveDiscoveryWithOptions(
 	}
 	connection := grpcmethods.Serve(t, methods, register)
 	return environmentpb.NewEnvironmentServiceClient(connection)
+}
+
+func configureDelegatedIdentity(t *testing.T, objects client.WithWatch, sandboxName, identityName, identityUID string) auth.Identity {
+	t.Helper()
+	var sandbox sandboxapi.Sandbox
+	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &sandbox); err != nil {
+		t.Fatal(err)
+	}
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: identityName}
+	if err := objects.Update(t.Context(), &sandbox); err != nil {
+		t.Fatal(err)
+	}
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: identityName, UID: types.UID(identityUID)}}
+	if err := objects.Create(t.Context(), identity); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatal(err)
+	}
+	return auth.Identity{Name: identityName, UID: identityUID}
 }
 
 func readerWithObjects(t *testing.T, objects ...client.Object) client.WithWatch {
@@ -345,22 +363,8 @@ func bearing(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+token)
 }
 
-func delegatedBearing(t *testing.T, token string, account auth.Account, uid string) context.Context {
-	t.Helper()
-	envelope := &delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
-			Account: &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}, Uid: uid,
-		}},
-		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: actionRequestID, ExecutionId: actionExecutionID}},
-	}
-	encoded, err := auth.MarshalDelegation(envelope)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
-		"authorization", "Agentplane-Delegated "+token,
-		auth.DelegationMetadataKey, string(encoded),
-	))
+func delegatedBearing(t *testing.T, token string, identity auth.Identity) context.Context {
+	return delegatedIdentityBearing(t, token, identity)
 }
 
 func delegatedIdentityBearing(t *testing.T, token string, identity auth.Identity) context.Context {
@@ -404,7 +408,6 @@ func serveIdentityDiscovery(
 			environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 		},
 		[]auth.Delegator{{Account: auth.Account{Namespace: discoveryNamespace, Name: "actions"}, IdentityCallers: true}},
-		nil,
 		identities,
 	)
 	if err != nil {
@@ -508,16 +511,14 @@ func TestDirectIdentityEnvironmentReadsUseCurrentSandboxIdentity(t *testing.T) {
 
 func TestManagementRequiresDirectGrantedPodAndFencesTarget(t *testing.T) {
 	objects := baseReader(t)
-	method := environmentpb.EnvironmentService_SetEnvironmentWakeOnSend_FullMethodName
-	rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{method})
+	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	request := &environmentpb.SetEnvironmentWakeOnSendRequest{Target: target, WakeOnSend: true}
 	if _, err := rpc.SetEnvironmentWakeOnSend(bearing(t, matchingToken), request); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("account-only caller: got %v", err)
 	}
-	actor := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
-	if _, err := rpc.SetEnvironmentWakeOnSend(delegatedBearing(t, actionsToken, actor, executionUID), request); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("delegated caller borrowed management grant: got %v", err)
+	if _, err := rpc.SetEnvironmentWakeOnSend(delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}), request); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Identity delegation reached a mutation method without an Identity grant: got %v", err)
 	}
 	stale := proto.Clone(request).(*environmentpb.SetEnvironmentWakeOnSendRequest)
 	stale.Target.Uid = "old-uid"
@@ -841,13 +842,13 @@ func TestGetDoesNotProjectAReplacedPodWithTheSameName(t *testing.T) {
 	}
 }
 
-func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.T) {
+func TestDelegatedIdentityReadsUseLiveBindingAndTargetUIDFences(t *testing.T) {
 	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 	})
-	effective := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
-	ctx := delegatedBearing(t, actionsToken, effective, executionUID)
+	effective := auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}
+	ctx := delegatedBearing(t, actionsToken, effective)
 
 	listed, err := rpc.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: 10})
 	if err != nil {
@@ -860,12 +861,11 @@ func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetExecutionAccount().GetUid() != executionUID {
-		t.Fatalf("delegated GetEnvironment execution account = %+v", got.GetExecutionAccount())
+	if got.GetExecutionAccount() != nil {
+		t.Fatalf("delegated Identity GetEnvironment exposed a ServiceAccount account: %+v", got.GetExecutionAccount())
 	}
-	if got.GetActions().GetResumeEligibility().GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE ||
-		got.GetActions().GetResumeEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
-		t.Fatalf("delegated resume eligibility used the actor instead of effective caller: %+v", got.GetActions().GetResumeEligibility())
+	if got.GetActions().GetResumeEligibility() != nil {
+		t.Fatalf("Identity read inherited ServiceAccount lifecycle authority: %+v", got.GetActions().GetResumeEligibility())
 	}
 
 	for _, target := range []*identitypb.EnvironmentTarget{
@@ -877,12 +877,9 @@ func TestDelegatedActionsUseTheEffectiveCallerAndKeepTargetUIDFences(t *testing.
 		}
 	}
 
-	// Existing projected ServiceAccount callers keep the direct mode on the same RPC methods.
-	direct, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{
-		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
-	})
-	if err != nil || direct.GetTarget().GetUid() != sandboxUID {
-		t.Fatalf("direct GetEnvironment = %+v, %v", direct, err)
+	// A same-name projected ServiceAccount is no longer the effective workload subject.
+	if _, err := rpc.GetEnvironment(bearing(t, matchingToken), &environmentpb.GetEnvironmentRequest{Target: listed.Items[0].Target}); status.Code(err) != codes.NotFound {
+		t.Fatalf("same-name ServiceAccount retained environment access: %v", err)
 	}
 }
 
@@ -892,6 +889,7 @@ func TestDelegatedDiscoveryRejectsUntrustedActorAndReplacedCallerUID(t *testing.
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
 	})
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
+	effective := auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}
 	for _, test := range []struct {
 		name string
 		ctx  context.Context
@@ -899,17 +897,12 @@ func TestDelegatedDiscoveryRejectsUntrustedActorAndReplacedCallerUID(t *testing.
 	}{
 		{
 			name: "untrusted actor",
-			ctx:  delegatedBearing(t, untrustedToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, executionUID),
+			ctx:  delegatedBearing(t, untrustedToken, effective),
 			code: codes.PermissionDenied,
 		},
 		{
-			name: "replaced effective ServiceAccount UID",
-			ctx:  delegatedBearing(t, actionsToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, "old-service-account-uid"),
-			code: codes.PermissionDenied,
-		},
-		{
-			name: "caller namespace outside delegator scope",
-			ctx:  delegatedBearing(t, actionsToken, auth.Account{Namespace: foreignNamespace, Name: sandboxName}, executionUID),
+			name: "replaced effective Identity UID",
+			ctx:  delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: "old-identity-uid"}),
 			code: codes.PermissionDenied,
 		},
 	} {
@@ -928,7 +921,7 @@ func TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod(t *testing
 	}
 	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, methods)
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
-	valid := delegatedBearing(t, actionsToken, auth.Account{Namespace: discoveryNamespace, Name: sandboxName}, executionUID)
+	valid := delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID})
 	validMetadata, _ := metadata.FromOutgoingContext(valid)
 	encodedEnvelope := validMetadata.Get(auth.DelegationMetadataKey)[0]
 	for _, test := range []struct {
@@ -1292,9 +1285,15 @@ func TestInventoryReaderListAndGetAreBroadButOrdinaryCallersStayScoped(t *testin
 
 func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	actor := auth.Account{Namespace: discoveryNamespace, Name: "actions"}
+	ownedIdentity := auth.Identity{Name: "owned-identity", UID: "owned-identity-uid"}
+	ownedRecord := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: ownedIdentity.Name, UID: types.UID(ownedIdentity.UID)}}
+	otherIdentity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "other-identity", UID: "other-identity-uid"}}
+	first := sandboxObject(sandboxUID)
+	first.Spec.Identity = &sandboxapi.IdentityRef{Name: ownedIdentity.Name}
 	other := sandboxObject("other-uid")
 	other.Name = "other"
-	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other)
+	other.Spec.Identity = &sandboxapi.IdentityRef{Name: "other-identity"}
+	objects := readerWithObjects(t, first, executionAccountObject(first.UID), ownedRecord, other, otherIdentity)
 	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), sets.New(actor), ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -1303,16 +1302,19 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, CallerNamespaces: []string{discoveryNamespace}}}, auth.ServiceAccountUIDReaderFunc(func(_ context.Context, _ auth.Account) (string, bool, error) { return executionUID, true, nil }), nil)
+	identities, err := auth.KubernetesIdentityUIDs(objects, discoveryNamespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := Methods(resolver).WithDelegation([]string{environmentpb.EnvironmentService_ListEnvironments_FullMethodName}, []auth.Delegator{{Account: actor, IdentityCallers: true}}, identities)
 	if err != nil {
 		t.Fatal(err)
 	}
 	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) { environmentpb.RegisterEnvironmentServiceServer(server, service) })
 	rpc := environmentpb.NewEnvironmentServiceClient(connection)
-	effective := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
-	response, err := rpc.ListEnvironments(delegatedBearing(t, actionsToken, effective, executionUID), &environmentpb.ListEnvironmentsRequest{Limit: 10})
-	if err != nil || len(response.GetItems()) != 1 || response.GetItems()[0].GetTarget().GetName() != sandboxName {
-		t.Fatalf("delegated list = %v, %v", response, err)
+	response, err := rpc.ListEnvironments(delegatedBearing(t, actionsToken, ownedIdentity), &environmentpb.ListEnvironmentsRequest{Limit: 10})
+	if err != nil || len(response.GetItems()) != 1 || response.GetItems()[0].GetTarget().GetName() != first.Name {
+		t.Fatalf("delegated Identity list inherited actor reader scope: %v, %v", response, err)
 	}
 }
 

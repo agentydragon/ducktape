@@ -397,7 +397,7 @@ func actionConnectionDelegation(
 	}
 	return rules.WithDelegation(methods, []auth.Delegator{{
 		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
-	}}, nil, identities)
+	}}, identities)
 }
 
 // serve answers gRPC on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked

@@ -38,13 +38,15 @@ import (
 )
 
 const (
-	testNamespace   = "agentplane"
-	testSandbox     = "workspace"
-	testSandboxUID  = "sandbox-uid"
-	executionUID    = "execution-uid"
-	operatorUID     = "operator-uid"
-	actorUID        = "actor-uid"
-	notificationUID = "notifications-uid"
+	testNamespace         = "agentplane"
+	testSandbox           = "workspace"
+	testSandboxUID        = "sandbox-uid"
+	executionUID          = "execution-uid"
+	executionIdentityName = "workspace-identity"
+	executionIdentityUID  = "workspace-identity-uid"
+	operatorUID           = "operator-uid"
+	actorUID              = "actor-uid"
+	notificationUID       = "notifications-uid"
 )
 
 var (
@@ -156,24 +158,7 @@ func newHarness(t *testing.T, object client.WithWatch, operatorCallers []auth.Ac
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err := environments.Methods(resolver).WithDelegation(
-		[]string{environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName},
-		[]auth.Delegator{{Account: actorAccount, CallerNamespaces: []string{testNamespace}}},
-		auth.ServiceAccountUIDReaderFunc(func(_ context.Context, account auth.Account) (string, bool, error) {
-			switch account {
-			case actorAccount:
-				return actorUID, true, nil
-			case executionAccount:
-				return executionUID, true, nil
-			default:
-				return "", false, nil
-			}
-		}),
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	methods := environments.Methods(resolver)
 	apiService, err := environments.New(testNamespace, object, runtimeconfig.Catalog{}, service, nil, environments.ManagementOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -234,6 +219,19 @@ func testObjects(t *testing.T, sandbox *sandboxapi.Sandbox, executionUID string)
 	return clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(sandbox, account, operator, notifications).Build()
 }
 
+func testIdentityObjects(t *testing.T, sandbox *sandboxapi.Sandbox, executionUID string) client.WithWatch {
+	t.Helper()
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: executionIdentityName}
+	objects := testObjects(t, sandbox, executionUID)
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{
+		Namespace: testNamespace, Name: executionIdentityName, UID: types.UID(executionIdentityUID),
+	}}
+	if err := objects.Create(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	return objects
+}
+
 func targetHandle(uid string) *identitypb.EnvironmentTarget {
 	return &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: testSandbox, Uid: uid}
 }
@@ -247,13 +245,11 @@ func directContext(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+token)
 }
 
-func delegatedContext(t *testing.T, effectiveUID string) context.Context {
+func delegatedContext(t *testing.T) context.Context {
 	t.Helper()
 	envelope := &delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
-			Account: &identitypb.ServiceAccount{Namespace: executionAccount.Namespace, Name: executionAccount.Name}, Uid: effectiveUID,
-		}},
-		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: executionIdentityName, Uid: executionIdentityUID}},
+		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
 	}
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
@@ -268,25 +264,19 @@ func resumeRequest(uid string, generation int64) *environmentpb.ResumeEnvironmen
 	return &environmentpb.ResumeEnvironmentRequest{Target: targetHandle(uid), ResumeToken: targetToken(uid, generation)}
 }
 
-func TestOwnExecutionAccountCanResumeIdleSuspendedSandboxWithOptIn(t *testing.T) {
+func TestOwnExecutionAccountCannotResumeIdleSuspendedSandbox(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
 	h := newHarness(t, objects, nil)
 	response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 4))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || response.GetWakeGeneration() != 5 {
-		t.Fatalf("ResumeEnvironment response = %+v", response)
-	}
-	if response.GetEligibility().GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT {
-		t.Fatalf("eligibility = %+v", response.GetEligibility())
+	if status.Code(err) != codes.PermissionDenied || response != nil {
+		t.Fatalf("same-name ServiceAccount resume = %+v, %v; want PermissionDenied", response, err)
 	}
 	var got sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: testNamespace, Name: testSandbox}, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !got.Spec.Running || got.Spec.WakeGeneration != 5 {
-		t.Fatalf("patched Sandbox spec = %+v", got.Spec)
+	if !got.Spec.Running || got.Spec.WakeGeneration != 4 {
+		t.Fatalf("denied same-name ServiceAccount changed Sandbox spec = %+v", got.Spec)
 	}
 }
 
@@ -294,18 +284,10 @@ func TestDelegatedActorDoesNotInheritOperatorAuthority(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
 	h := newHarness(t, objects, []auth.Account{actorAccount})
 	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(
-		delegatedContext(t, executionUID), resumeRequest(testSandboxUID, 2),
+		delegatedContext(t), resumeRequest(testSandboxUID, 2),
 	)
-	if status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("delegated actor operator grant returned %v, want PermissionDenied", err)
-	}
-	st, ok := status.FromError(err)
-	if !ok || len(st.Details()) != 1 {
-		t.Fatalf("denial details = %v", err)
-	}
-	eligibility, ok := st.Details()[0].(*environmentlifecyclepb.ResumeEligibility)
-	if !ok || eligibility.GetReason() != environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED {
-		t.Fatalf("delegated caller eligibility = %v", st.Details())
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Identity delegation without a lifecycle grant returned %v, want Unauthenticated", err)
 	}
 }
 
@@ -313,9 +295,9 @@ func TestDelegatedCallerCannotOmitResumeToken(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 1), executionUID)
 	h := newHarness(t, objects, []auth.Account{actorAccount})
 	request := &environmentpb.ResumeEnvironmentRequest{Target: targetHandle(testSandboxUID)}
-	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(delegatedContext(t, executionUID), request)
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("delegated token omission returned %v, want InvalidArgument", err)
+	_, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(delegatedContext(t), request)
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("ungranted Identity delegation returned %v, want Unauthenticated", err)
 	}
 }
 
@@ -392,13 +374,13 @@ func TestDirectPodBoundOperatorCanResumeRequestedStopWithoutToken(t *testing.T) 
 func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *testing.T) {
 	t.Run("old token is state changed", func(t *testing.T) {
 		objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 3), executionUID)
-		h := newHarness(t, objects, nil)
+		h := newHarness(t, objects, []auth.Account{operatorAccount})
 		client := environmentpb.NewEnvironmentServiceClient(h.conn)
-		first, err := client.ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 3))
+		first, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 3))
 		if err != nil || first.GetWakeGeneration() != 4 {
 			t.Fatalf("first resume = %+v, %v", first, err)
 		}
-		second, err := client.ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 3))
+		second, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 3))
 		if err != nil || second.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED || second.GetWakeGeneration() != 4 {
 			t.Fatalf("stale resume = %+v, %v", second, err)
 		}
@@ -410,7 +392,7 @@ func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *t
 		sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 8)
 		sandbox.ResourceVersion = "1"
 		objects := testObjects(t, sandbox, executionUID)
-		h := newHarness(t, objects, nil)
+		h := newHarness(t, objects, []auth.Account{operatorAccount})
 		h.budget.barrier = 2
 		h.budget.release = make(chan struct{})
 		client := environmentpb.NewEnvironmentServiceClient(h.conn)
@@ -421,7 +403,7 @@ func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *t
 		results := make(chan result, 2)
 		for range 2 {
 			go func() {
-				response, err := client.ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 8))
+				response, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 8))
 				results <- result{response: response, err: err}
 			}()
 		}
@@ -458,8 +440,8 @@ func TestOldGenerationDoesNotAdvanceASecondWakeAndConcurrentConflictRereads(t *t
 			}
 			return base.Patch(ctx, object, patch, options...)
 		}}
-		h := newHarness(t, objects, nil)
-		response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 5))
+		h := newHarness(t, objects, []auth.Account{operatorAccount})
+		response, err := environmentpb.NewEnvironmentServiceClient(h.conn).ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 5))
 		if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED || response.GetWakeGeneration() != 6 {
 			t.Fatalf("resume after conflict = %+v, %v", response, err)
 		}
@@ -479,9 +461,9 @@ func TestLostPatchReplyIsUnknownAndNeverReplayed(t *testing.T) {
 		}
 		return errors.New("connection closed after patch may have committed")
 	}}
-	h := newHarness(t, objects, nil)
+	h := newHarness(t, objects, []auth.Account{operatorAccount})
 	client := environmentpb.NewEnvironmentServiceClient(h.conn)
-	_, err := client.ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 9))
+	_, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 9))
 	if status.Code(err) != codes.Unavailable {
 		t.Fatalf("lost patch reply returned %v, want Unavailable", err)
 	}
@@ -490,7 +472,7 @@ func TestLostPatchReplyIsUnknownAndNeverReplayed(t *testing.T) {
 	if !ok || wake.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || wake.GetTargetGeneration() != 9 {
 		t.Fatalf("unknown outcome details = %v", st.Details())
 	}
-	response, err := client.ResumeEnvironment(directContext(t, "execution"), resumeRequest(testSandboxUID, 9))
+	response, err := client.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 9))
 	if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_STATE_CHANGED {
 		t.Fatalf("retry of uncertain old token = %+v, %v", response, err)
 	}
@@ -501,38 +483,33 @@ func TestLostPatchReplyIsUnknownAndNeverReplayed(t *testing.T) {
 
 func TestAutomaticWakeSharesPolicyBudgetAndReportsRetryFacts(t *testing.T) {
 	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: executionUID}
-	t.Run("own account opt in", func(t *testing.T) {
+	t.Run("same-name ServiceAccount self-wake is retired", func(t *testing.T) {
 		objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 1), executionUID)
 		h := newHarness(t, objects, nil)
 		assessment, err := h.service.AssessAutomaticWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
-		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE {
+		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED {
 			t.Fatalf("AssessAutomaticWake = %+v, %v", assessment, err)
 		}
-		if len(h.budget.calls) != 0 {
-			t.Fatalf("read-only assessment reserved wake budget: %+v", h.budget.calls)
-		}
 		assessment, err = h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
-		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED || assessment.GetTargetGeneration() != 2 {
-			t.Fatalf("RequestWake = %+v, %v", assessment, err)
-		}
-		if len(h.budget.calls) != 1 || h.budget.calls[0].caller.UID != executionUID || h.budget.calls[0].target != testSandboxUID || h.budget.calls[0].gen != 2 {
-			t.Fatalf("wake budget key = %+v", h.budget.calls)
+		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED || len(h.budget.calls) != 0 {
+			t.Fatalf("RequestWake = %+v, %v, budget %+v; want denied without reservation", assessment, err, h.budget.calls)
 		}
 	})
+	wakeIdentity := lifecycle.IdentityWakeCaller{Identity: &identitypb.Identity{Name: executionIdentityName, Uid: executionIdentityUID}}
 	t.Run("budget exhausted", func(t *testing.T) {
-		objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
+		objects := testIdentityObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
 		h := newHarness(t, objects, nil)
 		h.budget.delay = 30 * time.Second
-		assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
+		assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, wakeIdentity)
 		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED || assessment.GetRetryAt() == nil {
 			t.Fatalf("rate limited RequestWake = %+v, %v", assessment, err)
 		}
 	})
 	t.Run("budget backend error", func(t *testing.T) {
-		objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
+		objects := testIdentityObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
 		h := newHarness(t, objects, nil)
 		h.budget.err = errors.New("storage unavailable")
-		assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
+		assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, wakeIdentity)
 		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_FAILED || assessment.GetError().GetCode() != int32(codes.Unavailable) {
 			t.Fatalf("budget error RequestWake = %+v, %v", assessment, err)
 		}
@@ -578,7 +555,7 @@ func TestResumeTokenBindsTargetAndGeneration(t *testing.T) {
 func TestAutomaticWakeDeletionRacesGuardedPatch(t *testing.T) {
 	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 5)
 	sandbox.Finalizers = []string{"test.allegedly.works/hold-deletion"}
-	base := testObjects(t, sandbox, executionUID)
+	base := testIdentityObjects(t, sandbox, executionUID)
 	patches := 0
 	objects := testPatchClient{WithWatch: base, patch: func(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
 		patches++
@@ -594,8 +571,8 @@ func TestAutomaticWakeDeletionRacesGuardedPatch(t *testing.T) {
 		return base.Patch(ctx, object, patch, options...)
 	}}
 	h := newHarness(t, objects, nil)
-	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: executionUID}
-	assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
+	caller := lifecycle.IdentityWakeCaller{Identity: &identitypb.Identity{Name: executionIdentityName, Uid: executionIdentityUID}}
+	assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, caller)
 	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_FAILED || assessment.GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED {
 		t.Fatalf("wake racing deletion = %+v, %v", assessment, err)
 	}
@@ -608,9 +585,9 @@ func TestAutomaticWakeDeletionRacesGuardedPatch(t *testing.T) {
 	}
 }
 
-// A Sandbox acting as an Identity wakes for that Identity's queued work under the policy that lets
-// its own ServiceAccount wake it; another Identity, a replaced incarnation, a Sandbox acting as none
-// and a disabled policy are refused as a ServiceAccount caller would be.
+// A Sandbox acting as an Identity wakes for that Identity's queued work under the existing
+// allowOwnServiceAccount opt-in; another Identity, a replaced incarnation, a Sandbox acting as none
+// and a disabled policy are refused.
 func TestAutomaticWakeAuthorizesTheSandboxesOwnIdentity(t *testing.T) {
 	const identityUID = "identity-uid"
 	allowOwn := &sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}

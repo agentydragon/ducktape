@@ -87,8 +87,8 @@ type IdentityChangeGuard interface {
 }
 
 // Methods admits direct TokenReview-verified ServiceAccounts in the configured Resolver namespaces.
-// List/Get also admit workload credentials naming an Identity. The composition root may enable
-// delegated mode on selected methods; handlers recheck the effective subject against live ownership.
+// Environment inventory methods expose workload-owned resources to their exact live Identity or a
+// direct, explicitly configured component reader; same-name ServiceAccount self-discovery is retired.
 func Methods(resolver *auth.Resolver) auth.Methods {
 	rule := auth.ReviewedServiceAccount(resolver)
 	identityRead := auth.ReviewedServiceAccountOrIdentity(resolver)
@@ -96,10 +96,10 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName:     rule,
 		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName:            rule,
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:             identityRead,
-		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:            rule,
+		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName:            identityRead,
 		environmentpb.EnvironmentService_GetEnvironment_FullMethodName:               identityRead,
 		environmentpb.EnvironmentService_GetEnvironmentIdentityRecord_FullMethodName: rule,
-		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:             rule,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName:             identityRead,
 		environmentpb.EnvironmentService_ResumeEnvironment_FullMethodName:            rule,
 		environmentpb.EnvironmentService_SuspendEnvironment_FullMethodName:           rule,
 		environmentpb.EnvironmentService_DeleteEnvironment_FullMethodName:            rule,
@@ -151,8 +151,6 @@ func environmentSubject(ctx context.Context) (environmentCaller, error) {
 	switch admitted := admission.(type) {
 	case auth.DirectAdmission:
 		return environmentCaller{serviceAccount: admitted.Caller}, nil
-	case auth.DelegatedAdmission:
-		return environmentCaller{serviceAccount: admitted.EffectiveCaller}, nil
 	case auth.IdentityAdmission:
 		identity := admitted.Caller.Identity
 		return environmentCaller{identity: &identity}, nil
@@ -178,19 +176,12 @@ func identityMatches(left *auth.Identity, right *identitypb.Identity) bool {
 	return left != nil && right != nil && left.Name == right.GetName() && left.UID == right.GetUid()
 }
 
-func (s *Service) ownsSandbox(ctx context.Context, caller environmentCaller, target *sandboxreader.Identity) (bool, error) {
-	if caller.identity != nil {
-		acting, found, err := s.sandboxes.ExecutionIdentity(ctx, target)
-		if err != nil || !found {
-			return false, err
-		}
-		return identityMatches(caller.identity, acting), nil
-	}
-	execution, found, err := s.sandboxes.ExecutionAccount(ctx, target)
+func (s *Service) ownsSandbox(ctx context.Context, identity *auth.Identity, target *sandboxreader.Identity) (bool, error) {
+	acting, found, err := s.sandboxes.ExecutionIdentity(ctx, target)
 	if err != nil || !found {
 		return false, err
 	}
-	return callerMatches(caller.serviceAccount, execution), nil
+	return identityMatches(identity, acting), nil
 }
 
 // broadReader applies only to direct credentials; delegated actors never lend their grants to a caller.
@@ -204,12 +195,6 @@ func (s *Service) broadReader(ctx context.Context, identity *auth.ServiceAccount
 	}
 	ok := s.readers.Has(serviceAccountReference(identity))
 	return ok
-}
-
-func callerMatches(caller *auth.ServiceAccountPrincipal, execution *sandboxreader.ServiceAccountIdentity) bool {
-	return caller != nil && execution != nil && execution.GetAccount() != nil &&
-		caller.GetAccount().GetNamespace() == execution.GetAccount().GetNamespace() &&
-		caller.GetAccount().GetName() == execution.GetAccount().GetName() && caller.GetUid() == execution.GetUid()
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.ListEnvironmentsRequest) (*environmentpb.ListEnvironmentsResponse, error) {
@@ -226,53 +211,13 @@ func (s *Service) ListEnvironments(ctx context.Context, request *environmentpb.L
 	if identity.serviceAccount != nil && s.broadReader(ctx, identity.serviceAccount) {
 		return s.listAll(ctx, request, identity.serviceAccount)
 	}
-	if identity.identity == nil && request.GetPageToken() != "" {
-		return nil, status.Error(codes.InvalidArgument, "page token is not valid for this inventory")
-	}
-	if identity.identity != nil {
-		return s.listIdentityEnvironments(ctx, request, identity)
-	}
-	response := &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{}}
-	// Current Sandbox-owned execution accounts share the Sandbox's namespace and name. Read only
-	// that candidate directly; a namespace-wide continuation token could reveal another Sandbox's
-	// storage key even when its object is filtered out. The list contract keeps its page shape for
-	// future account mappings without making today's lookup depend on foreign inventory.
-	account := serviceAccountReference(identity.serviceAccount)
-	if account.Namespace != s.namespace {
-		return response, nil
-	}
-	view, err := s.sandboxes.Get(ctx, account.Name)
-	if err != nil {
-		if status.Code(err) == codes.NotFound {
-			return response, nil
+	if identity.identity == nil {
+		if request.GetPageToken() != "" {
+			return nil, status.Error(codes.InvalidArgument, "page token is not valid for this inventory")
 		}
-		slog.ErrorContext(ctx, "Environment inventory Sandbox read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Sandbox inventory is unavailable")
+		return &environmentpb.ListEnvironmentsResponse{Items: []*environmentpb.EnvironmentDescriptor{}}, nil
 	}
-	if deleting(view.Resource) {
-		return response, nil
-	}
-	execution, found, err := s.sandboxes.ExecutionAccount(ctx, view.Identity)
-	if err != nil {
-		slog.ErrorContext(ctx, "Environment inventory execution account read failed", "error", err)
-		return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
-	}
-	if found && callerMatches(identity.serviceAccount, execution) {
-		descriptor, err := s.describe(ctx, view.Resource, execution, identity)
-		if err != nil {
-			return nil, err
-		}
-		_, _, visible, err := s.revalidateDescriptor(ctx, descriptor, identity, false)
-		if err != nil {
-			slog.ErrorContext(ctx, "Environment discovery authorization recheck failed", "error", err)
-			return nil, status.Error(codes.Unavailable, "Sandbox execution account is unavailable")
-		}
-		if !visible {
-			return response, nil
-		}
-		response.Items = append(response.Items, descriptor)
-	}
-	return response, nil
+	return s.listIdentityEnvironments(ctx, request, identity)
 }
 
 // listIdentityEnvironments filters against the Sandbox's current named Identity and then fences
@@ -298,7 +243,7 @@ func (s *Service) listIdentityEnvironments(
 			continue
 		}
 		target := &sandboxreader.Identity{Namespace: object.Namespace, Name: object.Name, Uid: string(object.UID)}
-		owned, err := s.ownsSandbox(ctx, caller, target)
+		owned, err := s.ownsSandbox(ctx, caller.identity, target)
 		if err != nil {
 			slog.ErrorContext(ctx, "Environment inventory acting Identity read failed", "error", err)
 			return nil, status.Error(codes.Unavailable, "Sandbox Identity is unavailable")
@@ -425,7 +370,7 @@ func (s *Service) getEnvironment(
 	}
 	var execution *sandboxreader.ServiceAccountIdentity
 	found := false
-	if identity.serviceAccount != nil {
+	if broad {
 		execution, found, err = s.sandboxes.ExecutionAccount(ctx, view.Identity)
 		if err != nil {
 			slog.ErrorContext(ctx, "Environment discovery execution account read failed", "error", err)
@@ -433,16 +378,15 @@ func (s *Service) getEnvironment(
 		}
 	}
 	if !broad {
-		if identity.identity != nil {
-			owned, err := s.ownsSandbox(ctx, identity, view.Identity)
-			if err != nil {
-				slog.ErrorContext(ctx, "Environment discovery owner read failed", "error", err)
-				return nil, "", status.Error(codes.Unavailable, "Sandbox Identity is unavailable")
-			}
-			if !owned {
-				return nil, "", status.Error(codes.NotFound, "environment not found")
-			}
-		} else if !found || !callerMatches(identity.serviceAccount, execution) {
+		if identity.identity == nil {
+			return nil, "", status.Error(codes.NotFound, "environment not found")
+		}
+		owned, err := s.ownsSandbox(ctx, identity.identity, view.Identity)
+		if err != nil {
+			slog.ErrorContext(ctx, "Environment discovery owner read failed", "error", err)
+			return nil, "", status.Error(codes.Unavailable, "Sandbox Identity is unavailable")
+		}
+		if !owned {
 			return nil, "", status.Error(codes.NotFound, "environment not found")
 		}
 	}
@@ -498,22 +442,21 @@ func (s *Service) revalidateDescriptor(
 	}
 	var execution *sandboxreader.ServiceAccountIdentity
 	found := false
-	if caller.serviceAccount != nil || broad {
+	if broad {
 		execution, found, err = s.sandboxes.ExecutionAccount(ctx, current.Identity)
 		if err != nil {
 			return nil, false, false, err
 		}
 	}
 	if !broad {
-		if caller.identity != nil {
-			owned, err := s.ownsSandbox(ctx, caller, current.Identity)
-			if err != nil {
-				return nil, false, false, err
-			}
-			if !owned {
-				return nil, false, false, nil
-			}
-		} else if !found || !callerMatches(caller.serviceAccount, execution) {
+		if caller.identity == nil {
+			return nil, false, false, nil
+		}
+		owned, err := s.ownsSandbox(ctx, caller.identity, current.Identity)
+		if err != nil {
+			return nil, false, false, err
+		}
+		if !owned {
 			return nil, false, false, nil
 		}
 	}

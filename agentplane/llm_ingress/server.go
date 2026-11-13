@@ -74,7 +74,7 @@ func newIngressHandler(c config, resolver *auth.Resolver, identities auth.Identi
 			}
 			delegators = append(delegators, auth.Delegator{Account: account, IdentityCallers: true})
 		}
-		if admission, err = admission.AllowDelegationFrom(delegators, nil, identities); err != nil {
+		if admission, err = admission.AllowDelegationFrom(delegators, identities); err != nil {
 			return nil, fmt.Errorf("central_sampler_identity_callers: %w", err)
 		}
 	}

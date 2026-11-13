@@ -41,8 +41,6 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
@@ -353,23 +351,13 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	maps.Copy(methods, environments.Methods(dispatcherAuth))
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
-			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
+			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
 		}
-		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
-			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				return "", false, nil
-			}
-			if err != nil {
-				return "", false, err
-			}
-			return string(serviceAccount.UID), true, nil
-		})
 		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
 		if err != nil {
 			return err
 		}
-		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, uidReader, identityReader)
+		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, identityReader)
 		if err != nil {
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}

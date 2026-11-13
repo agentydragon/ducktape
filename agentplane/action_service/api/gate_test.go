@@ -258,7 +258,7 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	s.gate.connectionDelegation, err = rules.WithDelegation(methods, []auth.Delegator{{
 		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
-	}}, nil, identityUIDs)
+	}}, identityUIDs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,15 +282,9 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 		t.Fatalf("an Identity with no PolicyBinding was admitted through the labeled actor: %v", err)
 	}
 
-	// The method allowlist is exact, and Connection provenance cannot turn an SA into the effective caller.
+	// The method allowlist is exact; the shared auth contract rejects legacy ServiceAccount callers.
 	_, err = s.client.GetActionPolicy(delegated(identityRef), &action_servicepb.GetActionPolicyRequest{})
 	wantCode(t, "an Action method without Connection delegation", err, codes.Unauthenticated)
-	accountEnvelope := connectionEnvelope(identityRef)
-	accountEnvelope.EffectiveCaller = &delegationpb.Delegation_Caller{Caller: &identitypb.ServiceAccountIdentity{
-		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-caller"}, Uid: "test-uid-test-caller",
-	}}
-	_, err = s.client.ListActionRequests(connectionContext(t, t.Context(), actorToken, accountEnvelope), &action_servicepb.ListActionRequestsRequest{})
-	wantCode(t, "Connection provenance with an SA effective caller", err, codes.PermissionDenied)
 
 	set := namespace.policySet(t, "connection-subject-set", exactActions("other-group", "not-this-action"))
 	binding := &policyapi.PolicyBinding{

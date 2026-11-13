@@ -8,28 +8,29 @@ Dispatcher automatic-wake path, and EnvironmentService's read-only eligibility a
 Sandbox reconciliation or readiness; those remain with the Sandbox Controller.
 
 The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID,
-checks the original effective caller's live ServiceAccount UID (or, for an Identity caller, the live
-UID of the Identity the target acts as), and reads the current controller-owned execution ServiceAccount
-or Identity. A replacement Sandbox, ServiceAccount or Identity cannot inherit old authority.
+and reads the current controller-owned execution ServiceAccount or Identity. Explicit resume accepts
+only a direct, live Pod-bound ServiceAccount in `operator_callers`; automatic wake accepts a live
+Identity matching the Sandbox's current Identity binding or an explicitly configured ServiceAccount
+broker. A replacement Sandbox, ServiceAccount or Identity cannot inherit old authority.
 
 ## Authority
 
-- An ordinary direct or delegated caller may resume an idle-suspended Sandbox only when its effective
-  ServiceAccount namespace, name and UID exactly match the current execution account and
-  `spec.resumePolicy.allowOwnServiceAccount` is true.
-- An Identity caller (Dispatcher's automatic wake for queued work attributed to an Identity, its own
-  workload or a component acting for it) wakes an idle-suspended Sandbox under the same policy: the
-  Sandbox's `spec.identity` must name that Identity, the Identity's live UID must match, and
-  `spec.resumePolicy.allowOwnServiceAccount` must be true. The policy admits the Sandbox's own acting
-  principal, account or Identity; no new flag. No broker or operator grant names an Identity, and
-  `EnvironmentService` admits no Identity caller, so an Identity has no explicit resume.
+- Ordinary ServiceAccount self-resume is retired. Explicit `ResumeEnvironment` accepts only a
+  direct TokenReview-proven Pod-bound ServiceAccount listed in `operator_callers`; delegated callers
+  and Identity callers cannot use that grant.
+- Dispatcher automatic wake for queued work attributed to an Identity (including its own workload or
+  a component acting for it) may wake an idle-suspended Sandbox under the existing
+  `spec.resumePolicy.allowOwnServiceAccount` opt-in. The Sandbox's `spec.identity` must name that
+  Identity, and the live Identity UID must match. This existing opt-in now covers the Sandbox's own
+  effective Identity; it does not authorize a ServiceAccount with the same name. No broker or
+  operator grant names an Identity, and EnvironmentService admits no Identity caller for explicit
+  resume.
 - Delegated admission retains the actor separately. The handler uses only `auth.EffectiveCaller` for
   ordinary policy; actor Pod proof and actor allowlist membership do not become the caller's grant.
 - A direct TokenReview-proven Pod-bound account listed in `operator_callers` may explicitly resume a
   requested stop. This allowlist is separate from `wake_callers`; delegated calls cannot exercise it.
-- `wake_callers` remains a restricted broker grant for automatic wake only. Automatic wake always
-  uses the original effective caller identity, requires `spec.wakeOnSend`, and cannot override
-  `spec.running=false`.
+- `wake_callers` remains a restricted ServiceAccount broker grant for automatic wake only. Identity
+  self-wake and broker wake require `spec.wakeOnSend` and cannot override `spec.running=false`.
 - Neither `resumePolicy` nor `wakeOnSend` grants Kubernetes access or permission to alter policy.
 
 ## Concurrency and outcomes

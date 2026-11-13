@@ -39,31 +39,32 @@ const (
 // WatchEnvironments sends one initial snapshot followed by coalesced descriptor changes.
 func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentsResponse]) error {
 	ctx := stream.Context()
-	identity, err := caller(ctx)
+	identity, err := environmentSubject(ctx)
 	if err != nil {
 		return err
 	}
-	broad := s.broadReader(ctx, identity)
-	account := serviceAccountReference(identity)
-	if !broad && account.Namespace != s.namespace {
+	if !identity.valid() {
+		return status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
+	}
+	broad := identity.serviceAccount != nil && s.broadReader(ctx, identity.serviceAccount)
+	if identity.identity == nil && !broad {
 		return status.Error(codes.NotFound, "environment not found")
 	}
-	name := ""
-	if !broad {
-		name = account.Name
-	}
 	initialSandboxes := &sandboxapi.SandboxList{}
-	sandboxes, err := s.watchCollection(ctx, initialSandboxes, s.namespace, name)
+	sandboxes, err := s.watchCollection(ctx, initialSandboxes, s.namespace, "")
 	if err != nil {
 		return err
 	}
 	defer sandboxes.Stop()
-	accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, s.namespace, name)
-	if err != nil {
-		return err
+	var accountEvents <-chan watch.Event
+	if broad {
+		accounts, err := s.watchCollection(ctx, &corev1.ServiceAccountList{}, s.namespace, "")
+		if err != nil {
+			return err
+		}
+		defer accounts.Stop()
+		accountEvents = accounts.ResultChan()
 	}
-	defer accounts.Stop()
-	accountEvents := accounts.ResultChan()
 	// A VM Pod may not have the Sandbox's name. Index each current incarnation by Pod name.
 	pods, err := s.watchCollection(ctx, &corev1.PodList{}, s.namespace, "")
 	if err != nil {
@@ -147,6 +148,16 @@ func (s *Service) WatchEnvironments(_ *emptypb.Empty, stream grpc.ServerStreamin
 			if err := auth.RevalidateStream(ctx); err != nil {
 				return err
 			}
+			names := make([]string, 0, len(previous))
+			for name := range previous {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if err := refresh(name); err != nil {
+					return err
+				}
+			}
 			continue
 		case event, ok = <-sandboxes.ResultChan():
 			source = sandboxSource
@@ -227,42 +238,36 @@ func (s *Service) watchCollection(ctx context.Context, objects client.ObjectList
 	return result, nil
 }
 
-func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountPrincipal, broad bool) ([]*environmentpb.EnvironmentDescriptor, error) {
-	caller := environmentCaller{serviceAccount: identity}
+func (s *Service) collection(ctx context.Context, caller environmentCaller, broad bool) ([]*environmentpb.EnvironmentDescriptor, error) {
 	var resources []sandboxapi.Sandbox
-	if broad {
-		var list sandboxapi.SandboxList
-		if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
-			return nil, watchFailure(ctx, err)
-		}
-		resources = list.Items
-	} else {
-		v, err := s.sandboxes.Get(ctx, serviceAccountReference(identity).Name)
-		if status.Code(err) == codes.NotFound {
-			return []*environmentpb.EnvironmentDescriptor{}, nil
-		}
-		if err != nil {
-			return nil, watchFailure(ctx, err)
-		}
-		execution, found, err := s.sandboxes.ExecutionAccount(ctx, v.Identity)
-		if err != nil {
-			return nil, watchFailure(ctx, err)
-		}
-		if !found || !callerMatches(identity, execution) {
-			return []*environmentpb.EnvironmentDescriptor{}, nil
-		}
-		resources = []sandboxapi.Sandbox{*v.Resource}
+	var list sandboxapi.SandboxList
+	if err := s.objects.List(ctx, &list, client.InNamespace(s.namespace)); err != nil {
+		return nil, watchFailure(ctx, err)
 	}
+	resources = list.Items
 	sort.Slice(resources, func(i, j int) bool { return resources[i].Name < resources[j].Name })
 	result := make([]*environmentpb.EnvironmentDescriptor, 0, len(resources))
 	for i := range resources {
 		resource := &resources[i]
-		execution, found, err := s.sandboxes.ExecutionAccount(ctx, &sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)})
-		if err != nil {
-			return nil, watchFailure(ctx, err)
-		}
-		if !broad && (!found || !callerMatches(identity, execution)) {
-			continue
+		target := &sandboxreader.Identity{Namespace: resource.Namespace, Name: resource.Name, Uid: string(resource.UID)}
+		var execution *sandboxreader.ServiceAccountIdentity
+		if broad {
+			var err error
+			execution, _, err = s.sandboxes.ExecutionAccount(ctx, target)
+			if err != nil {
+				return nil, watchFailure(ctx, err)
+			}
+		} else {
+			if caller.identity == nil || resource.Spec.Identity == nil || resource.Spec.Identity.Name != caller.identity.Name {
+				continue
+			}
+			owned, err := s.ownsSandbox(ctx, caller.identity, target)
+			if err != nil {
+				return nil, watchFailure(ctx, err)
+			}
+			if !owned {
+				continue
+			}
 		}
 		value, err := s.describe(ctx, resource, execution, caller)
 		if status.Code(err) == codes.NotFound {
@@ -287,9 +292,8 @@ func (s *Service) collection(ctx context.Context, identity *auth.ServiceAccountP
 
 // collectionItem rereads only the Sandbox affected by a source event. The returned Pod name is
 // tracked even when the item is not currently visible, so a later incarnation event can reconcile it.
-func (s *Service) collectionItem(ctx context.Context, identity *auth.ServiceAccountPrincipal, broad bool, name string) (*environmentpb.EnvironmentDescriptor, string, error) {
-	caller := environmentCaller{serviceAccount: identity}
-	if !broad && name != serviceAccountReference(identity).Name {
+func (s *Service) collectionItem(ctx context.Context, caller environmentCaller, broad bool, name string) (*environmentpb.EnvironmentDescriptor, string, error) {
+	if !broad && caller.identity == nil {
 		return nil, "", nil
 	}
 	v, err := s.sandboxes.Get(ctx, name)
@@ -304,12 +308,23 @@ func (s *Service) collectionItem(ctx context.Context, identity *auth.ServiceAcco
 	if resource.Status.Incarnation != nil {
 		podName = resource.Status.Incarnation.Name
 	}
-	execution, found, err := s.sandboxes.ExecutionAccount(ctx, v.Identity)
-	if err != nil {
-		return nil, "", watchFailure(ctx, err)
-	}
-	if !broad && (!found || !callerMatches(identity, execution)) {
-		return nil, podName, nil
+	var execution *sandboxreader.ServiceAccountIdentity
+	if broad {
+		execution, _, err = s.sandboxes.ExecutionAccount(ctx, v.Identity)
+		if err != nil {
+			return nil, "", watchFailure(ctx, err)
+		}
+	} else {
+		if resource.Spec.Identity == nil || resource.Spec.Identity.Name != caller.identity.Name {
+			return nil, podName, nil
+		}
+		owned, err := s.ownsSandbox(ctx, caller.identity, v.Identity)
+		if err != nil {
+			return nil, "", watchFailure(ctx, err)
+		}
+		if !owned {
+			return nil, podName, nil
+		}
 	}
 	item, err := s.describe(ctx, resource, execution, caller)
 	if status.Code(err) == codes.NotFound {

@@ -32,24 +32,10 @@ const (
 	delegatedScheme       = DelegatedScheme + " "
 	maxDelegationBytes    = 4096
 	maxDelegatedTokenSize = 16384
-	maxServiceAccountUID  = 256
 	maxIdentityUID        = 256
 )
 
 var ErrInvalidDelegation = errors.New("invalid delegation envelope")
-
-// ServiceAccountUIDReader returns the current UID of the named account. A missing account is not
-// an infrastructure failure; it means the delegated identity cannot be admitted.
-type ServiceAccountUIDReader interface {
-	GetServiceAccountUID(context.Context, Account) (uid string, found bool, err error)
-}
-
-// ServiceAccountUIDReaderFunc adapts a Kubernetes lookup at a service's composition root.
-type ServiceAccountUIDReaderFunc func(context.Context, Account) (uid string, found bool, err error)
-
-func (read ServiceAccountUIDReaderFunc) GetServiceAccountUID(ctx context.Context, account Account) (string, bool, error) {
-	return read(ctx, account)
-}
 
 // IdentityUIDReader returns the UID of the live Identity of that name in the receiver's policy
 // namespace. A missing or deleting Identity is not an infrastructure failure; it means the delegated
@@ -85,12 +71,10 @@ func (r kubernetesIdentityUIDs) GetIdentityUID(ctx context.Context, name string)
 	return string(identity.UID), true, nil
 }
 
-// Delegator grants one actor permission to assert callers for the method whose Rule it is attached
-// to: ServiceAccounts in CallerNamespaces and, when IdentityCallers is set, Identities. It does not
-// grant direct caller or privileged backend authority.
+// Delegator grants one actor permission to assert Identities for the method whose Rule it is
+// attached to. It does not grant direct caller or privileged backend authority.
 type Delegator struct {
-	Account          Account
-	CallerNamespaces []string
+	Account Account
 	// IdentityCallers lets the actor assert any Identity in the receiver's policy namespace. It is a
 	// grant of its own: trust to assert ServiceAccounts never implies it.
 	IdentityCallers bool
@@ -100,15 +84,12 @@ type Delegator struct {
 }
 
 type delegatorGrant struct {
-	callerNamespaces     map[string]struct{}
-	identityCallers      bool
 	connectionProvenance bool
 }
 
 type delegationPolicy struct {
-	resolver        *Resolver
-	delegators      map[Account]delegatorGrant
-	serviceAccounts ServiceAccountUIDReader
+	resolver   *Resolver
+	delegators map[Account]delegatorGrant
 	// identities is nil on a method that admits no direct Identity caller, or a receiver that
 	// resolves none.
 	identities IdentityUIDReader
@@ -116,11 +97,9 @@ type delegationPolicy struct {
 
 // AllowDelegationFrom adds a separately authenticated delegated mode while preserving this Rule's
 // direct mode. The Rule must still be placed in Methods under each full RPC method that permits it.
-// serviceAccounts reads the accounts a delegator with CallerNamespaces may assert, and identities,
-// nil when the receiver resolves no Identity, the Identities a delegator granted IdentityCallers may
-// assert; each is required by the grants that use it. A Rule admitting no direct Identity caller
-// never admits a delegated one.
-func (r Rule) AllowDelegationFrom(delegators []Delegator, serviceAccounts ServiceAccountUIDReader, identities IdentityUIDReader) (Rule, error) {
+// identities, nil when the receiver resolves no Identity, reads the Identities a delegator granted
+// IdentityCallers may assert. A Rule admitting no direct Identity caller never admits a delegated one.
+func (r Rule) AllowDelegationFrom(delegators []Delegator, identities IdentityUIDReader) (Rule, error) {
 	if r.kind == ruleRefuse || r.kind == rulePublic || r.resolver == nil {
 		return Rule{}, fmt.Errorf("delegation requires an authenticated direct rule")
 	}
@@ -138,28 +117,17 @@ func (r Rule) AllowDelegationFrom(delegators []Delegator, serviceAccounts Servic
 		if _, duplicate := configured[delegator.Account]; duplicate {
 			return Rule{}, fmt.Errorf("delegator ServiceAccount is repeated")
 		}
-		if len(delegator.CallerNamespaces) == 0 && !delegator.IdentityCallers {
-			return Rule{}, fmt.Errorf("delegator caller scope is empty")
+		if !delegator.IdentityCallers {
+			return Rule{}, fmt.Errorf("delegator is not granted Identity callers")
 		}
-		if len(delegator.CallerNamespaces) != 0 && serviceAccounts == nil {
-			return Rule{}, fmt.Errorf("delegator may assert ServiceAccounts, but the receiver resolves none")
-		}
-		if delegator.IdentityCallers && identities == nil {
+		if identities == nil {
 			return Rule{}, fmt.Errorf("delegator may assert Identities, but the receiver resolves none")
 		}
-		namespaces := make(map[string]struct{}, len(delegator.CallerNamespaces))
-		for _, namespace := range delegator.CallerNamespaces {
-			if len(validation.IsDNS1123Label(namespace)) != 0 {
-				return Rule{}, fmt.Errorf("delegator caller namespace is invalid")
-			}
-			namespaces[namespace] = struct{}{}
-		}
 		configured[delegator.Account] = delegatorGrant{
-			callerNamespaces: namespaces, identityCallers: delegator.IdentityCallers,
 			connectionProvenance: delegator.ConnectionProvenance,
 		}
 	}
-	policy := &delegationPolicy{resolver: r.resolver, delegators: configured, serviceAccounts: serviceAccounts}
+	policy := &delegationPolicy{resolver: r.resolver, delegators: configured}
 	if r.admitsIdentityCallers() {
 		policy.identities = identities
 	}
@@ -196,12 +164,6 @@ func validDelegation(envelope *delegationpb.Delegation) bool {
 		return false
 	}
 	switch caller := envelope.GetEffectiveCaller().(type) {
-	case *delegationpb.Delegation_Caller:
-		account := caller.Caller.GetAccount()
-		if account == nil || !validAccount(Account{Namespace: account.GetNamespace(), Name: account.GetName()}) ||
-			caller.Caller.GetUid() == "" || len(caller.Caller.GetUid()) > maxServiceAccountUID {
-			return false
-		}
 	case *delegationpb.Delegation_Identity:
 		identity := caller.Identity
 		if identity == nil || len(validation.IsDNS1123Subdomain(identity.GetName())) != 0 ||
@@ -285,16 +247,6 @@ type DirectAdmission struct {
 
 func (DirectAdmission) isAdmission() {}
 
-// DelegatedAdmission keeps the actor's Pod-bound proof distinct from the effective caller.
-// The actor is never inserted into the legacy Caller context.
-type DelegatedAdmission struct {
-	Actor           Principal
-	EffectiveCaller *ServiceAccountPrincipal
-	Provenance      *delegationpb.Delegation
-}
-
-func (DelegatedAdmission) isAdmission() {}
-
 // DelegatedIdentityAdmission is a trusted actor's call on behalf of an Identity. The actor keeps
 // its Pod-bound proof; the Identity is the exact live incarnation the actor named. Only a method
 // whose direct mode admits Identity callers admits one, and EffectiveCaller refuses it, so the
@@ -339,8 +291,6 @@ func EffectiveCaller(ctx context.Context) (*ServiceAccountPrincipal, error) {
 	switch call := admission.(type) {
 	case DirectAdmission:
 		return call.Caller, nil
-	case DelegatedAdmission:
-		return call.EffectiveCaller, nil
 	default:
 		return nil, errNotAdmitted
 	}
@@ -392,46 +342,15 @@ func (p *delegationPolicy) admit(ctx, reviewContext context.Context, authorizati
 	if _, isConnection := envelope.GetProvenance().(*delegationpb.Delegation_Connection); isConnection && !grant.connectionProvenance {
 		return nil, status.Error(codes.PermissionDenied, "Connection provenance is not admitted on this method")
 	}
-	if identity := envelope.GetIdentity(); identity != nil {
-		return p.admitIdentity(ctx, reviewContext, actor, grant, identity, envelope)
-	}
-	if _, isConnection := envelope.GetProvenance().(*delegationpb.Delegation_Connection); isConnection {
-		return nil, status.Error(codes.PermissionDenied, "Connection provenance requires an Identity caller")
-	}
-	caller := envelope.GetCaller()
-	if _, ok := grant.callerNamespaces[caller.GetAccount().GetNamespace()]; !ok {
-		return nil, status.Error(codes.PermissionDenied, "delegated caller namespace is not allowed")
-	}
-	uid, found, err := p.serviceAccounts.GetServiceAccountUID(reviewContext, Account{
-		Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(),
-	})
-	if err != nil {
-		if reviewContext.Err() != nil {
-			return nil, status.FromContextError(reviewContext.Err()).Err()
-		}
-		return nil, status.Error(codes.Unavailable, "delegated caller identity unavailable")
-	}
-	if !found || uid != caller.GetUid() {
-		return nil, status.Error(codes.PermissionDenied, "delegated caller identity is not current")
-	}
-	return withAdmission(ctx, DelegatedAdmission{
-		Actor: actor,
-		EffectiveCaller: serviceAccountPrincipal(Account{
-			Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName(),
-		}, caller.GetUid()),
-		Provenance: proto.Clone(envelope).(*delegationpb.Delegation),
-	}), nil
+	return p.admitIdentity(ctx, reviewContext, actor, envelope.GetIdentity(), envelope)
 }
 
 func (p *delegationPolicy) admitIdentity(
-	ctx, reviewContext context.Context, actor Principal, grant delegatorGrant,
-	identity *identitypb.Identity, envelope *delegationpb.Delegation,
+	ctx, reviewContext context.Context, actor Principal, identity *identitypb.Identity,
+	envelope *delegationpb.Delegation,
 ) (context.Context, error) {
 	if p.identities == nil {
 		return nil, status.Error(codes.PermissionDenied, "delegated Identity callers are not admitted on this method")
-	}
-	if !grant.identityCallers {
-		return nil, status.Error(codes.PermissionDenied, "delegator is not trusted to assert Identities")
 	}
 	uid, found, err := p.identities.GetIdentityUID(reviewContext, identity.GetName())
 	if err != nil {

@@ -151,14 +151,12 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 	if envelope.GetAction().GetRequestId() != wantRequest.String() || envelope.GetAction().GetExecutionId() != wantExecution.String() {
 		b.testing.Fatalf("delegation envelope = %v", &envelope)
 	}
-	if b.identity != nil {
-		if !proto.Equal(envelope.GetIdentity(), b.identity) || envelope.GetCaller() != nil {
-			b.testing.Fatalf("delegation envelope = %v, want it for Identity %v", &envelope, b.identity)
-		}
-		return
+	wantIdentity := b.identity
+	if wantIdentity == nil {
+		wantIdentity = &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}
 	}
-	if envelope.GetCaller().GetAccount().GetNamespace() != testCallerNamespace || envelope.GetCaller().GetAccount().GetName() != testCallerName || envelope.GetCaller().GetUid() != testCallerUID {
-		b.testing.Fatalf("delegation envelope = %v", &envelope)
+	if !proto.Equal(envelope.GetIdentity(), wantIdentity) {
+		b.testing.Fatalf("delegation envelope = %v, want it for Identity %v", &envelope, wantIdentity)
 	}
 }
 
@@ -566,7 +564,7 @@ func requestFor(action string, args any, callerUID *string) store.ExecutionReque
 	return store.ExecutionRequest{
 		RequestID: testRequestID, ExecutionID: testExecutionID,
 		Action: store.ActionIdentity{Group: "sessions", Name: action}, Arguments: encoded,
-		Caller: store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, UID: callerUID},
+		Caller: store.IdentityCaller{Identity: store.Identity{Name: "test-identity", UID: "test-identity-uid"}},
 	}
 }
 
@@ -625,52 +623,6 @@ func TestOpenUnknownOutcomeIsNotRetried(t *testing.T) {
 	}, &uid))
 	if !errors.Is(err, worker.ErrOutcomeUnknown) || backend.openCalls != 1 {
 		t.Fatalf("open error=%v, calls=%d; want one unknown-outcome attempt", err, backend.openCalls)
-	}
-}
-
-func TestSessionWritesRejectTargetOutsideAuthenticatedCallerNamespace(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		args map[string]any
-	}{
-		{
-			name: "create",
-			args: map[string]any{
-				"target":     map[string]string{"namespace": "other-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
-				"session_id": testSessionID,
-				"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "model", "cwd": "/workspace"},
-			},
-		},
-		{
-			name: "submit_input",
-			args: map[string]any{
-				"target":     map[string]string{"namespace": "other-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
-				"session_id": testSessionID, "command_id": testCommandID, "text": "hello",
-			},
-		},
-		{
-			name: "interrupt_turn",
-			args: map[string]any{
-				"target":     map[string]string{"namespace": "other-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
-				"session_id": testSessionID, "command_id": testCommandID, "turn_id": "turn-1",
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			backend := &delegatedBackend{testing: t}
-			executor := newDelegatedExecutor(t, backend)
-			uid := testCallerUID
-			outcome, err := executor.attempt(t.Context(), requestFor(test.name, test.args, &uid))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if outcome.State != store.ExecutionFailed || outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS {
-				t.Fatalf("outcome=%+v error=%v; want invalid_arguments", outcome, err)
-			}
-			if backend.openCalls != 0 || backend.submitCalls != 0 || backend.interruptCalls != 0 {
-				t.Fatalf("wrong-namespace request reached a backend: open=%d submit=%d interrupt=%d", backend.openCalls, backend.submitCalls, backend.interruptCalls)
-			}
-		})
 	}
 }
 
@@ -801,16 +753,37 @@ func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 func TestMissingCallerUIDFailsClosedBeforeBackendCall(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutor(t, backend)
-	outcome, err := executor.attempt(t.Context(), requestFor("create", map[string]any{
+	uid := testCallerUID
+	request := requestFor("create", map[string]any{
 		"target":     map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
 		"session_id": testSessionID,
 		"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "claude-sonnet", "cwd": "/workspace"},
-	}, nil))
+	}, &uid)
+	request.Caller = store.ServiceAccountCaller{Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}}
+	outcome, err := executor.attempt(t.Context(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if outcome.State != store.ExecutionFailed || backend.gotOpen != nil {
-		t.Fatalf("outcome=%+v backend opening=%v; missing caller UID must fail before RPC", outcome, backend.gotOpen)
+	if outcome.State != store.ExecutionFailed || outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE || backend.gotOpen != nil {
+		t.Fatalf("outcome=%+v backend opening=%v; retained ServiceAccount caller must fail before RPC", outcome, backend.gotOpen)
+	}
+}
+
+func TestRetainedServiceAccountActionDoesNotReattributeOrReachBackend(t *testing.T) {
+	backend := &delegatedBackend{testing: t}
+	executor := newDelegatedExecutor(t, backend)
+	uid := testCallerUID
+	request := requestFor("submit_input", map[string]any{
+		"target": map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
+	}, &uid)
+	request.Caller = store.ServiceAccountCaller{
+		Account: store.ServiceAccount{Namespace: testCallerNamespace, Name: testCallerName}, UID: &uid,
+	}
+	outcome, err := executor.attempt(t.Context(), request)
+	if err != nil || outcome.State != store.ExecutionFailed ||
+		outcome.Error.GetKind() != action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_CALLER_IDENTITY_UNAVAILABLE ||
+		backend.submitCalls != 0 || backend.gotSubmit != nil {
+		t.Fatalf("retained ServiceAccount outcome=%+v error=%v backend calls=%d; want failure without re-attribution", outcome, err, backend.submitCalls)
 	}
 }
 

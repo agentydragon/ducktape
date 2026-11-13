@@ -29,7 +29,7 @@ const maxPatchAttempts = 5
 
 var (
 	errInvalidTarget = errors.New("exact Sandbox target is required")
-	errInvalidCaller = errors.New("effective ServiceAccount identity is incomplete")
+	errInvalidCaller = errors.New("direct ServiceAccount identity is incomplete")
 )
 
 // Options configure the shared lifecycle policy and mutation owner. WakeCallers preserve the
@@ -326,20 +326,11 @@ func (s *Manager) accountWakeAssessment(ctx context.Context, view *sandboxapi.Sa
 	if s.isWakeBroker(AccountWakeCaller{Account: caller}) {
 		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_ALLOWED_WAKE_BROKER, generation), true
 	}
-	eligibility, err := s.eligibilityFor(ctx, view, caller, false)
-	if err != nil {
-		return failureAssessment(codes.Unavailable, "execution account state is unavailable", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, generation), false
-	}
-	if eligibility.GetState() != environmentlifecyclepb.ResumeEligibilityState_RESUME_ELIGIBILITY_STATE_AVAILABLE {
-		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, wakeReasonForEligibility(eligibility), generation), false
-	}
-	return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE, environmentlifecyclepb.WakeReason_WAKE_REASON_UNSPECIFIED, generation), true
+	return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED, generation), false
 }
 
-// identityWakeAssessment authorizes an Identity caller's automatic wake exactly as the Sandbox's own
-// ServiceAccount's: the Sandbox must act as that live Identity incarnation now, and its
-// `resumePolicy.allowOwnServiceAccount` must permit its own principal to resume it. No broker grant
-// names an Identity.
+// identityWakeAssessment authorizes the Sandbox's currently bound Identity under the existing
+// resume-policy opt-in. It never resolves or falls back to the Sandbox's same-name ServiceAccount.
 func (s *Manager) identityWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller *identitypb.Identity) (*environmentlifecyclepb.WakeAssessment, bool) {
 	generation := view.Spec.WakeGeneration
 	named, found, err := s.sandboxes.ExecutionIdentity(ctx, &sandboxreader.Identity{
@@ -388,23 +379,7 @@ func (s *Manager) eligibilityFor(ctx context.Context, view *sandboxapi.Sandbox, 
 	if requestedStop(view) {
 		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_OPERATOR_REQUESTED_STOP), nil
 	}
-	account := auth.Account{Namespace: caller.GetAccount().GetNamespace(), Name: caller.GetAccount().GetName()}
-	if account.Namespace != view.Namespace || account.Name != view.Name {
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
-	}
-	execution, found, err := s.sandboxes.ExecutionAccount(ctx, &sandboxreader.Identity{
-		Namespace: view.Namespace, Name: view.Name, Uid: string(view.UID),
-	})
-	if err != nil {
-		return nil, status.Error(codes.Unavailable, "execution ServiceAccount state is unavailable")
-	}
-	if !found || execution.GetAccount() == nil || execution.GetAccount().GetNamespace() != caller.GetAccount().GetNamespace() || execution.GetAccount().GetName() != caller.GetAccount().GetName() || execution.GetUid() != caller.GetUid() {
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_EXECUTION_ACCOUNT_CHANGED), nil
-	}
-	if view.Spec.ResumePolicy == nil || !view.Spec.ResumePolicy.AllowOwnServiceAccount {
-		return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_POLICY_DISABLED), nil
-	}
-	return allowed(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_ALLOWED_OWN_SERVICE_ACCOUNT), nil
+	return denied(environmentlifecyclepb.ResumeEligibilityReason_RESUME_ELIGIBILITY_REASON_CALLER_NOT_EXECUTION_ACCOUNT), nil
 }
 
 func requestedStop(view *sandboxapi.Sandbox) bool {

@@ -12,22 +12,23 @@ Its discovery and resume method paths are:
 - `/agentplane.environments.v1.EnvironmentService/WatchEnvironment`
 - `/agentplane.environments.v1.EnvironmentService/ResumeEnvironment`
 
-Methods retain direct TokenReview-verified ServiceAccount credentials. List/Get also admit workload
-credentials naming an Identity and explicitly configured Actions delegation. Watch, resume, and
-management keep their existing ServiceAccount gates; management requires its own direct Pod-bound
+Methods retain direct TokenReview-verified ServiceAccount credentials. List/get and both watches
+also admit workload credentials naming an Identity and explicitly configured Actions delegation.
+Mutations keep their existing ServiceAccount gates; management requires its own direct Pod-bound
 manager or launcher grant. Delegated calls use the existing Dispatcher audience and are opted into
-by exact full RPC method name. ServiceAccount callers are checked by namespace, name, and immutable
-UID. Identity callers can list/get only Sandboxes whose current `spec.identity.name` names that
-Identity, with its exact current UID. A same-name replacement follows the Sandbox's deliberate
-name-based binding, while a credential for the old UID is refused. A target handle is the Sandbox
-namespace, name, and UID; get returns `NOT_FOUND` for an absent or replaced target and for an
-unauthorized Identity.
+by exact full RPC method name. Broad ServiceAccount readers are checked by namespace, name, and
+immutable UID. Identity callers can list/get/watch only Sandboxes whose current
+`spec.identity.name` names that Identity, with its exact current UID. A same-name replacement
+follows the Sandbox's deliberate name-based binding, while a credential for the old UID is refused.
+Ordinary ServiceAccount same-name self-discovery is retired: its list is empty and get/watch returns
+`NOT_FOUND`. A target handle is the Sandbox namespace, name, and UID; get returns `NOT_FOUND` for an
+absent or replaced target and for an unauthorized Identity.
 
 `GetEnvironment` returns the current descriptor immediately. `WatchEnvironment` accepts the same
 exact target and sends a current descriptor followed by changed snapshots. It observes Kubernetes
 state, including current incarnation Pod diagnostics, even while the target is suspended, with
-no connection to its Runtime. Each snapshot repeats
-the live target and execution-account checks. Metadata changes and observation timestamps alone
+no connection to its Runtime. Each snapshot repeats the live target and caller-specific Identity
+ownership check. Metadata changes and observation timestamps alone
 do not emit duplicate snapshots.
 
 The watch is a current-state subscription: intermediate states may be coalesced, and reconnection
@@ -36,16 +37,17 @@ a lost Kubernetes source ends it with `UNAVAILABLE`. Clients retain their last o
 and reconnect to observe again. Waiting for readiness is a client operation over this stream;
 neither get nor watch requests resume. CLI and Action/MCP wait adapters are separate work.
 
-List requires a limit from 1..100. Account callers resolve their same-name candidate. Identity callers
-page through their visible Sandboxes with a lexical Sandbox-name cursor; it only skips entries and
-cannot widen access. Broad direct readers may page over the namespace using a Kubernetes
+List requires a limit from 1..100. Ordinary ServiceAccount callers see an empty inventory. Identity
+callers page through their visible Sandboxes with a lexical Sandbox-name cursor; it only skips
+entries and cannot widen access. Broad direct readers may page over the namespace using a Kubernetes
 continuation token.
 
-`ResumeEnvironment` separately checks the exact target and execution account, resume opt-in policy,
-and operator authority through the shared [lifecycle manager](lifecycle/README.md). Listing or
-reading a target does not authorize changing it. The observed wake generation and opaque resume
-precondition bind an ordinary request to that Sandbox UID and generation; the backend rechecks
-current identity, policy and state when the token is used.
+`ResumeEnvironment` separately checks the exact target, resume opt-in policy, and direct operator
+authority through the shared [lifecycle manager](lifecycle/README.md). Ordinary ServiceAccount
+self-resume and Identity explicit resume are denied. Listing or reading a target does not authorize
+changing it. The observed wake generation and opaque resume precondition bind an ordinary request to
+that Sandbox UID and generation; the backend rechecks current identity, policy and state when the
+token is used.
 
 Workspace paths and harness/model/effort choices are deployment-configured facts. They are returned
 only when the target's exact SandboxTemplate has a published mapping; custom templates preserve
@@ -57,9 +59,11 @@ not treated as instructions. Platform guidance is a separate source.
 
 Readiness, operating mode, stop stage, automatic wake-on-send status and explicit-resume eligibility
 are separate current facts. Explicit-resume eligibility includes a denial reason and is evaluated
-for the authenticated effective caller against the live same-ServiceAccount identity and
-`resumePolicy`; it does not depend on `wakeOnSend`. Automatic wake has its own assessment and uses
-the shared lifecycle manager under the `wakeOnSend` and configured `wake_callers` policy.
+for a direct ServiceAccount against its live UID and configured operator grant; it does not depend
+on `wakeOnSend`. Automatic Identity wake has its own assessment
+and uses the shared lifecycle manager under the `wakeOnSend` and existing
+`resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_callers` remains an automatic-only
+ServiceAccount broker grant.
 
 Call `EnvironmentService.ResumeEnvironment` explicitly, then observe the same target again.
 `REQUESTED` confirms acceptance of desired running state, not readiness; no Session or input is
@@ -87,8 +91,8 @@ use `EnvironmentDescriptor`, with configuration, observed state, caller-specific
 Kubernetes diagnostics grouped into separate submessages. Reconnection starts a new snapshot;
 intermediate changes may be coalesced. Direct ServiceAccounts named by the Gateway's
 `environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
-not inherited by delegated callers. Ordinary ServiceAccount callers remain restricted to their
-exact owned Sandbox. Identity callers see only Sandboxes bound to that Identity; their descriptors
+not inherited by delegated callers. Ordinary ServiceAccount callers no longer receive workload
+self-discovery. Identity callers see only Sandboxes bound to that Identity; their descriptors
 omit the execution ServiceAccount, resume eligibility, wake generation, resume token, and
 automatic-wake eligibility. A delegated Action's component reader grant is never inherited by the
 effective Identity.
