@@ -1,47 +1,94 @@
 {
-  "attempts": [
-    {
-      "archive": "9ac13c88bf1727b49f48dce4df2411f846d2273624fe4ba10987f83a1b696e45/3630",
-      "invocation": "cbfb412f-9f36-49fe-937f-9672c4e5d9ce",
-      "result": "Staging failed before any graph: scratch object database could not retrieve promised historical blobs."
-    },
-    {
-      "archive": "1f116dcaad388ee236f384c2a2105b843c0118fb76a5e267610ab1c488d3e9d1/489159444",
-      "invocation": "e1b25d6b-e543-4d18-b1e5-56f990d73713",
-      "result": "Scratch promisor repair verified all four expected trees; control completed; candidate failed graph loading on missing pair-era helper prerequisites."
-    }
-  ],
-  "candidate_graph_errors": [
-    "_POD_DEPS undefined",
-    "k3s_suite lacks args parameter required by candidate manual targets"
-  ],
-  "control_affected_targets": 117,
-  "control_pre_runtime_tag_filter_tests": 51,
-  "limit": "One behavior-neutral Runtime cleanup pair with a d717 overlay; not latest663, 30-pair qualification, executed tests or speedup evidence.",
-  "selected_target_execution": false,
-  "source": {
-    "architecture_overlay_base": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
-    "architecture_overlay_head": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
-    "checkout_sha_expected": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
-    "ci_tested_merge_commit": "2f9d5576a6609417e290e3a02d81911248f3dbd0",
-    "ci_tested_merge_tree_expected": "adb8317827a459e02187e418356c04b541f234be",
-    "cohort_pair_delta_paths": [
+  "schema_version": 3,
+  "status": "COMPLETE_SELECTOR_ONLY",
+  "claim_scope": "One historical PR pair and one pinned d717 overlay. No tests ran, no performance comparison or saving was measured, and this does not complete the 30-pair qualification.",
+  "source_artifacts": {
+    "reviewed_summary_sha256": "388ff7076eb0b333e608e3206bcc33405897bc3ff261bde2a8685566c1f44322",
+    "repaired_payload_manifest_sha256": "2bdc7629dc47922fb532b80828b816fa81827e3d8547ee705d485403138af7cb",
+    "reviewed_summary_schema": "ducktape.historical_pair_selector_review.v1",
+    "payload_manifest_schema": "ducktape.historical_pair_replay_payload.v1"
+  },
+  "pair": {
+    "pr_number": 15687,
+    "tested_base": "44d0f077b7d2640c02833dc1864ef0165224d1ba",
+    "pr_head_identity_only": "ba7ef4c42c19941702d0e9714d06e941dfe73b35",
+    "tested_merge": "2f9d5576a6609417e290e3a02d81911248f3dbd0",
+    "tested_merge_tree": "adb8317827a459e02187e418356c04b541f234be",
+    "changed_paths": [
       "agentplane/env/runtime/execution/adapter/adapter_test.go",
       "agentplane/env/runtime/runtime.go"
     ],
-    "cohort_pr_number": 15687,
-    "cohort_sha256": "d2c94a25a41ea9599c366addd3ad7e952b9c7f19db8c6ec8c58d4f4fcbaa49b9",
-    "historical_pair_delta_sha256_newline_terminated": "96b8d799f655e29845ec8bbab6c026495889a44b6e16afe7c1c09ca3907be944",
-    "pair_patch_sha256": "156586bb37f1819eaf042054fa4f9bcb15cc3bdb56627f34841a0f5a5aa94a8e",
-    "pr_head_commit_only_for_identity": "ba7ef4c42c19941702d0e9714d06e941dfe73b35",
-    "pr_head_tree_identity_only": "91505fc39ec8121187954f5a756ee48fc9a92900",
-    "tested_base_commit": "44d0f077b7d2640c02833dc1864ef0165224d1ba"
+    "historical_change": "Removed two unused fields; candidate overlay preserved the historical pair blobs."
   },
-  "status": "PARTIAL; not a timing comparison",
-  "verified_tree_ids": {
-    "candidate_base": "4aab4b02c4fb67431d99bc00353e5d06ca13839b",
-    "candidate_tested_merge": "e9a35781cd0b6c84b18cb15c54655df09e2887b7",
-    "control_base": "334c900c5dfb35b435df1783098730874432da84",
-    "control_tested_merge": "adb8317827a459e02187e418356c04b541f234be"
-  }
+  "architecture_overlay": {
+    "base": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+    "head": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+    "path_count": 40,
+    "path_sha256": "d3526a63210133a3c059b6711f6890d85a12e4488be0d5018ac4e4ef1d851576",
+    "candidate_overlay_blobs_identical_across_candidate_base_and_tested_merge": true,
+    "candidate_pair_era_adaptations_identical_across_candidate_base_and_tested_merge": true,
+    "candidate_trees": {
+      "candidate_base": "e74f9e7bf4731d1467cf049bf0599fc5141f6a47",
+      "candidate_tested_merge": "23bd2b7707e22450a70b14262f752d0a5f610cfb",
+      "control_base": "334c900c5dfb35b435df1783098730874432da84",
+      "control_tested_merge": "adb8317827a459e02187e418356c04b541f234be"
+    },
+    "pair_era_compatibility_adaptations": {
+      "k3s_helper": {
+        "adaptation": "Add optional args = [] and forward args to py_test, exactly matching the pinned candidate helper behavior; existing pair-era calls keep empty args.",
+        "path": "agentplane/system_tests/k3s/defs.bzl",
+        "sha256": "c7812944ffc3870153a01939402803c7b9317d9f4f3493e8b253485339770078"
+      },
+      "suite_build": {
+        "adaptation": "Define _POD_DEPS as an exact copy of the pair-era required test_pod dependency list so candidate manual comparison targets load; test_pod itself remains unchanged.",
+        "dependency_count": 12,
+        "path": "agentplane/system_tests/suites/BUILD.bazel",
+        "sha256": "6b02cebffceb8cfb938e68580afc7b8f8093d58ec1f4db08b522ea3fc5dd0cde"
+      }
+    }
+  },
+  "selector": {
+    "invocation_id": "d89cacfc-35af-47e8-acdf-f679961ec5d3",
+    "invocation_url": "https://app.buildbuddy.io/invocation/d89cacfc-35af-47e8-acdf-f679961ec5d3",
+    "control_affected_targets": 117,
+    "candidate_affected_targets": 124,
+    "control_tests_before_runtime_tag_filter": 51,
+    "candidate_tests_before_runtime_tag_filter": 51,
+    "same_test_labels": true,
+    "candidate_only_affected_target_count": 7,
+    "manual_test_targets_still_filtered": true,
+    "tests_executed": 0
+  },
+  "payload_repair": {
+    "status": "complete",
+    "hosted_archive_cas_digest_and_size": "d71c8606dda154402470519b1d092a4a04f22f0338cfc48a40c0ea186134a724/13473843",
+    "hosted_hash_counts": {
+      "control": 42948,
+      "candidate": 42978
+    },
+    "hosted_command_count": 541,
+    "local_stage_command_count": 515,
+    "local_stage_mode": "local stage-only validation; no graph query, build, test, remote launch, commit, push, or PR",
+    "stage_assertions": {
+      "all_four_tree_ids_match_pins": true,
+      "candidate_diff_is_exactly_40_overlay_paths_on_each_side": true,
+      "no_bazel_command_executed": true,
+      "pair_production_blobs_unchanged": true,
+      "candidate_overlay_blobs_equal_across_candidate_base_and_candidate_tested_merge": true,
+      "compatibility_adaptations_equal_across_candidate_base_and_candidate_tested_merge": true
+    },
+    "prior_attempts_preserved": true,
+    "no_graph_build_test_or_remote_launch_in_local_stage": true
+  },
+  "earlier_attempts": [
+    {
+      "invocation": "cbfb412f-9f36-49fe-937f-9672c4e5d9ce",
+      "result": "Staging failed before graph evaluation because the scratch object database could not retrieve promised historical blobs."
+    },
+    {
+      "invocation": "e1b25d6b-e543-4d18-b1e5-56f990d73713",
+      "result": "The repaired Git stage verified the expected trees and control selection; candidate graph loading lacked pair-era _POD_DEPS and k3s_suite args support."
+    }
+  ],
+  "errors_in_completed_selector_comparison": []
 }

@@ -1,0 +1,130 @@
+{
+  "schema": "agentplane.app_fixture_ownership.v1",
+  "source": {
+    "bbr_source_base": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+    "bbr_source_capture": "Dirty-worktree auto-sync; remote invocation logs showed checkout of the base, tracked patch application, and separate patches for the two new fixture modules. No --run_from_commit was used.",
+    "reviewed_candidate_commit_after_capture": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "candidate_tree_sha1": "ebb5035e4f0d62b29f8a0597d69b47b10f62ef07",
+    "test_invocation": "8efca746-a5cf-48d4-b215-cc62ab34a73e",
+    "test_source_file_sha256": {
+      "agentplane/app/testing/gateway_fixtures.py": "e58f99005c991948ce05c9653f583133edf622551ef661fa27bdc27d76fe08e4",
+      "agentplane/app/testing/runtime_fixtures.py": "f74fe91d1889160bdaa2b7cc4e211e01dec02ebbf85d4204b6e2052e87ca9060",
+      "agentplane/app/integration_fixtures.py": "78d61c23e32ad83e52d4e189934d05e05a4d4ee5f723ac172dcf6e95eb06aaae",
+      "agentplane/runner_gateway/conftest.py": "0c096b371d6e08410b46228b85668d1e87bd9ac8be795538491349a256d1a992",
+      "agentplane/app/BUILD.bazel": "f8f2b926c35502a7cfa32d2fb8ef1412866ad3ebaccb4b8ebe7ee3fec9946e6c",
+      "agentplane/app/testing/BUILD.bazel": "1fe7b4e1b8d8e2b8e3bfe257224e7731eeebe0114db7a3dc6a4de2a94ab9a658",
+      "agentplane/runner_gateway/BUILD.bazel": "eaff83db89c15530181ce13d909e4d2d4a55ceb23fd7993fb35087235e4d6587",
+      "agentplane/app/test_bridge.py": "35bd24b270b4aca269aea5902b94a265e9bdc46d5deb915fa87d1511d75aecb5",
+      "agentplane/app/test_history_gateway.py": "755e200e63e56bf861ae4d4b559e4af2204c33c269bfd340d4770b2ae73c2367",
+      "agentplane/app/test_live.py": "1f79223db37a7b81e21cdd6194486c9b9e2722a7d64440032baca7f0c52f0f5a",
+      "agentplane/app/test_thread_browser.py": "4c01f19296c2460b6c27772348ee12ce7e67e85978ce5f955ca781f7b03f6c7d"
+    },
+    "rbe_build_invocation": "2d64a373-8304-41ce-bc4f-fcbe1ee38888",
+    "rbe_build_remote_copy_sha256_verified": [
+      "agentplane/app/testing/gateway_fixtures.py",
+      "agentplane/app/testing/runtime_fixtures.py",
+      "agentplane/app/integration_fixtures.py",
+      "agentplane/runner_gateway/conftest.py"
+    ]
+  },
+  "graph": {
+    "runtime_label": "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
+    "before_rdeps_invocation": "0f6e2bfb-7110-4b6c-a325-406f4dfb77e7",
+    "before_runtime_referencing_app_py_tests": 15,
+    "representative_before_somepath_invocation": "43a9756c-0da8-47d3-be7a-fcf1bb8a9077",
+    "after_rdeps_invocation": "8b3056bc-8411-4231-968a-9e257a4ed532",
+    "after_runtime_referencing_app_py_tests": [
+      "//agentplane/app:test_bridge",
+      "//agentplane/app:test_history_gateway"
+    ],
+    "retained_owner_somepath_invocations": {
+      "//agentplane/app:test_bridge": "cd23f83d-6f5e-403f-a9b9-53f488df607a",
+      "//agentplane/app:test_history_gateway": "018ca8b6-5787-486b-850f-7da0f96fe653"
+    },
+    "removed_accidental_runtime_edges": [
+      "//agentplane/app:test_action_api",
+      "//agentplane/app:test_api",
+      "//agentplane/app:test_electric_chunk_compaction",
+      "//agentplane/app:test_electric_subset_window",
+      "//agentplane/app:test_electric_wal_recovery",
+      "//agentplane/app:test_electric_window_traffic",
+      "//agentplane/app:test_live",
+      "//agentplane/app:test_native_facades",
+      "//agentplane/app:test_notifications_stream",
+      "//agentplane/app:test_thread_browser",
+      "//agentplane/app:test_thread_debug",
+      "//agentplane/app:test_thread_sync",
+      "//agentplane/app:test_thread_window_browser"
+    ],
+    "representative_after_empty_somepath_invocation": "2098ee1c-c107-4232-b88e-5bbc6ad53c1d"
+  },
+  "build": {
+    "command": "direnv exec . bbr build //agentplane/app:integration_fixtures //agentplane/app/testing:gateway_fixtures //agentplane/app/testing:runtime_fixtures //agentplane/runner_gateway:conftest",
+    "invocation": "2d64a373-8304-41ce-bc4f-fcbe1ee38888",
+    "result": "passed, including Python typing and lint aspects"
+  },
+  "normal_milestone_commit_hooks": "PASS",
+  "focused_tests": {
+    "invocation": "8efca746-a5cf-48d4-b215-cc62ab34a73e",
+    "targets": 4,
+    "junit_cases": 42,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "case_counts": {
+      "action_api": 4,
+      "api": 8,
+      "bridge_all_four_shards": 24,
+      "history_gateway": 6
+    },
+    "run": 1,
+    "attempt": 1,
+    "physical_census": {
+      "fresh_test_runner_records": 7,
+      "unique_execution_ids": 7,
+      "invocation_link_type": 1,
+      "all_completed_reapi_status0": true,
+      "run": 1,
+      "attempt": 1,
+      "mapping": "Four bridge shards plus action_api, api and history_gateway, each mapped to one passed result."
+    }
+  },
+  "retained_services": [
+    "App",
+    "Gateway",
+    "History",
+    "PostgreSQL",
+    "Kubernetes API server"
+  ],
+  "fixture_body_review": "Moved fixture/function AST bodies unchanged; only fixture imports/exports, explicit Runtime plugins and Bazel input ownership changed.",
+  "limits": [
+    "This is a fresh focused RBE run for two light App targets and the two retained Runtime-owner targets, not the full 13-target matrix.",
+    "Graph evidence proves selection closure for the production Runtime binary. It does not claim all other App service/container inputs are unnecessary.",
+    "App/Gateway/History/Kubernetes API server fixture semantics and test frequency were preserved; the two Runtime consumers remain explicit.",
+    "Full required CI is the remaining integration check for every affected target."
+  ],
+  "post_commit_closure_audit": {
+    "target": "//agentplane/app:test_action_api",
+    "source_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "invocation": "680fd2e8-5db1-4cf7-955c-d37a8414661e",
+    "query": "kind(\"py_binary|go_binary|oci_image|container_image|oci_tarball\", deps(//agentplane/app:test_action_api))",
+    "remaining_executable_labels": [
+      "//agentplane/app/go:agentplane-app",
+      "//agentplane/history_service:history-service",
+      "//agentplane/policy/api/v1alpha1/protogen:protogen",
+      "//agentplane/runner_gateway:runner-gateway",
+      "//agentplane/testing/envtest:server",
+      "//devinfra/python:protoc",
+      "//devinfra/python:protoc_gen_mypy_grpc",
+      "@com_github_grpc_ecosystem_grpc_gateway_v2//protoc-gen-grpc-gateway:protoc-gen-grpc-gateway",
+      "@io_k8s_sigs_controller_tools//cmd/controller-gen:controller-gen",
+      "@@gazelle++go_deps+org_golang_google_grpc_cmd_protoc_gen_go_grpc//:protoc-gen-go-grpc",
+      "@org_golang_google_protobuf//cmd/protoc-gen-go:protoc-gen-go",
+      "@io_bazel_rules_go//go/tools/builders:go-protoc-bin",
+      "@io_bazel_rules_go//go/tools/builders:go_path-bin",
+      "@rules_python//python/private:py_console_script_gen_py",
+      "@rules_python//python/private/pypi:wheel_record_rewriter_py"
+    ],
+    "interpretation": "No additional accidental service binary was identified: App, History, Gateway, and envtest are used by this fixture family; the remaining protoc/controller/build helper labels are code-generation or build tooling in the transitive query. No further graph reduction was attempted without evidence of an unused owner."
+  }
+}

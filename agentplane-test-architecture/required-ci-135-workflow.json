@@ -1,0 +1,52 @@
+{
+  "source_head": "135dba720768d9dfdb60a122145d9d23f9699dd0",
+  "tested_merge": "1d60fcfeba9214487cc48853a79d951fb4828ea9",
+  "workflow_id": 43438449724,
+  "attempt": 1,
+  "workflow_created_at_utc": "2026-11-13T13:59:04Z",
+  "required_job_completed_at_utc": "2026-11-13T14:01:21Z",
+  "failure": "bb remote log stream RST_STREAM INTERNAL_ERROR; client exit1",
+  "test_invocation": "c58a8964-84fd-5ce6-9fc1-e78500aa3b2d",
+  "parent_invocation": "cac952d6-1524-4cf3-b8a3-a166336aa57e",
+  "test_invocation_status": "DISCONNECTED_INVOCATION_STATUS",
+  "parent_execution_stage": "COMPLETED",
+  "parent_reapi_status": {
+    "code": 1,
+    "message": "invocation cancelled"
+  },
+  "indexed_test_runner_records": 0,
+  "physical_test_attempts": null,
+  "limits": [
+    "Bazel log reports progress including cached results; no complete case/physical-attempt census is available for the disconnected child.",
+    "Transport failure mechanism before cancellation is not established; no OOM or source failure claim."
+  ],
+  "rerun": "Only failed workflow rerun after confirming remote parent terminal; no source change.",
+  "reviewed_at_utc": "2026-11-13T14:03:21.961344+00:00",
+  "attempt_2": {
+    "test_invocation": "03a1aa59-ade3-5637-97da-de0d6779f80c",
+    "completed_at_utc": "2026-11-13T14:07:47Z",
+    "status": "TESTS_FAILED",
+    "same_tested_merge": true,
+    "process_seconds": 208.237,
+    "new_physical_test_runner_records": 56,
+    "failed_test_targets": 1,
+    "reapi_failure_statuses": 0,
+    "failed_target": "//agentplane/env/e2e:test_codex_shared_process",
+    "failure": "Runtime startup attempted bind 127.0.0.1:43377 and received address already in use; the first case failed and the other three cases passed.",
+    "mechanism": "Released ephemeral-port selection gap, reproduced by the seeded competition regression. Repair committed on successor source5699.",
+    "full_required_result": "FAILED_AND_SUPERSEDED. Source135 did not reach a green required result.",
+    "test_result_cache_reuse": "Not provided by reviewed attempt record; 56 records were NEW physical TestRunner records."
+  },
+  "rerun_inclusive_clock": {
+    "start": "Original attempt-1 workflow creation at 13:59:04Z",
+    "end": "Failed/superseded source135 after attempt2; no green result on this exact head.",
+    "seconds": null,
+    "interim_failure_at_utc": "2026-11-13T14:07:47Z",
+    "original_creation_to_attempt_2_failure_seconds": 523,
+    "interpretation": "523 seconds is creation-to-failed-result elapsed. A successor source has a separate workflow clock; do not combine the source135 creation with source5699 green."
+  },
+  "tracking_issue": "https://github.com/agentydragon/ducktape/issues/13270#issuecomment-6855285177",
+  "tracking_distinction": "Attempt 1 is the outer remote log observer/reset and cancellation path (#13270), distinct from inner Execute/WaitExecution recovery (#16025). Attempt 2 is a real test failure from the listener-port allocation race tracked in #16231.",
+  "listener_race_issue": "https://github.com/agentydragon/ducktape/issues/16231",
+  "successor_source_head": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702"
+}

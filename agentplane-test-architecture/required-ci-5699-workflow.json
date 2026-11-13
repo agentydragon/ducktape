@@ -1,0 +1,81 @@
+{
+  "schema": "agentplane.required_ci_source5699.v1",
+  "source_head": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+  "tested_merge": "c8acb4008be54b34b1de5694145f546b156768a8",
+  "tested_merge_parents": [
+    "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702"
+  ],
+  "workflow_id": 43445505282,
+  "attempt": 1,
+  "workflow_created_at_utc": "2026-11-13T14:43:50Z",
+  "last_required_completed_at_utc": "2026-11-13T14:49:08Z",
+  "workflow_created_to_last_required_seconds": 318.0,
+  "status": "SUCCESS",
+  "required_checks": [
+    {
+      "name": "bazel-ci / Test & Build",
+      "status": "SUCCESS",
+      "completed_at_utc": "2026-11-13T14:49:08Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43445505282/job/131953766842"
+    },
+    {
+      "name": "Build artifacts + imports check",
+      "status": "SUCCESS",
+      "completed_at_utc": "2026-11-13T14:45:03Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43445505456/job/131953766658"
+    },
+    {
+      "name": "Pre-commit checks",
+      "status": "SUCCESS",
+      "completed_at_utc": "2026-11-13T14:44:56Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43445505266/job/131953765889"
+    }
+  ],
+  "test_invocation": "826bd51a-bd7c-5275-9509-85bffa194597",
+  "bazel_test_process_seconds": 223.375,
+  "fresh_physical_test_runner_records": 54,
+  "unique_fresh_execution_ids": 54,
+  "fresh_test_actions_all_completed_reapi0_exit0": true,
+  "fresh_k3s_test_actions": 0,
+  "fresh_target_labels": [
+    "//agentplane/app:test_action_api",
+    "//agentplane/app:test_api",
+    "//agentplane/app:test_bridge",
+    "//agentplane/app:test_electric_chunk_compaction",
+    "//agentplane/app:test_electric_subset_window",
+    "//agentplane/app:test_electric_wal_recovery",
+    "//agentplane/app:test_history_gateway",
+    "//agentplane/app:test_live",
+    "//agentplane/app:test_native_facades",
+    "//agentplane/app:test_notifications_stream",
+    "//agentplane/app:test_thread_browser",
+    "//agentplane/app:test_thread_debug",
+    "//agentplane/app:test_thread_sync",
+    "//agentplane/app:test_thread_window_browser",
+    "//agentplane/central_sampler:test_gateway_integration",
+    "//agentplane/env/e2e/testing:failure_journal_test",
+    "//agentplane/env/e2e:test_attach",
+    "//agentplane/env/e2e:test_codex_catalog",
+    "//agentplane/env/e2e:test_codex_code_mode",
+    "//agentplane/env/e2e:test_codex_shared_process",
+    "//agentplane/env/e2e:test_executor_container",
+    "//agentplane/env/e2e:test_initialize",
+    "//agentplane/env/e2e:test_instructions",
+    "//agentplane/env/e2e:test_pid1_container",
+    "//agentplane/env/e2e:test_restart",
+    "//agentplane/env/e2e:test_subagents",
+    "//agentplane/env/e2e:test_turns",
+    "//agentplane/runner_gateway/dispatcher:test_testing_client",
+    "//agentplane/runner_gateway/migrations:test_migrations",
+    "//agentplane/runner_gateway:test_client",
+    "//agentplane/runner_gateway:test_grpc_native",
+    "//agentplane/runner_gateway:test_settings",
+    "//agentplane/x/runner_layering:test_sparse_root"
+  ],
+  "limits": [
+    "One exact-head required workflow, not a matched before/after or representative latency distribution.",
+    "No fresh K3s action in this workflow; cached results are not new deployment acceptance exposure.",
+    "Source135 was superseded while red. Its creation time is not this source5699 clock."
+  ]
+}

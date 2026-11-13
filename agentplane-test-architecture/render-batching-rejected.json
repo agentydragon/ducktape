@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "status": "REJECTED_FOR_CI_LATENCY",
+  "hypothesis": "Batching seven common renderer variants with two virtualized FULL controls could amortize one renderer import process.",
+  "scope": "one action for seven shared standard renderer variants plus VM and Firecracker FULL controls; MCP fixture remains separate",
+  "source": {
+    "base": "66320ca9960967305b7683dbfbacae6456c46a1a",
+    "candidate_patch_sha256": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb",
+    "candidate_patch_path": "render-batching-candidate.patch",
+    "source_tree_restored_clean_after_experiment": true
+  },
+  "baseline": {
+    "invocation_id": "07e8713a-7e92-45fc-9b6b-b4d8071385bf",
+    "test_runner": {
+      "wall": 26.300445,
+      "cpu": 34.00235
+    },
+    "junit": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "seven_standard_render_actions": [
+      {
+        "profile": "local",
+        "wall": 21.881907,
+        "cpu": 25.875
+      },
+      {
+        "profile": "pod",
+        "wall": 30.031014,
+        "cpu": 37.69
+      },
+      {
+        "profile": "central",
+        "wall": 28.721711,
+        "cpu": 31.036
+      },
+      {
+        "profile": "central-services",
+        "wall": 29.013616,
+        "cpu": 34.013
+      },
+      {
+        "profile": "central-budget",
+        "wall": 28.473283,
+        "cpu": 34.302
+      },
+      {
+        "profile": "vm",
+        "wall": 27.009249,
+        "cpu": 31.155
+      },
+      {
+        "profile": "firecracker",
+        "wall": 21.775016,
+        "cpu": 25.141
+      }
+    ],
+    "overlap": "all seven standard actions began within about 73ms; last action ended about 30.048s after first action start; do not sum their wall durations",
+    "render_action_cpu_sum_seconds": 219.212
+  },
+  "candidate": {
+    "physical_batch_invocation_id": "12efd307-58c9-4d94-9e9d-2f6157512e3b",
+    "batch_action_id": "/uploads/b30c2d7a-7a71-42fe-a467-756bdba7fac7/blobs/4e1cad1aa29b10ff5c5c2a9182419ab1f2d4c84ca16056572f172fb375057faf/494",
+    "batch_action_timing": {
+      "wall": 30.939643,
+      "cpu": 38.620124
+    },
+    "successful_test_invocation_id": "feafbd03-6b76-43d7-bfa1-002ccc53ea8b",
+    "test_runner": {
+      "wall": 28.455,
+      "cpu": 33.777471
+    },
+    "junit": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "suite_seconds": 3.148
+    },
+    "same_invocation_caveat": "successful TestRunner used the batch action output from the earlier physical candidate run; do not call that invocation a matched cold whole-graph comparison"
+  },
+  "comparison": {
+    "render_action_cpu": "baseline seven actions total 219.212 CPU seconds versus candidate batch action 38.620124 CPU seconds, a 180.592 CPU-second reduction across these render actions; this is an aggregate CPU benefit, not observed wall-time or queue saving",
+    "render_wall": "candidate batch 30.940s versus baseline slowest standard render 30.031s; all baseline renders overlapped, so batching shows no wall-time benefit and adds about 0.91s to the renderer critical path in this observed pair",
+    "test_runner_wall": "candidate 28.455s versus baseline 26.300445s, about 2.155s slower; test-runner CPU is nearly unchanged",
+    "selective_consumer": "k3s/defs.bzl selects the VM profile by its individual rendered JSON path; under the candidate that file is an output of the nine-output batch, so a VM-only consumer would materialize unrelated profiles. VM standalone baseline action was 27.009s/31.155 CPU; no matched VM-only action measurement on the candidate was run.",
+    "decision_scope": "reject this seven-shared-variant plus two-FULL-controls batching arrangement for CI latency; revisit if measured renderer CPU capacity or CPU queueing becomes a limiting factor"
+  },
+  "output_equivalence": {
+    "method": "compare candidate CAS digests from the batch ActionResult with baseline render ActionResults",
+    "matching_standard_profiles": [
+      "local",
+      "pod",
+      "central",
+      "central-services",
+      "vm",
+      "firecracker"
+    ],
+    "unverified_standard_profile": "central-budget: baseline action result lookup returned NotFound, so exact digest comparison could not be completed",
+    "candidate_output_digests": {
+      "local": "bb6599d84ac7cab2db459cce14692281aee41e94c78d11bf48b3677c29c78622",
+      "pod": "f7512a733819420b1c572cc9dfe041802a8537f02b393c3ad7246905db2b2828",
+      "central": "43625506bd0afec5d9ac51b06b9ab4055d414b394acb949bf95bb5abb7bd887e",
+      "central-services": "31377cb5015bac275ac3b6172f58507ddf234a46a695a96d780a9682e2e90049",
+      "central-budget": "caa59c4e6585dfb3480b9485c5af1075b2421be8d6b2d0d2d11898efc875c210",
+      "vm": "ce0b64ef4200d375b8f8e15a6e5960abdb424834214eb7891eab35bd400e22f0",
+      "firecracker": "5f17bfa425b1ba36b08427ff80c238d2b5938e53d6dacfbe0c5956db6fdecaf8",
+      "vm-full": "10b7de1ea9bbdc901e6cb2e04726bcb53e300ba04f83847424ee127d87c1e8c7",
+      "firecracker-full": "8b37a21df3cff1207aaf34f416209a095faa9ae36e4fddecaebc1cb039ea934e"
+    },
+    "full_controls": "No baseline declared-file CAS digests existed for VM/Firecracker FULL outputs; preserved profile-equivalence testcases passed in candidate JUnit using the same FULL defaults and arguments."
+  },
+  "revisit_trigger": "Revisit only if measured renderer CPU contention or CPU queueing is limiting a selected CI critical path; this experiment shows aggregate CPU reduction but no burst, queue, or complete-feedback saving.",
+  "limits": [
+    "The seven baseline standard actions overlapped substantially; their wall durations are not additive.",
+    "The candidate successful TestRunner consumed the batch action output from an earlier physical render action, so there was no matched cold whole-graph comparison.",
+    "The candidate batch also generated two FULL controls absent as separate declared baseline outputs.",
+    "Six of seven standard output CAS digests match; central-budget baseline result was unavailable. The two FULL controls were covered by passing equivalence assertions but have no baseline declared-file digest.",
+    "No source optimization was adopted and no CI gate or policy changed."
+  ]
+}
