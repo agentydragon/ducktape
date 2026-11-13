@@ -219,7 +219,6 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 			if err := registerThreadMetadataGateway(server, &appService{threadReader: &threadReadStoreFake{}, updates: changes, updatesConnected: connected.Load, drainDone: server.DrainDone()}); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(server.Close)
 			httpServer := httptest.NewServer(server.Handler(authentication))
 			t.Cleanup(httpServer.Close)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -455,7 +454,6 @@ func TestThreadMutationGateway(t *testing.T) {
 	if err := registerThreadMetadataGateway(server, &appService{threadReader: store, threadHistory: history, environments: inventory}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	handler := server.Handler(authentication)
 	path := "/upstream/app/v1/threads/" + id.String()
 	call := func(method, path, body string, authorized bool) *httptest.ResponseRecorder {

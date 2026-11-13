@@ -128,7 +128,6 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	RegisterStreamingRoutes(server, StreamingDependencies{})
 	server.RegisterRawRoute("/threads/{thread_id}/sync/{rest...}", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("non-UUID sync route reached its handler")
