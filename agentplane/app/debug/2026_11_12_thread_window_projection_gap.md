@@ -134,3 +134,61 @@ next discriminating observation is still a naturally failing run with the direct
 view, fresh Electric snapshot, Chromium entity-stream metadata, and browser cursor
 captured together. Only then can we distinguish replication, stream delivery, and
 client application before changing the runtime path.
+
+## Natural recurrence with direct reads, 2026-11-13 UTC
+
+The [01:59 UTC mainline invocation](https://app.buildbuddy.io/invocation/c210960a-e5ab-5a68-9ab2-cf847b5b0052)
+on source `0a13d8cabfa551075af470e6660200708643a7bf` reproduced the same
+cursor-334 assertion. Its target reports one failed, five passed cases. The
+retained diagnostic now establishes committed 334, folded 334, direct view 334,
+and fresh Electric subset cursor 334, while the DOM remains 264. Thus the append,
+folded row and fresh Electric read completed in this occurrence. They do not
+prove what the existing live request delivered.
+
+The CDP artifact contains zero buffered bytes for response `7258.94`, handle
+`13800933-1794535177397698`, offset `34614888_124`. This was the last response
+that received SSE headers, **not the last attempted request**: the trace shows
+it opened at monotonic 22169.453 ms, before pagination paused it. A later entity
+GET completed with only an up-to-date control at 22907.444 ms. The final live
+entity GET began at 22937.268 ms and received no headers before the assertion's
+30-second deadline. An empty older response is therefore not proof that the
+server sent an empty current response or that the client discarded cursor 334.
+
+The final request began while the fixture removed its temporary request route:
+`setNetworkInterceptionPatterns([])` started at 22934.970 ms. That ordering makes
+browser interception/request admission a testable candidate, alongside server
+request admission and streaming. It is not a demonstrated Playwright defect.
+Completed POST and non-live GET responses negotiated HTTP/2 with TLS/server-port
+metadata. Pending/SSE trace entries instead say HTTP/1.1 without TLS/server-port
+metadata; these incomplete entries do not establish a negotiated protocol or
+six-socket admission limit. The final request's send/wait/receive timings are
+all -1, so it does not prove on-wire or upstream admission. The fast-retry warning
+again belongs to a payload shape, not an observed entity-stream reset.
+
+The advertised ingress log describes port 45213 and an earlier shape handle;
+the failed page uses port 34817. Multiple fixtures wrote the same
+`conversation-http2-ingress/container.log` path, so that file cannot determine
+whether the failed page's final GET reached nginx, the Go app or Electric. The
+fixture now retains each ingress and static-frontend log under a unique
+`<role>-<port>-<uuid>/container.log` path. The port joins it to the browser trace;
+the UUID prevents collisions even if the operating system later reuses a port.
+This repairs evidence retention without changing request routing or delivery.
+
+A [five-run focused repetition](https://app.buildbuddy.io/invocation/007cd06a-44d3-4f33-814a-07f44a3796c8)
+on effective source `4415ac2544` passed five fresh remote runs (zero cached),
+with five distinct TestRunner execution IDs. The unchanged real streaming
+scenario and its one-shape, reading-anchor and draft assertions all remained.
+A [focused retention validation](https://app.buildbuddy.io/invocation/72b0f431-9644-4130-93da-3e7e2b422be6)
+on the same source plus this fixture change passed one fresh remote run in
+50.415 s and published
+`conversation-http2-ingress-43521-c51d455f3e484513b25136e4d3a5e2b8/container.log`.
+No cursor failure occurred in these six physical attempts; neither is a delivery
+repair or a post-fix recurrence measurement.
+
+[Issue #16033](https://github.com/agentydragon/ducktape/issues/16033) remains open.
+At the next natural recurrence, join the final attempted entity GET to its
+port-specific ingress log before choosing a repair. If admitted upstream,
+compare app/session admission and Electric delivery; if absent, retain Chromium
+request timing/interception evidence. Review the next seven days of target
+outcomes with cache and physical-execution counts kept separate. No scheduled
+monitor or failure-rate reduction is claimed.

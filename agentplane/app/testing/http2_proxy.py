@@ -5,6 +5,7 @@ import ssl
 from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
+from uuid import uuid4
 
 import httpx
 from jinja2 import Template
@@ -51,11 +52,13 @@ async def _wait_for_frontend(upstream: str) -> None:
 
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
+    # A suite starts several fixtures: preserve each instance instead of overwriting its logs.
+    log_id = f"{certificate.port}-{uuid4().hex}"
     ingress_image = await asyncio.to_thread(load_oci_image, nginx_unprivileged.LAYOUT_RLOCATION)
     static_image = await asyncio.to_thread(load_oci_image, LAYOUT_RLOCATION)
     with ExitStack() as stack:
         static_container = stack.enter_context(
-            LoggedContainer(static_image, test_name="conversation-static-frontend").with_exposed_ports(8080)
+            LoggedContainer(static_image, test_name=f"conversation-static-frontend-{log_id}").with_exposed_ports(8080)
         )
         static_upstream = f"http://{static_container.get_container_host_ip()}:{static_container.get_exposed_port(8080)}"
         await _wait_for_frontend(static_upstream)
@@ -67,7 +70,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
             Template(template).render(port=port, upstream=upstream, static_upstream=static_upstream) + "\n"
         )
         container = (
-            LoggedContainer(ingress_image, test_name="conversation-http2-ingress")
+            LoggedContainer(ingress_image, test_name=f"conversation-http2-ingress-{log_id}")
             .with_kwargs(network_mode="host")
             .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
             .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")
