@@ -127,8 +127,12 @@ pub enum TransformSpecSource {
     Tree(CompileSpecTreeOptions),
 }
 
-pub fn run_transform(cli: &TransformRequest, options: TransformRunOptions) -> Result<()> {
-    run_transform_with_analysis(cli, options, None)
+pub fn run_transform(
+    cli: &TransformRequest,
+    options: TransformRunOptions,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<()> {
+    run_transform_with_analysis(cli, options, None, diagnostics)
 }
 
 /// A stored artifact paired with the reader's compiled analysis identity.
@@ -144,6 +148,7 @@ pub fn run_transform_with_analysis(
     cli: &TransformRequest,
     options: TransformRunOptions,
     analysis: Option<AnalysisArtifactInput<'_>>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<()> {
     if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
         anyhow::ensure!(analysis.is_some(), "--reports-only requires --analysis");
@@ -181,7 +186,7 @@ pub fn run_transform_with_analysis(
         },
         None => AnalysisMode::Compute,
     };
-    run_prepared_transform(&spec, prepared, options, false, mode, false)?;
+    run_prepared_transform(&spec, prepared, options, false, mode, false, diagnostics)?;
     Ok(())
 }
 
@@ -194,6 +199,7 @@ pub fn assess_candidate_effect_relocation(
     graph_source: &VerifiedGraphSourceContext,
     edit_modules_root: &Path,
     candidate_modules: &BTreeMap<String, LogicalModule>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<CandidateRelocationAssessmentReport> {
     let TransformSpecSource::Tree(tree) = &cli.spec_source else {
         bail!("candidate effect assessment requires a tree-shaped transform context");
@@ -269,7 +275,7 @@ pub fn assess_candidate_effect_relocation(
         artifact,
         analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
     };
-    let outcome = run_prepared_transform(&spec, prepared, options, true, mode, true)?;
+    let outcome = run_prepared_transform(&spec, prepared, options, true, mode, true, diagnostics)?;
     let PreparedTransformResult::EffectAssessed(mut assessments) = outcome else {
         bail!("candidate effect assessment did not reach AssignmentAnalysis");
     };
@@ -310,13 +316,22 @@ pub fn ensure_candidate_emittable_for_write(
 
 /// `debundle spec project-analysis`: the run's analysis projection, written to
 /// `out` as its canonical bytes. Runs the selector solve and nothing after it.
-pub fn project_analysis(cli: &TransformRequest, out: &Path) -> Result<()> {
+pub fn project_analysis(
+    cli: &TransformRequest,
+    out: &Path,
+    diagnostics: &analysis::diagnostics::Diagnostics,
+) -> Result<()> {
     let options = audit_options();
     let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
     let artifact = prepared.source.program.into_artifact();
-    let projection =
-        frontend_elaboration::project_analysis(artifact, &spec, &base, Some(&prepared.provenance))?;
+    let projection = frontend_elaboration::project_analysis(
+        artifact,
+        &spec,
+        &base,
+        Some(&prepared.provenance),
+        diagnostics,
+    )?;
     fs::write(out, projection.encode()?)
         .with_context(|| format!("write analysis projection {}", out.display()))
 }
@@ -349,7 +364,11 @@ pub enum ContractProbeOutcome {
 }
 
 impl ContractAudit {
-    pub fn prepare(cli: &TransformRequest, expected_spec: &TransformSpec) -> Result<Self> {
+    pub fn prepare(
+        cli: &TransformRequest,
+        expected_spec: &TransformSpec,
+        diagnostics: &analysis::diagnostics::Diagnostics,
+    ) -> Result<Self> {
         let (spec, prepared) = prepare_transform(cli, &audit_options(), Some(expected_spec), None)?;
         run_prepared_transform(
             &spec,
@@ -358,6 +377,7 @@ impl ContractAudit {
             true,
             AnalysisMode::Compute,
             false,
+            diagnostics,
         )?;
         prepared
             .provenance
@@ -377,6 +397,7 @@ impl ContractAudit {
     pub fn probe(
         &self,
         contracts: BTreeMap<String, ChunkExportPurity>,
+        diagnostics: &analysis::diagnostics::Diagnostics,
     ) -> Result<ContractProbeOutcome> {
         self.provenance()
             .verify(&CurrentRoots::default())
@@ -393,6 +414,7 @@ impl ContractAudit {
             true,
             AnalysisMode::Compute,
             false,
+            diagnostics,
         );
         self.provenance()
             .verify(&CurrentRoots::default())
@@ -440,7 +462,12 @@ impl AnnotationProbe {
 
     /// Run `spec` on the prepared input with reports and full graphs under
     /// `out_root`. Input changes since preparation abort the probe.
-    pub fn run(&self, spec: &TransformSpec, out_root: &Path) -> Result<AnnotationProbeRun> {
+    pub fn run(
+        &self,
+        spec: &TransformSpec,
+        out_root: &Path,
+        diagnostics: &analysis::diagnostics::Diagnostics,
+    ) -> Result<AnnotationProbeRun> {
         self.prepared
             .provenance
             .verify(&CurrentRoots::default())
@@ -462,6 +489,7 @@ impl AnnotationProbe {
             false,
             AnalysisMode::Compute,
             false,
+            diagnostics,
         );
         self.prepared
             .provenance
@@ -622,6 +650,7 @@ fn run_prepared_transform(
     suppress_reports: bool,
     analysis: AnalysisMode,
     assessment_only: bool,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<PreparedTransformResult> {
     let PreparedTransform {
         source,
@@ -751,6 +780,7 @@ fn run_prepared_transform(
                 assessment_only,
                 analysis,
             },
+            diagnostics,
         )?;
         let materialize_result = match materialize_result {
             Materialized::Assessed(assessments) => {
@@ -1251,17 +1281,29 @@ mod tests {
                 packages_root: None,
             };
             let spec = load_transform_spec_source(&cli.spec_source)?;
-            let audit = ContractAudit::prepare(&cli, &spec)?;
+            let audit = ContractAudit::prepare(
+                &cli,
+                &spec,
+                &analysis::diagnostics::Diagnostics::default(),
+            )?;
             for path in [&source, &list, &spec_path] {
                 let original = fs::read(path)?;
                 let mut changed = original.clone();
                 changed.push(b'\n');
                 fs::write(path, changed)?;
-                let error = audit.probe(BTreeMap::new()).unwrap_err();
+                let error = audit
+                    .probe(
+                        BTreeMap::new(),
+                        &analysis::diagnostics::Diagnostics::default(),
+                    )
+                    .unwrap_err();
                 assert!(error.is::<graph_provenance::GraphMismatch>(), "{error:#}");
                 fs::write(path, original)?;
                 assert!(matches!(
-                    audit.probe(BTreeMap::new())?,
+                    audit.probe(
+                        BTreeMap::new(),
+                        &analysis::diagnostics::Diagnostics::default()
+                    )?,
                     ContractProbeOutcome::Accepted
                 ));
             }
@@ -1386,6 +1428,7 @@ mod tests {
                     packages_root: None,
                 },
                 KEEP_GOING_RUN,
+                &analysis::diagnostics::Diagnostics::default(),
             )?;
 
             assert!(out.join("app/bootstrap.js").exists());
@@ -1493,6 +1536,7 @@ mod tests {
                     packages_root: None,
                 },
                 KEEP_GOING_RUN,
+                &analysis::diagnostics::Diagnostics::default(),
             )
             .expect_err("non-empty output directories should be rejected, not replaced");
             assert!(js_out.join("stale.txt").exists());
@@ -1577,6 +1621,7 @@ mod tests {
                     full_reports: BTreeSet::new(),
                     full_report_chunks: BTreeSet::new(),
                 },
+                &analysis::diagnostics::Diagnostics::default(),
             )?;
 
             assert!(js_out.join("stale.txt").exists());

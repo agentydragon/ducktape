@@ -37,6 +37,7 @@
 //! error). The rejection is pinned by
 //! `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`.
 
+use analysis::diagnostics::{AdmissionShape, ChunkDiagnostic, Diagnostics};
 use anyhow::{Result, bail};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Class, ClassMember, Expr, Function, GetterProp, Key, Lit,
@@ -69,25 +70,19 @@ pub enum DynamicImportTarget {
 
 #[derive(Debug)]
 struct AdmissionViolation {
-    check: AdmissionCheck,
-    /// Source-order statement ordinal in the post-comma-split view
-    /// (`facts::top_level_item_views`), aligned with the A2 bail and
-    /// the dependency graph reports.
+    shape: AdmissionShape,
+    /// Ordinal in the post-comma-split top-level source view.
     ordinal: usize,
-    description: String,
-    /// Benign while the emitted tree is the source as one module in source
-    /// order, under its own names: enforced by
-    /// [`enforce_split_admission`] once the assignment is known.
-    split_only: bool,
 }
 
 /// Scan `module` for admission violations and `bail!` on any that the
-/// spec does not override. Overridden violations print one notice line
+/// spec does not override. Overridden violations record one notice
 /// per check and description, naming every statement it suppressed;
-/// configured overrides that suppress nothing print a redundant-override
+/// configured overrides that suppress nothing record a redundant-override
 /// warning and are returned, for `spec lint`.
 pub(super) fn enforce_chunk_admission(
     chunk_id: &str,
+    diagnostics: &Diagnostics,
     module: &Module,
     overrides: AdmissionOverrides,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
@@ -95,50 +90,39 @@ pub(super) fn enforce_chunk_admission(
     let violations = scan_admission_violations(module, resolve_dynamic_import);
     let (suppressed, fatal): (Vec<_>, Vec<_>) = violations
         .into_iter()
-        .partition(|violation| overrides.contains(violation.check));
+        .partition(|violation| overrides.contains(violation.shape.check()));
     let fatal: Vec<_> = fatal
         .into_iter()
-        .filter(|violation| !violation.split_only)
+        .filter(|violation| !matches!(violation.shape, AdmissionShape::LazyDirectEval))
         .collect();
-    let mut notices: Vec<(AdmissionCheck, &str, Vec<usize>)> = Vec::new();
+    let mut notices: Vec<(AdmissionShape, Vec<usize>)> = Vec::new();
     for violation in &suppressed {
-        match notices.iter_mut().find(|(check, description, _)| {
-            *check == violation.check && *description == violation.description
-        }) {
-            Some((_, _, ordinals)) => ordinals.push(violation.ordinal),
-            None => notices.push((
-                violation.check,
-                violation.description.as_str(),
-                vec![violation.ordinal],
-            )),
+        match notices
+            .iter_mut()
+            .find(|(shape, _)| *shape == violation.shape)
+        {
+            Some((_, ordinals)) => ordinals.push(violation.ordinal),
+            None => notices.push((violation.shape.clone(), vec![violation.ordinal])),
         }
     }
-    for (check, description, ordinals) in &notices {
-        let noun = if ordinals.len() == 1 {
-            "statement"
-        } else {
-            "statements"
-        };
-        let statements = ordinals
-            .iter()
-            .map(|ordinal| format!("#{ordinal}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!(
-            "notice: chunk {chunk_id}: admission check {check} overridden by spec \
-             (chunk_analysis_options.{chunk_id}.admission_overrides): {noun} \
-             {statements}: {description}",
+    for (shape, statements) in notices {
+        diagnostics.record_chunk(
+            chunk_id,
+            ChunkDiagnostic::AdmissionOverride { shape, statements },
         );
     }
     let redundant = overrides
         .iter()
-        .filter(|check| !suppressed.iter().any(|violation| violation.check == *check))
+        .filter(|check| {
+            !suppressed
+                .iter()
+                .any(|violation| violation.shape.check() == *check)
+        })
         .collect::<Vec<_>>();
     for check in &redundant {
-        eprintln!(
-            "warning: chunk {chunk_id}: admission override `{check}` is redundant — \
-                 the chunk has no {check} violation and the override is a no-op. \
-                 Remove it from chunk_analysis_options.{chunk_id}.admission_overrides.",
+        diagnostics.record_chunk(
+            chunk_id,
+            ChunkDiagnostic::RedundantAdmissionOverride(*check),
         );
     }
     refuse(chunk_id, &fatal)?;
@@ -160,7 +144,10 @@ pub(super) fn enforce_split_admission(
     }
     let fatal: Vec<_> = scan_admission_violations(module, &|_| DynamicImportTarget::External)
         .into_iter()
-        .filter(|violation| violation.split_only && !overrides.contains(violation.check))
+        .filter(|violation| {
+            matches!(violation.shape, AdmissionShape::LazyDirectEval)
+                && !overrides.contains(violation.shape.check())
+        })
         .collect();
     refuse(chunk_id, &fatal)
 }
@@ -175,8 +162,8 @@ fn refuse(chunk_id: &str, fatal: &[AdmissionViolation]) -> Result<()> {
             format!(
                 "  statement #{ordinal}: [{check}] {description}",
                 ordinal = violation.ordinal,
-                check = violation.check,
-                description = violation.description,
+                check = violation.shape.check(),
+                description = violation.shape.explanation(),
             )
         })
         .collect::<Vec<_>>()
@@ -187,7 +174,7 @@ fn refuse(chunk_id: &str, fatal: &[AdmissionViolation]) -> Result<()> {
          The realizability theorem does not cover these shapes. Rework the chunk, or — \
          after auditing that the shape is benign here — opt out per check via \
          `chunk_analysis_options.{chunk_id}.admission_overrides` (e.g. `[{first}]`).",
-        first = first.check,
+        first = first.shape.check(),
     );
 }
 
@@ -223,12 +210,10 @@ struct AdmissionScan<'r> {
 }
 
 impl AdmissionScan<'_> {
-    fn record(&mut self, check: AdmissionCheck, description: String) {
+    fn record(&mut self, shape: AdmissionShape) {
         self.violations.push(AdmissionViolation {
-            check,
+            shape,
             ordinal: self.ordinal,
-            description,
-            split_only: false,
         });
     }
 
@@ -246,18 +231,11 @@ impl AdmissionScan<'_> {
         // Module code is strict, and strict mode forbids `eval` as a
         // binding name — so an `eval` ident here is the global eval.
         if matches!(callee_base_expr(callee), Expr::Ident(ident) if ident.sym.as_ref() == "eval") {
-            let shape = if matches!(callee.unwrap_parens(), Expr::Seq(_)) {
-                "indirect `(…, eval)(...)` call"
+            self.record(if matches!(callee.unwrap_parens(), Expr::Seq(_)) {
+                AdmissionShape::IndirectEvalAtTopLevel
             } else {
-                "direct `eval(...)` call"
-            };
-            self.record(
-                AdmissionCheck::A1Eval,
-                format!(
-                    "{shape} at module top level — the static analyzer cannot see what \
-                     eval reads, so the at-init read graph `I` would be incomplete"
-                ),
-            );
+                AdmissionShape::DirectEvalAtTopLevel
+            });
         }
     }
 
@@ -274,24 +252,11 @@ impl AdmissionScan<'_> {
         match literal {
             Some(specifier) => {
                 if (self.resolve_dynamic_import)(&specifier) == DynamicImportTarget::SameChunk {
-                    self.record(
-                        AdmissionCheck::A3DynamicImport,
-                        format!(
-                            "`import({specifier:?})` resolves into this chunk — dynamic \
-                             import of a debundled internal module routes around the \
-                             static import graph"
-                        ),
-                    );
+                    self.record(AdmissionShape::InternalDynamicImport { specifier });
                 }
             }
             None if self.lazy_depth == 0 => {
-                self.record(
-                    AdmissionCheck::A3DynamicImport,
-                    "dynamic `import(...)` with a non-literal specifier at module top \
-                     level — the target cannot be proven external to the debundled \
-                     module set"
-                        .to_string(),
-                );
+                self.record(AdmissionShape::NonliteralDynamicImport);
             }
             None => {}
         }
@@ -310,15 +275,7 @@ impl Visit for AdmissionScan<'_> {
             // visible: an ordinary opaque call.
             Callee::Expr(expr) if matches!(expr.unwrap_parens(), Expr::Ident(ident) if ident.sym.as_ref() == "eval") =>
             {
-                self.violations.push(AdmissionViolation {
-                    check: AdmissionCheck::A1Eval,
-                    ordinal: self.ordinal,
-                    description: "direct `eval(...)` call in a lazy body — it can read and \
-                                  write any binding in scope by name, which the analysis \
-                                  cannot see, once the chunk is split, reordered or renamed"
-                        .to_string(),
-                    split_only: true,
-                });
+                self.record(AdmissionShape::LazyDirectEval);
             }
             _ => {}
         }
@@ -334,22 +291,12 @@ impl Visit for AdmissionScan<'_> {
                     // `import.meta.url` is the one whitelisted shape (A5).
                     MemberProp::Ident(prop) if prop.sym.as_ref() == "url" => {}
                     MemberProp::Ident(prop) => {
-                        let prop = prop.sym.as_ref();
-                        self.record(
-                            AdmissionCheck::A5ImportMeta,
-                            format!(
-                                "`import.meta.{prop}` read at module top level — only \
-                                 `import.meta.url` is covered by the realizability theorem"
-                            ),
-                        );
+                        self.record(AdmissionShape::ImportMetaProperty {
+                            property: prop.sym.to_string(),
+                        });
                     }
                     _ => {
-                        self.record(
-                            AdmissionCheck::A5ImportMeta,
-                            "computed `import.meta[...]` access at module top level — only \
-                             `import.meta.url` is covered by the realizability theorem"
-                                .to_string(),
-                        );
+                        self.record(AdmissionShape::ComputedImportMeta);
                     }
                 }
             }
@@ -369,12 +316,7 @@ impl Visit for AdmissionScan<'_> {
         // Reached only for `import.meta` outside the member shapes
         // intercepted above (e.g. passed as a value).
         if node.kind == MetaPropKind::ImportMeta && self.lazy_depth == 0 {
-            self.record(
-                AdmissionCheck::A5ImportMeta,
-                "bare `import.meta` used as a value at module top level — namespace \
-                 reflection beyond `import.meta.url`"
-                    .to_string(),
-            );
+            self.record(AdmissionShape::BareImportMeta);
         }
     }
 
@@ -502,7 +444,7 @@ mod tests {
     ) -> Vec<(AdmissionCheck, usize)> {
         scan_admission_violations(&parse(source), resolve)
             .into_iter()
-            .map(|violation| (violation.check, violation.ordinal))
+            .map(|violation| (violation.shape.check(), violation.ordinal))
             .collect()
     }
 

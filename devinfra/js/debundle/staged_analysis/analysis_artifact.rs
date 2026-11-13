@@ -269,7 +269,12 @@ mod tests {
                 replacement_packages: &BTreeMap::new(),
             },
             None,
-            &reparse_unretained_entries(artifact, None),
+            &reparse_unretained_entries(
+                artifact,
+                None,
+                &analysis::diagnostics::Diagnostics::default(),
+            ),
+            &analysis::diagnostics::Diagnostics::default(),
         )
         .expect("program summary analysis succeeds");
         let chunks = artifact

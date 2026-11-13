@@ -101,14 +101,27 @@ pub enum ResolvedLocalMemberOrigin {
 /// gate) must never silently treat a claimed source unit as residual. As in `run`, a
 /// claim unique only because other claims took its alternatives resolves, with
 /// a warning on stderr.
+pub struct SourceClaimsContext<'a> {
+    pub graph: &'a DependencyGraphReport,
+    pub dependency_graph_path: &'a Path,
+    pub modules_root: &'a Path,
+    pub source_root: Option<&'a Path>,
+    pub source_context: Option<&'a VerifiedGraphSourceContext>,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+}
+
 pub fn resolve_source_claims(
-    graph: &DependencyGraphReport,
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
+    context: SourceClaimsContext<'_>,
     claim_sets: &[SourceClaimSet<'_>],
 ) -> Result<Vec<ResolvedSourceClaims>> {
+    let SourceClaimsContext {
+        graph,
+        dependency_graph_path,
+        modules_root,
+        source_root,
+        source_context,
+        diagnostics,
+    } = context;
     resolve_claim_sets(
         graph,
         dependency_graph_path,
@@ -118,21 +131,25 @@ pub fn resolve_source_claims(
         claim_sets,
     )?
     .into_iter()
-    .map(|resolved| resolved.map(ResolvedClaimSet::warn))
+    .map(|resolved| resolved.map(|resolved| resolved.record(diagnostics)))
     .collect()
 }
 
 /// [`resolve_source_claims`] for `claim_sets[index]` alone, resolved together
 /// with the others: an error in another set does not fail it.
 pub fn resolve_source_claims_of(
-    graph: &DependencyGraphReport,
-    dependency_graph_path: &Path,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
+    context: SourceClaimsContext<'_>,
     claim_sets: &[SourceClaimSet<'_>],
     index: usize,
 ) -> Result<ResolvedSourceClaims> {
+    let SourceClaimsContext {
+        graph,
+        dependency_graph_path,
+        modules_root,
+        source_root,
+        source_context,
+        diagnostics,
+    } = context;
     resolve_claim_sets(
         graph,
         dependency_graph_path,
@@ -142,20 +159,23 @@ pub fn resolve_source_claims_of(
         claim_sets,
     )?
     .swap_remove(index)
-    .map(ResolvedClaimSet::warn)
+    .map(|resolved| resolved.record(diagnostics))
 }
 
 /// A claim set's resolution and the warnings it carries.
 #[derive(Default)]
 struct ResolvedClaimSet {
     claims: ResolvedSourceClaims,
-    warnings: Vec<String>,
+    warnings: Vec<SelectorOutcome>,
 }
 
 impl ResolvedClaimSet {
-    fn warn(self) -> ResolvedSourceClaims {
-        for warning in &self.warnings {
-            eprintln!("{warning}");
+    fn record(self, diagnostics: &analysis::diagnostics::Diagnostics) -> ResolvedSourceClaims {
+        for warning in self.warnings {
+            diagnostics.record_chunk(
+                &warning.chunk.clone(),
+                analysis::diagnostics::ChunkDiagnostic::Selector(Box::new(warning)),
+            );
         }
         self.claims
     }
@@ -526,7 +546,7 @@ fn claim_entity(
 ) -> Result<()> {
     let (place, source) = one_place(claims, module, entity, outcomes)?;
     if source.outcome.severity() != Severity::Ok {
-        set.warnings.push(source.outcome.render_line());
+        set.warnings.push(source.outcome.clone());
     }
     match entity {
         EntityIndex::AnonymousStatement(index) => {
@@ -676,10 +696,12 @@ fn one_place<'o, 's>(
                         .map(|candidate| (candidate.clone(), source)),
                 );
             }
-            _ => bail!(
-                "module {module_path} {what} did not resolve:\n{}",
-                source.outcome.render_line()
-            ),
+            _ => {
+                return Err(anyhow::Error::new(
+                    selector_outcome::SelectorFailure::Single(Box::new(source.outcome.clone())),
+                ))
+                .with_context(|| format!("module {module_path} {what} did not resolve:"));
+            }
         }
     }
     let at_least = if truncated { "at least " } else { "" };

@@ -852,14 +852,19 @@ fn gate_post_edit_assignment_with_expected(
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // source unit must never silently fall to residual.
     let claim_sets = source_claim_sets_from_post_spec(post_spec);
-    let resolved_claims = resolve_source_claims(
-        dependency_graph_report,
-        dependency_graph_path,
-        modules_root,
-        source_lookup.root,
-        source_lookup.verified,
-        &claim_sets,
-    )?;
+    let resolved_claims = command_diagnostics::run(|diagnostics| {
+        resolve_source_claims(
+            anonymous_resolution::SourceClaimsContext {
+                graph: dependency_graph_report,
+                dependency_graph_path,
+                modules_root,
+                source_root: source_lookup.root,
+                source_context: source_lookup.verified,
+                diagnostics,
+            },
+            &claim_sets,
+        )
+    })?;
     let claim_projection = project_source_unit_claims(input, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
     match expected {

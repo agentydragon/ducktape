@@ -5,10 +5,11 @@ use analysis::DependencyGraphInput;
 use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
+use command_output::{print_ndjson_list, print_report};
 use peel::plan::{LimitReport, apply_limit_with_metadata};
 use peel::{
     CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
-    print_ndjson_list, print_report, resolve_binding_source_units,
+    resolve_binding_source_units,
 };
 
 /// Args for `debundle scc`.

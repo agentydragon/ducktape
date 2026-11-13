@@ -27,9 +27,10 @@ mod static_imports;
 use analyze_command::AnalyzeArgs;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, CommandFactory, FromArgMatches, Parser, Subcommand};
+use command_output::print_report;
 use graph_provenance::{CurrentRoots, GraphMismatch, GraphMismatchReason};
 use lowering::FullReportKind;
-use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
+use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs};
 use pipeline::{
     GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformRunOptions,
     run_transform_with_analysis,
@@ -570,35 +571,38 @@ fn run_debundle_cli(
             let output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.context.resolve()?;
-            run_transform_with_analysis(
-                &cli,
-                TransformRunOptions {
-                    ownership_subset: ownership_subset
-                        .as_deref()
-                        .map(lowering::ownership_subset::OwnershipSubset::read)
-                        .transpose()?,
-                    output,
-                    artifacts,
-                    graph_reports: if graphs {
-                        lowering::GraphReportSelection::Full
-                    } else {
-                        lowering::GraphReportSelection::None
+            command_diagnostics::run(|diagnostics| {
+                run_transform_with_analysis(
+                    &cli,
+                    TransformRunOptions {
+                        ownership_subset: ownership_subset
+                            .as_deref()
+                            .map(lowering::ownership_subset::OwnershipSubset::read)
+                            .transpose()?,
+                        output,
+                        artifacts,
+                        graph_reports: if graphs {
+                            lowering::GraphReportSelection::Full
+                        } else {
+                            lowering::GraphReportSelection::None
+                        },
+                        keep_going,
+                        report_dir_override: None,
+                        list_template_identifiers: false,
+                        effect_conflicts_jsonl,
+                        effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
+                        full_reports: full_reports.into_iter().collect(),
+                        full_report_chunks: full_report_chunks.into_iter().collect(),
                     },
-                    keep_going,
-                    report_dir_override: None,
-                    list_template_identifiers: false,
-                    effect_conflicts_jsonl,
-                    effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
-                    full_reports: full_reports.into_iter().collect(),
-                    full_report_chunks: full_report_chunks.into_iter().collect(),
-                },
-                analysis
-                    .as_deref()
-                    .map(|path| pipeline::AnalysisArtifactInput {
-                        path,
-                        analysis_engine_sha256,
-                    }),
-            )?;
+                    analysis
+                        .as_deref()
+                        .map(|path| pipeline::AnalysisArtifactInput {
+                            path,
+                            analysis_engine_sha256,
+                        }),
+                    diagnostics,
+                )
+            })?;
             if output == RunOutput::DryRun {
                 println!("dry-run: transform pipeline checks passed; no outputs written");
             }

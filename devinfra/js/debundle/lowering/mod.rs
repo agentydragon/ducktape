@@ -297,6 +297,7 @@ pub fn materialize_logical_modules(
     spec_inputs: MaterializeSpecInputs<'_>,
     vendor_plan: &Arc<vendor::VendorResolutionPlan>,
     options: MaterializeLogicalModulesOptions,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<Materialized> {
     ensure!(
         !options.assessment_only || matches!(&options.analysis, AnalysisMode::Load { .. }),
@@ -323,9 +324,7 @@ pub fn materialize_logical_modules(
             "full graph export for ownership subsets is unsupported"
         );
         subset.validate(logical_modules, &selected_chunk_ids)?;
-        eprintln!(
-            "Ownership subset: validating the selected assignment with full spec context; the canonical assignment is not being validated."
-        );
+        diagnostics.record_invocation(analysis::diagnostics::InvocationDiagnostic::OwnershipSubset);
     }
     let seen: BTreeSet<&str> = selected_chunk_ids.iter().map(String::as_str).collect();
 
@@ -365,6 +364,7 @@ pub fn materialize_logical_modules(
     let reparsed = program_summary::reparse_unretained_entries(
         &artifact,
         Some(&program_summary_chunk_closure),
+        diagnostics,
     );
     let mut loaded = match &options.analysis {
         AnalysisMode::Load {
@@ -450,7 +450,7 @@ pub fn materialize_logical_modules(
             host_behavior,
             intrinsics_never_written: program_premises.intrinsics_never_written.as_ref(),
             fail_fast: !options.keep_going,
-            report_warnings: false,
+            diagnostics,
         },
     )?;
     let frontend_elaboration::FrontendElaboration {
@@ -471,6 +471,7 @@ pub fn materialize_logical_modules(
                         prepare_logical_chunk(
                             MaterializeLogicalChunkInputs {
                                 context: ChunkContext {
+                                    diagnostics,
                                     ownership_subset: options.ownership_subset.as_ref(),
                                     artifact: artifact_ref,
                                     artifact_indexes: &artifact_indexes,
@@ -539,6 +540,7 @@ pub fn materialize_logical_modules(
                 },
                 Some(&program_summary_chunk_closure),
                 &reparsed,
+                diagnostics,
             )?,
             None,
         ),

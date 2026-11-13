@@ -4,6 +4,7 @@
 //! imports that export receives the contract under its local binding name.
 //! This is axiom projection, not inference: no fixpoint, no source facts.
 
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::cross_module_purity::ModulePurityFacts;
@@ -29,12 +30,13 @@ pub(crate) fn scoped<T: Clone>(
 
 /// Project per-export contract values (`export → T`) onto each analyzed
 /// importer's local bindings (`local → T`). `asserted` comes from [`scoped`].
-/// An assertion naming an export its analyzed chunk lacks warns to stderr as
+/// An assertion naming an export its analyzed chunk lacks records a diagnostic as
 /// dangling (likely a typo or a stale entry) and is ignored.
 pub(crate) fn project_onto_importers<T: Clone>(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<String, BTreeMap<String, T>>,
-    contract: &str,
+    contract: ExportContract,
+    diagnostics: &Diagnostics,
 ) -> BTreeMap<String, BTreeMap<String, T>> {
     for (module, by_export) in asserted {
         for export in by_export.keys() {
@@ -42,9 +44,12 @@ pub(crate) fn project_onto_importers<T: Clone>(
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
-                eprintln!(
-                    "cross_module_purity: dangling {contract} assertion \
-                     {module}:{export} — no such analyzed module export; ignoring"
+                diagnostics.record_chunk(
+                    module,
+                    ChunkDiagnostic::DanglingExportContract {
+                        contract,
+                        export: export.clone(),
+                    },
                 );
             }
         }
@@ -74,7 +79,8 @@ pub(crate) fn project_onto_importers<T: Clone>(
 pub(crate) fn project_export_set(
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<String, BTreeSet<String>>,
-    contract: &str,
+    contract: ExportContract,
+    diagnostics: &Diagnostics,
 ) -> BTreeMap<String, BTreeSet<String>> {
     let as_map = asserted
         .iter()
@@ -85,7 +91,7 @@ pub(crate) fn project_export_set(
             )
         })
         .collect();
-    project_onto_importers(modules, &as_map, contract)
+    project_onto_importers(modules, &as_map, contract, diagnostics)
         .into_iter()
         .map(|(importer, locals)| (importer, locals.into_keys().collect()))
         .collect()
@@ -135,7 +141,8 @@ mod tests {
         project_export_set(
             modules,
             &scoped(configured, modules, |p| &p.fluent_exports),
-            "fluent_exports",
+            ExportContract::FluentExports,
+            &Diagnostics::default(),
         )
     }
 

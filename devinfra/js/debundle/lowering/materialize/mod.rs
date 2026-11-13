@@ -73,6 +73,7 @@ use swc_ecma_ast::*;
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
 pub(super) struct ChunkContext<'a> {
+    pub(super) diagnostics: &'a analysis::diagnostics::Diagnostics,
     pub(super) ownership_subset: Option<&'a OwnershipSubset>,
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
@@ -439,6 +440,7 @@ pub(super) fn finish_logical_chunk(
             target_file: &target_file,
             runtime_ast,
             source_path: &source_path,
+            diagnostics: context.diagnostics,
             export_reentry_policy: export_reentry_policies
                 .get(&chunk_id_interned)
                 .unwrap_or(&ExportReentryPolicy::Conservative),
@@ -484,7 +486,12 @@ pub(super) fn finish_logical_chunk(
         };
     // An unused entry is a warning: the graph is exactly the graph without it.
     for unused in &precomputed.unused_commuting_statements {
-        eprintln!("warning: chunk {chunk_id}: {unused}");
+        context.diagnostics.record_chunk(
+            chunk_id,
+            analysis::diagnostics::ChunkDiagnostic::UnusedCommutingStatements(Box::new(
+                unused.clone(),
+            )),
+        );
     }
     if !precomputed.unused_commuting_statements.is_empty()
         && let Some(report_out_dir) = report_emission.rejection_dir()

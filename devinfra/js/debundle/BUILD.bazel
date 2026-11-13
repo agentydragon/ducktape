@@ -660,6 +660,7 @@ rust_library(
         "assignment_assembly.rs",
         "atomic_groups.rs",
         "cross_module_purity.rs",
+        "diagnostics.rs",
         "execution_evidence.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/builtins.rs",
@@ -800,6 +801,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":report_io",
+        ":selector_outcome",
         ":source_identity",
         ":spec",
         "@crates//:anyhow",
@@ -1386,10 +1388,22 @@ rust_library(
 )
 
 rust_library(
+    name = "command_diagnostics",
+    srcs = ["command_diagnostics.rs"],
+    edition = "2024",
+    deps = [
+        ":analysis",
+        "@crates//:anyhow",
+    ],
+)
+
+rust_library(
     name = "analyze_command",
     srcs = ["analyze_command.rs"],
     edition = "2024",
     deps = [
+        ":analysis",
+        ":command_diagnostics",
         ":package_args",
         ":staged_analysis",
         "@crates//:anyhow",
@@ -1402,6 +1416,8 @@ rust_library(
     srcs = ["transform_command.rs"],
     edition = "2024",
     deps = [
+        ":analysis",
+        ":command_diagnostics",
         ":package_args",
         ":pipeline",
         ":spec_tree",
@@ -1422,6 +1438,7 @@ rust_library(
     crate_root = "pipeline.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":analysis_projection",
         ":artifact",
         ":emit_harness",
@@ -1495,6 +1512,8 @@ rust_library(
         ":analyze_command",
         ":anonymous_resolution",
         ":artifact",
+        ":command_diagnostics",
+        ":command_output",
         ":gate",
         ":graph_provenance",
         ":js_ast",
@@ -1995,5 +2014,17 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+rust_library(
+    name = "command_output",
+    srcs = ["command_output.rs"],
+    edition = "2024",
+    deps = [
+        ":peel",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
     ],
 )

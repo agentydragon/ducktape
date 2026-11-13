@@ -30,6 +30,7 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
+use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use analysis_model::PrimKinds;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -697,12 +698,13 @@ impl<'a> ModulePurityFacts<'a> {
 /// axioms: they enter the verdict map as `Pure` even when the export's
 /// binding is not a classifiable chunk-top function (interop wrappers,
 /// re-exported callables), and the effects closure never demotes them. An assertion
-/// naming a module or export the program doesn't have is reported to stderr
+/// naming a module or export the program does not have records a diagnostic
 /// as a dangling assertion (likely a typo or a stale entry) and ignored.
 pub fn resolve_imported_purities(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     callable_summaries: &mut ResolvedCallableSummaries,
+    diagnostics: &Diagnostics,
 ) -> Result<BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>>> {
     // Only exported verdicts read by a named/default import can affect the
     // returned maps or another module's closure. Namespace member calls are
@@ -721,9 +723,12 @@ pub fn resolve_imported_purities(
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export_name));
             if !known_export {
-                eprintln!(
-                    "cross_module_purity: dangling pure_exports assertion \
-                     {module}:{export_name} — no such analyzed module export; ignoring"
+                diagnostics.record_chunk(
+                    module,
+                    ChunkDiagnostic::DanglingExportContract {
+                        contract: ExportContract::PureExports,
+                        export: export_name.clone(),
+                    },
                 );
                 continue;
             }
@@ -1223,6 +1228,7 @@ pub fn resolve_imported_callable_summaries(
         BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
     >,
     inputs: CallableSummaryInputs<'_>,
+    diagnostics: &Diagnostics,
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
         requested_original_provider_exports,
@@ -1265,8 +1271,12 @@ pub fn resolve_imported_callable_summaries(
                         ProofDependencies::default(),
                     );
             } else {
-                eprintln!(
-                    "cross_module_purity: dangling callback_factory_exports assertion {module}:{export} — no such analyzed module export; ignoring"
+                diagnostics.record_chunk(
+                    module,
+                    ChunkDiagnostic::DanglingExportContract {
+                        contract: ExportContract::CallbackFactoryExports,
+                        export: export.clone(),
+                    },
                 );
             }
         }
@@ -2324,6 +2334,7 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
+            &Diagnostics::default(),
         )
         .unwrap();
         assert!(!resolved["a"]["wrap"].is_pure());
@@ -2348,6 +2359,7 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
+            &Diagnostics::default(),
         )
         .unwrap();
 
@@ -2375,6 +2387,7 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
+            &Diagnostics::default(),
         )
         .unwrap();
 
@@ -2426,6 +2439,7 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
+            &Diagnostics::default(),
         )
         .unwrap();
         assert!(!resolved["app"].contains_key("ext"));
@@ -2447,6 +2461,7 @@ mod tests {
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
+            &Diagnostics::default(),
         )
         .unwrap();
         assert!(!resolved["app"].contains_key("table"));
@@ -2507,7 +2522,8 @@ mod tests {
             !resolve_imported_purities(
                 &modules,
                 &BTreeMap::new(),
-                &mut ResolvedCallableSummaries::default()
+                &mut ResolvedCallableSummaries::default(),
+                &Diagnostics::default()
             )
             .unwrap()["app"]["observer"]
                 .is_pure()
@@ -2519,6 +2535,7 @@ mod tests {
             &modules,
             &asserted,
             &mut ResolvedCallableSummaries::default(),
+            &Diagnostics::default(),
         )
         .unwrap();
         assert!(resolved["app"]["observer"].is_pure());
@@ -2565,7 +2582,8 @@ mod tests {
             !resolve_imported_purities(
                 &modules,
                 &BTreeMap::new(),
-                &mut ResolvedCallableSummaries::default()
+                &mut ResolvedCallableSummaries::default(),
+                &Diagnostics::default()
             )
             .unwrap()["app"]
                 .contains_key("forwardRef")
@@ -2578,7 +2596,8 @@ mod tests {
             resolve_imported_purities(
                 &modules,
                 &asserted,
-                &mut ResolvedCallableSummaries::default()
+                &mut ResolvedCallableSummaries::default(),
+                &Diagnostics::default()
             )
             .unwrap()["app"]["forwardRef"]
                 .is_pure()
@@ -2631,6 +2650,7 @@ mod tests {
                 no_accessor_install_callables: &BTreeMap::new(),
                 intrinsics_never_written: BTreeSet::new(),
             },
+            &Diagnostics::default(),
         )
         .unwrap()
         .imported_callables;

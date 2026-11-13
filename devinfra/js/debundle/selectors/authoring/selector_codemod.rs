@@ -1631,12 +1631,17 @@ fn prove_synthesized_selector(
             } if *binding == target.runtime_binding => {
                 first_body_index = first_body_index.min(*body_index)
             }
-            _ => bail!(
-                "synthesized selector does not prove `{}` as `{}`: {}",
-                target.runtime_binding,
-                target.export_name,
-                outcome.render_line()
-            ),
+            _ => {
+                return Err(anyhow::Error::new(
+                    selector_outcome::SelectorFailure::Single(Box::new(outcome.clone())),
+                ))
+                .with_context(|| {
+                    format!(
+                        "synthesized selector does not prove `{}` as `{}`",
+                        target.runtime_binding, target.export_name
+                    )
+                });
+            }
         }
     }
     if first_body_index != decl.body_idx {

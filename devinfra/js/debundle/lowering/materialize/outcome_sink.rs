@@ -8,13 +8,10 @@ use selector_outcome::{
 };
 use std::collections::BTreeSet;
 
-/// Outcome lines a failing chunk prints; `selector_diagnostics.json` keeps them
-/// all.
-const HUMAN_OUTCOME_REPORT_LIMIT: usize = 200;
-
 /// Every selector outcome of one chunk worth reporting: each entity that did
-/// not resolve, and each resolved-by-elimination warning. Warnings print as
-/// they arrive and never stop the chunk. With `fail_fast` the first error
+/// not resolve, and each resolved-by-elimination warning. The frontend records
+/// warnings in the invocation context; this sink only retains their report data.
+/// With `fail_fast` the first error
 /// stops it with that outcome's line; otherwise the entity stays unclaimed,
 /// the chunk goes on, and [`OutcomeSink::finish`] fails it with every error.
 pub(super) struct OutcomeSink {
@@ -57,9 +54,10 @@ impl OutcomeSink {
             );
         }
         match outcome.severity() {
-            Severity::Error if self.fail_fast => bail!("{}", outcome.render_line()),
-            Severity::Warning => eprintln!("{}", outcome.render_line()),
-            Severity::Ok | Severity::Error => {}
+            Severity::Error if self.fail_fast => {
+                bail!(selector_outcome::SelectorFailure::Single(Box::new(outcome)))
+            }
+            Severity::Ok | Severity::Warning | Severity::Error => {}
         }
         self.outcomes.push(outcome);
         Ok(())
@@ -109,16 +107,12 @@ impl OutcomeSink {
             return Ok(());
         }
         failed.sort();
-        let mut report = String::from(
-            "Selector outcome report: in keep-going mode, selectors that did not resolve are \
-             left unclaimed so the rest of the chunk can still be checked.\n",
-        );
-        SelectorOutcomeReport {
-            outcomes: failed,
-            templates: Vec::new(),
-            validation: self.validation,
-        }
-        .render_text(&mut report, Some(HUMAN_OUTCOME_REPORT_LIMIT));
-        bail!("{report}")
+        bail!(selector_outcome::SelectorFailure::KeepGoing(
+            SelectorOutcomeReport {
+                outcomes: failed,
+                templates: Vec::new(),
+                validation: self.validation,
+            }
+        ))
     }
 }

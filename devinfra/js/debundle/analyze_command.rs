@@ -41,6 +41,9 @@ impl AnalyzeArgs {
     }
 
     pub fn run(self, analysis_engine_sha256: &str) -> Result<()> {
-        analyze_from_projection(self.resolve()?, analysis_engine_sha256)
+        let diagnostics = analysis::diagnostics::Diagnostics::default();
+        let result = analyze_from_projection(self.resolve()?, analysis_engine_sha256, &diagnostics);
+        command_diagnostics::report(&diagnostics);
+        result
     }
 }

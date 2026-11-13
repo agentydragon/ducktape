@@ -133,7 +133,7 @@ pub struct FrontendSpecInputs<'a> {
     pub host_behavior: &'a HostBehavior,
     pub intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
     pub fail_fast: bool,
-    pub report_warnings: bool,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
 }
 
 /// Build the canonical project-analysis artifact directly from source-level
@@ -144,6 +144,7 @@ pub fn project_analysis(
     spec: &spec::TransformSpec,
     base: &AnalysisSpec,
     graph_provenance: Option<&GraphProvenance>,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<AnalysisSpec> {
     if !spec.materialize_logical_modules.target_dir.is_empty() {
         artifact::paths::normalize_module_path(&spec.materialize_logical_modules.target_dir)?;
@@ -187,7 +188,7 @@ pub fn project_analysis(
             host_behavior: &spec.host_behavior,
             intrinsics_never_written: spec.program_premises.intrinsics_never_written.as_ref(),
             fail_fast: true,
-            report_warnings: true,
+            diagnostics,
         },
     )?;
     complete_analysis_spec(base, &frontend.projection)
@@ -239,7 +240,7 @@ pub fn elaborate<'a>(
                 resolved,
                 spec.chunk_renames,
                 spec.fail_fast,
-                spec.report_warnings,
+                spec.diagnostics,
             )
         })
         .collect::<Result<Vec<_>>>()?;
@@ -1023,7 +1024,9 @@ fn eligible_member_indices(
                             },
                         },
                     );
-                    bail!("{}", duplicate.render_line());
+                    bail!(selector_outcome::SelectorFailure::Single(Box::new(
+                        duplicate
+                    )));
                 }
                 continue;
             }
@@ -1075,7 +1078,7 @@ fn finish_frontend_chunk<'a>(
     resolved: ResolvedChunk<'a>,
     chunk_renames: &BTreeMap<String, ChunkRenames>,
     fail_fast: bool,
-    report_warnings: bool,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<FrontendChunk<'a>> {
     let ResolvedChunk {
         resolution,
@@ -1091,7 +1094,7 @@ fn finish_frontend_chunk<'a>(
         top_level_mark: prepared.runtime_ast.top_level_mark,
         body: &prepared.runtime_ast.module.body,
         fail_fast,
-        report_warnings,
+        diagnostics,
     })?;
     let (declared_assumptions, source_only_initializer_bindings) = collect_binding_contracts(
         &prepared.explicit_requests,
@@ -1128,7 +1131,7 @@ struct MemberClaimInput<'a> {
     top_level_mark: swc_common::Mark,
     body: &'a [ModuleItem],
     fail_fast: bool,
-    report_warnings: bool,
+    diagnostics: &'a analysis::diagnostics::Diagnostics,
 }
 
 fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProjection> {
@@ -1141,7 +1144,7 @@ fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProje
         top_level_mark,
         body,
         fail_fast,
-        report_warnings,
+        diagnostics,
     } = input;
     struct ExistingClaim {
         request_index: usize,
@@ -1172,7 +1175,7 @@ fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProje
         }
     }
     for outcome in &resolution.outcomes {
-        record_frontend_outcome(&outcome.outcome, fail_fast, report_warnings)?;
+        record_frontend_outcome(&outcome.outcome, fail_fast, diagnostics)?;
         let request = requests.get(outcome.module).with_context(|| {
             format!(
                 "selector outcome names missing logical module {}",
@@ -1268,7 +1271,9 @@ fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProje
                         },
                     },
                 );
-                bail!("{}", duplicate.render_line());
+                bail!(selector_outcome::SelectorFailure::Single(Box::new(
+                    duplicate
+                )));
             }
             continue;
         }
@@ -1293,12 +1298,17 @@ fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProje
 fn record_frontend_outcome(
     outcome: &SelectorOutcome,
     fail_fast: bool,
-    report_warnings: bool,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<()> {
     match outcome.severity() {
-        Severity::Error if fail_fast => bail!("{}", outcome.render_line()),
-        Severity::Warning if report_warnings => eprintln!("{}", outcome.render_line()),
-        Severity::Error | Severity::Warning => {}
+        Severity::Error if fail_fast => bail!(selector_outcome::SelectorFailure::Single(Box::new(
+            outcome.clone()
+        ))),
+        Severity::Warning => diagnostics.record_chunk(
+            &outcome.chunk,
+            analysis::diagnostics::ChunkDiagnostic::Selector(Box::new(outcome.clone())),
+        ),
+        Severity::Error => {}
         Severity::Ok => {}
     }
     Ok(())

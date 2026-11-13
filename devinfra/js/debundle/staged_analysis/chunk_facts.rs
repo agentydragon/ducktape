@@ -16,15 +16,28 @@ use std::collections::BTreeMap;
 /// One chunk's facts for `debundle analyze`: what `finish_logical_chunk`
 /// computes, from the chunk's source, the projection and the cross-module
 /// summaries, with no plan.
+pub struct LogicalChunkAnalysisContext<'a> {
+    pub artifact: &'a ChunkBundle,
+    pub artifact_indexes: &'a ArtifactIndexes,
+    pub chunk_id: &'a str,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub file: Option<&'a str>,
+    pub export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
+}
+
 pub fn analyze_logical_chunk(
-    artifact: &ChunkBundle,
-    artifact_indexes: &ArtifactIndexes,
-    chunk_id: &str,
-    file: Option<&str>,
-    export_reentry_policies: &BTreeMap<ChunkId, ExportReentryPolicy>,
+    context: LogicalChunkAnalysisContext<'_>,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
 ) -> Result<ChunkFactAnalysis> {
+    let LogicalChunkAnalysisContext {
+        artifact,
+        artifact_indexes,
+        chunk_id,
+        diagnostics,
+        file,
+        export_reentry_policies,
+    } = context;
     let chunk_id_interned = artifact
         .chunk_table
         .get(chunk_id)
@@ -46,6 +59,7 @@ pub fn analyze_logical_chunk(
             artifact,
             artifact_indexes,
             chunk_id,
+            diagnostics,
             chunk_id_interned,
             target_file: &target_file,
             runtime_ast,
@@ -66,6 +80,7 @@ pub fn analyze_logical_chunk(
 /// program summary: the chunk's source and where its dynamic imports
 /// land. It never sees the chunk's plan builder or assignment.
 pub struct ChunkFactsContext<'a> {
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
     pub artifact: &'a ChunkBundle,
     pub artifact_indexes: &'a ArtifactIndexes,
     pub chunk_id: &'a str,
@@ -105,6 +120,7 @@ pub fn compute_logical_chunk_facts(
         artifact,
         artifact_indexes,
         chunk_id,
+        diagnostics,
         chunk_id_interned,
         target_file,
         runtime_ast,
@@ -312,6 +328,7 @@ pub fn compute_logical_chunk_facts(
         ChunkFacts::Loaded(facts) => {
             let redundant = check_chunk_facts(
                 chunk_id,
+                diagnostics,
                 &runtime_ast.module,
                 &facts,
                 chunk_analysis_inputs.admission_overrides,
@@ -339,6 +356,7 @@ pub fn compute_logical_chunk_facts(
             );
             compute_chunk_facts(
                 chunk_id,
+                diagnostics,
                 &runtime_ast.module,
                 structural_analysis,
                 &analysis_inputs,

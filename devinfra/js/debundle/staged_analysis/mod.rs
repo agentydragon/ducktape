@@ -13,7 +13,7 @@ use artifact::{
     ArtifactIndexes, ChunkBundle, JsFile, chunk_runtime_entry, export_policies,
     normalized_chunk_ids, prune_artifact_to_chunk_ids,
 };
-use chunk_facts::analyze_logical_chunk;
+use chunk_facts::{LogicalChunkAnalysisContext, analyze_logical_chunk};
 use graph_provenance::GraphProvenance;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -210,6 +210,7 @@ pub fn load_analysis(
 
 /// Inputs to [`analyze_program`] besides the parsed program.
 pub struct AnalyzeProgramInputs<'a> {
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
     pub spec: &'a AnalysisSpec,
     /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
     pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
@@ -227,6 +228,7 @@ pub fn analyze_program(
     inputs: AnalyzeProgramInputs<'_>,
 ) -> Result<Vec<u8>> {
     let AnalyzeProgramInputs {
+        diagnostics,
         spec,
         embedded_loaders,
         vendor_plan,
@@ -266,6 +268,7 @@ pub fn analyze_program(
     let reparsed = program_summary::reparse_unretained_entries(
         &artifact,
         Some(&program_summary_chunk_closure),
+        diagnostics,
     );
     let program_summary = program_summary::collect_program_summary(
         &artifact,
@@ -278,6 +281,7 @@ pub fn analyze_program(
         },
         Some(&program_summary_chunk_closure),
         &reparsed,
+        diagnostics,
     )?;
     // Reparsed entries are no longer needed once cross-module analysis and
     // context numbering are complete. Build the ordinal table now so those
@@ -296,11 +300,14 @@ pub fn analyze_program(
                 .map(|chunk_id| {
                     GLOBALS.set(globals, || {
                         analyze_logical_chunk(
-                            &artifact,
-                            &artifact_indexes,
-                            chunk_id,
-                            spec.entry_file.as_deref(),
-                            &export_reentry_policies,
+                            LogicalChunkAnalysisContext {
+                                artifact: &artifact,
+                                artifact_indexes: &artifact_indexes,
+                                chunk_id,
+                                diagnostics,
+                                file: spec.entry_file.as_deref(),
+                                export_reentry_policies: &export_reentry_policies,
+                            },
                             &projection,
                             &program_summary,
                         )

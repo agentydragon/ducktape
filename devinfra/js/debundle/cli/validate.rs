@@ -24,8 +24,9 @@ use crate::print_section;
 use analysis::CommutingStatementsDiagnostic;
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
+use command_output::print_report;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
-use peel::{OutputFormat, print_report};
+use peel::OutputFormat;
 use pipeline::{RunOutput, TransformRunOptions, TransformSpecSource, run_transform};
 use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
@@ -153,22 +154,25 @@ pub(crate) fn run_captured_pass(transform: TransformArgs) -> Result<CapturedPass
     // Dry-run + a report dir makes the materialize pass emit per-chunk
     // reports, independent of how the spec configures `report_out_dir`.
     let capture = tempfile::tempdir().context("creating report capture dir")?;
-    let pass = run_transform(
-        &cli,
-        TransformRunOptions {
-            ownership_subset: None,
-            output: RunOutput::DryRun,
-            artifacts: pipeline::RunArtifacts::Program,
-            graph_reports: lowering::GraphReportSelection::None,
-            keep_going,
-            report_dir_override: Some(capture.path().to_path_buf()),
-            list_template_identifiers: true,
-            effect_conflicts_jsonl: false,
-            effect_conflicts_chunks: Default::default(),
-            full_reports: Default::default(),
-            full_report_chunks: Default::default(),
-        },
-    );
+    let pass = command_diagnostics::run(|diagnostics| {
+        run_transform(
+            &cli,
+            TransformRunOptions {
+                ownership_subset: None,
+                output: RunOutput::DryRun,
+                artifacts: pipeline::RunArtifacts::Program,
+                graph_reports: lowering::GraphReportSelection::None,
+                keep_going,
+                report_dir_override: Some(capture.path().to_path_buf()),
+                list_template_identifiers: true,
+                effect_conflicts_jsonl: false,
+                effect_conflicts_chunks: Default::default(),
+                full_reports: Default::default(),
+                full_report_chunks: Default::default(),
+            },
+            diagnostics,
+        )
+    });
     Ok(CapturedPass {
         capture,
         error: pass.err(),

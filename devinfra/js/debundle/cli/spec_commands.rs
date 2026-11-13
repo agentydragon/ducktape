@@ -5,9 +5,10 @@ use crate::validate::{ValidateArgs, run_validate_cmd};
 use crate::{emit_report, print_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
+use command_output::print_report;
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
-use peel::{OutputFormat, print_report};
+use peel::OutputFormat;
 use transform_command::ProjectAnalysisArgs;
 
 use selector_codemod::match_selector::{

@@ -21,8 +21,9 @@ use analysis::reports::spec_lint::{
 };
 use anyhow::{Context, Result, ensure};
 use clap::Args as ClapArgs;
+use command_output::print_report;
 use output_layout::SPEC_LINT_REPORT;
-use peel::{OutputFormat, print_report};
+use peel::OutputFormat;
 use pipeline::{AnnotationProbe, AnnotationProbeRun, load_transform_spec_source};
 use serde::Serialize;
 use serde_json::Value;
@@ -404,7 +405,9 @@ fn probe_annotations(
     let scratch = tempfile::tempdir().context("creating probe scratch dir")?;
     let baseline_root = scratch.path().join("baseline");
     let mut probed = Vec::new();
-    let baseline = match probe.run(probe.spec(), &baseline_root)? {
+    let baseline = match command_diagnostics::run(|diagnostics| {
+        probe.run(probe.spec(), &baseline_root, diagnostics)
+    })? {
         AnnotationProbeRun::Accepted => Some(report_tree(&baseline_root)?),
         AnnotationProbeRun::Rejected(error) | AnnotationProbeRun::Inconclusive(error) => {
             let error = format!("{error:#}");
@@ -429,7 +432,9 @@ fn probe_annotations(
             }
             let root = scratch.path().join(format!("probe-{index}"));
             let started = Instant::now();
-            let verdict = match probe.run(&target.withhold(probe.spec())?, &root)? {
+            let verdict = match command_diagnostics::run(|diagnostics| {
+                probe.run(&target.withhold(probe.spec())?, &root, diagnostics)
+            })? {
                 AnnotationProbeRun::Accepted if report_tree(&root)? == baseline => {
                     Some(InferenceVerdict::Inferable {
                         reason: InferableReason::WithheldRunUnchanged,

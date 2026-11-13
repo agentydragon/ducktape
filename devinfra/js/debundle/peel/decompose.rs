@@ -234,15 +234,17 @@ pub struct ModuleDecompositionOptions {
 pub fn decompose_modules_from_files_with_options(
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<ModuleDecompositionReport> {
     let input = DependencyGraphInput::read(&options.dependency_graph_path)?;
-    decompose_modules_from_graph_with_options(&input, options, decomposition)
+    decompose_modules_from_graph_with_options(&input, options, decomposition, diagnostics)
 }
 
 pub fn decompose_modules_from_graph_with_options(
     input: &DependencyGraphInput,
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<ModuleDecompositionReport> {
     let graph = input.report();
     let claims = active_claims_from_options(graph, options)?;
@@ -253,6 +255,7 @@ pub fn decompose_modules_from_graph_with_options(
         existing_module_paths,
         options,
         decomposition,
+        diagnostics,
     )
 }
 
@@ -290,6 +293,7 @@ fn decompose_modules(
     existing_module_paths: BTreeSet<ModulePath>,
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<ModuleDecompositionReport> {
     let graph = input.report();
     let strategy = decomposition.strategy;
@@ -387,7 +391,7 @@ fn decompose_modules(
     };
 
     let resolved_modules = if decomposition.preserve_selector_anchors {
-        Some(resolve_decomposition_claims(graph, options)?)
+        Some(resolve_decomposition_claims(graph, options, diagnostics)?)
     } else {
         None
     };
@@ -699,6 +703,7 @@ struct ResolvedDecompositionModule {
 fn resolve_decomposition_claims(
     graph: &DependencyGraphReport,
     options: &ProposalOptions,
+    diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<Vec<ResolvedDecompositionModule>> {
     let source_root = options
         .source_root
@@ -732,11 +737,14 @@ fn resolve_decomposition_claims(
         })
         .collect::<Vec<_>>();
     let resolved = resolve_source_claims(
-        graph,
-        &options.dependency_graph_path,
-        &options.modules_root,
-        Some(source_root),
-        options.source_context.as_ref(),
+        anonymous_resolution::SourceClaimsContext {
+            graph,
+            dependency_graph_path: &options.dependency_graph_path,
+            modules_root: &options.modules_root,
+            source_root: Some(source_root),
+            source_context: options.source_context.as_ref(),
+            diagnostics,
+        },
         &claim_sets,
     )?;
 
