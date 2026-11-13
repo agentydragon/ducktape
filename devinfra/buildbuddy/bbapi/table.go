@@ -16,7 +16,7 @@ func newTable() *table {
 	return &table{w: tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)}
 }
 
-// header writes a header row and is a no-op if --json is set.
+// header writes a header row to the tabwriter; JSON-mode callers must not flush it.
 func (t *table) header(cols ...string) {
 	fmt.Fprintln(t.w, strings.Join(cols, "\t"))
 }
