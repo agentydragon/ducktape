@@ -406,7 +406,7 @@
                   <${Stack} gap="sm">
                     <${Title} order=${3}>${lane.name}<//>
                     <${Badge} variant="light"
-                      >${lane.url ? "PR opened" : "Dispatched"}<//
+                      >${lane.pr_state === "MERGED" ? "Merged" : lane.url ? "PR opened" : "Dispatched"}<//
                     >
                     <${Text} fw=${600}>${lane.status}<//>
                     ${lane.url ? html`<${Anchor} href=${lane.url}>${lane.url}<//>` : null}
@@ -498,9 +498,7 @@
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
         >
-          <${Title} order=${1}
-            >Backend reruns: VM and browser repair PRs open<//
-          >
+          <${Title} order=${1}>Backend reruns: VM and browser repairs merged<//>
           <${ReliabilityWork} />
           <${Stack} component="section" id="current" gap="sm" my="xl">
             <${Text} component="p" c="dimmed" my="sm">
@@ -1308,7 +1306,7 @@
                     <${Table.Tr}>
                       <${Table.Td}>${"3 · Systemd proof"}<//>
                       <${Table.Td}
-                        >${"#15571 already reports whether the shared context ended before the final proof read. The dispatched VM work will use fresh failure evidence to distinguish the remaining causes."}<//
+                        >${"#15571 added the context-expiry diagnostic. Merged candidate #15957 gives the final proof read its own bounded deadline; historical budget exhaustion versus a slow D-Bus read remains unresolved."}<//
                       >
                       <${Table.Td}
                         >${"Only then choose between a scoped deadline repair and investigating the D-Bus read path. Keep the final empty-proof assertion."}<//
@@ -1343,7 +1341,7 @@
               <${Paper} withBorder p="md">
                 <${Text} fw=${700}>${"3 · Systemd proof"}<//>
                 <${Text} component="p" size="sm" my="sm"
-                  >${"#15571 already records whether the context ended before the final proof read. The VM dispatch will use that evidence to choose a scoped deadline repair or investigate D-Bus, retaining the empty-proof assertion."}<//
+                  >${"#15571 added the context-expiry diagnostic. Merged candidate #15957 gives the final proof read its own bounded deadline while retaining the empty-proof assertion. Recurrence reduction remains unmeasured."}<//
                 >
               <//>
               <${Paper} withBorder p="md">

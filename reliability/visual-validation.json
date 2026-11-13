@@ -1,77 +1,403 @@
 {
+  "schema_version": 2,
+  "invocation_id": "4c6b0c69-be45-49f1-8ca3-6bb7a3e97e2d",
+  "invocation_url": "https://app.buildbuddy.io/invocation/4c6b0c69-be45-49f1-8ca3-6bb7a3e97e2d",
+  "target": "//x/ci_reports_preview:visual_test",
   "status": "PASSED",
-  "test": "//x/ci_reports_preview:visual_test",
-  "invocation": "https://app.buildbuddy.io/invocation/3d26d1bd-cd85-4cbe-8a55-e1d33b82e490",
-  "case_count": 12,
-  "scope": "Full 12-case home, latency and reliability suite before the subsequent latency-only correction",
-  "reviewed_at_utc": "2026-11-12T23:13:18.809641+00:00",
-  "tested_assets": [
+  "validated_at_utc": "2026-11-13T01:26:03.705989+00:00",
+  "scope": "Final merged-PR report snapshot; four report cases and four shared navigation cases. The complete target ran twelve cases across both reports and navigation.",
+  "rendered_asset_hash_method": "Hash every loaded same-origin resource URL from the immutable packaged static server and compare with local publication bytes.",
+  "rendered_asset_sha256": {
+    "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
+    "reliability/evidence.json": "baefc630fe44418c6b966664e4d36f0c91b5ea46c7bf7a9098ec679db2f5f28a",
+    "reliability/index.html": "34575a65a5f197d1382524e251b2df25b9fee2d888024a580a9703d1ce442433",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
+  },
+  "cases": [
     {
-      "path": "reliability/index.html",
-      "sha256": "9d5a78b4081763f510d63c399729f2f0a44b992a9d17aeb91623afdf1824bf45"
+      "report": "reliability/index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-vruqdyi6z-panel-reliability-cases",
+        "mantine-vruqdyi6z-panel-reliability-landed"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
     },
     {
-      "path": "reliability/evidence.json",
-      "sha256": "75850e39e587f1894f6f33a4a0a3f273f9fd643336818cd6a411c5f4468ac167"
+      "report": "reliability/index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 900,
+        "width": 1280
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-d0ugxfv7b-panel-reliability-cases",
+        "mantine-d0ugxfv7b-panel-reliability-landed"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
     },
     {
-      "path": "reliability/manifest.json",
-      "sha256": "2913ad2bd3b6d02d9a8f06f70fcacfc624ea9c63d8577b8b186b87890e957c1b"
+      "report": "reliability/index.html",
+      "theme": "dark",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-yvmsphovf-panel-reliability-cases",
+        "mantine-yvmsphovf-panel-reliability-landed"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
+    },
+    {
+      "report": "reliability/index.html",
+      "theme": "light",
+      "viewport": {
+        "height": 844,
+        "width": 390
+      },
+      "status": "passed",
+      "live_theme_change": true,
+      "document_overflow": false,
+      "dispatch_work_card_count": 2,
+      "dispatch_expanded_panel_ids": [
+        "mantine-kd4s20w71-panel-reliability-cases",
+        "mantine-kd4s20w71-panel-reliability-landed"
+      ],
+      "history_chart": "recent-vm-indexed-failures"
     }
   ],
-  "published_assets": [
-    {
-      "path": "reliability/index.html",
-      "sha256": "9d5a78b4081763f510d63c399729f2f0a44b992a9d17aeb91623afdf1824bf45"
+  "root_navigation": {
+    "rendered_asset_sha256": {
+      "index.html": "cce7c1d57ad357162876c5d32175923c8b72d52d807851f00315e0fed6f3c6b2",
+      "latency/manifest.json": "24141396663fde1c0be1ab443cc1fb5b0841b590e0ffabe3b10212e1c4ce4889",
+      "reliability/manifest.json": "609af65d99823bc66d931b295d58487981d255fb6e00ed53434bf3ff1c408061",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
+      "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a"
     },
-    {
-      "path": "reliability/evidence.json",
-      "sha256": "75850e39e587f1894f6f33a4a0a3f273f9fd643336818cd6a411c5f4468ac167"
-    },
-    {
-      "path": "reliability/manifest.json",
-      "sha256": "64e167fb0f651cf795ac91d3ade3752b4f95f6dbc2916c3834d37667cede6c7c"
-    }
-  ],
-  "shared_assets": [
-    {
-      "path": "report.js",
-      "sha256": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
-    },
-    {
-      "path": "report.css",
-      "sha256": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
-    }
-  ],
-  "manifest_note": "Publication manifest differs from tested manifest only by the visual-validation reference.",
+    "cases": [
+      {
+        "report": "index.html",
+        "theme": "dark",
+        "viewport": {
+          "height": 900,
+          "width": 1280
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      },
+      {
+        "report": "index.html",
+        "theme": "light",
+        "viewport": {
+          "height": 900,
+          "width": 1280
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      },
+      {
+        "report": "index.html",
+        "theme": "dark",
+        "viewport": {
+          "height": 844,
+          "width": 390
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      },
+      {
+        "report": "index.html",
+        "theme": "light",
+        "viewport": {
+          "height": 844,
+          "width": 390
+        },
+        "status": "passed",
+        "live_theme_change": true,
+        "document_overflow": false,
+        "manifest_stamps": {
+          "latency/manifest.json": "Window 2026-11-10T00:00:00Z \u2192 2026-11-12T23:59:19Z \u00b7 devel 649fcbec4c \u00b7 published 2026-11-13T01:18Z",
+          "reliability/manifest.json": "Window 2026-11-05T07:20:00Z \u2192 2026-11-12T07:20:00Z \u00b7 devel 97ebe3e463 \u00b7 published 2026-11-13T01:18Z",
+          "upstream-patches/manifest.json": "Reviewed 2026-11-10T00:29:13Z \u00b7 devel 5720cbd391",
+          "visual-reliability/manifest.json": "Reviewed 2026-11-09T08:07:23Z \u00b7 devel 69f35d736d"
+        }
+      }
+    ]
+  },
   "checks": [
-    "Desktop and mobile",
-    "Initial light and dark schemes",
-    "Live browser color preference change",
-    "Real pinned CDN CSS and modules",
-    "Populated charts and expandable controls",
-    "No document overflow or page/console errors"
+    "Real pinned CDN stylesheets and ESM modules",
+    "Initial light/dark themes and live preference changes",
+    "Both work cards and expanded dispatch accordions",
+    "Retained populated charts",
+    "Latency exact-head table expansion",
+    "No document overflow or browser errors"
   ],
-  "manually_reviewed_screenshots": [
+  "manual_review": "Representative desktop/mobile light/dark screenshots of both reports and navigation reviewed; cards, text, expanded controls and charts are readable.",
+  "screenshots": [
     {
-      "case": "light-desktop-reliability",
-      "checkpoint": "section-reliability-nov12-later",
-      "sha256": "2b379d092c6ded4a39b49d58a8f54a18757463839e7d8aa45429ef670d480cfb"
+      "case": "test_root_navigation_smoke[dark-mobile]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "843aaef36331726da96c0a5a51acd3f7a2585d5c47f2c919fae1561e5a8a3dcf",
+      "test_output_relative_path": "files/0aca017b5365703123b323a45c85615a29d7c9a7efc6f56b641ba9dd679214e9.png"
     },
     {
-      "case": "light-mobile-reliability",
-      "checkpoint": "section-reliability-nov12-later",
-      "sha256": "75838e4a467a35b3191c39635b098c33fa246e28c79b801067be44950e1dcae9"
+      "case": "test_ci_report_refresh[dark-mobile-reliability]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "9efb4ed07af4ae64c18d37242662fb07956272d6edfc5eb6931d250201a84253",
+      "test_output_relative_path": "files/1c66139f2b8f9ee916fd5508ff9cd7df9aeaef08b470d9b8adb561ecb99a3b56.png"
     },
     {
-      "case": "dark-desktop-reliability",
-      "checkpoint": "section-reliability-nov12-later",
-      "sha256": "45ac5fa830897014941b7b3a3aae858cb4feac86638d455ff0678d9eb4d4618f"
+      "case": "test_ci_report_refresh[dark-mobile-reliability]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "37f6fcb5ce8e8d5ea5d34cf2227c42890fe661aff1c4d3f07a912a7ec82aa4fc",
+      "test_output_relative_path": "files/2a4662005b815a5e2f06d9aaadce42a0f7ec724fd7f3e7cb7b572f9c33511b9a.png"
     },
     {
-      "case": "dark-mobile-reliability",
-      "checkpoint": "section-reliability-nov12-later",
-      "sha256": "acf2af667b57efa2b95f0535ca022f337605c96edc2d6d46524660eefb6c1f44"
+      "case": "test_root_navigation_smoke[dark-desktop]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "93131c57d7937040bea1bbd771a2abba78bacce37c0c517f652bfbbd2aacf53e",
+      "test_output_relative_path": "files/4048f06e5616443ac8dc93d573036bbf2b1410e6e0a49d2d83872f452fe8ed25.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "existing-vm-history-chart",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "459f3df6e4d3ad3f631383849770812bb15f1fde2d026db93eea12c5fe89cd27",
+      "test_output_relative_path": "files/4835242a600c87759cac1ed54d00941d98620e8176169901f94174991a736633.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-reliability]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "c7efadbf8a11718746d456b7eb7c158bf28bd88821de55b73b5f58e34194943b",
+      "test_output_relative_path": "files/50373eb294f3e315a7a504187786871e77d2d20dc97f2b1dd9381deae439b132.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "6cfb2217d3fae154eb33bca087f1fc31d9a54e2d1981480f67b10241f193c3d3",
+      "test_output_relative_path": "files/6085d1ee0f7084d60fac5d57cdc9828a94a5600a32f285e31ae01e9a9ba562a7.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "3f7ce90f38ccd96b1f53c57f730ebc96f827b72d1f03f7fddbbde552cbf94ea4",
+      "test_output_relative_path": "files/67c51afe8ff3d50e5403506bb001bf3047a82e3a094ebc15d310ffa2e2ae2ee4.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[dark-mobile]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "93272d0bd601d5e3e2a26be2529a19cc367a1d9637abc32a86ff4ac073024025",
+      "test_output_relative_path": "files/742bba3db296dc76ca99e065ac93f02848e67f5d4126f51a99e2d2e0c3e201e1.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "c714f6ae79c2295b333af6779c54cbf38888744a35dfb891c47ad01969908694",
+      "test_output_relative_path": "files/777f82269956f01a462e187359685307182fe66c725a451047f5c9133e029217.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-mobile]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "93272d0bd601d5e3e2a26be2529a19cc367a1d9637abc32a86ff4ac073024025",
+      "test_output_relative_path": "files/8bb0be6ca07528786bf1de112d6665a76d8bf27b8ad02b8a2d0c031f9cc26d1d.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "72069354eb6700d3339ccdd380bb206b034d70b7ba35d81cfc58ace3b09e75dc",
+      "test_output_relative_path": "files/90944b4a642e11485dcbc15718aa2ab1837edbd8f7ae0496a4c4e9531a01d18b.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-reliability]",
+      "checkpoint": "existing-vm-history-chart",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "581ec825ec858cd143ba91de998517fdd0cb399beb88026580edebd76fb94146",
+      "test_output_relative_path": "files/9345425ada36dc348a123631c800601da1bd057b2ceed6239d9febc81b400e62.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-mobile]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "843aaef36331726da96c0a5a51acd3f7a2585d5c47f2c919fae1561e5a8a3dcf",
+      "test_output_relative_path": "files/b1c716ad9ba5e21ff8c10886c1a055afac13e592fe5f27973394c0e1aff60f61.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "existing-vm-history-chart",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "1dfedfa1eb03713f79109f2935b3121e2e020917fc8b8c17ff3b366985c38695",
+      "test_output_relative_path": "files/b33beea87772ecde95a42f1f29ffc73130478111ec5e75f651159b54279c9aef.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-reliability]",
+      "checkpoint": "existing-vm-history-chart",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "cbff469cc92047afe4b72ab797a7a8e1f2e9484d07233f7524bf30fec29feeb4",
+      "test_output_relative_path": "files/c24eb6a1bb143e58d1021a7b05c5dec845455fbafd197fc8b3a8ea5d7e659ef9.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-reliability]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "da93b4a6b683b5532e4767e94c8b6089edd9437f4cc6b4224681b198c7e9f25d",
+      "test_output_relative_path": "files/c2cdfc5e4cd1edb3a63bfbf3a37f1206f4cfd89dc1b0736e7b69a93cdea7a416.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "499b1dca25d67367b0a9ddde77c438107f853087d2a4a03c476168e2ad72dfcb",
+      "test_output_relative_path": "files/c5f4f1d16144fe8c18ff234891664b059f127f75a40a38de6c84cef905d76cde.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "58c55fdb050a04c946d5bc6b5b0c4251099c3fb19d6fb44aa28d928c02dbc327",
+      "test_output_relative_path": "files/c722fb82b6ca821cb4bb43803fbfa071aac474e154064d18ac37e02e5a5e34d7.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-desktop-reliability]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "72d1c5c1c987c483bca8a556fe84854a37c2e46aa35927d3f22b88984e91f955",
+      "test_output_relative_path": "files/cd6f444fb5c9c959efe559b6d6ceee13929838cd68b68d8d40693c39590ee5ba.png"
+    },
+    {
+      "case": "test_ci_report_refresh[light-mobile-reliability]",
+      "checkpoint": "reliability-dispatch",
+      "theme": "light",
+      "viewport": "mobile",
+      "sha256": "7236fcf3b222fff612eb338b7a922874ed4b65faa32e31e4a9530df2440b0a7c",
+      "test_output_relative_path": "files/d0183ec916b3773636aedc2f2dbc271b2c3366891dda627e2b74e2242c723d59.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-reliability]",
+      "checkpoint": "overview",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "19f2efda27ace15419061c0d78db18676aa1f77308b5fa6de2c83b9c3fd5bbd0",
+      "test_output_relative_path": "files/d3557a4f28dfe87e44f06d464982be761971e94c792d5d44a65bc9c43b7f49ba.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-mobile-reliability]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "mobile",
+      "sha256": "52c899d278d21c3af63cab8ccfa065cfb0d8ecde63b9cdf006dca36037604fbe",
+      "test_output_relative_path": "files/d59db6bc1d336a4aeb2b169f40342a16464ebac37fd935d4e4e14003758697d6.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[dark-desktop]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "6b56249ed4eb080595977899406af2c07723935a1373a2b8557442a6fd8ae950",
+      "test_output_relative_path": "files/d8656b16fb902a3da2b4164ec7340e65f822e894e11b12cc4393fcd4f9035879.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-reliability]",
+      "checkpoint": "reliability-dispatch-expanded",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "ee09cdc6ae7d3815528f0b5da3123c959f58422788857f20889d71f014eb42a9",
+      "test_output_relative_path": "files/ded148fbbed1fe9a32c5af883cdb3278b7137e79dbc766858a64e6cf1c25365e.png"
+    },
+    {
+      "case": "test_ci_report_refresh[dark-desktop-reliability]",
+      "checkpoint": "live-theme-change",
+      "theme": "dark",
+      "viewport": "desktop",
+      "sha256": "18dfb4256754a60bdadd9d7093c59b3ccef90ae401f15a84cbcdcfe15b2f1e90",
+      "test_output_relative_path": "files/e079a8765281763237c913c34b8fbe076aab3ad03a2d931df4df7a570979ba24.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-desktop]",
+      "checkpoint": "live-theme-change",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "93131c57d7937040bea1bbd771a2abba78bacce37c0c517f652bfbbd2aacf53e",
+      "test_output_relative_path": "files/e2421d7da2fb83f44d494cc32a17b94aaaf8ed0ec922c493c2a24caae910a01e.png"
+    },
+    {
+      "case": "test_root_navigation_smoke[light-desktop]",
+      "checkpoint": "overview",
+      "theme": "light",
+      "viewport": "desktop",
+      "sha256": "6b56249ed4eb080595977899406af2c07723935a1373a2b8557442a6fd8ae950",
+      "test_output_relative_path": "files/fbcdbf1da0c10f37cf7809d245812479849a2b6b136316266d09b46a3824f37c.png"
     }
   ]
 }

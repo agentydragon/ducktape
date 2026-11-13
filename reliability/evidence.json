@@ -968,7 +968,7 @@
     }
   },
   "backend_retry_review": {
-    "reviewed_at_utc": "2026-11-13T01:05:45.700938+00:00",
+    "reviewed_at_utc": "2026-11-13T01:18:12.076914+00:00",
     "inspected_devel_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
     "population_source_devel_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
     "population_window_utc": ["2026-11-10T00:00:00Z", "2026-11-12T23:59:19Z"],
@@ -1326,22 +1326,22 @@
       {
         "id": "vm",
         "name": "VM and guest reliability",
-        "status": "Candidate repair PR #15957 open; focused RBE passed; full Bazel CI pending at review",
+        "status": "Merged candidate repair #15957; all three required checks passed",
         "url": "https://github.com/agentydragon/ducktape/pull/15957",
         "head_sha": "c63b79879ea37450199f36b8e1278cfdfbc0e0c3",
         "summary": "The final systemd empty-domain proof now receives its own 10-second read context under the existing bounded fixture context. Earlier retry, PID, stdin, exit-status and stream assertions remain. This does not resolve separate guest-progress, provider restore or cold-setup failures.",
-        "validation": "One fresh uncached real VM result passed in 295.174 seconds. Hosted pre-commit and artifact/import gates passed; the full required Bazel gate was pending at review. Historical budget exhaustion versus a slow final D-Bus read remains unresolved.",
-        "pr_state": "OPEN",
-        "required_checks_observed_at_utc": "2026-11-13T01:05:45.700938+00:00",
+        "validation": "One fresh uncached real VM result passed in 295.174 seconds. All three required checks passed at the exact PR head before merge. Historical budget exhaustion versus a slow final D-Bus read remains unresolved; recurrence reduction is unmeasured.",
+        "pr_state": "MERGED",
+        "required_checks_observed_at_utc": "2026-11-13T01:18:12.076914+00:00",
         "required_checks": [
           {
             "__typename": "CheckRun",
-            "completedAt": "0001-01-01T00:00:00Z",
-            "conclusion": "",
+            "completedAt": "2026-11-13T01:09:52Z",
+            "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43341817674/job/131611691953",
             "name": "bazel-ci / Test & Build",
             "startedAt": "2026-11-13T01:02:33Z",
-            "status": "IN_PROGRESS",
+            "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
@@ -1377,47 +1377,49 @@
           "source_base_commit": "5115ad2b1c19451ed0b2a71e76d00ed05c982513",
           "source_qualification": "Base plus local candidate patch mirrored by bbr, before investigation note; code is mirrored in the PR head. Not an exact-head CI result."
         },
-        "debug_note_url": "https://github.com/agentydragon/ducktape/blob/c63b79879ea37450199f36b8e1278cfdfbc0e0c3/agentplane/debug/2026_11_12_vm_ci_reliability.md"
+        "debug_note_url": "https://github.com/agentydragon/ducktape/blob/c63b79879ea37450199f36b8e1278cfdfbc0e0c3/agentplane/debug/2026_11_12_vm_ci_reliability.md",
+        "merged_at_utc": "2026-11-13T01:10:12Z",
+        "merge_commit": "c77e9726a2b14875f37a421e208dd957d7b0bd1b"
       },
       {
         "id": "browser",
         "name": "Thread browser reliability",
-        "status": "Candidate repair PR #15960 open; focused RBE passed; full Bazel CI pending at review",
+        "status": "Merged candidate repair #15960; all three required checks passed",
         "url": "https://github.com/agentydragon/ducktape/pull/15960",
         "head_sha": "e68e06315894048504367e787ce114c156da79a7",
         "summary": "The scroll-follow test waits for the appended projection cursor. Raw-frame inspection brings the stable observation row into view before checking the lazy editor, preserving native-frame equality. The two pre-test /auth/login timeouts remain unresolved.",
-        "validation": "All five selected browser cases passed uncached on RBE, with 38 deselected and test sharding disabled for this focused run. No controlled pre-fix reproduction or recurrence reduction is claimed. The three required PR checks were pending at review.",
-        "pr_state": "OPEN",
-        "required_checks_observed_at_utc": "2026-11-13T01:05:45.700938+00:00",
+        "validation": "All five selected browser cases passed uncached on RBE, with 38 deselected and test sharding disabled for this focused run. All three required checks passed at the exact PR head before merge. No controlled pre-fix reproduction or recurrence reduction is claimed.",
+        "pr_state": "MERGED",
+        "required_checks_observed_at_utc": "2026-11-13T01:18:12.076914+00:00",
         "required_checks": [
           {
             "__typename": "CheckRun",
-            "completedAt": "0001-01-01T00:00:00Z",
-            "conclusion": "",
+            "completedAt": "2026-11-13T01:09:16Z",
+            "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43341999339/job/131612286994",
             "name": "bazel-ci / Test & Build",
             "startedAt": "2026-11-13T01:03:55Z",
-            "status": "IN_PROGRESS",
+            "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "0001-01-01T00:00:00Z",
-            "conclusion": "",
+            "completedAt": "2026-11-13T01:05:17Z",
+            "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43341999253/job/131612285603",
             "name": "Build artifacts + imports check",
             "startedAt": "2026-11-13T01:03:55Z",
-            "status": "IN_PROGRESS",
+            "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "0001-01-01T00:00:00Z",
-            "conclusion": "",
+            "completedAt": "2026-11-13T01:05:08Z",
+            "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43341999303/job/131612286087",
             "name": "Pre-commit checks",
             "startedAt": "2026-11-13T01:03:55Z",
-            "status": "IN_PROGRESS",
+            "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           }
         ],
@@ -1433,7 +1435,9 @@
           "test_sharding_strategy": "disabled",
           "source_qualification": "Focused local candidate patch through bbr; exact-head required CI remains separate."
         },
-        "debug_note_url": "https://github.com/agentydragon/ducktape/blob/e68e06315894048504367e787ce114c156da79a7/agentplane/debug/2026_11_12_thread_browser_ci.md"
+        "debug_note_url": "https://github.com/agentydragon/ducktape/blob/e68e06315894048504367e787ce114c156da79a7/agentplane/debug/2026_11_12_thread_browser_ci.md",
+        "merged_at_utc": "2026-11-13T01:10:31Z",
+        "merge_commit": "6ea6e57fe2c4c47c57387113e772a4eff4e48192"
       }
     ],
     "landed": [
