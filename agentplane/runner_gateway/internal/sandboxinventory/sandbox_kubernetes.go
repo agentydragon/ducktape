@@ -1,4 +1,4 @@
-package dispatcher
+package sandboxinventory
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,17 +69,17 @@ func (k *KubernetesSandboxes) WaitSynced(ctx context.Context) bool {
 	return k.inventory.WaitForCacheSync(ctx)
 }
 
-func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (SandboxSnapshot, bool, error) {
+func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (dispatcher.SandboxSnapshot, bool, error) {
 	if !k.informer.HasSynced() {
-		return SandboxSnapshot{}, false, errors.New("Sandbox inventory is not synchronized")
+		return dispatcher.SandboxSnapshot{}, false, errors.New("Sandbox inventory is not synchronized")
 	}
 	var object sandboxapi.Sandbox
 	err := k.inventory.Get(ctx, types.NamespacedName{Namespace: k.namespace, Name: name}, &object)
 	if apierrors.IsNotFound(err) {
-		return SandboxSnapshot{}, false, nil
+		return dispatcher.SandboxSnapshot{}, false, nil
 	}
 	if err != nil {
-		return SandboxSnapshot{}, false, err
+		return dispatcher.SandboxSnapshot{}, false, err
 	}
 	view, err := sandboxSnapshot(&object)
 	return view, err == nil, err
@@ -86,11 +87,11 @@ func (k *KubernetesSandboxes) GetSandbox(ctx context.Context, name string) (Sand
 
 // GetExecutionIdentity returns the Identity the exact live Sandbox UID names, read uncached so
 // delivery never authorizes from a stale informer snapshot.
-func (k *KubernetesSandboxes) GetExecutionIdentity(ctx context.Context, sandbox SandboxSnapshot) (*identitypb.Identity, bool, error) {
+func (k *KubernetesSandboxes) GetExecutionIdentity(ctx context.Context, sandbox dispatcher.SandboxSnapshot) (*identitypb.Identity, bool, error) {
 	return k.reader.ExecutionIdentity(ctx, &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID})
 }
 
-func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnapshot, error) {
+func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]dispatcher.SandboxSnapshot, error) {
 	if !k.informer.HasSynced() {
 		return nil, errors.New("Sandbox inventory is not synchronized")
 	}
@@ -98,7 +99,7 @@ func (k *KubernetesSandboxes) ListSandboxes(ctx context.Context) ([]SandboxSnaps
 	if err := k.inventory.List(ctx, &objects, client.InNamespace(k.namespace)); err != nil {
 		return nil, err
 	}
-	result := make([]SandboxSnapshot, 0, len(objects.Items))
+	result := make([]dispatcher.SandboxSnapshot, 0, len(objects.Items))
 	for i := range objects.Items {
 		view, err := sandboxSnapshot(&objects.Items[i])
 		if err != nil {
@@ -126,14 +127,14 @@ func (k *KubernetesSandboxes) CurrentSandboxUIDs(ctx context.Context) (map[strin
 	return result, nil
 }
 
-func sandboxSnapshot(object *sandboxapi.Sandbox) (SandboxSnapshot, error) {
+func sandboxSnapshot(object *sandboxapi.Sandbox) (dispatcher.SandboxSnapshot, error) {
 	if object.Name == "" || object.UID == "" {
-		return SandboxSnapshot{}, errors.New("Sandbox has no name or UID")
+		return dispatcher.SandboxSnapshot{}, errors.New("Sandbox has no name or UID")
 	}
 	if object.Namespace == "" {
-		return SandboxSnapshot{}, errors.New("Sandbox has no namespace")
+		return dispatcher.SandboxSnapshot{}, errors.New("Sandbox has no namespace")
 	}
-	view := SandboxSnapshot{
+	view := dispatcher.SandboxSnapshot{
 		Name: object.Name, Namespace: object.Namespace, UID: string(object.UID),
 		Deleting:       object.DeletionTimestamp != nil,
 		WakeOnSend:     object.Spec.WakeOnSend,

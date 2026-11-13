@@ -31,6 +31,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/sandboxinventory"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -239,7 +240,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	catalog, err := dispatcher.NewKubernetesSandboxes(inventory, objects, c.Namespace)
+	catalog, err := sandboxinventory.NewKubernetesSandboxes(inventory, objects, c.Namespace)
 	if err != nil {
 		return err
 	}

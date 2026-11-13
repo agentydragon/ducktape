@@ -76,6 +76,7 @@ conversation and from Runner admission.
   `CreateEnvironment` names the Identity the Sandbox acts as and binds no PolicySets: a launch
   creates the Identity and grants it, including the default sets, before calling it.
 - `internal/gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
+- `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
