@@ -506,6 +506,13 @@ ENV = Environment(
                 ANTHROPIC_API_KEY.key
             )
         },
+        # Migration 16 makes v16 provider intents mandatory. Recreate drains every old sampler
+        # writer before the new image starts its migration.
+        # CLEANUP(added 2026-11-13): restore inherited RollingUpdate only after all sampler writers
+        # use an image with migration 16 and no old sampler Pods remain.
+        replicas=ReplicaProfile(
+            count=2, strategy=DeploymentStrategy.recreate(), min_ready=Duration.seconds(5), pdb_min_available=1
+        ),
         max_live_sessions=32,
         turn_timeout_seconds=3600,
         rpc_timeout_seconds=30,

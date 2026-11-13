@@ -62,7 +62,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 		t.Fatalf("notification without an active turn: %v", err)
 	}
 	startTurnForStore(t, store, session, owner, "turn")
-	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cell, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil)
+	cell, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +146,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					t.Fatal(err)
 				}
 				startTurnForStore(t, store, session, owner, "turn")
-				sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+				sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -184,7 +184,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				if err != nil || len(beforeResult) == 0 {
 					t.Fatalf("notice was appended before pending tool result: records=%d err=%v", len(beforeResult), err)
 				}
-				cell, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil)
+				cell, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}

@@ -17,9 +17,16 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, prepare requestPreparation) (string, []byte, error) {
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, prepare requestPreparation, policy *ProviderAttemptPolicy) (string, []byte, error) {
 	kind := request.Kind
-	if !kind.valid() {
+	if !kind.valid() || kind == PendingIntentCompaction {
+		return "", nil, protocol.ErrInvalid
+	}
+	if kind == PendingIntentSampling {
+		if policy == nil || policy.validate() != nil {
+			return "", nil, protocol.ErrInvalid
+		}
+	} else if policy != nil {
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
@@ -48,11 +55,26 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, p
 			request.ProviderRequest = &prepared
 			wire = rendered
 		}
+		if policy != nil && request.ProviderRequest != nil {
+			request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
+			request.ProviderRequest.SourceControl, err = conversation.contextControl(conversation.Context())
+			if err != nil {
+				return err
+			}
+		}
 		requestWire, err := marshal(request)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		if policy != nil {
+			if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, *policy, id, nil, 1, policy.Budget); err != nil {
+				return err
+			}
+		} else if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
 			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
 		}
@@ -61,10 +83,6 @@ func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, p
 		}
 		conversation.Pending = &PendingIntent{ID: id, Kind: kind}
 		if err := updateConversation(ctx, tx, conversation); err != nil {
-			return err
-		}
-		session, err := sessionForConversation(ctx, tx, conversation.ID)
-		if err != nil {
 			return err
 		}
 		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
@@ -107,7 +125,12 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1`, intentID, resultWire); err != nil {
+		if intent.Kind == IntentSampling || intent.Kind == IntentCompaction {
+			if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
+				return err
+			}
+		}
+		if err := settleIntentResult(ctx, tx, intentID, resultWire); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
@@ -144,6 +167,11 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err != nil {
 			return err
 		}
+		if intent.Kind == IntentSampling || intent.Kind == IntentCompaction {
+			if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
+				return err
+			}
+		}
 		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, intentID)
 		if err != nil {
 			return err
@@ -163,7 +191,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1`, intentID, wire); err != nil {
+			if err := settleIntentResult(ctx, tx, intentID, wire); err != nil {
 				return err
 			}
 			conversation.Stopped = true
@@ -189,7 +217,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1`, intentID, wire); err != nil {
+		if err := settleIntentResult(ctx, tx, intentID, wire); err != nil {
 			return err
 		}
 
@@ -209,8 +237,8 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, prepare requestPreparation) (string, []byte, error) {
-	if request.Kind != PendingIntentCompaction {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy) (string, []byte, error) {
+	if request.Kind != PendingIntentCompaction || policy.validate() != nil {
 		return "", nil, protocol.ErrInvalid
 	}
 	id := uuid.NewString()
@@ -254,11 +282,22 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 			request.ProviderRequest = &prepared
 			wire = rendered
 		}
+		if request.ProviderRequest != nil {
+			request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
+			request.ProviderRequest.SourceControl, err = conversation.contextControl(conversation.Context())
+			if err != nil {
+				return err
+			}
+		}
 		requestWire, err := marshal(request)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+		session, err := sessionForConversation(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, policy, id, nil, 1, policy.Budget); err != nil {
 			return err
 		}
 		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
@@ -266,10 +305,6 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		}
 		conversation.Pending = &PendingIntent{ID: id, Kind: PendingIntentCompaction}
 		if err := updateConversation(ctx, tx, conversation); err != nil {
-			return err
-		}
-		session, err := sessionForConversation(ctx, tx, conversation.ID)
-		if err != nil {
 			return err
 		}
 		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
@@ -300,7 +335,13 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET result=$2 WHERE id=$1`, intentID, resultWire); err != nil {
+		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
+			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
+		}
+		if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
+			return err
+		}
+		if err := settleIntentResult(ctx, tx, intentID, resultWire); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)

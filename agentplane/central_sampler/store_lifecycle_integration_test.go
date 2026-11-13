@@ -71,7 +71,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		t.Fatal(err)
 	}
 	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "opaque"}})
-	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
+	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil, providerAttemptTestPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestBlockedReasonNamesUnresolvedIntentInGetSession(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}

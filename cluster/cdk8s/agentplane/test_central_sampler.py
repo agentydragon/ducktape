@@ -47,8 +47,9 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     deployment = _resource(staging_manifests, "Deployment", central_sampler.NAME)
     pod = deployment["spec"]["template"]["spec"]
     assert deployment["spec"]["replicas"] >= 2
-    assert deployment["spec"]["strategy"]["type"] == "RollingUpdate"
-    assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
+    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
+    # The incompatible provider-attempt migration changes only this writer's rollout strategy.
+    assert _resource(staging_manifests, "Deployment", "runner-gateway")["spec"]["strategy"]["type"] == "RollingUpdate"
     assert _resource(staging_manifests, "PodDisruptionBudget", central_sampler.NAME)["spec"]["minAvailable"] >= 1
     assert pod["serviceAccountName"] == central_sampler.NAME
     assert not pod.get("initContainers")

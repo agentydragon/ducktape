@@ -61,6 +61,20 @@ To roll back, stop the sampler and restore its pre-cutover database backup with 
 or recreate its database using that image and start fresh. An image-only rollback cannot read the
 new schema.
 
+Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
+It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
+new constraint prevents an older sampler image from inserting provider intents. This incompatible
+writer cutover configures only the staging Central Sampler Deployment with Kubernetes `Recreate`,
+keeping its two replicas, five-second readiness delay and one available-Pod disruption budget. Expect
+sampler downtime while old Pods stop and the new image starts the migration; serving resumes when a
+new Pod passes readiness. Verify all old Pods are gone and the new revision is ready. After that
+rollout confirms every writer uses migration 16, a follow-up may remove the explicit replica profile
+and restore the inherited rolling strategy. The migration can run at normal startup because
+`Recreate` prevents old and new writer images from overlapping. Take a pre-cutover database backup.
+If rollback is needed after migration 16, stop all new writers and restore that backup before starting
+the previous image. A previous image alone cannot write provider intents under the new required-metadata
+constraint.
+
 `//agentplane/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its
 own Pod, migrate before serving, and use projected service-account tokens for

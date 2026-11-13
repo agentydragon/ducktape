@@ -54,7 +54,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	// or malformed retained records that still contain credential headers.
 	intent.ProviderRequest.Headers["Authorization"] = "Bearer do-not-return"
 	intent.ProviderRequest.Headers["X-API-Key"] = "do-not-return"
-	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(body))
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(body), providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}

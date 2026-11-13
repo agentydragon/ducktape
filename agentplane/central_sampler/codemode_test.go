@@ -267,6 +267,9 @@ func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTime
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = manager.Close(ctx)
+		if t.Failed() {
+			retainFailedCodeModeHostLog(t, directory)
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		for _, peer := range peers {
@@ -277,6 +280,45 @@ func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTime
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]*fakeCodeModePeer(nil), peers...)
+	}
+}
+
+func retainFailedCodeModeHostLog(t *testing.T, directory string) {
+	t.Helper()
+	outputs := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if outputs == "" {
+		return
+	}
+	logPath := filepath.Join(directory, "code-mode-host.log")
+	log, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Logf("read failed Code Mode host stderr log: %v", err)
+		return
+	}
+	if err := os.MkdirAll(outputs, 0o750); err != nil {
+		t.Logf("create undeclared test output directory: %v", err)
+		return
+	}
+	testName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	name := testName + "-" + filepath.Base(directory) + "-code-mode-host.log"
+	if err := os.WriteFile(filepath.Join(outputs, name), log, 0o640); err != nil {
+		t.Logf("write failed Code Mode host stderr log: %v", err)
+	}
+}
+
+func TestRetainFailedCodeModeHostLog(t *testing.T) {
+	outputs := t.TempDir()
+	t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", outputs)
+	directory := t.TempDir()
+	const stderr = "fake child exited unexpectedly"
+	if err := os.WriteFile(filepath.Join(directory, "code-mode-host.log"), []byte(stderr), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	retainFailedCodeModeHostLog(t, directory)
+	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()) + "-" + filepath.Base(directory) + "-code-mode-host.log"
+	got, err := os.ReadFile(filepath.Join(outputs, name))
+	if err != nil || string(got) != stderr {
+		t.Fatalf("retained log=%q err=%v", got, err)
 	}
 }
 
@@ -922,7 +964,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 
 func appendModelToolCall(t *testing.T, store *Store, owner Owner, call protocol.ToolInvocation) {
 	t.Helper()
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}

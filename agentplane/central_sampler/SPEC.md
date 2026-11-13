@@ -742,6 +742,21 @@ these concrete native fields and Go's standard JSON encoder, rather than rerunni
 policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
 commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
 
+Each sampling and compaction intent also records its provider step, 1-based attempt number, finite
+budget, predecessor, original accepted command, owner generation and PostgreSQL-clock attempt lease;
+an eligible transient abandonment stores its retry due time in that same journal row. Existing
+provider intents migrate as one-attempt steps, so migration does not invent retry allowance. The
+conversation owner lock remains the first fence: attempt expiry is observable but never transfers
+Session ownership. Renew, evidence writes and Finish require the current owner generation and a live
+attempt lease. Retry begin creates a fresh intent ID in the same step only after the predecessor is
+due and the same model-visible source context still validates; it returns the exact stored prepared
+wire request rather than reconstructing from live transcript or JavaScript state. A host-loss
+frontier carries a named suppression reason and cannot reuse that frozen request; continuation
+after the model-visible reset uses a fresh prepared request in the runtime recovery path. Partial
+sampling evidence remains retained, while observed response items are reconciled `ABSENT`; no
+partial tool call is committed or dispatched before Finish. These are storage and API contracts:
+runtime backoff/retry scheduling and removal of the turn deadline are separate work.
+
 Before sampling, the first snapshot of model-visible execution handles and subsequent changes
 append as native notices, after the
 applicable input/tool results. Unchanged snapshots do not append; disappearance emits an empty

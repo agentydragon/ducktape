@@ -86,7 +86,7 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 					return prepared, wire, err
 				}
 				intent := providerRequestIntent(PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config)
-				id, wire, err := store.Begin(t.Context(), owner, intent, wrapped)
+				id, wire, err := store.Begin(t.Context(), owner, intent, wrapped, providerAttemptTestPolicyPointer())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -204,7 +204,7 @@ func TestRequestRecipeReconstructsIndependentSuffix(t *testing.T) {
 		t.Fatal(err)
 	}
 	preparation := adapter.(responsesAdapter).preparation(session, protocol.SessionAttribution{SessionID: session.ID}, true)
-	id, wire, err := store.Begin(t.Context(), owner, providerRequestIntent(PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config), preparation)
+	id, wire, err := store.Begin(t.Context(), owner, providerRequestIntent(PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config), preparation, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}

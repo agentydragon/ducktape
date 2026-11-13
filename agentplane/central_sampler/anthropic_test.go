@@ -45,7 +45,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
