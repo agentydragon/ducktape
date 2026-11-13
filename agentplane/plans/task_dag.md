@@ -3291,7 +3291,7 @@ apply is not verified here. The rest is on staging, including the proxy's half t
 `EGRESS_IDENTITY_RULES`: the proxy decides an Identity caller by the bindings naming it,
 impersonates any account it holds a use rule for and records the decision by kind and name
 ([egress SPEC](../egress/SPEC.md) § Decision); the Rules API answers an Identity. The seam is
-`identity/auth/auth`'s `Subject` (`Principal` | `IdentityPrincipal`), and each service's
+`identity/auth`'s `Subject` (`Principal` | `IdentityPrincipal`), and each service's
 workload-facing methods admit the union and record an identity reference plus the workload
 incarnation as provenance. Dispatcher is the authority for a Session's Identity, recorded from its
 Sandbox's `spec.identity`; its delivery and wake path refuses a Session whose identity differs from
