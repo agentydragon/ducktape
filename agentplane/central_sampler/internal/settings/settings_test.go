@@ -100,10 +100,7 @@ func TestProviderLeasesCoverConfiguredPhasesAndDatabaseSlack(t *testing.T) {
 	if got, want := settings.ProviderProgressLease(), 620*time.Second; got != want {
 		t.Fatalf("provider progress lease=%s, want idle + two RPC intervals %s", got, want)
 	}
-	settings.TurnTimeoutSeconds = 900
-	if got, want := settings.ProviderAttemptLease(), 900*time.Second; got != want {
-		t.Fatalf("initial provider attempt lease=%s, want the larger whole-turn timeout %s", got, want)
-	}
+
 }
 
 func TestSettingsRejectProviderPhaseLeaseOverflow(t *testing.T) {

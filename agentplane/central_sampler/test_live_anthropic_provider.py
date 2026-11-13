@@ -194,7 +194,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         compaction=AnthropicCompactionConfig(max_tokens=2048, keep_recent_turns=1),
         per_message_effort=True,
         cache_diagnostics=True,
-    ).model_copy(update={"turn_timeout_seconds": TURN_TIMEOUT_SECONDS})
+    )
     request = create_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"
@@ -429,9 +429,7 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
     base = settings(
         database_url, "https://unused.invalid", execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
     )
-    config = anthropic_settings(base, model, max_tokens=2048, prompt_cache=True, per_message_effort=True).model_copy(
-        update={"turn_timeout_seconds": TURN_TIMEOUT_SECONDS}
-    )
+    config = anthropic_settings(base, model, max_tokens=2048, prompt_cache=True, per_message_effort=True)
     request = create_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"
@@ -513,7 +511,7 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
         model,
         max_tokens=1200,
         compaction=AnthropicCompactionConfig(max_tokens=1200, auto_compact_tokens=1, keep_recent_turns=0),
-    ).model_copy(update={"turn_timeout_seconds": TURN_TIMEOUT_SECONDS})
+    )
     request = create_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"

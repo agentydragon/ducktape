@@ -3423,7 +3423,6 @@ data:
       "gateway_token_file": "/var/run/secrets/central-sampler/gateway",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
-      "turn_timeout_seconds": 3600,
       "rpc_timeout_seconds": 30,
       "executor_initialize_timeout_seconds": 30,
       "shutdown_drain_seconds": 40,

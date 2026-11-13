@@ -55,7 +55,6 @@ async def test_agent_runs_a_nested_command_and_continues(
                     auth=AuthConfig(type="bearer", credential=SecretStr(os.environ["OPENAI_API_KEY"])),
                 )
             },
-            "turn_timeout_seconds": TURN_TIMEOUT_SECONDS,
         }
     )
     token = f"sampler-live-{uuid4().hex}"

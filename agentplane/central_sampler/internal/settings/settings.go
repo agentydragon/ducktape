@@ -29,7 +29,6 @@ type Settings struct {
 	DirectExecutorTarget                 string                                   `json:"direct_executor_target"`
 	DirectExecutorInsecureLocaltest      bool                                     `json:"direct_executor_insecure_localtest"`
 	MaxLiveSessions                      int                                      `json:"max_live_sessions"`
-	TurnTimeoutSeconds                   int                                      `json:"turn_timeout_seconds"`
 	ProviderResponseHeaderTimeoutSeconds *int                                     `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds           *int                                     `json:"provider_idle_timeout_seconds,omitempty"`
 	RPCTimeoutSeconds                    int                                      `json:"rpc_timeout_seconds"`
@@ -41,6 +40,7 @@ type Settings struct {
 	LeaseSeconds                         int                                      `json:"lease_seconds"`
 	AutoCompactTokens                    *int                                     `json:"auto_compact_tokens"`
 	Kubeconfig                           string                                   `json:"kubeconfig"`
+	SetupTimeoutSeconds *int `json:"setup_timeout_seconds,omitempty"`
 }
 
 func LoadSettings(path string) (Settings, error) {

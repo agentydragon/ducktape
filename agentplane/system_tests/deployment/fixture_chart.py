@@ -216,7 +216,6 @@ def environment(
             },
             max_live_sessions=2,
             # Gateway reconnect has a bounded 120s window; a live turn must outlast it.
-            turn_timeout_seconds=240,
             rpc_timeout_seconds=10,
             executor_initialize_timeout_seconds=30,
             lease_seconds=60,

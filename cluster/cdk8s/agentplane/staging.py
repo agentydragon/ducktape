@@ -514,7 +514,6 @@ ENV = Environment(
             count=2, strategy=DeploymentStrategy.recreate(), min_ready=Duration.seconds(5), pdb_min_available=1
         ),
         max_live_sessions=32,
-        turn_timeout_seconds=3600,
         rpc_timeout_seconds=30,
         lease_seconds=60,
     ),

@@ -13,6 +13,7 @@ import (
 )
 
 const (
+	defaultSetupTimeoutSeconds = 3600
 	defaultCodeModeObservationTimeoutSeconds    = 300
 	defaultExecutorInitializeTimeoutSeconds     = 30
 	defaultExecutorReconnectTimeoutSeconds      = 120
@@ -101,11 +102,10 @@ func (s Settings) Validate() error {
 	if strings.ContainsAny(remaining, "{}") {
 		return errors.New("gateway target supports only namespace and sandbox placeholders")
 	}
-	if s.MaxLiveSessions <= 0 || s.TurnTimeoutSeconds <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
+	if s.MaxLiveSessions <= 0 || s.RPCTimeoutSeconds <= 0 || s.LeaseSeconds <= 30 {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
 	for name, seconds := range map[string]int{
-		"turn_timeout_seconds": s.TurnTimeoutSeconds,
 		"rpc_timeout_seconds":  s.RPCTimeoutSeconds,
 		"lease_seconds":        s.LeaseSeconds,
 	} {
@@ -119,6 +119,9 @@ func (s Settings) Validate() error {
 	}
 	if observationSeconds <= 0 || int64(observationSeconds) > maxExecutorInitializeTimeoutSeconds-int64(s.RPCTimeoutSeconds) {
 		return errors.New("code_mode_observation_timeout_seconds must be positive and fit with rpc_timeout_seconds in time.Duration")
+	}
+	if s.SetupTimeoutSeconds != nil && (*s.SetupTimeoutSeconds <= 0 || int64(*s.SetupTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
+		return errors.New("setup_timeout_seconds must be positive and fit in time.Duration")
 	}
 	if s.ExecutorInitializeTimeoutSeconds != nil {
 		seconds := int64(*s.ExecutorInitializeTimeoutSeconds)
@@ -174,6 +177,14 @@ func (s Settings) Connection(model string) (ConnectionConfig, error) {
 	return connection, nil
 }
 
+func (s Settings) SetupTimeout() time.Duration {
+	seconds := defaultSetupTimeoutSeconds
+	if s.SetupTimeoutSeconds != nil {
+		seconds = *s.SetupTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
 func (s Settings) CodeModeObservationTimeout() time.Duration {
 	seconds := defaultCodeModeObservationTimeoutSeconds
 	if s.CodeModeObservationTimeoutSeconds != nil {
@@ -219,10 +230,6 @@ func (s Settings) ProviderIdleTimeout() time.Duration {
 // the idle interval with two RPC operations reserved for evidence and the renewal.
 func (s Settings) ProviderAttemptLease() time.Duration {
 	phaseSeconds := int64(s.ProviderResponseHeaderTimeout()/time.Second) + int64(s.ProviderIdleTimeout()/time.Second) + 3*int64(s.RPCTimeoutSeconds)
-	turnSeconds := int64(s.TurnTimeoutSeconds)
-	if turnSeconds > phaseSeconds {
-		phaseSeconds = turnSeconds
-	}
 	return time.Duration(phaseSeconds) * time.Second
 }
 

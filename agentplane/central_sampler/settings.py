@@ -218,7 +218,6 @@ class Settings(BaseModel):
     direct_executor_target: str | None = None
     direct_executor_insecure_localtest: bool = False
     max_live_sessions: int = Field(gt=0)
-    turn_timeout_seconds: int = Field(gt=0)
     provider_response_header_timeout_seconds: int | None = Field(
         default=None,
         gt=0,
@@ -230,6 +229,12 @@ class Settings(BaseModel):
         gt=0,
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed between durable semantic provider events after response headers.",
+    )
+    setup_timeout_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Maximum setup script duration; the service uses 3600 seconds when omitted.",
     )
     rpc_timeout_seconds: int = Field(gt=0)
     code_mode_observation_timeout_seconds: int | None = Field(

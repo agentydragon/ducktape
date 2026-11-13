@@ -381,6 +381,11 @@ Provider requests ask for `reasoning.summary: "auto"`, as wrapped Codex does for
 routes; summary text streams to History as the reasoning item's text, its parts joined by newlines.
 Compaction requests carry the same summary and context but no effort.
 
+Agent turns have no elapsed-time deadline. Provider phase budgets, durable attempt budgets, database
+operation limits and native observation limits bound each step; shutdown and explicit interruption
+still cancel active work. Setup scripts have a separate `setup_timeout_seconds` limit (3600 seconds
+when omitted). Neither setup policy nor Session ownership leases impose a turn duration limit.
+
 Database-clock leases and generations fence stale sampler writes. They cannot atomically fence an
 external shell effect: a dispatched operation with no observed result is uncertain. The persisted
 intent/result journal distinguishes this from an operation known not to have been dispatched.

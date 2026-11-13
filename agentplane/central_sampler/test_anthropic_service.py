@@ -65,7 +65,6 @@ def native_config(base: Any) -> Any:
             compaction=AnthropicCompactionConfig(max_tokens=128),
         ),
     )
-    base.turn_timeout_seconds = TIMEOUT_SECONDS
     return base
 
 

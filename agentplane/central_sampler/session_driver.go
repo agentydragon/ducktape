@@ -413,7 +413,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		if release, err := r.drainReleases(ctx, sessionID, owner, activeCommand, &drainContinued); err != nil || release {
 			return activeCommand, err
 		}
-		turnCtx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.TurnTimeoutSeconds)*time.Second)
+		turnCtx, cancel := context.WithCancel(ctx)
 		var result TurnResult
 		if payload.GetCompact() != nil {
 			conversation, readErr := r.store.Read(turnCtx, owner)

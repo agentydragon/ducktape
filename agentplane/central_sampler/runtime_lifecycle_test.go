@@ -323,7 +323,7 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0), NextSeq: 1}, nil
 	}
 	settings := samplersettings.Settings{
-		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, TurnTimeoutSeconds: 30, ShutdownDrainSeconds: &drainSeconds,
+		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, ShutdownDrainSeconds: &drainSeconds,
 		Connections: map[string]samplersettings.ConnectionConfig{"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}}},
 		Models: map[string]samplersettings.ModelConfig{"fixture-model": {
 			Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectStandard},

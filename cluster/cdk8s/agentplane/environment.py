@@ -56,7 +56,6 @@ class CentralSamplerProps:
     models: Mapping[str, settings.ModelConfig]
     connections: Mapping[str, settings.ConnectionConfig]
     max_live_sessions: int
-    turn_timeout_seconds: int
     rpc_timeout_seconds: int
     lease_seconds: int
     replicas: ReplicaProfile | None = None

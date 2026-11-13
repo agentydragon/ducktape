@@ -90,7 +90,6 @@ class CentralSampler(Construct):
             gateway_token_file=_GATEWAY_TOKEN_FILE,
             gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
             max_live_sessions=props.max_live_sessions,
-            turn_timeout_seconds=props.turn_timeout_seconds,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             executor_initialize_timeout_seconds=props.executor_initialize_timeout_seconds,
             lease_seconds=props.lease_seconds,
