@@ -65,221 +65,312 @@
         Title,
       } from "@mantine/core";
       import { html, mount } from "../report.js";
-      const sourceSHA = "9b58dd18f932f4129dbd1d673450cc5df87e859d";
+      const sourceSHA = "3370398e424236303c0c49e25d635b6ac4731a10";
       const nextPRs = [
         {
           number: 1,
-          title: "Give shared workload transport an honest home",
-          destination: "agentplane/identity/transport/",
-          readiness: "Ready; broad mechanical move",
+          title: "Extract the sampler stored-event codec",
+          destination: "agentplane/central_sampler/internal/eventcodec/",
+          readiness: "Ready; source and caller preflight complete",
           scope:
-            "Move environment_runtime_transport, its Python config and testing helpers together. The Go library depends on SPIFFE and gRPC, not the identity resolver or issuer, so placing it below identity does not itself create a cycle. Update every Go/Python import, Bazel label, cdk8s setting reference and document. Keep transport policy and credential resolution in their existing roles.",
+            "Move event_storage.go's encode/decode functions into a concrete leaf package. Update store.go, store_admission.go and sampling_recovery.go directly; no Store interface or transaction callback. The leaf imports only gzip/byte helpers and the event-log protobuf. Keep persistence and lease ownership in Store.",
           invariant:
-            "Preserve TLS verification, URI and EKU validation, SPIFFE trust domains, expiry behavior, token audiences and configuration keys. Do not absorb resolver or issuer logic in this move.",
+            "Keep the 4096-byte threshold, only-compress-when-smaller rule, gzip detection, retained protobuf bytes and error behavior. History duplicate checks still receive the identical decoded event; no stored-row rewrite or migration.",
           check:
-            "Run the relocated transport race suite; build credential resolver and issuer, affected Go binaries and Python settings/cdk8s libraries. Search the entire repository for the old path; remaining active references must be zero.",
+            "Build the leaf and run existing sampler Store/service coverage. Compare moved codec bodies after only naming/import edits; do not claim that existing unit tests directly cover compressed records.",
+          sources: [
+            "agentplane/central_sampler/event_storage.go",
+            "agentplane/central_sampler/store_admission.go",
+            "agentplane/central_sampler/sampling_recovery.go",
+            "agentplane/central_sampler/BUILD.bazel",
+          ],
+          commands: [
+            "bbr build //agentplane/central_sampler/internal/eventcodec:eventcodec",
+            "bbr test //agentplane/central_sampler:central_sampler_test",
+          ],
+          current_checks: ["//agentplane/central_sampler:central_sampler_test"],
+          dependency:
+            "Independent leaf; the root remains the durable owner. Future eventcodec label must be created and queried at dispatch.",
+          importer_closure:
+            "3 root Go caller files; 1 Bazel library consumer; no external package consumer.",
+        },
+        {
+          number: 2,
+          title: "Extract Dispatcher placement validation",
+          destination:
+            "agentplane/runner_gateway/dispatcher/internal/placement/",
+          readiness: "Ready; source and caller preflight complete",
+          scope:
+            "Move placement.go's concrete placement vocabulary, validation and exact-target helpers into an owner-private leaf. Update six production callers: api, store, delivery, delivery_wake, snapshots and central_runner. Use the defining package directly. Split the existing mixed contract test: pure placement checks move; DescribeSession privacy assertions and Store test helpers stay with Dispatcher.",
+          invariant:
+            "Preserve persisted placement strings, exact environment name/UID validation, native harness admission and InvalidArgument outcomes. No change to forwarding markers, delivery fences, database transactions or instruction redaction.",
+          check:
+            "Run the moved pure contract cases plus current central-runner and Store integration targets. Verify DescribeSession retains the placement and omits private opening instructions.",
+          sources: [
+            "agentplane/runner_gateway/dispatcher/placement.go",
+            "agentplane/runner_gateway/dispatcher/placement_contract_test.go",
+            "agentplane/runner_gateway/dispatcher/placement_test.go",
+            "agentplane/runner_gateway/dispatcher/BUILD.bazel",
+          ],
+          commands: [
+            "bbr test //agentplane/runner_gateway/dispatcher/internal/placement:placement_test //agentplane/runner_gateway/dispatcher:central_runner_test //agentplane/runner_gateway/dispatcher:store_integration_test",
+          ],
+          current_checks: [
+            "//agentplane/runner_gateway/dispatcher:central_runner_test",
+            "//agentplane/runner_gateway/dispatcher:store_integration_test",
+          ],
+          dependency:
+            "Independent of the service moves; the new leaf depends on protos/UUID/gRPC status, never on dispatcher root. New placement_test is a proposed relocated target.",
+          importer_closure:
+            "6 production caller files in one Dispatcher package; test helpers remain with their concrete Store owner.",
+        },
+        {
+          number: 3,
+          title: "Give shared workload transport an identity home",
+          destination: "agentplane/identity/transport/",
+          readiness: "Ready; source and caller preflight complete",
+          scope:
+            "Carry forward the previous un-dispatched lane 1. Move environment_runtime_transport, its Python config and testing subtree together; update Go/Python imports, Bazel labels, settings/cdk8s consumers and source pointers. This is broad mechanical churn, not a prerequisite for the other nine lanes.",
+          invariant:
+            "Keep TLS verification, SPIFFE trust domains, URI/EKU checks, expiry, token audiences and configuration keys. Resolver/issuer remain downstream; transport must not import their policy or credential-resolution logic.",
+          check:
+            "Run the relocated transport suite and build credential resolver/issuer plus affected Go and Python consumers. Search all tracked repository references, including selectors and manifests; preserve historical pinned source permalinks.",
           sources: [
             "agentplane/environment_runtime_transport/BUILD.bazel",
             "agentplane/environment_runtime_transport/security.go",
             "agentplane/environment_runtime_transport/config.py",
+            "agentplane/identity/credentials/resolver/BUILD.bazel",
           ],
           commands: [
             "bbr test //agentplane/identity/transport:transport_test",
             "bbr build //agentplane/identity/credentials/resolver //agentplane/identity/credentials/issuer",
           ],
-          dependency:
-            "No content dependency on the open PRs; reconcile overlapping imports by rebasing.",
-        },
-        {
-          number: 2,
-          title: "Extract sampler configuration and model-route settings",
-          destination: "agentplane/central_sampler/settings/",
-          readiness: "Ready; leaf extraction",
-          scope:
-            "Move Settings, ModelConfig, ConnectionConfig, AuthConfig, decoding, validation and their methods from settings.go into a public settings package. Keep the configuration family together; split the 441-line implementation into decoding, model/connection settings and validation files as useful. Update sampler, command and History integration callers to name the defining package directly. Move settings tests; keep test fixture builders with their consumers.",
-          invariant:
-            "The file imports provider adapters, protocol and shared transport, with no sampler-root dependency. Preserve unknown-key rejection, defaults, model compatibility, credential reading, gateway address checks and timeout budgets. Keep the Python rendering schema and its keys stable; add no type aliases or re-exports.",
-          check:
-            "Run relocated settings tests and central_sampler_unit_test, build the sampler command, and run the existing History ingress and sampler service tests that construct these settings.",
-          sources: [
-            "agentplane/central_sampler/settings.go",
-            "agentplane/central_sampler/settings_test.go",
-            "agentplane/central_sampler/settings_fixture_test.go",
-            "agentplane/central_sampler/cmd/main.go",
-          ],
-          commands: [
-            "bbr test //agentplane/central_sampler/settings:settings_test //agentplane/central_sampler:central_sampler_unit_test",
-            "bbr build //agentplane/central_sampler/cmd:main_bin",
+          current_checks: [
+            "//agentplane/environment_runtime_transport:environment_runtime_transport_test",
+            "//agentplane/identity/credentials/resolver:resolver_test",
+            "//agentplane/identity/credentials/issuer:issuer_test",
           ],
           dependency:
-            "Independent of lane 1; update transport imports again if its move lands first.",
-        },
-        {
-          number: 3,
-          title: "Extract the sampler code-mode tool contract",
-          destination: "agentplane/central_sampler/internal/toolcontract/",
-          readiness: "Ready with a bounded parser split",
-          scope:
-            "Move codemode_description.go, its embedded templates and description tests, plus the pure exec/wait input types and parsers from codemode.go and tool_protocol.go. Make the schema reflector and decoder use the same concrete input types. Keep prepareExecute, prepareJSONCall and other methods that touch CodeMode, Store or a live host in the sampler root.",
-          invariant:
-            "Preserve freeform and JSON contracts, safe-integer checks, unknown-field rejection, defaults, code-tool ordering and schema behavior. Leave journal writes, live-cell handles, admission and cancellation with their current owners. Pure parsing must not import the sampler root or require callback plumbing.",
-          check:
-            "Run the moved description/input tests, existing code-mode execution and unit suites, and build the command including embedded template runfiles. Verify both exec encodings with existing provider/service coverage.",
-          sources: [
-            "agentplane/central_sampler/codemode_description.go",
-            "agentplane/central_sampler/codemode.go",
-            "agentplane/central_sampler/tool_protocol.go",
-            "agentplane/central_sampler/codemode_description_test.go",
-          ],
-          commands: [
-            "bbr test //agentplane/central_sampler/internal/toolcontract:toolcontract_test //agentplane/central_sampler:central_sampler_unit_test //agentplane/central_sampler:central_sampler_test",
-            "bbr build //agentplane/central_sampler/cmd:main_bin",
-          ],
-          dependency:
-            "Independent of settings extraction. Shared edits in codemode.go are rebase work, not a reason to serialize ready PRs.",
+            "No content dependency. Other lanes may overlap imports; rebase whichever lands second. Proposed transport_test replaces the current longer test label.",
+          importer_closure:
+            "88 Go import-reference files (46 production, 42 tests), 44 Python import files, 54 BUILD/bzl reference files at the initial preflight; transport has no resolver/issuer back-edge.",
         },
         {
           number: 4,
-          title: "Extract sampler tool-result decoding and rendering",
-          destination: "agentplane/central_sampler/internal/tooloutput/",
-          readiness: "Ready; pure result boundary",
+          title: "Make History read RPC handlers private",
+          destination: "agentplane/history_service/internal/rpc/",
+          readiness: "Ready; source and caller preflight complete",
           scope:
-            "Move codemode_output.go, codemode_protocol.go, output_truncation.go and their tests into one result-decoding/rendering package. Keep observation types concrete. Pass the resolved output budget into rendering so output code does not depend on the root tool-description constants. Update process-output callers as well as CodeMode.Execute.",
+            "Move api/{service,follow,watch}.go, its four Go test files and implementation BUILD to internal/rpc. Update History main's NewService and method-policy wiring. Leave api/history and api/ingress public proto packages at their current paths.",
           invariant:
-            "Preserve UTF-8 boundaries, omission markers, image/audio accounting, strict result variants, host duration and error rendering. Keep CodeMode.observe and all Store writes in the coordinator; parsing and rendering must not acquire a lease or touch the executor.",
+            "Preserve delegated authorization, follow/watch cursor behavior, replay boundaries, stream termination and error mapping. Storage, projection and wakeups remain their existing owners; no wire or schema rename.",
           check:
-            "Run the relocated protocol/output tests and existing sampler unit and execution tests. Retain behavior coverage for mixed content, failed/yielded cells, process output truncation and image preparation.",
+            "Run the relocated handler integration suite and existing History service integration suite; build history-service. Search all references to the handler import, without rewriting the public proto paths.",
           sources: [
-            "agentplane/central_sampler/codemode_output.go",
-            "agentplane/central_sampler/codemode_protocol.go",
-            "agentplane/central_sampler/output_truncation.go",
-            "agentplane/central_sampler/codemode_output_test.go",
-          ],
-          commands: [
-            "bbr test //agentplane/central_sampler/internal/tooloutput:tooloutput_test //agentplane/central_sampler:central_sampler_unit_test //agentplane/central_sampler:central_sampler_test",
-          ],
-          dependency:
-            "Can start alongside lane 3. Resolve the default budget at its caller rather than creating a dependency on the tool-contract package.",
-        },
-        {
-          number: 5,
-          title: "Make History projection and cursor walking private",
-          destination:
-            "agentplane/history_service/internal/{projection,settledcursors}/",
-          readiness: "Ready; owner-only imports verified",
-          scope:
-            "Move the existing projection and settledcursors Go packages and tests under History internal. There are nine projection import files and three cursor-helper import files, all inside History. Update read/watch handlers, settlement backfill, ingress recovery tests and the fold package together; leave Python fold/models.py and its browser-sync consumers at their established boundary.",
-          invariant:
-            "Keep leases, cursor coverage, checkpoint commits, settlement rules and stored schemas unchanged. Preserve the real sampler-to-History projection scenarios landed in #16080.",
-          check:
-            "Run relocated projection lifecycle/integration and cursor tests, the History read integration suite and ingress integration suite, and build the History binary. Reuse existing scale coverage if the diff changes its setup; a path-only move does not call for a new performance claim.",
-          sources: [
-            "agentplane/history_service/projection/BUILD.bazel",
-            "agentplane/history_service/projection/projector.go",
-            "agentplane/history_service/settledcursors/settledcursors.go",
-            "agentplane/history_service/ingress/sampler_history_projection_test.go",
-          ],
-          commands: [
-            "bbr test //agentplane/history_service/internal/projection:lifecycle_test //agentplane/history_service/internal/projection:integration_test //agentplane/history_service/internal/settledcursors:settledcursors_test",
-            "bbr test //agentplane/history_service/internal/reads:integration_test //agentplane/history_service/ingress:integration_test",
-          ],
-          dependency:
-            "Do not duplicate #16094 or #16105. Their package moves may cause import conflicts; these are not content prerequisites. Recheck their landed paths at dispatch.",
-        },
-        {
-          number: 6,
-          title: "Make History ingress implementation private",
-          destination: "agentplane/history_service/internal/ingress/",
-          readiness: "Ready; one owner-local importer",
-          scope:
-            "Move ingress implementation and its full integration harness under internal, updating main.go and Bazel labels. The only Go import of the implementation is History main. Public producer contracts stay in api/ingress; include the producer-to-History scenarios and real exporter in the relocated test target.",
-          invariant:
-            "Preserve SVID/delegated authorization, Sandbox UID validation, bounds, duplicate handling and acknowledgement timing. Keep the producer fixture dependent on public sampler APIs and its explicit historyexport boundary.",
-          check:
-            "Run the relocated ingress integration suite and History startup/integration suites; build history-service and the Runtime/sampler exporters. Search all repository references, including test target selectors and docs, for the old implementation path.",
-          sources: [
-            "agentplane/history_service/ingress/ingress.go",
-            "agentplane/history_service/ingress/BUILD.bazel",
+            "agentplane/history_service/api/service.go",
+            "agentplane/history_service/api/follow.go",
+            "agentplane/history_service/api/watch.go",
+            "agentplane/history_service/api/BUILD.bazel",
             "agentplane/history_service/main.go",
           ],
           commands: [
-            "bbr test //agentplane/history_service/internal/ingress:integration_test //agentplane/history_service:integration_test",
-            "bbr build //agentplane/history_service:history-service //agentplane/central_sampler/cmd:main_bin",
+            "bbr test //agentplane/history_service/internal/rpc:integration_test //agentplane/history_service:integration_test",
+            "bbr build //agentplane/history_service:history-service",
+          ],
+          current_checks: [
+            "//agentplane/history_service/api:integration_test",
+            "//agentplane/history_service:integration_test",
           ],
           dependency:
-            "Independent of lane 5 and the landed storage move; rebase shared BUILD/import edits. If a test actually depends on an unmerged commit, use a native GitHub stack.",
+            "Shares main/BUILD edits with open ingress PR #16115; these are rebase conflicts, not a content dependency. No root import from the new package.",
+          importer_closure:
+            "1 importing Go package/file: History main. NewService, Methods and MethodsWithDelegation have no cross-service Go caller.",
+        },
+        {
+          number: 5,
+          title: "Make MCP Connection persistence private",
+          destination: "agentplane/mcp_edge/internal/connections/",
+          readiness: "Ready; source and caller preflight complete",
+          scope:
+            "Move the existing connections package, tests and BUILD intact. Update MCP composition/core client and authserver consumers. Public api/connection bindings and the database schema stay in place.",
+          invariant:
+            "Preserve transaction boundaries, update wakeups, exact Identity UID matching, connection/grant versions, enrollment activation and revocation. No name-only fallback or OAuth authority change.",
+          check:
+            "Run relocated Connection integration tests, authserver integration and SDK DCR tests, and MCP runtime tests. Build the existing service binary through its current composition target.",
+          sources: [
+            "agentplane/mcp_edge/connections/BUILD.bazel",
+            "agentplane/mcp_edge/connections/store.go",
+            "agentplane/mcp_edge/connections/authorizations.go",
+            "agentplane/mcp_edge/authserver/authorize.go",
+          ],
+          commands: [
+            "bbr test //agentplane/mcp_edge/internal/connections:integration_test //agentplane/mcp_edge/authserver:integration_test //agentplane/mcp_edge/authserver:sdk_dcr_test //agentplane/mcp_edge:runtime_test",
+          ],
+          current_checks: [
+            "//agentplane/mcp_edge/connections:integration_test",
+            "//agentplane/mcp_edge/authserver:integration_test",
+            "//agentplane/mcp_edge/authserver:sdk_dcr_test",
+            "//agentplane/mcp_edge:runtime_test",
+          ],
+          dependency:
+            "Independent of lane 6; shared authserver imports can be rebased. Dependencies point to public API/auth/Postgres/wakeups, not back to main or authserver.",
+          importer_closure:
+            "2 importing Go package directories: mcp_edge root and authserver. Current Bazel visibility is broader than this owner.",
+        },
+        {
+          number: 6,
+          title: "Make the MCP protocol server private",
+          destination: "agentplane/mcp_edge/internal/mcpserver/",
+          readiness: "Ready; source and caller preflight complete",
+          scope:
+            "Move mcpserver with its golden/tool data and tests. Update MCP main and authserver bearer/outage helpers, plus action_service/docs/BUILD's explicit visibility exception for the relocated consumer.",
+          invariant:
+            "Preserve /mcp routing, Streamable HTTP and JSON-RPC behavior, tool schemas, bearer context, outage errors and DNS-rebinding protection. No endpoint, OAuth or Action-admission redesign.",
+          check:
+            "Run the moved MCP server tests, authserver integration and SDK DCR tests, and root MCP runtime tests. Build with embedded docs/data to catch visibility and runfile regressions.",
+          sources: [
+            "agentplane/mcp_edge/mcpserver/BUILD.bazel",
+            "agentplane/mcp_edge/mcpserver/server.go",
+            "agentplane/mcp_edge/mcpserver/bearer.go",
+            "agentplane/action_service/docs/BUILD.bazel",
+          ],
+          commands: [
+            "bbr test //agentplane/mcp_edge/internal/mcpserver:mcpserver_test //agentplane/mcp_edge/authserver:integration_test //agentplane/mcp_edge/authserver:sdk_dcr_test //agentplane/mcp_edge:runtime_test",
+          ],
+          current_checks: [
+            "//agentplane/mcp_edge/mcpserver:mcpserver_test",
+            "//agentplane/mcp_edge/authserver:integration_test",
+            "//agentplane/mcp_edge/authserver:sdk_dcr_test",
+            "//agentplane/mcp_edge:runtime_test",
+          ],
+          dependency:
+            "Independent of lane 5. The docs visibility exception must move in the same commit; this is not permission to make Action Gate internal.",
+          importer_closure:
+            "2 importing Go package directories: MCP composition and authserver; 1 additional Action docs visibility edge.",
         },
         {
           number: 7,
-          title: "Separate Notification handlers from public contracts",
-          destination: "agentplane/notification_service/internal/rpc/",
-          readiness: "Ready; 22 Go files, one owner-local importer",
+          title: "Make the Action MCP executor private",
+          destination: "agentplane/action_service/internal/mcpexec/",
+          readiness: "Ready; source and caller preflight complete",
           scope:
-            "Move the eleven implementation files and eleven tests currently directly under notification_service/api to internal/rpc. Leave api/notifications and its generated bindings public. Update Notification main, test labels and documentation; the empty api grouping directory can still contain the contract package.",
+            "Move mcpexec, golden data and its complete integration harness as one existing package. Update the Action composition root and every BUILD/embed selector. Keep worker, linkage, store and catalog as the existing concrete dependencies.",
           invariant:
-            "Preserve authorization, delegation, watch behavior and error mapping. Keep the transactional store, GitHub advisory lock order, inbox wakeups and commit ownership together.",
+            "Preserve per-group MCP supervision, tool offer/withdrawal, OAuth linkage, request leases, cancellation and retry behavior. No new worker interface, session lifetime or availability policy.",
           check:
-            "Run relocated RPC unit and integration tests, service integration tests and the store integration suite; build notification-service and its API clients. No database or wire rename belongs in this PR.",
+            "Run relocated MCP executor unit/golden and integration suites plus the Action service integration target. Preserve fixture bytes and embedded paths.",
           sources: [
-            "agentplane/notification_service/api/BUILD.bazel",
-            "agentplane/notification_service/api/service.go",
-            "agentplane/notification_service/main.go",
-            "agentplane/notification_service/internal/store/github_ingest.go",
+            "agentplane/action_service/mcpexec/BUILD.bazel",
+            "agentplane/action_service/mcpexec/executor.go",
+            "agentplane/action_service/mcpexec/linkage.go",
+            "agentplane/action_service/main.go",
           ],
           commands: [
-            "bbr test //agentplane/notification_service/internal/rpc:unit_test //agentplane/notification_service/internal/rpc:integration_test //agentplane/notification_service:integration_test",
-            "bbr build //agentplane/notification_service:notification-service",
+            "bbr test //agentplane/action_service/internal/mcpexec:mcpexec_test //agentplane/action_service/internal/mcpexec:integration_test //agentplane/action_service:integration_test",
+          ],
+          current_checks: [
+            "//agentplane/action_service/mcpexec:mcpexec_test",
+            "//agentplane/action_service/mcpexec:integration_test",
+            "//agentplane/action_service:integration_test",
           ],
           dependency:
-            "Independent of lanes 1\u20136; public Notification API relocation #16069 is already merged.",
+            "Open Action contract PR #16088 overlaps imports/BUILD only. Use its landed paths when dispatching; no content dependency or blanket API handler move.",
+          importer_closure:
+            "1 external importing Go package directory: Action composition. No worker-to-mcpexec reverse edge.",
         },
         {
           number: 8,
-          title: "Put the MCP Connection contract under api/connection",
-          destination: "agentplane/mcp_edge/api/connection/",
-          readiness: "Ready after generated-consumer preflight",
+          title: "Make Notification Session identity checks private",
+          destination:
+            "agentplane/notification_service/internal/sessionidentity/",
+          readiness: "Ready; source and caller preflight complete",
           scope:
-            "Move connection_service.proto and its generated Go, Python, TypeScript and gateway targets out of the MCP edge composition BUILD. Update imports in app frontend/backend, CLI and MCP edge, including HTTP-facade/OpenAPI generation and references in system-test fixtures.",
+            "Move the existing sessionidentity helper intact and update internal/rpc and worker consumers. Keep its concrete Session, placement and destination inputs; do not combine it with inbox storage or split GitHub transactions.",
           invariant:
-            "Retain agentplane.mcp_edge package, ConnectionService full method names, field numbers and HTTP annotations. File/descriptors and generated import paths will move, so inventory descriptor/reflection consumers too. Keep OAuth and Connection state ownership unchanged.",
+            "Preserve exact Session ID, recognized placement, Sandbox name+UID and recorded Identity name+UID checks. Keep name-only resolution invalid and maintain the existing Target/Identity/IdentityRun behavior.",
           check:
-            "Build every generated language consumer and affected app/CLI/MCP targets; run Connection and OAuth authserver integration tests and facade coverage. Use existing authorization tests to check method policies still match.",
+            "Build the relocated library and run RPC unit/integration, worker integration and service integration suites. There is no dedicated test target to move: existing caller tests exercise the helper.",
           sources: [
-            "agentplane/mcp_edge/connection_service.proto",
-            "agentplane/mcp_edge/BUILD.bazel",
-            "agentplane/mcp_edge/connections/BUILD.bazel",
-            "agentplane/mcp_edge/authserver/BUILD.bazel",
+            "agentplane/notification_service/sessionidentity/session.go",
+            "agentplane/notification_service/sessionidentity/BUILD.bazel",
+            "agentplane/notification_service/internal/rpc/messages_test.go",
+            "agentplane/notification_service/worker/BUILD.bazel",
           ],
           commands: [
-            "bbr test //agentplane/mcp_edge/connections:integration_test //agentplane/mcp_edge/authserver:integration_test",
-            "bbr build //agentplane/mcp_edge:main_lib",
+            "bbr build //agentplane/notification_service/internal/sessionidentity:sessionidentity",
+            "bbr test //agentplane/notification_service/internal/rpc:unit_test //agentplane/notification_service/internal/rpc:integration_test //agentplane/notification_service/worker:integration_test //agentplane/notification_service:integration_test",
+          ],
+          current_checks: [
+            "//agentplane/notification_service/internal/rpc:unit_test",
+            "//agentplane/notification_service/internal/rpc:integration_test",
+            "//agentplane/notification_service/worker:integration_test",
+            "//agentplane/notification_service:integration_test",
           ],
           dependency:
-            "Action contract imports overlap #16088. Recheck its status and import paths; stack only if the implementation uses content that exists solely in that PR.",
+            "Independent security-helper move; no transaction or lock-order extraction. Existing Bazel scope is already owner-only; internal adds Go import enforcement.",
+          importer_closure:
+            "2 importing Go package directories: Notification RPC and worker. Helper depends only on model and public Session/Dispatcher protos.",
         },
         {
           number: 9,
-          title:
-            "Put Egress admin and rules contracts beside their implementations",
-          destination: "agentplane/egress/api/{rules,admin}/",
-          readiness: "Ready after generated-consumer preflight",
+          title: "Make Egress Admin implementation private",
+          destination: "agentplane/egress/internal/admin/",
+          readiness: "Ready; source and caller preflight complete",
           scope:
-            "Move egress_rules.proto and egress_admin.proto with their generated targets. They form one source-import closure because admin imports rules. Keep implementation packages admin/, rules/ and proxy/ in place; update Go/Python/TypeScript, CLI, app, policy tooling and test consumers atomically.",
+            "Move the existing admin Go implementation/tests/BUILD, updating Egress cmd imports and source selectors. Keep the public api/admin wire package and the current rules implementation path until lane 10 lands.",
           invariant:
-            "Retain protobuf packages, gRPC method names, HTTP annotations, policy semantics and credential-substitution behavior. Account for changed proto source paths and generated descriptors; no deployment setting, trust or egress policy change.",
+            "Preserve bounded decision watches, decision history, credential presentation/redaction, health/readiness and authorization. No stored data, policy, stream or wire change.",
           check:
-            "Build affected clients and gateway/schema generators, run existing admin/rules tests and proxy integration coverage, and build the deployed proxy and sidecar. Verify exact method names used by authentication still match.",
+            "Run relocated admin tests, command listener tests and existing proxy integration coverage. Build the deployed egress command with the same startup wiring.",
           sources: [
-            "agentplane/egress/egress_rules.proto",
-            "agentplane/egress/egress_admin.proto",
             "agentplane/egress/admin/BUILD.bazel",
-            "agentplane/egress/rules/BUILD.bazel",
+            "agentplane/egress/admin/grpc.go",
+            "agentplane/egress/admin/credentials.go",
+            "agentplane/egress/cmd/admin_grpc.go",
           ],
           commands: [
-            "bbr test //agentplane/egress/admin:admin_test //agentplane/egress/rules:rules_test //agentplane/egress:test_proxy",
+            "bbr test //agentplane/egress/internal/admin:admin_test //agentplane/egress/cmd:listener_test //agentplane/egress:test_proxy",
+          ],
+          current_checks: [
+            "//agentplane/egress/admin:admin_test",
+            "//agentplane/egress/cmd:listener_test",
+            "//agentplane/egress:test_proxy",
           ],
           dependency:
-            "Independent of the other API moves; lane 1 may overlap transport imports. Protobuf package-name alignment remains deferred.",
+            "Independent of lane 10: admin can import the existing rules package, then update that import if rules moves later. Shared cmd changes require a rebase, not a stack.",
+          importer_closure:
+            "1 importing Go package directory: Egress cmd. Admin depends on rules; neither imports cmd.",
+        },
+        {
+          number: 10,
+          title: "Make Egress Rules implementation private",
+          destination: "agentplane/egress/internal/rules/",
+          readiness: "Ready; source and caller preflight complete",
+          scope:
+            "Move rules implementation/tests/BUILD; update both Egress cmd and Admin to the new path, whichever path Admin has when this dispatches. Public api/rules proto bindings remain unchanged.",
+          invariant:
+            "Preserve admitted caller selection, nil-list meaning, field-by-field effective-policy projection and omission of all Secret references/values. CredentialOf still exposes presentation metadata only.",
+          check:
+            "Run relocated rule tests plus admin, listener and proxy integration coverage. Check the caller identity and credential-redaction cases rather than changing the policy model.",
+          sources: [
+            "agentplane/egress/rules/BUILD.bazel",
+            "agentplane/egress/rules/grpc.go",
+            "agentplane/egress/admin/credentials.go",
+            "agentplane/egress/cmd/admin_grpc.go",
+          ],
+          commands: [
+            "bbr test //agentplane/egress/internal/rules:rules_test //agentplane/egress/admin:admin_test //agentplane/egress/cmd:listener_test //agentplane/egress:test_proxy",
+          ],
+          current_checks: [
+            "//agentplane/egress/rules:rules_test",
+            "//agentplane/egress/admin:admin_test",
+            "//agentplane/egress/cmd:listener_test",
+            "//agentplane/egress:test_proxy",
+          ],
+          dependency:
+            "Independent of lane 9. If Admin is already internal, select //agentplane/egress/internal/admin:admin_test instead of its old label. No contract namespace rename.",
+          importer_closure:
+            "2 importing Go package directories: Egress cmd and Admin. No back-edge to either caller.",
         },
       ];
       const reorgPRs = [
@@ -290,9 +381,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T02:18:14Z",
           url: "https://github.com/agentydragon/ducktape/pull/15922",
-          headRefName: "codex/central-sampler-runtime-organization",
           headRefOid: "b41be01650130114d2b9e1fa805da0409662d4dd",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -302,9 +391,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T00:10:42Z",
           url: "https://github.com/agentydragon/ducktape/pull/15931",
-          headRefName: "codex/history-reads-private",
           headRefOid: "6536f32f129760663401985967d103a59726fb15",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -314,9 +401,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T00:17:22Z",
           url: "https://github.com/agentydragon/ducktape/pull/15938",
-          headRefName: "codex/notification-inboxaccess-private",
           headRefOid: "c773878ce3c0af2e0f2ac616080404974277f1e6",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -327,9 +412,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T01:23:10Z",
           url: "https://github.com/agentydragon/ducktape/pull/15964",
-          headRefName: "codex/sampler-promptimage-20261112",
           headRefOid: "69c59e4cb9cf38cbc1e891759d284ac3bbb3670d",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -339,9 +422,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T01:27:13Z",
           url: "https://github.com/agentydragon/ducktape/pull/15967",
-          headRefName: "codex/history-service-api",
           headRefOid: "f0016c35093dce1851050def16e13f6275439237",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -351,9 +432,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T01:56:12Z",
           url: "https://github.com/agentydragon/ducktape/pull/15987",
-          headRefName: "codex/notification-entry-storage",
           headRefOid: "ee1afdf430512a371be2c35484c554eac920b57e",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -363,9 +442,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T02:11:33Z",
           url: "https://github.com/agentydragon/ducktape/pull/15990",
-          headRefName: "agent/history-ingress-contract-20261112",
           headRefOid: "7e2b87ffd67b0fd2a9537440c4aa97fe312a3cc7",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -375,9 +452,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T02:45:34Z",
           url: "https://github.com/agentydragon/ducktape/pull/16017",
-          headRefName: "codex/notification-store-private",
           headRefOid: "b31d24190a0f2c8c1e5eea3f8dc93c63f9252c67",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -387,9 +462,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T02:45:40Z",
           url: "https://github.com/agentydragon/ducktape/pull/16018",
-          headRefName: "codex/central-sampler-outputbuffer",
           headRefOid: "c5d04002fb8057b4291523726f96659738b6efbb",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -399,9 +472,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T03:02:05Z",
           url: "https://github.com/agentydragon/ducktape/pull/16020",
-          headRefName: "codex/sampler-history-export",
           headRefOid: "c3440e69ad2ae6631606e7ee1d7fb314a5c80d8e",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -411,9 +482,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T04:14:55Z",
           url: "https://github.com/agentydragon/ducktape/pull/16067",
-          headRefName: "codex/sampler-api-contract",
           headRefOid: "801c1079c14f0747d49e90aff710736adaa2d4a8",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -423,9 +492,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T04:31:28Z",
           url: "https://github.com/agentydragon/ducktape/pull/16069",
-          headRefName: "codex/notification-api-contract",
           headRefOid: "b544253abd23a944829380ab3f529de6a749fb9a",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -435,9 +502,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T04:18:19Z",
           url: "https://github.com/agentydragon/ducktape/pull/16073",
-          headRefName: "relocate-action-store-internal",
           headRefOid: "edd9c3c7420a788efd24cd6466128eabcee8f4bd",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -447,9 +512,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T04:44:23Z",
           url: "https://github.com/agentydragon/ducktape/pull/16074",
-          headRefName: "codex/dispatcher-api-contract",
           headRefOid: "e11066a749c19ec24b36cc092bb089d973a6a3fd",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -459,9 +522,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T05:04:32Z",
           url: "https://github.com/agentydragon/ducktape/pull/16080",
-          headRefName: "agent/history-fold-privacy",
           headRefOid: "362b4a96ec94a3923ea7592ab74fc0bd1a3edede",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -471,21 +532,53 @@
           isDraft: false,
           mergedAt: null,
           url: "https://github.com/agentydragon/ducktape/pull/16088",
-          headRefName: "codex/action-service-api-layout",
-          headRefOid: "041a4f92f643896193c2a5629c84f55ff64138b7",
-          baseRefName: "devel",
+          headRefOid: "3dbdae0410f921b7c9992164772efb88c4aa18a3",
           mergeable: "UNKNOWN",
+          checks: [
+            {
+              conclusion: "FAILURE",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/actions/runs/43379691689/job/131734310273",
+              name: "bazel-ci / Test & Build",
+              status: "COMPLETED",
+            },
+            {
+              conclusion: "SUCCESS",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/actions/runs/43379690386/job/131734304758",
+              name: "Build artifacts + imports check",
+              status: "COMPLETED",
+            },
+            {
+              conclusion: "SUCCESS",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/actions/runs/43379690228/job/131734303718",
+              name: "Pre-commit checks",
+              status: "COMPLETED",
+            },
+            {
+              context: "BuildBuddy / Bazel ordinary tests (live)",
+              state: "FAILURE",
+              targetUrl:
+                "https://app.buildbuddy.io/invocation/182813f0-556b-5dfa-b482-b00c8e9e5445",
+            },
+            {
+              conclusion: "SUCCESS",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/runs/131734554385",
+              name: "PR visual review",
+              status: "COMPLETED",
+            },
+          ],
         },
         {
           number: 16094,
           title: "Make History threadfold package internal",
-          state: "OPEN",
-          isDraft: true,
-          mergedAt: null,
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T06:41:31Z",
           url: "https://github.com/agentydragon/ducktape/pull/16094",
-          headRefName: "agent/history-threadfold-internal",
-          headRefOid: "e812f6c40568b14c1799e4fab04d69ab9159263d",
-          baseRefName: "devel",
+          headRefOid: "0da3940920c9da405953b4c86aca9afab6c09f73",
           mergeable: "UNKNOWN",
         },
         {
@@ -495,9 +588,7 @@
           isDraft: false,
           mergedAt: "2026-11-13T05:01:10Z",
           url: "https://github.com/agentydragon/ducktape/pull/16097",
-          headRefName: "codex/action-service-web-push-api-layout",
           headRefOid: "836bd4d4d864b6fd51197d708a02a574922d2a37",
-          baseRefName: "devel",
           mergeable: "UNKNOWN",
         },
         {
@@ -507,9 +598,123 @@
           isDraft: false,
           mergedAt: "2026-11-13T05:17:46Z",
           url: "https://github.com/agentydragon/ducktape/pull/16105",
-          headRefName: "agent/history-storage-private",
           headRefOid: "9112b5bb4db2fc04363780e76f522270fdf86dc4",
-          baseRefName: "devel",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16113,
+          title: "Make History projection and cursor walking private",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T05:48:25Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16113",
+          headRefOid: "4d9bd527cb4e5a609eed8b093bbcdd722fd02159",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16115,
+          title: "Make History ingress implementation private",
+          state: "OPEN",
+          isDraft: false,
+          mergedAt: null,
+          url: "https://github.com/agentydragon/ducktape/pull/16115",
+          headRefOid: "3f9a8b6da4a01a5e49bda2a3e0de70f25cba6760",
+          mergeable: "UNKNOWN",
+          checks: [
+            {
+              conclusion: "FAILURE",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/actions/runs/43375601303/job/131721259101",
+              name: "bazel-ci / Test & Build",
+              status: "COMPLETED",
+            },
+            {
+              conclusion: "SUCCESS",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/actions/runs/43375601336/job/131721259405",
+              name: "Build artifacts + imports check",
+              status: "COMPLETED",
+            },
+            {
+              conclusion: "SUCCESS",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/actions/runs/43375601261/job/131721258967",
+              name: "Pre-commit checks",
+              status: "COMPLETED",
+            },
+            {
+              context: "BuildBuddy / Bazel ordinary tests (live)",
+              state: "FAILURE",
+              targetUrl:
+                "https://app.buildbuddy.io/invocation/7ef2774b-03a6-50d9-b8a2-d8b7f88d1423",
+            },
+            {
+              conclusion: "SUCCESS",
+              detailsUrl:
+                "https://github.com/agentydragon/ducktape/runs/131721455798",
+              name: "PR visual review",
+              status: "COMPLETED",
+            },
+          ],
+        },
+        {
+          number: 16117,
+          title: "Make Notification RPC handlers private",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T05:57:08Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16117",
+          headRefOid: "7eefa8c9702a9f31b4e11bf41e5575cdc4495042",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16118,
+          title: "refactor(agentplane): extract sampler tool output",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T05:55:21Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16118",
+          headRefOid: "6cbfb796fe34a6bd41d69feaaf34dfc446767e6d",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16120,
+          title: "agentplane: extract sampler settings package",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T06:00:27Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16120",
+          headRefOid: "78ba07df747d9003a71e844eb0aec59593995f25",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16121,
+          title: "agentplane: extract sampler code-mode tool contract",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T06:13:57Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16121",
+          headRefOid: "9721c9d6539c61199f0a03f666f0d07193e71f09",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16123,
+          title: "Move Egress API contracts beside their owner",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T06:07:35Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16123",
+          headRefOid: "10bf56435755bc0ef81d4318533b29dd2361f58b",
+          mergeable: "UNKNOWN",
+        },
+        {
+          number: 16128,
+          title: "refactor(agentplane): locate MCP Connection API",
+          state: "MERGED",
+          isDraft: false,
+          mergedAt: "2026-11-13T06:13:26Z",
+          url: "https://github.com/agentydragon/ducktape/pull/16128",
+          headRefOid: "ad3372513a3f2f9ddd49f044f8c42c9461e96574",
           mergeable: "UNKNOWN",
         },
       ];
@@ -541,7 +746,7 @@
               >${"A first-principles architecture, source inventory and staged adoption plan for Agentplane."}<//
             >
             <${Text} component="p" c="dimmed" size="sm"
-              >${"Original ownership inventory: 93f2ba8eef · reorganization preflight: 9b58dd18f9 · 2026-11-13 05:19 UTC · source and PR state, not a deployment audit"}<//
+              >${"Original ownership inventory: 93f2ba8eef · reorganization preflight: 3370398e42 · 2026-11-13 07:04:58 UTC · source and PR state, not a deployment audit"}<//
             >
           </header>
           <${Group} component="nav" gap="sm" my="md" aria-label="Contents"
@@ -562,7 +767,7 @@
               >${"Build a hierarchy within each owner"}<//
             ><${Anchor} href=${"#adoption"}
               >${"Burn-down and next PRs"}<//
-            ><${Anchor} href=${"#next-prs"}>${"Next nine PRs"}<//
+            ><${Anchor} href=${"#next-prs"}>${"Next ten PRs"}<//
             ><${Anchor} href=${"#sources"}
               >${"Sources and design judgment"}<//
             ><//
@@ -782,11 +987,11 @@
             ><${Code}
               block=${true}
               style=${{ overflowX: "auto", whiteSpace: "pre" }}
-              >${"agentplane/\n  runner_gateway/\n    dispatcher/\n      api/session/             # existing public wire contract\n      internal/                # admission and delivery implementation, where fitting\n    environments/              # environment management\n    gateway/                   # authenticated runtime routing\n    main.go                    # existing combined process; split is undecided\n\n  history_service/\n    api/                       # existing server handlers; public contracts can live below\n      history/                 # existing: History read proto and bindings\n      ingress/                 # existing: journal ingress proto and bindings\n    internal/\n      reads/                   # existing: History read implementation\n      storage/                 # existing private storage (#16105)\n    projection/                # proposed move: internal/projection\n    threadfold/                # owner-local after #16080; privacy PR #16094 open\n    main.go\n\n  notification_service/\n    api/notifications/         # public contract; handlers move to internal/rpc\n    internal/\n      inboxaccess/             # existing: Notification inbox authorization\n      store/                   # existing: private Notification storage\n    worker/\n    main.go\n\n  action_service/\n    api/                       # existing RPC handlers\n    internal/store/            # existing private store (#16073)\n    worker/\n    main.go\n  env/runtime/\n    execution/  session/  journal/  harness/  claude/  codex/\n  identity/                    # auth and WorkloadCredential packages\n  egress/\n  app/\n  cli/"}<//
+              >${"agentplane/\n  runner_gateway/\n    dispatcher/\n      api/session/             # existing public wire contract\n      internal/                # admission and delivery implementation, where fitting\n    environments/              # environment management\n    gateway/                   # authenticated runtime routing\n    main.go                    # existing combined process; split is undecided\n\n  history_service/\n    api/                       # existing server handlers; public contracts can live below\n      history/                 # existing: History read proto and bindings\n      ingress/                 # existing: journal ingress proto and bindings\n    internal/\n      reads/                   # existing: History read implementation\n      storage/                 # existing private storage (#16105)\n      projection/              # existing private projection (#16113)\n      settledcursors/          # existing private cursors (#16113)\n      threadfold/              # existing private fold (#16094)\n      rpc/                     # next: current api/ handler implementation\n      ingress/                 # dispatched #16115; not merged\n    main.go\n\n  notification_service/\n    api/notifications/         # existing public contract\n    internal/\n      rpc/                     # existing private handlers (#16117)\n      sessionidentity/         # next: exact Session/Identity checks\n      inboxaccess/             # existing: Notification inbox authorization\n      store/                   # existing: private Notification storage\n    worker/\n    main.go\n\n  action_service/\n    api/                       # existing RPC handlers; contract move #16088 open\n    internal/store/            # existing private store (#16073)\n    worker/\n    main.go\n  env/runtime/\n    execution/  session/  journal/  harness/  claude/  codex/\n  identity/                    # auth and WorkloadCredential packages\n  egress/\n  app/\n  cli/"}<//
             ><${Text} component="p" my="sm"
               >${"A directory that groups contracts is not necessarily itself a Go package; the existing "}<${Code}>${"history_service/api"}</${Code}>${" is already a server-handler package and can have child contract packages. Place contracts outside "}<${Code}>${"internal/"}</${Code}>${" if callers outside the owner need them. Keep protobuf package/service names and wire semantics stable when moving files; a directory name alone does not introduce a new API version."}<//
             ><${Text} component="p" my="sm"
-              >${"The cross-service test dependency on "}<${Code}>${"threadfold"}</${Code}>${" was removed by #16080 while preserving the real sampler-to-History projection scenarios. The owner-local "}<${Code}>${"internal/threadfold"}</${Code}>${" move is already dispatched as #16094; preserve that integration coverage when it lands."}<//
+              >${"The cross-service test dependency on "}<${Code}>${"threadfold"}</${Code}>${" was removed by #16080 while preserving the real sampler-to-History projection scenarios. The owner-local "}<${Code}>${"internal/threadfold"}</${Code}>${" move is merged as #16094; keep that integration coverage intact."}<//
             ><//
           ><${Stack} component="section" id=${"rules"} gap="sm" my="xl"
             ><${Box}>${"08 / Conventions"}<//
@@ -1135,7 +1340,7 @@
             ><${Box}>${"11 / Navigating large packages"}<//
             ><${Title} order=${2} mt="lg" mb="xs"
               >${"Build a hierarchy within each owner"}<//
-            ><${Text} component="p" my="sm">${"Current navigation hotspots, counted as direct tracked Go files including tests: sampler 80, Runtime 57, Notification store 49, Action handlers 28, Dispatcher 27 and Notification handlers 22. The sampler had 77 in the original inventory; useful extractions have landed, but new work has kept the root large. The next batch extracts concrete configuration, tool-contract and output responsibilities. File counts are navigation evidence, not a target size or performance claim. "}<${Anchor} href=${"evidence.json"}>${"Snapshot and counting method"}<//><//
+            ><${Text} component="p" my="sm">${"Current navigation hotspots, counted as direct tracked Go files including tests: sampler 70 (22 tests), Runtime 57 (33), Notification store 49 (32), app/go 31 (15), Sandbox controller 29 (13), Action handlers 28 (16), Dispatcher 27 (14) and Notification RPC 22 (11). Tests are a subset of each total; subdirectories and generated outputs are excluded. The sampler is down from 80 at the previous preflight after settings, toolcontract and tooloutput moved. The next two extractions create useful leaves without splitting mutable owners. File counts measure navigation, not performance or a target package size. "}<${Anchor} href=${"evidence.json"}>${"Snapshot and counting method"}<//><//
             ><${Blockquote} color=${"teal"} my="md"
               ><strong>${"Go constraint:"}</strong
               >${" a subdirectory is a different package. Files with methods on the same concrete type cannot simply be moved into separate directories: the type and its methods must stay together, or the responsibilities must be extracted into different types with an explicit dependency. Plan those changes around invariants and transactions, not filename prefixes."}<//
@@ -1144,7 +1349,7 @@
             ><${Code}
               block=${true}
               style=${{ overflowX: "auto", whiteSpace: "pre" }}
-              >${"central_sampler/\n  cmd/                       # existing entry point\n  api/                       # existing public sampler protocol\n  protocol/                  # existing provider-neutral content and strict JSON\n  anthropic/  responses/     # existing provider adapters\n  historyexport/             # existing: sampler History export\n  internal/\n    promptimage/             # existing: image preparation and its tests\n    outputbuffer/            # existing: bounded process output\n    codemode/                # existing: host, framing and logical-session lifecycle\n    executor/                # later: only after Store and owner contracts are explicit\n    storage/                 # existing: content storage helpers\n    sessionstore/            # later: move the full lease/transaction owner together\n    toolcontract/            # proposed: schemas, descriptions, input parsing\n    tooloutput/              # proposed: strict result decoding and rendering\n    runtime/                 # later: per-Session work and lifecycle orchestration\n  settings/                  # proposed: Go config and model-route validation\n  service.go                 # gRPC boundary, until dependencies support moving it\n  settings.py                # existing deployment rendering model"}<//
+              >${"central_sampler/\n  cmd/                       # existing entry point\n  api/                       # existing public sampler protocol\n  protocol/                  # existing provider-neutral content and strict JSON\n  anthropic/  responses/     # existing provider adapters\n  historyexport/             # existing: sampler History export\n  internal/\n    promptimage/             # existing: image preparation and its tests\n    outputbuffer/            # existing: bounded process output\n    codemode/                # existing: host, framing and logical-session lifecycle\n    executor/                # later: only after Store and owner contracts are explicit\n    storage/                 # existing: content storage helpers\n    sessionstore/            # later: move the full lease/transaction owner together\n    toolcontract/            # existing: schemas, descriptions, input parsing (#16121)\n    tooloutput/              # existing: result decoding and rendering (#16118)\n    eventcodec/              # next lane 1: stored-event encode/decode\n    runtime/                 # later: per-Session work and lifecycle orchestration\n  settings/                  # existing: Go config/model-route validation (#16120)\n  service.go                 # gRPC boundary, until dependencies support moving it\n  settings.py                # existing deployment rendering model"}<//
             ><${Text} component="p" my="sm"
               >${"Image preparation and its tests now live in "}<${Code}>${"internal/promptimage"}</${Code}>${" (merged #15964). Keep its strict decoder, image limits and placeholders as subsequent sampler responsibilities are extracted. "}<${Anchor}
                 href=${"https://github.com/agentydragon/ducktape/blob/d7e0aa16c32e8f9f7ba8cfe75066cb1ce524c54a/agentplane/central_sampler/internal/promptimage/image_preparation.go"}
@@ -1171,7 +1376,7 @@
             ><${Code}
               block=${true}
               style=${{ overflowX: "auto", whiteSpace: "pre" }}
-              >${"notification_service/\n  api/notifications/                  # existing public contract\n  github/  model/  worker/             # existing responsibilities\n  internal/\n    rpc/                               # proposed: handlers now under api/\n    inboxaccess/                       # existing: inbox authorization\n    storagecodec/                      # existing: storage encoding\n    store/                             # existing: private transactional store\n      internal/entry/                  # existing: entry identity and row storage\n  migrations/                          # one database and migration owner remains"}<//
+              >${"notification_service/\n  api/notifications/                  # existing public contract\n  github/  model/  worker/             # existing responsibilities\n  internal/\n    rpc/                               # existing private handlers (#16117)\n    sessionidentity/                   # next lane 8: exact target identity\n    inboxaccess/                       # existing: inbox authorization\n    storagecodec/                      # existing: storage encoding\n    store/                             # existing: private transactional store\n      internal/entry/                  # existing: entry identity and row storage\n  migrations/                          # one database and migration owner remains"}<//
             ><${Text} component="p" my="sm"
               >${"The existing "}<${Code}>${"internal/store/"}</${Code}>${" mixes inbox operations with many "}<${Code}>${"github_*"}</${Code}>${" files, which makes navigation difficult. However, GitHub ingestion allocates positions, invalidates access, wakes inboxes and records notifications in transactions; several methods are on the same "}<${Code}>${"*Store"}</${Code}>${". The 909a7748b9 preflight found no useful narrow ingestion extraction: one GitHub advisory lock orders ingestion, refresh, delivery recording, cleanup, reconciliation and subscription start positions. Ingestion wakes inboxes under the same transaction, with the GitHub lock acquired before inbox rows in ID order; recording appends using that same transaction. Keep this consistency domain cohesive. A future extraction needs an explicit transaction-bearing boundary that retains those lock participants, inbox writes, wakeups and commit ordering; merely moving a query builder or wrapping the Store would not establish that boundary. "}<${Anchor}
                 href=${"https://github.com/agentydragon/ducktape/blob/909a7748b935f910fc86aaf5dd69008d539321e5/agentplane/notification_service/internal/store/github_ingest.go"}
@@ -1185,7 +1390,7 @@
             ><${Code}
               block=${true}
               style=${{ overflowX: "auto", whiteSpace: "pre" }}
-              >${"runner_gateway/dispatcher/\n  api/session/               # existing public contract; RPC implementation may be separate\n  internal/\n    admission/               # candidate: Session / command admission\n    delivery/                # candidate: worker, wake and routing\n    store/                   # candidate: transactions and possible-forwarding fence\n    watch/                   # candidate: watch and terminal delivery\n    placement/               # candidate: placement validation\n  # composition under Dispatcher; current Gateway binary may still host it"}<//
+              >${"runner_gateway/dispatcher/\n  api/session/               # existing public contract; RPC implementation may be separate\n  internal/\n    admission/               # candidate: Session / command admission\n    delivery/                # candidate: worker, wake and routing\n    store/                   # candidate: transactions and possible-forwarding fence\n    watch/                   # candidate: watch and terminal delivery\n    placement/               # next lane 2: concrete pure validation\n  # composition under Dispatcher; current Gateway binary may still host it"}<//
             ><${Text} component="p" my="sm"
               >${"Today "}<${Code}>${"api.go"}</${Code}>${", "}<${Code}>${"delivery.go"}</${Code}>${", "}<${Code}>${"store.go"}</${Code}>${", "}<${Code}>${"watch.go"}</${Code}>${" and "}<${Code}>${"placement.go"}</${Code}>${" provide a useful starting map. Separate the stable delivery responsibility from RPC translation, but first map "}<${Code}>${"Store"}</${Code}>${" methods, terminal snapshots and lease/cleanup transactions. The possible-forwarding marker and deletion fence must remain coordinated in the same durable boundary; package movement does not itself close the existing watcher/reconnect gap. "}<${Anchor}
                 href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/runner_gateway/dispatcher/SPEC.md"}
@@ -1204,19 +1409,19 @@
                 >${"If extraction requires a behavior or ownership decision, document that specific dependency and choose another ready slice; do not block unrelated moves."}<//
               ><//
             ><${Text} component="p" my="sm"
-              >${"The next-PR preflight below is pinned to 9b58dd18f9. Small existing packages and pure sampler leaves have concrete import boundaries; larger Store, Executor and Runtime splits still need ownership work."}<//
+              >${"The next-PR preflight below is pinned to 3370398e42. It traces source callers, BUILD edges and the tests that must move. Small existing packages and pure leaves have concrete import boundaries; larger Store, Executor and Runtime splits still need ownership work."}<//
             ><//
           ><${Stack} component="section" id=${"adoption"} gap="sm" my="xl"
             ><${Box}>${"12 / Burn-down and dispatch plan"}<//
             ><${Title} order=${2} mt="lg" mb="xs">${"Move useful code now; keep decisions separate"}<//
-            ><${Text} component="p" my="sm">${"Preflight at devel "}<${Code}>${sourceSHA}<//>${"; PR status observed 2026-11-13 05:19 UTC. The ownership and coverage inventory above remains dated to its original snapshot. This refresh checked the proposed package leaves and relevant consumers; it ran no new backend suites or live probes. "}<${Anchor} href=${"evidence.json"}>${"Machine-readable source, PR and lane evidence"}<//><//
+            ><${Text} component="p" my="sm">${"Preflight at devel "}<${Code}>${sourceSHA}<//>${"; PR status observed 2026-11-13 07:04:58 UTC. The ownership and coverage inventory above remains dated to its original snapshot. This refresh checked source/import/BUILD closure. It ran no new backend suites or live probes; focused tests from the two preceding rebases are retained separately in the evidence. "}<${Anchor} href=${"evidence.json"}>${"Machine-readable source, PR and lane evidence"}<//><//
             ><${Blockquote} color="teal" my="md"><strong>${"Rules for each move. "}</strong>${"Preserve behavior, identities, authentication, stored data and wire names. Update all imports, generated bindings, BUILD labels, source descriptors, test selectors and relevant docs atomically; no shims or type re-exports. Existing focused tests and CI validate the changed head. A source move permits no incidental state, rollout or security-policy change."}<//
             ><${Title} order=${3} mt="lg" mb="xs">${"Landed · completed package moves"}<//
-            ><${Text} component="p" my="sm">${"The earlier History reads/API, Notification inbox/entry/store and sampler prompt-image/output-buffer/exporter moves are complete. Since the last report, sampler API #16067, Notification API #16069, Action store privacy #16073, Dispatcher API #16074, Web Push API #16097, producer-to-History recovery coverage #16080 and History storage privacy #16105 have merged. They leave the active queue. The coverage harness now exercises real sampler production, export, ingress and projection; it no longer imports threadfold from the sampler tests."}<//
+            ><${Text} component="p" my="sm">${"25 of the 27 tracked implementation PRs are merged. The latest batch landed History projection/cursors #16113, Notification RPC privacy #16117, sampler tooloutput #16118, settings #16120 and toolcontract #16121, Egress API placement #16123, and MCP Connection API placement #16128. History threadfold privacy #16094 has also merged after its rebase. These leave the active queue; only Action API placement and History ingress privacy remain open. The earlier producer-to-History recovery coverage #16080 stays intact."}<//
             ><${Group} gap="sm" wrap="wrap">${reorgPRs.filter((p) => p.state === "MERGED").map((p) => html`<${PRLink} key=${p.number} number=${p.number} />`)}<//
             ><${Title} order=${3} mt="lg" mb="xs">${"Already dispatched · finish these PRs"}<//
-            ><${Text} component="p" my="sm">${"Keep these separate from new recommendations. Open is not merged, and the snapshot is not a promise about their later CI state."}<//
-            ><${Box} style=${{ overflowX: "auto" }}><${Table} withTableBorder striped><thead><tr><th>${"PR"}</th><th>${"Current work"}</th><th>${"Snapshot / next action"}</th></tr></thead><tbody>
+            ><${Text} component="p" my="sm">${"Keep these separate from new recommendations. Open is not merged. Both open heads have failed Bazel CI; pre-commit and imports checks passed. The snapshot is not a promise about later checks or merge state."}<//
+            ><${Box} style=${{ overflowX: "auto" }}><${Table} miw=${680} withTableBorder striped><thead><tr><th>${"PR"}</th><th>${"Current work"}</th><th>${"Snapshot / next action"}</th></tr></thead><tbody>
             ${reorgPRs
               .filter((p) => p.state === "OPEN")
               .map(
@@ -1227,21 +1432,24 @@
                       ${p.title}<br /><${Code}>${p.headRefOid.slice(0, 10)}<//>
                     </td>
                     <td>
-                      ${p.mergeable === "CONFLICTING" ? "Conflicts with devel at this observation; rebase and let checks run on the new head." : "Open; inspect checks for this head and review before merge."}
+                      ${p.isDraft ? "Draft. " : "Ready for review. "}${p.mergeable === "CONFLICTING" ? "Conflicts with devel; rebase before checks. " : p.mergeable === "MERGEABLE" ? "Mergeable at observation. " : "GitHub mergeability unknown at observation. "}${p.checks.filter((c) => c.name === "bazel-ci / Test & Build" || c.name === "Pre-commit checks" || c.name === "Build artifacts + imports check").map((c) => html`<${Text} key=${c.name} size="sm"><${Anchor} href=${c.detailsUrl}>${c.name}<//>${`: ${c.conclusion || c.status}`}<//>`)}
                     </td>
                   </tr>`,
               )}
             </tbody><//><//
+            ><${Blockquote} color="yellow" my="md">${"History ingress #16115 failed in test_vm setup while importing OCI images: BrokenPipeError, then the k3s API and containerd were unavailable, before History ingress ran. "}<${Anchor} href="https://app.buildbuddy.io/invocation/7ef2774b-03a6-50d9-b8a2-d8b7f88d1423">${"Exact-head failure"}<//>${". No current-devel reproduction or targeted retry was run here, so this is neither green nor evidence of an ingress regression. Action #16088 failed waiting for a VM Sandbox to become Ready: no first runner state message arrived within 300 seconds. Its focused rebase tests passed, recorded separately; no root cause or current-devel reproduction was established here."}<//
             ><${Title} order=${3} mt="lg" mb="xs">${"Stages and dependencies"}<//
-            ><${Box} style=${{ overflowX: "auto" }}><${Table} withTableBorder striped><thead><tr><th>${"Stage"}</th><th>${"Work"}</th><th>${"Exit"}</th></tr></thead><tbody>
-            <tr><td>${"0 · Finish the current batch"}</td><td>${"Finish the Action API and History fold privacy PRs. History storage privacy #16105 is merged. Preserve #16080 coverage."}</td><td>${"Each existing PR is merged or explicitly deferred; record its actual head and checks."}</td></tr>
-            <tr><td>${"1 · Dispatch useful leaves"}</td><td>${"Start lanes 1–7 as independent small PRs. Prefer sampler settings, tool contract and output to another large mutable-state split."}</td><td>${"Defining packages have clear callers; old paths and aliases are gone; focused suites and affected builds pass."}</td></tr>
-            <tr><td>${"2 · Finish public contract placement"}</td><td>${"Lanes 8–9 include full Go/Python/TypeScript and generated descriptor/facade consumer inventories."}</td><td>${"Generated consumers build; RPC methods, HTTP annotations and authorization policies retain their contracts."}</td></tr>
-            <tr><td>${"3 · Re-inventory before deeper splits"}</td><td>${"Choose a full sampler Store/Executor responsibility or one Runtime coordinator only after mapping mutable state, leases, transactions and shutdown."}</td><td>${"A bounded design names one owner per fence and a race-tested behavior. Keep protobuf namespace alignment and deployment/database decisions separate."}</td></tr>
+            ><${Box} id="adoption-stages" style=${{ overflowX: "auto" }}><${Table} miw=${760} withTableBorder striped><thead><tr><th>${"Stage"}</th><th>${"Work"}</th><th>${"Exit"}</th></tr></thead><tbody>
+            <tr><td>${"0 · Finish the current batch"}</td><td>${"Resolve the exact-head CI failures on Action API #16088 and History ingress privacy #16115, then review/merge or explicitly defer. The fold move #16094 is already merged."}</td><td>${"Record each actual head, CI outcome and merge state. A failed VM setup is not a passing service test."}</td></tr>
+            <tr><td>${"1 · Extract two pure leaves"}</td><td>${"Dispatch sampler eventcodec (1) and Dispatcher placement (2) independently. Preserve storage bytes, exact target validation and the mixed test ownership."}</td><td>${"Root packages depend on the new concrete leaves; no reverse import, new Store interface or changed transaction boundary. Focused suites and affected builds pass."}</td></tr>
+            <tr><td>${"2 · Enforce implementation ownership"}</td><td>${"Dispatch private-package moves 4–10 independently: History RPC, MCP persistence/server, Action MCP executor, Notification Session identity and separate Egress Admin/Rules PRs."}</td><td>${"All actual consumers fit the Go internal rule; imports, BUILD visibility, embedded data and selectors move together. Public protocols stay stable."}</td></tr>
+            <tr><td>${"3 · Move shared transport"}</td><td>${"Lane 3 carries forward the ready but un-dispatched cross-language transport move. It can run in parallel with the smaller moves; inventory every Go, Python and BUILD consumer."}</td><td>${"Relocated tests and affected consumers pass; no resolver/issuer back-edge or TLS/config change; active old-path references are gone."}</td></tr>
+            <tr><td>${"4 · Re-inventory before deeper splits"}</td><td>${"Map sampler mutable ownership, Notification transactions and Runtime shutdown/reconciliation before selecting a whole coordinator or transaction-bearing responsibility."}</td><td>${"A bounded design names one owner per fence and one race-tested simplification. Keep protobuf namespace alignment and deployment/database decisions separate."}</td></tr>
             </tbody><//><//
             ><${Text} component="p" my="sm">${"Stages group the review work; they are not a global queue. New lanes can start while existing PRs finish. Overlapping files require rebases, not artificial dependencies; use native GitHub Stacks only when one change needs another change’s content. Each implementation PR states its exact scope and test result. Future labels in the commands below describe the proposed targets; dispatch must add and query them before running."}<//
-            ><${Title} id="next-prs" order=${3} mt="lg" mb="xs">${"Next nine reorganization PRs"}<//
-            ><${Text} component="p" my="sm">${"Ranked by useful ownership and navigation gain. The first seven have source-level package seams; lanes 8–9 are broader generated-client moves. Expand each lane for files, invariants, checks and dependencies."}<//
+            ><${Title} id="next-prs" order=${3} mt="lg" mb="xs">${"Next ten reorganization PRs"}<//
+            ><${Text} component="p" my="sm">${"Ranked by useful ownership and navigation gain. Lanes 1–2 are pure leaves; lane 3 is the carried-forward cross-language transport move; lanes 4–10 put existing implementation packages behind their owner. Egress Admin and Rules are separate, independently reviewable PRs. Expand for caller closure, files, invariants, checks and dependencies. These are proposals, not newly dispatched work."}<//
+            ><${Text} component="p" size="sm" c="dimmed">${"Caller counts use explicit denominators: sampler/Dispatcher source files, service importing Go package directories, and transport reference files by language. They are not comparable package fan-out totals."}<//
             ><${Accordion} multiple=${true} defaultValue=${["lane-1"]} variant="separated">
             ${nextPRs.map(
               (lane) =>
@@ -1259,11 +1467,18 @@
                         >${lane.readiness}<//
                       ><${Text}>${lane.scope}<//
                       ><${Text}
+                        ><strong>${"Caller closure: "}</strong
+                        >${lane.importer_closure}<//
+                      ><${Text}
                         ><strong>${"Preserve: "}</strong>${lane.invariant}<//
                       ><${Text}
                         ><strong>${"Acceptance: "}</strong>${lane.check}<//
                       ><${Text}
                         ><strong>${"Dependency: "}</strong>${lane.dependency}<//
+                      ><${Text} size="sm" c="dimmed"
+                        >${"Current test labels (not newly run in this preflight): "}${lane.current_checks.join(", ")}<//
+                      ><${Text} size="sm" fw=${600}
+                        >${"Proposed dispatch commands — create/query relocated labels first"}<//
                       ><${Code}
                         block
                         style=${{ overflowX: "auto", whiteSpace: "pre" }}
@@ -1295,6 +1510,7 @@
             ><${Text} component="p" my="sm"
               >${"The links below support the named conventions. The component boundaries, ownership choices and failure protocol in this document are a design proposal informed by those conventions, not requirements imposed by them."}<//
             ><${List} spacing="xs"
+              ><${List.Item}><${Anchor} href="https://google.github.io/eng-practices/review/developer/small-cls.html">${"Google Engineering Practices: Small CLs"}<//>${" — independently reviewable changes; the lane boundaries here remain project-specific judgment."}<//
               ><${List.Item}
                 ><${Anchor} href=${"https://go.dev/doc/modules/layout"}
                   >${"Go: Organizing a Go module"}<//

@@ -1,452 +1,1637 @@
 {
-  "source_sha": "9b58dd18f932f4129dbd1d673450cc5df87e859d",
-  "observed_at_utc": "2026-11-13 05:19 UTC",
-  "scope": "Reorganization source/import preflight and GitHub PR state; no new backend test or deployment evidence.",
+  "source_sha": "3370398e424236303c0c49e25d635b6ac4731a10",
+  "initial_preflight_sha": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
+  "observed_at_utc": "2026-11-13 07:04:58 UTC",
+  "scope": "Source/import/BUILD preflight and fresh GitHub state. No new backend tests or deployment probes for this report refresh; rebase test evidence is separately retained.",
   "original_inventory_sha": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
+  "previous_preflight_sha": "9b58dd18f932f4129dbd1d673450cc5df87e859d",
   "pull_requests": [
     {
-      "number": 15922,
-      "title": "Organize central sampler runtime files",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T02:18:14Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15922",
+      "baseRefName": "devel",
       "headRefName": "codex/central-sampler-runtime-organization",
       "headRefOid": "b41be01650130114d2b9e1fa805da0409662d4dd",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "bd410610477e1a714a7fa2ef5eb41d8929e4e140"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T02:18:14Z",
+      "number": 15922,
+      "state": "MERGED",
+      "title": "Organize central sampler runtime files",
+      "url": "https://github.com/agentydragon/ducktape/pull/15922",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43350231158/job/131639238191",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43350231194/job/131639237783",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43350231208/job/131639238079",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131639943635",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/9410afa5-38fd-523b-a9d1-065ce41e52d2"
+        }
+      ]
     },
     {
-      "number": 15931,
-      "title": "Make History reads an internal package",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T00:10:42Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15931",
+      "baseRefName": "devel",
       "headRefName": "codex/history-reads-private",
       "headRefOid": "6536f32f129760663401985967d103a59726fb15",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "2b441e2acbb0939d278ee81d816592b0667998c5"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T00:10:42Z",
+      "number": 15931,
+      "state": "MERGED",
+      "title": "Make History reads an internal package",
+      "url": "https://github.com/agentydragon/ducktape/pull/15931",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43333377820/job/131583348041",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43333377771/job/131583347467",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43333377929/job/131583348219",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/9580f2fa-e8d4-5a8d-a4c2-deeb48b2e3b7"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131583627204",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 15938,
-      "title": "agentplane: make notification inbox access internal",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T00:17:22Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15938",
+      "baseRefName": "devel",
       "headRefName": "codex/notification-inboxaccess-private",
       "headRefOid": "c773878ce3c0af2e0f2ac616080404974277f1e6",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "942560ea21063112063eed6270f67dc00de6832b"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T00:17:22Z",
+      "number": 15938,
+      "state": "MERGED",
+      "title": "agentplane: make notification inbox access internal",
+      "url": "https://github.com/agentydragon/ducktape/pull/15938",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43334218431/job/131586181664",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43334218332/job/131586180622",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43334218347/job/131586181402",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131586490441",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/5e4bd1f7-2846-5c1a-b99b-8f94985352f4"
+        }
+      ]
     },
     {
-      "number": 15964,
-      "title": "refactor(agentplane): extract sampler prompt image preparation",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T01:23:10Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15964",
+      "baseRefName": "devel",
       "headRefName": "codex/sampler-promptimage-20261112",
       "headRefOid": "69c59e4cb9cf38cbc1e891759d284ac3bbb3670d",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "3cb93daedadeccbf0278d7ff37417faef187310f"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T01:23:10Z",
+      "number": 15964,
+      "state": "MERGED",
+      "title": "refactor(agentplane): extract sampler prompt image preparation",
+      "url": "https://github.com/agentydragon/ducktape/pull/15964",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43342773489/job/131614831432",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43342773478/job/131614830628",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43342773467/job/131614831089",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131615138112",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/4f19a8f9-c766-58bc-80b0-7fdfc4894419"
+        }
+      ]
     },
     {
-      "number": 15967,
-      "title": "Move History read API proto under api/history",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T01:27:13Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15967",
+      "baseRefName": "devel",
       "headRefName": "codex/history-service-api",
       "headRefOid": "f0016c35093dce1851050def16e13f6275439237",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "d7e0aa16c32e8f9f7ba8cfe75066cb1ce524c54a"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T01:27:13Z",
+      "number": 15967,
+      "state": "MERGED",
+      "title": "Move History read API proto under api/history",
+      "url": "https://github.com/agentydragon/ducktape/pull/15967",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43343401767/job/131616883184",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43343401649/job/131616882847",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43343401658/job/131616882633",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/ca74a860-1ae8-58b1-ac44-7087cae3a96a"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131617159888",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 15987,
-      "title": "agentplane: extract notification entry storage",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T01:56:12Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15987",
+      "baseRefName": "devel",
       "headRefName": "codex/notification-entry-storage",
       "headRefOid": "ee1afdf430512a371be2c35484c554eac920b57e",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "7cb0e3cfcbc4e45daf140a0b0ed8bcc315ab907e"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T01:56:12Z",
+      "number": 15987,
+      "state": "MERGED",
+      "title": "agentplane: extract notification entry storage",
+      "url": "https://github.com/agentydragon/ducktape/pull/15987",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43347253894/job/131629480492",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43347253606/job/131629479872",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43347254448/job/131629482666",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131629776243",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/99b6be87-5afe-5f82-a889-53b2cc2a0d6e"
+        }
+      ]
     },
     {
-      "number": 15990,
-      "title": "agentplane: move History ingress API under api/ingress",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T02:11:33Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/15990",
+      "baseRefName": "devel",
       "headRefName": "agent/history-ingress-contract-20261112",
       "headRefOid": "7e2b87ffd67b0fd2a9537440c4aa97fe312a3cc7",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "2b4ad99d0e565956e435e0be5b00bb349e40d6a4"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T02:11:33Z",
+      "number": 15990,
+      "state": "MERGED",
+      "title": "agentplane: move History ingress API under api/ingress",
+      "url": "https://github.com/agentydragon/ducktape/pull/15990",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43347618028/job/131637631309",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43347617769/job/131630666778",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43347617756/job/131630666562",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/5436adcf-6a2e-5ee1-b6ad-61923a5cb538"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131637898401",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 16017,
-      "title": "agentplane: make Notification store package private",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T02:45:34Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16017",
+      "baseRefName": "devel",
       "headRefName": "codex/notification-store-private",
       "headRefOid": "b31d24190a0f2c8c1e5eea3f8dc93c63f9252c67",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "52f67955e1a9742ff01c08ee036517f07c44fd4d"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T02:45:34Z",
+      "number": 16017,
+      "state": "MERGED",
+      "title": "agentplane: make Notification store package private",
+      "url": "https://github.com/agentydragon/ducktape/pull/16017",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43353245157/job/131649076596",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43353245188/job/131649076891",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43353245109/job/131649076771",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131649330294",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/9bb813b7-7403-5722-bbf3-9a7096ad560f"
+        }
+      ]
     },
     {
-      "number": 16018,
-      "title": "Extract central sampler output buffer",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T02:45:40Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16018",
+      "baseRefName": "devel",
       "headRefName": "codex/central-sampler-outputbuffer",
       "headRefOid": "c5d04002fb8057b4291523726f96659738b6efbb",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "3c728915bd51c179770839626da122a7ee6dd944"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T02:45:40Z",
+      "number": 16018,
+      "state": "MERGED",
+      "title": "Extract central sampler output buffer",
+      "url": "https://github.com/agentydragon/ducktape/pull/16018",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43353409635/job/131649610938",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43353409552/job/131649610189",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43353409941/job/131649611684",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131649870694",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/95267ea6-8031-555b-b1d3-ae50771aa905"
+        }
+      ]
     },
     {
-      "number": 16020,
-      "title": "Extract central sampler History exporter",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T03:02:05Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16020",
+      "baseRefName": "devel",
       "headRefName": "codex/sampler-history-export",
       "headRefOid": "c3440e69ad2ae6631606e7ee1d7fb314a5c80d8e",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "12d05ea77e486cb9edf07584003f734780d98a76"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T03:02:05Z",
+      "number": 16020,
+      "state": "MERGED",
+      "title": "Extract central sampler History exporter",
+      "url": "https://github.com/agentydragon/ducktape/pull/16020",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43355322579/job/131655877845",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43355322631/job/131655877757",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43355322410/job/131655877600",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131656127028",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/f1384470-035c-5a27-bfb3-638e3d6d4625"
+        }
+      ]
     },
     {
-      "number": 16067,
-      "title": "Move sampler API contract beside its owner",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T04:14:55Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16067",
+      "baseRefName": "devel",
       "headRefName": "codex/sampler-api-contract",
       "headRefOid": "801c1079c14f0747d49e90aff710736adaa2d4a8",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "38431b240b67602856050edd15266c5cd884f3c2"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T04:14:55Z",
+      "number": 16067,
+      "state": "MERGED",
+      "title": "Move sampler API contract beside its owner",
+      "url": "https://github.com/agentydragon/ducktape/pull/16067",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43362505760/job/131679092244",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43362505683/job/131679127929",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43362505865/job/131679149749",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/1407de36-7e20-5c88-9f22-0e5dcc5220b9"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131679287436",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 16069,
-      "title": "Move Notification API contract beside its owner",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T04:31:28Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16069",
+      "baseRefName": "devel",
       "headRefName": "codex/notification-api-contract",
       "headRefOid": "b544253abd23a944829380ab3f529de6a749fb9a",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "89f998558fadbd1e2cc70f25d3151615b45dca54"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T04:31:28Z",
+      "number": 16069,
+      "state": "MERGED",
+      "title": "Move Notification API contract beside its owner",
+      "url": "https://github.com/agentydragon/ducktape/pull/16069",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43365087126/job/131687495885",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43365087146/job/131687495749",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43365087144/job/131687495634",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/852d76c5-aa08-57d4-a8fa-b60b3bb24b6d"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131687702455",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 16073,
-      "title": "Move Action Service store under internal",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T04:18:19Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16073",
+      "baseRefName": "devel",
       "headRefName": "relocate-action-store-internal",
       "headRefOid": "edd9c3c7420a788efd24cd6466128eabcee8f4bd",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "38827b51435340ce2c409c253114821571826e2b"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T04:18:19Z",
+      "number": 16073,
+      "state": "MERGED",
+      "title": "Move Action Service store under internal",
+      "url": "https://github.com/agentydragon/ducktape/pull/16073",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43363314875/job/131681683258",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43363314880/job/131681683183",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43363314853/job/131681682678",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131681905516",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/2d804f05-09c8-5fe5-bd18-92525bbe8b81"
+        }
+      ]
     },
     {
-      "number": 16074,
-      "title": "Move Dispatcher API contract beside its owner",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T04:44:23Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16074",
+      "baseRefName": "devel",
       "headRefName": "codex/dispatcher-api-contract",
       "headRefOid": "e11066a749c19ec24b36cc092bb089d973a6a3fd",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "fc404f8e45c57c9e5251e2ef734e852ba9db0401"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T04:44:23Z",
+      "number": 16074,
+      "state": "MERGED",
+      "title": "Move Dispatcher API contract beside its owner",
+      "url": "https://github.com/agentydragon/ducktape/pull/16074",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43366452848/job/131691880260",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43366452783/job/131691879635",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43366452856/job/131691879718",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/8af79ba7-d4e4-5099-a6e8-00bac9091b2c"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131692089010",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 16080,
-      "title": "Keep sampler History recovery coverage at ingress boundary",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T05:04:32Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16080",
+      "baseRefName": "devel",
       "headRefName": "agent/history-fold-privacy",
       "headRefOid": "362b4a96ec94a3923ea7592ab74fc0bd1a3edede",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
-    },
-    {
-      "number": 16088,
-      "title": "agentplane: move Action API contracts beside owner",
-      "state": "OPEN",
       "isDraft": false,
-      "mergedAt": null,
-      "url": "https://github.com/agentydragon/ducktape/pull/16088",
-      "headRefName": "codex/action-service-api-layout",
-      "headRefOid": "041a4f92f643896193c2a5629c84f55ff64138b7",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
-    },
-    {
-      "number": 16094,
-      "title": "Make History threadfold package internal",
-      "state": "OPEN",
-      "isDraft": true,
-      "mergedAt": null,
-      "url": "https://github.com/agentydragon/ducktape/pull/16094",
-      "headRefName": "agent/history-threadfold-internal",
-      "headRefOid": "e812f6c40568b14c1799e4fab04d69ab9159263d",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
-    },
-    {
-      "number": 16097,
-      "title": "agentplane: move Web Push API contract beside owner",
+      "mergeCommit": {
+        "oid": "884658572cf9bcb46f76b4af8cffe074bc10abeb"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T05:04:32Z",
+      "number": 16080,
       "state": "MERGED",
+      "title": "Keep sampler History recovery coverage at ingress boundary",
+      "url": "https://github.com/agentydragon/ducktape/pull/16080",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43368505802/job/131698495333",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43368505828/job/131698495777",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43368505778/job/131698495438",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131698726841",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/abf108f2-b7fd-59fe-a441-1d803938c33f"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/action-service-api-layout",
+      "headRefOid": "3dbdae0410f921b7c9992164772efb88c4aa18a3",
       "isDraft": false,
-      "mergedAt": "2026-11-13T05:01:10Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16097",
+      "mergeCommit": null,
+      "mergeable": "UNKNOWN",
+      "mergedAt": null,
+      "number": 16088,
+      "state": "OPEN",
+      "title": "agentplane: move Action API contracts beside owner",
+      "url": "https://github.com/agentydragon/ducktape/pull/16088",
+      "checks": [
+        {
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43379691689/job/131734310273",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43379690386/job/131734304758",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43379690228/job/131734303718",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "FAILURE",
+          "targetUrl": "https://app.buildbuddy.io/invocation/182813f0-556b-5dfa-b482-b00c8e9e5445"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131734554385",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "agent/history-threadfold-internal",
+      "headRefOid": "0da3940920c9da405953b4c86aca9afab6c09f73",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "6f518c986514222a35b0489707c08a82f620492d"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T06:41:31Z",
+      "number": 16094,
+      "state": "MERGED",
+      "title": "Make History threadfold package internal",
+      "url": "https://github.com/agentydragon/ducktape/pull/16094",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43378734774/job/131731264754",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43378734846/job/131731264843",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43378734755/job/131731264262",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/1b0af96c-5282-5edb-9d6b-e65e21465c06"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131731505323",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
       "headRefName": "codex/action-service-web-push-api-layout",
       "headRefOid": "836bd4d4d864b6fd51197d708a02a574922d2a37",
-      "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "2d6f09d8a9ed33202d6adaab393a9f24264ca313"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T05:01:10Z",
+      "number": 16097,
+      "state": "MERGED",
+      "title": "agentplane: move Web Push API contract beside owner",
+      "url": "https://github.com/agentydragon/ducktape/pull/16097",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43367925145/job/131696638326",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43367925093/job/131696637456",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43367925151/job/131696638266",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/ff617ec9-8e96-55cb-b9b1-2a15e1b45035"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131696864890",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     },
     {
-      "number": 16105,
-      "title": "agentplane: make History storage private",
-      "state": "MERGED",
-      "isDraft": false,
-      "mergedAt": "2026-11-13T05:17:46Z",
-      "url": "https://github.com/agentydragon/ducktape/pull/16105",
+      "baseRefName": "devel",
       "headRefName": "agent/history-storage-private",
       "headRefOid": "9112b5bb4db2fc04363780e76f522270fdf86dc4",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "47e58c1e7c156edcd996d11456419b917d257d1c"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T05:17:46Z",
+      "number": 16105,
+      "state": "MERGED",
+      "title": "agentplane: make History storage private",
+      "url": "https://github.com/agentydragon/ducktape/pull/16105",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43369838925/job/131702776013",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43369838968/job/131702775834",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43369838948/job/131702775699",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/1cfab08e-ed96-5a91-a466-4ca223c09d13"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131703031977",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
+    },
+    {
       "baseRefName": "devel",
-      "mergeable": "UNKNOWN"
+      "headRefName": "codex/history-projection-private",
+      "headRefOid": "4d9bd527cb4e5a609eed8b093bbcdd722fd02159",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "e925c2bce999355beb39b5e89dc79dbefc19bbd2"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T05:48:25Z",
+      "number": 16113,
+      "state": "MERGED",
+      "title": "Make History projection and cursor walking private",
+      "url": "https://github.com/agentydragon/ducktape/pull/16113",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43373408008/job/131714219578",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43373407923/job/131714219129",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43373407801/job/131714218580",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/0e69d2c9-9e89-5265-8b0f-b96df5ae94d7"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131714447993",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/history-ingress-private",
+      "headRefOid": "3f9a8b6da4a01a5e49bda2a3e0de70f25cba6760",
+      "isDraft": false,
+      "mergeCommit": null,
+      "mergeable": "UNKNOWN",
+      "mergedAt": null,
+      "number": 16115,
+      "state": "OPEN",
+      "title": "Make History ingress implementation private",
+      "url": "https://github.com/agentydragon/ducktape/pull/16115",
+      "checks": [
+        {
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375601303/job/131721259101",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375601336/job/131721259405",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375601261/job/131721258967",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "FAILURE",
+          "targetUrl": "https://app.buildbuddy.io/invocation/7ef2774b-03a6-50d9-b8a2-d8b7f88d1423"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131721455798",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/notification-rpc-private",
+      "headRefOid": "7eefa8c9702a9f31b4e11bf41e5575cdc4495042",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "ca8e6f40aefc655b3d19365066f1e0c23b537570"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T05:57:08Z",
+      "number": 16117,
+      "state": "MERGED",
+      "title": "Make Notification RPC handlers private",
+      "url": "https://github.com/agentydragon/ducktape/pull/16117",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374214300/job/131716793841",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374214296/job/131716793991",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374214297/job/131716794227",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131717007146",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/35ff5891-0ffd-5d99-80f1-f0d7a38d19be"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/sampler-tooloutput",
+      "headRefOid": "6cbfb796fe34a6bd41d69feaaf34dfc446767e6d",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "73c214534dc211f8460fb233d3a63e4808947399"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T05:55:21Z",
+      "number": 16118,
+      "state": "MERGED",
+      "title": "refactor(agentplane): extract sampler tool output",
+      "url": "https://github.com/agentydragon/ducktape/pull/16118",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374256595/job/131716928822",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374256444/job/131716928127",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374256343/job/131716927963",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131717145638",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/6c4e9432-2c0b-5862-ab67-293947b09369"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/sampler-settings-package",
+      "headRefOid": "78ba07df747d9003a71e844eb0aec59593995f25",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "d6a5dc5e4c3532a42be16d0711cf3b6497b1e823"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T06:00:27Z",
+      "number": 16120,
+      "state": "MERGED",
+      "title": "agentplane: extract sampler settings package",
+      "url": "https://github.com/agentydragon/ducktape/pull/16120",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374682976/job/131718288387",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374682883/job/131718287680",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43374682897/job/131718287727",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131718508840",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/d6e14f01-e86b-5214-9de2-003f62c135c6"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/sampler-toolcontract",
+      "headRefOid": "9721c9d6539c61199f0a03f666f0d07193e71f09",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "df047945431f7c080e05bc0a4115f43c6ef4e357"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T06:13:57Z",
+      "number": 16121,
+      "state": "MERGED",
+      "title": "agentplane: extract sampler code-mode tool contract",
+      "url": "https://github.com/agentydragon/ducktape/pull/16121",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43376335061/job/131723580197",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43376335122/job/131723581668",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43376335242/job/131723580687",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "NEUTRAL",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131723828807",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/31016115-e565-5782-9d48-198eb6772ea6"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/egress-api-layout",
+      "headRefOid": "10bf56435755bc0ef81d4318533b29dd2361f58b",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "5eec67a350cd55d6726b68dbfe9725a2baf0d93e"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T06:07:35Z",
+      "number": 16123,
+      "state": "MERGED",
+      "title": "Move Egress API contracts beside their owner",
+      "url": "https://github.com/agentydragon/ducktape/pull/16123",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375196559/job/131719932747",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375196462/job/131719932309",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375196461/job/131719932346",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/b8eee848-5c26-5301-9d8c-2700d1c1e75e"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131720136020",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
+    },
+    {
+      "baseRefName": "devel",
+      "headRefName": "codex/mcp-connection-api",
+      "headRefOid": "ad3372513a3f2f9ddd49f044f8c42c9461e96574",
+      "isDraft": false,
+      "mergeCommit": {
+        "oid": "c6173d6a188ad52a9257b536fbef3f82a7334303"
+      },
+      "mergeable": "UNKNOWN",
+      "mergedAt": "2026-11-13T06:13:26Z",
+      "number": 16128,
+      "state": "MERGED",
+      "title": "refactor(agentplane): locate MCP Connection API",
+      "url": "https://github.com/agentydragon/ducktape/pull/16128",
+      "checks": [
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375586398/job/131721211739",
+          "name": "bazel-ci / Test & Build",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375586383/job/131721211298",
+          "name": "Build artifacts + imports check",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375586497/job/131721211490",
+          "name": "Pre-commit checks",
+          "status": "COMPLETED"
+        },
+        {
+          "context": "BuildBuddy / Bazel ordinary tests (live)",
+          "state": "SUCCESS",
+          "targetUrl": "https://app.buildbuddy.io/invocation/112d9e41-92a4-5f71-8efd-97ceb45e36a2"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131721461180",
+          "name": "PR visual review",
+          "status": "COMPLETED"
+        }
+      ]
     }
   ],
   "package_metrics": [
     {
       "path": "agentplane/central_sampler",
-      "go_files": 80,
-      "tests": 26,
-      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+      "go_files": 70,
+      "tests": 22,
+      "previous_go_files": 80,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
     },
     {
       "path": "agentplane/env/runtime",
       "go_files": 57,
       "tests": 33,
-      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+      "previous_go_files": 57,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
     },
     {
       "path": "agentplane/notification_service/internal/store",
       "go_files": 49,
       "tests": 32,
-      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+      "previous_go_files": 49,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/app/go",
+      "go_files": 31,
+      "tests": 15,
+      "previous_go_files": null,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
+    },
+    {
+      "path": "agentplane/sandbox_controller",
+      "go_files": 29,
+      "tests": 13,
+      "previous_go_files": null,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
     },
     {
       "path": "agentplane/action_service/api",
       "go_files": 28,
       "tests": 16,
-      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+      "previous_go_files": 28,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
     },
     {
       "path": "agentplane/runner_gateway/dispatcher",
       "go_files": 27,
       "tests": 14,
-      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+      "previous_go_files": 27,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
     },
     {
-      "path": "agentplane/notification_service/api",
+      "path": "agentplane/notification_service/internal/rpc",
       "go_files": 22,
       "tests": 11,
-      "method": "Direct tracked .go files only; includes tests; excludes subdirectories and generated build outputs."
+      "previous_go_files": 22,
+      "method": "Direct tracked .go files, tests included; tests column is a subset. Excludes subdirectories and generated build outputs."
     }
   ],
   "next_prs": [
     {
       "number": 1,
-      "title": "Give shared workload transport an honest home",
+      "title": "Extract the sampler stored-event codec",
+      "destination": "agentplane/central_sampler/internal/eventcodec/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move event_storage.go's encode/decode functions into a concrete leaf package. Update store.go, store_admission.go and sampling_recovery.go directly; no Store interface or transaction callback. The leaf imports only gzip/byte helpers and the event-log protobuf. Keep persistence and lease ownership in Store.",
+      "invariant": "Keep the 4096-byte threshold, only-compress-when-smaller rule, gzip detection, retained protobuf bytes and error behavior. History duplicate checks still receive the identical decoded event; no stored-row rewrite or migration.",
+      "check": "Build the leaf and run existing sampler Store/service coverage. Compare moved codec bodies after only naming/import edits; do not claim that existing unit tests directly cover compressed records.",
+      "sources": [
+        "agentplane/central_sampler/event_storage.go",
+        "agentplane/central_sampler/store_admission.go",
+        "agentplane/central_sampler/sampling_recovery.go",
+        "agentplane/central_sampler/BUILD.bazel"
+      ],
+      "commands": [
+        "bbr build //agentplane/central_sampler/internal/eventcodec:eventcodec",
+        "bbr test //agentplane/central_sampler:central_sampler_test"
+      ],
+      "current_checks": ["//agentplane/central_sampler:central_sampler_test"],
+      "dependency": "Independent leaf; the root remains the durable owner. Future eventcodec label must be created and queried at dispatch.",
+      "importer_closure": "3 root Go caller files; 1 Bazel library consumer; no external package consumer."
+    },
+    {
+      "number": 2,
+      "title": "Extract Dispatcher placement validation",
+      "destination": "agentplane/runner_gateway/dispatcher/internal/placement/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move placement.go's concrete placement vocabulary, validation and exact-target helpers into an owner-private leaf. Update six production callers: api, store, delivery, delivery_wake, snapshots and central_runner. Use the defining package directly. Split the existing mixed contract test: pure placement checks move; DescribeSession privacy assertions and Store test helpers stay with Dispatcher.",
+      "invariant": "Preserve persisted placement strings, exact environment name/UID validation, native harness admission and InvalidArgument outcomes. No change to forwarding markers, delivery fences, database transactions or instruction redaction.",
+      "check": "Run the moved pure contract cases plus current central-runner and Store integration targets. Verify DescribeSession retains the placement and omits private opening instructions.",
+      "sources": [
+        "agentplane/runner_gateway/dispatcher/placement.go",
+        "agentplane/runner_gateway/dispatcher/placement_contract_test.go",
+        "agentplane/runner_gateway/dispatcher/placement_test.go",
+        "agentplane/runner_gateway/dispatcher/BUILD.bazel"
+      ],
+      "commands": [
+        "bbr test //agentplane/runner_gateway/dispatcher/internal/placement:placement_test //agentplane/runner_gateway/dispatcher:central_runner_test //agentplane/runner_gateway/dispatcher:store_integration_test"
+      ],
+      "current_checks": [
+        "//agentplane/runner_gateway/dispatcher:central_runner_test",
+        "//agentplane/runner_gateway/dispatcher:store_integration_test"
+      ],
+      "dependency": "Independent of the service moves; the new leaf depends on protos/UUID/gRPC status, never on dispatcher root. New placement_test is a proposed relocated target.",
+      "importer_closure": "6 production caller files in one Dispatcher package; test helpers remain with their concrete Store owner."
+    },
+    {
+      "number": 3,
+      "title": "Give shared workload transport an identity home",
       "destination": "agentplane/identity/transport/",
-      "readiness": "Ready; broad mechanical move",
-      "scope": "Move environment_runtime_transport, its Python config and testing helpers together. The Go library depends on SPIFFE and gRPC, not the identity resolver or issuer, so placing it below identity does not itself create a cycle. Update every Go/Python import, Bazel label, cdk8s setting reference and document. Keep transport policy and credential resolution in their existing roles.",
-      "invariant": "Preserve TLS verification, URI and EKU validation, SPIFFE trust domains, expiry behavior, token audiences and configuration keys. Do not absorb resolver or issuer logic in this move.",
-      "check": "Run the relocated transport race suite; build credential resolver and issuer, affected Go binaries and Python settings/cdk8s libraries. Search the entire repository for the old path; remaining active references must be zero.",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Carry forward the previous un-dispatched lane 1. Move environment_runtime_transport, its Python config and testing subtree together; update Go/Python imports, Bazel labels, settings/cdk8s consumers and source pointers. This is broad mechanical churn, not a prerequisite for the other nine lanes.",
+      "invariant": "Keep TLS verification, SPIFFE trust domains, URI/EKU checks, expiry, token audiences and configuration keys. Resolver/issuer remain downstream; transport must not import their policy or credential-resolution logic.",
+      "check": "Run the relocated transport suite and build credential resolver/issuer plus affected Go and Python consumers. Search all tracked repository references, including selectors and manifests; preserve historical pinned source permalinks.",
       "sources": [
         "agentplane/environment_runtime_transport/BUILD.bazel",
         "agentplane/environment_runtime_transport/security.go",
-        "agentplane/environment_runtime_transport/config.py"
+        "agentplane/environment_runtime_transport/config.py",
+        "agentplane/identity/credentials/resolver/BUILD.bazel"
       ],
       "commands": [
         "bbr test //agentplane/identity/transport:transport_test",
         "bbr build //agentplane/identity/credentials/resolver //agentplane/identity/credentials/issuer"
       ],
-      "dependency": "No content dependency on the remaining open PRs; reconcile overlapping imports by rebasing."
-    },
-    {
-      "number": 2,
-      "title": "Extract sampler configuration and model-route settings",
-      "destination": "agentplane/central_sampler/settings/",
-      "readiness": "Ready; leaf extraction",
-      "scope": "Move Settings, ModelConfig, ConnectionConfig, AuthConfig, decoding, validation and their methods from settings.go into a public settings package. Keep the configuration family together; split the 441-line implementation into decoding, model/connection settings and validation files as useful. Update sampler, command and History integration callers to name the defining package directly. Move settings tests; keep test fixture builders with their consumers.",
-      "invariant": "The file imports provider adapters, protocol and shared transport, with no sampler-root dependency. Preserve unknown-key rejection, defaults, model compatibility, credential reading, gateway address checks and timeout budgets. Keep the Python rendering schema and its keys stable; add no type aliases or re-exports.",
-      "check": "Run relocated settings tests and central_sampler_unit_test, build the sampler command, and run the existing History ingress and sampler service tests that construct these settings.",
-      "sources": [
-        "agentplane/central_sampler/settings.go",
-        "agentplane/central_sampler/settings_test.go",
-        "agentplane/central_sampler/settings_fixture_test.go",
-        "agentplane/central_sampler/cmd/main.go"
+      "current_checks": [
+        "//agentplane/environment_runtime_transport:environment_runtime_transport_test",
+        "//agentplane/identity/credentials/resolver:resolver_test",
+        "//agentplane/identity/credentials/issuer:issuer_test"
       ],
-      "commands": [
-        "bbr test //agentplane/central_sampler/settings:settings_test //agentplane/central_sampler:central_sampler_unit_test",
-        "bbr build //agentplane/central_sampler/cmd:main_bin"
-      ],
-      "dependency": "Independent of lane 1; update transport imports again if its move lands first."
-    },
-    {
-      "number": 3,
-      "title": "Extract the sampler code-mode tool contract",
-      "destination": "agentplane/central_sampler/internal/toolcontract/",
-      "readiness": "Ready with a bounded parser split",
-      "scope": "Move codemode_description.go, its embedded templates and description tests, plus the pure exec/wait input types and parsers from codemode.go and tool_protocol.go. Make the schema reflector and decoder use the same concrete input types. Keep prepareExecute, prepareJSONCall and other methods that touch CodeMode, Store or a live host in the sampler root.",
-      "invariant": "Preserve freeform and JSON contracts, safe-integer checks, unknown-field rejection, defaults, code-tool ordering and schema behavior. Leave journal writes, live-cell handles, admission and cancellation with their current owners. Pure parsing must not import the sampler root or require callback plumbing.",
-      "check": "Run the moved description/input tests, existing code-mode execution and unit suites, and build the command including embedded template runfiles. Verify both exec encodings with existing provider/service coverage.",
-      "sources": [
-        "agentplane/central_sampler/codemode_description.go",
-        "agentplane/central_sampler/codemode.go",
-        "agentplane/central_sampler/tool_protocol.go",
-        "agentplane/central_sampler/codemode_description_test.go"
-      ],
-      "commands": [
-        "bbr test //agentplane/central_sampler/internal/toolcontract:toolcontract_test //agentplane/central_sampler:central_sampler_unit_test //agentplane/central_sampler:central_sampler_test",
-        "bbr build //agentplane/central_sampler/cmd:main_bin"
-      ],
-      "dependency": "Independent of settings extraction. Shared edits in codemode.go are rebase work, not a reason to serialize ready PRs."
+      "dependency": "No content dependency. Other lanes may overlap imports; rebase whichever lands second. Proposed transport_test replaces the current longer test label.",
+      "importer_closure": "88 Go import-reference files (46 production, 42 tests), 44 Python import files, 54 BUILD/bzl reference files at the initial preflight; transport has no resolver/issuer back-edge."
     },
     {
       "number": 4,
-      "title": "Extract sampler tool-result decoding and rendering",
-      "destination": "agentplane/central_sampler/internal/tooloutput/",
-      "readiness": "Ready; pure result boundary",
-      "scope": "Move codemode_output.go, codemode_protocol.go, output_truncation.go and their tests into one result-decoding/rendering package. Keep observation types concrete. Pass the resolved output budget into rendering so output code does not depend on the root tool-description constants. Update process-output callers as well as CodeMode.Execute.",
-      "invariant": "Preserve UTF-8 boundaries, omission markers, image/audio accounting, strict result variants, host duration and error rendering. Keep CodeMode.observe and all Store writes in the coordinator; parsing and rendering must not acquire a lease or touch the executor.",
-      "check": "Run the relocated protocol/output tests and existing sampler unit and execution tests. Retain behavior coverage for mixed content, failed/yielded cells, process output truncation and image preparation.",
+      "title": "Make History read RPC handlers private",
+      "destination": "agentplane/history_service/internal/rpc/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move api/{service,follow,watch}.go, its four Go test files and implementation BUILD to internal/rpc. Update History main's NewService and method-policy wiring. Leave api/history and api/ingress public proto packages at their current paths.",
+      "invariant": "Preserve delegated authorization, follow/watch cursor behavior, replay boundaries, stream termination and error mapping. Storage, projection and wakeups remain their existing owners; no wire or schema rename.",
+      "check": "Run the relocated handler integration suite and existing History service integration suite; build history-service. Search all references to the handler import, without rewriting the public proto paths.",
       "sources": [
-        "agentplane/central_sampler/codemode_output.go",
-        "agentplane/central_sampler/codemode_protocol.go",
-        "agentplane/central_sampler/output_truncation.go",
-        "agentplane/central_sampler/codemode_output_test.go"
-      ],
-      "commands": [
-        "bbr test //agentplane/central_sampler/internal/tooloutput:tooloutput_test //agentplane/central_sampler:central_sampler_unit_test //agentplane/central_sampler:central_sampler_test"
-      ],
-      "dependency": "Can start alongside lane 3. Resolve the default budget at its caller rather than creating a dependency on the tool-contract package."
-    },
-    {
-      "number": 5,
-      "title": "Make History projection and cursor walking private",
-      "destination": "agentplane/history_service/internal/{projection,settledcursors}/",
-      "readiness": "Ready; owner-only imports verified",
-      "scope": "Move the existing projection and settledcursors Go packages and tests under History internal. There are nine projection import files and three cursor-helper import files, all inside History. Update read/watch handlers, settlement backfill, ingress recovery tests and the fold package together; leave Python fold/models.py and its browser-sync consumers at their established boundary.",
-      "invariant": "Keep leases, cursor coverage, checkpoint commits, settlement rules and stored schemas unchanged. Preserve the real sampler-to-History projection scenarios landed in #16080.",
-      "check": "Run relocated projection lifecycle/integration and cursor tests, the History read integration suite and ingress integration suite, and build the History binary. Reuse existing scale coverage if the diff changes its setup; a path-only move does not call for a new performance claim.",
-      "sources": [
-        "agentplane/history_service/projection/BUILD.bazel",
-        "agentplane/history_service/projection/projector.go",
-        "agentplane/history_service/settledcursors/settledcursors.go",
-        "agentplane/history_service/ingress/sampler_history_projection_test.go"
-      ],
-      "commands": [
-        "bbr test //agentplane/history_service/internal/projection:lifecycle_test //agentplane/history_service/internal/projection:integration_test //agentplane/history_service/internal/settledcursors:settledcursors_test",
-        "bbr test //agentplane/history_service/internal/reads:integration_test //agentplane/history_service/ingress:integration_test"
-      ],
-      "dependency": "Do not duplicate #16094 or #16105. Their package moves may cause import conflicts; these are not content prerequisites. Recheck their landed paths at dispatch."
-    },
-    {
-      "number": 6,
-      "title": "Make History ingress implementation private",
-      "destination": "agentplane/history_service/internal/ingress/",
-      "readiness": "Ready; one owner-local importer",
-      "scope": "Move ingress implementation and its full integration harness under internal, updating main.go and Bazel labels. The only Go import of the implementation is History main. Public producer contracts stay in api/ingress; include the producer-to-History scenarios and real exporter in the relocated test target.",
-      "invariant": "Preserve SVID/delegated authorization, Sandbox UID validation, bounds, duplicate handling and acknowledgement timing. Keep the producer fixture dependent on public sampler APIs and its explicit historyexport boundary.",
-      "check": "Run the relocated ingress integration suite and History startup/integration suites; build history-service and the Runtime/sampler exporters. Search all repository references, including test target selectors and docs, for the old implementation path.",
-      "sources": [
-        "agentplane/history_service/ingress/ingress.go",
-        "agentplane/history_service/ingress/BUILD.bazel",
+        "agentplane/history_service/api/service.go",
+        "agentplane/history_service/api/follow.go",
+        "agentplane/history_service/api/watch.go",
+        "agentplane/history_service/api/BUILD.bazel",
         "agentplane/history_service/main.go"
       ],
       "commands": [
-        "bbr test //agentplane/history_service/internal/ingress:integration_test //agentplane/history_service:integration_test",
-        "bbr build //agentplane/history_service:history-service //agentplane/central_sampler/cmd:main_bin"
+        "bbr test //agentplane/history_service/internal/rpc:integration_test //agentplane/history_service:integration_test",
+        "bbr build //agentplane/history_service:history-service"
       ],
-      "dependency": "Independent of lane 5 and the landed storage move; rebase shared BUILD/import edits. If a test actually depends on an unmerged commit, use a native GitHub stack."
+      "current_checks": [
+        "//agentplane/history_service/api:integration_test",
+        "//agentplane/history_service:integration_test"
+      ],
+      "dependency": "Shares main/BUILD edits with open ingress PR #16115; these are rebase conflicts, not a content dependency. No root import from the new package.",
+      "importer_closure": "1 importing Go package/file: History main. NewService, Methods and MethodsWithDelegation have no cross-service Go caller."
+    },
+    {
+      "number": 5,
+      "title": "Make MCP Connection persistence private",
+      "destination": "agentplane/mcp_edge/internal/connections/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move the existing connections package, tests and BUILD intact. Update MCP composition/core client and authserver consumers. Public api/connection bindings and the database schema stay in place.",
+      "invariant": "Preserve transaction boundaries, update wakeups, exact Identity UID matching, connection/grant versions, enrollment activation and revocation. No name-only fallback or OAuth authority change.",
+      "check": "Run relocated Connection integration tests, authserver integration and SDK DCR tests, and MCP runtime tests. Build the existing service binary through its current composition target.",
+      "sources": [
+        "agentplane/mcp_edge/connections/BUILD.bazel",
+        "agentplane/mcp_edge/connections/store.go",
+        "agentplane/mcp_edge/connections/authorizations.go",
+        "agentplane/mcp_edge/authserver/authorize.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/mcp_edge/internal/connections:integration_test //agentplane/mcp_edge/authserver:integration_test //agentplane/mcp_edge/authserver:sdk_dcr_test //agentplane/mcp_edge:runtime_test"
+      ],
+      "current_checks": [
+        "//agentplane/mcp_edge/connections:integration_test",
+        "//agentplane/mcp_edge/authserver:integration_test",
+        "//agentplane/mcp_edge/authserver:sdk_dcr_test",
+        "//agentplane/mcp_edge:runtime_test"
+      ],
+      "dependency": "Independent of lane 6; shared authserver imports can be rebased. Dependencies point to public API/auth/Postgres/wakeups, not back to main or authserver.",
+      "importer_closure": "2 importing Go package directories: mcp_edge root and authserver. Current Bazel visibility is broader than this owner."
+    },
+    {
+      "number": 6,
+      "title": "Make the MCP protocol server private",
+      "destination": "agentplane/mcp_edge/internal/mcpserver/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move mcpserver with its golden/tool data and tests. Update MCP main and authserver bearer/outage helpers, plus action_service/docs/BUILD's explicit visibility exception for the relocated consumer.",
+      "invariant": "Preserve /mcp routing, Streamable HTTP and JSON-RPC behavior, tool schemas, bearer context, outage errors and DNS-rebinding protection. No endpoint, OAuth or Action-admission redesign.",
+      "check": "Run the moved MCP server tests, authserver integration and SDK DCR tests, and root MCP runtime tests. Build with embedded docs/data to catch visibility and runfile regressions.",
+      "sources": [
+        "agentplane/mcp_edge/mcpserver/BUILD.bazel",
+        "agentplane/mcp_edge/mcpserver/server.go",
+        "agentplane/mcp_edge/mcpserver/bearer.go",
+        "agentplane/action_service/docs/BUILD.bazel"
+      ],
+      "commands": [
+        "bbr test //agentplane/mcp_edge/internal/mcpserver:mcpserver_test //agentplane/mcp_edge/authserver:integration_test //agentplane/mcp_edge/authserver:sdk_dcr_test //agentplane/mcp_edge:runtime_test"
+      ],
+      "current_checks": [
+        "//agentplane/mcp_edge/mcpserver:mcpserver_test",
+        "//agentplane/mcp_edge/authserver:integration_test",
+        "//agentplane/mcp_edge/authserver:sdk_dcr_test",
+        "//agentplane/mcp_edge:runtime_test"
+      ],
+      "dependency": "Independent of lane 5. The docs visibility exception must move in the same commit; this is not permission to make Action Gate internal.",
+      "importer_closure": "2 importing Go package directories: MCP composition and authserver; 1 additional Action docs visibility edge."
     },
     {
       "number": 7,
-      "title": "Separate Notification handlers from public contracts",
-      "destination": "agentplane/notification_service/internal/rpc/",
-      "readiness": "Ready; 22 Go files, one owner-local importer",
-      "scope": "Move the eleven implementation files and eleven tests currently directly under notification_service/api to internal/rpc. Leave api/notifications and its generated bindings public. Update Notification main, test labels and documentation; the empty api grouping directory can still contain the contract package.",
-      "invariant": "Preserve authorization, delegation, watch behavior and error mapping. Keep the transactional store, GitHub advisory lock order, inbox wakeups and commit ownership together.",
-      "check": "Run relocated RPC unit and integration tests, service integration tests and the store integration suite; build notification-service and its API clients. No database or wire rename belongs in this PR.",
+      "title": "Make the Action MCP executor private",
+      "destination": "agentplane/action_service/internal/mcpexec/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move mcpexec, golden data and its complete integration harness as one existing package. Update the Action composition root and every BUILD/embed selector. Keep worker, linkage, store and catalog as the existing concrete dependencies.",
+      "invariant": "Preserve per-group MCP supervision, tool offer/withdrawal, OAuth linkage, request leases, cancellation and retry behavior. No new worker interface, session lifetime or availability policy.",
+      "check": "Run relocated MCP executor unit/golden and integration suites plus the Action service integration target. Preserve fixture bytes and embedded paths.",
       "sources": [
-        "agentplane/notification_service/api/BUILD.bazel",
-        "agentplane/notification_service/api/service.go",
-        "agentplane/notification_service/main.go",
-        "agentplane/notification_service/internal/store/github_ingest.go"
+        "agentplane/action_service/mcpexec/BUILD.bazel",
+        "agentplane/action_service/mcpexec/executor.go",
+        "agentplane/action_service/mcpexec/linkage.go",
+        "agentplane/action_service/main.go"
       ],
       "commands": [
-        "bbr test //agentplane/notification_service/internal/rpc:unit_test //agentplane/notification_service/internal/rpc:integration_test //agentplane/notification_service:integration_test",
-        "bbr build //agentplane/notification_service:notification-service"
+        "bbr test //agentplane/action_service/internal/mcpexec:mcpexec_test //agentplane/action_service/internal/mcpexec:integration_test //agentplane/action_service:integration_test"
       ],
-      "dependency": "Independent of lanes 1\u20136; public Notification API relocation #16069 is already merged."
+      "current_checks": [
+        "//agentplane/action_service/mcpexec:mcpexec_test",
+        "//agentplane/action_service/mcpexec:integration_test",
+        "//agentplane/action_service:integration_test"
+      ],
+      "dependency": "Open Action contract PR #16088 overlaps imports/BUILD only. Use its landed paths when dispatching; no content dependency or blanket API handler move.",
+      "importer_closure": "1 external importing Go package directory: Action composition. No worker-to-mcpexec reverse edge."
     },
     {
       "number": 8,
-      "title": "Put the MCP Connection contract under api/connection",
-      "destination": "agentplane/mcp_edge/api/connection/",
-      "readiness": "Ready after generated-consumer preflight",
-      "scope": "Move connection_service.proto and its generated Go, Python, TypeScript and gateway targets out of the MCP edge composition BUILD. Update imports in app frontend/backend, CLI and MCP edge, including HTTP-facade/OpenAPI generation and references in system-test fixtures.",
-      "invariant": "Retain agentplane.mcp_edge package, ConnectionService full method names, field numbers and HTTP annotations. File/descriptors and generated import paths will move, so inventory descriptor/reflection consumers too. Keep OAuth and Connection state ownership unchanged.",
-      "check": "Build every generated language consumer and affected app/CLI/MCP targets; run Connection and OAuth authserver integration tests and facade coverage. Use existing authorization tests to check method policies still match.",
+      "title": "Make Notification Session identity checks private",
+      "destination": "agentplane/notification_service/internal/sessionidentity/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move the existing sessionidentity helper intact and update internal/rpc and worker consumers. Keep its concrete Session, placement and destination inputs; do not combine it with inbox storage or split GitHub transactions.",
+      "invariant": "Preserve exact Session ID, recognized placement, Sandbox name+UID and recorded Identity name+UID checks. Keep name-only resolution invalid and maintain the existing Target/Identity/IdentityRun behavior.",
+      "check": "Build the relocated library and run RPC unit/integration, worker integration and service integration suites. There is no dedicated test target to move: existing caller tests exercise the helper.",
       "sources": [
-        "agentplane/mcp_edge/connection_service.proto",
-        "agentplane/mcp_edge/BUILD.bazel",
-        "agentplane/mcp_edge/connections/BUILD.bazel",
-        "agentplane/mcp_edge/authserver/BUILD.bazel"
+        "agentplane/notification_service/sessionidentity/session.go",
+        "agentplane/notification_service/sessionidentity/BUILD.bazel",
+        "agentplane/notification_service/internal/rpc/messages_test.go",
+        "agentplane/notification_service/worker/BUILD.bazel"
       ],
       "commands": [
-        "bbr test //agentplane/mcp_edge/connections:integration_test //agentplane/mcp_edge/authserver:integration_test",
-        "bbr build //agentplane/mcp_edge:main_lib"
+        "bbr build //agentplane/notification_service/internal/sessionidentity:sessionidentity",
+        "bbr test //agentplane/notification_service/internal/rpc:unit_test //agentplane/notification_service/internal/rpc:integration_test //agentplane/notification_service/worker:integration_test //agentplane/notification_service:integration_test"
       ],
-      "dependency": "Action contract imports overlap #16088. Recheck its status and import paths; stack only if the implementation uses content that exists solely in that PR."
+      "current_checks": [
+        "//agentplane/notification_service/internal/rpc:unit_test",
+        "//agentplane/notification_service/internal/rpc:integration_test",
+        "//agentplane/notification_service/worker:integration_test",
+        "//agentplane/notification_service:integration_test"
+      ],
+      "dependency": "Independent security-helper move; no transaction or lock-order extraction. Existing Bazel scope is already owner-only; internal adds Go import enforcement.",
+      "importer_closure": "2 importing Go package directories: Notification RPC and worker. Helper depends only on model and public Session/Dispatcher protos."
     },
     {
       "number": 9,
-      "title": "Put Egress admin and rules contracts beside their implementations",
-      "destination": "agentplane/egress/api/{rules,admin}/",
-      "readiness": "Ready after generated-consumer preflight",
-      "scope": "Move egress_rules.proto and egress_admin.proto with their generated targets. They form one source-import closure because admin imports rules. Keep implementation packages admin/, rules/ and proxy/ in place; update Go/Python/TypeScript, CLI, app, policy tooling and test consumers atomically.",
-      "invariant": "Retain protobuf packages, gRPC method names, HTTP annotations, policy semantics and credential-substitution behavior. Account for changed proto source paths and generated descriptors; no deployment setting, trust or egress policy change.",
-      "check": "Build affected clients and gateway/schema generators, run existing admin/rules tests and proxy integration coverage, and build the deployed proxy and sidecar. Verify exact method names used by authentication still match.",
+      "title": "Make Egress Admin implementation private",
+      "destination": "agentplane/egress/internal/admin/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move the existing admin Go implementation/tests/BUILD, updating Egress cmd imports and source selectors. Keep the public api/admin wire package and the current rules implementation path until lane 10 lands.",
+      "invariant": "Preserve bounded decision watches, decision history, credential presentation/redaction, health/readiness and authorization. No stored data, policy, stream or wire change.",
+      "check": "Run relocated admin tests, command listener tests and existing proxy integration coverage. Build the deployed egress command with the same startup wiring.",
       "sources": [
-        "agentplane/egress/egress_rules.proto",
-        "agentplane/egress/egress_admin.proto",
         "agentplane/egress/admin/BUILD.bazel",
-        "agentplane/egress/rules/BUILD.bazel"
+        "agentplane/egress/admin/grpc.go",
+        "agentplane/egress/admin/credentials.go",
+        "agentplane/egress/cmd/admin_grpc.go"
       ],
       "commands": [
-        "bbr test //agentplane/egress/admin:admin_test //agentplane/egress/rules:rules_test //agentplane/egress:test_proxy"
+        "bbr test //agentplane/egress/internal/admin:admin_test //agentplane/egress/cmd:listener_test //agentplane/egress:test_proxy"
       ],
-      "dependency": "Independent of the other API moves; lane 1 may overlap transport imports. Protobuf package-name alignment remains deferred."
+      "current_checks": [
+        "//agentplane/egress/admin:admin_test",
+        "//agentplane/egress/cmd:listener_test",
+        "//agentplane/egress:test_proxy"
+      ],
+      "dependency": "Independent of lane 10: admin can import the existing rules package, then update that import if rules moves later. Shared cmd changes require a rebase, not a stack.",
+      "importer_closure": "1 importing Go package directory: Egress cmd. Admin depends on rules; neither imports cmd."
+    },
+    {
+      "number": 10,
+      "title": "Make Egress Rules implementation private",
+      "destination": "agentplane/egress/internal/rules/",
+      "readiness": "Ready; source and caller preflight complete",
+      "scope": "Move rules implementation/tests/BUILD; update both Egress cmd and Admin to the new path, whichever path Admin has when this dispatches. Public api/rules proto bindings remain unchanged.",
+      "invariant": "Preserve admitted caller selection, nil-list meaning, field-by-field effective-policy projection and omission of all Secret references/values. CredentialOf still exposes presentation metadata only.",
+      "check": "Run relocated rule tests plus admin, listener and proxy integration coverage. Check the caller identity and credential-redaction cases rather than changing the policy model.",
+      "sources": [
+        "agentplane/egress/rules/BUILD.bazel",
+        "agentplane/egress/rules/grpc.go",
+        "agentplane/egress/admin/credentials.go",
+        "agentplane/egress/cmd/admin_grpc.go"
+      ],
+      "commands": [
+        "bbr test //agentplane/egress/internal/rules:rules_test //agentplane/egress/admin:admin_test //agentplane/egress/cmd:listener_test //agentplane/egress:test_proxy"
+      ],
+      "current_checks": [
+        "//agentplane/egress/rules:rules_test",
+        "//agentplane/egress/admin:admin_test",
+        "//agentplane/egress/cmd:listener_test",
+        "//agentplane/egress:test_proxy"
+      ],
+      "dependency": "Independent of lane 9. If Admin is already internal, select //agentplane/egress/internal/admin:admin_test instead of its old label. No contract namespace rename.",
+      "importer_closure": "2 importing Go package directories: Egress cmd and Admin. No back-edge to either caller."
     }
-  ]
+  ],
+  "importer_count_method": "Sampler/Dispatcher counts are direct caller source files; service counts are distinct importing Go package directories, excluding same-package tests. Transport counts reference files by language. These denominators are explicitly different.",
+  "ci_findings": [
+    {
+      "pr": 16115,
+      "head": "3f9a8b6da4a01a5e49bda2a3e0de70f25cba6760",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "phase": "setup: OCI image import before History ingress ran",
+      "error": "BrokenPipeError; k3s API and containerd connection refused",
+      "invocation": "https://app.buildbuddy.io/invocation/7ef2774b-03a6-50d9-b8a2-d8b7f88d1423",
+      "limit": "No current-devel reproduction or targeted retry was run in the rebase task; do not call this green or prove an ingress regression from it."
+    },
+    {
+      "pr": 16088,
+      "head": "3dbdae0410f921b7c9992164772efb88c4aa18a3",
+      "target": "//agentplane/system_tests/suites:test_vm",
+      "phase": "VM Sandbox readiness",
+      "error": "SandboxNotReadyError after 300 seconds: EnvironmentRuntimeConnected=False, ConnectionPending; no first runner state message",
+      "invocation": "https://app.buildbuddy.io/invocation/182813f0-556b-5dfa-b482-b00c8e9e5445",
+      "limit": "Observed failure mechanism only; no current-devel reproduction or root-cause proof, and focused rebase tests do not clear this CI failure."
+    }
+  ],
+  "retained_validation": [
+    {
+      "pr": 16094,
+      "head": "0da3940920c9da405953b4c86aca9afab6c09f73",
+      "kind": "focused working-tree tests",
+      "invocation": "https://app.buildbuddy.io/invocation/59c68bde-4042-4231-98c8-ecf928b66a0c",
+      "result": "3 targets passed: fold/golden, projection and reads; not rollout evidence"
+    },
+    {
+      "pr": 16088,
+      "head": "3dbdae0410f921b7c9992164772efb88c4aa18a3",
+      "kind": "focused working-tree tests/build",
+      "invocation": "https://app.buildbuddy.io/invocation/12a44835-b5ed-4c3c-81d2-6a27b002ad41",
+      "build_invocation": "https://app.buildbuddy.io/invocation/fa6ee2c5-48d3-42f3-ad61-084d7cb75184",
+      "result": "4 targets passed; 4 TypeScript proto targets built; exact-head hosted checks recorded separately"
+    }
+  ],
+  "report_validation": {
+    "invocation": "https://app.buildbuddy.io/invocation/49d28d62-6ec6-44ed-9068-f910d198d1f5",
+    "result": "PASSED: 8 browser cases in one RBE Bazel test target; 45.7 seconds",
+    "pages": ["/", "/agentplane-organization/"],
+    "viewports": [
+      {
+        "width": 1280,
+        "height": 900
+      },
+      {
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "themes": ["light", "dark"],
+    "checks": [
+      "real esm.sh and jsDelivr loading; no CDN interception",
+      "live system color preference changes",
+      "all ten lane disclosures open and close",
+      "contents anchors resolve",
+      "no document horizontal overflow",
+      "mobile adoption table scrolls horizontally"
+    ],
+    "screenshots": "Reviewed desktop/mobile screenshots in both themes, including report cards, burn-down, adoption table and expanded lane details. Screenshots and the temporary preview harness are artifacts on the invocation; no backend suite or deployment was run for this report refresh.",
+    "rendered_asset_sha256": {
+      "index.html": "3d6842943aaec19596c84d9fcd93bd8274393a293958a3921c846bb706711d7f",
+      "agentplane-organization/index.html": "20e0042ebad9a74df1a1bb8275f7266dc0da655be2d1f3a10b18a147febd9999",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
+    },
+    "static_checks": [
+      "JavaScript module parses",
+      "HTML and JSON lane/status data agree",
+      "all lane source paths exist at the pinned snapshot",
+      "24 current test target names found in owning BUILD files; not an execution claim",
+      "original dated inventory/coverage sections preserved byte-for-byte"
+    ]
+  }
 }
