@@ -45,6 +45,15 @@ fn claimed_modules_export_their_entry_points() {
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
+            "editor/packages/excalidraw/clipboard.js",
+            &[
+                "copyToClipboard",
+                "createPasteEvent",
+                "parseClipboard",
+                "readSystemClipboard",
+            ],
+        ),
+        (
             "editor/packages/excalidraw/element/newElement.js",
             &[
                 "newElement",
