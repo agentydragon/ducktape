@@ -1,0 +1,157 @@
+{
+  "best_next_measurement": {
+    "boundedness": "Read-only observation first; do not repeat a full gate unless the standard path demonstrates the suspected condition.",
+    "must_not_claim": "404 count as duration, lock-check span as proof of reuse, or a single cold/warm pair as fleet-wide CI savings.",
+    "proposal": "On one normal required //... CI invocation, retain its existing Bazel profile and log, and capture an allowlisted before/after state for the driver lock cache (valid cached lock present vs absent; no lock contents). Check whether that actual invocation emits either class of Debian 404. If the required run shows a lock miss or the same live-pool misses, then use one exact-source, isolated warm/cold hosted pair with identical targets and existing RBE/cache policy to compare first-TestRunner time and Bazel profile spans."
+  },
+  "interpretation": {
+    "apt_limit": "The profiles show many rules_distroless repository events and a very short APT lockfile check, but do not prove lock restoration or attribute setup wall time to the APT extension. The live-pool warnings are from a manual guest invocation, not the 0a9 required invocation.",
+    "comparison": "The first physical TestRunner began about 93.1s after 0a9 invocation start and 99.3s after 5699 invocation start. The approximately 6.2s difference is not a speedup claim: these are different commits, worker/cache states, shard counts, and fresh-action populations.",
+    "decision": "No evidence here supports changing the APT extension, Debian pins, or cache policy.",
+    "profile_limit": "Bazel exposes a combined runAnalysisAndExecutionPhase (167.056s at 0a9) rather than separate load, analysis, repository-fetch, and execution wall phases. It remains active long after the first TestRunner. Fetch duration sums overlap; interval unions are event coverage, not causal delay."
+  },
+  "manual_guest_404s": {
+    "by_host_and_resource": {
+      "https://deb.debian.org": {
+        "count": 45,
+        "resource": "pinned .deb pool URLs"
+      },
+      "https://snapshot.debian.org": {
+        "count": 22,
+        "resource": "dists metadata URLs"
+      }
+    },
+    "invocation_id": "680b53ca-b068-4e8c-bc07-4fdd8372bf40",
+    "kind": "Manual targeted guest build/test, separate source and command from 0a9 required CI.",
+    "limit": "The manual test passed after the warnings, but this record does not identify whether each package came from the pinned snapshot fallback or an existing repository cache. Warning count is not elapsed time.",
+    "log_file": "../guest-session-validation/positive-7-launch.log",
+    "log_sha256": "ebc786d2cfd3a6f33b226ba29d7c837529ee95b365e6ca0a9491a8f0dbbc6c61",
+    "manual_test_outcome": {
+      "failed": 0,
+      "new_physical_actions": 2,
+      "passed": 2
+    },
+    "observed_404_warning_lines": 67,
+    "source_head": "8a555b21141fded2166fcc17cd14096187e22842"
+  },
+  "profiles": {
+    "current_0a9_required_ci": {
+      "bazel_elapsed_seconds": 181.842,
+      "command": "test //...",
+      "invocation_finished_utc": "2026-11-13T15:58:02.538Z",
+      "invocation_id": "9478886b-9d97-5d14-8270-9ae969e1bb9d",
+      "invocation_started_utc": "2026-11-13T15:55:00.696Z",
+      "profile": {
+        "TestRunner_action_count": 8,
+        "TestRunner_action_start_window_seconds": 0.816,
+        "bazel_version": "9.2.0",
+        "buildTargets_span": {
+          "duration_seconds": 167.297,
+          "start_seconds": 14.536
+        },
+        "compressed_bytes": 3459558,
+        "first_TestRunner_action_start_seconds": 93.100675,
+        "first_TestRunner_result_start_utc": "2026-11-13T15:56:33.807Z",
+        "invocation_log": {
+          "any_404_lines": 0,
+          "debian_host_404_warning_lines": 0,
+          "private_file": "private/0a9-build.log",
+          "sha256": "35d9f9b7e2553915e18562e8b2e54de4c4c3b4b3a6597d37834787521f8fc5c9"
+        },
+        "invocation_start_to_first_physical_TestRunner_seconds": 93.111,
+        "pre_first_TestRunner_repository_fetches": {
+          "all_repository_fetch_duration_sum_seconds": 76.357,
+          "all_repository_fetch_event_count": 10830,
+          "all_repository_fetch_interval_union_seconds": 19.419,
+          "apt_extension_lockfile_check_span_seconds": 0.002159,
+          "largest_single_apt_fetch_span_seconds": 0.147,
+          "rules_distroless_apt_duration_sum_seconds": 20.923,
+          "rules_distroless_apt_fetch_event_count": 3112,
+          "rules_distroless_apt_interval_union_seconds": 5.747,
+          "rules_distroless_apt_unique_repository_names": 1207
+        },
+        "private_file": "private/0a9-command.profile.gz",
+        "profile_start_utc": "2026-11-13T15:55:00.713186624Z",
+        "runAnalysisAndExecutionPhase_span": {
+          "duration_seconds": 167.056,
+          "start_seconds": 14.642
+        },
+        "sha256": "223a3c135c8dbd0001a9533829804bfbc412e5a1961a84d66a994c61fa2c21a5",
+        "test_results": {
+          "cases": 24,
+          "errors": 0,
+          "failed": 0,
+          "fresh_k3s_actions": 0,
+          "new_physical_actions": 8,
+          "passed": 24,
+          "skipped": 0
+        }
+      },
+      "source_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+      "tested_merge": "d723d23c7eada30dd8f5853547a5e5f66d9b2eb5",
+      "workflow_evidence": {
+        "curated_file": "../../iteration2/pages/agentplane-test-architecture/required-ci-0a9-workflow.json",
+        "limits": "Only eight Bridge shard actions were new; other test results were cached. This is not a fresh full-system run.",
+        "required_feedback_seconds": 264.0,
+        "sha256": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171"
+      },
+      "workflow_id": 43457244360
+    },
+    "prior_5699_required_ci": {
+      "command": "test //...",
+      "evidence_file": "../current-native-critical-path/evidence.json",
+      "first_TestRunner_result_start_utc": "2026-11-13T14:46:46.280562Z",
+      "invocation_id": "826bd51a-bd7c-5275-9509-85bffa194597",
+      "invocation_start_to_first_physical_TestRunner_seconds": 99.281,
+      "invocation_started_utc": "2026-11-13T14:45:07Z",
+      "limits": "The README short ID was wrong; this is the full BuildBuddy invocation ID. This source, cache state, shard count, and number of newly executed tests differ from 0a9.",
+      "profile": {
+        "compressed_bytes": 5252234,
+        "first_TestRunner_action_start_seconds": 111.399,
+        "pre_first_TestRunner_repository_fetches": {
+          "all_repository_fetch_duration_sum_seconds": 79.214,
+          "all_repository_fetch_event_count": 10732,
+          "all_repository_fetch_interval_union_seconds": 21.708,
+          "apt_extension_lockfile_check_span_seconds": 0.001778,
+          "rules_distroless_apt_duration_sum_seconds": 25.546,
+          "rules_distroless_apt_fetch_event_count": 3014,
+          "rules_distroless_apt_interval_union_seconds": 11.206,
+          "rules_distroless_apt_unique_repository_names": 1207
+        },
+        "private_file": "../current-native-critical-path/private/5699-command.profile.gz",
+        "profile_start_utc": "2026-11-13T14:44:54.852829943Z",
+        "sha256": "2231ad15c5b867e9049972f28f17bc7e581e6e9d448c02a641059b097e5f0458",
+        "test_results": {
+          "new_physical_TestRunner_actions": 54,
+          "passed": 54,
+          "targets": 33
+        }
+      },
+      "source_head": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+      "tested_merge": "c8acb4008be54b34b1de5694145f546b156768a8"
+    }
+  },
+  "schema_version": 1,
+  "scope": "Read-only profile and source-path attribution for pre-TestRunner time. No build/test reruns, source edits, cache-policy changes, or pin changes.",
+  "source_behavior_at_0a9": {
+    "apt_configuration": "One shared apt extension; snapshot metadata URLs pin forky to 2026-09-05 and trixie/security to 2026-03-01.",
+    "apt_extension_file": "devinfra/bazel/oci.MODULE.bazel",
+    "deb_rewrite": "For snapshot pool/*.deb URLs only, try deb.debian.org first, then the original snapshot URL. The rule does not rewrite dists metadata URLs.",
+    "downloader_config_file": "devinfra/bazel/downloader.cfg",
+    "module_lock_cache": {
+      "behavior": "The driver context wraps selection, test, and build. If the workspace MODULE.bazel.lock is absent, it restores valid JSON from ${XDG_CACHE_HOME:-~/.cache}/ducktape/bazel/MODULE.bazel.lock, then atomically saves a valid workspace lock after the command. An existing workspace lock takes precedence.",
+      "driver_file": "devinfra/ci/bazel_ci.py",
+      "per_invocation_hit_status": "Not recorded in the invocation log or profile. The 2.159ms APT lockfile-check span is not direct evidence of a cache hit.",
+      "repository_cache_action": ".github/actions/setup-bazel/action.yml hashes MODULE.bazel, **/*.MODULE.bazel and MODULE.bazel.lock in its repository-cache key and caches Bazelisk plus the Bazel repository cache."
+    },
+    "rules_distroless_version": "0.9.4"
+  },
+  "selection_context": {
+    "branch_head": "8a555b21141fded2166fcc17cd14096187e22842",
+    "base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "graph_wide_trigger_path": "devinfra/ci/bazel_ci.py",
+    "mechanism": "The exact pinned driver lists its own path as a graph-wide trigger. The branch delta includes that path for selected-label provenance diagnostics; graph_wide_change_reason therefore selects //... rather than affected labels. The observed0a9 and8a native invocations both use test //....",
+    "profile_observation": "The0a9 profile includes action dependency checking, analysis and top-level output handling for unrelated finance, Props, Haku and other targets before the first fresh Bridge action.",
+    "limit": "The93.111s first-fresh-TestRunner interval describes this full-repository branch validation. It is not an estimate of ordinary backend PR selected-graph setup or a causal delay assigned to those unrelated targets."
+  }
+}

@@ -74,6 +74,7 @@
       const evidence = await evidenceResponse.json();
       const followup = evidence.followup_refresh;
       const architectureFollowup = evidence.architecture_followup;
+      const architectureIteration9 = architectureFollowup.iteration9;
 
       const pr = "https://github.com/agentydragon/ducktape/pull/15493";
       const run =
@@ -566,21 +567,43 @@
             my="xl"
           >
             <${Title} order=${2}
-              >Current observer and listener recovery follow-up<//
+              >Iteration 9 observer evidence and retained reliability
+              follow-ups<//
             >
             <${Text} size="sm" c="dimmed">
-              ${`Selected evidence observed ${architectureFollowup.observed_at_utc}. The retained 5–12 November reliability population, source pin, denominators and rates remain unchanged.`}
+              ${`Selected evidence observed ${architectureIteration9.observed_at_utc}. The retained 5–12 November reliability population, source pin, denominators and rates remain unchanged.`}
             <//>
             <${Text}>
-              The architecture source 0a9acbf passed all three required checks;
-              eight fresh Bridge actions covered 24 passing cases while other
-              test results were cached. This validates that source workflow; it
-              does not refresh the recurrence population or establish a
-              reliability improvement. See the${" "}
+              Architecture source 8a555b2 passed all three required checks in
+              351s from workflow creation to the last required result. Its
+              native TestRunner invocation had 59 fresh physical actions and 292
+              passing cases, with no failures, errors or skips. This single
+              workflow does not refresh the recurrence population or establish a
+              reliability improvement. The older 0a9 run had eight fresh Bridge
+              actions and a 264s clock; these were not a matched comparison. See
+              the${" "}
               <${Anchor}
-                href="../agentplane-test-architecture/required-ci-0a9-workflow.json"
+                href="../agentplane-test-architecture/required-ci-8a5-workflow.json"
                 >required-CI record<//
               >.
+            <//>
+            <${Paper} withBorder p="md">
+              <${Stack} gap="sm">
+                <${Text} fw=${600}>Manual packaged guest session contract<//>
+                <${Text}>
+                  Both healthy NEW guest targets pass; the Session target
+                  completes two real Shell turns with retained workspace state.
+                  A wrong-History identity control ends at its expected
+                  assertion, with preflight, guest SPIFFE rejection and cleanup
+                  verified. Both targets remain manual; these runs do not add
+                  fresh exposures to the required-CI reliability population.
+                  ${" "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/guest-session-contract.json"
+                    >Guest contract evidence<//
+                  >
+                <//>
+              <//>
             <//>
             <${Paper} withBorder p="md">
               <${Stack} gap="sm">
@@ -596,16 +619,33 @@
                   unknown outcomes remain covered. This is separate from inner
                   Execute/WaitExecution recovery tracked in #16025.
                 <//>
+                <${Text}>
+                  A live fault probe against BuildBuddy then accepted one real
+                  Run, delivered one log chunk before injected INTERNAL, and
+                  observed no cancellation or second submission. The same-ID
+                  WaitExecution reached status 0 / remote exit 23; a fresh
+                  invocation lookup agreed and the CLI returned exit 23. The
+                  tested source patch remains unshipped. ${" "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/accepted-run-observer-live.json"
+                    >Live observer evidence<//
+                  >
+                  ${" · "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/accepted-run-observer-live-helper.patch"
+                    >Probe helper patch<//
+                  >
+                <//>
                 <${Text} size="sm" c="dimmed">
                   The static patched CLI executable builds and passes
                   version/help smoke, with an unknown release stamp from the
-                  shallow source. No live BuildBuddy reset injection,
-                  installation, Ducktape package pin or release was done. The
-                  existing package consumes an upstream CLI artifact; the
-                  preferred shipping path is an upstream fix and official
-                  release. ${" "}
-                  <${Anchor} href="../agentplane-test-architecture/#iteration8"
-                    >Patch, tests and shipping evidence<//
+                  shallow source. The live probe injected an observer INTERNAL
+                  error, not a literal server RST. Installation, Ducktape
+                  package pin and release remain undone. The existing package
+                  consumes an upstream CLI artifact; the preferred shipping path
+                  is an upstream fix and official release. ${" "}
+                  <${Anchor} href="../agentplane-test-architecture/#iteration9"
+                    >Current live proof, tests and shipping evidence<//
                   >
                 <//>
               <//>

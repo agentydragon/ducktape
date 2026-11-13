@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "scope": "Manual packaged guest Runtime/Claude Session feasibility and seeded wrong-History identity control. No gate replacement or matched speed claim.",
+  "source": {
+    "revision": "8a555b21141fded2166fcc17cd14096187e22842",
+    "code_sha256": {
+      "agentplane/env/e2e/testing/history_tunnel.py": "7de44e5985bfeb9ff87e1113f819838c8c20928995a4b4138b158e1d8231268a",
+      "agentplane/env/e2e/testing/model_config.py": "b12966b5bad9fb9846c87379a09f904719e71ef77a4d0650dc09284659da11b7",
+      "agentplane/history_service/BUILD.bazel": "386e3a78985f595de32b4b851be5f0cb276db3d1b0d1a3363b3c7e4290d581a0",
+      "agentplane/history_service/testing/BUILD.bazel": "a481f6038d1597ebcf846c8dd44babaf0f42e8a88c8b01718b4fd32fd2c60755",
+      "agentplane/history_service/testing/go_service.py": "ccb2bc13299a049e28625927c264be50bc4aae73a9877617542d2fbad42f1509",
+      "agentplane/testing/BUILD.bazel": "d2c92634698b0b860a7071f4d48649790950c3d5608f7f67afa9885d5e9d0808",
+      "agentplane/x/direct_vm_boot/BUILD.bazel": "263435184e158f5234ed89c8be7e6b83fea652354b5e947ce32db7f476af2239",
+      "agentplane/x/direct_vm_boot/runtime_guest.py": "bd6c88832b77557b21271419424b406592f2d6b003c1ac773b12953107a27d74",
+      "agentplane/x/direct_vm_boot/test_runtime_gateway.py": "9a9a761365002ce783a43b1b664d9d8349bf5d0be4ac2862b7f75a4b29826d29",
+      "agentplane/x/direct_vm_boot/test_runtime_session.py": "0aa2b3c8ae43edd31ddabade2f89ee7551ab53a911cad163f68016c8e58e9b19"
+    },
+    "positive_code_sha256": {
+      "agentplane/env/e2e/testing/history_tunnel.py": "7de44e5985bfeb9ff87e1113f819838c8c20928995a4b4138b158e1d8231268a",
+      "agentplane/env/e2e/testing/model_config.py": "b12966b5bad9fb9846c87379a09f904719e71ef77a4d0650dc09284659da11b7",
+      "agentplane/history_service/BUILD.bazel": "386e3a78985f595de32b4b851be5f0cb276db3d1b0d1a3363b3c7e4290d581a0",
+      "agentplane/history_service/testing/BUILD.bazel": "a481f6038d1597ebcf846c8dd44babaf0f42e8a88c8b01718b4fd32fd2c60755",
+      "agentplane/history_service/testing/go_service.py": "ccb2bc13299a049e28625927c264be50bc4aae73a9877617542d2fbad42f1509",
+      "agentplane/testing/BUILD.bazel": "d2c92634698b0b860a7071f4d48649790950c3d5608f7f67afa9885d5e9d0808",
+      "agentplane/x/direct_vm_boot/BUILD.bazel": "263435184e158f5234ed89c8be7e6b83fea652354b5e947ce32db7f476af2239",
+      "agentplane/x/direct_vm_boot/runtime_guest.py": "bd6c88832b77557b21271419424b406592f2d6b003c1ac773b12953107a27d74",
+      "agentplane/x/direct_vm_boot/test_runtime_gateway.py": "9a9a761365002ce783a43b1b664d9d8349bf5d0be4ac2862b7f75a4b29826d29",
+      "agentplane/x/direct_vm_boot/test_runtime_session.py": "60a33da54346f37c17d6c2bcafb263c0bca5757520fd24cc7df75dec5f415b94"
+    },
+    "positive_source_note": "Two passing targets on the preceding working-tree snapshot. The sole subsequent Python/BUILD change adds transport.abort only in the opt-in wrong-identity relay cleanup; this byte-level difference was verified. Final negative exercises it."
+  },
+  "healthy": {
+    "native_invocation_id": "680b53ca-b068-4e8c-bc07-4fdd8372bf40",
+    "new_physical_actions": 2,
+    "junit": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bazel_elapsed_seconds": 243.426,
+    "contracts": [
+      "Authenticated packaged Runtime status, fresh boot identity, exact Sandbox/Pod Lease epoch.",
+      "Two packaged Claude Shell turns, retained nonce, original command IDs, contiguous sourced History, two completions and same Runtime boot."
+    ]
+  },
+  "final_control": {
+    "native_invocation_id": "bfd90ef2-08e3-4e49-9ba4-a915ccff0d05",
+    "new_physical_actions": 1,
+    "junit": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "expected_failure": "Unchanged History turn-completion assertion sees no committed turn after Runtime rejects wrong SPIFFE URI.",
+    "preflight": "Real History Health.Check returns SERVING through both authenticated TLS legs before guest start.",
+    "runtime_evidence": "unexpected ID spiffe://agentplane/egress-proxy in packaged Runtime serial records",
+    "successful_first_shell": true,
+    "cleanup": {
+      "state_owner_restored": true,
+      "named_container_removed": true,
+      "gateway_host_forward_listener_free": true,
+      "tls_relay_listener_and_tasks_stopped": true,
+      "tls_close_timeout_seen": false
+    }
+  },
+  "physical_actions": [
+    {
+      "native_invocation_id": "680b53ca-b068-4e8c-bc07-4fdd8372bf40",
+      "label": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+      "new_physical_action": true,
+      "execution_id": "/uploads/0559d440-082a-4a58-bc7e-83e838b17e63/blobs/9c44fc24fc176c93d3f4181809f7230af539ccfc04ba545f5e9b646e9faefd6c/581",
+      "exit_code": 0,
+      "process_seconds": 101.894021,
+      "cpu_seconds": 172.989682,
+      "peak_memory_bytes": 1441370112
+    },
+    {
+      "native_invocation_id": "680b53ca-b068-4e8c-bc07-4fdd8372bf40",
+      "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+      "new_physical_action": true,
+      "execution_id": "/uploads/bb1a5db5-ed13-4098-b291-2b74d278b07b/blobs/60972322423751540c0dba4c25503eaa747a4da54a78ae05bca6f8c56d11b2dc/581",
+      "exit_code": 0,
+      "process_seconds": 163.792403,
+      "cpu_seconds": 356.14321,
+      "peak_memory_bytes": 2044203008
+    },
+    {
+      "native_invocation_id": "bfd90ef2-08e3-4e49-9ba4-a915ccff0d05",
+      "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+      "new_physical_action": true,
+      "execution_id": "/uploads/3bd53470-ed5e-48e2-8830-98b8388fde41/blobs/cefbc3d6e817c11d396f8e3eb8b3dacbb0cd4fd3efeb189e9a595e9c0ebd399f/581",
+      "exit_code": 1,
+      "process_seconds": 115.060072,
+      "cpu_seconds": 154.876935,
+      "peak_memory_bytes": 2017423360
+    }
+  ],
+  "earlier_attempts": [
+    {
+      "native_invocation_id": "5aee53ed-f780-4d04-914d-6e4a82645f40",
+      "outcome": "analysis/aspect failure, zero bodies",
+      "finding": "Missing direct protobuf dependency on extracted helper; repaired."
+    },
+    {
+      "native_invocation_id": "86c56ec9-2358-4767-b5a3-3145f2591bef",
+      "outcome": "two healthy failures",
+      "finding": "Invalid Session cwd and Gateway serial-record teardown race; repaired."
+    },
+    {
+      "native_invocation_id": "57e74ef1-4b10-4c01-9b70-28065dd55a0f",
+      "outcome": "two healthy failures",
+      "finding": "Premature dormant-to-ready assertion and Docker loading consuming RPC deadline; repaired."
+    },
+    {
+      "native_invocation_id": "449d966e-ea13-48de-b12f-686a7876aa23",
+      "outcome": "Gateway pass; Session assertion failure and teardown error",
+      "finding": "Successful nonce output included CLI metadata; require exact first line, nonerror and call ID, then settle model exchange."
+    },
+    {
+      "native_invocation_id": "97ed514e-b133-431b-b2f3-4019ef8a951b",
+      "outcome": "Session pass",
+      "finding": "Two real turns and cleanup on that working-tree checkpoint."
+    },
+    {
+      "native_invocation_id": "25746e94-c5ff-47c3-8a35-fd8d59cbb497",
+      "outcome": "invalid negative, fixture startup error",
+      "finding": "History rejects its own wrong identity; does not prove Runtime rejection. Replaced with healthy upstream TLS relay."
+    },
+    {
+      "native_invocation_id": "8ec70561-b98e-4349-8645-416d6f65243f",
+      "outcome": "Gateway pass; Session readiness failure",
+      "finding": "Linux still mounting/starting systemd when RPC deadline expires. Wait for actual Runtime process record under unchanged QEMU lifetime."
+    },
+    {
+      "native_invocation_id": "c2191426-029b-4e82-88a8-d9a5d936ca8c",
+      "outcome": "valid expected negative",
+      "finding": "Real preflight SERVING; guest wrong-URI rejection; successful first Shell result; ordinary History-completion assertion fails; cleanup verified."
+    },
+    {
+      "native_invocation_id": "9077776c-c243-4fc1-98b6-bac1e841d925",
+      "outcome": "valid expected negative",
+      "finding": "Same intended rejection after startup-phase change; cleanup verified."
+    }
+  ],
+  "bounds": {
+    "qemu_execution_seconds": 120,
+    "qemu_kill_grace_seconds": 10,
+    "launcher_open_serial_seconds": 30,
+    "authenticated_rpc_seconds_after_runtime_record": 30,
+    "tls_relay_close_seconds": 2
+  },
+  "limits": [
+    "Manual targets remain excluded from the required gate. Existing VM/Firecracker and deployed acceptance remain.",
+    "Fixture-authored status and CA do not prove controller reconciliation, real issuance/Secret projection, KubeVirt or PVC behavior, App routing, guest Codex, or executor-budget enforcement.",
+    "Executor resource budget is disabled in the Session fixture. External model responses are scripted; packaged CLI, Shell and service processes are real.",
+    "These are implementation attempts with changing source and cache/load exposure, not a reliability cohort or paired performance benchmark.",
+    "Aggregate target-history query returned no rows; exact native REAPI/JUnit records supply the reported timings."
+  ]
+}

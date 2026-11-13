@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "source_head": "8a555b21141fded2166fcc17cd14096187e22842",
+  "source_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+  "tested_merge": "c8d36b745f7f44d9a53de44f851ac3e7b3eb8160",
+  "merge_parents": [
+    "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "8a555b21141fded2166fcc17cd14096187e22842"
+  ],
+  "workflow_id": 43475573129,
+  "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43475573129",
+  "attempt": 1,
+  "required_checks": [
+    {
+      "name": "bazel-ci / Test & Build",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "started_at": "2026-11-13T17:43:22Z",
+      "completed_at": "2026-11-13T17:49:11Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43475573129/job/132058397435"
+    },
+    {
+      "name": "Build artifacts + imports check",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "started_at": "2026-11-13T17:43:23Z",
+      "completed_at": "2026-11-13T17:44:51Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43475573058/job/132058402424"
+    },
+    {
+      "name": "Pre-commit checks",
+      "status": "COMPLETED",
+      "conclusion": "SUCCESS",
+      "started_at": "2026-11-13T17:43:25Z",
+      "completed_at": "2026-11-13T17:44:38Z",
+      "url": "https://github.com/agentydragon/ducktape/actions/runs/43475576640/job/132058416230"
+    }
+  ],
+  "earliest_required_workflow_creation": "2026-11-13T17:43:20+00:00",
+  "last_required_check_completion": "2026-11-13T17:49:11+00:00",
+  "workflow_creation_to_last_required_seconds": 351.0,
+  "native_test_invocation": "6b19539f-0618-549f-9a48-dc7041e9082c",
+  "native_test_elapsed_seconds": 248.838,
+  "fresh_physical_test_runner_records": 59,
+  "unique_fresh_execution_ids": 59,
+  "merged_records": 0,
+  "fresh_junit": {
+    "tests": 292,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "fresh_bridge_junit_cases": 24,
+  "fresh_bridge_case_names_sha256": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+  "fresh_k3s_actions": 0,
+  "fresh_process_envelope_seconds": 149.530948,
+  "summed_fresh_action_cpu_seconds": 6171.583562,
+  "fresh_targets": {
+    "//agentplane/app:test_action_api": 1,
+    "//agentplane/app:test_api": 1,
+    "//agentplane/app:test_bridge": 8,
+    "//agentplane/app:test_electric_chunk_compaction": 1,
+    "//agentplane/app:test_electric_subset_window": 1,
+    "//agentplane/app:test_electric_wal_recovery": 1,
+    "//agentplane/app:test_history_gateway": 1,
+    "//agentplane/app:test_live": 1,
+    "//agentplane/app:test_native_facades": 1,
+    "//agentplane/app:test_notifications_stream": 1,
+    "//agentplane/app:test_thread_browser": 16,
+    "//agentplane/app:test_thread_debug": 1,
+    "//agentplane/app:test_thread_sync": 1,
+    "//agentplane/app:test_thread_window_browser": 1,
+    "//agentplane/central_sampler:test_gateway_integration": 1,
+    "//agentplane/env/e2e/testing:failure_journal_test": 1,
+    "//agentplane/env/e2e:test_attach": 1,
+    "//agentplane/env/e2e:test_codex_catalog": 1,
+    "//agentplane/env/e2e:test_codex_code_mode": 1,
+    "//agentplane/env/e2e:test_codex_shared_process": 1,
+    "//agentplane/env/e2e:test_executor_container": 1,
+    "//agentplane/env/e2e:test_initialize": 1,
+    "//agentplane/env/e2e:test_instructions": 1,
+    "//agentplane/env/e2e:test_pid1_container": 4,
+    "//agentplane/env/e2e:test_restart": 1,
+    "//agentplane/env/e2e:test_subagents": 1,
+    "//agentplane/env/e2e:test_turns": 1,
+    "//agentplane/history_service/fold:test_recording": 1,
+    "//agentplane/runner_gateway/dispatcher:test_testing_client": 1,
+    "//agentplane/runner_gateway/migrations:test_migrations": 1,
+    "//agentplane/runner_gateway:test_client": 1,
+    "//agentplane/runner_gateway:test_grpc_native": 1,
+    "//agentplane/runner_gateway:test_settings": 1,
+    "//agentplane/x/runner_layering:test_sparse_root": 1
+  },
+  "limits": [
+    "Exact source required-CI checkpoint, not a matched before/after experiment.",
+    "The prior0a9 required run had eight fresh Bridge actions and other cached results; different fresh workloads prevent a speed comparison.",
+    "Manual guest contracts were validated separately and remain excluded from this required test command.",
+    "Cached test results remain part of ordinary gate evaluation but are excluded from the fresh physical/JUnit counts above."
+  ]
+}

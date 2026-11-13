@@ -193,6 +193,7 @@
           Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
         const iteration4 = data?.iteration4;
         const iteration5 = data?.iteration5;
+        const iteration9 = data?.iteration9;
         const iteration8 = data?.iteration8;
         const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
@@ -399,9 +400,6 @@
               ],
             ]
           : [];
-        const iteration3StatusLabel = (iteration3?.status || "evidence pending")
-          .replaceAll("_", " ")
-          .toLowerCase();
         const iteration3TopSummary = iteration3
           ? `Iteration 3 evidence (${iteration3.status || "status pending"}): ${iteration3.finding || "The three source-pinned suite variants are still being reviewed."}`
           : "Iteration 3 source-pinned comparisons are loading; no result is inferred while evidence is unavailable.";
@@ -838,24 +836,14 @@
           >
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
-            ><${Badge} color="gray">Iteration 2 implementation history<//
-            ><${Badge}
-              color=${iteration3?.status === "COMPLETE" ? "green" : "orange"}
-              >Iteration 3 ${iteration3StatusLabel}<//
-            ><${Badge} color="orange">devel merge gate unchanged<//
-            ><${Badge} color="teal">Iteration 4 native repeat passed<//
-            ><${Badge} color="orange">Iteration 5 qualification pending<//
-            ><${Badge} color="blue"
-              >Historical source91f CI:
-              ${iteration5?.final_source_ci?.status || "Pending"}<//
             ><${Badge} color="teal"
-              >Iteration 8 ·
-              ${iteration8?.main_source?.current_head?.required_ci || "Loading"}
-              required CI<//
-            ><//
+              >Iteration 9 ·
+              ${iteration9 ? "all three required checks passed" : "Loading"}<//
+            ><${Badge} color="orange">devel merge gate unchanged<//
+            ><${Badge} color="gray">Iterations 2–8 retained below<//><//
           >
           <${Text} size="sm"
-            >${iteration8?.finding || iteration7?.finding || data?.iteration6?.finding || iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
+            >${iteration9?.finding || "Current source evidence is loading; no result is inferred while it is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -865,7 +853,8 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration8", "Iteration 8 current evidence"],
+              ["iteration9", "Iteration 9 current evidence"],
+              ["iteration8", "Iteration 8 snapshot · 0a9"],
               ["iteration7", "Iteration 7 snapshot · 5699"],
               ["iteration6", "Iteration 6 evidence · 663"],
               ["iteration5", "Iteration 5 history"],
@@ -884,14 +873,90 @@
             )}
           <//>
           <${Alert} color="orange" title="Current architecture evidence">
-            ${iteration8?.finding || iteration7?.finding || "Loading current source evidence…"}
+            ${iteration9?.finding || "Loading current source evidence…"}
+          <//>
+          <${Section}
+            id="iteration9"
+            title="Iteration 9: source 8a555, current checks, and measured follow-ups"
+          >
+            ${p("Source 8a555b2 passed all three required checks. This checkpoint adds a fresh native CI result, a manual packaged guest contract, a live accepted-run observer proof, and bounded import/selector measurements. It does not establish a whole-CI speedup or change the required gate.")}
+            <${Rows}
+              headers=${["Evidence", "Observed result", "Boundary"]}
+              rows=${[
+                [
+                  html`<${Anchor} href="required-ci-8a5-workflow.json"
+                    >Current required CI · 8a555<//
+                  >`,
+                  "All three required checks passed in 351s from workflow creation to last required result. The native TestRunner invocation had 59 fresh physical actions and 292 passing cases, with no failures, errors or skips.",
+                  "One workflow observation. The earlier 0a9 run had eight fresh Bridge actions and a 264s clock; 351s versus 264s is not a matched comparison or a whole-CI saving.",
+                ],
+                [
+                  html`<${Anchor} href="guest-session-contract.json"
+                    >Packaged guest contract · manual<//
+                  >`,
+                  "Both healthy guest targets pass; the Session target completes two real Shell turns with retained workspace state. A wrong-History identity control fails at the expected assertion; preflight, guest SPIFFE rejection and cleanup are verified.",
+                  "Both targets remain manual and outside required CI. They do not replace deployed VM, issuer, controller, PVC, App, Codex or executor-budget acceptance.",
+                ],
+                [
+                  html`<${Anchor} href="accepted-run-observer-live.json"
+                    >Accepted-run observer fault · live<//
+                  >`,
+                  "One real Run was accepted; after one actual log chunk the observer received injected INTERNAL. The same execution reached terminal status 0 / exit 23, with a fresh invocation lookup; the CLI returned exit 23.",
+                  html`No cancellation or second submission occurred. The tested
+                    CLI patch remains unshipped. See the${" "}
+                    <${Anchor} href="accepted-run-observer-live-helper.patch"
+                      >helper patch<//
+                    >.`,
+                ],
+                [
+                  html`<${Anchor} href="python-bytecode-collection-screen.json"
+                    >Python bytecode collection screen<//
+                  >`,
+                  "Across the same 24 collected cases (zero test bodies), collection reduced mean import self-time by 4.494s.",
+                  "Cold candidate B1 added 3,455 PyCompile actions, 4,202.992 CPU seconds and 83.444s Bazel elapsed versus A1. A warm full-target probe remains separate; this screen does not justify adoption.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="historical-app-cut-four-pair-selector.json"
+                    >Historical App-cut selectors<//
+                  >`,
+                  "All 30 pinned source pairs pass local tree, patch, delta and full test-function AST audits, including decorators. The #15858 App-cut selector pair completed: 119 → 107 affected targets and 50 → 38 runnable tests, retaining both Runtime-owning App suites.",
+                  "Five App-cut selector pairs are complete. The four additional pairs retain identical runnable test sets (29 / 180 / 285 / 57) in both arms. This is not 30 full architecture graph runs or timing qualification. The older #15687 / d717 selector result remains separately recorded below.",
+                ],
+                [
+                  html`<${Anchor} href="setup-attribution.json"
+                    >Pre-test setup attribution<//
+                  >`,
+                  "The earlier 0a9 native profile had 93.111s before its first physical Bridge action; measured APT spans cover 5.747s and its exact required-CI log has no Debian 404s.",
+                  "This branch changes the CI driver, deliberately triggering a full-repository sweep; the 93s interval is not ordinary backend selected-graph setup. The separate manual 8a555 guest build logged 45 live-mirror package 404s and 22 snapshot metadata misses. No attributable delay is established; the remaining combined analysis/build interval is unclassified.",
+                ],
+              ]}
+            />
+            ${p("Next: compare full eight-shard Bridge bodies with and without bytecode under warm remote caching while retaining the cold compile cost; compare read-only guest artifact mounts with eager copies under identical contracts and cache/platform; use these isolated selector results to qualify full-graph shadows, three busy windows and a four-PR burst before any gate promotion.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor} href="required-ci-8a5-workflow.json"
+                >8a555 required-CI record<//
+              >
+              <${Anchor} href="accepted-run-observer-live.json"
+                >Live observer evidence<//
+              >
+              <${Anchor} href="python-bytecode-collection-screen.json"
+                >Bytecode screen<//
+              >
+              <${Anchor} href="historical-app-cut-pair-deltas.jsonl"
+                >Historical pair deltas<//
+              >
+              <${Anchor} href="historical-app-cut-pair-asts.jsonl"
+                >Historical AST audit<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration8"
-            title="Iteration 8: current checks, import ownership, and the next measured candidate"
+            title="Iteration 8 historical snapshot: 0a9 checks, import ownership, and the Bridge candidate"
           >
             <${Title} order=${3}>Source and required-check state<//>
-            ${p("This supplement records the earlier a16af required-CI milestone, the independent ASGI ownership change, and the newer 8-shard Bridge candidate separately. The 0a9acbf source now passes all three required checks. Existing report windows and rates are retained below; the current devel test-selection policy has not changed.")}
+            ${p("This historical supplement records the earlier a16af required-CI milestone, the independent ASGI ownership change, and the 0a9 8-shard Bridge candidate separately. Source 8a555 is the current checked source above. Existing report windows and rates are retained below; the current devel test-selection policy has not changed.")}
             <${Rows}
               headers=${["Evidence", "Observed result", "Boundary"]}
               rows=${[
@@ -910,7 +975,7 @@
                   "Different command, cache and workload from the main PR; workflow clocks are not a matched speed comparison.",
                 ],
                 [
-                  "Current Bridge8 source head",
+                  "Iteration 8 Bridge8 source head · 0a9",
                   iteration8
                     ? html`<${Anchor}
                           href=${`${repo}/commit/${iteration8.main_source.current_head.commit}`}

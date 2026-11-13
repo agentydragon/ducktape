@@ -78576,6 +78576,51 @@
         "artifact": "../agentplane-test-architecture/required-ci-0a9-workflow.json",
         "limit": "All other test results were cached. Prior a16af workflow had 65 fresh actions and a different last target, so 356s versus 264s is not a causal saving."
       }
+    },
+    "iteration9": {
+      "observed_at_utc": "2026-11-13T18:39:50.518998+00:00",
+      "source_head": "8a555b21141fded2166fcc17cd14096187e22842",
+      "source_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+      "tested_merge": "c8d36b745f7f44d9a53de44f851ac3e7b3eb8160",
+      "required_ci": "SUCCESS; all three required checks passed",
+      "workflow_creation_to_last_required_seconds": 351.0,
+      "native_test_invocation": "6b19539f-0618-549f-9a48-dc7041e9082c",
+      "fresh_physical_actions": 59,
+      "fresh_junit": {
+        "tests": 292,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "finding": "Source8a555b2 passes all three required checks. The manual packaged Claude contract completes two real Shell turns with retained workspace state and a valid wrong-History identity control. A real BuildBuddy log-observer fault preserves one accepted run and its exit23. Bytecode collection improves imports but its cold compilation cost blocks adoption from that screen. Whole-PR speed qualification remains open.",
+      "artifacts": {
+        "guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
+        "accepted-run-observer-live.json": "6e7fdb05669548081c50495127d7ecb36dbf142a1e78745c8208a58972ed6f0f",
+        "accepted-run-observer-live-helper.patch": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
+        "python-bytecode-collection-screen.json": "6bc254fc641ea37f081510b36bad745260796ca77b124989403224b56f4138da",
+        "required-ci-8a5-workflow.json": "c7b1bedc52c6401ae830a9337726d746a75f7a060a344789d7bd18f66d2113f8",
+        "historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
+        "historical-app-cut-pair-deltas.jsonl": "79a184682caa8c3b9e90853ff80e237bfaee1507e1779df74c9af515ce81caf8",
+        "historical-app-cut-pair-asts.jsonl": "236d894ac0b8b875bbc4c2dae46abf30cc0109d82df314ab603db0856f4a4206",
+        "setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
+        "historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7"
+      },
+      "guest_contract": "Two healthy NEW actions pass. The final wrong-URI control has one NEW expected assertion failure, no fixture error or skip; real preflight, guest SPIFFE rejection, and cleanup are verified. Both targets remain manual.",
+      "observer": "One real Run, one actual log chunk then injected INTERNAL, no cancellation or second submission, same-ID WaitExecution terminal status0/exit23, fresh invocation lookup and CLI exit23. Tested binary/source patch remain unshipped.",
+      "bytecode": "Same24 collected cases across A/B/B/A; zero bodies. Candidate loads1959pyc files and reduces mean import self time4.494s, but coldB1 adds3455NEWPyCompile actions/4202.992CPU seconds and83.444s Bazel elapsed versusA1. Warm full-target probe is separate.",
+      "historical": "All30 pinned App-cut source pairs pass local tree/patch/delta/AST audits. The earlier#15858 selector pair removed12unrelated App tests. Four additional selector-only pairs completed with identical runnable test sets (29/180/285/57); they preserve the Runtime owners wherever affected. These are5App-cut selector pairs, not30full architecture timing/coverage pairs.",
+      "next": [
+        "Measure full8-shard Bridge bodies with and without bytecode under normal warm remote caching; retain cold compile cost separately.",
+        "Measure direct read-only guest artifact mounts against eager copies, with identical contracts, cache/platform and cleanup.",
+        "Complete historical selectors then qualified full-graph shadows, three busy windows and four-PR burst before gate promotion."
+      ],
+      "limits": [
+        "Prior0a9 CI had8fresh Bridge actions;8a5has59fresh actions.351s versus264s is not a matched performance comparison.",
+        "Current required gate and deployed VM/Firecracker/issuer/controller/PVC/App/Codex/executor-budget acceptance remain.",
+        "Existing reliability population, recurrence windows and rates are retained; these experiments do not refresh them."
+      ],
+      "setup": "The0a9 native profile has93.111s before the first physical Bridge action. APT spans cover5.747s and its exact log has no Debian404s; the remaining combined analysis/build gap is unclassified. The separate manual8a5 run has45live-mirror package404s plus22snapshot metadata misses, with no attributable delay established.",
+      "historical_observed_at_utc": "2026-11-13T18:08:10.196892Z"
     }
   }
 }

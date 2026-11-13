@@ -1,0 +1,390 @@
+{
+  "schema_version": 1,
+  "screen": {
+    "outer_invocation_id": "b4d81124-143c-4781-93f2-98bdbd0a9ff4",
+    "outer_invocation_url": "https://app.buildbuddy.io/invocation/b4d81124-143c-4781-93f2-98bdbd0a9ff4",
+    "source_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+    "target": "//agentplane/app:test_bridge",
+    "order": ["A", "B", "B", "A"],
+    "test_mode": "pytest collect-only; no test bodies; --nocache_test_results; one run and shard",
+    "toolchain_observed": {
+      "bazel_version": "release 9.2.0",
+      "python_bytecode_tag": "cpython-314"
+    },
+    "case_set": {
+      "count": 24,
+      "names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+      "identical_all_arms": true
+    },
+    "variant": {
+      "file": "agentplane/app/BUILD.bazel",
+      "test_bridge_name_line": 179,
+      "candidate_setting_line": 180,
+      "candidate_setting": "pyc_collection = \"include_pyc\"",
+      "baseline_build_sha256": "f8f2b926c35502a7cfa32d2fb8ef1412866ad3ebaccb4b8ebe7ee3fec9946e6c",
+      "candidate_build_sha256": "f76463db183e7f01714ed94e8a5735585476a135ac2cfb944d289b6145a57d3c",
+      "diff_additions": ["+    pyc_collection = \"include_pyc\","]
+    },
+    "archive": {
+      "cas_uri": "/compressed-blobs/zstd/a8ba5fa075da0e4ae197fa4e51c5173c5d51896c0476cdfd923381b0b8aa5f92/2454105",
+      "sha256": "a8ba5fa075da0e4ae197fa4e51c5173c5d51896c0476cdfd923381b0b8aa5f92",
+      "size_bytes": 2454105,
+      "verified_against_cas_and_safely_extracted": true,
+      "members": 24,
+      "archive_manifest": "archive-manifest.json"
+    },
+    "execution_link_type_mapping": {
+      "1": "NEW",
+      "2": "MERGED",
+      "source": "https://raw.githubusercontent.com/buildbuddy-io/buildbuddy/master/proto/stored_invocation.proto"
+    },
+    "arms": [
+      {
+        "arm": 1,
+        "variant": "A",
+        "invocation_id": "f223e405-9846-4ffd-94aa-65a025d1ca40",
+        "invocation_url": "https://app.buildbuddy.io/invocation/f223e405-9846-4ffd-94aa-65a025d1ca40",
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "success": true,
+        "source_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+        "bazel_target": "//agentplane/app:test_bridge",
+        "invocation_duration_s": 36.664,
+        "bazel_profile": {
+          "elapsed_s": 36.664,
+          "critical_path_s": 25.57,
+          "action_count": 4304
+        },
+        "case_collection": {
+          "count": 24,
+          "names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+          "test_bodies_run": 0,
+          "reported_collection_duration": "24 tests collected in 0.23s",
+          "import_record_count": 2433,
+          "summed_import_self_s": 12.41179,
+          "max_import_cumulative_s": 6.940052,
+          "pyc_code_objects_loaded": 0
+        },
+        "native_execution": {
+          "physical_execution_rows": 1,
+          "unique_execution_ids": 1,
+          "stage_counts": {
+            "COMPLETED": 1
+          },
+          "link_type_counts": {
+            "NEW": 1
+          },
+          "action_mnemonic_counts": {
+            "TestRunner": 1
+          },
+          "test_runner": {
+            "link_type": "NEW",
+            "execution_s": 20.16644,
+            "queue_to_worker_start_s": 0.060721,
+            "input_fetch_s": 0.878335,
+            "cpu_s": 21.961689,
+            "peak_memory_bytes": 568418304,
+            "file_download_duration_s": 20.820626,
+            "file_download_size_bytes": null
+          },
+          "py_compile": {
+            "physical_rows": 0,
+            "unique_execution_ids": 0,
+            "distinct_target_labels": 0,
+            "link_type_counts": {},
+            "cpu_s": 0.0,
+            "summed_execution_wall_s_overlapping": 0,
+            "execution_envelope_s": null,
+            "summed_queue_to_worker_start_s_overlapping": 0,
+            "summed_input_fetch_s_overlapping": 0
+          }
+        },
+        "action_cache_query_page": {
+          "rows_returned": 100,
+          "has_more_pages": true,
+          "cache_types": {
+            "AC": 79,
+            "CAS": 21
+          },
+          "status_counts_raw": {
+            "{}": 100
+          }
+        },
+        "test_artifact": {
+          "status": "PASSED",
+          "run_count": 1,
+          "attempt_count": 1,
+          "shard_count": 1,
+          "test_runner_duration_s": 20.166
+        }
+      },
+      {
+        "arm": 2,
+        "variant": "B",
+        "invocation_id": "f339ee22-cc47-46b6-bbd3-590c01d69720",
+        "invocation_url": "https://app.buildbuddy.io/invocation/f339ee22-cc47-46b6-bbd3-590c01d69720",
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "success": true,
+        "source_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+        "bazel_target": "//agentplane/app:test_bridge",
+        "invocation_duration_s": 120.108,
+        "bazel_profile": {
+          "elapsed_s": 120.108,
+          "critical_path_s": 34.53,
+          "action_count": 3464
+        },
+        "case_collection": {
+          "count": 24,
+          "names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+          "test_bodies_run": 0,
+          "reported_collection_duration": "24 tests collected in 0.18s",
+          "import_record_count": 2433,
+          "summed_import_self_s": 6.185533,
+          "max_import_cumulative_s": 3.242136,
+          "pyc_code_objects_loaded": 1959
+        },
+        "native_execution": {
+          "physical_execution_rows": 3456,
+          "unique_execution_ids": 3456,
+          "stage_counts": {
+            "COMPLETED": 3456
+          },
+          "link_type_counts": {
+            "NEW": 3456
+          },
+          "action_mnemonic_counts": {
+            "PyCompile": 3455,
+            "TestRunner": 1
+          },
+          "test_runner": {
+            "link_type": "NEW",
+            "execution_s": 12.983445,
+            "queue_to_worker_start_s": 0.063472,
+            "input_fetch_s": 0.772323,
+            "cpu_s": 15.314145,
+            "peak_memory_bytes": 551575552,
+            "file_download_duration_s": 13.250962,
+            "file_download_size_bytes": 65311862
+          },
+          "py_compile": {
+            "physical_rows": 3455,
+            "unique_execution_ids": 3455,
+            "distinct_target_labels": 165,
+            "link_type_counts": {
+              "NEW": 3455
+            },
+            "cpu_s": 4202.991766,
+            "summed_execution_wall_s_overlapping": 6719.940316,
+            "execution_envelope_s": 100.301292,
+            "summed_queue_to_worker_start_s_overlapping": 287.566167,
+            "summed_input_fetch_s_overlapping": 543.361758
+          }
+        },
+        "action_cache_query_page": {
+          "rows_returned": 100,
+          "has_more_pages": true,
+          "cache_types": {
+            "AC": 100
+          },
+          "status_counts_raw": {
+            "{\"code\":5}": 100
+          }
+        },
+        "test_artifact": {
+          "status": "PASSED",
+          "run_count": 1,
+          "attempt_count": 1,
+          "shard_count": 1,
+          "test_runner_duration_s": 12.983
+        }
+      },
+      {
+        "arm": 3,
+        "variant": "B",
+        "invocation_id": "18855834-2e85-4802-a9e3-875f75a5cfac",
+        "invocation_url": "https://app.buildbuddy.io/invocation/18855834-2e85-4802-a9e3-875f75a5cfac",
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "success": true,
+        "source_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+        "bazel_target": "//agentplane/app:test_bridge",
+        "invocation_duration_s": 15.038,
+        "bazel_profile": {
+          "elapsed_s": 15.038,
+          "critical_path_s": 13.77,
+          "action_count": 2
+        },
+        "case_collection": {
+          "count": 24,
+          "names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+          "test_bodies_run": 0,
+          "reported_collection_duration": "24 tests collected in 0.22s",
+          "import_record_count": 2433,
+          "summed_import_self_s": 6.321423,
+          "max_import_cumulative_s": 3.181904,
+          "pyc_code_objects_loaded": 1959
+        },
+        "native_execution": {
+          "physical_execution_rows": 1,
+          "unique_execution_ids": 1,
+          "stage_counts": {
+            "COMPLETED": 1
+          },
+          "link_type_counts": {
+            "NEW": 1
+          },
+          "action_mnemonic_counts": {
+            "TestRunner": 1
+          },
+          "test_runner": {
+            "link_type": "NEW",
+            "execution_s": 12.854198,
+            "queue_to_worker_start_s": 0.058981,
+            "input_fetch_s": 0.360881,
+            "cpu_s": 16.159605,
+            "peak_memory_bytes": 549253120,
+            "file_download_duration_s": 12.929198,
+            "file_download_size_bytes": null
+          },
+          "py_compile": {
+            "physical_rows": 0,
+            "unique_execution_ids": 0,
+            "distinct_target_labels": 0,
+            "link_type_counts": {},
+            "cpu_s": 0.0,
+            "summed_execution_wall_s_overlapping": 0,
+            "execution_envelope_s": null,
+            "summed_queue_to_worker_start_s_overlapping": 0,
+            "summed_input_fetch_s_overlapping": 0
+          }
+        },
+        "action_cache_query_page": {
+          "rows_returned": 3,
+          "has_more_pages": false,
+          "cache_types": {
+            "CAS": 3
+          },
+          "status_counts_raw": {
+            "{}": 3
+          }
+        },
+        "test_artifact": {
+          "status": "PASSED",
+          "run_count": 1,
+          "attempt_count": 1,
+          "shard_count": 1,
+          "test_runner_duration_s": 12.854
+        }
+      },
+      {
+        "arm": 4,
+        "variant": "A",
+        "invocation_id": "af65e5ec-9d19-4294-92d3-0a5ee41826a4",
+        "invocation_url": "https://app.buildbuddy.io/invocation/af65e5ec-9d19-4294-92d3-0a5ee41826a4",
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "success": true,
+        "source_commit": "a16af807fac240634e3b738ac0fff833180c1bba",
+        "bazel_target": "//agentplane/app:test_bridge",
+        "invocation_duration_s": 17.898,
+        "bazel_profile": {
+          "elapsed_s": 17.898,
+          "critical_path_s": 16.96,
+          "action_count": 5
+        },
+        "case_collection": {
+          "count": 24,
+          "names_sha256": "c7d1e42abdddda0ddc09995c80a2584e72e5b2d1f74cff32557a7a7fe99fffec",
+          "test_bodies_run": 0,
+          "reported_collection_duration": "24 tests collected in 0.17s",
+          "import_record_count": 2433,
+          "summed_import_self_s": 9.08363,
+          "max_import_cumulative_s": 4.929773,
+          "pyc_code_objects_loaded": 0
+        },
+        "native_execution": {
+          "physical_execution_rows": 1,
+          "unique_execution_ids": 1,
+          "stage_counts": {
+            "COMPLETED": 1
+          },
+          "link_type_counts": {
+            "NEW": 1
+          },
+          "action_mnemonic_counts": {
+            "TestRunner": 1
+          },
+          "test_runner": {
+            "link_type": "NEW",
+            "execution_s": 15.253729,
+            "queue_to_worker_start_s": 0.059675,
+            "input_fetch_s": 0.281551,
+            "cpu_s": 18.32617,
+            "peak_memory_bytes": 568532992,
+            "file_download_duration_s": 15.305068,
+            "file_download_size_bytes": null
+          },
+          "py_compile": {
+            "physical_rows": 0,
+            "unique_execution_ids": 0,
+            "distinct_target_labels": 0,
+            "link_type_counts": {},
+            "cpu_s": 0.0,
+            "summed_execution_wall_s_overlapping": 0,
+            "execution_envelope_s": null,
+            "summed_queue_to_worker_start_s_overlapping": 0,
+            "summed_input_fetch_s_overlapping": 0
+          }
+        },
+        "action_cache_query_page": {
+          "rows_returned": 3,
+          "has_more_pages": false,
+          "cache_types": {
+            "CAS": 3
+          },
+          "status_counts_raw": {
+            "{}": 3
+          }
+        },
+        "test_artifact": {
+          "status": "PASSED",
+          "run_count": 1,
+          "attempt_count": 1,
+          "shard_count": 1,
+          "test_runner_duration_s": 15.253
+        }
+      }
+    ],
+    "derived_screen_means": {
+      "interpretation": "descriptive mean of two A and two B collection-only arms; not a full CI causal estimate",
+      "A_summed_python_import_self_s": 10.74771,
+      "B_summed_python_import_self_s": 6.253478,
+      "import_self_s_delta_A_minus_B": 4.494232,
+      "import_self_percent_reduction": 41.82,
+      "A_test_runner_execution_s": 17.710085,
+      "B_test_runner_execution_s": 12.918821,
+      "test_runner_execution_s_delta_A_minus_B": 4.791263,
+      "A_test_runner_cpu_s": 20.143929,
+      "B_test_runner_cpu_s": 15.736875,
+      "test_runner_cpu_s_delta_A_minus_B": 4.407054,
+      "cold_B1_minus_A1_bazel_elapsed_s": 83.444,
+      "cold_B1_minus_A1_critical_path_s": 8.96,
+      "cold_B1_py_compile_cpu_core_minutes": 70.05,
+      "warm_B2_minus_A2_test_runner_s": -2.399531
+    },
+    "prior_harness_failure": {
+      "outer_invocation_id": "851b7ab9-4ea3-447d-b31f-01450ebed0ca",
+      "outer_invocation_url": "https://app.buildbuddy.io/invocation/851b7ab9-4ea3-447d-b31f-01450ebed0ca",
+      "baseline_native_invocation_id": "6c0ea644-7edc-42c5-8251-1969d0231b90",
+      "status": "harness-failure; excluded from ABBA",
+      "cause": "parser read Bazel command output instead of declared test.log; no B candidate arm ran",
+      "actual_collected_case_count": 24,
+      "test_bodies_run": 0,
+      "diagnosis": "../attempt1/parser-diagnosis.json"
+    },
+    "limits": [
+      "This is a collection-only target screen; no Bridge test bodies or fixture/service work ran.",
+      "B1 incurred the cold pyc action wave; later B2/A2 ran with a warm Bazel output base (the native profiles share one output-base path and the later action counts were 2 and 5).",
+      "PyCompile CPU, queue, input-fetch, and summed action execution-wall values overlap across parallel actions and must not be added as invocation wall time.",
+      "The action-cache API responses are partial pages when next_page_token is present; recorded cache status counts are raw page values, not a full action-cache census.",
+      "No result establishes a full CI speedup, ongoing remote-cache hit rate, test-body behavior, or a routine adoption case."
+    ]
+  }
+}

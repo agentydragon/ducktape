@@ -1,25 +1,25 @@
 {
   "source_devel_commit": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
-  "audited_at_utc": "2026-11-13T15:58:33Z",
+  "audited_at_utc": "2026-11-13T18:39:50.518998+00:00",
   "published_at_utc": null,
-  "scope": "Iteration8: one-branch architecture plan, current required-CI evidence, ASGI ownership/profile evidence, Bridge shard-count candidate, completed historical App selector screen and outer BuildBuddy observer repair. Gate and frequency unchanged.",
-  "report_sha256": "b825863c0eb2652f570c3f5c0d536942e55007b25c5ecffcb23216b4d035b066",
-  "evidence_sha256": "90be76e1431b342b1adb481db90bb4447cb655318bbe74d800633deecf8b05e2",
-  "previous_gh_pages_commit": "ef13de63ecb4bd2eed29eeb84e6a513901a80c7e",
+  "scope": "Iteration9: packaged guest Session contract, current required CI, live accepted-run observer proof and bounded bytecode/selector/setup evidence. Required gate and test frequency unchanged.",
+  "report_sha256": "dd74b3733e4aa8c3db174a8984f294029c5956a76d508bdf6ad141bfcecb06bb",
+  "evidence_sha256": "86ac70aded64941f27e131ed3df0bbb6b6200e1c132e7a30d3aa66c6542fea4c",
+  "previous_gh_pages_commit": "c3898c42c0121fa2ebcc4b931170e0dd66f7e995",
   "pilot_branch": "agent/test-architecture-pivot",
-  "pilot_head_commit": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+  "pilot_head_commit": "8a555b21141fded2166fcc17cd14096187e22842",
   "pilot_base_commit": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
   "visual_validation": "visual-validation.json",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-  "attribution": "Source 0a9 passed all three required checks. Eight fresh Bridge actions covered 24 passing cases while other test results were cached; the earlier a16 workflow had 65 fresh actions and a different last target. The 4/8/8/4 target-only Bridge probe supports a scheduling candidate on the architecture branch, with higher aggregate CPU and requested capacity; no complete-CI saving or devel policy change is established. Historical replay and adoption qualification remain open.",
+  "attribution": "All three required source8a checks passed in351s with59fresh actions/292passing cases. This is a single observation with different cache exposure from0a9; no matched whole-CI saving is established. Manual guest contracts and live observer proof have explicit coverage/shipping limits. Qualification remains open.",
   "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
   "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
   "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-  "ci_synthetic_merge_commit": "d723d23c7eada30dd8f5853547a5e5f66d9b2eb5",
+  "ci_synthetic_merge_commit": "c8d36b745f7f44d9a53de44f851ac3e7b3eb8160",
   "ci_synthetic_merge_base_commit": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
-  "implementation_head_commit": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+  "implementation_head_commit": "8a555b21141fded2166fcc17cd14096187e22842",
   "previous_published_at_utc": null,
-  "prepared_at_utc": "2026-11-13T15:58:33Z",
+  "prepared_at_utc": "2026-11-13T18:39:50.518998+00:00",
   "publication_status": "Review snapshot; publication is tracked by its gh-pages PR.",
   "reproduction_artifact_sha256": {
     "selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2"
@@ -48,17 +48,28 @@
     "required-ci-a16-workflow.json": "8584a810536a43562cb1a94a427ce8ca7551e404d98ae79b8d82316ccc812f03",
     "required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
     "historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
-    "accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152"
+    "accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
+    "guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
+    "accepted-run-observer-live.json": "6e7fdb05669548081c50495127d7ecb36dbf142a1e78745c8208a58972ed6f0f",
+    "accepted-run-observer-live-helper.patch": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
+    "python-bytecode-collection-screen.json": "6bc254fc641ea37f081510b36bad745260796ca77b124989403224b56f4138da",
+    "required-ci-8a5-workflow.json": "c7b1bedc52c6401ae830a9337726d746a75f7a060a344789d7bd18f66d2113f8",
+    "historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
+    "historical-app-cut-pair-deltas.jsonl": "79a184682caa8c3b9e90853ff80e237bfaee1507e1779df74c9af515ce81caf8",
+    "historical-app-cut-pair-asts.jsonl": "236d894ac0b8b875bbc4c2dae46abf30cc0109d82df314ab603db0856f4a4206",
+    "setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
+    "iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
+    "historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
   "visual_validation_status": "See visual-validation.json for this snapshot's exact-byte browser checks and screenshot review.",
   "previous_snapshot_source": {
     "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
-    "pilot_head": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
-    "required_ci_synthetic_merge": "c8acb4008be54b34b1de5694145f546b156768a8",
-    "required_ci_workflow_id": 43445505282,
-    "required_ci_result": "SUCCESS; 318 seconds from workflow creation to last required result",
-    "visual_validation": "https://github.com/agentydragon/ducktape/blob/ef13de63ecb4bd2eed29eeb84e6a513901a80c7e/agentplane-test-architecture/visual-validation.json"
+    "pilot_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
+    "required_ci_synthetic_merge": "d723d23c7eada30dd8f5853547a5e5f66d9b2eb5",
+    "required_ci_workflow_id": 43457244360,
+    "required_ci_result": "SUCCESS;264s;8freshBridgeactions/24cases;otherresultscached",
+    "visual_validation": "https://github.com/agentydragon/ducktape/blob/c3898c42c0121fa2ebcc4b931170e0dd66f7e995/agentplane-test-architecture/visual-validation.json"
   },
   "iteration7": {
     "source_milestone_commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
@@ -69,7 +80,7 @@
     "historical_pairs_remaining": 29,
     "visual_validation": "See visual-validation.json; four device/theme cases, current evidence and retained controls."
   },
-  "root_navigation_sha256": "be608424e0587f66583f2f5b22e0fee187c8780b9bca0bb9bbd056cae14e60dd",
+  "root_navigation_sha256": "bb30bf5cd7c9d8c4aafa8cc9d997bc1a49a9763a7ba85ee0c4f8773de60b6519",
   "iteration8": {
     "source_head_commit": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
     "devel_base_commit": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
@@ -82,5 +93,25 @@
     "junit_failures_errors_skips": 0,
     "fresh_k3s_actions": 0,
     "limits": "Other test results were cached. The earlier a16 workflow had 65 fresh actions and a different last target; no causal whole-CI saving is claimed. Historical 30-pair selector and adoption qualification remain open."
+  },
+  "iteration9": {
+    "source_head": "8a555b21141fded2166fcc17cd14096187e22842",
+    "source_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "tested_merge": "c8d36b745f7f44d9a53de44f851ac3e7b3eb8160",
+    "required_ci": "SUCCESS; all three required checks passed",
+    "workflow_creation_to_last_required_seconds": 351.0,
+    "native_test_invocation": "6b19539f-0618-549f-9a48-dc7041e9082c",
+    "fresh_physical_actions": 59,
+    "fresh_junit": {
+      "tests": 292,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "limits": [
+      "Prior0a9 CI had8fresh Bridge actions;8a5has59fresh actions.351s versus264s is not a matched performance comparison.",
+      "Current required gate and deployed VM/Firecracker/issuer/controller/PVC/App/Codex/executor-budget acceptance remain.",
+      "Existing reliability population, recurrence windows and rates are retained; these experiments do not refresh them."
+    ]
   }
 }

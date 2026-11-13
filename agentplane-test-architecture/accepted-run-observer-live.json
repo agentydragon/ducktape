@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "purpose": "Allowlisted evidence for one live BuildBuddy CLI log-observer failure probe, plus the exact helper/build artifacts.",
+  "result": "passed",
+  "source": {
+    "repository": "https://github.com/buildbuddy-io/buildbuddy",
+    "branch": "master",
+    "commit": "f3508d33d1fbe0482d05ef9b0f0b9bbd7dac4962",
+    "dirty_or_untracked_source_sync": false,
+    "live_invocation_command_source": "inline generated nonce script; no scratch file transferred",
+    "hosted_build_mirror_base_commit": "4db6dd74f9a43bab0d0bf3ef7aceb42a05708438"
+  },
+  "patches": {
+    "observer_recovery": {
+      "sha256": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
+      "status": "tested source change, still unshipped and unpinned",
+      "scope": "BuildBuddy CLI recovery after an accepted Run loses its log observer"
+    },
+    "helper_only_reproducible_patch": {
+      "file": "accepted-run-observer-live-helper.patch",
+      "sha256": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
+      "files": [
+        "cli/remotebazel/liveprobe/BUILD",
+        "cli/remotebazel/liveprobe/liveprobe.go",
+        "cli/remotebazel/liveprobe/liveprobe_test.go"
+      ],
+      "scope": "Adds only the isolated loopback gRPC probe helper and its focused unit test."
+    }
+  },
+  "artifacts": {
+    "helper_source_sha256": {
+      "cli/remotebazel/liveprobe/BUILD": "68ad8ba35f23f84e48bcf65f635f7d16d31e6803fe5fb161d735084428f0e620",
+      "cli/remotebazel/liveprobe/liveprobe.go": "356447cce5a5ff8dfab693b41ec0287589837023d752456eb0c6e5cc8da6d3e5",
+      "cli/remotebazel/liveprobe/liveprobe_test.go": "0a0aced70758a4794a27b3f2848770c0166c530215580e63d7d96f13753fb173"
+    },
+    "helper_binary": {
+      "sha256": "df938d04f019c980d01b1ff60b52c783a3cc59d854db46686689e1ee93aa9ed6",
+      "target": "//cli/remotebazel/liveprobe:liveprobe"
+    },
+    "patched_cli_binary": {
+      "sha256": "af428e8979dfc9f57a942bc351437b576cbd521e223a2068d10182f7091a27d3",
+      "target": "//cli/cmd/bb:bb",
+      "format": "Linux amd64 static ELF",
+      "bazel_version": "9.3.1",
+      "go_toolchain": "go1.27.3",
+      "cli_version": "unknown"
+    }
+  },
+  "rbe_validation": {
+    "observer_recovery_regression": {
+      "target": "//cli/remotebazel:remotebazel_test",
+      "command": "bbr test --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1 --jobs=4 //cli/remotebazel:remotebazel_test",
+      "hosted_runner_invocation_id": "26bb0bee-6e6e-4001-959b-9b6427ebff36",
+      "bazel_child_invocation_id": "2e989892-aaf2-4f68-af7d-3f8da91d8ffd",
+      "result": "passed",
+      "junit": {
+        "cases": 38,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "prepatch_negative_control": {
+      "target": "//cli/remotebazel:remotebazel_test",
+      "hosted_runner_invocation_id": "2faa0cc6-e62e-4a90-bab4-24b800be3e3b",
+      "bazel_child_invocation_id": "c2260576-57a8-44e3-8b93-0354d4f5d44c",
+      "result": "expected failure after restoring the pinned original observer implementation",
+      "failure": "the one recovery test received INTERNAL/RST_STREAM INTERNAL_ERROR while expecting same-execution reconciliation"
+    },
+    "helper_test": {
+      "target": "//cli/remotebazel/liveprobe:liveprobe_test",
+      "command": "bbr test //cli/remotebazel/liveprobe:liveprobe_test --nocache_test_results --flaky_test_attempts=1 --runs_per_test=1",
+      "hosted_runner_invocation_id": "66619f22-d4e3-45ac-b993-6856979a472c",
+      "bazel_child_invocation_id": "afdc3048-e63e-4574-976b-3fba57090216",
+      "result": "passed",
+      "bazel_reported_test_targets": 1
+    },
+    "helper_build": {
+      "target": "//cli/remotebazel/liveprobe:liveprobe",
+      "command": "bbr build //cli/remotebazel/liveprobe:liveprobe",
+      "hosted_runner_invocation_id": "4bbd35b7-9af6-4b76-9b23-055b6513b4ce",
+      "bazel_child_invocation_id": "3eac54ab-7485-4402-9946-a9ce6a09d1ee",
+      "result": "passed"
+    },
+    "patched_cli_static_build": {
+      "target": "//cli/cmd/bb:bb",
+      "command": "bbr build //cli/cmd/bb --stamp --compilation_mode=opt --strip=always --config=static --remote_build_event_upload=all --remote_download_outputs=toplevel",
+      "hosted_runner_invocation_id": "8d74b936-db4a-4f5a-be94-db23a833af65",
+      "bazel_child_invocation_id": "eac1abd1-e5cd-476c-9475-ac63394cd4fa",
+      "result": "built",
+      "binary_sha256": "af428e8979dfc9f57a942bc351437b576cbd521e223a2068d10182f7091a27d3",
+      "smoke": {
+        "version_cli": "unknown",
+        "help_exit_code": 0
+      }
+    },
+    "earlier_compile_failure": {
+      "hosted_runner_invocation_id": "d219dabd-790c-4ce7-9bd2-c1366de7bd6c",
+      "bazel_child_invocation_id": "828cce83-9408-48d2-a38a-6bf612b91dc4",
+      "result": "compile failure before test execution",
+      "cause": "test fixture used *int32 for a CLI field typed *int; corrected before the passing run"
+    }
+  },
+  "live_probe": {
+    "started_at": "2026-11-13T17:22:34.18869797Z",
+    "finished_at": "2026-11-13T17:22:40.721580486Z",
+    "helper_sha256": "df938d04f019c980d01b1ff60b52c783a3cc59d854db46686689e1ee93aa9ed6",
+    "cli_sha256": "af428e8979dfc9f57a942bc351437b576cbd521e223a2068d10182f7091a27d3",
+    "endpoint": "grpcs://remote.buildbuddy.io",
+    "script_nonce_sha256": "6d6737ca5018efd5fa945f4c6c85d2dacd387444c0fe5083d32863781c6305df",
+    "script_behavior": "prints a fresh random nonce, then exits 23",
+    "log_observer_fault": {
+      "get_event_log_streams": 1,
+      "upstream_chunks_received": 1,
+      "chunks_forwarded_to_cli": 1,
+      "injected_status": "INTERNAL"
+    },
+    "run": {
+      "attempts": 1,
+      "forwarded_upstream": 1,
+      "upstream_successes": 1,
+      "accepted_invocation_id": "0721f23d-ddb3-48cf-ae48-e27b2b68b5b0",
+      "observed_client_retries": 0,
+      "cancel_attempts": 0,
+      "cancel_forwards": 0,
+      "client_retry_disabled": false,
+      "disable_retry_flag_passed": false
+    },
+    "reconciliation": {
+      "get_execution_lookups": 1,
+      "get_execution_lookup_invocation_id": "0721f23d-ddb3-48cf-ae48-e27b2b68b5b0",
+      "wait_execution_streams": 1,
+      "wait_execution_name": "bb-snapshot/uploads/0cb0831c-5c9b-4fba-a2d8-d9cc8233aae1/blobs/blake3/365aed3ce1b87827548c3dd2239e3985be7c8518d18430b71aaed8e752e50424/149",
+      "terminal_status_code": 0,
+      "remote_exit_code": 23,
+      "get_invocation_after_terminal": 1,
+      "get_invocation_before_terminal": 0,
+      "cli_invocation_id_matches_accepted_id": true,
+      "cli_process_exit_code": 23
+    },
+    "independent_reapi_record": {
+      "source_record": "accepted-execution.json",
+      "execution_id": "bb-snapshot/uploads/0cb0831c-5c9b-4fba-a2d8-d9cc8233aae1/blobs/blake3/365aed3ce1b87827548c3dd2239e3985be7c8518d18430b71aaed8e752e50424/149",
+      "matches_wait_execution_name": true,
+      "stage": "COMPLETED",
+      "status_code": 0,
+      "exit_code": 23
+    },
+    "independent_invocation_record": {
+      "source_record": "accepted-invocation-status.json",
+      "invocation_id": "0721f23d-ddb3-48cf-ae48-e27b2b68b5b0",
+      "status": "COMPLETE_INVOCATION_STATUS",
+      "bazel_exit_code": "Failed",
+      "interpretation": "Expected: the controlled remote command exits 23; this is not a protocol-reconciliation failure."
+    },
+    "contract_result": "passed"
+  },
+  "source_records_inspected": [
+    "result.json",
+    "launch-receipt.json",
+    "accepted-invocation-status.json",
+    "accepted-execution.json"
+  ],
+  "limits": [
+    "This is one live invocation and does not estimate a failure rate or establish reliability across workloads.",
+    "The controlled remote command intentionally exits 23 to verify that terminal status and the remote exit code survive observer loss.",
+    "The 38-case RBE test uses scripted RPC clients; the helper unit test validates local routing and contract guards. The live probe supplies one real-service end-to-end observation.",
+    "The observer-recovery source patch is not shipped, installed, pinned, or part of Ducktape's release pipeline. The static binary's embedded CLI version remains unknown.",
+    "The one-shot harness forwards the caller's gRPC metadata but neither records nor emits credentials, environment variables, request bodies, or log contents."
+  ]
+}
