@@ -156,6 +156,56 @@ async def test_app_loads_and_draws(playwright_driver: Playwright, origin: str) -
         assert failed_requests == []
 
 
+async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        geometry = await page.evaluate(
+            """async () => {
+                const [resize, crop] = await Promise.all([
+                    import('./editor/packages/excalidraw/element/resizeElements.js'),
+                    import('./editor/packages/excalidraw/element/cropElement.js'),
+                ]);
+                const original = {
+                    id: 'resize-smoke', type: 'rectangle', x: 10, y: 20,
+                    width: 100, height: 50, angle: 0, version: 1,
+                    versionNonce: 1, updated: 0, boundElements: null,
+                    groupIds: [], isDeleted: false,
+                };
+                const latest = { ...original };
+                const elements = new Map([[original.id, latest]]);
+                const originals = new Map([[original.id, original]]);
+                resize.resizeSingleElement(150, 75, latest, original, elements, originals, 'se');
+                const resized = [latest.x, latest.y, latest.width, latest.height];
+                Object.assign(latest, original);
+                resize.resizeSingleElement(150, 75, latest, original, elements, originals, 'se', {
+                    shouldResizeFromCenter: true});
+
+                const image = {
+                    id: 'crop-smoke', type: 'image', x: 0, y: 0,
+                    width: 100, height: 50, angle: 0, scale: [1, 1], crop: null,
+                };
+                const cropped = crop.cropElement(image, 'e', 200, 100, 75, 25);
+                return {
+                    resized,
+                    centered: [latest.x, latest.y, latest.width, latest.height],
+                    cropped: [cropped.x, cropped.y, cropped.width, cropped.height,
+                        cropped.crop.x, cropped.crop.y, cropped.crop.width, cropped.crop.height],
+                    uncropped: crop.getUncroppedWidthAndHeight(cropped),
+                };
+            }"""
+        )
+        assert geometry == {
+            "resized": [10, 20, 150, 75],
+            "centered": [-15, 7.5, 150, 75],
+            "cropped": [0, 0, 75, 50, 0, 0, 150, 100],
+            "uncropped": {"width": 100, "height": 50},
+        }
+
+
 async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None

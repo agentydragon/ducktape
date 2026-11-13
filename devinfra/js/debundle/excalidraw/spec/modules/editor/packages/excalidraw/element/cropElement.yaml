@@ -1,0 +1,60 @@
+# Original home: packages/excalidraw/element/cropElement.ts
+source_matches:
+  - match: |
+      var selected = (
+        element,
+        transformHandle,
+        naturalWidth,
+        naturalHeight,
+        pointerX,
+        pointerY,
+        widthAspectRatio,
+      ) => {
+        STMT_LIST;
+        return EXPR,
+          {
+            x: EXPR,
+            y: EXPR,
+            width: EXPR,
+            height: EXPR,
+            crop: EXPR,
+          };
+      };
+    bindings:
+      - local: selected
+        name: cropElement
+
+  - match: |
+      var selected = (
+        stateAtCropStart,
+        transformHandle,
+        width,
+        height,
+        shouldMaintainAspectRatio,
+      ) => {
+        let [x1, y1, x2, y2] = EXPR(
+          stateAtCropStart,
+          stateAtCropStart.width,
+          stateAtCropStart.height,
+          !0,
+        ),
+          DECLARATORS;
+        STMT_LIST;
+        return EXPR;
+      };
+    bindings:
+      - local: selected
+        name: recomputeOrigin
+
+  - match: |
+      var selected = (element) => {
+        if (element.crop) {
+          let width = element.width / (element.crop.width / element.crop.naturalWidth),
+            height = element.height / (element.crop.height / element.crop.naturalHeight);
+          return { width, height };
+        }
+        return { width: element.width, height: element.height };
+      };
+    bindings:
+      - local: selected
+        name: getUncroppedWidthAndHeight
