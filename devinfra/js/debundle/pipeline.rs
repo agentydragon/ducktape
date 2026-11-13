@@ -1022,7 +1022,7 @@ fn canonical_generation_command(
         argv.extend(["--effect-conflicts-chunk".to_string(), chunk.clone()]);
     }
     for report in &options.full_reports {
-        argv.extend(["--full-report".to_string(), report.as_str().to_string()]);
+        argv.extend(["--full-report".to_string(), report.to_string()]);
     }
     for chunk in &options.full_report_chunks {
         argv.extend(["--full-report-chunk".to_string(), chunk.clone()]);

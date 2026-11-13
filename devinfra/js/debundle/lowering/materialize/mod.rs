@@ -6,6 +6,7 @@
 mod apply;
 mod outcome_sink;
 mod plan_builder;
+mod residual_atomic_report;
 
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
@@ -751,6 +752,7 @@ pub(super) fn finish_logical_chunk(
             effect_conflicts_jsonl: false,
             full_translation_validation: false,
             full_export_reentry: false,
+            full_residual_atomic_groups: false,
         };
         let (evaluation, _) = evaluate_chunk_candidate(
             report_context,
@@ -778,6 +780,9 @@ pub(super) fn finish_logical_chunk(
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
         full_translation_validation: full_reports
             .contains(&super::FullReportKind::TranslationValidation)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        full_residual_atomic_groups: full_reports
+            .contains(&super::FullReportKind::ResidualAtomicGroups)
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
     };
     let (evaluation, report_out_dir) = evaluate_chunk_candidate(
@@ -1345,6 +1350,7 @@ struct ChunkReportContext<'a> {
     effect_conflicts_jsonl: bool,
     full_translation_validation: bool,
     full_export_reentry: bool,
+    full_residual_atomic_groups: bool,
 }
 
 /// Exact counts over the canonical in-memory graph, with no node/edge table.
@@ -1379,6 +1385,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
         effect_conflicts_jsonl,
         graph_reports,
         full_export_reentry,
+        full_residual_atomic_groups,
         ..
     } = context;
     let report_out_dir = if preflight.is_rejected() {
@@ -1395,7 +1402,8 @@ fn evaluate_chunk_candidate<'a, 'b>(
         "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
     ensure!(
-        !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
+        !(full_translation_validation || full_export_reentry || full_residual_atomic_groups)
+            || report_out_dir.is_some(),
         "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
 
@@ -1477,6 +1485,7 @@ fn emit_reports_and_resolve_gate<'a>(
         graph_reports,
         policy,
         full_export_reentry,
+        full_residual_atomic_groups,
         ..
     } = context;
     let assignment_analysis = evaluation.assignment_analysis();
@@ -1487,6 +1496,14 @@ fn emit_reports_and_resolve_gate<'a>(
     // Gate, translation checks and candidate assessment are complete,
     // independently of whether this caller writes their diagnostic reports.
     if let Some(report_out_dir) = report_out_dir {
+        if full_residual_atomic_groups {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                output_layout::RESIDUAL_ATOMIC_GROUPS_REPORT,
+                &residual_atomic_report::build(assignment_analysis, ownership_subset, !rejected),
+            )?;
+        }
         let graph = assignment_analysis.inputs().dependency_graph();
         let mut edge_kinds = std::collections::BTreeMap::new();
         for edge in graph.iter_edges() {

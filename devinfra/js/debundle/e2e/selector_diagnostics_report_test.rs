@@ -99,7 +99,7 @@ fn keep_going_writes_machine_readable_selector_outcomes() {
         json!({
             "logical_module": "diagnostics/anon",
             "entity": {"anonymous_statement": 0},
-            "selector_kind": "anonymous_statements.source_match",
+            "selector_kind": "anonymous_statement",
         })
     );
 }
@@ -323,7 +323,7 @@ fn find_anon_outcome<'a>(outcomes: &'a [Value], preview_needle: &str) -> &'a Val
     outcomes
         .iter()
         .find(|record| {
-            record["placement"]["selector_kind"] == "anonymous_statements.source_match"
+            record["placement"]["selector_kind"] == "anonymous_statement"
                 && record["selector_preview"]
                     .as_str()
                     .is_some_and(|preview| preview.contains(preview_needle))

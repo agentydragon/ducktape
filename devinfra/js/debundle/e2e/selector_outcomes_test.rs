@@ -172,7 +172,7 @@ fn anonymous_statement_unique_only_by_elimination_warns() {
         json!({
             "logical_module": "anonymous/either",
             "entity": {"anonymous_statement": 0},
-            "selector_kind": "anonymous_statements.source_match",
+            "selector_kind": "anonymous_statement",
         }),
         "{either:#}"
     );

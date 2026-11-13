@@ -20,6 +20,7 @@ use crate::model::{
 /// abstracted. Top-level literals are always one object per site.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
+#[value(rename_all = "snake_case")]
 pub enum FunctionHeap {
     /// One abstract object per literal.
     Site,

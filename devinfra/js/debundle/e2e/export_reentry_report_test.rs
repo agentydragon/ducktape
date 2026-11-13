@@ -467,7 +467,7 @@ fn bounded_loader_evidence_keeps_complete_explicit_export() {
     }
     let full_path = |root: &std::path::Path| root.join(CHUNK_ID).join("export_reentry.full.json");
     assert!(!full_path(&default.report_root).exists());
-    let exported = run_fixture_with_args(opts(), &["--full-report", "export-reentry"]);
+    let exported = run_fixture_with_args(opts(), &["--full-report", "export_reentry"]);
     let summary: Value = read_json(&report_path(&exported.report_root, CHUNK_ID));
     assert_eq!(
         summary,
@@ -523,10 +523,10 @@ fn full_reentry_selection_preserves_errors_and_refuses_suppressed_reports() {
     let fixture =
         write_validate_fixture_spec(FixtureOpts::new("export const value = 7;\n", vec![]));
     for flags in [
-        vec!["--full-report", "export-reentry", "--dry-run"],
+        vec!["--full-report", "export_reentry", "--dry-run"],
         vec![
             "--full-report",
-            "export-reentry",
+            "export_reentry",
             "--full-report-chunk",
             "static/typo",
         ],
@@ -546,7 +546,7 @@ fn full_reentry_selection_preserves_errors_and_refuses_suppressed_reports() {
         invalid.spec_path.to_str().unwrap(),
         "--emit-on-rejection",
         "--full-report",
-        "export-reentry",
+        "export_reentry",
     ]);
     assert_eq!(result.status.code(), Some(1), "{result:?}");
     assert!(

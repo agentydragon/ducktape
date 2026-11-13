@@ -86,9 +86,18 @@ fn export_filter_changes_only_jsonl_sinks_and_keeps_staged_facts() {
 #[test]
 fn full_report_filter_changes_only_sinks_and_keeps_staged_facts() {
     assert_export_filter_changes_only_sinks(
-        &["--full-report", "translation-validation"],
+        &["--full-report", "translation_validation"],
         "--full-report-chunk",
         "translation_validation.full.jsonl",
+    );
+}
+
+#[test]
+fn residual_atomic_report_matches_staged_run_and_filters_chunks() {
+    assert_export_filter_changes_only_sinks(
+        &["--full-report", "residual_atomic_groups"],
+        "--full-report-chunk",
+        "residual_atomic_groups.json",
     );
 }
 
@@ -99,7 +108,7 @@ fn full_translation_report_matches_direct_and_staged_runs() {
         &[
             "--emit-on-rejection",
             "--full-report",
-            "translation-validation",
+            "translation_validation",
         ],
     );
 }
@@ -108,14 +117,14 @@ fn full_translation_report_matches_direct_and_staged_runs() {
 fn full_reentry_export_matches_staged_and_filters_only_sinks() {
     assert_staged_run_matches(
         split_with_pure_import(),
-        &["--full-report", "export-reentry"],
+        &["--full-report", "export_reentry"],
     );
     assert_staged_run_matches(
         rejected_split(),
-        &["--emit-on-rejection", "--full-report", "export-reentry"],
+        &["--emit-on-rejection", "--full-report", "export_reentry"],
     );
     assert_export_filter_changes_only_sinks(
-        &["--full-report", "export-reentry"],
+        &["--full-report", "export_reentry"],
         "--full-report-chunk",
         "export_reentry.full.json",
     );

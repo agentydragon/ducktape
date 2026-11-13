@@ -43,7 +43,7 @@ fn opts<'a>(source: &'a str, members: &[&'static str], families: Option<&str>) -
 #[test]
 fn named_families_stay_intact_and_overrides_are_listed() {
     let source = source("");
-    for families in ["all", "[Map]"] {
+    for families in ["all", "[map]"] {
         let fixture = run_fixture(opts(&source, &["install"], Some(families)));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
@@ -107,7 +107,7 @@ fn mapped_from_entries_proof_records_the_premise() {
 #[test]
 fn without_the_premise_or_naming_another_family_map_stays_unknown() {
     let source = source("");
-    for families in [None, Some("[Array]")] {
+    for families in [None, Some("[array]")] {
         expect_atomic_conflict_rejection(
             opts(&source, &["install"], families),
             &["values/native", "values/later"],
@@ -121,21 +121,21 @@ fn a_write_on_a_named_familys_exact_object_refutes_the_premise() {
     for (patch, families) in [
         (
             "function patch(value) { Map.prototype.extra = value; }\n",
-            "[Map]",
+            "[map]",
         ),
         (
             "function patch(value) { (Map.prototype.extra as any) = value; }\n",
-            "[Map]",
+            "[map]",
         ),
         (
             "function patch() { (Map.prototype.extra as any)++; }\n",
-            "[Map]",
+            "[map]",
         ),
-        ("function patch(value) { (Map as any) = value; }\n", "[Map]"),
+        ("function patch(value) { (Map as any) = value; }\n", "[map]"),
         ("function patch(value) { Map.groupBy = value; }\n", "all"),
         (
             "function patch(value) { globalThis.Map = value; }\n",
-            "[Map]",
+            "[map]",
         ),
     ] {
         let source = source(patch);

@@ -433,7 +433,7 @@ pub struct SelectedSourceUnitSource {
 /// `ndjson` emits one JSON value per line so streaming consumers
 /// (`jq -c`, downstream pipes) don't have to buffer.
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
-#[value(rename_all = "lowercase")]
+#[value(rename_all = "snake_case")]
 pub enum OutputFormat {
     Text,
     Json,

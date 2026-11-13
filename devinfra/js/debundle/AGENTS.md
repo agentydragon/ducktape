@@ -131,3 +131,11 @@ A sound scoped solution can be the lasting choice. Theorem: <docs/design.md>
   never hand-rolled segment splitting.
 - **Deviation** from STYLE.md (every field needs a reader): spec `note:` fields are a
   ratified exemption, since the rewriters drop `#` comments.
+
+## Enum names
+
+All Debundle-owned enum identifiers in specs, CLI values, and serialized
+reports use `snake_case`. Derive the spelling with `serde`, `strum`, or Clap
+rather than maintaining per-variant names or aliases. Human explanations and
+external JavaScript module specifiers may use their natural syntax; convert at
+the boundary. Update downstream consumers when changing enum names.

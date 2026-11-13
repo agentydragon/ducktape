@@ -294,10 +294,7 @@ fn expect_intrinsic_alias_outcome(opts: FixtureOpts<'_>, kind: &str, export: &st
     let outcomes = run_rejection_fixture(opts).selector_outcomes();
     let alias = find_outcome(&outcomes, kind, export);
     assert_eq!(alias["placement"]["logical_module"], "decorate_runtime");
-    assert_eq!(
-        alias["placement"]["selector_kind"],
-        "members.intrinsic_alias"
-    );
+    assert_eq!(alias["placement"]["selector_kind"], "intrinsic_alias");
 }
 
 /// **Fail-closed: no matching alias.** A property the trio never aliases

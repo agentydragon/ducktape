@@ -159,7 +159,7 @@ fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
     );
     let full = run_rejection_fixture_with_args(
         FixtureOpts::new(&source, modules),
-        &["--full-report", "translation-validation"],
+        &["--full-report", "translation_validation"],
         1,
     );
     assert_eq!(summary, full.translation_validation());
@@ -230,7 +230,7 @@ fn accepted_full_report_is_explicit_and_does_not_change_runtime() {
         FixtureOpts::new("export const value = 7;\nconsole.log(value);\n", vec![]),
         &[
             "--full-report",
-            "translation-validation",
+            "translation_validation",
             "--full-report-chunk",
             "static/app",
         ],
@@ -253,11 +253,15 @@ fn full_report_selection_errors_remain_failures() {
         write_validate_fixture_spec(FixtureOpts::new("export const value = 7;\n", vec![]));
     for (flags, diagnostic) in [
         (vec!["--full-report-chunk", "static/app"], "--full-report"),
-        (vec!["--full-report", "unknown"], "unknown full report"),
+        (vec!["--full-report", "unknown"], "invalid value"),
+        (
+            vec!["--full-report", "translation-validation"],
+            "invalid value",
+        ),
         (
             vec![
                 "--full-report",
-                "translation-validation",
+                "translation_validation",
                 "--full-report-chunk",
                 "static/typo",
             ],
@@ -266,14 +270,14 @@ fn full_report_selection_errors_remain_failures() {
         (
             vec![
                 "--full-report",
-                "translation-validation",
+                "translation_validation",
                 "--full-report-chunk",
                 "../app",
             ],
             "Invalid relative path",
         ),
         (
-            vec!["--full-report", "translation-validation", "--dry-run"],
+            vec!["--full-report", "translation_validation", "--dry-run"],
             "report policy suppresses output",
         ),
     ] {
@@ -300,7 +304,7 @@ fn invalid_spec_still_fails_with_reading_only_and_full_report_flags() {
         fixture.spec_path.to_str().unwrap(),
         "--emit-on-rejection",
         "--full-report",
-        "translation-validation",
+        "translation_validation",
     ]);
     assert_eq!(result.status.code(), Some(1), "{result:?}");
     assert!(
@@ -323,7 +327,7 @@ fn invocation_record_retains_full_report_sink_selection_without_claiming_executi
         "--spec",
         fixture.spec_path.to_str().unwrap(),
         "--full-report",
-        "translation-validation",
+        "translation_validation",
         "--full-report-chunk",
         "static/app",
     ]);
@@ -332,7 +336,7 @@ fn invocation_record_retains_full_report_sink_selection_without_claiming_executi
     assert_eq!(record["will_execute"], false);
     let argv = record["argv"].as_array().unwrap();
     for pair in [
-        ["--full-report", "translation-validation"],
+        ["--full-report", "translation_validation"],
         ["--full-report-chunk", "static/app"],
     ] {
         assert!(

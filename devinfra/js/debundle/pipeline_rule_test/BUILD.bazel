@@ -150,19 +150,19 @@ pipeline_report_flags_test(
             "full_translation",
             [],
             False,
-            ["translation-validation"],
+            ["translation_validation"],
         ),
         (
             "full_reentry",
             [],
             False,
-            ["export-reentry"],
+            ["export_reentry"],
         ),
         (
             "full_translation_filtered",
             ["static/quote'; $(printf injected) `printf injected`"],
             True,
-            ["translation-validation"],
+            ["translation_validation"],
         ),
     ]
 ]
@@ -170,14 +170,14 @@ pipeline_report_flags_test(
 pipeline_report_flags_test(
     name = "full_report_test",
     baseline = ":jsonl_default",
-    expected_flags = "--full-report 'translation-validation'",
+    expected_flags = "--full-report 'translation_validation'",
     target_under_test = ":full_translation",
 )
 
 pipeline_report_flags_test(
     name = "full_report_filtered_test",
     baseline = ":jsonl_readable_default",
-    expected_flags = "--full-report 'translation-validation' --full-report-chunk 'static/quote'\\''; $(printf injected) `printf injected`'",
+    expected_flags = "--full-report 'translation_validation' --full-report-chunk 'static/quote'\\''; $(printf injected) `printf injected`'",
     readable = True,
     target_under_test = ":full_translation_filtered",
 )
@@ -185,7 +185,7 @@ pipeline_report_flags_test(
 pipeline_report_flags_test(
     name = "full_reentry_test",
     baseline = ":jsonl_default",
-    expected_flags = "--full-report 'export-reentry'",
+    expected_flags = "--full-report 'export_reentry'",
     target_under_test = ":full_reentry",
 )
 

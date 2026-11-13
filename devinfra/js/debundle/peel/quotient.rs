@@ -113,6 +113,7 @@ impl CycleEvidence {
 /// evidence so the caller can attribute the rejection to a specific
 /// source_unit pair.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ContractRejected {
     WouldCreateCycle { cycle: CycleEvidence },
     ExceedsCap { combined_lines: usize, cap: usize },

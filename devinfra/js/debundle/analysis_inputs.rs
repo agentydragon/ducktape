@@ -19,6 +19,7 @@ use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceM
 pub mod saved;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
     TypescriptMetadataDecorateHelper,

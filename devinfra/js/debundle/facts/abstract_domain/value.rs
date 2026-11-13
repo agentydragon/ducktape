@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 /// One abstract value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Value {
     /// The runtime object(s) one source allocation site creates, keyed by the
     /// site's start offset. Multiplicity is not tracked: one site may stand
@@ -28,6 +29,7 @@ pub enum Value {
 
 /// Kind of an allocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// A function, arrow or method body.
     Function,

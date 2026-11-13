@@ -160,7 +160,8 @@ pub(super) struct InspectSourceArgs {
 
 #[derive(Debug, Clone, Copy, Serialize, ValueEnum, strum::Display)]
 #[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "snake_case")]
+#[value(rename_all = "snake_case")]
 pub(super) enum SourceView {
     Pretty,
     Raw,

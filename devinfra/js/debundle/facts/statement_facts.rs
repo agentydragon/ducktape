@@ -184,6 +184,7 @@ pub struct CallbackFactoryBarrierFact {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CallbackFactoryBarrierRejection {
     NamespaceMemberWrite {
         witness: CallbackFactoryWriteWitness,
@@ -477,6 +478,7 @@ impl StatementFacts {
 /// representable here — statements containing them are marked
 /// non-summarizable.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EffectCell {
     Binding(Id),
     GlobalProp(String),
@@ -510,6 +512,7 @@ pub struct StatementEffectSummary {
 /// synchronous execution settled them. Every element is untainted at that
 /// point (design § Heap taint).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum SettledElements {
     /// Every element is a primitive.
     Primitive,

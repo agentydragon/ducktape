@@ -169,6 +169,14 @@ Ownership filtering precedes residual routing for every supported residual
 policy. An omitted explicit claim at the catchall path loses its authored
 renames and annotations; ordinary residual routing can recreate that destination.
 Full graph export remains unsupported with this option.
+`run --full-report residual_atomic_groups` instead reports atomic groups that
+have at least one residual-assigned source unit, using the exact assignment
+being validated. It identifies each source unit, including non-binding
+statements, its destination and source location. Incoming and outgoing edge
+counts are exact graph-edge counts; each kind and direction has at most four
+examples from distinct neighboring groups and a truncation flag. Groups spanning selected and residual
+destinations remain visible. The report is diagnostic and does not assert that
+moving any group is realizable; full-report chunk selection applies normally.
 Each chunk's graph summary and module report records its retained module paths
 and optional `bindings` and `anonymous_statements` selector-index lists in
 `ownership_subset`, preserving omitted fields versus empty lists. Named and
@@ -485,7 +493,7 @@ category totals; effect-set comparison receives the complete legacy conflict
 pair set, including pairs beyond the samples. Forward-swapped edges retain
 their existing report-only role. Bounds never narrow checks or source scope.
 
-`run --full-report translation-validation` additionally streams every result
+`run --full-report translation_validation` additionally streams every result
 from that same checker to `translation_validation.full.jsonl`. Rows have a
 `category` of `conflict`, `forward_edge_kept`, `forward_edge_swapped` or
 `placement_split`; conflict rows retain both statements, dependency-edge key
@@ -1558,8 +1566,8 @@ host_behavior:
   loader_result_for_evaluating_module: unknown # throws | returns_partial_namespace
   synchronous_load_runs_app_callbacks: unknown # never
   synchronous_load_drains_microtasks: unknown # never
-  reentry_free_builtin_modules: [path, fs/promises]
-  reentry_free_bun_modules: [bun:ffi, ws]
+  reentry_free_builtin_modules: [path, fs_promises]
+  reentry_free_bun_modules: [bun_ffi, ws]
   reentry_free_embedded_loaders: [text]
   reentry_free_operations: [async_local_storage_construct, promise_resolve]
   predefined_globals: unknown # standard, bun
@@ -1893,7 +1901,7 @@ program_premises:
   process_prototype_chain_accessors: none # or unknown
   non_literal_loader_calls: native_addons_only # or unknown
   intrinsics_never_written:
-    families: all # or a list: [Object, Array, Map]
+    families: all # or a list: [object, array, map]
     note: "Audit list: program_graph.json.gz; runtime probe: <invocation>"
   note: "Audit: <where the premise was checked>"
 ```
@@ -1914,9 +1922,10 @@ program_premises:
 
 ### Intrinsics never written
 
-`intrinsics_never_written.families` names native census families (`Error`,
-`FinalizationRegistry`, `Function`, `Object`, `Array`, `Math`, `RegExp`,
-`Symbol`, `Promise`, `Map`, `Set`, `WeakMap`, `WeakSet`), or `all` of them. It
+`intrinsics_never_written.families` names native census families (`error`,
+`finalization_registry`, `function`, `object`, `array`, `math`, `reg_exp`,
+`symbol`, `promise`, `map`, `set`, `weak_map`, `weak_set`), or `all` of them.
+Each name identifies the corresponding JavaScript global. It
 asserts that no execution of the program writes any slot of a named family:
 its global binding, its constructor's properties, its prototype object and
 properties (with `%ArrayIteratorPrototype%` for `Array` and

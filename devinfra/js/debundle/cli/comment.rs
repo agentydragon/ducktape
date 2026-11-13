@@ -144,10 +144,9 @@ struct CommentOutcomeJson<'a> {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
 enum Locator<'a> {
-    #[serde(rename = "sym")]
     Binding(&'a str),
-    #[serde(rename = "module")]
     Module(&'a str),
 }
 

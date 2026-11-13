@@ -75,6 +75,33 @@ fn validate_text_summarizes_counts_and_one_line_per_outcome() {
 }
 
 #[test]
+fn enum_names_use_snake_case_and_reject_legacy_spellings() {
+    for (family, module, accepted) in [
+        ("map", "fs_promises", true),
+        ("Map", "fs_promises", false),
+        ("map", "fs/promises", false),
+    ] {
+        let fixture = write_validate_fixture_spec(
+            FixtureOpts::new("const value = 1;", Vec::new())
+                .with_raw_spec_key(
+                    "program_premises",
+                    json!({
+                        "intrinsics_never_written": {"families": [family], "note": "audited"}
+                    }),
+                )
+                .with_raw_spec_key(
+                    "host_behavior",
+                    json!({
+                        "reentry_free_builtin_modules": [module]
+                    }),
+                ),
+        );
+        let result = run_spec_validate(&fixture.spec_path, &["--format", "json"]);
+        assert_eq!(result.status.success(), accepted, "{result:?}");
+    }
+}
+
+#[test]
 fn validate_clean_spec_reports_no_problems() {
     let mut opts = FixtureOpts::new(
         r#"function renderCard(value) {
@@ -500,7 +527,7 @@ sideEffect("shared");
         json!({
             "logical_module": "effects/missing",
             "entity": {"anonymous_statement": 0},
-            "selector_kind": "anonymous_statements.source_match",
+            "selector_kind": "anonymous_statement",
         })
     );
 
@@ -548,7 +575,7 @@ start();
         json!({
             "logical_module": "effects/startup",
             "entity": {"anonymous_statement": 0},
-            "selector_kind": "anonymous_statements.source_match",
+            "selector_kind": "anonymous_statement",
         })
     );
 }

@@ -164,32 +164,12 @@ pub struct RequestedLogicalModule {
 }
 
 /// Complete diagnostic sinks; never an analysis or full-graph selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum FullReportKind {
     TranslationValidation,
     ExportReentry,
-}
-
-impl FullReportKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::TranslationValidation => "translation-validation",
-            Self::ExportReentry => "export-reentry",
-        }
-    }
-}
-
-impl std::str::FromStr for FullReportKind {
-    type Err = String;
-    fn from_str(value: &str) -> std::result::Result<Self, Self::Err> {
-        match value {
-            "translation-validation" => Ok(Self::TranslationValidation),
-            "export-reentry" => Ok(Self::ExportReentry),
-            _ => Err(format!(
-                "unknown full report {value:?}; expected translation-validation or export-reentry"
-            )),
-        }
-    }
+    ResidualAtomicGroups,
 }
 
 /// Full graph serialization is independent of report timing and evidence detail.

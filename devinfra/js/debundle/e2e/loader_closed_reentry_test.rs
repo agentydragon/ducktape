@@ -528,7 +528,7 @@ export function legacy() { return import.meta.require("constants"); }
         .collect();
     assert_eq!(targets, ["bun:ffi", "constants", "undici"]);
     let host_keys = report["loader"]["host_keys"].as_array().unwrap();
-    assert!(host_keys.contains(&json!({ "reentry_free_bun_module": "bun:ffi" })));
+    assert!(host_keys.contains(&json!({ "reentry_free_bun_module": "bun_ffi" })));
     assert!(host_keys.contains(&json!({ "reentry_free_builtin_module": "constants" })));
 
     let derivation = rejected_loader_derivation(

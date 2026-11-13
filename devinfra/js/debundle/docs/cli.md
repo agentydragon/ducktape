@@ -400,7 +400,7 @@ rows label each identity kind; `unrenamed` means no explicit readable name:
 - `direct_binding_identifier` has `name` from `selector.binding.name`.
 - `source_match_capture` has `local` from `source_matches[].bindings[].local`.
 - `structural_member` has `selector` from the typed member selector, such as
-  `members.cross_ref`; it has no direct binding identifier. An invalid
+  `cross_ref`; it has no direct binding identifier. An invalid
   selector is reported as `members.selector`.
 
 Neither a direct identifier's spelling nor a capture's local spelling alone
@@ -573,18 +573,40 @@ exits 1. The contract is
 `translation_validation.json` keeps exact gate/TV verdicts and category totals,
 with at most twenty deterministic examples per category. Each evidence field
 has `total`, `examples` and `truncated`; use totals for comparisons.
-`debundle run --full-report export-reentry` writes the original complete
+
+### Residual atomic group report
+
+To inspect the atomic units that remain under the current assignment, including
+an ownership subset, request `debundle run --full-report residual_atomic_groups`.
+The per-chunk `residual_atomic_groups.json` lists every group containing a
+residual source unit. Each source unit has its source location, statement kind,
+bindings (empty for anonymous statements), and actual destination. Groups also
+include incoming and outgoing edge counts by kind and up to four examples per
+kind and direction, chosen from distinct neighboring groups; `truncated` marks
+incomplete examples. Edge totals count
+graph edges, not distinct dependencies. `fully_residual: false` means a group
+spans residual and selected destinations; the gate verdict remains authoritative.
+This report works with `--ownership-subset` without `--graphs`; it is a planning
+aid, not proof that extracting a group or batch passes the gate. Select chunks
+with `--full-report-chunk` or Bazel `full_report_chunks`, and request it through
+Bazel with `full_reports = ["residual_atomic_groups"]`.
+Entry import and export declaration units may appear in this inventory as
+scaffolding; their presence does not suggest moving them out of the entry.
+
+### Other full reports
+
+`debundle run --full-report export_reentry` writes the original complete
 export-reentry schema as compact `export_reentry.full.json`. The default
 `export_reentry.json` has exact collection and site counts, at most twenty
 deterministic examples per collection, and explicit truncation. The complete
 semantic report and staged payload still drive policy and checks. Full-file
 serialization and explicit flush finish before the summary; failures fail the
 run. Use `--full-report-chunk` to select sinks, independently of graph export.
-Bazel `full_reports = ["export-reentry"]` forwards the same request; both full
+Bazel `full_reports = ["export_reentry"]` forwards the same request; full
 report kinds can be requested together. See the
 [wire contract](wire_format.md#export-reentry-diagnostics).
 
-`debundle run --full-report translation-validation` writes complete checker rows
+`debundle run --full-report translation_validation` writes complete checker rows
 in `translation_validation.full.jsonl`. Repeat `--full-report-chunk <chunk-id>`
 to select only those sinks; configured analysis, summaries, checks and verdicts
 stay unchanged. The summary advertises this command even when no full stream
@@ -593,7 +615,7 @@ An accepted dry run refuses an explicit full-report request because it suppresse
 reports. Rejected dry runs retain their normal evidence policy. Invalid specs,
 unknown chunk filters and write/flush failures remain errors; complete streams
 flush before the final summary is published. Bazel `full_reports =
-["translation-validation"]` and optional `full_report_chunks` forward these
+["translation_validation"]` and optional `full_report_chunks` forward these
 flags only to Pipeline, leaving Analyze cache inputs unchanged.
 
 `debundle run --effect-conflicts-jsonl` opts into a complete per-chunk

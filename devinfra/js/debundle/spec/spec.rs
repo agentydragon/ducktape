@@ -206,6 +206,7 @@ pub enum AllIntrinsicFamilies {
 
 /// A native census family, named by its global binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum IntrinsicFamily {
     Error,
     FinalizationRegistry,
@@ -361,11 +362,9 @@ pub enum NodeBuiltinModule {
     Constants,
     Crypto,
     Dns,
-    #[serde(rename = "dns/promises")]
     DnsPromises,
     Events,
     Fs,
-    #[serde(rename = "fs/promises")]
     FsPromises,
     Http,
     Http2,
@@ -373,27 +372,21 @@ pub enum NodeBuiltinModule {
     Net,
     Os,
     Path,
-    #[serde(rename = "path/posix")]
     PathPosix,
-    #[serde(rename = "path/win32")]
     PathWin32,
     PerfHooks,
     Process,
     Querystring,
     Readline,
     Stream,
-    #[serde(rename = "stream/consumers")]
     StreamConsumers,
-    #[serde(rename = "stream/promises")]
     StreamPromises,
     StringDecoder,
-    #[serde(rename = "timers/promises")]
     TimersPromises,
     Tls,
     Tty,
     Url,
     Util,
-    #[serde(rename = "util/types")]
     UtilTypes,
     Vm,
     WorkerThreads,
@@ -452,12 +445,10 @@ impl NodeBuiltinModule {
 /// `reentry_free_bun_modules`: Bun's own `bun:` modules and the packages Bun
 /// replaces with built-in implementations.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BunModule {
-    #[serde(rename = "bun:ffi")]
     BunFfi,
-    #[serde(rename = "undici")]
     Undici,
-    #[serde(rename = "ws")]
     Ws,
 }
 
@@ -1190,10 +1181,9 @@ pub enum CapturedValueKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BuiltinGlobalRoot {
-    #[serde(rename = "globalThis")]
     GlobalThis,
-    #[serde(rename = "window")]
     Window,
 }
 

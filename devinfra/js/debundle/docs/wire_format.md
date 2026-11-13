@@ -101,6 +101,16 @@ list for older provenance records.
 
 ## Atomic graph reports
 
+The opt-in `residual_atomic_groups.json` reports the actual run assignment,
+including ownership subsets, without exporting a full graph. Each group has
+source-unit rows (including anonymous statements with empty `bindings`), current
+destinations and `fully_residual`. `incoming` and `outgoing` are keyed by edge
+kind and contain exact edge totals, up to four examples from distinct neighboring
+groups, and `truncated`.
+Each example identifies both endpoint units, the other atomic group and endpoint
+destination, the binding when present, and whether it constrains initialization.
+Examples are bounded evidence, not an exhaustive dependency closure.
+
 `dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
 `source_unit_ids` and `members` identify the source units in that group.
@@ -164,7 +174,7 @@ canonical IDs. All global and closure predicates still run, including closure
 predicates when a global blocker has already forced conservative policy.
 
 `example_limit` is twenty. `full_detail_export_available` indicates a capability;
-`full_detail_export_command` names `debundle run --full-report export-reentry`.
+`full_detail_export_command` names `debundle run --full-report export_reentry`.
 This explicit request streams compact `export_reentry.full.json` containing the
 complete original `ExportReentryReport` schema: full policy name sets, full
 loader requests/loaded chunks, full blocker/builtin arrays, and the original
@@ -369,7 +379,7 @@ deterministic order as the complete checker. Conflict examples contain
 not the sample length, when comparing results.
 
 `example_limit` is twenty. `full_detail_export_available` is a capability and
-`full_detail_export_command` names `debundle run --full-report translation-validation`.
+`full_detail_export_command` names `debundle run --full-report translation_validation`.
 An explicit request writes `translation_validation.full.jsonl`; nothing writes
 that stream by default. Each row's `category` is `conflict`, `forward_edge_kept`,
 `forward_edge_swapped` or `placement_split`. Conflict rows flatten the complete

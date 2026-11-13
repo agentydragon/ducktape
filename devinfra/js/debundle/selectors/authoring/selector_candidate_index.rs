@@ -27,7 +27,7 @@ pub enum TopLevelKind {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, strum::Display)]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "snake_case")]
 pub enum VarKind {
     Var,
     Let,
