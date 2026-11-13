@@ -27,89 +27,25 @@ module it bundles. Every other chunk is `inline_in_entry`.
 
 `:debundle` runs the spec; `:analysis` selects its saved analysis.
 
-- **Modules**, each claimed by a source-anchored selector (property names,
-  self-emitted strings and class names; no minified-name pins):
-  - Paths below each chunk mirror the original
-    [`v0.18.1` source tree](https://github.com/excalidraw/excalidraw/tree/v0.18.1/packages),
-    including package boundaries and case. Chunk directories describe the input
-    bundle; paths inside them describe the upstream source homes.
-  - `editor`: `packages/excalidraw/appState` (`getDefaultAppState`),
-    `packages/excalidraw/data/blob` (21 file/blob helpers for scene/library loading,
-    data URLs, image conversion, MIME normalization and binary reads), and
-    `packages/excalidraw/element/textWrapping` (the complete wrapping/tokenizing
-    implementation, Unicode regex builders and caches, and its internal helpers).
-  - `main`: `packages/excalidraw/components/Card` (`Card`) and separate
-    `packages/excalidraw/components/ColorPicker/{HotkeyLabel,PickerHeading}` modules.
-  - `main`: `packages/excalidraw/history` contains the complete original
-    `History`, `HistoryEntry` and `HistoryChangedEvent` classes, including
-    recording, inverse entries, undo/redo stacks and change notifications.
-  - `main`: `packages/excalidraw/actions/manager` restores `ActionManager`,
-    including action registration, keyboard dispatch, enabled predicates,
-    panel rendering and synchronous/asynchronous result delivery.
-  - `editor`: `packages/excalidraw/scene/Scene` restores the complete `Scene`
-    class, including element maps, selection caching, frame filtering,
-    insertion and update notifications. Its two static-map writes and four
-    source helpers remain in the entry at their original initialization positions.
-  - `editor`: `packages/excalidraw/emitter` restores the complete `Emitter`
-    class used by history and other editor subscriptions.
-  - `editor`: `packages/excalidraw/fonts/Fonts` restores the `Fonts` class,
-    including lazy font registration, scene-family discovery, font-load cache
-    invalidation and font-face CSS generation. Its generated static-field
-    initialization stays in the entry.
-  - `editor`: `packages/excalidraw/store` restores `Store`, `Snapshot`,
-    `StoreIncrementEvent`, capture actions and observed-state helpers;
-    `packages/excalidraw/change` restores `Delta`, `AppStateChange` and
-    `ElementsChange`. The emitted static-field initialization statements stay
-    in the entry at their original positions.
-  - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
-    source path and names for element classification, arrow/text bindings,
-    frame variants and roundness rules.
-  - `editor`: `packages/excalidraw/element/bounds` restores `getVisibleSceneBounds`
-    and `doBoundsIntersect` for viewport/zoom conversion and strict rectangle
-    intersection. The remaining source family is still residual.
-  - `editor`: `packages/excalidraw/element/linearElementEditor` restores the
-    `LinearElementEditor` class, including point selection, dragging,
-    coordinate conversion, normalization and fixed-segment editing. Its
-    generated static-field initialization stays in the entry.
-  - `editor`: `packages/math/{point,vector,angle,utils}` restores the original
-    package paths and names for point geometry, vector arithmetic, angle
-    conversion, tolerances and rounding. Its emitted modules run under Node
-    without evaluating the browser entry.
-- **Vendor swaps**: whole-chunk `swap` of the default-only `vendor/clsx` and
-  `vendor/roughjs` entry chunks, and a `partial_swap` of the shared clsx chunk,
-  which rewrites the editor's and `main`'s imports to `"clsx"`. Its symbol key
-  is that chunk's minified export name, which the vendor-mark schema requires.
+The [module specs](spec/modules) use structural source selectors and mirror
+original paths in the pinned
+[`v0.18.1` source tree](https://github.com/excalidraw/excalidraw/tree/v0.18.1/packages).
+Chunk directories identify bundle inputs; paths inside them identify upstream
+source homes. [Vendor marks](spec/vendor_marks.yaml) configure package swaps.
 
-`test_debundle_tree` checks the accepted tree is complete: no `GATE_REJECTED`,
-every input chunk has an accepting gate and translation-validation summary and,
-unless fully swapped, a non-empty emitted entry, and every static chunk import
-names an input chunk. `spec_output_test` asserts the spec's effects through the
-e2e helpers: claimed modules' export specifiers, geometry and scalar math under
-Node, event delivery and subscription cleanup under Node, the clsx import
-rewrite and strip, and the swap report.
-`test_smoke` loads the accepted tree's browser harness in headless Chromium
-from a test-owned server. The server serves `app/`, Excalidraw's fonts from
-the package (`app/index.html` sets `EXCALIDRAW_ASSET_PATH`), and the swapped
-packages from their Bazel package roots, through an import map it builds from
-`reports/vendor_swaps.json`. The test waits for the harness `load` marker and
-the toolbar, draws a rectangle, and exercises undo and redo, with no
-console or page errors, harness-recorded errors, or failed requests. It
-exercises only what startup and drawing load: no lazy locale, font-subsetting
-or file-system chunk. It also imports `textWrapping` through its original source
-path and exercises word wrapping, Unicode normalization, joined emojis and CJK
-detection. Separate browser probes exercise element predicates, UTF-8 data URL
-round trips, binary blob reads, image MIME normalization and library loading.
-The Scene probe checks static lookup by object/id, deleted-element filtering,
-selection, update subscription and cleanup.
-The store/change probe checks snapshot reuse, capture scheduling, notifications,
-the non-enumerable observed-state marker, and forward/inverse state and element
-changes.
-The linear-editor probe checks constructor state, static initialization,
-element lookup, rotation and global coordinates, and point normalization.
-The action-manager probe checks registration, synchronous/asynchronous results,
-keyboard dispatch, view-only and configured-disabled actions, and predicates.
-The Fonts probe checks family deduplication, shared registration, and the
-one-time scene invalidation for newly loaded font faces.
+The spec is partial: unmatched code stays in each entry in source order.
+Acceptance of the whole tree does not measure readable extraction coverage.
+Generated `reports/output.json` records named-module size fractions;
+`reports/tree/<chunk>/modules.json` records the actual claimed members.
+
+`test_debundle_tree` verifies complete accepted output and resolvable static
+chunk imports. `spec_output_test` checks the spec's emitted contracts through
+the e2e helpers. `test_smoke` loads the emitted tree in Chromium, draws a
+rectangle, exercises undo/redo and runs behavior probes for recovered modules.
+
+The browser harness serves Excalidraw's fonts from the pinned package and
+builds its import map from `reports/vendor_swaps.json`. Startup and drawing do
+not load every lazy locale, font-subsetting or file-system chunk.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the
