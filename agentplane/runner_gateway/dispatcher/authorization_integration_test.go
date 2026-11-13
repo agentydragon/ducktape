@@ -378,6 +378,7 @@ func TestDispatcherIdentitySVIDDoesNotInheritSameNamedAccountAuthority(t *testin
 		t.Fatalf("foreign Sandbox SVID with owner bearer GetSession = %v, want NotFound", err)
 	}
 }
+
 func TestRPCIdentityOnlyOwnershipKeepsPodBoundBackendReads(t *testing.T) {
 	store := testStore(t, 10)
 	ownerAccount := serviceAccountIdentityFor(Account(caller), "owner-uid")
