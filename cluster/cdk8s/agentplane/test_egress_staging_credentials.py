@@ -132,7 +132,9 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     assert [rule["methods"] for rule in rules] == [["GET"], ["POST"]]
     assert all(rule["hosts"] == ["platform-sessions.allegedly.works"] for rule in rules)
     assert all(rule["paths"] for rule in rules)
-    assert all(path.startswith("/proxy/quest/") for rule in rules for path in rule["paths"])
+    assert all(
+        path.startswith(("/proxy/quest/", "/proxy/quest-scheduler/")) for rule in rules for path in rule["paths"]
+    )
     network = next(
         obj
         for obj in objects

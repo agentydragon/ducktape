@@ -1871,9 +1871,9 @@ spec:
       containers:
         - args:
             - --integration-config
-            - /etc/platform-sessions/quest-integration.json
+            - /etc/platform-sessions/quest-scheduler-integration.json
             - --instance-id
-            - quest
+            - quest-scheduler
             - --control-address
             - 0.0.0.0:8444
             - --control-token-file
@@ -1891,7 +1891,7 @@ spec:
             - --tls-key
             - /var/run/provider-tls/tls.key
             - --route-grants
-            - /etc/platform-sessions/quest-routes.json
+            - /etc/platform-sessions/quest-scheduler-routes.json
           env:
             - name: HOME
               value: /tmp
@@ -3260,17 +3260,17 @@ spec:
               - secret:
                   items:
                     - key: token
-                      path: quest/control
+                      path: quest-scheduler/control
                   name: platform-sessions-quest-control
               - secret:
                   items:
                     - key: token
-                      path: quest/owner
+                      path: quest-scheduler/owner
                   name: platform-sessions-quest-owner
               - secret:
                   items:
                     - key: token
-                      path: quest/route
+                      path: quest-scheduler/route
                   name: platform-sessions-quest-route
               - secret:
                   items:
