@@ -243,11 +243,8 @@ func (s *Manager) applyResume(
 		if view.Spec.WakeGeneration == math.MaxInt64 {
 			return failureAssessment(codes.FailedPrecondition, "wake generation cannot be incremented", environmentlifecyclepb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE, view.Spec.WakeGeneration), nil
 		}
-		if view.Status.StopStage == sandboxapi.StopStageDeleting || view.DeletionTimestamp != nil {
-			return failureAssessment(codes.NotFound, "Sandbox is deleting", environmentlifecyclepb.WakeReason_WAKE_REASON_DELETING, view.Spec.WakeGeneration), nil
-		}
-		if view.Status.StopStage == sandboxapi.StopStageQuiescing {
-			return failureAssessment(codes.FailedPrecondition, "Sandbox is quiescing", environmentlifecyclepb.WakeReason_WAKE_REASON_QUIESCING, view.Spec.WakeGeneration), nil
+		if stopping := stoppingAssessment(view); stopping != nil {
+			return stopping, nil
 		}
 
 		idleSuspended := view.Spec.Running && view.Status.OperatingMode == sandboxapi.OperatingModeSuspended &&
@@ -292,11 +289,8 @@ func (s *Manager) applyResume(
 
 func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller WakeCaller) (*environmentlifecyclepb.WakeAssessment, bool) {
 	generation := view.Spec.WakeGeneration
-	if view.Status.StopStage == sandboxapi.StopStageDeleting || view.DeletionTimestamp != nil {
-		return failureAssessment(codes.NotFound, "Sandbox is deleting", environmentlifecyclepb.WakeReason_WAKE_REASON_DELETING, generation), false
-	}
-	if view.Status.StopStage == sandboxapi.StopStageQuiescing {
-		return failureAssessment(codes.FailedPrecondition, "Sandbox is quiescing", environmentlifecyclepb.WakeReason_WAKE_REASON_QUIESCING, generation), false
+	if stopping := stoppingAssessment(view); stopping != nil {
+		return stopping, false
 	}
 	if requestedStop(view) {
 		return assessmentFor(environmentlifecyclepb.WakeState_WAKE_STATE_DENIED, environmentlifecyclepb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP, generation), false
@@ -312,6 +306,17 @@ func (s *Manager) automaticWakeAssessment(ctx context.Context, view *sandboxapi.
 	default:
 		panic(fmt.Sprintf("unknown wake caller %T", caller))
 	}
+}
+
+func stoppingAssessment(view *sandboxapi.Sandbox) *environmentlifecyclepb.WakeAssessment {
+	generation := view.Spec.WakeGeneration
+	if view.Status.StopStage == sandboxapi.StopStageDeleting || view.DeletionTimestamp != nil {
+		return failureAssessment(codes.NotFound, "Sandbox is deleting", environmentlifecyclepb.WakeReason_WAKE_REASON_DELETING, generation)
+	}
+	if view.Status.StopStage == sandboxapi.StopStageQuiescing {
+		return failureAssessment(codes.FailedPrecondition, "Sandbox is quiescing", environmentlifecyclepb.WakeReason_WAKE_REASON_QUIESCING, generation)
+	}
+	return nil
 }
 
 func (s *Manager) accountWakeAssessment(ctx context.Context, view *sandboxapi.Sandbox, caller *ServiceAccountIdentity) (*environmentlifecyclepb.WakeAssessment, bool) {
