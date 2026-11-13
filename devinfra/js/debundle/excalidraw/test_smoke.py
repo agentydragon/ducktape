@@ -651,8 +651,8 @@ async def test_scene_restoration(playwright_driver: Playwright, origin: str) -> 
                     rectangle, text
                 ], [{...rectangle, version: 8}], {repairBindings: true});
                 const duplicates = restore.restoreElements([rectangle, rectangle], null);
-                const appState = restore.restoreAppState({zoom: 100, activeTool: {type: 'eraser'},
-                    viewBackgroundColor: '#abcdef'}, {cursorButton: 'down', scrollX: 45});
+                const appState = restore.restore({appState: {zoom: 100, activeTool: {type: 'eraser'},
+                    viewBackgroundColor: '#abcdef'}}, {cursorButton: 'down', scrollX: 45}, null).appState;
                 const library = restore.restoreLibraryItems([[rectangle]], 'unpublished');
                 const files = {example: {id: 'example'}};
                 const restored = restore.restore({elements: [rectangle], files}, null, null);
