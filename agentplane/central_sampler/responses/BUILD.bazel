@@ -17,6 +17,11 @@ go_library(
         "stored.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/responses",
+    visibility = [
+        "//agentplane/central_sampler:__pkg__",
+        "//agentplane/central_sampler/settings:__pkg__",
+        "//agentplane/history_service/ingress:__pkg__",
+    ],
     deps = [
         "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",

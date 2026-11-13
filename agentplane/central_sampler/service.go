@@ -12,6 +12,7 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -30,7 +31,7 @@ type Sampler struct {
 	Store    *Store
 	Runtime  *Runtime
 	Resolver *auth.Resolver
-	Settings Settings
+	Settings samplersettings.Settings
 	Wakeups  *wakeups.Hub
 }
 

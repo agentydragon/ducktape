@@ -12,6 +12,7 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"google.golang.org/grpc"
@@ -56,7 +57,7 @@ type Executor struct {
 }
 
 // NewExecutor restores local executor state without contacting the execution environment.
-func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
+func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings samplersettings.Settings) (*Executor, func() error, error) {
 	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)

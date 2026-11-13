@@ -42,8 +42,8 @@ reason and linked evidence without replaying an uncertain operation.
 
 ## Running
 
-Build `//agentplane/central_sampler/cmd:main_bin`. Supply a JSON file matching
-[`Settings`](settings.go), then run the binary with `--config PATH` to serve. Use a PostgreSQL URL
+Build `//agentplane/central_sampler/cmd:main_bin`. Supply a JSON file matching the Go
+[`Settings`](settings/) package, then run the binary with `--config PATH` to serve. Use a PostgreSQL URL
 (`postgresql://`). Startup applies Goose migrations before opening the service database connection
 or starting workers. Baseline 11 creates the current schema on an empty database and adopts fully upgraded
 version-10 databases after checking their history and schema. Adoption preserves Session records,

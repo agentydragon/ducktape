@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 )
@@ -72,8 +72,8 @@ func responsesRequestForTranscript(t *testing.T, store *Store, owner Owner, inst
 
 func dispatchStoredResponsesRequest(t *testing.T, store *Store, owner Owner, request responses.Request) (string, []byte) {
 	t.Helper()
-	connection := ConnectionConfig{BaseURL: "https://provider.example.test"}
-	config := ModelConfig{
+	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
+	config := samplersettings.ModelConfig{
 		Connection:    "fixture-connection",
 		ProviderModel: "fixture-provider-model",
 		API:           protocol.APIStyleResponses,

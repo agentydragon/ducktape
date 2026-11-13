@@ -10,6 +10,7 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -38,12 +39,12 @@ func executionIdentity(session *Session) (*identitypb.Identity, error) {
 // Identity, which the ingress then attributes the call to. A Session without an Identity, on any
 // connection, is called as the sampler itself with the Session claimed by header, exactly as before
 // Identities existed; a bearer connection is never delegated to.
-func providerAuthorization(connection ConnectionConfig, attribution providerAttribution) (string, map[string]string, error) {
+func providerAuthorization(connection samplersettings.ConnectionConfig, attribution providerAttribution) (string, map[string]string, error) {
 	credential, err := readProviderCredential(connection)
 	if err != nil {
 		return "", nil, err
 	}
-	if connection.Auth.Type != AuthTypeAgentplaneIngress || attribution.Identity == nil {
+	if connection.Auth.Type != samplersettings.AuthTypeAgentplaneIngress || attribution.Identity == nil {
 		return "Bearer " + credential, map[string]string{"x-agentplane-session-id": attribution.SessionID}, nil
 	}
 	encoded, err := auth.EncodeDelegationHeader(&delegationpb.Delegation{
@@ -74,17 +75,17 @@ type compactionPlan struct {
 type protocolAdapter interface {
 	API() protocol.APIStyle
 	Prepare(*Session, protocol.SessionAttribution) requestPreparation
-	Sample(context.Context, *http.Client, ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool) (*sampleResult, error)
+	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool) (*sampleResult, error)
 	AutoCompactTokens(*int) *int
 	PrepareCompaction(*Conversation, *Session, *ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
 }
 
 type (
-	responsesAdapter struct{ config ModelConfig }
-	anthropicAdapter struct{ config ModelConfig }
+	responsesAdapter struct{ config samplersettings.ModelConfig }
+	anthropicAdapter struct{ config samplersettings.ModelConfig }
 )
 
-func adapterFor(config ModelConfig) (protocolAdapter, error) {
+func adapterFor(config samplersettings.ModelConfig) (protocolAdapter, error) {
 	switch config.API {
 	case protocol.APIStyleResponses:
 		return responsesAdapter{config}, nil
@@ -153,7 +154,7 @@ func (a anthropicAdapter) Prepare(session *Session, _ protocol.SessionAttributio
 	}
 }
 
-func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
+func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
 	authorization, headers, err := providerAuthorization(connection, attribution)
 	if err != nil {
 		return nil, err
@@ -174,7 +175,7 @@ func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, conne
 }
 
 // The direct Anthropic API is called with its own key; it attributes nothing to the Session.
-func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, connection ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, _ providerAttribution, compaction bool) (*sampleResult, error) {
+func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, _ providerAttribution, compaction bool) (*sampleResult, error) {
 	credential, err := readProviderCredential(connection)
 	if err != nil {
 		return nil, err
@@ -186,7 +187,7 @@ func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, conne
 	return &sampleResult{Records: []json.RawMessage{response.Message}, Audit: response.Audit(), ContextTokens: response.ContextTokens}, nil
 }
 
-func readProviderCredential(connection ConnectionConfig) (string, error) {
+func readProviderCredential(connection samplersettings.ConnectionConfig) (string, error) {
 	credential, err := connection.Auth.ReadCredential()
 	if err != nil {
 		return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "provider credential unavailable", "error": err.Error(), "dispatched": false}}

@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
-
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
@@ -242,7 +242,7 @@ func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost,
 	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	manager := NewCodeModeHost(context.Background(), Settings{CodeModeHost: binary, Logs: directory, RPCTimeoutSeconds: 2}, nil)
+	manager := NewCodeModeHost(context.Background(), samplersettings.Settings{CodeModeHost: binary, Logs: directory, RPCTimeoutSeconds: 2}, nil)
 	var mu sync.Mutex
 	var peers []*fakeCodeModePeer
 	go func() {
@@ -899,11 +899,11 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 	if call.Name == "wait" {
 		execEncoding = protocol.ExecEncodingFreeform
 	}
-	settings := Settings{
-		Connections: map[string]ConnectionConfig{
-			"provider": {BaseURL: "https://provider.invalid", Auth: AuthConfig{Type: AuthTypeBearer, Credential: "fixture-credential"}},
+	settings := samplersettings.Settings{
+		Connections: map[string]samplersettings.ConnectionConfig{
+			"provider": {BaseURL: "https://provider.invalid", Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}},
 		},
-		Models: map[string]ModelConfig{
+		Models: map[string]samplersettings.ModelConfig{
 			"fixture-model": {
 				Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite},
 				ExecEncoding: execEncoding, ReasoningEfforts: []string{""},

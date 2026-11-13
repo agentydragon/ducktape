@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -20,8 +21,8 @@ func TestProviderAuthorizationDelegatesOnlyForAnIdentityOnTheAgentplaneIngress(t
 	if err := os.WriteFile(tokenFile, []byte("test-workload-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	connection := func(kind AuthType) ConnectionConfig {
-		c := ConnectionConfig{BaseURL: "https://llm-ingress.test", Auth: AuthConfig{Type: kind, CredentialFile: tokenFile}}
+	connection := func(kind samplersettings.AuthType) samplersettings.ConnectionConfig {
+		c := samplersettings.ConnectionConfig{BaseURL: "https://llm-ingress.test", Auth: samplersettings.AuthConfig{Type: kind, CredentialFile: tokenFile}}
 		if err := c.Validate(); err != nil {
 			t.Fatalf("%s connection: %v", kind, err)
 		}
@@ -30,7 +31,7 @@ func TestProviderAuthorizationDelegatesOnlyForAnIdentityOnTheAgentplaneIngress(t
 	identity := &identitypb.Identity{Name: "test-session-identity", Uid: "test-identity-uid"}
 	const sessionID = "00000000-0000-4000-8000-000000000042"
 
-	authorization, headers, err := providerAuthorization(connection(AuthTypeAgentplaneIngress), providerAttribution{SessionID: sessionID, Identity: identity})
+	authorization, headers, err := providerAuthorization(connection(samplersettings.AuthTypeAgentplaneIngress), providerAttribution{SessionID: sessionID, Identity: identity})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +51,11 @@ func TestProviderAuthorizationDelegatesOnlyForAnIdentityOnTheAgentplaneIngress(t
 	}
 
 	for name, test := range map[string]struct {
-		connection ConnectionConfig
+		connection samplersettings.ConnectionConfig
 		identity   *identitypb.Identity
 	}{
-		"a Session without an Identity on the ingress": {connection(AuthTypeAgentplaneIngress), nil},
-		"a bearer connection":                          {connection(AuthTypeBearer), identity},
+		"a Session without an Identity on the ingress": {connection(samplersettings.AuthTypeAgentplaneIngress), nil},
+		"a bearer connection":                          {connection(samplersettings.AuthTypeBearer), identity},
 	} {
 		t.Run(name, func(t *testing.T) {
 			authorization, headers, err := providerAuthorization(test.connection, providerAttribution{SessionID: sessionID, Identity: test.identity})

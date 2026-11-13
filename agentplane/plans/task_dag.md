@@ -3830,7 +3830,8 @@ phase (section 14): expand → switch → contract leaves each transitional piec
   after the switch is applied and accepted, the staging `llm-ingress` connection
   (`AuthConfig(type="bearer", …)` in `cluster/cdk8s/agentplane/staging.py`) moves to
   `agentplane_ingress`; the `bearer` connection auth type and its projected-token credential file
-  (`central_sampler/settings.py`, `settings.go`) go once no connection uses it. Review LLM ingress's
+  (`central_sampler/settings.py`, `central_sampler/settings/`) go once no connection uses it. Review
+  LLM ingress's
   `central_sampler_accounts` (trusted sampler producers attributing public Session IDs) then: the
   delegated Identity carries that attribution.
 - **`SANDBOX_IDENTITY_SPEC` (live rollout accepted; required verifier source merged):**

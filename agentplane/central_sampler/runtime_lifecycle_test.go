@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
-
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/google/uuid"
@@ -76,7 +76,7 @@ func waitRuntimeDone(t *testing.T, done <-chan error) {
 func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := NewRuntime(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan Owner, 1)
 	allowClaimReturn := make(chan struct{})
 	runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (Owner, error) {
@@ -119,7 +119,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
-	runtime := NewRuntime(store, Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := NewRuntime(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	releaseCommitted := make(chan Owner, 1)
 	allowReleaseReturn := make(chan struct{})
 	runtime.releaseLease = func(ctx context.Context, owner Owner) error {
@@ -191,7 +191,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 }
 
 func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := NewRuntime(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 2
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -214,7 +214,7 @@ func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) 
 }
 
 func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := NewRuntime(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 1
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -322,10 +322,10 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0), NextSeq: 1}, nil
 	}
-	settings := Settings{
+	settings := samplersettings.Settings{
 		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, TurnTimeoutSeconds: 30, ShutdownDrainSeconds: &drainSeconds,
-		Connections: map[string]ConnectionConfig{"provider": {BaseURL: server.URL, Auth: AuthConfig{Type: AuthTypeBearer, Credential: "fixture-credential"}}},
-		Models: map[string]ModelConfig{"fixture-model": {
+		Connections: map[string]samplersettings.ConnectionConfig{"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}}},
+		Models: map[string]samplersettings.ModelConfig{"fixture-model": {
 			Connection: "provider", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectStandard},
 			ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""},
 		}},
@@ -334,7 +334,7 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	manager.store = store
 	f.runtime = NewRuntime(store, settings, manager)
 	f.peers = peers
-	f.runtime.newExecutor = func(_ context.Context, store *Store, owner Owner, _ *Session, _ Settings) (*Executor, func() error, error) {
+	f.runtime.newExecutor = func(_ context.Context, store *Store, owner Owner, _ *Session, _ samplersettings.Settings) (*Executor, func() error, error) {
 		executor := newFakeExecutor(t, store, owner, client)
 		executor.environment = map[string]string{}
 		return executor, func() error { return nil }, nil

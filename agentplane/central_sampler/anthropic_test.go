@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -24,8 +25,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func anthropicTestConfig() ModelConfig {
-	return ModelConfig{
+func anthropicTestConfig() samplersettings.ModelConfig {
+	return samplersettings.ModelConfig{
 		Connection: "anthropic", ProviderModel: "claude-test", API: protocol.APIStyleAnthropicMessages,
 		ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{"low", "high"},
 		AnthropicMessages: &anthropic.Config{
@@ -164,8 +165,8 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 	defer server.Close()
 	config := anthropicTestConfig()
 	settings := fixtureSettings()
-	settings.Models = map[string]ModelConfig{session.Model: config}
-	settings.Connections = map[string]ConnectionConfig{"anthropic": {BaseURL: server.URL, Auth: AuthConfig{Type: AuthTypeAnthropicAPIKey, Credential: "fixture-key"}}}
+	settings.Models = map[string]samplersettings.ModelConfig{session.Model: config}
+	settings.Connections = map[string]samplersettings.ConnectionConfig{"anthropic": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeAnthropicAPIKey, Credential: "fixture-key"}}}
 	if _, err := store.DB().ExecContext(t.Context(), `ALTER TABLE sampler_intent ADD CONSTRAINT reject_test_intent CHECK (false)`); err != nil {
 		t.Fatal(err)
 	}
