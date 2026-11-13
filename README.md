@@ -6,7 +6,7 @@ report snapshots. The CI reports are:
 
 - **Agentplane test architecture:** [fast-CI plan, implementation progress and recovery measurements](agentplane-test-architecture/index.html),
   [evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). Smaller native inputs, focused recovery fixtures, bounded timing experiments and retained deployment/app acceptance. Six implementation steps retain explicit adoption measurements; the devel merge gate is unchanged.
+  [source manifest](agentplane-test-architecture/manifest.json). Pod service closure, independent harness concurrency, reusable native fixtures and same-Pod Secret cadence measurements retain real deployment/app acceptance. The required feedback objective and adoption measurements remain open; the devel merge gate is unchanged.
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json). Refreshed devel-base backend feedback and ten dispatched lanes include experiment results, PR state, and explicit follow-up measurement triggers. Earlier cohorts retain their original windows.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),

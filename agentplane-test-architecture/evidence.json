@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "scope": "Agentplane test architecture, initial native pilot and iteration2 implementation. Devel gate unchanged; experimental branch changes four existing fixture profiles, not their scenarios. No measured complete required-CI improvement.",
+  "scope": "Agentplane test architecture: initial pilot, iteration2 recovery profiles, iteration3 Pod service closure/concurrency and Secret-projection cadence spike. Experimental branch only; complete required-CI and reliability improvement not established.",
   "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
-  "observed_at_utc": "2026-11-13T05:01:20.727796+00:00",
+  "observed_at_utc": "2026-11-13T07:32:12.560466+00:00",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
   "current_static_graph": {
     "static_required_eligible_k3s_suite_count": 13,
@@ -3175,5 +3175,1302 @@
       }
     ],
     "limits": "One experimental head, not a before/after cohort; broad graph includes all 13 ordinary K3s suites. Physical action durations do not sum to gate wall time. Cleanup artifact subset covers the last-running Pod action only."
+  },
+  "iteration3": {
+    "status": "COMPLETE",
+    "finding": "All 21 Pod cases pass in all three source-pinned variants. The combined profile observed 378.331s physical process time versus 419.229s control, but concurrency alone took 472.226s. An unchanged Secret-projection case accounts for a large tail; this screen does not establish a causal full-suite or complete-CI saving.",
+    "comparison_scope_note": "One full-suite action per variant, launched in control/concurrent/combined order with overlap and ordinary CI in flight. Control used a cold baseline and another worker; both candidates used warm baselines on the same worker identity in separate actions. All physical tests are NEW, uncached and single-attempt. CPU was 1021.665/1302.442/1223.896 seconds respectively. Uneven phase/cache/load exposure prevents attribution, p90 or reliability claims. Durations are separate clocks, not additive.",
+    "source_provenance": {
+      "base_commit": "1e03f9e4fcc110462b11eae4cc3fc68c9ec69046",
+      "variants": [
+        {
+          "key": "control",
+          "label": "Control",
+          "commit": "6369d22eff7f714125cf3bc0c9299a911df0cdcd",
+          "branch": "agent/test-architecture-pivot",
+          "source_note": "Ordinary devel merge, unchanged full Pod suite."
+        },
+        {
+          "key": "concurrent_only",
+          "label": "Concurrent pooled harnesses",
+          "commit": "defe54fa1270013bc30cb948b109d35e36209c56",
+          "branch": "agent/test-architecture-pivot",
+          "source_note": "Only four already-reserved independent harness pairs run concurrently."
+        },
+        {
+          "key": "combined_profile",
+          "label": "Concurrency + Pod service profile",
+          "commit": "6fc4da6af4520668a9d97a7d1a8206848679529e",
+          "branch": "agent/test-architecture-pivot",
+          "source_note": "Also omits the MCP edge construct/image only from Pod scenarios; renderer checks run alongside."
+        }
+      ]
+    },
+    "variants": [
+      {
+        "key": "control",
+        "label": "Control",
+        "status": "PASSED",
+        "outcome": "All 21 original Pod cases passed; no skips, case removals or assertion weakening.",
+        "runs": [
+          {
+            "invocation": "fbf9106a-3aae-4852-888c-9bf0bba260e6",
+            "url": "https://app.buildbuddy.io/invocation/fbf9106a-3aae-4852-888c-9bf0bba260e6",
+            "status": "FAILED",
+            "note": "Launcher argument error before testing; zero physical test attempts.",
+            "test_seconds": null,
+            "process_seconds": null,
+            "setup_seconds": null,
+            "cpu_seconds": null
+          },
+          {
+            "invocation": "9c7b1900-20dd-4dcc-a9e8-0e9929d929aa",
+            "url": "https://app.buildbuddy.io/invocation/9c7b1900-20dd-4dcc-a9e8-0e9929d929aa",
+            "status": "PASSED",
+            "test_seconds": 463.767,
+            "process_seconds": 419.228807,
+            "setup_seconds": 96.796239,
+            "cpu_seconds": 1021.664771,
+            "case_seconds": null,
+            "note": "21/21 cases; one NEW uncached attempt; cold retained baseline; cleanup complete. Worker 6da11158-5d75-42cb-85e9-33093ec9ae54."
+          }
+        ],
+        "failures": [
+          "Initial launcher invocation fbf9106a-3aae-4852-888c-9bf0bba260e6 placed remote source flags after the Bazel verb. Bazel rejected the flags before any test execution. Corrected invocation is retained separately; this is not a test flake."
+        ],
+        "pending": []
+      },
+      {
+        "key": "concurrent_only",
+        "label": "Concurrent pooled harnesses",
+        "status": "PASSED",
+        "outcome": "All 21 original Pod cases passed; no skips, case removals or assertion weakening.",
+        "runs": [
+          {
+            "invocation": "1ab3660f-d81d-4d84-8a50-7bb56b65675c",
+            "url": "https://app.buildbuddy.io/invocation/1ab3660f-d81d-4d84-8a50-7bb56b65675c",
+            "status": "PASSED",
+            "test_seconds": 511.511,
+            "process_seconds": 472.226347,
+            "setup_seconds": 71.728234,
+            "cpu_seconds": 1302.441518,
+            "case_seconds": null,
+            "note": "21/21 cases; one NEW uncached attempt; warm retained baseline; cleanup complete. Worker 263e5580-4569-4829-98b4-a889c89be07c."
+          }
+        ],
+        "failures": [],
+        "pending": []
+      },
+      {
+        "key": "combined_profile",
+        "label": "Concurrency + Pod service profile",
+        "status": "PASSED",
+        "outcome": "All 21 original Pod cases passed; no skips, case removals or assertion weakening.",
+        "runs": [
+          {
+            "invocation": "051935c8-10f5-4b27-9503-36f65e551a3a",
+            "url": "https://app.buildbuddy.io/invocation/051935c8-10f5-4b27-9503-36f65e551a3a",
+            "status": "PASSED",
+            "test_seconds": 410.262,
+            "process_seconds": 378.331124,
+            "setup_seconds": 86.373874,
+            "cpu_seconds": 1223.895961,
+            "case_seconds": null,
+            "note": "21/21 cases; one NEW uncached attempt; warm retained baseline; cleanup complete. Worker 263e5580-4569-4829-98b4-a889c89be07c."
+          }
+        ],
+        "failures": [],
+        "pending": []
+      }
+    ],
+    "physical_evidence": [
+      {
+        "key": "control",
+        "source_commit": "6369d22eff7f714125cf3bc0c9299a911df0cdcd",
+        "invocation": "9c7b1900-20dd-4dcc-a9e8-0e9929d929aa",
+        "baseline": "cold",
+        "cleanup": "complete",
+        "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+        "execution": {
+          "id": "/uploads/e05d71fa-8b47-4db9-bfa8-3766dd829b45/blobs/cf877b2889f8a8a2a2f629ebd75d861fa7f92a135b98184efa094ac15075c25b/1218",
+          "action_digest": {
+            "hash": "cf877b2889f8a8a2a2f629ebd75d861fa7f92a135b98184efa094ac15075c25b",
+            "sizeBytes": "1218"
+          },
+          "worker": "6da11158-5d75-42cb-85e9-33093ec9ae54",
+          "stage": "COMPLETED",
+          "status": {},
+          "queue_seconds": 0.136057,
+          "worker_prepare_seconds": 2.815478,
+          "input_fetch_seconds": 1.779432,
+          "process_seconds": 419.228807,
+          "cpu_seconds": 1021.664771,
+          "reported_peak_memory_bytes": 5313691648,
+          "io_stats": {
+            "fileDownloadCount": "300",
+            "fileDownloadSizeBytes": "1922096929",
+            "fileDownloadDurationUsec": "420745548",
+            "fileUploadCount": "149",
+            "fileUploadSizeBytes": "51873643",
+            "fileUploadDurationUsec": "827823"
+          }
+        },
+        "cases": [
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+            "seconds": 21.10057
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+            "seconds": 20.941929
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+            "seconds": 13.776986
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+            "seconds": 15.481402
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+            "seconds": 83.565986
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+            "seconds": 39.73269
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+            "seconds": 20.610458
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+            "seconds": 30.951804
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+            "seconds": 24.183614
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+            "seconds": 1.04279
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+            "seconds": 22.366496
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+            "seconds": 3.306715
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+            "seconds": 21.781377
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+            "seconds": 43.480236
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+            "seconds": 0.021677
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+            "seconds": 1.389708
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+            "seconds": 1.695623
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+            "seconds": 22.355988
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+            "seconds": 15.494448
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+            "seconds": 17.888862
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+            "seconds": 5.339522
+          }
+        ],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "21",
+          "time": "359.453",
+          "timestamp": "2026-11-13T06:52:31.325816+00:00",
+          "hostname": "192.168.241.2"
+        }
+      },
+      {
+        "key": "concurrent_only",
+        "source_commit": "defe54fa1270013bc30cb948b109d35e36209c56",
+        "invocation": "1ab3660f-d81d-4d84-8a50-7bb56b65675c",
+        "baseline": "warm",
+        "cleanup": "complete",
+        "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+        "execution": {
+          "id": "/uploads/631db551-b6ed-47ac-92a3-da56441134cf/blobs/14d3d653dfb2a692009e2b39ae6f7ede424d225c01882edcf523452a7c4ec3c9/1218",
+          "action_digest": {
+            "hash": "14d3d653dfb2a692009e2b39ae6f7ede424d225c01882edcf523452a7c4ec3c9",
+            "sizeBytes": "1218"
+          },
+          "worker": "263e5580-4569-4829-98b4-a889c89be07c",
+          "stage": "COMPLETED",
+          "status": {},
+          "queue_seconds": 0.059292,
+          "worker_prepare_seconds": 0.269655,
+          "input_fetch_seconds": 0.179201,
+          "process_seconds": 472.226347,
+          "cpu_seconds": 1302.441518,
+          "reported_peak_memory_bytes": 5457547264,
+          "io_stats": {
+            "fileDownloadCount": "2",
+            "fileDownloadSizeBytes": "17046",
+            "fileDownloadDurationUsec": "472309244",
+            "fileUploadCount": "140",
+            "fileUploadSizeBytes": "63876526",
+            "fileUploadDurationUsec": "481986"
+          }
+        },
+        "cases": [
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+            "seconds": 23.818069
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+            "seconds": 20.882169
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+            "seconds": 14.415277
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+            "seconds": 18.255888
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+            "seconds": 85.534645
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+            "seconds": 51.667678
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+            "seconds": 19.34053
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+            "seconds": 45.047796
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+            "seconds": 19.341367
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+            "seconds": 25.46967
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+            "seconds": 1.507718
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+            "seconds": 4.499945
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+            "seconds": 20.324996
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+            "seconds": 24.243107
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+            "seconds": 0.013784
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+            "seconds": 1.36945
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+            "seconds": 52.471233
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+            "seconds": 1.600751
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+            "seconds": 1.423541
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+            "seconds": 3.622168
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+            "seconds": 108.807435
+          }
+        ],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "21",
+          "time": "452.478",
+          "timestamp": "2026-11-13T06:54:10.389955+00:00",
+          "hostname": "192.168.241.2"
+        }
+      },
+      {
+        "key": "combined_profile",
+        "source_commit": "6fc4da6af4520668a9d97a7d1a8206848679529e",
+        "invocation": "051935c8-10f5-4b27-9503-36f65e551a3a",
+        "baseline": "warm",
+        "cleanup": "complete",
+        "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+        "execution": {
+          "id": "/uploads/bbd25ce2-fe1f-41f3-8219-a22dec12f338/blobs/09a837d7ca4a3d93293888737ce559edb7986a665a4a534cdc6286143e448d1a/1218",
+          "action_digest": {
+            "hash": "09a837d7ca4a3d93293888737ce559edb7986a665a4a534cdc6286143e448d1a",
+            "sizeBytes": "1218"
+          },
+          "worker": "263e5580-4569-4829-98b4-a889c89be07c",
+          "stage": "COMPLETED",
+          "status": {},
+          "queue_seconds": 0.06208,
+          "worker_prepare_seconds": 0.290101,
+          "input_fetch_seconds": 0.195148,
+          "process_seconds": 378.331124,
+          "cpu_seconds": 1223.895961,
+          "reported_peak_memory_bytes": 5322272768,
+          "io_stats": {
+            "fileDownloadCount": "2",
+            "fileDownloadSizeBytes": "227380",
+            "fileDownloadDurationUsec": "378412281",
+            "fileUploadCount": "145",
+            "fileUploadSizeBytes": "62544537",
+            "fileUploadDurationUsec": "469956"
+          }
+        },
+        "cases": [
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+            "seconds": 22.407481
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+            "seconds": 18.843083
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+            "seconds": 16.787978
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+            "seconds": 20.7657
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+            "seconds": 82.324359
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+            "seconds": 43.068956
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+            "seconds": 17.207892
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+            "seconds": 41.895959
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+            "seconds": 26.586436
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+            "seconds": 1.052256
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+            "seconds": 25.055673
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+            "seconds": 3.353554
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+            "seconds": 20.107431
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+            "seconds": 39.714731
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+            "seconds": 0.019652
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+            "seconds": 2.105291
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+            "seconds": 2.107987
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+            "seconds": 20.181821
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+            "seconds": 13.422506
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+            "seconds": 3.804653
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+            "seconds": 15.862322
+          }
+        ],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "21",
+          "time": "357.680",
+          "timestamp": "2026-11-13T06:55:53.521395+00:00",
+          "hostname": "192.168.241.2"
+        }
+      }
+    ],
+    "configured_closure": {
+      "query": "somepath(//agentplane/system_tests/suites:test_pod, //agentplane/mcp_edge:service_image)",
+      "control": {
+        "commit": "6369d22eff7f714125cf3bc0c9299a911df0cdcd",
+        "invocation": "68639d1e-2e17-482b-8f83-868377ba851a",
+        "path": [
+          "//agentplane/system_tests/suites:test_pod",
+          "//agentplane/system_tests/suites:test_pod_image_manifest",
+          "//agentplane/mcp_edge:service_image"
+        ]
+      },
+      "candidate": {
+        "commit": "6fc4da6af4520668a9d97a7d1a8206848679529e",
+        "invocation": "9966f8ea-8fc2-4c78-a5c6-2dc10ee9a631",
+        "result": "Empty query results"
+      },
+      "interpretation": "Verified configured dependency removal, not transferred-byte or population latency saving."
+    },
+    "coverage": {
+      "retained": [
+        "Identical21 JUnit case IDs in all three full-suite variants; both harnesses remain in every previously paired case.",
+        "Real app Session/history/stream and preset flows, Actions command-box creation, Notifications CLI, live policy changes and workload identities.",
+        "Real >=60-second idle timer, Pod replacement, cert-manager issuance, same-Pod Secret projection, TLS rejection/valid recovery, storage and exact retained History.",
+        "Four pooled cases overlap only pre-reserved distinct Claude/Codex Sandboxes, model queues, UUID Sessions and deployment-unique command IDs. Pair capacity stays two pairs/four pooled Pods; failure cancels and awaits the peer, and the pool destroys a failed pair."
+      ],
+      "omitted": [
+        "The focused Pod fixture omits only the MCP edge construct and service image. Actions stays. Default, dispatcher, probe, MCP, VM, Firecracker and real-model profiles retain their prior service compositions."
+      ],
+      "limitations": [
+        "The Pod fixture's unused Connection routes remain configured and unavailable; system status reports Connection Service down. External-connection behavior remains owned by retained MCP/app acceptance.",
+        "Default/production reconnect duration remains unchanged outside the separate iteration2 budget profile. This iteration makes no required-selection reduction or manual-gate promotion.",
+        "Reusable native service fixtures remain a manual pilot with envtest-authored Sandbox/Pod status; they do not prove real controllers, scheduling, Secret projection, image assembly or app behavior."
+      ]
+    },
+    "projection_spike": {
+      "status": "PASSED",
+      "finding": "All six same-Pod certificate replacement cases passed with complete cleanup. Default-sync case times were 29.341/91.048/22.291s; five-second cases were 22.723/26.058/29.050s. Each run number used the same worker identity across arms. Configz confirms 1m0s versus 5s and Watch in all six. This is a promising bounded tail screen; three executions per arm do not establish reliability or a causal whole-CI saving.",
+      "source_note": "Default-cadence control is literal 6fc4da6af4520668a9d97a7d1a8206848679529e. Five-second candidate is literal 33cc6df6c70f9e83e95a9959a0ae8aefd093610b. Three fresh selected-case actions per arm; ordinary production node settings and the real >=60s idle timer remain unchanged. baseline.py is fingerprinted, so the changed startup flag cannot attach an incompatible retained node.",
+      "runs": [
+        {
+          "variant": "Default sync",
+          "invocation": "09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "url": "https://app.buildbuddy.io/invocation/09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "status": "PASSED",
+          "case_seconds": 29.341167,
+          "process_seconds": 238.201204,
+          "cpu_seconds": 699.08794,
+          "setup_seconds": 124.036367,
+          "note": "run=1, shard=1, attempt=1; warm; cleanup complete; worker d14ebf50-6aea-448e-aeb0-5f9ba14661f9. Physical execution joined using TEST_RUN_NUMBER in actual CAS Command.",
+          "run": 1,
+          "source_commit": "6fc4da6af4520668a9d97a7d1a8206848679529e",
+          "physical_execution": {
+            "id": "/uploads/1541c060-38a3-4ea4-be6c-f9507df0ee7f/blobs/876a59043c024ad04b2dd4adcca99881d3bf95410f8f96cb17920fdc5f56aac6/1218",
+            "action_digest": {
+              "hash": "876a59043c024ad04b2dd4adcca99881d3bf95410f8f96cb17920fdc5f56aac6",
+              "sizeBytes": "1218"
+            },
+            "worker": "d14ebf50-6aea-448e-aeb0-5f9ba14661f9",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.063037,
+            "worker_prepare_seconds": 1.210138,
+            "input_fetch_seconds": 0.906278,
+            "process_seconds": 238.201204,
+            "cpu_seconds": 699.08794,
+            "reported_peak_memory_bytes": 4561534976,
+            "io_stats": {
+              "fileDownloadCount": "127",
+              "fileDownloadSizeBytes": "638832708",
+              "fileDownloadDurationUsec": "239011138",
+              "fileUploadCount": "59",
+              "fileUploadSizeBytes": "23405849",
+              "fileUploadDurationUsec": "441059"
+            }
+          },
+          "command_join": {
+            "run": 1,
+            "execution_id": "/uploads/1541c060-38a3-4ea4-be6c-f9507df0ee7f/blobs/876a59043c024ad04b2dd4adcca99881d3bf95410f8f96cb17920fdc5f56aac6/1218",
+            "action_digest": {
+              "hash": "876a59043c024ad04b2dd4adcca99881d3bf95410f8f96cb17920fdc5f56aac6",
+              "sizeBytes": "1218"
+            },
+            "command_digest": {
+              "hash": "3571457160b15a8fc1efe96c39991fa7889df61883f3ff6deebe8f0cad870b35",
+              "sizeBytes": "5058"
+            },
+            "target": "//agentplane/system_tests/suites:test_pod"
+          }
+        },
+        {
+          "variant": "Default sync",
+          "invocation": "09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "url": "https://app.buildbuddy.io/invocation/09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "status": "PASSED",
+          "case_seconds": 91.047532,
+          "process_seconds": 272.872575,
+          "cpu_seconds": 593.268405,
+          "setup_seconds": 105.501219,
+          "note": "run=2, shard=1, attempt=1; warm; cleanup complete; worker ad46274e-1aa9-4995-975b-ac38cb14c7d0. Physical execution joined using TEST_RUN_NUMBER in actual CAS Command.",
+          "run": 2,
+          "source_commit": "6fc4da6af4520668a9d97a7d1a8206848679529e",
+          "physical_execution": {
+            "id": "/uploads/79f89fd8-3492-4012-a747-dfa596dcc413/blobs/f3d2a19a9ac4298bdb398888a3924e12273216ae3a41755199d000ceb2ab4ef4/1218",
+            "action_digest": {
+              "hash": "f3d2a19a9ac4298bdb398888a3924e12273216ae3a41755199d000ceb2ab4ef4",
+              "sizeBytes": "1218"
+            },
+            "worker": "ad46274e-1aa9-4995-975b-ac38cb14c7d0",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.06275,
+            "worker_prepare_seconds": 1.416347,
+            "input_fetch_seconds": 1.089197,
+            "process_seconds": 272.872575,
+            "cpu_seconds": 593.268405,
+            "reported_peak_memory_bytes": 4601237504,
+            "io_stats": {
+              "fileDownloadCount": "88",
+              "fileDownloadSizeBytes": "711145140",
+              "fileDownloadDurationUsec": "273784839",
+              "fileUploadCount": "56",
+              "fileUploadSizeBytes": "24185322",
+              "fileUploadDurationUsec": "418143"
+            }
+          },
+          "command_join": {
+            "run": 2,
+            "execution_id": "/uploads/79f89fd8-3492-4012-a747-dfa596dcc413/blobs/f3d2a19a9ac4298bdb398888a3924e12273216ae3a41755199d000ceb2ab4ef4/1218",
+            "action_digest": {
+              "hash": "f3d2a19a9ac4298bdb398888a3924e12273216ae3a41755199d000ceb2ab4ef4",
+              "sizeBytes": "1218"
+            },
+            "command_digest": {
+              "hash": "b5bb37ad2a265c3163cb5e7d3238a178076db8e5922ece1a81bbced7d58254a6",
+              "sizeBytes": "5058"
+            },
+            "target": "//agentplane/system_tests/suites:test_pod"
+          }
+        },
+        {
+          "variant": "Default sync",
+          "invocation": "09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "url": "https://app.buildbuddy.io/invocation/09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "status": "PASSED",
+          "case_seconds": 22.291219,
+          "process_seconds": 162.718738,
+          "cpu_seconds": 406.24379,
+          "setup_seconds": 78.657725,
+          "note": "run=3, shard=1, attempt=1; warm; cleanup complete; worker 5cd93f50-25d8-490c-97aa-c37ab69e2422. Physical execution joined using TEST_RUN_NUMBER in actual CAS Command.",
+          "run": 3,
+          "source_commit": "6fc4da6af4520668a9d97a7d1a8206848679529e",
+          "physical_execution": {
+            "id": "/uploads/37c12160-938d-4d9f-9c03-398a790aee89/blobs/b79c6111fddf7cebaa3b7438036cd8cc36257da4d3723c783f1f2e8d82a030d0/1218",
+            "action_digest": {
+              "hash": "b79c6111fddf7cebaa3b7438036cd8cc36257da4d3723c783f1f2e8d82a030d0",
+              "sizeBytes": "1218"
+            },
+            "worker": "5cd93f50-25d8-490c-97aa-c37ab69e2422",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.064241,
+            "worker_prepare_seconds": 2.089993,
+            "input_fetch_seconds": 2.005039,
+            "process_seconds": 162.718738,
+            "cpu_seconds": 406.24379,
+            "reported_peak_memory_bytes": 5025816576,
+            "io_stats": {
+              "fileDownloadCount": "670",
+              "fileDownloadSizeBytes": "1861972761",
+              "fileDownloadDurationUsec": "164598233",
+              "fileUploadCount": "58",
+              "fileUploadSizeBytes": "22227146",
+              "fileUploadDurationUsec": "404543"
+            }
+          },
+          "command_join": {
+            "run": 3,
+            "execution_id": "/uploads/37c12160-938d-4d9f-9c03-398a790aee89/blobs/b79c6111fddf7cebaa3b7438036cd8cc36257da4d3723c783f1f2e8d82a030d0/1218",
+            "action_digest": {
+              "hash": "b79c6111fddf7cebaa3b7438036cd8cc36257da4d3723c783f1f2e8d82a030d0",
+              "sizeBytes": "1218"
+            },
+            "command_digest": {
+              "hash": "a99ebffd109b8df5a23791174ccae92f606abdec24fefc057e306a6061020a79",
+              "sizeBytes": "5058"
+            },
+            "target": "//agentplane/system_tests/suites:test_pod"
+          }
+        },
+        {
+          "variant": "5-second sync",
+          "invocation": "dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "url": "https://app.buildbuddy.io/invocation/dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "status": "PASSED",
+          "case_seconds": 22.72338,
+          "process_seconds": 239.370308,
+          "cpu_seconds": 675.4409,
+          "setup_seconds": 142.449435,
+          "note": "run=1, shard=1, attempt=1; cold; cleanup complete; worker d14ebf50-6aea-448e-aeb0-5f9ba14661f9. Physical execution joined using TEST_RUN_NUMBER in actual CAS Command.",
+          "run": 1,
+          "source_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
+          "physical_execution": {
+            "id": "/uploads/3720b3ff-25cf-42e2-8ac6-c3b88c5322ad/blobs/bd5f20712c68946155a7b5a1f0dbee1105820bd5542431e0ca2b0e801bdd3877/1218",
+            "action_digest": {
+              "hash": "bd5f20712c68946155a7b5a1f0dbee1105820bd5542431e0ca2b0e801bdd3877",
+              "sizeBytes": "1218"
+            },
+            "worker": "d14ebf50-6aea-448e-aeb0-5f9ba14661f9",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.064583,
+            "worker_prepare_seconds": 0.276141,
+            "input_fetch_seconds": 0.224561,
+            "process_seconds": 239.370308,
+            "cpu_seconds": 675.4409,
+            "reported_peak_memory_bytes": 4360863744,
+            "io_stats": {
+              "fileDownloadCount": "2",
+              "fileDownloadSizeBytes": "86041",
+              "fileDownloadDurationUsec": "239482261",
+              "fileUploadCount": "63",
+              "fileUploadSizeBytes": "13483041",
+              "fileUploadDurationUsec": "895295"
+            }
+          },
+          "command_join": {
+            "run": 1,
+            "execution_id": "/uploads/3720b3ff-25cf-42e2-8ac6-c3b88c5322ad/blobs/bd5f20712c68946155a7b5a1f0dbee1105820bd5542431e0ca2b0e801bdd3877/1218",
+            "action_digest": {
+              "hash": "bd5f20712c68946155a7b5a1f0dbee1105820bd5542431e0ca2b0e801bdd3877",
+              "sizeBytes": "1218"
+            },
+            "command_digest": {
+              "hash": "3571457160b15a8fc1efe96c39991fa7889df61883f3ff6deebe8f0cad870b35",
+              "sizeBytes": "5058"
+            },
+            "target": "//agentplane/system_tests/suites:test_pod"
+          }
+        },
+        {
+          "variant": "5-second sync",
+          "invocation": "dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "url": "https://app.buildbuddy.io/invocation/dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "status": "PASSED",
+          "case_seconds": 26.057954,
+          "process_seconds": 211.888663,
+          "cpu_seconds": 576.389913,
+          "setup_seconds": 111.972099,
+          "note": "run=2, shard=1, attempt=1; cold; cleanup complete; worker ad46274e-1aa9-4995-975b-ac38cb14c7d0. Physical execution joined using TEST_RUN_NUMBER in actual CAS Command.",
+          "run": 2,
+          "source_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
+          "physical_execution": {
+            "id": "/uploads/bcc3b44d-ba59-497a-ad8a-34a1c3d6083b/blobs/00888526ceedeb8582d2d91e8cb86882dfb727a425fa2e8b6b7f84c1d28e79a5/1218",
+            "action_digest": {
+              "hash": "00888526ceedeb8582d2d91e8cb86882dfb727a425fa2e8b6b7f84c1d28e79a5",
+              "sizeBytes": "1218"
+            },
+            "worker": "ad46274e-1aa9-4995-975b-ac38cb14c7d0",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.063948,
+            "worker_prepare_seconds": 0.312426,
+            "input_fetch_seconds": 0.260822,
+            "process_seconds": 211.888663,
+            "cpu_seconds": 576.389913,
+            "reported_peak_memory_bytes": 4372013056,
+            "io_stats": {
+              "fileDownloadCount": "2",
+              "fileDownloadSizeBytes": "86041",
+              "fileDownloadDurationUsec": "212026718",
+              "fileUploadCount": "63",
+              "fileUploadSizeBytes": "13643788",
+              "fileUploadDurationUsec": "282832"
+            }
+          },
+          "command_join": {
+            "run": 2,
+            "execution_id": "/uploads/bcc3b44d-ba59-497a-ad8a-34a1c3d6083b/blobs/00888526ceedeb8582d2d91e8cb86882dfb727a425fa2e8b6b7f84c1d28e79a5/1218",
+            "action_digest": {
+              "hash": "00888526ceedeb8582d2d91e8cb86882dfb727a425fa2e8b6b7f84c1d28e79a5",
+              "sizeBytes": "1218"
+            },
+            "command_digest": {
+              "hash": "b5bb37ad2a265c3163cb5e7d3238a178076db8e5922ece1a81bbced7d58254a6",
+              "sizeBytes": "5058"
+            },
+            "target": "//agentplane/system_tests/suites:test_pod"
+          }
+        },
+        {
+          "variant": "5-second sync",
+          "invocation": "dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "url": "https://app.buildbuddy.io/invocation/dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "status": "PASSED",
+          "case_seconds": 29.050095,
+          "process_seconds": 164.549261,
+          "cpu_seconds": 394.502168,
+          "setup_seconds": 80.780122,
+          "note": "run=3, shard=1, attempt=1; cold; cleanup complete; worker 5cd93f50-25d8-490c-97aa-c37ab69e2422. Physical execution joined using TEST_RUN_NUMBER in actual CAS Command.",
+          "run": 3,
+          "source_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
+          "physical_execution": {
+            "id": "/uploads/fc199e51-614f-489c-a9c9-4bc5f62ee421/blobs/bbedecf1bd02d0a42b81ac6b45ef3ad0036edcc7f2cc0618d278c9b0cde1feb0/1218",
+            "action_digest": {
+              "hash": "bbedecf1bd02d0a42b81ac6b45ef3ad0036edcc7f2cc0618d278c9b0cde1feb0",
+              "sizeBytes": "1218"
+            },
+            "worker": "5cd93f50-25d8-490c-97aa-c37ab69e2422",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.064181,
+            "worker_prepare_seconds": 0.221411,
+            "input_fetch_seconds": 0.176277,
+            "process_seconds": 164.549261,
+            "cpu_seconds": 394.502168,
+            "reported_peak_memory_bytes": 4968992768,
+            "io_stats": {
+              "fileDownloadCount": "2",
+              "fileDownloadSizeBytes": "86041",
+              "fileDownloadDurationUsec": "164619013",
+              "fileUploadCount": "66",
+              "fileUploadSizeBytes": "13537721",
+              "fileUploadDurationUsec": "459578"
+            }
+          },
+          "command_join": {
+            "run": 3,
+            "execution_id": "/uploads/fc199e51-614f-489c-a9c9-4bc5f62ee421/blobs/bbedecf1bd02d0a42b81ac6b45ef3ad0036edcc7f2cc0618d278c9b0cde1feb0/1218",
+            "action_digest": {
+              "hash": "bbedecf1bd02d0a42b81ac6b45ef3ad0036edcc7f2cc0618d278c9b0cde1feb0",
+              "sizeBytes": "1218"
+            },
+            "command_digest": {
+              "hash": "a99ebffd109b8df5a23791174ccae92f606abdec24fefc057e306a6061020a79",
+              "sizeBytes": "5058"
+            },
+            "target": "//agentplane/system_tests/suites:test_pod"
+          }
+        }
+      ],
+      "limitations": [
+        "This changes the test node's periodic synchronization cadence, so it establishes projection correctness under that cadence rather than exposure to the production-default one-minute schedule.",
+        "Selected-case execution is a feasibility/tail screen, not complete CI feedback or a reliability population. Compare CPU separately and retain all failures.",
+        "Arms ran in default-then-candidate order with overlap. Controls attached warm baselines; candidate startup-source changes forced cold rebuilds. Native fixture extraction and a stronger unrelated policy assertion are also in candidate source, outside the selected case.",
+        "Aggregate TestRunner CPU across three actions: 1698.600s default versus 1646.333s candidate. This includes setup/cleanup and is not a standalone kubelet CPU measurement. No significant population cost claim."
+      ],
+      "pending": [
+        "Repeat counterbalanced warm/cold and busy-window exposure before adopting a reliability or latency claim; inspect current-head ordinary CI."
+      ],
+      "failures": [],
+      "effective_configuration": [
+        {
+          "variant": "projection-5s",
+          "run": 1,
+          "sync_frequency": "5s",
+          "config_map_and_secret_change_detection_strategy": "Watch",
+          "invocation": "dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/98fcef031949c9e8eab01686dd5815773919cf06eff5dddb78d00a3bc664b7d4/13432"
+        },
+        {
+          "variant": "projection-5s",
+          "run": 2,
+          "sync_frequency": "5s",
+          "config_map_and_secret_change_detection_strategy": "Watch",
+          "invocation": "dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/eac21c6abcb0eeebbbde66342c4aa6bad2077876c7d1ecd1e9bb29a8b7d56015/13432"
+        },
+        {
+          "variant": "projection-5s",
+          "run": 3,
+          "sync_frequency": "5s",
+          "config_map_and_secret_change_detection_strategy": "Watch",
+          "invocation": "dfbc6e9d-bb6d-4321-aaa1-849f3dd160f2",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/eac21c6abcb0eeebbbde66342c4aa6bad2077876c7d1ecd1e9bb29a8b7d56015/13432"
+        },
+        {
+          "variant": "projection-control",
+          "run": 1,
+          "sync_frequency": "1m0s",
+          "config_map_and_secret_change_detection_strategy": "Watch",
+          "invocation": "09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434"
+        },
+        {
+          "variant": "projection-control",
+          "run": 2,
+          "sync_frequency": "1m0s",
+          "config_map_and_secret_change_detection_strategy": "Watch",
+          "invocation": "09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434"
+        },
+        {
+          "variant": "projection-control",
+          "run": 3,
+          "sync_frequency": "1m0s",
+          "config_map_and_secret_change_detection_strategy": "Watch",
+          "invocation": "09eea6bb-8837-4aec-8105-a9b7a6344205",
+          "artifact_uri": "bytestream://remote.buildbuddy.io/blobs/2d5998abe5c9c07b2ac720d3f37e9e78c149ab039b62dab2c5a73dfe39a757ab/13434"
+        }
+      ]
+    },
+    "native_fixture_extraction": {
+      "status": "PASSED",
+      "finding": "Moved the existing Gateway/Dispatcher/History composition to agentplane/testing/native_service_fixtures.py; the pilot keeps its target/manual tag and Claude selection. Seven fixture function ASTs are unchanged. Explicit imports preserve pytest scope.",
+      "checks": [
+        "Positive real-service recovery passed at 33cc6df6c70f9e83e95a9959a0ae8aefd093610b: https://app.buildbuddy.io/invocation/d12a1122-8586-4d0b-976a-9c16b26fc0eb . Retained-node compatibility tests passed in the same invocation.",
+        "Discarded-journal control failed at the retained-Session assertion (empty Runtime Session set), not setup: https://app.buildbuddy.io/invocation/addede73-ff24-4675-b7fe-f121dfbf0dbc .",
+        "All nine explicitly named changed Python library targets built with their configured lint/type aspects: https://app.buildbuddy.io/invocation/3b553799-eab5-4fd1-b724-c54844db7c77 .",
+        "Seven composed fixture function ASTs match the original pilot; target path, manual status, Claude artifact selection and fresh identity/database lifetimes remain unchanged."
+      ],
+      "failures": [
+        "One pre-test Bazel visibility error, fixed before the positive retry."
+      ],
+      "pending": [],
+      "positive": {
+        "invocation": "d12a1122-8586-4d0b-976a-9c16b26fc0eb",
+        "url": "https://app.buildbuddy.io/invocation/d12a1122-8586-4d0b-976a-9c16b26fc0eb",
+        "recorded_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
+        "source_note": "Exact published33cc6df6c70f9e83e95a9959a0ae8aefd093610b; native fixture ownership extraction, unchanged scenario.",
+        "success": true,
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "bazel_seconds": 52.471,
+        "actions": [
+          {
+            "label": "//agentplane/system_tests/k3s:test_baseline",
+            "run": 1,
+            "shard": 1,
+            "attempt": 1,
+            "baseline": "unknown",
+            "cleanup": null,
+            "fingerprint": null,
+            "setup_seconds": null,
+            "cases": [
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_infrastructure_inputs_change_compatibility[binary]",
+                "seconds": 0.008252
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_infrastructure_inputs_change_compatibility[crd]",
+                "seconds": 0.002607
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_infrastructure_inputs_change_compatibility[release]",
+                "seconds": 0.002931
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_infrastructure_inputs_change_compatibility[image]",
+                "seconds": 0.002468
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_infrastructure_inputs_change_compatibility[helper]",
+                "seconds": 0.00278
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_infrastructure_inputs_change_compatibility[layer_mode]",
+                "seconds": 0.002438
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_fingerprint_is_stable_across_input_order",
+                "seconds": 0.002859
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_invalid_marker_is_rejected_before_ownership_fields_are_read[marker0]",
+                "seconds": 0.005502
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_invalid_marker_is_rejected_before_ownership_fields_are_read[marker1]",
+                "seconds": 0.002427
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_matching_clean_baseline_is_marked_dirty_before_reuse",
+                "seconds": 0.002067
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_dirty_or_incompatible_baseline_cannot_attach[dirty-compatible]",
+                "seconds": 0.003132
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_dirty_or_incompatible_baseline_cannot_attach[clean-different]",
+                "seconds": 0.002727
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_unhealthy_clean_baseline_cannot_attach",
+                "seconds": 0.002925
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_reused_pid_cannot_be_stopped",
+                "seconds": 0.003097
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_image_store_requires_compatible_clean_state_and_disk_headroom[None-clean-20000000000-False]",
+                "seconds": 0.002714
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_image_store_requires_compatible_clean_state_and_disk_headroom[test-k3s-clean-20000000000-True]",
+                "seconds": 0.00203
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_image_store_requires_compatible_clean_state_and_disk_headroom[test-k3s-dirty-20000000000-False]",
+                "seconds": 0.002317
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_image_store_requires_compatible_clean_state_and_disk_headroom[other-k3s-clean-20000000000-False]",
+                "seconds": 0.006856
+              },
+              {
+                "nodeid": "agentplane/system_tests/k3s/test_baseline.py::test_image_store_requires_compatible_clean_state_and_disk_headroom[test-k3s-clean-19999999999-False]",
+                "seconds": 0.002786
+              }
+            ],
+            "junit": {
+              "name": "pytest",
+              "errors": "0",
+              "failures": "0",
+              "skipped": "0",
+              "tests": "19",
+              "time": "4.915",
+              "timestamp": "2026-11-13T07:10:23.157592+00:00",
+              "hostname": "192.168.241.2"
+            },
+            "junit_cases": [
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_infrastructure_inputs_change_compatibility[binary]",
+                "time": "0.006"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_infrastructure_inputs_change_compatibility[crd]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_infrastructure_inputs_change_compatibility[release]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_infrastructure_inputs_change_compatibility[image]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_infrastructure_inputs_change_compatibility[helper]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_infrastructure_inputs_change_compatibility[layer_mode]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_fingerprint_is_stable_across_input_order",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_invalid_marker_is_rejected_before_ownership_fields_are_read[marker0]",
+                "time": "0.006"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_invalid_marker_is_rejected_before_ownership_fields_are_read[marker1]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_matching_clean_baseline_is_marked_dirty_before_reuse",
+                "time": "0.002"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_dirty_or_incompatible_baseline_cannot_attach[dirty-compatible]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_dirty_or_incompatible_baseline_cannot_attach[clean-different]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_unhealthy_clean_baseline_cannot_attach",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_reused_pid_cannot_be_stopped",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_image_store_requires_compatible_clean_state_and_disk_headroom[None-clean-20000000000-False]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_image_store_requires_compatible_clean_state_and_disk_headroom[test-k3s-clean-20000000000-True]",
+                "time": "0.002"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_image_store_requires_compatible_clean_state_and_disk_headroom[test-k3s-dirty-20000000000-False]",
+                "time": "0.003"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_image_store_requires_compatible_clean_state_and_disk_headroom[other-k3s-clean-20000000000-False]",
+                "time": "0.007"
+              },
+              {
+                "classname": "agentplane.system_tests.k3s.test_baseline",
+                "name": "test_image_store_requires_compatible_clean_state_and_disk_headroom[test-k3s-clean-19999999999-False]",
+                "time": "0.003"
+              }
+            ],
+            "physical_executions": [
+              {
+                "id": "/uploads/80112681-ae78-4d44-b723-d021f9fcb58b/blobs/818bca9cd9f29fbf240189f107f59baa1619a6bc8cea907f9f46225b66c18830/500",
+                "action_digest": {
+                  "hash": "818bca9cd9f29fbf240189f107f59baa1619a6bc8cea907f9f46225b66c18830",
+                  "sizeBytes": "500"
+                },
+                "worker": "65f4124a-ba1f-43c5-98e1-4c7b2648dda8",
+                "stage": "COMPLETED",
+                "status": {},
+                "queue_seconds": 0.10693,
+                "worker_prepare_seconds": 0.304185,
+                "input_fetch_seconds": 0.220097,
+                "process_seconds": 12.456411,
+                "cpu_seconds": 10.225588,
+                "reported_peak_memory_bytes": 521342976,
+                "io_stats": {
+                  "fileDownloadCount": "1",
+                  "fileDownloadSizeBytes": "48900",
+                  "fileDownloadDurationUsec": "12525814",
+                  "fileUploadCount": "8",
+                  "fileUploadSizeBytes": "61329",
+                  "fileUploadDurationUsec": "87938"
+                }
+              }
+            ]
+          },
+          {
+            "label": "//agentplane/x/native_contracts:test_recovery",
+            "run": 1,
+            "shard": 1,
+            "attempt": 1,
+            "baseline": "unknown",
+            "cleanup": null,
+            "fingerprint": null,
+            "setup_seconds": null,
+            "cases": [],
+            "junit": {
+              "name": "pytest",
+              "errors": "0",
+              "failures": "0",
+              "skipped": "0",
+              "tests": "1",
+              "time": "26.710",
+              "timestamp": "2026-11-13T07:10:31.597680+00:00",
+              "hostname": "192.168.241.2"
+            },
+            "junit_cases": [
+              {
+                "classname": "agentplane.x.native_contracts.test_recovery",
+                "name": "test_runtime_transport_outage_retains_history_and_accepts_next_input",
+                "time": "26.234"
+              }
+            ],
+            "physical_executions": [
+              {
+                "id": "/uploads/55bfae7d-23b5-45f0-b2b8-de52a0fc473f/blobs/a8a6a6ec58afc5809025c7f14e4eed3e8458bbe237af4025574af1f3357929d8/581",
+                "action_digest": {
+                  "hash": "a8a6a6ec58afc5809025c7f14e4eed3e8458bbe237af4025574af1f3357929d8",
+                  "sizeBytes": "581"
+                },
+                "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+                "stage": "COMPLETED",
+                "status": {},
+                "queue_seconds": 0.060828,
+                "worker_prepare_seconds": 0.35433,
+                "input_fetch_seconds": 0.26779,
+                "process_seconds": 41.243402,
+                "cpu_seconds": 47.523337,
+                "reported_peak_memory_bytes": 1076936704,
+                "io_stats": {
+                  "fileDownloadCount": "5",
+                  "fileDownloadSizeBytes": "91624406",
+                  "fileDownloadDurationUsec": "41379756",
+                  "fileUploadCount": "16",
+                  "fileUploadSizeBytes": "88269",
+                  "fileUploadDurationUsec": "295651"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "negative_control": {
+        "invocation": "addede73-ff24-4675-b7fe-f121dfbf0dbc",
+        "url": "https://app.buildbuddy.io/invocation/addede73-ff24-4675-b7fe-f121dfbf0dbc",
+        "recorded_commit": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
+        "source_note": "Expected failed discarded-journal control at exact33cc6df6c70f9e83e95a9959a0ae8aefd093610b.",
+        "success": null,
+        "status": "COMPLETE_INVOCATION_STATUS",
+        "bazel_seconds": 42.18,
+        "actions": [
+          {
+            "label": "//agentplane/x/native_contracts:test_recovery",
+            "run": 1,
+            "shard": 1,
+            "attempt": 1,
+            "baseline": "unknown",
+            "cleanup": null,
+            "fingerprint": null,
+            "setup_seconds": null,
+            "cases": [],
+            "junit": {
+              "name": "pytest",
+              "errors": "0",
+              "failures": "1",
+              "skipped": "0",
+              "tests": "1",
+              "time": "24.831",
+              "timestamp": "2026-11-13T07:12:43.692701+00:00",
+              "hostname": "192.168.241.2"
+            },
+            "junit_cases": [
+              {
+                "classname": "agentplane.x.native_contracts.test_recovery",
+                "name": "test_runtime_transport_outage_retains_history_and_accepts_next_input",
+                "time": "24.242"
+              }
+            ],
+            "physical_executions": [
+              {
+                "id": "/uploads/3bec803b-4a78-4522-a8ed-eea0d8610822/blobs/15fb5928b4fe1588ce6736c8b637edb299ae80815500e299201d0e3736383a5d/581",
+                "action_digest": {
+                  "hash": "15fb5928b4fe1588ce6736c8b637edb299ae80815500e299201d0e3736383a5d",
+                  "sizeBytes": "581"
+                },
+                "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+                "stage": "COMPLETED",
+                "status": {},
+                "queue_seconds": 0.062402,
+                "worker_prepare_seconds": 0.374143,
+                "input_fetch_seconds": 0.267198,
+                "process_seconds": 37.919519,
+                "cpu_seconds": 44.678925,
+                "reported_peak_memory_bytes": 1077661696,
+                "io_stats": {
+                  "fileDownloadDurationUsec": "37966474",
+                  "fileUploadCount": "16",
+                  "fileUploadSizeBytes": "132158",
+                  "fileUploadDurationUsec": "95732"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "next_step": "Keep this source PR experimental. MCP services418.667s is now the last fresh ordinary-CI test, with VM391.875s and Pod382.481s behind it. Next map those seven MCP cases to backend contracts versus OAuth/app journeys, compose the smallest real-service fixture for the backend cases and retain actual deployment/app acceptance. Complete native active-work/History-gap/fencing seeded-defect controls and the planned 30-pair/100-execution graph replay before reducing required selection. Continue counterbalanced cadence/concurrency exposure; current 9m49s feedback does not meet the <4-minute objective.",
+    "ordinary_ci": {
+      "finding": "All three required checks passed on implementation head 33cc6df6c7. Observed required-check feedback was 9m49s; the routine <4-minute objective remains unmet. MCP services finished last, followed by VM and Pod acceptance.",
+      "pr_head": "33cc6df6c70f9e83e95a9959a0ae8aefd093610b",
+      "merge_commit": "4e1a675306f3c4e95a9aad67f35d3ae552ee6095",
+      "merge_base_commit": "a0456735d25a4a877729bc483d3ac66fa33469e8",
+      "source_note": "Ordinary CI tested GitHub synthetic merge 4e1a675306f3c4e95a9aad67f35d3ae552ee6095 with parents a0456735d25a4a877729bc483d3ac66fa33469e8 and33cc6df6c70f9e83e95a9959a0ae8aefd093610b. Its tree differs from literal head 33cc. This result is separate from the pinned experiments. Feedback runs from workflow creation to the latest successful required check; it is not proof of auto-merge eligibility or a matched population improvement.",
+      "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43383732566",
+      "invocation_url": "https://app.buildbuddy.io/invocation/86e3e3c4-56bf-50cf-b578-3559a4f99d29",
+      "bazel_seconds": 510.656,
+      "required_feedback_seconds": 589.0,
+      "pod_process_seconds": 382.4809,
+      "pod_setup_seconds": 94.370594,
+      "last_test_actions": [
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_services",
+          "process_seconds": 418.667358
+        },
+        {
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "process_seconds": 391.875305
+        },
+        {
+          "label": "//agentplane/system_tests/suites:test_pod",
+          "process_seconds": 382.4809
+        }
+      ],
+      "physical_new_test_execution_count": 26,
+      "pod_cases": 21,
+      "pod_baseline": "cold",
+      "pod_cleanup": "complete",
+      "merge_tree": "ca201eab4a5481cfcbe7ef40ed4e5a12fa7e0fa5",
+      "literal_head_tree": "7276d3ad1359ec571a3f77154625670ebe96b0bd",
+      "tree_matches_literal_head": false,
+      "docs_head": "337aae97f1a5050260424f74bdb033df579687f0",
+      "docs_status": "PASSED",
+      "docs_workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43385199997",
+      "docs_invocation_url": "https://app.buildbuddy.io/invocation/9298e005-0cd1-5ad3-a1a7-a820c21bbc62"
+    }
   }
 }
