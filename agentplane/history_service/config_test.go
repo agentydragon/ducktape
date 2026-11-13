@@ -36,13 +36,14 @@ func loadTestConfig(t *testing.T, file string, environ ...string) (config, error
 	}, environ...))
 }
 
-func TestSettingsLoadFromTheFileAndTheEnvironmentWithTheirDefaults(t *testing.T) {
+func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantReaders := []auth.Account{{Namespace: "test-agentplane", Name: "test-app"}, {Namespace: "test-agentplane", Name: "test-notifications"}}
-	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.DatabaseURL == "" || c.Ingress.WriterNamespaces[0] != "test-agentplane" {
+	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.DatabaseURL != "postgres://test-user:never-print-this@test-database/history" ||
+		c.Ingress.WriterNamespaces[0] != "test-agentplane" {
 		t.Errorf("settings were not read: %+v", c)
 	}
 	if !c.Ingress.SettleDeltas {
@@ -57,7 +58,6 @@ func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 	file := requiredFile + `delegation:
   actor: test-agentplane/actions
   identity_callers: true
-  caller_namespaces: [test-agentplane]
   methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
 `
 	c, err := loadTestConfig(t, file)
@@ -65,21 +65,21 @@ func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.Delegation == nil || c.Delegation.Actor != (auth.Account{Namespace: "test-agentplane", Name: "actions"}) ||
-		!slices.Equal(c.Delegation.CallerNamespaces, []string{"test-agentplane"}) ||
 		!slices.Equal(c.Delegation.Methods, []string{"/agentplane.history_service.HistoryService/ReadSessionEvents"}) {
 		t.Fatalf("delegation settings were not kept separate and explicit: %+v", c.Delegation)
 	}
 	for _, incomplete := range []string{
 		requiredFile + "delegation: {actor: test-agentplane/actions}\n",
-		requiredFile + "delegation: {actor: test-agentplane/actions, caller_namespaces: [], methods: [x]}\n",
-		requiredFile + "delegation: {actor: malformed, caller_namespaces: [test-agentplane], methods: [x]}\n",
+		requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: false, methods: [x]}\n",
+		requiredFile + "delegation: {actor: malformed, identity_callers: true, methods: [x]}\n",
+		requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: true, caller_namespaces: [test-agentplane], methods: [x]}\n",
 	} {
 		if _, err := loadTestConfig(t, incomplete); err == nil {
 			t.Fatalf("accepted incomplete or malformed delegation setting: %s", incomplete)
 		}
 	}
 	identityOnly, err := loadTestConfig(t, requiredFile+"delegation: {actor: test-agentplane/actions, identity_callers: true, methods: [x]}\n")
-	if err != nil || !identityOnly.Delegation.IdentityCallers || len(identityOnly.Delegation.CallerNamespaces) != 0 {
+	if err != nil || !identityOnly.Delegation.IdentityCallers {
 		t.Fatalf("an Identity-only delegation grant: %+v %v", identityOnly.Delegation, err)
 	}
 }
@@ -123,13 +123,14 @@ ingress:
 	}
 }
 
-func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
-	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"watch_lease_s: 1.5\n", settingPrefix+"FOLD_CONCURRENCY=7")
+func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
+	file := strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1) + "watch_lease_s: 1.5\nfold_concurrency: 7\n"
+	c, err := loadTestConfig(t, file, settingPrefix+"FOLD_CONCURRENCY=9", settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9999")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.WatchLeaseSeconds != 1.5 || c.FoldConcurrency != 7 || c.PolicyNamespace != "test-policies" {
-		t.Errorf("file and environment overrides: %+v", c)
+		t.Errorf("settings file values changed under environment overrides: %+v", c)
 	}
 	c, err = loadTestConfig(t, strings.Replace(requiredFile, "  writer_namespaces", "  settle_deltas: false\n  writer_namespaces", 1))
 	if err != nil {
@@ -144,7 +145,7 @@ func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
 	}
 }
 
-func TestNativeFrameReadBatchSizeLoadsFromFileAndEnvironment(t *testing.T) {
+func TestNativeFrameReadBatchSizeLoadsFromFileAndIgnoresEnvironment(t *testing.T) {
 	fileSetting := requiredFile + "native_frame_read_batch_size: 17\n"
 	c, err := loadTestConfig(t, fileSetting)
 	if err != nil {
@@ -158,24 +159,19 @@ func TestNativeFrameReadBatchSizeLoadsFromFileAndEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.NativeFrameReadBatchSize != 3 {
-		t.Fatalf("environment setting = %d, want 3", c.NativeFrameReadBatchSize)
+	if c.NativeFrameReadBatchSize != 17 {
+		t.Fatalf("environment changed file setting to %d, want 17", c.NativeFrameReadBatchSize)
 	}
 }
 
-func TestMigrationTimeoutSettings(t *testing.T) {
+func TestMigrationTimeoutIsReadFromTheSettingsFile(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile+"migration_timeout_s: 45\n", settingPrefix+"MIGRATION_TIMEOUT_S=90")
-	if err != nil || c.MigrationTimeoutSeconds != 90 {
-		t.Fatalf("environment override: timeout %v, error %v", c.MigrationTimeoutSeconds, err)
-	}
-	timeout, err := migrationOnlyTimeout()
-	if err != nil || timeout != 90*time.Second {
-		t.Fatalf("migration-only timeout %v, error %v", timeout, err)
+	if err != nil || c.MigrationTimeoutSeconds != 45 {
+		t.Fatalf("settings file timeout %v, error %v", c.MigrationTimeoutSeconds, err)
 	}
 	for _, value := range []string{"0", "NaN", "86401", "invalid"} {
-		t.Setenv(settingPrefix+"MIGRATION_TIMEOUT_S", value)
-		if _, err := migrationOnlyTimeout(); err == nil {
-			t.Errorf("migration-only accepted timeout %q", value)
+		if _, err := loadTestConfig(t, requiredFile+"migration_timeout_s: "+value+"\n"); err == nil {
+			t.Errorf("settings file accepted migration timeout %q", value)
 		}
 	}
 }
@@ -183,6 +179,7 @@ func TestMigrationTimeoutSettings(t *testing.T) {
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":                      requiredFile + "bogus: 1\n",
+		"runtime secret in file":           requiredFile + "database_url: postgres://file.invalid/history\n",
 		"no readers":                       "reader_accounts: []\n" + requiredFile[strings.Index(requiredFile, "token_audience"):],
 		"no audience":                      strings.Replace(requiredFile, "token_audience: test-history-service\n", "", 1),
 		"no ingress audience":              strings.Replace(requiredFile, "  token_audience: test-runner-ingress\n", "", 1),
@@ -205,6 +202,20 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 	if _, err := loadTestConfig(t, requiredFile, databaseURLEnv[:len(settingPrefix)]+"DATABASE_URL="); err == nil {
 		t.Error("accepted without a database URL")
+	}
+}
+
+func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv}); err == nil {
+		t.Fatal("started without a settings file path")
+	}
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{
+		settingPrefix + "CONFIG_FILE=/settings/file/does/not/exist", databaseURLEnv,
+	}); err == nil {
+		t.Fatal("started without the required settings file")
+	}
+	if _, err := loadTestConfig(t, requiredFile+"---\n"); err == nil {
+		t.Fatal("accepted more than one YAML document")
 	}
 }
 

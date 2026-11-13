@@ -21,7 +21,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, IngressSettings, Settings
+from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, DelegationSettings, IngressSettings, Settings
 from agentplane.identity.auth import listener
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
@@ -35,7 +35,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
@@ -123,18 +122,13 @@ class HistoryService(Construct):
             settle_deltas=env.settle_deltas,
             compact_deltas=env.compact_deltas,
         )
-        content = {
-            "reader_accounts": sorted(callers, key=lambda reader: (reader.namespace, reader.name)),
-            "token_audience": TOKEN_AUDIENCE,
-            "policy_namespace": env.namespace,
-            "ingress": ingress_settings,
-        }
+        delegation = None
         if delegation_actor is not None:
-            content["delegation"] = {
-                "actor": f"{delegation_actor.namespace}/{delegation_actor.name}",
+            delegation = DelegationSettings(
+                actor=f"{delegation_actor.namespace}/{delegation_actor.name}",
                 # Session delegation names an Identity in policy_namespace as the effective caller.
-                "identity_callers": True,
-                "methods": [
+                identity_callers=True,
+                methods=(
                     "/agentplane.history_service.HistoryService/ReadSessionEvents",
                     "/agentplane.history_service.HistoryService/FollowSession",
                     "/agentplane.history_service.HistoryService/ReadSessionObservations",
@@ -145,8 +139,8 @@ class HistoryService(Construct):
                     "/agentplane.history_service.HistoryService/ReadNativeFrames",
                     "/agentplane.history_service.HistoryService/FindSessions",
                     "/agentplane.history_service.HistoryService/WatchSessionSummaries",
-                ],
-            }
+                ),
+            )
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.go).
         workload = add_service_workload(
@@ -155,7 +149,7 @@ class HistoryService(Construct):
             serves=[endpoint],
             container="history-service",
             image=f"{_IMAGE}:unset",
-            env_variables={env_name(Settings, "database_url"): database_url, **(container_env or {})},
+            env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url, **(container_env or {})},
             readiness=tls_grpc_probe(
                 port=endpoint.pod_port,
                 ca_file=workload_tls.TRUST_BUNDLE_FILE,
@@ -193,19 +187,26 @@ class HistoryService(Construct):
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        content["rpc"] = listener.Listener(
-            listen_address=f"0.0.0.0:{endpoint.pod_port}",
-            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[
-                listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE, RUNNER_INGRESS_AUDIENCE})),
-                listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-            ],
+        settings = Settings(
+            reader_accounts=frozenset(callers),
+            token_audience=TOKEN_AUDIENCE,
+            policy_namespace=env.namespace,
+            ingress=ingress_settings,
+            delegation=delegation,
+            rpc=listener.Listener(
+                listen_address=f"0.0.0.0:{endpoint.pod_port}",
+                tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[
+                    listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE, RUNNER_INGRESS_AUDIENCE})),
+                    listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+                ],
+            ),
         )
         config = SettingsFile(
             self,
             "config",
             metadata=ApiObjectMetadata(name=f"{NAME}-config", namespace=env.namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(settings),
             path="/etc/agentplane-history-service/config.yaml",
         )
         config.mount_into(workload.container, env=Settings.config_file_env)

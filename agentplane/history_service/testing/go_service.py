@@ -8,8 +8,8 @@ API server answers the service's TokenReviews for real Pod-bound tokens.
 from __future__ import annotations
 
 import asyncio
-import json
 import subprocess
+import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from contextlib import ExitStack, aclosing, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
@@ -17,6 +17,7 @@ from pathlib import Path
 from uuid import UUID
 
 import grpc
+import yaml
 from python.runfiles import Runfiles
 
 from agentplane.environment_runtime_transport.config import ClientTLS
@@ -24,6 +25,7 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.settings import IngressSettings, Settings
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
@@ -59,14 +61,27 @@ def _go_database_url(database_url: str) -> str:
 
 def migrate_history_database(database_url: str) -> None:
     """Bring a database to the History Service's schema with the serving binary's migration-only mode."""
-    result = subprocess.run(
-        [_SERVICE, "--migrate-only"],
-        env={_DATABASE_URL_ENV: _go_database_url(database_url)},
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
+    settings = Settings(
+        reader_accounts=frozenset((READER,)),
+        token_audience=READER_AUDIENCE,
+        policy_namespace="test-policy-namespace",
+        rpc=workload_listener.Listener(
+            listen_address="127.0.0.1:8080",
+            auth=[workload_listener.KubernetesBearerAuth(audiences=frozenset({READER_AUDIENCE, WRITER_AUDIENCE}))],
+        ),
+        ingress=IngressSettings(token_audience=WRITER_AUDIENCE, writer_namespaces=frozenset((WRITER.namespace,))),
     )
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        config = Path(temporary_directory) / "history-service.yaml"
+        config.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True), sort_keys=False))
+        result = subprocess.run(
+            [_SERVICE, "--migrate-only"],
+            env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -226,29 +241,26 @@ async def go_history_service(
             rpc.auth.append(workload_listener.SPIFFEAuth(ca_file=ca_file))
             channel_credentials = grpc.ssl_channel_credentials(root_certificates=svid_ca.cert_pem)
             history_tls = ClientTLS(ca_file=ca_file, server_uri="spiffe://agentplane/history-ingress")
-        config.write_text(
-            json.dumps(
-                {
-                    "policy_namespace": policy_namespace,
-                    "reader_accounts": [{"namespace": READER.namespace, "name": READER.name}],
-                    "token_audience": READER_AUDIENCE,
-                    "request_timeout_s": 10,
-                    "rpc": rpc.model_dump(mode="json", exclude_none=True),
-                    "kubeconfig": str(api.kubeconfig),
-                    "ingress": {
-                        "token_audience": WRITER_AUDIENCE,
-                        "writer_namespaces": list(writer_namespaces),
-                        "sampler_accounts": [account.model_dump() for account in sampler_accounts],
-                        "sampler_identity_callers": sampler_identity_callers,
-                        # Tests compare the archive with the runner's journal entry by entry.
-                        "settle_deltas": False,
-                    },
-                    # The fold also runs when a commit announces itself; the interval only bounds a missed notice.
-                    "fold_interval_s": 0.05,
-                    "watch_lease_s": watch_lease_s,
-                }
-            )
+        settings = Settings(
+            reader_accounts=frozenset((READER,)),
+            token_audience=READER_AUDIENCE,
+            policy_namespace=policy_namespace,
+            request_timeout_s=10,
+            rpc=rpc,
+            kubeconfig=api.kubeconfig,
+            ingress=IngressSettings(
+                token_audience=WRITER_AUDIENCE,
+                writer_namespaces=frozenset(writer_namespaces),
+                sampler_accounts=frozenset(sampler_accounts),
+                sampler_identity_callers=sampler_identity_callers,
+                # Tests compare the archive with the runner's journal entry by entry.
+                settle_deltas=False,
+            ),
+            # The fold also runs when a commit announces itself; the interval only bounds a missed notice.
+            fold_interval_s=0.05,
+            watch_lease_s=watch_lease_s,
         )
+        config.write_text(yaml.safe_dump(settings.model_dump(mode="json", exclude_none=True), sort_keys=False))
         async with go_process(
             _SERVICE,
             env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},

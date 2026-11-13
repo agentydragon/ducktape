@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, model_validator
 
 from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
-from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
-from util.yaml_file_settings import YamlFileSettings
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -20,10 +17,7 @@ type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]
 class DelegationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
-    caller_namespaces: tuple[str, ...] = Field(
-        default=(), description="Deprecated and ignored; retained only to load older deployment settings."
-    )
-    identity_callers: bool = Field(
+    identity_callers: Literal[True] = Field(
         description="Must be true: Actions may assert a live Identity in policy_namespace as the effective caller."
     )
     methods: tuple[str, ...] = Field(
@@ -55,14 +49,21 @@ class IngressSettings(BaseModel):
         "Preserves all original events and cursors. Disabling affects new writes only.",
     )
 
+    @field_serializer("writer_namespaces")
+    def sorted_writer_namespaces(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
 
-class Settings(YamlFileSettings):
+    @field_serializer("sampler_accounts")
+    def sorted_sampler_accounts(self, value: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
+        return sorted(value, key=lambda account: (account.namespace, account.name))
+
+
+class Settings(BaseModel):
+    """Complete non-secret runtime settings, authored in the mounted YAML file."""
+
     config_file_env: ClassVar[str] = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
-    model_config = SettingsConfigDict(
-        env_prefix="AGENTPLANE_HISTORY_SERVICE_", cli_parse_args=True, cli_kebab_case=True
-    )
+    model_config = ConfigDict(extra="forbid")
 
-    database_url: str = Field(min_length=1)
     reader_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     delegation: DelegationSettings | None = Field(
         default=None,
@@ -71,7 +72,6 @@ class Settings(YamlFileSettings):
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
-    log_levels: LogLevels
     rpc: Listener
     kubeconfig: Path | None = None
     policy_namespace: str = Field(min_length=1, description="Namespace holding the Identities a Sandbox SVID may name.")
@@ -86,6 +86,10 @@ class Settings(YamlFileSettings):
     watch_lease_s: float = Field(
         default=300, gt=0, description="Seconds a WatchSessionSummaries stream lasts before planned renewal."
     )
+
+    @field_serializer("reader_accounts")
+    def sorted_reader_accounts(self, value: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
+        return sorted(value, key=lambda account: (account.namespace, account.name))
 
     @model_validator(mode="after")
     def bearer_audiences(self) -> Settings:

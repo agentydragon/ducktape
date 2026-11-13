@@ -72,8 +72,8 @@ trust grant. It preserves the Rule's ordinary direct path. Delegation requires a
 Identity needs the actor's separate `Delegator.IdentityCallers` grant, a Rule whose direct mode admits
 Identity callers (`ReviewedServiceAccountOrIdentity`, `AnySubject`, `SVIDOrAccounts`), and the live
 Identity's UID in the receiver's policy namespace (`KubernetesIdentityUIDs`, an uncached read);
-otherwise it is `PERMISSION_DENIED`. Legacy `caller_namespaces` config fields are accepted but inert
-during rollout. Delegation never asserts a ServiceAccount as the effective caller. A method with no
+otherwise it is `PERMISSION_DENIED`. Legacy `caller_namespaces` config fields never grant authority;
+strict service settings may reject them. Delegation never asserts a ServiceAccount as the effective caller. A method with no
 delegation policy rejects the delegated scheme and any delegation envelope; `Bearer` plus an envelope
 is rejected rather than treated as a direct call. The envelope's provenance is one typed profile,
 an Action's records, a central Session, or a consented MCP Connection/grant; the handler consumes only

@@ -41,12 +41,9 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
-        "//agentplane:log_levels",
         "//agentplane:subjects",
         "//agentplane/identity/auth:listener",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 
@@ -96,7 +93,7 @@ go_library(
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
-        "@com_github_spf13_viper//:viper",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/runtime",
