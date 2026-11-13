@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"google.golang.org/grpc"
@@ -320,8 +321,8 @@ func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	zero := uint64(0)
-	output := newHeadTailBuffer(16)
-	output.push(nil)
+	output := outputbuffer.New(16)
+	output.Append(nil)
 	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
 	err := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
 		method: executorMethodProcessStart, processID: "not-dispatched-start", retainedSession: "retained-executor",
@@ -351,8 +352,8 @@ func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
 func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) {
 	largeCursor := uint64(1<<53 + 17)
 	outputBytes := []byte{0, 'x', 0xff}
-	output := newHeadTailBuffer(16)
-	output.push(outputBytes)
+	output := outputbuffer.New(16)
+	output.Append(outputBytes)
 	evidence := executionFailureRecord{
 		method: executorMethodProcessRead, remoteOutcome: NestedUnknown,
 		afterSequence: &largeCursor, output: output,
@@ -374,8 +375,8 @@ func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) 
 	}
 
 	zero := uint64(0)
-	empty := newHeadTailBuffer(16)
-	empty.push([]byte{})
+	empty := outputbuffer.New(16)
+	empty.Append([]byte{})
 	emptyEvidence := executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero, output: empty}.toolEvidence()
 	emptyJSON, err := json.Marshal(emptyEvidence)
 	if err != nil {
@@ -839,8 +840,8 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	if err := store.ProcessResult(t.Context(), owner, "observed-process", nil, protocol.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	output := newHeadTailBuffer(unifiedExecOutputMaxBytes)
-	output.push([]byte("stdout before failure\n"))
+	output := outputbuffer.New(outputbuffer.MaxBytes)
+	output.Append([]byte("stdout before failure\n"))
 	cursor := uint64(8)
 	transport := &executorTransportError{
 		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
@@ -873,7 +874,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	}
 	evidence, ok := rejected.evidence.(executionFailureEvidence)
 	if !ok || evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil ||
-		!bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 0 {
+		!bytes.Equal(*evidence.BufferedOutputBase64, output.RetainedBytes()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 0 {
 		t.Fatalf("full output is missing from FollowEvents evidence: %+v", rejected.evidence)
 	}
 }
@@ -885,7 +886,7 @@ func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *tes
 		message: "stale read", method: executorMethodProcessRead, intentID: "read-intent",
 		processID: "process-1", executionSessionID: "session-1", afterSequence: &cursor,
 		remoteOutcome: NestedUnknown, requestOutcome: &requestOutcome, automaticReplay: false,
-		currentIncarnationUID: "current-incarnation", output: newHeadTailBuffer(64),
+		currentIncarnationUID: "current-incarnation", output: outputbuffer.New(64),
 	}
 	evidence := record.toolEvidence()
 	if evidence.AfterSeq == nil || *evidence.AfterSeq != 0 || evidence.BufferedOutput == nil || *evidence.BufferedOutput != "" ||
@@ -1026,8 +1027,8 @@ func (c *cancelDuringJournalContext) Err() error {
 func (c *cancelDuringJournalContext) Done() <-chan struct{} { return c.done }
 
 func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
-	output := newHeadTailBuffer(16 * 1024)
-	output.push(bytes.Repeat([]byte("a"), 32*1024))
+	output := outputbuffer.New(16 * 1024)
+	output.Append(bytes.Repeat([]byte("a"), 32*1024))
 	cursor := uint64(12)
 	message, err := observedProcessFailureMessage(&executorTransportError{
 		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
@@ -1055,7 +1056,7 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 	}
 	evidence := transport.evidence("")
 	if evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil ||
-		!bytes.Equal(*evidence.BufferedOutputBase64, output.retained()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
+		!bytes.Equal(*evidence.BufferedOutputBase64, output.RetainedBytes()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
 		t.Fatalf("truncated output cannot be retrieved exactly from evidence: %+v", evidence)
 	}
 }
@@ -1126,7 +1127,7 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 				observed, readErr := e.readProcess(t.Context(), "late-output", 1000)
 				err = readErr
 				if err == nil {
-					output, code = string(observed.output.retained()), *observed.exitCode
+					output, code = string(observed.output.RetainedBytes()), *observed.exitCode
 				}
 			}
 			if err != nil || code != 23 || output != "late stdout\n" || reads != 3 {

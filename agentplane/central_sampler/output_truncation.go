@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 )
 
 // lossyUTF8 replaces each invalid byte with U+FFFD, as Rust String::from_utf8_lossy does for
@@ -34,7 +36,7 @@ func truncateExecOutput(output []byte, omittedBytes int, originalTokenCount int,
 		return fmt.Sprintf("Warning: truncated output (original token count: %d)\nTotal output lines: %d\n\n%s",
 			approxTokenCount(text), countLines(text), truncateMiddleWithTokenBudget(text, maxTokens))
 	}
-	marker := outputOmissionMarker(omittedBytes)
+	marker := outputbuffer.OmissionMarker(omittedBytes)
 	if len(text) <= budget {
 		if strings.Contains(text, marker) {
 			return text

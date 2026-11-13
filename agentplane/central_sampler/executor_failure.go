@@ -3,6 +3,8 @@ package centralsampler
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 )
 
 type executionMethod string
@@ -40,7 +42,7 @@ type executionFailureRecord struct {
 	environmentState      fmt.Stringer
 	currentIncarnationUID string
 	transportError        string
-	output                *headTailBuffer
+	output                *outputbuffer.Buffer
 }
 
 type executionFailureSource interface {
@@ -94,16 +96,16 @@ func (f executionFailureRecord) evidence(includeMessage bool) executionFailureEv
 		evidence.EnvironmentState = f.environmentState.String()
 	}
 	if f.output != nil {
-		buffered := f.output.retained()
+		buffered := f.output.RetainedBytes()
 		text := lossyUTF8(buffered)
 		base64 := make([]byte, len(buffered))
 		copy(base64, buffered)
-		bufferedBytes, omittedBytes := len(buffered), f.output.omitted
+		bufferedBytes, omittedBytes := len(buffered), f.output.OmittedBytes()
 		evidence.BufferedOutput = &text
 		evidence.BufferedOutputBase64 = &base64
 		evidence.BufferedBytes = &bufferedBytes
 		evidence.OmittedBytes = &omittedBytes
-		if includeMessage && f.method == executorMethodProcessRead && f.output.totalBytes() > 0 {
+		if includeMessage && f.method == executorMethodProcessRead && f.output.TotalBytes() > 0 {
 			observed := observedOutputEvidence(f.output)
 			evidence.ObservedOutput = &observed
 		}
@@ -153,7 +155,7 @@ func executionFailureMessage(f executionFailureRecord) (string, error) {
 	if f.environmentState != nil {
 		failure.EnvironmentState = f.environmentState.String()
 	}
-	if f.method == executorMethodProcessRead && f.output != nil && f.output.totalBytes() > 0 {
+	if f.method == executorMethodProcessRead && f.output != nil && f.output.TotalBytes() > 0 {
 		observed := observedOutputEvidence(f.output)
 		failure.ObservedOutput = &observed
 	}
@@ -183,8 +185,8 @@ func (e *executorNotDispatchedError) executionFailureRecord(remoteOutcome Nested
 	}
 }
 
-func observedOutputEvidence(output *headTailBuffer) observedProcessOutput {
-	retained := output.retained()
+func observedOutputEvidence(output *outputbuffer.Buffer) observedProcessOutput {
+	retained := output.RetainedBytes()
 	const shownBytes = 8 * 1024
 	head, tail := retained, []byte(nil)
 	if len(retained) > shownBytes {
@@ -193,13 +195,13 @@ func observedOutputEvidence(output *headTailBuffer) observedProcessOutput {
 	}
 	displayOmitted := len(retained) - len(head) - len(tail)
 	text := lossyUTF8(head)
-	if displayOmitted > 0 || output.omitted > 0 {
-		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, output.omitted)
+	if displayOmitted > 0 || output.OmittedBytes() > 0 {
+		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, output.OmittedBytes())
 	}
 	text += lossyUTF8(tail)
 	return observedProcessOutput{
-		Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: output.omitted,
+		Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: output.OmittedBytes(),
 		DisplayOmittedBytes: displayOmitted, ShownHeadBytes: len(head), ShownTailBytes: len(tail),
-		Truncated: displayOmitted > 0 || output.omitted > 0,
+		Truncated: displayOmitted > 0 || output.OmittedBytes() > 0,
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
@@ -282,7 +283,7 @@ func tokenBudget(value *uint64) *int {
 	}
 	// Collected output never exceeds 1 MiB, so any larger budget behaves the same; the bound only
 	// keeps byte arithmetic in range.
-	budget := int(min(*value, unifiedExecOutputMaxBytes))
+	budget := int(min(*value, outputbuffer.MaxBytes))
 	return &budget
 }
 
@@ -334,22 +335,22 @@ type unifiedExecResult struct {
 
 // processObservation is output collected from one process interaction.
 type processObservation struct {
-	output   *headTailBuffer
+	output   *outputbuffer.Buffer
 	exitCode *int
 	exited   bool
 	wallTime float64
 }
 
 func (o processObservation) unifiedExecResult(sessionID *int, maxOutputTokens *int, chunkID string) *unifiedExecResult {
-	collected := o.output.withOmissionMarker()
+	collected := o.output.WithOmissionMarker()
 	// Codex rust-v0.162.1 utils/string/src/truncate.rs approx_tokens_from_byte_count.
-	tokens := (o.output.totalBytes() + approxBytesPerToken - 1) / approxBytesPerToken
+	tokens := (o.output.TotalBytes() + approxBytesPerToken - 1) / approxBytesPerToken
 	result := &unifiedExecResult{ChunkID: chunkID, WallTimeSeconds: o.wallTime, ExitCode: o.exitCode, OriginalTokenCount: &tokens}
 	if !o.exited {
 		result.SessionID = sessionID
 	}
 	if maxOutputTokens != nil {
-		result.Output = truncateExecOutput(collected, o.output.omitted, tokens, *maxOutputTokens)
+		result.Output = truncateExecOutput(collected, o.output.OmittedBytes(), tokens, *maxOutputTokens)
 	} else {
 		result.Output = lossyUTF8(collected)
 	}

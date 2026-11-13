@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
+
+go_library(
+    name = "outputbuffer",
+    srcs = ["buffer.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer",
+)
+
+go_test(
+    name = "outputbuffer_test",
+    size = "small",
+    srcs = ["buffer_test.go"],
+    embed = [":outputbuffer"],
+    race = "on",
+)
