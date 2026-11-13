@@ -2,12 +2,16 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -228,5 +232,59 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	}
 	if len(summaries) != len(events)-1 || summaries[0].Event != (model.ActionsEvent{RequestID: requestID, Sequence: 18}) || summaries[0].ActionState == nil || *summaries[0].ActionState != "decision_pending" {
 		t.Fatalf("pending summaries from relational identity = %+v", summaries)
+	}
+}
+
+func TestIdentityActionActorReadsSummarizesAndExpiresWithoutChangingEventIdentity(t *testing.T) {
+	f := newIsolatedFixture(t, defaultQuotas())
+	body := f.body("identity-actor")
+	subscription := f.subscribe(t, body)
+	actor := &action_servicepb.Principal{Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: &identitypb.Identity{Name: "requester", Uid: "original-identity-uid"}}}
+	action := eventsThrough(1, 1)[0]
+	action.State, action.Actor = action_servicepb.ActionState_ACTION_STATE_CANCELLED, actor
+	payload, err := json.Marshal(action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := model.ActionsEvent{RequestID: body.Source.(model.ActionsSource).RequestID, Sequence: 1}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
+	var decoded storagecodec.ActionEvent
+	page := f.read(t, subscription.InboxID, 0)
+	if len(page.Entries) != 1 {
+		t.Fatalf("entries = %+v", page.Entries)
+	}
+	if err := json.Unmarshal(page.Entries[0].Payload, &decoded); err != nil || !proto.Equal(decoded.Actor, actor) {
+		t.Fatalf("read actor = %v, %v", decoded.Actor, err)
+	}
+	status, _, err := f.SessionStatus(t.Context(), body.DestinationRef.Namespace, body.SessionID, nil, Debounce{}, true, true)
+	if err != nil || status == nil || len(status.PendingEntries) != 1 {
+		t.Fatalf("status projection = %+v, %v", status, err)
+	}
+	for _, change := range []string{
+		`action_actor_identity_uid = NULL`,
+		`action_actor_identity_uid = ''`,
+		`action_actor_namespace = 'ns', action_actor_name = 'account'`,
+		`action_actor_issuer = 'issuer', action_actor_subject = 'subject'`,
+		`action_actor_kind = NULL`,
+	} {
+		_, err := f.db.ExecContext(t.Context(), "UPDATE entry SET "+change+" WHERE inbox_id = $1 AND cursor = 1", subscription.InboxID)
+		var rejected *pq.Error
+		if !errors.As(err, &rejected) || string(rejected.Code) != "23514" {
+			t.Errorf("accepted malformed Identity actor %s: %v", change, err)
+		}
+	}
+	f.acknowledge(t, subscription.InboxID, 1)
+	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
+	f.cleanAll(t)
+	page = f.read(t, subscription.InboxID, 0)
+	if page.Inbox.ExpiredThrough != 1 || len(page.Entries) != 0 {
+		t.Fatalf("expired page = %+v", page)
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_actor_identity_name IS NULL AND action_actor_identity_uid IS NULL`, subscription.InboxID); got != 1 {
+		t.Fatalf("Identity actor payload not expired: %d", got)
+	}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
+	if got := f.read(t, subscription.InboxID, 0).Inbox.LastCursor; got != 1 {
+		t.Fatalf("expired event replayed: cursor %d", got)
 	}
 }

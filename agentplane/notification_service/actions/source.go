@@ -128,7 +128,7 @@ func actionEvent(event *action_servicepb.ActionEvent) (storagecodec.ActionEvent,
 		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	actor := event.GetActor()
-	if err := validateActionActor(actor); err != nil {
+	if err := storagecodec.ValidateActionActor(actor); err != nil {
 		return storagecodec.ActionEvent{}, validationFailure()
 	}
 	return storagecodec.ActionEvent{
@@ -164,17 +164,4 @@ func validationFailure() error {
 func validActionState(state action_servicepb.ActionState) bool {
 	_, known := action_servicepb.ActionState_name[int32(state)]
 	return known && state != action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED
-}
-
-func validateActionActor(actor *action_servicepb.Principal) error {
-	if actor == nil {
-		return nil
-	}
-	if caller := actor.GetCaller(); caller != nil && caller.GetNamespace() != "" && caller.GetName() != "" {
-		return nil
-	}
-	if operator := actor.GetOperator(); operator != nil && operator.GetIssuer() != "" && operator.GetSubject() != "" {
-		return nil
-	}
-	return fmt.Errorf("an Action actor needs a caller account or an operator issuer and subject")
 }
