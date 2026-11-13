@@ -38,7 +38,7 @@ type fixture struct {
 func retained(t *testing.T, span *spans.Span) fixture {
 	t.Helper()
 	db := testpostgres.Open(t, database.URL)
-	f := fixture{db: db, history: storage.NewStore(db, false), id: uuid.New(), span: span}
+	f := fixture{db: db, history: storage.NewStore(db, storage.Options{}), id: uuid.New(), span: span}
 	if _, err := f.history.BindWriter(t.Context(), f.id, storage.ServiceAccountWriter{
 		Namespace: "test-namespace", Name: "test-runner", UID: "test-uid",
 	}, "", nil); err != nil {
@@ -108,7 +108,7 @@ func TestHistoricalSettlementPreservesFoldedContentAndCorrectsPastReaders(t *tes
 		t.Fatal("fixture has no folded delta evidence")
 	}
 	dry, err := RunSession(t.Context(), f.db, f.id, false)
-	if err != nil || dry.Items != 1 || dry.Rows != 4 || dry.StoredBytes <= 0 {
+	if err != nil || dry.Items != 1 || dry.Rows != 4 || dry.PayloadBytes <= 0 {
 		t.Fatalf("dry run: %+v %v", dry, err)
 	}
 	if f.count(t, "session_event") != 9 || f.count(t, "session_event_settlement") != 0 ||
@@ -141,6 +141,49 @@ func TestHistoricalSettlementPreservesFoldedContentAndCorrectsPastReaders(t *tes
 	}
 	if again, err := RunSession(t.Context(), f.db, f.id, true); err != nil || again != (Result{}) || f.count(t, "session_event") != 5 {
 		t.Fatalf("rerun/replay: %+v %v", again, err)
+	}
+}
+
+func TestHistoricalSettlementReadsAndPrunesPackedHistory(t *testing.T) {
+	db := testpostgres.Open(t, database.URL)
+	history := storage.NewStore(db, storage.Options{CompactDeltas: true})
+	id := uuid.New()
+	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "test-namespace", Name: "test-runner", UID: "test-uid"}, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	chunks := make([]string, 80)
+	for index := range chunks {
+		chunks[index] = "hello"
+	}
+	span := spans.ClaudeText(chunks, spans.TextOptions{})
+	if _, err := history.Append(t.Context(), id, span.Entries); err != nil {
+		t.Fatal(err)
+	}
+	var blocks int
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event_block WHERE session_id=$1", id).Scan(&blocks); err != nil || blocks == 0 {
+		t.Fatalf("blocks %d: %v", blocks, err)
+	}
+	dry, err := RunSession(t.Context(), db, id, false)
+	if err != nil || dry.Items != 1 || dry.Rows != 160 || dry.PayloadBytes <= 0 {
+		t.Fatalf("dry run: %+v, %v", dry, err)
+	}
+	applied, err := RunSession(t.Context(), db, id, true)
+	if err != nil || applied != dry {
+		t.Fatalf("apply: %+v, %v", applied, err)
+	}
+	page, err := history.ReadPage(t.Context(), id, 0, 1000)
+	if err != nil || len(page.Entries) != 4 || len(page.Settlements) != 1 {
+		t.Fatalf("page: %v, %v", page, err)
+	}
+	if page.Entries[0].Cursor != 1 || page.Entries[3].Cursor != uint64(len(span.Entries)) {
+		t.Fatalf("retained cursor bounds: %v", page)
+	}
+	if page.Settlements[0].Template == "" {
+		t.Fatal("missing settlement proof")
+	}
+	reads, err := history.ReadSequences(t.Context(), id, []uint64{3}, 10)
+	if err != nil || !reads.Reads[0].Unstored || reads.Reads[0].NextEntry.Cursor != uint64(len(span.Entries)-1) {
+		t.Fatalf("reads: %v, %v", reads, err)
 	}
 }
 

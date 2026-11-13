@@ -73,6 +73,8 @@ type ingressConfig struct {
 	// SettleDeltas removes an item's streamed delta entries from stored history once its retained completion
 	// provably holds their concatenation. Off keeps every entry, for debugging.
 	SettleDeltas bool `mapstructure:"settle_deltas"`
+	// CompactDeltas packs original streamed events into bounded, lossless storage blocks while live.
+	CompactDeltas bool `mapstructure:"compact_deltas"`
 }
 
 func defaultConfig() config {

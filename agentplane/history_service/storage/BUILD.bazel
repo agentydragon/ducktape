@@ -10,6 +10,7 @@ package(default_visibility = [
 go_library(
     name = "storage",
     srcs = [
+        "blocks.go",
         "delta_templates.go",
         "follow.go",
         "settlement.go",
@@ -50,6 +51,7 @@ go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [
+        "blocks_integration_test.go",
         "follow_integration_test.go",
         "settlement_helpers_test.go",
         "store_integration_test.go",

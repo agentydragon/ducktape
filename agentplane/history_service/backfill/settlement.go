@@ -13,9 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
-	"google.golang.org/protobuf/proto"
 )
 
 var (
@@ -23,10 +21,10 @@ var (
 	ErrProjectionBusy  = errors.New("Session projection lease held; retry after the fold releases it")
 )
 
-// Result counts eligible raw delta entries and their stored payload bytes, excluding indexes and rows.
+// Result counts eligible raw delta entries and their logical protobuf bytes, excluding indexes and rows.
 type Result struct {
-	Items             int
-	Rows, StoredBytes int64
+	Items              int
+	Rows, PayloadBytes int64
 }
 
 type scan struct {
@@ -38,7 +36,7 @@ type scan struct {
 
 func scanSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID) (scan, error) {
 	found := scan{lastReference: map[uint64]uint64{}}
-	history := storage.NewStore(db, false)
+	history := storage.NewStore(db, storage.Options{})
 	for after := uint64(0); ; {
 		pageCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		page, err := history.ReadFollowEntries(pageCtx, sessionID, after, nil, false)
@@ -92,10 +90,10 @@ func RunSession(ctx context.Context, db *sql.DB, sessionID uuid.UUID, apply bool
 		}
 		total.Items += result.Items
 		total.Rows += result.Rows
-		total.StoredBytes += result.StoredBytes
+		total.PayloadBytes += result.PayloadBytes
 		if result.Items != 0 {
 			slog.InfoContext(ctx, "historical settlement", "session_id", sessionID, "completion_cursor", cursor,
-				"apply", apply, "rows", result.Rows, "stored_payload_bytes", result.StoredBytes)
+				"apply", apply, "rows", result.Rows, "logical_payload_bytes", result.PayloadBytes)
 		}
 	}
 	return total, nil
@@ -141,12 +139,8 @@ func settleCompletion(ctx context.Context, db *sql.DB, sessionID uuid.UUID, curs
 			return err
 		}
 		if !recorded {
-			var payload []byte
-			if err := tx.QueryRowContext(ctx, "SELECT payload FROM session_event WHERE session_id = $1 AND cursor = $2", sessionID, cursor).Scan(&payload); err != nil {
-				return err
-			}
-			entry := &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(payload, entry); err != nil {
+			entry, err := storage.ReadEntry(ctx, tx, sessionID, cursor)
+			if err != nil {
 				return err
 			}
 			settled, err := storage.SettlementForCompletion(ctx, tx, sessionID, entry)
@@ -165,14 +159,12 @@ func settleCompletion(ctx context.Context, db *sql.DB, sessionID uuid.UUID, curs
 					}
 				}
 				for _, r := range settled.GetRanges() {
-					var rows, bytes int64
-					if err := tx.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(pg_column_size(payload)), 0)
-						FROM session_event WHERE session_id = $1 AND cursor BETWEEN $2 AND $3`,
-						sessionID, r.GetFirst(), r.GetLast()).Scan(&rows, &bytes); err != nil {
+					rows, bytes, err := storage.CountEventPayloads(ctx, tx, sessionID, r.GetFirst(), r.GetLast())
+					if err != nil {
 						return err
 					}
 					result.Rows += rows
-					result.StoredBytes += bytes
+					result.PayloadBytes += bytes
 				}
 				result.Items = 1
 				if apply {

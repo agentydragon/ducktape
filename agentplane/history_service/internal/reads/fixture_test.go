@@ -32,7 +32,7 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
-	history := storage.NewStore(db, false)
+	history := storage.NewStore(db, storage.Options{})
 	return fixture{
 		db: db, history: history, reader: &Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
 		projector: &projection.Projector{DB: db, History: history, Epoch: testEpoch, PageSize: testPageSize},

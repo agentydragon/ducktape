@@ -111,7 +111,7 @@ func TestALinkToAnEntryWithoutANativeFrameCarriesNoEntry(t *testing.T) {
 
 func TestAFrameSettledBeforeTheFoldForgetsItsLinkIsUnavailable(t *testing.T) {
 	f := newFixture(t)
-	settling := storage.NewStore(f.db, true)
+	settling := storage.NewStore(f.db, storage.Options{SettleDeltas: true})
 	// 1-2 start, 3-6 two chunk pairs, 7-8 completion; the fold links chunk 4 to its frame 3.
 	span := spans.ClaudeText([]string{"Hel", "lo"}, spans.TextOptions{}).Entries
 	sessionID := f.session(t, settling, sandboxName("settled-"), span[:6]...)

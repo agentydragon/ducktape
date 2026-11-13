@@ -1,4 +1,6 @@
 // The History Service's read boundary over retained Session history.
+// README.md specifies lossless incremental storage compaction, cursor/replay invariants and reader
+// requirements. Storage blocks never appear on this API; reads reconstruct original EventEntry values.
 syntax = "proto3";
 
 package agentplane.history_service;

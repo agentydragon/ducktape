@@ -136,7 +136,7 @@ func TestFollowByteBoundAndOversizedEntry(t *testing.T) {
 
 func TestFollowFilterDoesNotDecodeOtherKinds(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	native := nativeEntry(2, "selected")
 	appendEntries(t, store, sessionID, entry(1), native, entry(3))
@@ -154,7 +154,7 @@ func TestFollowFilterDoesNotDecodeOtherKinds(t *testing.T) {
 
 func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entries(1, 10)...)
 	page := followPage(t, store, sessionID, 0)
@@ -203,7 +203,7 @@ func TestFollowMetadataReplaysLateCorrectionsWithBoundedPagination(t *testing.T)
 
 func TestFollowPageBoundsSettlementsWhenKindsFilterOutCompletions(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entries(1, FollowSettlementsLimit+1)...)
 	for cursor := uint64(1); cursor <= FollowSettlementsLimit+1; cursor++ {

@@ -48,6 +48,9 @@ func TestSettingsLoadFromTheFileAndTheEnvironmentWithTheirDefaults(t *testing.T)
 	if !c.Ingress.SettleDeltas {
 		t.Error("default ingress does not settle deltas")
 	}
+	if c.Ingress.CompactDeltas {
+		t.Error("compaction must be explicitly enabled")
+	}
 }
 
 func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
@@ -133,6 +136,10 @@ func TestASettingAFileSetsToItsNonDefaultOverridesTheDefault(t *testing.T) {
 	}
 	if c.Ingress.SettleDeltas {
 		t.Error("settle_deltas: false was not applied")
+	}
+	c, err = loadTestConfig(t, strings.Replace(requiredFile, "  writer_namespaces", "  compact_deltas: true\n  writer_namespaces", 1))
+	if err != nil || !c.Ingress.CompactDeltas {
+		t.Fatalf("compact_deltas: true was not applied: %v", err)
 	}
 }
 

@@ -28,7 +28,7 @@ func testDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func testStore(t *testing.T) *Store { return NewStore(testDB(t), false) }
+func testStore(t *testing.T) *Store { return NewStore(testDB(t), Options{}) }
 
 func entryFrom(source string, cursor uint64, resumed bool) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{
@@ -169,7 +169,7 @@ func removeEntries(t *testing.T, db *sql.DB, sessionID uuid.UUID, removed ...uin
 
 func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "", nil); err != nil {
 		t.Fatal(err)
@@ -180,15 +180,15 @@ func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 		t.Fatalf("last cursor %d", last)
 	}
 	// A second replica replays the prefix and extends it.
-	if last := appendEntries(t, NewStore(db, false), sessionID, entry(1), resumed, native); last != 3 {
+	if last := appendEntries(t, NewStore(db, Options{}), sessionID, entry(1), resumed, native); last != 3 {
 		t.Fatalf("last cursor %d", last)
 	}
-	page := readPage(t, NewStore(db, false), sessionID, 1, 2)
+	page := readPage(t, NewStore(db, Options{}), sessionID, 1, 2)
 	if page.LastCursor != 3 {
 		t.Fatalf("last cursor %d", page.LastCursor)
 	}
 	assertEntries(t, page.Entries, resumed, native)
-	page = readPage(t, NewStore(db, false), sessionID, 3, 128)
+	page = readPage(t, NewStore(db, Options{}), sessionID, 3, 128)
 	if page.LastCursor != 3 {
 		t.Fatalf("last cursor %d", page.LastCursor)
 	}
@@ -217,7 +217,7 @@ func TestBadBatchRollsBackAndConflictingDuplicateIsRejected(t *testing.T) {
 
 func TestAppendStoresObservationFieldNumbers(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	batch := []*eventlogpb.EventEntry{entry(1), nativeEntry(2, "test-frame"), entry(3)}
 	batch[2].Event = nil
@@ -236,7 +236,7 @@ func TestAppendStoresObservationFieldNumbers(t *testing.T) {
 
 func TestTwoReplicaWritersSerializeOnTheHistoryRow(t *testing.T) {
 	db := testDB(t)
-	left, right := NewStore(db, false), NewStore(db, false)
+	left, right := NewStore(db, Options{}), NewStore(db, Options{})
 	sessionID := opened(t, left)
 	var wg sync.WaitGroup
 	results := make([]uint64, 2)
@@ -271,7 +271,7 @@ func TestASessionBindsToItsFirstWriter(t *testing.T) {
 
 func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := uuid.New()
 	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first", nil); err != nil {
 		t.Fatal(err)
@@ -367,7 +367,7 @@ func notifications(t *testing.T, db *sql.DB, operate func()) map[string]int {
 
 func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := uuid.New()
 	for _, step := range []struct {
 		name    string
@@ -442,7 +442,7 @@ func TestObservationPagesSeekTheRetainedPrefix(t *testing.T) {
 
 func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	if readPage(t, store, sessionID, 0, 128).FeedState != nil {
 		t.Fatal("a fresh Session has a feed state")
@@ -463,11 +463,11 @@ func TestFeedSnapshotNeedsCoveredBoundHistoryAndCannotRegress(t *testing.T) {
 
 	feed.Attached.HarnessState = sessionpb.HarnessState_HARNESS_STATE_RUNNING
 	record(feed)
-	assertFeedState(t, NewStore(db, false), sessionID, feed)
+	assertFeedState(t, NewStore(db, Options{}), sessionID, feed)
 
 	// A stopped snapshot at the cursor of a running one belongs to the previous run.
 	record(stoppedAt(sessionID, 1))
-	assertFeedState(t, NewStore(db, false), sessionID, feed)
+	assertFeedState(t, NewStore(db, Options{}), sessionID, feed)
 
 	appendEntries(t, store, sessionID, entryFrom("source", 2, true))
 	feed.Attached.LastCursor = 2
@@ -542,7 +542,7 @@ func TestReopeningASealNeedsASnapshotThatReachesIt(t *testing.T) {
 
 func TestRemovedCursorsAreReportedWhereAPageReachesThem(t *testing.T) {
 	db := testDB(t)
-	store := NewStore(db, false)
+	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
 	appendEntries(t, store, sessionID, entries(1, 5)...)
 	removeEntries(t, db, sessionID, 3, 5)
@@ -597,7 +597,7 @@ func settledRanges(page *historypb.ReadSessionEventsResponse) []CursorRange {
 }
 
 func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
-	store := NewStore(testDB(t), true)
+	store := NewStore(testDB(t), Options{SettleDeltas: true})
 	sessionID := opened(t, store)
 	// Cursors 1-2 start the item, 3-6 are two chunk pairs, 7-8 complete it; the completion arrives in a
 	// later batch.
@@ -658,7 +658,7 @@ func TestSettlingStoreDropsMatchedChunksOnceTheirItemCompletes(t *testing.T) {
 }
 
 func TestSettlingStoreRetainsStderrAndCompletionWhileDroppingReasoningDeltas(t *testing.T) {
-	store := NewStore(testDB(t), true)
+	store := NewStore(testDB(t), Options{SettleDeltas: true})
 	sessionID := opened(t, store)
 	span := reasoningSpanWithStderr().Entries
 	appendEntries(t, store, sessionID, span[:8]...)
@@ -676,7 +676,7 @@ func TestSettlingStoreRetainsStderrAndCompletionWhileDroppingReasoningDeltas(t *
 }
 
 func TestAnItemWithoutNativeFramesCompletesUnsettled(t *testing.T) {
-	store := NewStore(testDB(t), true)
+	store := NewStore(testDB(t), Options{SettleDeltas: true})
 	sessionID := opened(t, store)
 	var batch []*eventlogpb.EventEntry
 	for i, event := range []*eventpb.Event{
@@ -707,7 +707,7 @@ func TestDefaultStoreKeepsEveryEntry(t *testing.T) {
 }
 
 func TestReadSequencesRequiresAPositiveBatchAndNonzeroSequences(t *testing.T) {
-	store := NewStore(nil, false)
+	store := NewStore(nil, Options{})
 	for _, batchSize := range []int{0, -1} {
 		_, err := store.ReadSequences(t.Context(), uuid.New(), []uint64{1}, batchSize)
 		assertError(t, err, ErrInvalidArgument)
@@ -753,7 +753,7 @@ func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
 func TestAnIdentityBoundRowRefusesAnOlderReplicasServiceAccountBind(t *testing.T) {
 	db := testDB(t)
 	sessionID := uuid.New()
-	if _, err := NewStore(db, false).BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
+	if _, err := NewStore(db, Options{}).BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, testIdentitySandbox, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	_, err := db.ExecContext(t.Context(), `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4

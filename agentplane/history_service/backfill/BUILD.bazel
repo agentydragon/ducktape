@@ -11,9 +11,7 @@ go_library(
         "//agentplane/history_service/projection",
         "//agentplane/history_service/storage",
         "//agentplane/postgres",
-        "//agentplane/proto:event_log_go_proto",
         "@com_github_google_uuid//:uuid",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

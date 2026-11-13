@@ -49,6 +49,11 @@ class IngressSettings(BaseModel):
         description="Remove an item's streamed delta entries from stored history once its retained "
         "completion provably holds their concatenation. Turn off to keep every entry for debugging.",
     )
+    compact_deltas: bool = Field(
+        default=False,
+        description="Pack native frames and streamed deltas into bounded compressed blocks before completion. "
+        "Preserves all original events and cursors. Disabling affects new writes only.",
+    )
 
 
 class Settings(YamlFileSettings):

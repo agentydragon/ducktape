@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -71,18 +70,20 @@ func (s *Store) ResolveFollowStart(ctx context.Context, sessionID uuid.UUID, req
 		case *historypb.FollowSessionRequest_Tail:
 			after = last
 		case *historypb.FollowSessionRequest_Back:
-			var cursor uint64
-			err := tx.QueryRowContext(ctx, `SELECT cursor FROM session_event
-				WHERE session_id = $1 AND kind = $2 AND cursor <= $3
-				ORDER BY cursor DESC OFFSET $4 LIMIT 1`,
-				sessionID, start.Back.GetKind(), last, uint64(start.Back.GetCount())-1).Scan(&cursor)
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
+			upper, remaining := last, uint64(start.Back.GetCount())
+			for remaining > 0 {
+				count := int(min(remaining, 1000))
+				references, err := eventReferences(ctx, tx, sessionID, 0, upper, []historypb.EventKind{start.Back.GetKind()}, count, true)
+				if err != nil {
+					return err
+				}
+				if len(references) < count {
+					return nil
+				}
+				upper = references[len(references)-1].cursor - 1
+				remaining -= uint64(count)
 			}
-			if err != nil {
-				return err
-			}
-			after = cursor - 1
+			after = upper
 		}
 		return nil
 	})
@@ -100,32 +101,6 @@ func (s *Store) followLastCursor(ctx context.Context, tx *sql.Tx, sessionID uuid
 	return last, err
 }
 
-// followCandidates seeks a bounded slice of each requested kind's index before merging by cursor.
-// A single IN filter with cursor ordering can instead scan an arbitrarily long excluded prefix.
-func followCandidates(kinds []historypb.EventKind, args *[]any) (string, error) {
-	base := `SELECT cursor, octet_length(payload) + 6 AS size FROM session_event
-		WHERE session_id = $1 AND cursor > $2 AND cursor <= $3`
-	if len(kinds) == 0 {
-		return fmt.Sprintf("%s ORDER BY cursor LIMIT %d", base, FollowEntriesLimit+1), nil
-	}
-	var parameters []string
-	seen := make(map[historypb.EventKind]bool)
-	for _, kind := range kinds {
-		if !validFollowKind(kind) {
-			return "", invalid("event kind")
-		}
-		if seen[kind] {
-			continue
-		}
-		seen[kind] = true
-		*args = append(*args, kind)
-		parameters = append(parameters, fmt.Sprintf("($%d::integer)", len(*args)))
-	}
-	return fmt.Sprintf(`SELECT candidate.cursor, candidate.size FROM (VALUES %s) requested(kind)
-		CROSS JOIN LATERAL (%s AND kind = requested.kind ORDER BY cursor LIMIT %d) candidate
-		ORDER BY candidate.cursor LIMIT %d`, strings.Join(parameters, ","), base, FollowEntriesLimit+1, FollowEntriesLimit+1), nil
-}
-
 // ReadFollowEntries reads a bounded page and its settlements from one snapshot. Size accounting
 // reserves room for the response envelope and each repeated entry's wire header; an oversized
 // entry is returned alone. No database transaction is held while the caller sends the page.
@@ -139,50 +114,29 @@ func (s *Store) ReadFollowEntries(ctx context.Context, sessionID uuid.UUID, afte
 		if after > page.LastCursor {
 			return ErrOutOfRange
 		}
-		args := []any{sessionID, after, page.LastCursor}
-		candidates, err := followCandidates(kinds, &args)
+		for _, kind := range kinds {
+			if !validFollowKind(kind) {
+				return invalid("event kind")
+			}
+		}
+		references, err := eventReferences(ctx, tx, sessionID, after, page.LastCursor, kinds, FollowEntriesLimit+1, false)
 		if err != nil {
 			return err
 		}
-		// Materialize lengths, not payloads: even many oversized candidate entries cannot turn into
-		// an oversized result. The extra candidate tells us whether this frame covers the tail.
-		query := fmt.Sprintf(`WITH candidates AS MATERIALIZED (%s), sized AS MATERIALIZED (
-			SELECT cursor, row_number() OVER (ORDER BY cursor) AS position,
-				sum(size) OVER (ORDER BY cursor) AS bytes FROM candidates
-		), selected AS MATERIALIZED (
-			SELECT cursor FROM sized WHERE position <= %d AND (bytes <= %d OR position = 1)
-		)
-		SELECT selected.cursor, event.payload,
-			(SELECT max(cursor) FROM candidates) > (SELECT max(cursor) FROM selected) AS more
-		FROM selected JOIN session_event event ON event.session_id = $1 AND event.cursor = selected.cursor
-		ORDER BY selected.cursor`, candidates, FollowEntriesLimit, FollowBytesLimit-32)
-		rows, err := tx.QueryContext(ctx, query, args...)
-		if err != nil {
+		count, size := 0, 32
+		for _, reference := range references {
+			if count == FollowEntriesLimit || (count > 0 && size+reference.size+6 > FollowBytesLimit) {
+				break
+			}
+			count++
+			size += reference.size + 6
+		}
+		if page.Entries, err = loadEntries(ctx, tx, sessionID, references[:count]); err != nil {
 			return err
 		}
-		defer rows.Close()
 		page.ThroughCursor = page.LastCursor
-		for rows.Next() {
-			var cursor uint64
-			var payload []byte
-			var more bool
-			if err := rows.Scan(&cursor, &payload, &more); err != nil {
-				return err
-			}
-			entry := &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(payload, entry); err != nil {
-				return err
-			}
-			page.Entries = append(page.Entries, entry)
-			if more {
-				page.ThroughCursor = cursor
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		if err := rows.Close(); err != nil {
-			return err
+		if count < len(references) {
+			page.ThroughCursor = references[count-1].cursor
 		}
 		if includeSettlements {
 			settlements, err := tx.QueryContext(ctx, `SELECT completion_cursor, payload FROM session_event_settlement

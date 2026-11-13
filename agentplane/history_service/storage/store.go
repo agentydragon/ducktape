@@ -170,15 +170,19 @@ type SequenceReadPage struct {
 }
 
 type Store struct {
-	db           *sql.DB
-	settleDeltas bool
-	readScope    *ReadScope
+	db        *sql.DB
+	options   Options
+	readScope *ReadScope
 }
 
-// NewStore returns a store over db. With settleDeltas, Append removes an item's streamed delta entries
-// once its completion provably holds their concatenation; only the runner ingress sets it.
-func NewStore(db *sql.DB, settleDeltas bool) *Store {
-	return &Store{db: db, settleDeltas: settleDeltas}
+// Options controls writes only. Every reader supports packed entries regardless of these flags.
+type Options struct {
+	SettleDeltas  bool
+	CompactDeltas bool
+}
+
+func NewStore(db *sql.DB, options Options) *Store {
+	return &Store{db: db, options: options}
 }
 
 // WithReadScope returns a read-only view whose SQL reads are scoped before they page or project.
@@ -214,9 +218,10 @@ func marshal(message proto.Message) ([]byte, error) {
 }
 
 type historyRow struct {
-	sourceID   *string
-	lastCursor uint64
-	feedState  []byte
+	sourceID        *string
+	lastCursor      uint64
+	feedState       []byte
+	compactionAfter *uint64
 	// writer is nil while no push has bound the Session.
 	writer             Writer
 	sandboxUID         *string
@@ -232,11 +237,11 @@ func lockRow(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*historyRow,
 	var identityName, identityUID, executionIdentityName, executionIdentityUID *string
 	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, sandbox_uid,
 		execution_principal_namespace, execution_principal_name, execution_principal_uid,
-		writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid
+		writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid, compaction_after_cursor
 		FROM session_history WHERE id = $1 FOR UPDATE`, sessionID).
 		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &row.sandboxUID,
 			&executionNamespace, &executionName, &executionUID,
-			&identityName, &identityUID, &executionIdentityName, &executionIdentityUID)
+			&identityName, &identityUID, &executionIdentityName, &executionIdentityUID, &row.compactionAfter)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, sessionID)
 	}
@@ -464,6 +469,12 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		if err != nil {
 			return err
 		}
+		if s.options.CompactDeltas && row.compactionAfter == nil {
+			after := row.lastCursor
+			row.compactionAfter = &after
+		} else if !s.options.CompactDeltas {
+			row.compactionAfter = nil
+		}
 		var appended []*eventlogpb.EventEntry
 		for _, entry := range entries {
 			cursor, sourceID := entry.GetCursor(), entry.GetOrigin().GetSourceId()
@@ -492,7 +503,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			}
 			row.sourceID, row.lastCursor, appended = &sourceID, cursor, append(appended, entry)
 		}
-		if s.settleDeltas {
+		if s.options.SettleDeltas {
 			for _, entry := range appended {
 				settled, err := SettlementForCompletion(ctx, tx, sessionID, entry)
 				if err != nil {
@@ -506,8 +517,13 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			}
 		}
 		if len(appended) > 0 {
-			if _, err := tx.ExecContext(ctx, "UPDATE session_history SET source_id = $2, last_cursor = $3 WHERE id = $1",
-				sessionID, *row.sourceID, row.lastCursor); err != nil {
+			if s.options.CompactDeltas {
+				if err := compactEvents(ctx, tx, sessionID, *row.compactionAfter); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.ExecContext(ctx, "UPDATE session_history SET source_id = $2, last_cursor = $3, compaction_after_cursor = $4 WHERE id = $1",
+				sessionID, *row.sourceID, row.lastCursor, row.compactionAfter); err != nil {
 				return err
 			}
 			if err := notify(ctx, tx, ChannelHistory); err != nil {
@@ -523,9 +539,7 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 // checkReplay accepts an entry at or below the stored prefix when it equals what is stored, or when its
 // cursor was settled or removed and its exact payload is no longer stored to compare.
 func checkReplay(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entry *eventlogpb.EventEntry) error {
-	var payload []byte
-	err := tx.QueryRowContext(ctx, "SELECT payload FROM session_event WHERE session_id = $1 AND cursor = $2",
-		sessionID, entry.GetCursor()).Scan(&payload)
+	stored, err := ReadEntry(ctx, tx, sessionID, entry.GetCursor())
 	if errors.Is(err, sql.ErrNoRows) {
 		unstored, err := isUnstored(ctx, tx, sessionID, entry.GetCursor())
 		if err != nil {
@@ -539,11 +553,7 @@ func checkReplay(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entry *ev
 	if err != nil {
 		return err
 	}
-	var stored eventlogpb.EventEntry
-	if err := proto.Unmarshal(payload, &stored); err != nil {
-		return err
-	}
-	if !proto.Equal(&stored, entry) {
+	if !proto.Equal(stored, entry) {
 		return conflict("conflicting entry at %d", entry.GetCursor())
 	}
 	return nil
@@ -741,26 +751,15 @@ func (s *Store) ReadPage(ctx context.Context, sessionID uuid.UUID, afterCursor u
 		}
 		page = &historypb.ReadSessionEventsResponse{LastCursor: lastCursor}
 		through := afterCursor
-		rows, err := tx.QueryContext(ctx, `SELECT cursor, payload FROM session_event
-			WHERE session_id = $1 AND cursor > $2 AND cursor <= $3 ORDER BY cursor LIMIT $4`,
-			sessionID, afterCursor, lastCursor, limit)
+		references, err := eventReferences(ctx, tx, sessionID, afterCursor, lastCursor, nil, limit, false)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var payload []byte
-			if err := rows.Scan(&through, &payload); err != nil {
-				return err
-			}
-			entry := &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(payload, entry); err != nil {
-				return err
-			}
-			page.Entries = append(page.Entries, entry)
-		}
-		if err := rows.Err(); err != nil {
+		if page.Entries, err = loadEntries(ctx, tx, sessionID, references); err != nil {
 			return err
+		}
+		if len(page.Entries) > 0 {
+			through = page.Entries[len(page.Entries)-1].Cursor
 		}
 		if page.Settlements, err = readSettlements(ctx, tx, sessionID, afterCursor, through); err != nil {
 			return err
@@ -835,53 +834,108 @@ func (s *Store) ReadSequences(ctx context.Context, sessionID uuid.UUID, sequence
 }
 
 func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, lastCursor uint64, sequences []int64, readIndexes []int, reads []SequenceRead) error {
-	rows, err := tx.QueryContext(ctx, `SELECT requested.sequence, candidate.cursor, candidate.payload,
+	rows, err := tx.QueryContext(ctx, `SELECT requested.sequence, candidate.cursor, candidate.kind, candidate.size,
 			EXISTS (SELECT FROM session_event_settled_range r
-				WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
+				WHERE r.session_id=$1 AND r.first_cursor<=requested.sequence AND r.last_cursor>=requested.sequence)
 			OR EXISTS (SELECT FROM session_event_removed_range r
-				WHERE r.session_id = $1 AND r.first_cursor <= requested.sequence AND r.last_cursor >= requested.sequence)
-		FROM unnest($2::bigint[]) WITH ORDINALITY AS requested(sequence, position)
+				WHERE r.session_id=$1 AND r.first_cursor<=requested.sequence AND r.last_cursor>=requested.sequence)
+		FROM unnest($2::bigint[]) WITH ORDINALITY AS requested(sequence,position)
 		LEFT JOIN LATERAL (
-			SELECT e.cursor, e.payload FROM session_event e
-			WHERE e.session_id = $1 AND e.cursor >= requested.sequence AND e.cursor <= $3
-			ORDER BY e.cursor LIMIT 1
-		) candidate ON true
-		ORDER BY requested.position`, sessionID, pq.Array(sequences), lastCursor)
+			SELECT cursor,kind,octet_length(payload) AS size FROM session_event
+			WHERE session_id=$1 AND cursor>=requested.sequence AND cursor<=$3 ORDER BY cursor LIMIT 1
+		) candidate ON true ORDER BY requested.position`, sessionID, pq.Array(sequences), lastCursor)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	rowIndex := 0
+	candidates := make([]*eventReference, len(sequences))
+	index := 0
 	for rows.Next() {
-		if rowIndex >= len(sequences) {
-			return fmt.Errorf("sequence query returned more than %d rows", len(sequences))
-		}
 		var sequence int64
-		var cursor sql.NullInt64
-		var payload []byte
+		var cursor, kind, size sql.NullInt64
 		var unstored bool
-		if err := rows.Scan(&sequence, &cursor, &payload, &unstored); err != nil {
+		if err := rows.Scan(&sequence, &cursor, &kind, &size, &unstored); err != nil {
+			rows.Close()
 			return err
 		}
-		read := &reads[readIndexes[rowIndex]]
-		if read.Sequence != uint64(sequence) {
-			return fmt.Errorf("sequence query returned %d at position %d, want %d", sequence, rowIndex, read.Sequence)
+		if index >= len(sequences) || sequence != sequences[index] {
+			rows.Close()
+			return fmt.Errorf("sequence query disagrees at position %d", index)
 		}
-		read.Unstored = unstored
+		reads[readIndexes[index]].Unstored = unstored
 		if cursor.Valid {
-			entry := &eventlogpb.EventEntry{}
-			if err := proto.Unmarshal(payload, entry); err != nil {
-				return err
-			}
-			read.NextEntry = entry
+			candidates[index] = &eventReference{cursor: uint64(cursor.Int64), kind: historypb.EventKind(kind.Int64), size: int(size.Int64)}
 		}
-		rowIndex++
+		index++
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
 		return err
 	}
-	if rowIndex != len(sequences) {
-		return fmt.Errorf("sequence query returned %d rows, want %d", rowIndex, len(sequences))
+	rows.Close()
+	if index != len(sequences) {
+		return fmt.Errorf("sequence query returned %d rows, want %d", index, len(sequences))
+	}
+	// At most two neighboring blocks per requested cursor and packed kind. DISTINCT shares a
+	// block's metadata across requests; loadEntries likewise decompresses each selected block once.
+	kinds := make([]int64, len(compactKinds))
+	for index, kind := range compactKinds {
+		kinds[index] = int64(kind)
+	}
+	rows, err = tx.QueryContext(ctx, `SELECT DISTINCT b.first_cursor,b.kind,b.cursors,b.sizes
+		FROM unnest($2::bigint[]) requested(sequence) CROSS JOIN unnest($4::integer[]) requested_kind(kind)
+		CROSS JOIN LATERAL (
+			(SELECT first_cursor,kind,cursors,sizes FROM session_event_block
+				WHERE session_id=$1 AND kind=requested_kind.kind AND first_cursor<=requested.sequence
+				ORDER BY first_cursor DESC LIMIT 1)
+			UNION ALL
+			(SELECT first_cursor,kind,cursors,sizes FROM session_event_block
+				WHERE session_id=$1 AND kind=requested_kind.kind AND first_cursor>requested.sequence AND first_cursor<=$3
+				ORDER BY first_cursor LIMIT 1)
+		) b`, sessionID, pq.Array(sequences), lastCursor, pq.Array(kinds))
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var first uint64
+		var kind historypb.EventKind
+		var cursors, sizes pq.Int64Array
+		if err := rows.Scan(&first, &kind, &cursors, &sizes); err != nil {
+			rows.Close()
+			return err
+		}
+		if len(cursors) != len(sizes) {
+			rows.Close()
+			return fmt.Errorf("event block index lengths disagree")
+		}
+		for index, sequence := range sequences {
+			position, _ := slices.BinarySearch(cursors, sequence)
+			if position == len(cursors) || uint64(cursors[position]) > lastCursor {
+				continue
+			}
+			if previous := candidates[index]; previous == nil || uint64(cursors[position]) < previous.cursor {
+				candidates[index] = &eventReference{uint64(cursors[position]), kind, int(sizes[position]), &first}
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	var references []eventReference
+	var indexes []int
+	for index, candidate := range candidates {
+		if candidate != nil {
+			references = append(references, *candidate)
+			indexes = append(indexes, index)
+		}
+	}
+	entries, err := loadEntries(ctx, tx, sessionID, references)
+	if err != nil {
+		return err
+	}
+	for index, entry := range entries {
+		reads[readIndexes[indexes[index]]].NextEntry = entry
 	}
 	return nil
 }
@@ -951,21 +1005,23 @@ func (s *Store) ReadObservations(ctx context.Context, sessionID uuid.UUID, befor
 		if err != nil {
 			return err
 		}
-		query := `SELECT cursor, payload FROM session_event WHERE session_id = $1 AND cursor <= $2`
-		args := []any{sessionID, page.LastCursor}
-		switch {
-		case after != nil:
-			query += " AND cursor > $3 ORDER BY cursor LIMIT $4"
-			args = append(args, *after, limit)
-		case before != nil:
-			query += " AND cursor < $3 ORDER BY cursor DESC LIMIT $4"
-			args = append(args, *before, limit)
-		default:
-			query += " ORDER BY cursor DESC LIMIT $3"
-			args = append(args, limit)
+		lowCursor, highCursor := uint64(0), page.LastCursor
+		if after != nil {
+			lowCursor = *after
 		}
-		if page.Observations, err = readObservations(ctx, tx, query, args...); err != nil {
+		if before != nil {
+			if *before == 0 {
+				highCursor = 0
+			} else {
+				highCursor = min(highCursor, *before-1)
+			}
+		}
+		references, err := eventReferences(ctx, tx, sessionID, lowCursor, highCursor, nil, limit, after == nil)
+		if err != nil {
 			return err
+		}
+		for _, reference := range references {
+			page.Observations = append(page.Observations, Observation{Cursor: reference.cursor, Kind: reference.kind})
 		}
 		if after == nil {
 			slices.Reverse(page.Observations)
@@ -1001,28 +1057,6 @@ func (s *Store) ReadObservations(ctx context.Context, sessionID uuid.UUID, befor
 		return err
 	})
 	return page, err
-}
-
-func readObservations(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]Observation, error) {
-	rows, err := tx.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var observations []Observation
-	for rows.Next() {
-		var cursor uint64
-		var payload []byte
-		if err := rows.Scan(&cursor, &payload); err != nil {
-			return nil, err
-		}
-		var entry eventlogpb.EventEntry
-		if err := proto.Unmarshal(payload, &entry); err != nil {
-			return nil, err
-		}
-		observations = append(observations, Observation{Cursor: cursor, Kind: historypb.EventKind(observationNumber(&entry))})
-	}
-	return observations, rows.Err()
 }
 
 // observationNumber stores the Event.observation field number for FollowSession's indexed reads.
@@ -1080,26 +1114,19 @@ type storedEntry struct {
 
 // entriesBefore returns up to limit stored entries below cursor, nearest first.
 func entriesBefore(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor uint64, limit int) ([]storedEntry, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT cursor, payload FROM session_event
-		WHERE session_id = $1 AND cursor < $2 ORDER BY cursor DESC LIMIT $3`, sessionID, cursor, limit)
+	references, err := eventReferences(ctx, tx, sessionID, 0, cursor-1, nil, limit, true)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var batch []storedEntry
-	for rows.Next() {
-		var stored storedEntry
-		var payload []byte
-		if err := rows.Scan(&stored.cursor, &payload); err != nil {
-			return nil, err
-		}
-		stored.entry = &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(payload, stored.entry); err != nil {
-			return nil, err
-		}
-		batch = append(batch, stored)
+	entries, err := loadEntries(ctx, tx, sessionID, references)
+	if err != nil {
+		return nil, err
 	}
-	return batch, rows.Err()
+	batch := make([]storedEntry, len(entries))
+	for index, entry := range entries {
+		batch[index] = storedEntry{cursor: entry.Cursor, entry: entry}
+	}
+	return batch, nil
 }
 
 // RecordSettlement stores settled and deletes the entries in its ranges.
@@ -1117,10 +1144,6 @@ func RecordSettlement(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, sett
 			VALUES ($1, $2, $3, $4)`, sessionID, cursorRange.GetFirst(), cursorRange.GetLast(), settled.GetCompletionCursor()); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM session_event WHERE session_id = $1 AND cursor >= $2 AND cursor <= $3",
-			sessionID, cursorRange.GetFirst(), cursorRange.GetLast()); err != nil {
-			return err
-		}
 	}
-	return nil
+	return deleteEventRanges(ctx, tx, sessionID, settled.Ranges)
 }

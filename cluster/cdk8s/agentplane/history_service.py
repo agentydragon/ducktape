@@ -121,6 +121,7 @@ class HistoryService(Construct):
             ),
             sampler_identity_callers=env.central_sampler is not None,
             settle_deltas=env.settle_deltas,
+            compact_deltas=env.compact_deltas,
         )
         content = {
             "reader_accounts": sorted(callers, key=lambda reader: (reader.namespace, reader.name)),
