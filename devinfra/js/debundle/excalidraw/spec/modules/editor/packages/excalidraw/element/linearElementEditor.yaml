@@ -1,0 +1,17 @@
+# Original home: packages/excalidraw/element/linearElementEditor.ts
+source_matches:
+  - match: |
+      var linearEditorImplementation = class linearEditorClass {
+        ANYTHING;
+        static handleBoxSelection(ANYTHING, ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; }
+        ANYTHING;
+        static getPointGlobalCoordinates(ANYTHING, ANYTHING, ANYTHING) { STMT_LIST; }
+        static getPointsGlobalCoordinates(ANYTHING, ANYTHING) { STMT_LIST; }
+        ANYTHING;
+        static getNormalizedPoints(ANYTHING) { STMT_LIST; }
+        static normalizePoints(ANYTHING) { STMT_LIST; }
+        ANYTHING;
+      };
+    bindings:
+      - local: linearEditorImplementation
+        name: LinearElementEditor

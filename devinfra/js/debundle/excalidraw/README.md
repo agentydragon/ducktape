@@ -60,6 +60,10 @@ module it bundles. Every other chunk is `inline_in_entry`.
   - `editor`: `packages/excalidraw/element/bounds` restores `getVisibleSceneBounds`
     and `doBoundsIntersect` for viewport/zoom conversion and strict rectangle
     intersection. The remaining source family is still residual.
+  - `editor`: `packages/excalidraw/element/linearElementEditor` restores the
+    `LinearElementEditor` class, including point selection, dragging,
+    coordinate conversion, normalization and fixed-segment editing. Its
+    generated static-field initialization stays in the entry.
   - `editor`: `packages/math/{point,vector,angle,utils}` restores the original
     package paths and names for point geometry, vector arithmetic, angle
     conversion, tolerances and rounding. Its emitted modules run under Node
@@ -93,6 +97,8 @@ selection, update subscription and cleanup.
 The store/change probe checks snapshot reuse, capture scheduling, notifications,
 the non-enumerable observed-state marker, and forward/inverse state and element
 changes.
+The linear-editor probe checks constructor state, static initialization,
+element lookup, rotation and global coordinates, and point normalization.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the
