@@ -267,6 +267,11 @@ async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
         result = await page.evaluate(
             """async () => {
+                const [comparisons, normalize, scroll] = await Promise.all([
+                    import('./editor/packages/excalidraw/scene/comparisons.js'),
+                    import('./editor/packages/excalidraw/scene/normalize.js'),
+                    import('./editor/packages/excalidraw/scene/scroll.js'),
+                ]);
                 const { Scene } = await import('./editor/packages/excalidraw/scene/Scene.js');
                 const scene = new Scene();
                 let updates = 0;
@@ -289,8 +294,39 @@ async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
                 detach();
                 scene.triggerUpdate();
                 scene.destroy();
-                return {beforeDestroy, updates, afterDestroy: [Scene.getScene(visible.id),
-                                                               scene.getElementsIncludingDeleted().length]};
+                return {
+                    beforeDestroy,
+                    updates,
+                    afterDestroy: [Scene.getScene(visible.id), scene.getElementsIncludingDeleted().length],
+                    helpers: {
+                        comparisons: [
+                            comparisons.hasBackground('rectangle'),
+                            comparisons.hasBackground('text'),
+                            comparisons.hasStrokeColor('image'),
+                            comparisons.hasStrokeColor('text'),
+                            comparisons.hasStrokeWidth('arrow'),
+                            comparisons.hasStrokeStyle('freedraw'),
+                            comparisons.toolIsArrow('arrow'),
+                            comparisons.canHaveArrowheads('line'),
+                        ],
+                        normalize: [
+                            normalize.getNormalizedZoom(1.23456789),
+                            normalize.getNormalizedZoom(0),
+                            normalize.getNormalizedZoom(31),
+                            normalize.getNormalizedGridSize(0),
+                            normalize.getNormalizedGridStep(100.6),
+                        ],
+                        scroll: [
+                            scroll.centerScrollOn({
+                                scenePoint: {x: 10, y: 20},
+                                viewportDimensions: {width: 800, height: 600},
+                                zoom: {value: 2},
+                                offsets: {right: 80, top: 40},
+                            }),
+                            scroll.calculateScrollCenter([], {}),
+                        ],
+                    },
+                };
             }"""
         )
         assert result == {
@@ -304,6 +340,11 @@ async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
             },
             "updates": 1,
             "afterDestroy": [None, 0],
+            "helpers": {
+                "comparisons": [True, False, False, True, True, False, True, False],
+                "normalize": [1.234568, 0.1, 30, 1, 100],
+                "scroll": [{"scrollX": 170, "scrollY": 140}, {"scrollX": 0, "scrollY": 0}],
+            },
         }
 
 

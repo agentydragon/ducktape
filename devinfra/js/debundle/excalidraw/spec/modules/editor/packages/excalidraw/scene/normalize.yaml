@@ -1,0 +1,18 @@
+# Upstream owner: packages/excalidraw/scene/normalize.ts
+source_matches:
+  - match: |
+      var selected = (zoom) => EXPR(EXPR(zoom, 6), EXPR, EXPR);
+    bindings:
+      - local: selected
+        name: getNormalizedZoom
+
+  - match: |
+      var DECLARATORS_HEAD = null,
+        getNormalizedGridSize = (gridStep) => EXPR(Math.round(gridStep), 1, 100),
+        getNormalizedGridStep = (gridStep) => EXPR(Math.round(gridStep), 1, 100),
+        DECLARATORS_TAIL = null;
+    bindings:
+      - local: getNormalizedGridSize
+        name: getNormalizedGridSize
+      - local: getNormalizedGridStep
+        name: getNormalizedGridStep

@@ -1,0 +1,59 @@
+# Upstream owner: packages/excalidraw/scene/comparisons.ts
+source_matches:
+  - match: |
+      var selected = (type) =>
+        type === "rectangle" ||
+        type === "iframe" ||
+        type === "embeddable" ||
+        type === "ellipse" ||
+        type === "diamond" ||
+        type === "line" ||
+        type === "freedraw";
+    bindings:
+      - local: selected
+        name: hasBackground
+
+  - match: |
+      var selected = (type) =>
+        type !== "image" && type !== "frame" && type !== "magicframe";
+    bindings:
+      - local: selected
+        name: hasStrokeColor
+
+  - match: |
+      var selected = (type) =>
+        type === "rectangle" ||
+        type === "iframe" ||
+        type === "embeddable" ||
+        type === "ellipse" ||
+        type === "diamond" ||
+        type === "freedraw" ||
+        type === "arrow" ||
+        type === "line";
+    bindings:
+      - local: selected
+        name: hasStrokeWidth
+
+  - match: |
+      var selected = (type) =>
+        type === "rectangle" ||
+        type === "iframe" ||
+        type === "embeddable" ||
+        type === "ellipse" ||
+        type === "diamond" ||
+        type === "arrow" ||
+        type === "line";
+    bindings:
+      - local: selected
+        name: hasStrokeStyle
+
+  - match: |
+      var DECLARATORS_HEAD = null,
+        toolIsArrow = (type) => type === "arrow",
+        canHaveArrowheads = (type) => type === "arrow",
+        DECLARATORS_TAIL = null;
+    bindings:
+      - local: toolIsArrow
+        name: toolIsArrow
+      - local: canHaveArrowheads
+        name: canHaveArrowheads
