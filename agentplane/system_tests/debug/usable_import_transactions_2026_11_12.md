@@ -104,3 +104,42 @@ The selected graph excludes other required suites and GitHub gate clocks.
 [Final native acceptance ce2d8aa8](https://app.buildbuddy.io/invocation/ce2d8aa8-d977-4521-8485-d10ae4765764)
 passed the published stale-CRI-ID and no-import-transaction assertions as well as the earlier
 retag, restart, missing-pin, missing-unpack and CRI deletion/reimport boundaries.
+
+### Complete control and actual input comparison
+
+[Control 1a2d1791](https://app.buildbuddy.io/invocation/1a2d1791-4334-441f-8af6-a79d253aafb9)
+also passed all 27 cases, with Bazel elapsed 472.642s versus candidate 458.570s. The observed
+14.072s difference is not a causal graph result. Each suite used the same worker across the
+candidate-then-control pair, but order was fixed, competing load varied, and cache contents
+were not counterbalanced. All six baselines were cold and cleanup completed.
+
+| Suite       | Control setup / process / case envelope | Candidate setup / process / case envelope |
+| ----------- | --------------------------------------: | ----------------------------------------: |
+| Pod         |          128.241s / 433.721s / 241.362s |             67.332s / 419.276s / 283.187s |
+| MCP Actions |          137.603s / 318.640s / 120.009s |             92.331s / 265.177s / 115.504s |
+| VM          |          143.390s / 355.327s / 155.434s |            102.122s / 329.223s / 166.667s |
+
+Native Action/Command decoding and recursive input-tree comparison found identical commands,
+platforms and timeouts for every pair. Pod and MCP have no unique input paths; only `baseline.py`
+differs, with 126 and 127 identical CAS subtrees respectively. VM additionally differs in generated
+`root_disk.tar`, `root_image/index.json` and six OCI blob paths, so its actual tested image inputs
+are not matched. The cause of that generated-image difference is unproven; the EROFS rule already
+pins UUID and time. Do not attribute VM or whole-graph differences to the importer. A follow-up
+VM comparison must first establish identical actual guest inputs.
+
+Observed CPU sums are 3389.973s control versus 2808.563s candidate. Weighting each TestRunner
+process span by its unchanged requested capacity gives 97.534 versus 89.527 requested CU-minutes
+(Pod/MCP 4 CU each, VM 8). These are separate resource observations, not billing or a causal cost
+saving. Pod's case envelope was 41.825s longer in the candidate and offset much of its observed
+setup difference. This reinforces the need to measure full behavior rather than sum import spans.
+
+Native Action digests, including their byte sizes:
+
+```text
+candidate //agentplane/system_tests/suites:test_vm: f8aa107ec389a42f8904d5c50e583ed7175ae3291f1e073e2c6f96bd8b794c7d/1852
+candidate //agentplane/system_tests/suites/mcp:test_actions: 563d68d5986409223219dfc47b3107056d6ef7fbb523c41a0d4ad95b390622d5/1218
+candidate //agentplane/system_tests/suites:test_pod: 726647d3df65c70cb1be05b6b0b3f4c8eb6b0fd8a07cfa5cb26c37608740a88b/1218
+control //agentplane/system_tests/suites/mcp:test_actions: c6adb6b870ef0894b04fa7c7c0e446aa2bf06e0361d3d95f1e241af674ce8d81/1218
+control //agentplane/system_tests/suites:test_vm: aaf7bb1d42666523017df42cdbecb8da9882a4f8ddfdb0749ecc7cf1da87ed7b/1852
+control //agentplane/system_tests/suites:test_pod: 639bc752dc38282b3489602ee339e9166888a3ce54690107e51d505f197811b8/1218
+```
