@@ -237,7 +237,7 @@ func serve(ctx context.Context, c config, proxyListener, adminListener net.Liste
 		return err
 	}
 	egress, err := proxy.New(proxy.Options{
-		CA: ca, UpstreamRoots: roots, Authentication: authentication, Policy: index,
+		CA: ca, UpstreamRoots: roots, UpstreamRootsFile: c.UpstreamCAFile, Authentication: authentication, Policy: index,
 		Upstream: upstream.NewResolver(c.ExemptNetworks), Record: decisions.Record,
 		TLSPassthroughTargets: c.TLSPassthroughTargets,
 	})

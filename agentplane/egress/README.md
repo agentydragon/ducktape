@@ -79,7 +79,9 @@ environment or CLI overrides. `AGENTPLANE_EGRESS_DATABASE_URL` is a separate Sec
 for the shared history database and `--migrate-only`; it is not part of the YAML file. The proxy needs
 an interception CA (`ca_cert`,
 `ca_key`) that the runner containers trust; it signs a short-lived leaf per handshake. Upstream certificates are
-verified against the system roots, or against `upstream_ca_file` when given; the deployment passes
+verified against the system roots, or against `upstream_ca_file` when given. A changed upstream
+bundle is loaded for new requests; active connections finish and idle connections using the old
+roots are closed. An unreadable or invalid bundle fails new HTTPS requests closed. The deployment passes
 public roots plus the cluster CA, so a `clusterInternal` rule can reach the API server. Identity and egress policy come from
 the API server, in-cluster or through `kubeconfig`.
 

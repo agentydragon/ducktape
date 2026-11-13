@@ -42,10 +42,12 @@ type Options struct {
 	// CA signs the leaf certificates the sandboxes' clients are shown inside a tunnel.
 	CA tls.Certificate
 	// UpstreamRoots verifies the destinations, independently of CA.
-	UpstreamRoots  *x509.CertPool
-	Authentication *identity.Authenticator
-	Policy         *policy.Index
-	Upstream       *upstream.Resolver
+	UpstreamRoots *x509.CertPool
+	// UpstreamRootsFile, when set, is reloaded when the projected file changes.
+	UpstreamRootsFile string
+	Authentication    *identity.Authenticator
+	Policy            *policy.Index
+	Upstream          *upstream.Resolver
 	// Record receives every decision. It must not block.
 	Record func(decision.Record)
 }
@@ -77,7 +79,7 @@ func New(options Options) (*Proxy, error) {
 	}
 	p := &Proxy{
 		options: options, leaves: leaves, producer: uuid.New(), flights: newFlights(),
-		upstreams: newUpstreams(options.UpstreamRoots),
+		upstreams: newUpstreams(options.UpstreamRoots, options.UpstreamRootsFile),
 	}
 	p.server = &http.Server{
 		Handler: observability.HTTPHandler(http.HandlerFunc(p.serve)), ReadHeaderTimeout: 30 * time.Second, ErrorLog: log.New(io.Discard, "", 0),
@@ -301,20 +303,24 @@ func (p *Proxy) relay(w http.ResponseWriter, req *http.Request, admitted policy.
 		req.ContentLength = int64(len(admitted.BodyRewrite.Content))
 		req.TransferEncoding = nil
 	}
-	transport := p.upstreams.transport(upstreamKey{
+	key := upstreamKey{
 		target: strings.ToLower(target),
 		dialed: net.JoinHostPort(pin.Address.Unmap().String(), strconv.Itoa(pin.Port)),
 		scheme: req.URL.Scheme,
 		h2c:    req.URL.Scheme == "http" && req.ProtoMajor == 2,
 		// An upgrade (WebSocket) is HTTP/1.1 only.
 		attemptHTTP2: req.Header.Get("Upgrade") == "",
-	})
+	}
 	authority := req.URL.Host
 	(&httputil.ReverseProxy{
 		Rewrite: func(out *httputil.ProxyRequest) { out.Out.Host = "" },
 		Transport: roundTripperFunc(func(out *http.Request) (*http.Response, error) {
 			if out.URL.Host != authority {
 				return nil, errors.New("authority changed after admission")
+			}
+			transport, err := p.upstreams.transport(key)
+			if err != nil {
+				return nil, err
 			}
 			return transport.RoundTrip(out)
 		}),

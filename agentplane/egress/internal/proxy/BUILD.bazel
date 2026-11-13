@@ -33,6 +33,7 @@ go_test(
         "gate_test.go",
         "passthrough_test.go",
         "proxy_test.go",
+        "upstreams_test.go",
     ],
     embed = [":proxy"],
     deps = [

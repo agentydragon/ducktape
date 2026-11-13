@@ -201,6 +201,9 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   not against the interception root, which the proxy issues rather than trusts. That bundle carries
   the public roots plus this cluster's CA, which is what lets a `clusterInternal` rule reach the API
   server; a destination it does not cover fails the connection rather than being carried unverified.
+- An updated `upstream_ca_file` is loaded for subsequent HTTPS requests without restarting the
+  proxy. Idle connections using old roots are closed; active connections can finish. If the file
+  cannot be read or contains no certificates, new HTTPS requests fail closed.
 - The connection is made to the address that was checked: a name is resolved once per admission
   window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
   between the check and the connect. A dial for a target the gate did not admit is not made. An

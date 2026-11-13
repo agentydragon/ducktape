@@ -6,8 +6,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +42,9 @@ type upstreamKey struct {
 // an address other than the one its admission pinned: a host that re-resolves to another address
 // gets another key, and the old connections idle out.
 type upstreams struct {
-	roots *x509.CertPool
+	roots     *x509.CertPool
+	rootsFile string
+	rootsInfo os.FileInfo
 
 	mu    sync.Mutex
 	pools map[upstreamKey]*list.Element
@@ -53,18 +57,23 @@ type upstreamPool struct {
 	transport *http.Transport
 }
 
-func newUpstreams(roots *x509.CertPool) *upstreams {
-	return &upstreams{roots: roots, pools: map[upstreamKey]*list.Element{}, recent: list.New()}
+func newUpstreams(roots *x509.CertPool, rootsFile string) *upstreams {
+	return &upstreams{roots: roots, rootsFile: rootsFile, pools: map[upstreamKey]*list.Element{}, recent: list.New()}
 }
 
 // transport returns the transport for key, creating it and evicting the least recently used one
 // beyond the bound.
-func (u *upstreams) transport(key upstreamKey) *http.Transport {
+func (u *upstreams) transport(key upstreamKey) (*http.Transport, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if key.scheme == "https" && u.rootsFile != "" {
+		if err := u.reloadRoots(); err != nil {
+			return nil, err
+		}
+	}
 	if element, found := u.pools[key]; found {
 		u.recent.MoveToFront(element)
-		return element.Value.(*upstreamPool).transport
+		return element.Value.(*upstreamPool).transport, nil
 	}
 	transport := &http.Transport{
 		Proxy: nil, DisableCompression: true,
@@ -95,7 +104,37 @@ func (u *upstreams) transport(key upstreamKey) *http.Transport {
 		// Connections still carrying a response finish it, then idle out.
 		oldest.transport.CloseIdleConnections()
 	}
-	return transport
+	return transport, nil
+}
+
+// reloadRoots runs under mu. Projected ConfigMap updates replace the target inode;
+// size and modification time also detect ordinary in-place file updates.
+func (u *upstreams) reloadRoots() error {
+	info, err := os.Stat(u.rootsFile)
+	if err != nil {
+		return fmt.Errorf("stat upstream roots: %w", err)
+	}
+	if u.rootsInfo != nil && os.SameFile(info, u.rootsInfo) && info.Size() == u.rootsInfo.Size() && info.ModTime() == u.rootsInfo.ModTime() {
+		return nil
+	}
+	pem, err := os.ReadFile(u.rootsFile)
+	if err != nil {
+		return fmt.Errorf("read upstream roots: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pem) {
+		return errors.New("upstream roots contain no certificates")
+	}
+	if !u.roots.Equal(roots) {
+		for element := u.recent.Front(); element != nil; element = element.Next() {
+			element.Value.(*upstreamPool).transport.CloseIdleConnections()
+		}
+		u.pools = map[upstreamKey]*list.Element{}
+		u.recent.Init()
+		u.roots = roots
+	}
+	u.rootsInfo = info
+	return nil
 }
 
 // closeIdle closes every idle upstream connection, for a drain whose requests have finished.
