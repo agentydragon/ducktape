@@ -24,13 +24,13 @@ from agentplane.testing.native_service_fixtures import (
     postgres_image,
     runtime_binary,
     runtime_client,
-    sandbox,
     service_database_template,
     service_history_db_url,
     spec,
     start_runtime,
     workspace,
 )
+from agentplane.testing.sandbox_fixtures import sandbox
 
 # gazelle:include_dep @pypi//protobuf
 

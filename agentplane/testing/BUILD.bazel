@@ -1,6 +1,10 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+<<<<<<< HEAD
 _TEST_VISIBILITY = [
+=======
+_FIXTURE_VISIBILITY = [
+>>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
     "//agentplane/action_service:__pkg__",
     "//agentplane/app:__pkg__",
     "//agentplane/app/testing:__pkg__",
@@ -23,7 +27,11 @@ _TEST_VISIBILITY = [
 
 package(
     default_testonly = True,
+<<<<<<< HEAD
     default_visibility = _TEST_VISIBILITY,
+=======
+    default_visibility = _FIXTURE_VISIBILITY,
+>>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
 )
 
 py_library(
@@ -64,7 +72,11 @@ py_library(
         "//agentplane/testing/envtest:server",  # keep: fixture subprocess
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
+<<<<<<< HEAD
     visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
+=======
+    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+>>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
     deps = [
         "//agentplane:subjects",
         "//devinfra/testing:undeclared_outputs",
@@ -121,18 +133,55 @@ py_library(
 py_library(
     name = "tls",
     srcs = ["tls.py"],
+<<<<<<< HEAD
     visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
+=======
+    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+>>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
     deps = ["@pypi//cryptography"],
+)
+
+py_library(
+    name = "sandbox_fixtures",
+    testonly = True,
+    srcs = ["sandbox_fixtures.py"],
+    deps = [
+        ":kubernetes_apiserver",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "native_gateway_fixtures",
+    testonly = True,
+    srcs = ["native_gateway_fixtures.py"],
+    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+    deps = [
+        ":kubernetes_apiserver",
+        ":kubernetes_apiserver_fixtures",
+        ":sandbox_fixtures",
+        "//agentplane:subjects",
+        "//agentplane/env:config",
+        "//agentplane/net/peertls:config",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+    ],
 )
 
 py_library(
     name = "native_service_fixtures",
     testonly = True,
     srcs = ["native_service_fixtures.py"],
+    visibility = _FIXTURE_VISIBILITY,
     deps = [
         ":kubernetes_apiserver",
-        ":kubernetes_apiserver_fixtures",
-        "//agentplane:subjects",
+        ":native_gateway_fixtures",
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:fixtures",
@@ -142,13 +191,8 @@ py_library(
         "//agentplane/env/e2e/testing:process_fixtures",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/history_service/testing:go_service",
-        "//agentplane/net/peertls:config",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
         "@pypi//pytest",
         "@rules_python//python/runfiles",
     ],

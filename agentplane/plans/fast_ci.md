@@ -72,6 +72,12 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   This is an envtest-backed process contract; deployed controller, identity and
   storage acceptance remains. The ownership inventory below identifies the
   complete retained witnesses before any gate promotion.
+  Gateway/envtest/PostgreSQL and Sandbox fixtures are now reusable independently
+  of History, harness/model fixtures and host Runtime startup. The existing
+  recovery and admission-reply-loss targets pass after extraction. The configured
+  guest uses that narrow plugin and an explicitly unused ingress endpoint; it
+  creates no Session and starts no History service. Packaged guest Runtime and
+  harness inputs remain required.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -104,6 +110,15 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   Keep it manual; the wrong-config-serial control must fail guest readiness.
   This isolates generic guest packaging from K3s/KubeVirt acceptance without
   asserting that the broader deployment scenarios are redundant.
+  A separate manual `test_runtime_gateway` now boots the unmodified fixture guest root
+  and Runtime disk with fixture-issued TLS/configuration. Its healthy run
+  passed authenticated Gateway status, running lifecycle and exact Sandbox/Pod/
+  boot identity with a positive Lease epoch. The wrong-client-CA control reached
+  the same readiness assertion and failed after a real TLS rejection. Both paths
+  verified container removal, listener closure and restored state ownership.
+  No Session or supervised executor is created. This adds a
+  packaged Runtime transport witness; controller-issued credentials, KubeVirt,
+  PVC, executor operations and App acceptance remain separate.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
@@ -145,8 +160,15 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   The historical replay cohort now resolves 30 distinct tested base/head pairs
   from job-log source SHAs, matching BuildBuddy commit metadata and immutable
   merge parents. It retains failed/cancelled heads and all 40 workflow attempts.
-  This prepares replay inputs; the candidate/control graphs have not been run
-  on those pairs. Current PR API bases are recorded separately from tested bases.
+  The first compatible historical replay, Runtime cleanup PR #15687, completed
+  with the pinned d717 overlay and two audited pair-era BUILD/helper adaptations.
+  Control selects 117 affected targets and candidate selects 124; both select the
+  same 51 tests before runtime tag filtering. The seven extra candidate targets
+  are image manifests and native fixture libraries. Manual contracts remain
+  excluded, so this arrangement does not shorten Runtime PR selection. No selected
+  tests ran in that replay; it proves neither timing nor coverage equivalence.
+  The other 29 pairs remain unexecuted. Current PR API bases are recorded
+  separately from tested bases.
   A separate synthetic MCP-edge-only selector probe at literal 91f compares full
   Pod/VM/Firecracker ownership with the candidate, holding architecture constant
   within each pair. Actual CI hashing selects 18 versus 15 tests; exactly those
@@ -213,3 +235,9 @@ The existing image split #15214 stays held pending its own saving. Import usabil
 harness-mount experiments establish no complete-CI win and do not rule out different
 graphs or adequately provisioned capacity. Retained infrastructure and Pod runner
 pooling already exist; a parked shared-cluster spike is not a working prerequisite.
+
+A seven-profile render batch with two full VM/Firecracker controls passed the
+existing render assertions but did not shorten its observed render window or test
+action. It also broadened a VM-only consumer to all nine outputs. The patch was
+withdrawn; retain its aggregate CPU reduction as a revisit trigger only if renderer
+capacity becomes a measured feedback bottleneck.

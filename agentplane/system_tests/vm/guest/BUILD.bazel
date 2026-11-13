@@ -343,6 +343,12 @@ erofs_image(
     out = "root.img",
     compress_lz4 = True,
     tar = ":root_tar",
+    visibility = [
+        "//agentplane/system_tests/firecracker/guest:__pkg__",
+        "//agentplane/system_tests/firecracker/kernel:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     volume_label = "guest",
 )
 

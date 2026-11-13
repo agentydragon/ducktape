@@ -1,5 +1,6 @@
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_test")
@@ -82,6 +83,51 @@ py_test(
         "//agentplane/x/direct_vm_boot:launcher_tools",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_runtime_gateway",
+    size = "medium",
+    srcs = ["test_runtime_gateway.py"],
+    data = [
+        "//agentplane/system_tests/vm:test_runner_disk_erofs",
+        "//agentplane/system_tests/vm/guest:initramfs.cpio",
+        "//agentplane/system_tests/vm/guest:root_erofs",
+        "//agentplane/system_tests/vm/guest:vmlinuz",
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV | {
+        "INITRAMFS_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:initramfs.cpio)",
+        "KERNEL_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:vmlinuz)",
+        "ROOT_IMAGE_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm/guest:root_erofs)",
+        "RUNNER_IMAGE_RLOCATION": "$(rlocationpath //agentplane/system_tests/vm:test_runner_disk_erofs)",
+    },
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    tags = ["manual"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/env:config",
+        "//agentplane/net/peertls:config",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//agentplane/testing:native_gateway_fixtures",
+        "//agentplane/testing:tls",
+        "//agentplane/x/direct_vm_boot:launcher_tools",
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],

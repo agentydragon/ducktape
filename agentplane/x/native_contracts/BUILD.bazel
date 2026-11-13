@@ -10,6 +10,7 @@ py_library(
     deps = [
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:native_service_fixtures",
+        "//agentplane/testing:sandbox_fixtures",
         "@pypi//protobuf",
         "@pypi//pytest",
     ],
