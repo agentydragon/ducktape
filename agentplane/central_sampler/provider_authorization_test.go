@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"

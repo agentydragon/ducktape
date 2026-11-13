@@ -13,8 +13,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"google.golang.org/grpc"

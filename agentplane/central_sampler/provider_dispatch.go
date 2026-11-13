@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 )
 
 func toolDefinitions() []protocol.CodeToolDefinition {

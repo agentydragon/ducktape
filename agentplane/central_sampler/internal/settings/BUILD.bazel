@@ -1,6 +1,6 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//visibility:private"])
 
 go_library(
     name = "settings",
@@ -9,7 +9,11 @@ go_library(
         "settings.go",
         "validation.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/settings",
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings",
+    visibility = [
+        "//agentplane/central_sampler:__pkg__",
+        "//agentplane/central_sampler/cmd:__pkg__",
+    ],
     deps = [
         "//agentplane/central_sampler/anthropic",
         "//agentplane/central_sampler/protocol",

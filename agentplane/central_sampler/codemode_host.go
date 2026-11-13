@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
