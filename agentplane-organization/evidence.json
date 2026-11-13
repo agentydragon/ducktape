@@ -7464,7 +7464,1938 @@
     },
     "notes": "Preserved the newly landed provider-recovery implementation and rewrote its new settings/provider imports in the appropriate move layers. Both native stacks are complete."
   },
-  "report_validation": {
+  "go_batch": {
+    "observed_at_utc": "2026-11-13T14:25:18+00:00",
+    "source_sha": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "scope": "Every tracked .go file under agentplane, including tests, experiments and generated files. No directory or filename exclusions.",
+    "counts": {
+      "files": 1227,
+      "directories": 205,
+      "production": 674,
+      "tests": 553
+    },
+    "native_stack": 16208,
+    "lanes": [
+      {
+        "id": "peer-tls",
+        "number": 16206,
+        "title": "Shared peer TLS",
+        "from": ["environment_runtime_transport/"],
+        "to": ["net/peertls/"],
+        "preserve": "Peer URI/EKU verification, credential rotation, expiry closure, and explicit insecure configuration. Deferred auth design is a separate DAG decision.",
+        "checks": "Existing peertls tests passed; full CI checks every Go/Python/Bazel importer.",
+        "dependency": "Accepted base move; no authentication-policy choice.",
+        "status": "MERGED",
+        "head": "734959564f880f7639a7f815ffc49e124d91d446",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16206",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:34:16Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T11:21:47Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:23:09Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416446983/job/131855446687",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T11:21:47Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:22:51Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416446816/job/131855445788",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T11:21:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T11:33:50Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/feba5bfb-2f0b-570a-8211-48e3387bbc98"
+          }
+        ],
+        "ci": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43416446983/job/131855446687"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43416446816/job/131855445788"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/feba5bfb-2f0b-570a-8211-48e3387bbc98"
+          }
+        ]
+      },
+      {
+        "id": "app-settings",
+        "number": 16207,
+        "title": "App deployment settings",
+        "from": [
+          "app/go/config.go",
+          "app/go/frontend_config.go",
+          "app/go/config_test.go"
+        ],
+        "to": [
+          "app/go/internal/settings/ (then app/internal/settings/ in the private-library layer)"
+        ],
+        "preserve": "Required YAML plus explicit Secret inputs, strict validation, preset ordering and API response values.",
+        "checks": "Settings, App config API, Session API and generated staging config: 4 focused RBE tests passed.",
+        "dependency": "Uses the new peer-TLS path.",
+        "status": "MERGED",
+        "head": "cc507b795bdb5bc3b117a837f919e430afc25bdf",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16207",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:47:13Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T11:37:28Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:38:57Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418547332/job/131862454456",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T11:37:27Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:38:28Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418547355/job/131862455559",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T11:37:28Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T11:47:04Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547332/job/131862454456"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547355/job/131862455559"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35"
+          }
+        ]
+      },
+      {
+        "id": "auth-namespace",
+        "number": 16210,
+        "title": "Remove identity/auth/auth repetition",
+        "from": ["identity/auth/auth/"],
+        "to": ["identity/auth/"],
+        "preserve": "Resolver caching, Pod/UID proof, live SVID lookup, delegation and per-method authorization.",
+        "checks": "Mandatory hooks pass; existing authentication/service suites run in hosted CI.",
+        "dependency": "Path cleanup only; SPIFFE/TokenReview/configurability design stays deferred.",
+        "status": "OPEN",
+        "head": "a902851443a64abf355bad65ea07b06294e4062a",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16210",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:55Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131876385808",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:05Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:36Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712067/job/131876385883",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:09:21Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:57Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711978/job/131876385555",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:09:44Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:11:45Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b"
+          }
+        ],
+        "ci": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131876385808"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712067/job/131876385883"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711978/job/131876385555"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b"
+          }
+        ]
+      },
+      {
+        "id": "runner-control",
+        "number": 16211,
+        "title": "Separate runner RPC adapters",
+        "from": [
+          "sandbox_controller/internal/controller/quiescer.go",
+          "sandbox_controller/internal/controller/quiescer_test.go",
+          "sandbox_controller/internal/controller/firecracker_suspend.go"
+        ],
+        "to": ["sandbox_controller/internal/runnercontrol/"],
+        "preserve": "Controller keeps its consumer interfaces, state machines and generations; command wires the concrete RPC clients.",
+        "checks": "Controller and adapter tests passed; controller command library built on RBE.",
+        "dependency": "Independent extraction; uses peer TLS at its accepted path.",
+        "status": "OPEN",
+        "head": "46187487baa58b2c4efe7c68b198bd9d025eef21",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16211",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710670/job/131876380541",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710639/job/131876380610",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:32Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710640/job/131876380740",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:08:57Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:45Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131876388615",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:00Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:01Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712563/job/131876393417",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:09:41Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:27Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712554/job/131876392852",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:09:22Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:10:35Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/7eb796e9-cb23-564d-a19e-9d9e461c9bbf"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712563/job/131876393417"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712554/job/131876392852"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131876388615"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/7eb796e9-cb23-564d-a19e-9d9e461c9bbf"
+          }
+        ]
+      },
+      {
+        "id": "terminal-notice",
+        "number": 16212,
+        "title": "Dispatcher terminal-notice protocol",
+        "from": [
+          "runner_gateway/dispatcher/terminal.go",
+          "runner_gateway/dispatcher/watch.go"
+        ],
+        "to": ["runner_gateway/dispatcher/internal/terminalnotice/"],
+        "preserve": "Deletion and NOTIFY stay in one SQL transaction. WatchHub keeps subscriptions and reconnects; codec owns bounded multipart assembly.",
+        "checks": "Store integration, multipart/out-of-order notices and watch tests passed; Gateway executable built.",
+        "dependency": "Independent of controller adapters; ordered in the requested native stack.",
+        "status": "OPEN",
+        "head": "25a1fa4aa0090957c710d650425bc0fa6af073c5",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16212",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709479/job/131876376292",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:49Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709365/job/131876376070",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:08:49Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:18Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709490/job/131876377026",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:37Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:24Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712382/job/131876387093",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:43Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:32Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712306/job/131876391500",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:10:23Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:22Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712302/job/131876390864",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:10:18Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:11:17Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/eeac4f30-9fcd-5d9d-92ef-dd5683ae5cb7"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712306/job/131876391500"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712302/job/131876390864"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712382/job/131876387093"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/eeac4f30-9fcd-5d9d-92ef-dd5683ae5cb7"
+          }
+        ]
+      },
+      {
+        "id": "sandbox-inventory",
+        "number": 16213,
+        "title": "Sandbox Kubernetes inventory adapter",
+        "from": [
+          "runner_gateway/dispatcher/sandbox_kubernetes.go",
+          "runner_gateway/dispatcher/sandbox_kubernetes_test.go"
+        ],
+        "to": ["runner_gateway/internal/sandboxinventory/"],
+        "preserve": "Dispatcher keeps SandboxSnapshot/Catalog contracts; adapter keeps cached inventory and authoritative uncached checks.",
+        "checks": "Existing inventory and Dispatcher/Gateway tests; verify constructor wiring and stale/replaced Sandbox refusal.",
+        "dependency": "Command wires adapter through the existing structural interface.",
+        "status": "OPEN",
+        "head": "5a332ac8b0aa459156c5edcf51a0354c0f4f6528",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16213",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711070/job/131876382601",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711073/job/131876382856",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:59Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711272/job/131876383600",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:00Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:11Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711965/job/131876385807",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:25Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:08Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711707/job/131876390288",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:09:58Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:12Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711815/job/131876391172",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:10:08Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:11:03Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/cf101977-d81a-58a3-8fdf-6ad38c63bdfe"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711707/job/131876390288"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711815/job/131876391172"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711965/job/131876385807"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/cf101977-d81a-58a3-8fdf-6ad38c63bdfe"
+          }
+        ]
+      },
+      {
+        "id": "workload-uri",
+        "number": 16214,
+        "title": "Workload identity URI contract",
+        "from": [
+          "net/peertls/credentials.go (WorkloadID, URI codec and validation)",
+          "net/peertls/credentials_test.go (canonical URI test)"
+        ],
+        "to": ["identity/credentials/workloadid/"],
+        "preserve": "Exact trust domain, canonical URI format, validation errors and record identity semantics. TLS implementation consumes the contract.",
+        "checks": "Canonical URI test moves with codec; peer-TLS, issuer and resolver tests stay intact.",
+        "dependency": "Requires peer-TLS base; no new SPIFFE authentication rollout.",
+        "status": "OPEN",
+        "head": "c6f87560ab8bbb39eeb3a4a008c5b23af299b11d",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16214",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:52Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710561/job/131876380859",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:26Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:17Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710494/job/131876380118",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:52Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:25Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710462/job/131876380185",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:09:22Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:11:38Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/529d0a67-a92b-5ae5-a855-08c6f7ac385d"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710494/job/131876380118"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710462/job/131876380185"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710561/job/131876380859"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/529d0a67-a92b-5ae5-a855-08c6f7ac385d"
+          }
+        ]
+      },
+      {
+        "id": "app-private",
+        "number": 16216,
+        "title": "App-owned implementation libraries",
+        "from": [
+          "app/go/auth/",
+          "app/go/bridge/",
+          "app/go/federation/",
+          "app/go/historyclient/",
+          "app/go/historydata/",
+          "app/go/historywatch/",
+          "app/go/httperror/",
+          "app/go/migrations/",
+          "app/go/proxy/",
+          "app/go/sandboxes/",
+          "app/go/status/",
+          "app/go/threads/",
+          "app/go/internal/settings/"
+        ],
+        "to": ["app/internal/<responsibility>/"],
+        "preserve": "All imports, BUILD targets, embeds, fixtures and image/runfiles callers move together. Backends remain independent of the App.",
+        "checks": "Existing App package/HTTP/settings tests and generated staging contract; complete old-path search.",
+        "dependency": "Builds on the App settings extraction.",
+        "status": "OPEN",
+        "head": "d8eb561b65135b0b3886285278fc71c749e3a242",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16216",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:50Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709802/job/131876377611",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:50Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709929/job/131876378186",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:33Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709937/job/131876378760",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:21Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:39Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711250/job/131876383101",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:10:51Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:11Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711258/job/131876388889",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:10:49Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:39Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711136/job/131876387608",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:09:38Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:12:29Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/cc587447-b734-5223-8e3f-f810bacfd04c"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711258/job/131876388889"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711136/job/131876387608"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711250/job/131876383101"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/cc587447-b734-5223-8e3f-f810bacfd04c"
+          }
+        ]
+      },
+      {
+        "id": "app-server-command",
+        "number": 16217,
+        "title": "App command and HTTP composition",
+        "from": [
+          "app/go/main.go",
+          "app/go/*.go (remaining HTTP composition and tests)"
+        ],
+        "to": ["app/cmd/", "app/internal/server/"],
+        "preserve": "Command owns process signals, logging and CLI modes; server owns HTTP wiring and handlers. Schema and route behavior stay unchanged.",
+        "checks": "Schema export, HTTP routes, staging settings and binary/image callers; tests follow their owner.",
+        "dependency": "Follows App-private libraries; no service or deployment split.",
+        "status": "OPEN",
+        "head": "9d636ab12e1a54260d4b07eaf11ed85edc000325",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16217",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710610/job/131876380346",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:50Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710552/job/131876379947",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:18Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710618/job/131876380935",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:10:28Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:21Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710790/job/131876381578",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:10:30Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:00Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710684/job/131876390468",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:09:31Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:27Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710535/job/131876387045",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:09:17Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:12:06Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/b7911ed4-885a-50eb-a985-ecd3a7819256"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710684/job/131876390468"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710535/job/131876387045"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710790/job/131876381578"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/b7911ed4-885a-50eb-a985-ecd3a7819256"
+          }
+        ]
+      },
+      {
+        "id": "sampler-leaves",
+        "number": 16219,
+        "title": "Clarify sampler leaf ownership",
+        "from": [
+          "central_sampler/internal/storage/ (pure content values)",
+          "central_sampler/migration.go",
+          "central_sampler/schema/"
+        ],
+        "to": [
+          "central_sampler/internal/content/",
+          "central_sampler/migrations/"
+        ],
+        "preserve": "Content IDs and canonical bytes; unchanged SQL files, Goose history table, lock ID and embed basenames. No Store/Executor transaction split.",
+        "checks": "Existing content, migration/adoption and sampler/export integration coverage; SQL byte hashes unchanged.",
+        "dependency": "Implemented in proposed PR; real History ingress integration uses a narrowly visible migrations contract.",
+        "status": "OPEN",
+        "head": "daa539e6ca2d6dbe340c7906e17612f3b9ee2308",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16219",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711434/job/131876383425",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:51Z",
+            "conclusion": "CANCELLED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711495/job/131876383648",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:08:50Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:32Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711568/job/131876384050",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:13Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:32Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712568/job/131876388576",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:09:23Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:27Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712486/job/131876391913",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:10:13Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:16Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712479/job/131876392542",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:10:13Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T12:12:25Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/4e6971af-b579-54d6-86e8-ac3634688f82"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712486/job/131876391913"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712479/job/131876392542"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712568/job/131876388576"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/4e6971af-b579-54d6-86e8-ac3634688f82"
+          }
+        ]
+      },
+      {
+        "id": "operator-verifier",
+        "number": 16225,
+        "title": "Shared operator OIDC verification",
+        "from": [
+          "action_service/api/operator_oidc.go",
+          "action_service/api/operator_oidc_test.go"
+        ],
+        "to": ["identity/operator/"],
+        "preserve": "Exact claim validation, issuer routing, JWKS cache, timeouts and cancellation. Shared verifier returns issuer/subject; each service owns authorization. Python settings and all callers move together.",
+        "checks": "Five affected Go suites, seven changed Python library/aspect builds, three settings/catalog suites and hooks passed. Executable verifier tokens match after explicit API substitutions.",
+        "dependency": "Shared verification primitive only; no new privileged-workload authentication mechanism.",
+        "status": "OPEN",
+        "head": "82954aa9ade85564ebf9963e217ca2da7b04bcc5",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16225",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:04:14Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429274285/job/131898372542",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:55:43Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:56:56Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429274381/job/131898372683",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:55:42Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:56:46Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429274280/job/131898372130",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:55:42Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T13:04:06Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/d7c84ea4-63c3-5e69-b9e3-8eba1367f34d"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429274381/job/131898372683"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429274280/job/131898372130"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429274285/job/131898372542"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/d7c84ea4-63c3-5e69-b9e3-8eba1367f34d"
+          }
+        ]
+      },
+      {
+        "id": "mcp-admission",
+        "number": 16226,
+        "title": "MCP-owned operator admission",
+        "from": [
+          "mcp_edge/main.go (gate wiring)",
+          "action_service/api/gate.go (MCP-only sharing)"
+        ],
+        "to": ["mcp_edge/internal/admission/"],
+        "preserve": "Connection method allowlist, public health, unknown-method refusal, no workload/delegated credentials, stream revalidation and drain behavior.",
+        "checks": "Boundary tests include all Connection/health methods, real verifier acceptance/refusals, identity continuity, drain and status mapping; existing MCP and affected Action tests remain.",
+        "dependency": "Uses the neutral operator verifier; removes MCP import of Action handlers.",
+        "status": "OPEN",
+        "head": "fb524c4965300535a4fee430d233748db451bf74",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16226",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:08:52Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429810577/job/131900207785",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T12:59:46Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:01:15Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429810583/job/131900208120",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T12:59:46Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:00:45Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429810533/job/131900207615",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T12:59:45Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T13:08:46Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/cd5cec03-4848-56f2-b6ef-6787e9836709"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429810533/job/131900207615"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429810577/job/131900207785"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429810583/job/131900208120"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/cd5cec03-4848-56f2-b6ef-6787e9836709"
+          }
+        ]
+      },
+      {
+        "id": "action-private-rpc",
+        "number": 16227,
+        "title": "Action-owned private RPC handlers",
+        "from": ["action_service/api/*.go (handlers and their tests)"],
+        "to": ["action_service/internal/rpc/"],
+        "preserve": "Public proto/API contract directories stay public; service admission, principal conversion, watches and status behavior move with their owner.",
+        "checks": "Existing Action unit/integration/config suites and command build; every active import, BUILD, golden fixture and documentation reference updated.",
+        "dependency": "MCP owns admission first; no visibility exception or forwarding API.",
+        "status": "OPEN",
+        "head": "6f7511ea5539bee2e843ba89c6409c7e7f42468b",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16227",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:11:27Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43430374131/job/131902062715",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T13:03:38Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:05:07Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43430374168/job/131902062840",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T13:03:38Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:04:44Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43430373953/job/131902062828",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T13:03:38Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T13:11:19Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/5e1545e3-9b1f-54ec-8b4e-8bab6717b0eb"
+          }
+        ],
+        "ci": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43430374131/job/131902062715"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43430374168/job/131902062840"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43430373953/job/131902062828"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/5e1545e3-9b1f-54ec-8b4e-8bab6717b0eb"
+          }
+        ]
+      },
+      {
+        "id": "sampler-sessionstore",
+        "number": 16228,
+        "title": "Sampler transaction authority",
+        "from": [
+          "central_sampler/Store receiver family and durable types",
+          "central_sampler/protocol_adapter.go (transactional preparation only)"
+        ],
+        "to": [
+          "central_sampler/internal/sessionstore/",
+          "central_sampler/internal/toolcontract/ (pure schemas)",
+          "central_sampler/testing/exportfixture/ (testonly concrete source)"
+        ],
+        "preserve": "SQL, lease and row/advisory lock order, atomic admission, provider intent preparation, request bytes, evidence and History outbox checkpoints. Runtime retains provider I/O.",
+        "checks": "Store, sampler unit and real History ingress suites pass; sampler integration passes after correcting the request-read test fixture. All 141 production SQL literals, two migration files and 290 existing sampler test functions are preserved.",
+        "dependency": "Concrete provider-request recipe runs at the original locked preparation point; no exported callback plumbing or production test hooks.",
+        "status": "OPEN",
+        "head": "6a94f681ea978c98f2a35674c7ebbef4de294dfb",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16228",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:00:48Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438062152/job/131928188610",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T13:56:24Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:58:03Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438062087/job/131928187293",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T13:56:24Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:57:30Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438062111/job/131928187998",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T13:56:24Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T14:00:41Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/c9a01391-7d4a-52c8-b1a2-24ec32247105"
+          }
+        ],
+        "ci": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438062152/job/131928188610"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438062087/job/131928187293"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438062111/job/131928187998"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/c9a01391-7d4a-52c8-b1a2-24ec32247105"
+          }
+        ]
+      },
+      {
+        "id": "sampler-rpc",
+        "number": 16229,
+        "title": "Sampler private RPC boundary",
+        "from": [
+          "central_sampler/service.go",
+          "central_sampler/provider_request_read.go",
+          "central_sampler/service_test.go",
+          "central_sampler/request_read_service_test.go"
+        ],
+        "to": ["central_sampler/internal/rpc/"],
+        "preserve": "Caller authentication and per-UID authorization, atomic command validation, status/redaction, retained-request streaming and event following. Command composes all concrete owners.",
+        "checks": "RPC unit and real PostgreSQL integration pass, including exact prepared/stored/streamed bytes, multi-chunk transmission, credential redaction and cross-account/session denial.",
+        "dependency": "Uses private sessionstore and residentruntime; public protocol/provider contracts remain separate.",
+        "status": "OPEN",
+        "head": "b3cfd10ca98c16c98e7f0c1f41c13e54e6710f37",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16229",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:05:26Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438333933/job/131929136330",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T13:58:18Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:59:44Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438333811/job/131929135038",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T13:58:18Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T13:59:24Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438333802/job/131929134845",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T13:58:18Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T14:05:19Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/cfc4ac1c-9c67-523d-b5dd-68068d1732a4"
+          }
+        ],
+        "ci": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438333933/job/131929136330"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438333811/job/131929135038"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438333802/job/131929134845"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/cfc4ac1c-9c67-523d-b5dd-68068d1732a4"
+          }
+        ]
+      },
+      {
+        "id": "sampler-executor",
+        "number": 16230,
+        "title": "Sampler Runner execution client",
+        "from": [
+          "central_sampler/Executor receiver family, process/session adapters and tests"
+        ],
+        "to": ["central_sampler/internal/executor/"],
+        "preserve": "Runner handshake/rebind/incarnation fencing, output cursors, uncertain outcomes, no replay and transport closure.",
+        "checks": "Executor race suite and sampler unit pass. Combined resident-runtime/RPC suites also pass with a real loopback gRPC drain fixture; unknown outcomes and no-replay assertions remain.",
+        "dependency": "Independent of RPC after Store; consumes concrete sessionstore state and exposes real runtime operations.",
+        "status": "OPEN",
+        "head": "890f935a905a47dad5b377ed44a40f2fe1971d4f",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16230",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:19:54Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43440468210/job/131936453544",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T14:12:08Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:13:25Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43440468087/job/131936452908",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T14:12:08Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:13:17Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43440468421/job/131936453923",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T14:12:08Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T14:19:48Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/3ec80984-373d-53ad-83ad-95a2da924c3a"
+          }
+        ],
+        "ci": [
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43440468210/job/131936453544"
+          },
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43440468087/job/131936452908"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43440468421/job/131936453923"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/3ec80984-373d-53ad-83ad-95a2da924c3a"
+          }
+        ]
+      },
+      {
+        "id": "sampler-runtime",
+        "number": 16232,
+        "title": "Sampler resident-session runtime",
+        "from": [
+          "central_sampler/resident driver, code-mode host and provider dispatch files"
+        ],
+        "to": ["central_sampler/internal/residentruntime/"],
+        "preserve": "Owner admission, permits, provider frontiers/backoff, interruption, effects settlement and drain/claim/release ordering.",
+        "checks": "All 25 moved Go files match package/constructor-only changes. Both resident-runtime and both RPC suites pass on the combined tree; sampler service image builds. Root contains zero Go files.",
+        "dependency": "Final move after private Store, Executor and RPC APIs; removes the root Go implementation package.",
+        "status": "OPEN",
+        "head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+        "native_member": true,
+        "url": "https://github.com/agentydragon/ducktape/pull/16232",
+        "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:23:57Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43441173422/job/131938865059",
+            "name": "bazel-ci / Test & Build",
+            "startedAt": "2026-11-13T14:16:35Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:18:03Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43441173332/job/131938845298",
+            "name": "Build artifacts + imports check",
+            "startedAt": "2026-11-13T14:16:32Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T14:17:37Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43441173497/job/131938846793",
+            "name": "Pre-commit checks",
+            "startedAt": "2026-11-13T14:16:32Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "StatusContext",
+            "context": "BuildBuddy / Bazel ordinary tests (live)",
+            "startedAt": "2026-11-13T14:23:48Z",
+            "state": "SUCCESS",
+            "targetUrl": "https://app.buildbuddy.io/invocation/1a433496-55cb-5d95-bf35-d6cc094b5515"
+          }
+        ],
+        "ci": [
+          {
+            "name": "Build artifacts + imports check",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43441173332/job/131938845298"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43441173497/job/131938846793"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43441173422/job/131938865059"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/1a433496-55cb-5d95-bf35-d6cc094b5515"
+          }
+        ]
+      }
+    ],
+    "ownership_gates": [
+      {
+        "owner": "central_sampler",
+        "counts": "Baseline: 51 other Go + 27 *_test.go; proposed root: 0 other Go + 0 *_test.go",
+        "target": "Private sessionstore owns transactions and durable state; executor owns Runner effects; residentruntime owns scheduling, provider I/O and host lifecycle; rpc owns admission and streaming. Tests follow each owner.",
+        "next": "Review and land the four concrete proposed boundaries. Keep SQL/request bytes, ownership fences, no-replay behavior and lifecycle assertions unchanged; do not create a root forwarding package.",
+        "state": "Implemented in published proposed stack; zero direct root Go files."
+      },
+      {
+        "owner": "env/runtime/internal/coordinator",
+        "counts": "24 production + 33 test files",
+        "target": "Retain the coordinator aggregate; separate a lifecycle owner only when its admissions, cancellation and shutdown protocol is explicit.",
+        "next": "Map shutdown/reconciliation ownership, generation fencing, journal sealing and final History ACK; simplify one bounded path with existing race/lifecycle tests.",
+        "state": "Design gate; runner lifecycle follow-up remains open."
+      },
+      {
+        "owner": "env/runtime/session and env/runtime/supervision",
+        "counts": "14 production + 11 tests in each",
+        "target": "Retain native-session and subprocess-supervision ownership as two cohesive packages.",
+        "next": "Move a real separate responsibility if future source evidence identifies one; do not split methods across packages just to reduce a file count.",
+        "state": "Retain current scope for this batch."
+      },
+      {
+        "owner": "notification_service/internal/store",
+        "counts": "17 production + 32 test files",
+        "target": "Keep inbox/cursor updates, provider observations and lease/advisory locks under one transaction authority.",
+        "next": "Define a transaction API before extracting query families; preserve generation, row/advisory lock ordering and receipt/cursor atomicity.",
+        "state": "Design gate; not a filename-prefix split."
+      },
+      {
+        "owner": "action_service/api and MCP admission",
+        "counts": "Baseline: 12 other Go + 16 *_test.go files in Action handlers; no direct Go files remain in proposed action_service/api",
+        "target": "Shared verification lives in identity/operator; MCP owns admission in internal/admission; Action owns handlers and tests in internal/rpc. Public protobuf contracts remain in api/.",
+        "next": "Review and land the three proposed ownership PRs, preserving claim verification, service-specific authorization and stream/drain checks. No unresolved package-boundary decision remains in this group.",
+        "state": "Implemented in published proposed stack; per-PR merge/check states above."
+      },
+      {
+        "owner": "All remaining Go directories, commands, tests and experiments",
+        "counts": "205 directories covered by the full file inventory",
+        "target": "Keep cohesive owners and colocated tests; improve names and placement when a concrete owner/caller boundary justifies it.",
+        "next": "Every tracked Go file is eligible, including support libraries and x/. The directory ledger lists all current files and identifies selected moves; unselected files are not declared permanently exempt.",
+        "state": "In scope; no arbitrary package-size limit."
+      }
+    ],
+    "auth_design": "Future review compares audience-scoped ServiceAccount/TokenReview over pinned TLS, Kubernetes-independent service SPIFFE, and explicit per-target configuration. No mechanism selected; preserve role and delegation boundaries.",
+    "sampler_sequence": [
+      {
+        "step": 0,
+        "pr": "Complete the already-approved internal/content and migrations leaf moves",
+        "files_or_functions": [
+          "internal/storage -> internal/content",
+          "migration.go and schema/ -> migrations"
+        ],
+        "why_first": "Bounded content and migration leaves are implemented in PR #16219; they do not dissolve the Store/Executor/Runtime shared-state cluster.",
+        "existing_proof": [
+          "internal/storage/content_test.go",
+          "provider stored-content tests",
+          "baseline_migration_test.go",
+          "provider_attempt_test.go:TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance"
+        ],
+        "status": "OPEN: PR #16219",
+        "package_path": "central_sampler/internal/content + central_sampler/migrations",
+        "review_head": "daa539e6ca2d6dbe340c7906e17612f3b9ee2308",
+        "url": "https://github.com/agentydragon/ducktape/pull/16219"
+      },
+      {
+        "step": 1,
+        "pr": "Establish internal/sessionstore as the transactional ownership boundary",
+        "files_or_functions": [
+          "Store receiver cluster in the map",
+          "types.go durable domain values",
+          "content_store.go/content_request.go/request_plan.go",
+          "protocol_adapter.go request-preparation portion",
+          "exporter_outbox.go/provider_evidence.go"
+        ],
+        "contract_to_choose": "A concrete ProviderRequestPreparation recipe runs after the original owner/interrupt/pending checks inside Store transactions. Projection, frozen request bytes, intent insertion and durable evidence remain Store-owned. Provider I/O stays with the runtime.",
+        "leave_together": "All current Store transaction helpers, owner fencing, Conversation checkpoints, and provider intent writes remain in this package; migration package remains a leaf.",
+        "existing_proof": [
+          "store_integration_test.go:TestStoreFencesEveryWriteToTheLiveLeaseGeneration",
+          "store_integration_test.go:TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection",
+          "store_integration_test.go:TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner",
+          "provider_attempt_test.go:TestProviderFinishDoesNotCommitAfterDurableInterrupt",
+          "provider_attempt_test.go:TestProviderHostLossSuccessorsPreserveFiniteLineageAndUseFreshContext",
+          "store_lifecycle_integration_test.go:TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction"
+        ],
+        "integration_files": [
+          "central_sampler/BUILD.bazel",
+          "root Go test target declarations"
+        ],
+        "status": "OPEN: PR #16228",
+        "package_path": "central_sampler/internal/sessionstore",
+        "review_head": "6a94f681ea978c98f2a35674c7ebbef4de294dfb",
+        "url": "https://github.com/agentydragon/ducktape/pull/16228"
+      },
+      {
+        "step": 2,
+        "pr": "Move gRPC handlers into internal/rpc",
+        "files_or_functions": ["service.go", "provider_request_read.go"],
+        "contract_to_choose": "Sampler depends directly on concrete Store, Runtime, settings, resolver and wakeups. Preserve the existing transaction-scoped admission validator and all per-account authorization, revalidation, status and stream behavior. This extraction is independent of Executor once Store is private; the final runtime move updates its concrete import.",
+        "leave_together": "Store.LoadProviderRequest reconstructs retained bytes and filters credential headers; RPC preserves redaction and chunk transmission. Runtime wake remains after committed admission.",
+        "existing_proof": [
+          "service_test.go:TestAdmissionAuthenticatesAndAuthorizesAccountUID",
+          "service_test.go:TestSamplerErrorsExposeFixedStatus",
+          "BUILD.bazel test_service and test_anthropic_service targets"
+        ],
+        "integration_files": [
+          "central_sampler/BUILD.bazel",
+          "cmd/main.go registration and dependency wiring"
+        ],
+        "status": "OPEN: PR #16229",
+        "package_path": "central_sampler/internal/rpc",
+        "review_head": "b3cfd10ca98c16c98e7f0c1f41c13e54e6710f37",
+        "url": "https://github.com/agentydragon/ducktape/pull/16229"
+      },
+      {
+        "step": 3,
+        "pr": "Move the executor adapter into internal/executor",
+        "files_or_functions": [
+          "executor.go",
+          "executor_failure.go",
+          "executor_operations.go",
+          "executor_processes.go",
+          "executor_session.go",
+          "exec_incarnation_fence.go",
+          "unified_exec.go",
+          "view_image.go"
+        ],
+        "contract_to_choose": "The concrete executor API constructs a session/owner binding and exposes Invoke, Setup, ReconcileProcesses, InterruptAll, StopDispatch and read-only ProcessChanges. Runtime and Executor share toolcontract.Rejection; executor-owned unknown-outcome and image evidence retain their semantic types. This extraction is independent of RPC after Store.",
+        "leave_together": "Stream/session/cursor/reconnect/expected-incarnation/rejection evidence and mutation outcome classification stay in one Executor package.",
+        "existing_proof": [
+          "executor_test.go:TestExecutorRetriesOnlyCursorReadWithSameIdentity",
+          "executor_test.go:TestExecutorDoesNotReplayMutationAfterLostReply",
+          "executor_test.go:TestExitedOpenProcessYieldsAndRetainsLateOutput",
+          "executor_test.go:TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation",
+          "executor_resume_test.go:TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen"
+        ],
+        "integration_files": [
+          "central_sampler/BUILD.bazel",
+          "runtime call sites in session_setup.go and session_host.go"
+        ],
+        "status": "OPEN: PR #16230",
+        "package_path": "central_sampler/internal/executor",
+        "review_head": "890f935a905a47dad5b377ed44a40f2fe1971d4f",
+        "url": "https://github.com/agentydragon/ducktape/pull/16230"
+      },
+      {
+        "step": 4,
+        "pr": "Move resident scheduling and host-bound turn orchestration into internal/residentruntime",
+        "files_or_functions": [
+          "runtime.go",
+          "runtime_replica.go",
+          "session_driver.go",
+          "session_host.go",
+          "session_setup.go",
+          "session_turn.go",
+          "session_interrupt.go",
+          "session_compaction.go",
+          "provider_recovery_runtime.go",
+          "codemode.go",
+          "codemode_host.go",
+          "protocol_adapter.go (remaining provider I/O)",
+          "tool_invocation.go"
+        ],
+        "contract_to_choose": "After both Executor and RPC are extracted, move the remaining concrete runtime and its tests. Commands compose Store, Executor and residentruntime.New/NewCodeModeHost; RPC keeps a concrete Runtime pointer for Wake. No root implementation package or forwarding shim remains.",
+        "leave_together": "Lease claim/renew/release, resident scan, execution permit, shutdown drain, shared host lifecycle, turn control and provider recovery remain one Runtime receiver family.",
+        "existing_proof": [
+          "runtime_lifecycle_test.go:TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles",
+          "runtime_lifecycle_test.go:TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles",
+          "provider_recovery_runtime_test.go:TestRuntimeInterruptDuringProviderBackoffPreventsRetry",
+          "provider_finish_runtime_test.go:TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling",
+          "codemode_test.go:TestCodeModeHostFailureFansOutThenRestartsWithoutReplay"
+        ],
+        "integration_files": [
+          "central_sampler/BUILD.bazel",
+          "cmd/main.go construction and work-channel wiring"
+        ],
+        "status": "OPEN: PR #16232",
+        "package_path": "central_sampler/internal/residentruntime",
+        "review_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+        "url": "https://github.com/agentydragon/ducktape/pull/16232"
+      }
+    ],
+    "sampler_design_source": {
+      "repo": "agentydragon/ducktape",
+      "branch": "origin/devel",
+      "commit": "5bce8ae54d1ee2ffc0228fda76f2db8a096dfffd",
+      "date": "2026-11-13",
+      "extraction": "Read-only source snapshot at agentplane/central_sampler; 51 root production .go files, excluding tests and nested packages."
+    },
+    "proto_design": "Later align protobuf package/go_package declarations with filesystem directories through explicit wire-name and stored-payload migrations; ordinary source moves do not rename protocols.",
+    "published_tree": {
+      "head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+      "pr": 16232,
+      "files": 1241,
+      "directories": 217,
+      "moved_baseline_files": 187,
+      "new_file_paths": [
+        "agentplane/central_sampler/internal/executor/integration_testmain_test.go",
+        "agentplane/central_sampler/internal/residentruntime/integration_testmain_test.go",
+        "agentplane/central_sampler/internal/rpc/provider_request_read.go",
+        "agentplane/central_sampler/internal/rpc/test_helpers_test.go",
+        "agentplane/central_sampler/internal/sessionstore/provider_request.go",
+        "agentplane/central_sampler/internal/toolcontract/rejection.go",
+        "agentplane/central_sampler/internal/toolcontract/sampler_tools.go",
+        "agentplane/central_sampler/testing/exportfixture/source.go",
+        "agentplane/identity/credentials/workloadid/workloadid.go",
+        "agentplane/identity/credentials/workloadid/workloadid_test.go",
+        "agentplane/identity/operator/issuer_test.go",
+        "agentplane/identity/operator/verifier_test.go",
+        "agentplane/mcp_edge/internal/admission/gate.go",
+        "agentplane/mcp_edge/internal/admission/gate_test.go",
+        "agentplane/runner_gateway/dispatcher/internal/terminalnotice/terminalnotice.go",
+        "agentplane/sandbox_controller/internal/runnercontrol/quiescer.go",
+        "agentplane/sandbox_controller/internal/runnercontrol/suspender.go"
+      ],
+      "removed_or_split_baseline_paths": [
+        "agentplane/action_service/api/operator_oidc_test.go",
+        "agentplane/central_sampler/provider_dispatch.go",
+        "agentplane/central_sampler/provider_request_read.go"
+      ],
+      "note": "Published proposed source tree; these counts do not imply merge or deployment. Full baseline and proposed manifests include test-only support, generated code, and experiments."
+    },
+    "sampler_validation": {
+      "proposed_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+      "production_sql_literals_identical": 141,
+      "existing_test_functions_retained": 290,
+      "migration_sql_files_byte_identical": 2,
+      "tracked_test_files_registered": 46,
+      "moved_runtime_files_package_and_constructor_only": 25,
+      "focused_passes": [
+        {
+          "scope": "Store, sampler unit, real History ingress",
+          "invocation": "91ef357b-a6e3-4206-9816-021e283633ee",
+          "note": "Root integration in this first combined run failed on a missing encoding in a request-read test fixture."
+        },
+        {
+          "scope": "Sampler integration after test fixture correction",
+          "invocation": "bc5315cb-e73d-411e-b5ee-24f8086f6ccd"
+        },
+        {
+          "scope": "RPC unit and PostgreSQL integration",
+          "invocation": "315b0276-eaef-4637-8642-fe8f895c1e2a"
+        },
+        {
+          "scope": "Executor and sampler unit",
+          "invocation": "12f0534d-deaa-4d0e-b39a-3ac594c00ded",
+          "note": "Older worker base still had the already corrected Store fixture; its root integration failed there. The combined tree passes below."
+        },
+        {
+          "scope": "Combined resident-runtime and RPC unit/integration, 4 targets",
+          "invocation": "d954c215-8bdb-4ee5-9238-2a6127ac7350"
+        },
+        {
+          "scope": "Combined sampler service image build",
+          "invocation": "76b75277-45b5-4fa1-b4a5-bc48a6f5044f"
+        }
+      ],
+      "scope_note": "Focused runs, source-preservation review and current-head hosted CI are distinct evidence. No deployment or fresh live-provider claim. Existing test assertions, deadlines and race configuration are retained."
+    },
+    "retain_decisions": [
+      {
+        "area": "Egress",
+        "paths": [
+          "agentplane/egress/api/v1alpha1",
+          "agentplane/egress/resources",
+          "agentplane/egress/internal/{admin,decision,history,identity,informer,policy,presentation,proxy,rules,upstream}",
+          "agentplane/egress/sidecar"
+        ],
+        "evidence": [
+          "Egress resources are a deliberate cross-service boundary: agentplane/policy_controller/internal/controller/account_use.go imports agentplane/egress/resources.Placeholder; BUILD grants only that controller package as the exception to Egress subpackage visibility.",
+          "The sidecar is a separate deployed binary with no Go importers; its go_library and binary are already restricted to //agentplane/egress:__pkg__. Its location documents the separate runtime alongside sidecar_config.py/platform_routes.py, and egress/README.md describes the split.",
+          "The existing internal packages already align with runtime responsibilities; EgressAdmin and EgressRules have prior accepted moves and are excluded."
+        ],
+        "decision": "Retain. Internalizing resources would break a real policy-controller boundary. Moving the sidecar would add Bazel labels/runfile-path churn without changing its already restricted ownership or public API.",
+        "existing_checks": [
+          "//agentplane/egress/resources:resources_test",
+          "//agentplane/egress/sidecar:sidecar_test",
+          "//agentplane/egress:test_sidecar",
+          "//agentplane/egress:test_proxy",
+          "//agentplane/egress:test_platform_routes"
+        ],
+        "invariants": "Keep API/resource interpretation, Egress placeholder derivation, and independent sidecar deployment/configuration boundaries intact."
+      },
+      {
+        "area": "LLM ingress",
+        "paths": [
+          "agentplane/llm_ingress/{config.go,codex_catalog.go,main.go,model_config.go,server.go}",
+          "agentplane/llm_ingress/v1"
+        ],
+        "evidence": [
+          "The five Go service files share package main and form one binary/configuration/handler boundary. No other package imports the implementation import path; Runtime imports the generated llm_ingress/v1 ModelConfig proto contract instead.",
+          "codex_catalog.go is a small in-memory catalog loader consumed only by ingressHandler; model_config.go is the service's implementation of its generated RPC. Splitting either would create a helper package without a separate owner."
+        ],
+        "decision": "Retain the service implementation together and keep the versioned proto as the shared contract; no additional ownership boundary is justified.",
+        "existing_checks": [
+          "//agentplane/llm_ingress:ingress_test",
+          "//agentplane/llm_ingress:test_models"
+        ],
+        "invariants": "Preserve request authentication, attribution, proxy behavior, Codex catalog response/ETag, and ModelConfig RPC semantics."
+      },
+      {
+        "area": "Firecracker",
+        "paths": [
+          "agentplane/firecracker/{config.go,credentials.go,firecracker_api.go,guest_management.go,network.go,storage.go,supervisor.go}",
+          "agentplane/firecracker/vsock",
+          "agentplane/firecracker/workloadidentity",
+          "agentplane/firecracker/cmd/launcher",
+          "agentplane/firecracker/testing/runtime_probe"
+        ],
+        "evidence": [
+          "The root Firecracker API/VMM/guest lifecycle files form the host-side VM owner and are consumed by agentplane/env/firecracker; the root BUILD intentionally exposes them only to Agentplane subpackages.",
+          "vsock already separates the host/guest stream protocol and restricts BUILD visibility to the two direct Firecracker owners. workloadidentity separately owns the guest Workload API server/PEM parsing. launcher and runtime_probe are standalone command/test tools."
+        ],
+        "decision": "Retain existing split. Further splitting API, guest management, credentials, and VM supervision would cut across one guest-start/credential-delivery lifecycle and require new package APIs without a distinct owner.",
+        "existing_checks": [
+          "//agentplane/firecracker:firecracker_test",
+          "//agentplane/firecracker/vsock:vsock_test",
+          "//agentplane/firecracker/workloadidentity:workloadidentity_test",
+          "//agentplane/env/firecracker:thaw_test"
+        ],
+        "invariants": "Keep boot identity verification, credential delivery, guest synchronization, VMM ownership, vsock framing and shutdown behavior unchanged."
+      },
+      {
+        "area": "History Service",
+        "paths": [
+          "agentplane/history_service/internal/{ingress,migrations,projection,reads,rpc,settledcursors,storage,threadfold}",
+          "agentplane/history_service/{backfill,ops,testing,testing/spans}"
+        ],
+        "evidence": [
+          "Current package responsibilities already identify the main data and RPC owners. settledcursors is an 82-line leaf used by both internal/projection and internal/threadfold; it centralizes cursor-range semantics rather than belonging to one consumer.",
+          "threadfold owns event-to-Thread folding and golden fixtures; projection consumes it. storage owns the transactional raw-history/settlement store; ingress and rpc own separate server surfaces. backfill and ops are operational tools, not service implementation subpackages."
+        ],
+        "decision": "Retain current owners; no useful consolidation or split remains in this audit scope.",
+        "existing_checks": [
+          "//agentplane/history_service/internal/settledcursors:settledcursors_test",
+          "//agentplane/history_service/internal/threadfold:fold_test",
+          "//agentplane/history_service/internal/projection:integration_test",
+          "//agentplane/history_service/internal/storage:settlement_test",
+          "//agentplane/history_service/internal/ingress:ingress_test",
+          "//agentplane/history_service/internal/rpc:service_test"
+        ],
+        "invariants": "Keep append/settlement transaction boundaries, cursor coverage semantics, lease ownership, projection epoch behavior, and ingress caller revalidation with their existing owners."
+      },
+      {
+        "area": "Public Sandbox client/config SDK and shared support",
+        "paths": [
+          "agentplane/sandboxes/{api,environmentruntimeclient,lease,runtimeconfig,sandboxreader}",
+          "agentplane/net/{httpconnect,listener}",
+          "agentplane/grpc/{bearer,facade,graceful,healthprobe,streaming}",
+          "agentplane/postgres/{lease,migrate,probes,wakeups}",
+          "agentplane/identity/{auth,credentials}",
+          "agentplane/testing/*",
+          "agentplane/x/*"
+        ],
+        "evidence": [
+          "environmentruntimeclient is genuinely shared by Runner Gateway Dispatcher, Sandbox Controller, Notification, and App bridge; sandboxes is the common domain owner, while moving it beneath any one consumer would reverse ownership.",
+          "runtimeconfig is the deployment-published model/harness/template contract shared by App, Action orchestration, Runner Gateway, and cdk8s; the App README documents that external contract. It is intentionally separate from service-specific settings.",
+          "net/grpc/postgres/identity packages are individually named by their shared capability. postgres/wakeups has cross-service production importers, whereas postgres/lease is a distinct database primitive from sandboxes/lease. testing/postgres is explicitly testonly and shared across integration targets; x packages remain experimental by location."
+        ],
+        "decision": "Retain these shared boundaries. Moving them under a single consuming service or broad common package would make ownership less accurate; no extra refactor group recommended.",
+        "existing_checks": [
+          "//agentplane/sandboxes/environmentruntimeclient:environmentruntimeclient_test",
+          "//agentplane/grpc/facade:facade_test",
+          "//agentplane/postgres/wakeups:integration_test",
+          "//agentplane/postgres/lease:integration_test",
+          "//agentplane/testing/postgres:postgres_test"
+        ],
+        "invariants": "Preserve shared per-RPC token/transport behavior, deployment-published configuration semantics, wakeup fan-out/reconnect signals, lease ownership, and test-only fixture boundaries."
+      },
+      {
+        "area": "CLI invocation and command presentation",
+        "decision": "Retain the CLI command package for this batch; its fourteen production files implement one invocation owner and already separate API verbs by filename. A package per command would currently export common invocation/error/output state without separating an independent authority.",
+        "evidence": [
+          "cli/app.go app owns one invocation: environment, stdio, global JSON/timeout flags, signal context and exit/error envelope.",
+          "cli/main.go only constructs app and exits with its outcome; commands remain independent gRPC clients, not service dependencies.",
+          "cli/*_test.go exercise no-replay/ambiguous submit outcomes, bounded watch retries, exact environment resume tokens and credential non-disclosure."
+        ]
+      },
+      {
+        "area": "Sampler native-provider protocol contracts",
+        "decision": "Keep protocol/ as the shared provider contract package; split Store/Executor/Runtime implementations rather than scattering the common typed protocol values.",
+        "evidence": [
+          "All production importers are sampler-owned: providers, tool contracts/output, code-mode, settings and root sampling/persistence.",
+          "History ingress projection/export integration tests also use the native protocol and provider codecs; these remain real cross-service tests.",
+          "protocol/ contains typed Context, content/tool/event/error/provider-hook contracts, with no Store or Runtime dependency."
+        ]
+      },
+      {
+        "area": "Dispatcher aggregate after adapter/codec extraction",
+        "decision": "Keep the remaining Dispatcher domain owner cohesive in this batch. The selected Sandbox inventory and terminal-notice leaves have distinct ownership; the remaining files coordinate one durable dispatch authority.",
+        "evidence": [
+          "Dispatcher Store owns Session admission/ownership, delivery and terminal transaction rules; RPC callers use its declared Session API.",
+          "New runner_gateway/internal/sandboxinventory consumes the Dispatcher Catalog/Snapshot contracts without Kubernetes inventory code in Dispatcher.",
+          "Action session_delegation/dispatcher_integration_test.go intentionally tests against the real Dispatcher; a future Go-internal move needs an owner-local test fixture, not a production forwarding shim."
+        ]
+      }
+    ]
+  },
+  "completed_batch_report_validation": {
     "test": {
       "command": "direnv exec /home/agentydragon/code/ducktape bbr test //x/agentplane_plan_preview:visual_test",
       "invocation_id": "fb44a8d3-f89c-423f-a552-72aa612745c2",
@@ -7590,6 +9521,137 @@
           "merge_commit": "0a8452caaa15aef2717608044a828b8f7fa4bec1"
         }
       ]
+    }
+  },
+  "report_validation": {
+    "observed_at_utc": "2026-11-13T14:29:35+00:00",
+    "test": {
+      "command": "bbr test //x/agentplane_plan_preview:visual_test --noremote_accept_cached",
+      "invocation_id": "4ca4de64-c59a-409b-9f37-5c590d4512b4",
+      "url": "https://app.buildbuddy.io/invocation/4ca4de64-c59a-409b-9f37-5c590d4512b4",
+      "target_status": "PASSED",
+      "parametrized_case_count": 8,
+      "passed_cases": [
+        "test_pages[home-desktop-light]",
+        "test_pages[home-desktop-dark]",
+        "test_pages[home-mobile-light]",
+        "test_pages[home-mobile-dark]",
+        "test_pages[report-desktop-light]",
+        "test_pages[report-desktop-dark]",
+        "test_pages[report-mobile-light]",
+        "test_pages[report-mobile-dark]"
+      ],
+      "failed_cases": [],
+      "test_duration_seconds": 35.321
+    },
+    "served_assets_sha256": {
+      "index.html": "b3103b9aef876f12d48915c0206240047de5b6509784c99a320e338ef41c064a",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+      "agentplane-organization/index.html": "3eaf75c1f856e55614277055a58fe63cb2ab6ab0dbe18a74a51d9f3b04088b58",
+      "agentplane-organization/go-plan.json": "195e903039766f4258a1927dd98f7007b8f1f541363f16a972ac698458c678b9",
+      "agentplane-organization/go-files.json": "f024798da33bfc9b477cdb4418a8b734bf77349b566871a02e03bb3ff43e5245"
+    },
+    "tested_evidence_file_sha256": "0cd93933defaf7c0f5390c29085e9d0ceca49a32fbbd761bf425912729cace48",
+    "validated_evidence_payload_sha256": "14380901591cdf9fcebffda65768b9991633966e26bea6ef00a8e71973d79538",
+    "evidence_hash_scope": "Canonical evidence excluding report_validation and go_batch_verification. Only these non-rendered annotations change after browser validation.",
+    "screenshots_reviewed": {
+      "themes": ["light", "dark"],
+      "viewports": ["1280x900", "390x844"],
+      "checkpoints": [
+        "whole Go-tree plan",
+        "sampler ownership sequence",
+        "home organization card"
+      ]
+    },
+    "controls_checked": [
+      "Real pinned esm.sh and jsDelivr assets",
+      "Live system color-scheme changes",
+      "Navigation anchors",
+      "Retain decisions and all 205 directory disclosures",
+      "1,227 unique baseline entries and full proposed ledger downloaded over HTTP",
+      "Page/table overflow",
+      "Completed historical batch controls"
+    ]
+  },
+  "go_batch_verification": {
+    "planned_paths": {
+      "proposed_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+      "source_sha": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+      "total_baseline_files": 1227,
+      "proposed_files": 1241,
+      "all_baseline_files_mapped_to_real_proposed_paths_or_split_destinations": true,
+      "all_moved_files_have_groups": true,
+      "moved_go_files": 187,
+      "unimplemented_selected_file_destinations": 0
+    },
+    "sampler_focused_retry": {
+      "head": "922da60b9bb2e2c6b4a0ca2be507ead2137bbd52",
+      "target": "//agentplane/central_sampler:central_sampler_test",
+      "invocation": "cdbf620e-b57c-4c02-a490-b2cf6f114b0f",
+      "result": "PASSED",
+      "whole_target_retry": 1,
+      "test_assertions_or_timeouts_changed": false
+    },
+    "ci_incidents": [
+      {
+        "pr": 16210,
+        "failed_head": "2b02d73500acaf309438a35e7f88dab41c3ae6e8",
+        "invocation": "fb394e77-1fa0-5424-aba9-c4f94e3fa7a0",
+        "failure": "Analysis failure: concurrently landed startup test referenced the removed environment_runtime_transport package.",
+        "resolution": "Existing devel PR #16218 repairs the importer; all open layers rebased onto d9b2064b76. Current exact-head CI passes."
+      },
+      {
+        "pr": 16214,
+        "failed_head": "b6383b2e7a2b6cc4323f199b56010f83e70e6046",
+        "invocation": "14210264-6c40-56fa-8094-f162ac369b07",
+        "failure": "Pod suite: 20 passed, 1 idle-resume scenario timed out while Sandbox stayed Suspended/Idle with no Pod. Suite-level ALREADY_EXISTS warnings lack method, command ID and timestamp; they cannot be attributed to this case or outcome.",
+        "resolution": "Current rebased head passes full CI; test_pod is a remote-cache pass, which establishes current CI status rather than a fresh reproduction. No timeout/assertion/runtime change or targeted retry cleared this failure. The lifecycle cause remains unproven.",
+        "current_ci": {
+          "head": "c6f87560ab8bbb39eeb3a4a008c5b23af299b11d",
+          "invocation": "529d0a67-a92b-5ae5-a855-08c6f7ac385d",
+          "result": "PASSED",
+          "test_pod_remote_cache": true
+        },
+        "visibility_limit": "Failed artifacts lack sandbox-controller, runner-gateway and environment-runtime component logs. Reorganization diff preserves adapter RPC construction, arguments, identity metadata and command wiring. Keep lifecycle ownership/reconciliation follow-up open."
+      }
+    ],
+    "sampler_preservation": {
+      "proposed_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+      "production_sql_literals_identical": 141,
+      "existing_test_functions_retained": 290,
+      "migration_sql_files_byte_identical": 2,
+      "tracked_test_files_registered": 46,
+      "moved_runtime_files_package_and_constructor_only": 25,
+      "focused_passes": [
+        {
+          "scope": "Store, sampler unit, real History ingress",
+          "invocation": "91ef357b-a6e3-4206-9816-021e283633ee",
+          "note": "Root integration in this first combined run failed on a missing encoding in a request-read test fixture."
+        },
+        {
+          "scope": "Sampler integration after test fixture correction",
+          "invocation": "bc5315cb-e73d-411e-b5ee-24f8086f6ccd"
+        },
+        {
+          "scope": "RPC unit and PostgreSQL integration",
+          "invocation": "315b0276-eaef-4637-8642-fe8f895c1e2a"
+        },
+        {
+          "scope": "Executor and sampler unit",
+          "invocation": "12f0534d-deaa-4d0e-b39a-3ac594c00ded",
+          "note": "Older worker base still had the already corrected Store fixture; its root integration failed there. The combined tree passes below."
+        },
+        {
+          "scope": "Combined resident-runtime and RPC unit/integration, 4 targets",
+          "invocation": "d954c215-8bdb-4ee5-9238-2a6127ac7350"
+        },
+        {
+          "scope": "Combined sampler service image build",
+          "invocation": "76b75277-45b5-4fa1-b4a5-bc48a6f5044f"
+        }
+      ],
+      "scope_note": "Focused runs, source-preservation review and current-head hosted CI are distinct evidence. No deployment or fresh live-provider claim. Existing test assertions, deadlines and race configuration are retained."
     }
   }
 }
