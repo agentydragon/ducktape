@@ -2670,6 +2670,8 @@ spec:
         - env:
             - name: PLATFORM_SESSIONS_PUBLIC_BASE_URL
               value: https://platform-sessions.allegedly.works
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: PLATFORM_SESSIONS_INTEGRATION_CONFIG
               valueFrom:
                 configMapKeyRef:
@@ -2728,6 +2730,9 @@ spec:
             - mountPath: /var/run/provider-credentials
               name: provider-credentials
               readOnly: true
+            - mountPath: /var/run/public-web-pki
+              name: public-web-pki
+              readOnly: true
             - mountPath: /var/run/platform-sessions
               name: bearers
               readOnly: true
@@ -2748,6 +2753,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       volumes:
+        - configMap:
+            name: public-web-pki
+          name: public-web-pki
         - name: provider-credentials
           projected:
             defaultMode: 288

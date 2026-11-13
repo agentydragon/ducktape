@@ -519,6 +519,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             env_from=[k8s.EnvFromSource(secret_ref=k8s.SecretEnvSource(name="platform-sessions-oidc"))],
             env=[
                 k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value="https://platform-sessions.allegedly.works"),
+                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
                 _config_env("PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json"),
                 _config_env("PLATFORM_SESSIONS_BEARERS", "bearers.json"),
                 _config_env("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", "connections.json"),
@@ -537,12 +538,14 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="provider-credentials", mount_path=_TOKEN_DIR, read_only=True),
+                k8s.VolumeMount(name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True),
                 k8s.VolumeMount(name="bearers", mount_path="/var/run/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="trust", mount_path="/var/run/provider-trust", read_only=True),
                 k8s.VolumeMount(name="tls", mount_path="/var/run/gateway-tls", read_only=True),
             ],
         ),
         [
+            k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
             provider_credentials,
             k8s.Volume(
                 name="bearers",

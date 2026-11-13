@@ -194,7 +194,10 @@ def chart(app: App) -> Chart:
                                     env=[
                                         k8s.EnvVar(
                                             name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        )
+                                        ),
+                                        k8s.EnvVar(
+                                            name="GIT_SSL_CAINFO", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        ),
                                     ],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])

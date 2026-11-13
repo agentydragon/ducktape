@@ -217,6 +217,8 @@ spec:
                   value: /workdir
                 - name: SSL_CERT_FILE
                   value: /var/run/public-web-pki/ca-certificates.crt
+                - name: GIT_SSL_CAINFO
+                  value: /var/run/public-web-pki/ca-certificates.crt
                 - name: GIT_REPO_URL
                   valueFrom:
                     secretKeyRef:

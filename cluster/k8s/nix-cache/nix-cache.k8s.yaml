@@ -263,6 +263,8 @@ spec:
                     secretKeyRef:
                       key: token
                       name: github-secrets-sync-pat
+                - name: SSL_CERT_FILE
+                  value: /var/run/public-web-pki/ca-certificates.crt
               image: git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset
               name: rotate
               resources:
@@ -280,6 +282,9 @@ spec:
                 - mountPath: /config
                   name: rotators-config
                   readOnly: true
+                - mountPath: /var/run/public-web-pki
+                  name: public-web-pki
+                  readOnly: true
           restartPolicy: OnFailure
           securityContext:
             runAsNonRoot: true
@@ -288,6 +293,9 @@ spec:
               type: RuntimeDefault
           serviceAccountName: attic-jwt-rotator
           volumes:
+            - configMap:
+                name: public-web-pki
+              name: public-web-pki
             - configMap:
                 name: attic-rotators-config
               name: rotators-config
@@ -534,6 +542,9 @@ spec:
             - --cache=gaffer
             - --public-cache=public
             - --keypair-dir=/secrets/cache-keys
+          env:
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
           image: git.allegedly.works/ducktape-ci/attic-jwt-rotation:unset
           name: bootstrap
           resources:
@@ -551,6 +562,9 @@ spec:
             - mountPath: /secrets/cache-keys
               name: cache-keys
               readOnly: true
+            - mountPath: /var/run/public-web-pki
+              name: public-web-pki
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       restartPolicy: OnFailure
@@ -561,6 +575,9 @@ spec:
           type: RuntimeDefault
       serviceAccountName: attic-jwt-rotator
       volumes:
+        - configMap:
+            name: public-web-pki
+          name: public-web-pki
         - name: cache-keys
           secret:
             items:

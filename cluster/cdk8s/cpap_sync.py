@@ -208,6 +208,9 @@ def chart(app: App) -> Chart:
                                         k8s.EnvVar(
                                             name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
                                         ),
+                                        k8s.EnvVar(
+                                            name="GIT_SSL_CAINFO", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        ),
                                         _GIT_CREDENTIALS.key("repo_url").env_var("GIT_REPO_URL"),
                                         _GIT_CREDENTIALS.key("username").env_var("GIT_USERNAME"),
                                         _GIT_CREDENTIALS.key("password").env_var("GIT_PASSWORD"),

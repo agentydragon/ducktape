@@ -4120,6 +4120,8 @@ spec:
       namespace: ducktape-flux
     - name: piraeus-cluster
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/nix-cache
   prune: true
