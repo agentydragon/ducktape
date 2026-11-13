@@ -76,7 +76,7 @@ k3s_suite(
 k3s_suite(
     name = "test_gateway_crash",
     srcs = ["test_gateway_crash.py"],
-    stack = "mcp",
+    stack = "central",
     deps = [
         ":conftest",
         "//:conftest",
@@ -95,7 +95,7 @@ k3s_suite(
 k3s_suite(
     name = "test_gateway_budget",
     srcs = ["test_gateway_budget.py"],
-    stack = "mcp",
+    stack = "central",
     deps = [
         ":conftest",
         "//:conftest",
@@ -114,7 +114,7 @@ k3s_suite(
 k3s_suite(
     name = "test_sampler_roll",
     srcs = ["test_sampler_roll.py"],
-    stack = "mcp",
+    stack = "central",
     deps = [
         ":conftest",
         "//:conftest",
@@ -133,7 +133,7 @@ k3s_suite(
 k3s_suite(
     name = "test_history_outage",
     srcs = ["test_history_outage.py"],
-    stack = "mcp",
+    stack = "central",
     deps = [
         ":conftest",
         "//:conftest",

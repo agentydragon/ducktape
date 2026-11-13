@@ -1,4 +1,4 @@
-"""Render one ordinary or VM fixture chart into `$K3S_FIXTURE_DIR`.
+"""Render one ordinary, central-recovery or VM fixture chart into `$K3S_FIXTURE_DIR`.
 
 `K3S_FIXTURE_VARIANT` selects an ordinary, Pod, VM or Firecracker fixture.
 The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
@@ -27,6 +27,7 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
+    LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_POD = "local-model-pod"
     LOCAL_MODEL_VM = "local-model-vm"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
@@ -92,6 +93,8 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
     match variant:
         case FixtureVariant.LOCAL_MODEL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
+        case FixtureVariant.LOCAL_MODEL_CENTRAL:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
         case FixtureVariant.LOCAL_MODEL_POD:
             _render(
                 output,
