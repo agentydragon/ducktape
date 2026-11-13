@@ -28,7 +28,7 @@ from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_af
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import ThreadView
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text

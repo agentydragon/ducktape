@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
 import { IdentitySchema, PolicyBindingSchema } from "../../../policy/v1/policy_service_pb";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
-import { SessionSchema } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { SessionSchema } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import { identityBindings, remainingIdentityReferences } from "./references";
 
 const identity = create(IdentitySchema, { identity: { namespace: "policies", name: "fake-agent", uid: "current" } });

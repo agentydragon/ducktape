@@ -1,10 +1,7 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
-load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 
 go_library(
     name = "dispatcher",
@@ -31,7 +28,6 @@ go_library(
     ],
     deps = [
         ":dispatcher_notification_go_proto",
-        ":session_dispatcher_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
@@ -45,6 +41,7 @@ go_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/environmentruntimeclient",
@@ -97,8 +94,8 @@ go_test(
     srcs = ["methods_test.go"],
     embed = [":dispatcher"],
     deps = [
-        ":session_dispatcher_go_proto",
         "//agentplane/identity/auth/auth",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/testing/grpcmethods",
         "//agentplane/testing/kubeapiserver",
         "@org_golang_google_grpc//:grpc",
@@ -113,13 +110,13 @@ go_test(
     srcs = ["svid_auth_test.go"],
     embed = [":dispatcher"],
     deps = [
-        ":session_dispatcher_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
         "//agentplane/identity/auth/auth",
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/auth/testing",
         "//agentplane/identity/credentials/resolver",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/testing/kubeapiserver",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -148,7 +145,6 @@ go_test(
     embed = [":dispatcher"],
     tags = ["requires_docker"],
     deps = [
-        ":session_dispatcher_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
         "//agentplane/identity/auth/auth",
@@ -163,6 +159,7 @@ go_test(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/testing/grpcmethods",
@@ -189,52 +186,8 @@ go_test(
 )
 
 proto_library(
-    name = "session_dispatcher_proto",
-    srcs = ["session_dispatcher.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_proto",
-        "//agentplane/proto:environment_lifecycle_proto",
-        "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:identity_proto",
-        "//agentplane/proto:session_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-ts_proto_library(
-    name = "session_dispatcher_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":session_dispatcher_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_pb",
-        "//agentplane/proto:environment_lifecycle_pb",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:identity_pb",
-        "//agentplane/proto:session_pb",
-        "//google/api:annotations_pb",
-    ],
-)
-
-proto_library(
     name = "dispatcher_notification_proto",
     srcs = ["dispatcher_notification.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "session_dispatcher_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":session_dispatcher_proto"],
-)
-
-py_grpc_service_library(
-    name = "session_dispatcher_pb2_grpc",
-    proto = ":session_dispatcher_proto",
-    py_proto = ":session_dispatcher_pb2",
     visibility = ["//agentplane:__subpackages__"],
 )
 
@@ -245,31 +198,11 @@ py_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/grpc:calls",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//tenacity",
-    ],
-)
-
-go_proto_library(
-    name = "session_dispatcher_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb",
-    proto = ":session_dispatcher_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_go_proto",
-        "//agentplane/proto:environment_lifecycle_go_proto",
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:session_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
     ],
 )
 
@@ -288,13 +221,13 @@ go_test(
     ],
     embed = [":dispatcher"],
     deps = [
-        ":session_dispatcher_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
@@ -319,8 +252,8 @@ py_test(
         "//agentplane/grpc:serving",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:conftest",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "//agentplane/testing:tls",
         "@pypi//grpcio",
         "@pypi//protobuf",

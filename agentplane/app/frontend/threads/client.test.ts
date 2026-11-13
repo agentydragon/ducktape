@@ -15,7 +15,7 @@ import {
   threadObservations,
   listThreadWindow,
 } from "./client";
-import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import {
   BatchGetSessionSummariesResponseSchema,
   FeedStatus,

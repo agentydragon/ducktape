@@ -22,7 +22,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, session_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster

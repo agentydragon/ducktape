@@ -3,7 +3,7 @@ import { create } from "@bufbuild/protobuf";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
-import { DeliveryState, type Dispatch } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { DeliveryState, type Dispatch } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import { stubWatchFetch } from "../testing/watch";
 import { dispatchFromJson } from "./client";
 import { watchDispatches } from "./dispatch_watch";

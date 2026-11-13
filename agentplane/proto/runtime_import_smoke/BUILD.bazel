@@ -19,7 +19,7 @@ py_library(
     name = "probe",
     srcs = ["probe.py"],
     deps = [
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
         "@pypi//protobuf",
     ],
 )

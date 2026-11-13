@@ -1,4 +1,4 @@
-import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
 import { NotificationStatus } from "../notification_status";

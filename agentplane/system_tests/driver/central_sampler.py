@@ -16,7 +16,7 @@ from agentplane.central_sampler.api import sampler_pb2_grpc
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2_grpc
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity

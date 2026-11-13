@@ -13,7 +13,7 @@ import {
   type ThreadEntity,
 } from "../../../history_service/api/history/history_service_pb";
 import { Operation } from "../../../proto/command_pb";
-import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { DeliveryState } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 
 type CommandEntity = ThreadEntity & { entity: { case: "command"; value: ThreadCommand } };
 

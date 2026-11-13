@@ -10,6 +10,6 @@ go_library(
         "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/model",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
     ],
 )

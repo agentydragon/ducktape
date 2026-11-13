@@ -44,7 +44,7 @@ ts_library(
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:identity_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -58,7 +58,7 @@ agentplane_vitest_test(
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/policy/v1:policy_service_pb",
         "//agentplane/proto:identity_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -92,7 +92,7 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend:client",
         "//agentplane/policy/v1:policy_service_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -104,7 +104,7 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/policy/v1:policy_service_pb",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 

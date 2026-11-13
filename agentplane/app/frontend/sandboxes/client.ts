@@ -29,7 +29,7 @@ import {
   GetSessionResponseSchema,
   SessionSchema,
   type Session,
-} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+} from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
 export async function createSession(

@@ -28,7 +28,7 @@ from agentplane.app.testing.models import ThreadMetadata, ThreadView, thread_vie
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
-from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 

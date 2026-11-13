@@ -8,7 +8,7 @@ import {
   Harness,
   SessionSpecSchema,
 } from "../../../proto/session_pb";
-import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 import { CreateEnvironmentRequestSchema } from "../../../environments/v1/environment_service_pb";
 
