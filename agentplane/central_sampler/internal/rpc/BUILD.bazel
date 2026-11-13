@@ -11,8 +11,8 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/rpc",
     visibility = ["//agentplane/central_sampler/cmd:__pkg__"],
     deps = [
-        "//agentplane/central_sampler",
         "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/residentruntime",
         "//agentplane/central_sampler/internal/sessionstore",
         "//agentplane/central_sampler/internal/settings",
         "//agentplane/central_sampler/protocol",

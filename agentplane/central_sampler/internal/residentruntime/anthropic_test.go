@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"encoding/json"
@@ -173,7 +173,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	codeHost, _ := newFakeCodeModeManager(t)
-	runtime := NewRuntime(store, settings, codeHost)
+	runtime := New(store, settings, codeHost)
 	_, dispatchErr := runtime.advance(t.Context(), owner, nil, server.Client(), session)
 	var constraint *pq.Error
 	if !errors.As(dispatchErr, &constraint) || constraint.Code != "23514" || constraint.Constraint != "reject_test_intent" {

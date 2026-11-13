@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"context"
@@ -966,7 +966,7 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*ses
 		},
 		RPCTimeoutSeconds: 2,
 	}
-	runtime := NewRuntime(store, settings, manager)
+	runtime := New(store, settings, manager)
 	return store, owner, runtime, &liveHost{code: code, executor: &executor.Executor{}}, code, peers()[0]
 }
 

@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"bytes"
@@ -56,7 +56,7 @@ func providerCompactionRuntime(t *testing.T, store *sessionstore.Store, server *
 			},
 		},
 	}
-	return NewRuntime(store, settings, manager)
+	return New(store, settings, manager)
 }
 
 func receiveCompactionProviderRequest(t *testing.T, requests <-chan []byte) []byte {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -32,7 +32,7 @@ import (
 type Sampler struct {
 	samplerpb.UnimplementedSamplerServer
 	Store    *sessionstore.Store
-	Runtime  *centralsampler.Runtime
+	Runtime  *residentruntime.Runtime
 	Resolver *auth.Resolver
 	Settings samplersettings.Settings
 	Wakeups  *wakeups.Hub
