@@ -92,6 +92,10 @@ needs the working directory. Restoring live process handles retains their exact 
 a new executor binding with no live remote handles may start a fresh native session. Live JS cells
 alone do not require a native executor session.
 
+The deployment rolls sampler replicas when the public trust ConfigMap changes so new
+processes load the new roots. Rollout uses the normal bounded drain and ownership
+reconciliation described below; an in-flight provider request may be interrupted.
+
 Provider requests have independent `provider_response_header_timeout_seconds` and
 `provider_idle_timeout_seconds` budgets, defaulting to 120 and 600 seconds. The header budget
 covers request transmission through response headers while preserving the connection's configured

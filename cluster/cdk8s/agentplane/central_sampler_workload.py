@@ -140,7 +140,7 @@ class CentralSampler(Construct):
             ),
             termination_grace=Duration.seconds(60),
             # Provider Secret files are reread per request; rotating them must not restart the shared host.
-            annotations={"configmap.reloader.stakater.com/reload": settings_file.config_map.name},
+            annotations={"configmap.reloader.stakater.com/reload": f"{settings_file.config_map.name},public-web-pki"},
             replica_profile=props.replicas or env.replicas,
             placement=placement,
             registry_secret_name=registry_secret_name,

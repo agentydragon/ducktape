@@ -1626,6 +1626,8 @@ automountServiceAccountToken: true
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    configmap.reloader.stakater.com/reload: agentplane-staging-egress-upstream-ca,public-web-pki
   labels:
     app.kubernetes.io/name: egress
   name: egress
@@ -3458,7 +3460,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    configmap.reloader.stakater.com/reload: central-sampler-settings
+    configmap.reloader.stakater.com/reload: central-sampler-settings,public-web-pki
   labels:
     app.kubernetes.io/name: central-sampler
   name: central-sampler
