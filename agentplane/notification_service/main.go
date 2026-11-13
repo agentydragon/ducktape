@@ -31,7 +31,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/github/client" // Distinguish GitHub transport from the Kubernetes client.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"

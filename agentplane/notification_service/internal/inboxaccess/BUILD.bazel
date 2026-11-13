@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "inboxaccess",
     srcs = ["policy.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/inboxaccess",
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess",
     visibility = ["//agentplane/notification_service:__subpackages__"],
     deps = [
         "//agentplane/policy/api/v1alpha1",
