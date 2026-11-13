@@ -13,9 +13,9 @@ import (
 
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -29,8 +29,10 @@ import (
 func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testing.T) {
 	apis := []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages}
 	cuts := []string{"no_items", "during_text", "before_terminal"}
-	plans := make([]*samplerExportPlan, 0, len(apis)*len(cuts))
-	for range len(apis) * len(cuts) {
+	// The before_terminal Responses case exceeds one ExportSession scheduling
+	// quantum, so leave room for additional real producer-to-History calls.
+	plans := make([]*samplerExportPlan, 0, len(apis)*len(cuts)+2)
+	for range len(apis)*len(cuts) + 2 {
 		plans = append(plans, newSamplerExportPlan(0, 0, false))
 	}
 	fixture := newSamplerExportFixture(t, plans...)
@@ -175,11 +177,8 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 					t.Fatalf("reconciliation count=%d", reports)
 				}
 
-				ctx, _ := samplerExportContext(t)
-				if err := samplerExportResult(t, startSamplerExport(ctx, fixture, session.ID)); err != nil {
-					t.Fatalf("export recovered sampler history: %v", err)
-				}
-				projected := projectSamplerHistory(t, fixture, session.ID)
+				exportSamplerHistoryThrough(t, fixture, session.ID, recovered.Cursor)
+				projected := projectSamplerHistory(t, fixture, session.ID, recovered.Cursor)
 				for id := range wantAbsent {
 					item := projected.items[id]
 					if item == nil || item.GetRecovery() != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT {
@@ -333,7 +332,7 @@ type samplerProjectedHistory struct {
 	lifecycle []*historypb.ThreadLifecycle
 }
 
-func projectSamplerHistory(t *testing.T, fixture samplerExportFixture, sessionID string) samplerProjectedHistory {
+func projectSamplerHistory(t *testing.T, fixture samplerExportFixture, sessionID string, sourceCursor uint64) samplerProjectedHistory {
 	t.Helper()
 	threadID, err := uuid.Parse(sessionID)
 	if err != nil {
@@ -345,6 +344,9 @@ func projectSamplerHistory(t *testing.T, fixture samplerExportFixture, sessionID
 	}
 	if len(page.GetEntries()) == 0 {
 		t.Fatal("History retained no sampler events")
+	}
+	if page.GetLastCursor() != sourceCursor {
+		t.Fatalf("History retained through cursor %d, want recovered sampler cursor %d", page.GetLastCursor(), sourceCursor)
 	}
 	runner := projection.NewFoldRunner(fixture.historyDB, fixture.history, 1, 1000)
 	backlog, err := runner.Cycle(t.Context())
@@ -471,7 +473,7 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 			wantReasonContains: "code host reconciliation failed",
 		},
 	}
-	plans := make([]*samplerExportPlan, len(cases))
+	plans := make([]*samplerExportPlan, len(cases)+2)
 	for index := range plans {
 		plans[index] = newSamplerExportPlan(0, 0, false)
 	}
@@ -527,15 +529,17 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 					t.Fatalf("GetSession blocked_reason=%v, want it to contain %q", persisted.BlockedReason, test.wantReasonContains)
 				}
 			}
+			persisted, err := store.GetSession(t.Context(), session.ID, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			sourceCursor := persisted.Cursor
 			if err := store.Release(t.Context(), owner); err != nil {
 				t.Fatal(err)
 			}
 
-			ctx, _ := samplerExportContext(t)
-			if err := samplerExportResult(t, startSamplerExport(ctx, fixture, session.ID)); err != nil {
-				t.Fatalf("export failed sampler history: %v", err)
-			}
-			projected := projectSamplerHistory(t, fixture, session.ID)
+			exportSamplerHistoryThrough(t, fixture, session.ID, sourceCursor)
+			projected := projectSamplerHistory(t, fixture, session.ID, sourceCursor)
 			activeCommand := projected.commands["active-input"]
 			if activeCommand == nil {
 				t.Fatal("History did not project the admitted active input")
