@@ -281,7 +281,6 @@ class RunnerGateway(Construct):
         if delegation_actor is not None:
             content["delegation"] = {
                 "actor": _account(delegation_actor),
-                "caller_namespaces": [namespace],
                 # Session delegation names an Identity in policy_namespace as the effective caller.
                 "identity_callers": True,
                 "methods": [

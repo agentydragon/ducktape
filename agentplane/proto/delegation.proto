@@ -10,16 +10,15 @@ import "agentplane/proto/identity.proto";
 // service to delegate and authorize the caller normally; the provenance
 // provides audit correlation, not approval proof.
 message Delegation {
-  // The caller the RPC acts for. A receiver that predates `identity` reads an
-  // envelope naming one as having no caller and refuses it.
+  // The Identity the RPC acts for. A receiver that predates this field reads
+  // the envelope as having no effective Identity and refuses it.
   oneof effective_caller {
-    ServiceAccountIdentity caller = 1;
     // An Identity in the receiver's policy namespace, by name and the UID of
     // the incarnation the actor recorded.
     Identity identity = 4;
   }
-  reserved 2, 3;
-  reserved "action_request_id", "action_execution_id";
+  reserved 1, 2, 3;
+  reserved "caller", "action_request_id", "action_execution_id";
   // Exactly one profile names the durable record the actor serves. A receiver
   // that predates a profile reads the envelope as having none and refuses it.
   oneof provenance {

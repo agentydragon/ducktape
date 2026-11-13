@@ -53,6 +53,7 @@ func TestSettingsLoadFromTheFileAndTheEnvironmentWithTheirDefaults(t *testing.T)
 func TestDelegationTrustIsAnIndependentExactMethodSetting(t *testing.T) {
 	file := requiredFile + `delegation:
   actor: test-agentplane/actions
+  identity_callers: true
   caller_namespaces: [test-agentplane]
   methods: [/agentplane.history_service.HistoryService/ReadSessionEvents]
 `

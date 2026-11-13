@@ -50,10 +50,10 @@ type config struct {
 }
 
 type delegationConfig struct {
-	Actor            auth.Account `mapstructure:"actor"`
-	CallerNamespaces []string     `mapstructure:"caller_namespaces"`
-	// IdentityCallers lets the actor assert Identities in policy_namespace, a grant separate from
-	// caller_namespaces. It requires policy_namespace.
+	Actor auth.Account `mapstructure:"actor"`
+	// CallerNamespaces remains accepted during config rollout but no longer grants effective callers.
+	CallerNamespaces []string `mapstructure:"caller_namespaces"`
+	// IdentityCallers lets the actor assert Identities in policy_namespace.
 	IdentityCallers bool     `mapstructure:"identity_callers"`
 	Methods         []string `mapstructure:"methods"`
 }
@@ -124,8 +124,8 @@ func (c *config) validate() error {
 		return errors.New("reader_accounts must list at least one ServiceAccount")
 	}
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
-		len(c.Delegation.CallerNamespaces) == 0 && !c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
-		return errors.New("delegation requires an actor, caller namespaces or identity_callers, and methods")
+		!c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
+		return errors.New("delegation requires an actor, identity_callers, and methods")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc listener: %w", err)

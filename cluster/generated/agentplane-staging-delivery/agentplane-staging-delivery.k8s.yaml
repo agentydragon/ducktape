@@ -451,8 +451,6 @@ data:
       - agentplane-staging/app
     delegation:
       actor: agentplane-staging/actions
-      caller_namespaces:
-        - agentplane-staging
       identity_callers: true
       methods:
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput

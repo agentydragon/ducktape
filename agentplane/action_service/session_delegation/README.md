@@ -3,16 +3,18 @@
 Agent workflow: [Session delegation](../docs/agents/session_delegation.md), available with
 `agentplane actions guide session_delegation` and MCP `get_guide(name="session_delegation")`.
 
-The `session_delegation` executor forwards the caller identity retained with an Action request, a
-ServiceAccount or an Identity incarnation, to Environment Service, Session Dispatcher and History.
-These APIs enforce their normal caller-scoped target and Session checks. Actions authenticates with
-its own projected token for each destination audience; it carries the original caller's verified
-namespace, name and UID (an Identity's name and UID) plus the durable Action request and execution
-UUIDs in the shared delegation envelope. Tool arguments never select the caller. An absent caller UID
-fails closed. A ServiceAccount caller's `target.namespace` must be its own; an Identity has no
-namespace, and the backends scope it to the Sessions recorded with its incarnation. The Environment
-Service admits no Identity caller, and Dispatcher opens no Session for one, so an Identity's
-`environments/*` and `sessions/create` requests fail with that refusal.
+The `session_delegation` executor forwards the Identity incarnation retained with an Action request
+to Environment Service, Session Dispatcher and History. These APIs enforce their normal caller-scoped
+target and Session checks. Actions authenticates as its own service actor with a destination-audience
+token; it carries the original Identity name and UID plus the durable Action request and execution
+UUIDs in the shared delegation envelope. Tool arguments never select the caller. A missing or
+replaced Identity fails closed. Legacy Action records attributed to ServiceAccounts remain intact for
+receipt and audit reads, but execution refuses them without re-attribution or backend calls.
+
+Environment discovery scopes an Identity to Sandboxes currently bound to it. The Dispatcher scopes
+Session operations to the exact Identity recorded for the Session. Identity-originated Session
+creation remains denied pending a separately reviewed lifecycle grant; explicit Environment resume
+also remains under its existing component/operator authority boundary.
 
 ## Reviewed operations
 
@@ -41,8 +43,7 @@ task separately with `sessions__submit_input`.
 `environments__list` returns the owning Discovery page; `environments__get` immediately refreshes
 one exact incarnation. It has no wait fields and never resumes a target. `environments__resume` sends
 one explicit request using the exact target and opaque token from a fresh get; its result is
-acceptance, not readiness. The receiving backend enforces the effective caller's current
-same-ServiceAccount policy.
+acceptance, not readiness. The receiving backend enforces the effective Identity's current policy.
 `sessions__get` returns `session_client.GetSession`'s independently sourced retained
 Dispatcher Session and History summary. The Session part is the minimal authorized projection; it
 omits the creation spec and instructions and does not look up a live environment. Each source keeps
@@ -62,8 +63,8 @@ stored and returned by MCP Edge as structured JSON with the same JSON text fallb
 ## Authorization and recovery
 
 Only policies already bound to the caller can auto-approve these Actions. This adapter does not
-change a PolicySet or caller binding. The receiving services verify the effective caller's UID and
-resource authority; neither Action approval nor this delegation path creates or changes caller
+change a PolicySet or caller binding. The receiving services verify the effective Identity UID and
+resource authority; neither Action approval nor this delegation path creates or changes Identity
 grants.
 
 Session creation and input submission retain caller-held Session/command UUIDs for backend idempotent

@@ -59,14 +59,11 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	noAccounts := auth.ServiceAccountUIDReaderFunc(func(context.Context, auth.Account) (string, bool, error) {
-		return "", false, nil
-	})
 	var delegated []string
 	for method := range Methods(auth.Rule{}) {
 		delegated = append(delegated, method)
 	}
-	methods, err := MethodsWithDelegation(resolver, auth.Delegator{Account: actor, IdentityCallers: true}, noAccounts, identities, delegated)
+	methods, err := MethodsWithDelegation(resolver, auth.Delegator{Account: actor, IdentityCallers: true}, identities, delegated)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,10 +30,10 @@ class DelegationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
     caller_namespaces: tuple[str, ...] = Field(
-        min_length=1, description="Namespaces whose caller identity Actions may assert."
+        default=(), description="Deprecated and ignored; retained only to load older deployment settings."
     )
     identity_callers: bool = Field(
-        default=False, description="Whether Actions may assert an Identity in policy_namespace as the effective caller."
+        description="Must be true: Actions may assert a live Identity in policy_namespace as the effective caller."
     )
     methods: tuple[str, ...] = Field(
         min_length=1, description="Exact full RPC method names served by the Runner Gateway that admit delegation."

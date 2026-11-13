@@ -41,8 +41,6 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
@@ -236,19 +234,9 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, rpcListener
 	}
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
-			Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces, IdentityCallers: c.Delegation.IdentityCallers,
+			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
 		}
-		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
-			serviceAccount, err := kube.CoreV1().ServiceAccounts(account.Namespace).Get(ctx, account.Name, metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				return "", false, nil
-			}
-			if err != nil {
-				return "", false, err
-			}
-			return string(serviceAccount.UID), true, nil
-		})
-		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, uidReader, identityReader, c.Delegation.Methods)
+		historyMethods, err = api.MethodsWithDelegation(readerAuth, delegator, identityReader, c.Delegation.Methods)
 		if err != nil {
 			return fmt.Errorf("configure History delegation: %w", err)
 		}

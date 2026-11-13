@@ -228,12 +228,11 @@ func Methods(rule auth.Rule) auth.Methods {
 func MethodsWithDelegation(
 	resolver *auth.Resolver,
 	delegator auth.Delegator,
-	serviceAccounts auth.ServiceAccountUIDReader,
 	identities auth.IdentityUIDReader,
 	delegatedMethods []string,
 ) (auth.Methods, error) {
 	methods, err := Methods(auth.ReviewedServiceAccountOrIdentity(resolver)).WithDelegation(
-		delegatedMethods, []auth.Delegator{delegator}, serviceAccounts, identities,
+		delegatedMethods, []auth.Delegator{delegator}, identities,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated Dispatcher methods: %w", err)
@@ -308,17 +307,6 @@ func (s *Service) serviceAccountCaller(ctx context.Context) (ServiceAccountCalle
 			attribution.ActorPod = &PodIdentity{Name: direct.Pod.PodName, UID: direct.Pod.PodUID}
 			configured := s.DispatcherCallers.Has(auth.Account{Namespace: effective.GetAccount().GetNamespace(), Name: effective.GetAccount().GetName()})
 			privileged = configured && direct.Pod.IsPodBound()
-		}
-	case auth.DelegatedAdmission:
-		delegated := call
-		attribution.Actor = &ServiceAccountIdentity{
-			Account: &identitypb.ServiceAccount{Namespace: delegated.Actor.Account.Namespace, Name: delegated.Actor.Account.Name},
-			Uid:     delegated.Actor.ServiceAccountUID,
-		}
-		attribution.EffectiveCaller = delegated.EffectiveCaller
-		attribution.ActorPod = &PodIdentity{Name: delegated.Actor.PodName, UID: delegated.Actor.PodUID}
-		attribution.Action = &ActionCorrelation{
-			RequestID: delegated.Provenance.GetAction().GetRequestId(), ExecutionID: delegated.Provenance.GetAction().GetExecutionId(),
 		}
 	default:
 		return ServiceAccountCaller{}, status.Error(codes.Unauthenticated, "call not admitted")

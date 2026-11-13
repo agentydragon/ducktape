@@ -94,7 +94,6 @@ type Methods map[string]Rule
 func (m Methods) WithDelegation(
 	methodNames []string,
 	delegators []Delegator,
-	serviceAccounts ServiceAccountUIDReader,
 	identities IdentityUIDReader,
 ) (Methods, error) {
 	methods := make(Methods, len(m))
@@ -109,7 +108,7 @@ func (m Methods) WithDelegation(
 		if !ok {
 			return nil, fmt.Errorf("delegated method %q is not served", method)
 		}
-		rule, err := rule.AllowDelegationFrom(delegators, serviceAccounts, identities)
+		rule, err := rule.AllowDelegationFrom(delegators, identities)
 		if err != nil {
 			return nil, fmt.Errorf("delegated method %q: %w", method, err)
 		}
@@ -173,10 +172,6 @@ func sameAdmission(a, b Admission) bool {
 			return false
 		}
 		return first.Pod == nil || *first.Pod == *second.Pod
-	case DelegatedAdmission:
-		second, ok := b.(DelegatedAdmission)
-		return ok && first.Actor == second.Actor && sameServiceAccountIdentity(first.EffectiveCaller, second.EffectiveCaller) &&
-			proto.Equal(first.Provenance, second.Provenance)
 	case DelegatedIdentityAdmission:
 		second, ok := b.(DelegatedIdentityAdmission)
 		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&

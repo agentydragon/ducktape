@@ -14,10 +14,13 @@ import (
 
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -53,6 +56,8 @@ type watchFixture struct {
 	objects      client.WithWatch
 	rpc          environmentpb.EnvironmentServiceClient
 	target       *identitypb.EnvironmentTarget
+	identityName string
+	identityUID  string
 	ctx          context.Context
 	metadataRead <-chan struct{}
 	readerCtx    context.Context
@@ -94,8 +99,10 @@ func TestWatchEnvironmentDoesNotReadForUnrelatedPods(t *testing.T) {
 			return watch.NewRaceFreeFake(), nil
 		},
 	})
-	rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
-	ctx, cancel := context.WithCancel(bearing(t, matchingToken))
+	rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
+	})
+	ctx, cancel := context.WithCancel(delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}))
 	defer cancel()
 	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -147,12 +154,23 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := policyapi.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: scheme})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sandbox := sandboxObject("")
 	sandbox.Namespace = namespace
+	identity := &policyapi.Identity{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "watch-identity"},
+		Spec:       policyapi.IdentitySpec{Description: "Environment watch test identity"},
+	}
+	if err := objects.Create(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	sandbox.Spec.Identity = &sandboxapi.IdentityRef{Name: identity.Name}
 	if err := objects.Create(ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
@@ -189,14 +207,35 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := grpcmethods.Serve(t, Methods(resolver), func(server *grpc.Server) {
-		environmentpb.RegisterEnvironmentServiceServer(server, service)
-	})
-	token, err := watchAPI.UnboundToken(ctx, auth.Account{Namespace: namespace, Name: sandboxName}, dispatcherAudience)
+	actor := auth.Account{Namespace: namespace, Name: "actions"}
+	actorToken, err := watchAPI.WorkloadToken(ctx, actor, dispatcherAudience)
 	if err != nil {
 		t.Fatal(err)
 	}
+	identities, err := auth.KubernetesIdentityUIDs(observedObjects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := Methods(resolver).WithDelegation([]string{
+		environmentpb.EnvironmentService_GetEnvironment_FullMethodName,
+		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
+		environmentpb.EnvironmentService_ListEnvironments_FullMethodName,
+		environmentpb.EnvironmentService_WatchEnvironments_FullMethodName,
+	}, []auth.Delegator{{Account: actor, IdentityCallers: true}}, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := grpcmethods.Serve(t, methods, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	})
 	readerToken, err := watchAPI.UnboundToken(ctx, readerAccount, dispatcherAudience)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := auth.MarshalDelegation(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}},
+		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +244,10 @@ func newWatchFixture(t *testing.T) watchFixture {
 		readerCtx: metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken),
 		objects:   objects, rpc: environmentpb.NewEnvironmentServiceClient(connection),
 		target:       &identitypb.EnvironmentTarget{Namespace: namespace, Name: sandboxName, Uid: string(sandbox.UID)},
-		ctx:          metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
+		identityName: identity.Name, identityUID: string(identity.UID),
+		ctx: metadata.NewOutgoingContext(ctx, metadata.Pairs(
+			"authorization", "Agentplane-Delegated "+actorToken, auth.DelegationMetadataKey, string(envelope),
+		)),
 		metadataRead: metadataRead,
 	}
 }
@@ -335,8 +377,8 @@ func TestWatchEnvironmentCoalescesCurrentPodStatusAndFencesReplacement(t *testin
 	}
 }
 
-func TestWatchEnvironmentEndsWhenTargetOrExecutionAccountIsNoLongerAccessible(t *testing.T) {
-	for _, change := range []string{"replace target", "delete target", "replace execution account", "remove account owner"} {
+func TestWatchEnvironmentEndsWhenTargetOrIdentityBindingIsNoLongerAccessible(t *testing.T) {
+	for _, change := range []string{"replace target", "delete target", "replace Identity", "delete Identity", "remove Identity binding"} {
 		t.Run(change, func(t *testing.T) {
 			f := newWatchFixture(t)
 			stream, err := f.rpc.WatchEnvironment(f.ctx, &environmentpb.WatchEnvironmentRequest{Target: f.target})
@@ -358,40 +400,47 @@ func TestWatchEnvironmentEndsWhenTargetOrExecutionAccountIsNoLongerAccessible(t 
 						t.Fatal(err)
 					}
 				}
-			case "replace execution account", "remove account owner":
-				var account corev1.ServiceAccount
-				if err := f.objects.Get(f.ctx, types.NamespacedName{Namespace: f.target.Namespace, Name: sandboxName}, &account); err != nil {
+			case "replace Identity", "delete Identity":
+				var identity policyapi.Identity
+				if err := f.objects.Get(f.ctx, types.NamespacedName{Namespace: f.target.Namespace, Name: f.identityName}, &identity); err != nil {
 					t.Fatal(err)
 				}
-				if change == "replace execution account" {
-					if err := f.objects.Delete(f.ctx, &account); err != nil {
-						t.Fatal(err)
+				if err := f.objects.Delete(f.ctx, &identity); err != nil {
+					t.Fatal(err)
+				}
+				if change == "replace Identity" {
+					replacement := &policyapi.Identity{
+						ObjectMeta: metav1.ObjectMeta{Namespace: f.target.Namespace, Name: f.identityName},
+						Spec:       policyapi.IdentitySpec{Description: "Replacement watch test identity"},
 					}
-					replacement := executionAccountObject(types.UID(f.target.Uid))
-					replacement.Namespace, replacement.UID = f.target.Namespace, ""
 					if err := f.objects.Create(f.ctx, replacement); err != nil {
 						t.Fatal(err)
 					}
-				} else {
-					account.OwnerReferences = nil
-					if err := f.objects.Update(f.ctx, &account); err != nil {
-						t.Fatal(err)
-					}
+				}
+			case "remove Identity binding":
+				sandbox := f.sandbox(t)
+				sandbox.Spec.Identity = nil
+				if err := f.objects.Update(f.ctx, sandbox); err != nil {
+					t.Fatal(err)
 				}
 			}
-			if _, err := stream.Recv(); status.Code(err) != codes.NotFound {
-				t.Fatalf("watch after %s = %v, want NotFound", change, err)
+			wantCode := codes.NotFound
+			if change == "replace Identity" || change == "delete Identity" {
+				wantCode = codes.PermissionDenied
+			}
+			if _, err := stream.Recv(); status.Code(err) != wantCode {
+				t.Fatalf("watch after %s = %v, want %v", change, err, wantCode)
 			}
 		})
 	}
 }
 
-func TestWatchEnvironmentDelegationUsesTheEffectiveCaller(t *testing.T) {
+func TestWatchEnvironmentDelegationUsesTheEffectiveIdentity(t *testing.T) {
 	rpc := serveDiscoveryWithDelegation(t, baseReader(t), runtimeconfig.Catalog{}, []string{
 		environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
 	})
-	effective := auth.Account{Namespace: discoveryNamespace, Name: sandboxName}
-	ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, effective, executionUID), 5*time.Second)
+	effective := auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}
+	ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, effective), 5*time.Second)
 	defer cancel()
 	stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -400,18 +449,19 @@ func TestWatchEnvironmentDelegationUsesTheEffectiveCaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := stream.Recv()
-	if err != nil || got.GetEnvironment().GetExecutionAccount().GetUid() != executionUID {
-		t.Fatalf("delegated watch = %v, %v, want effective caller's environment", got, err)
+	if err != nil || got.GetEnvironment().GetIdentityName() != effective.Name || got.GetEnvironment().GetExecutionAccount() != nil {
+		t.Fatalf("delegated watch = %v, %v, want the effective Identity without an account projection", got, err)
 	}
 	for _, denied := range []struct {
 		name, token, uid string
 		want             codes.Code
 	}{
-		{name: "untrusted actor", token: untrustedToken, uid: executionUID, want: codes.PermissionDenied},
+		{name: "untrusted actor", token: untrustedToken, uid: delegatedIdentityUID, want: codes.PermissionDenied},
 		{name: "recreated caller", token: actionsToken, uid: "replaced-uid", want: codes.PermissionDenied},
 	} {
 		t.Run(denied.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(delegatedBearing(t, denied.token, effective, denied.uid), 5*time.Second)
+			identity := auth.Identity{Name: effective.Name, UID: denied.uid}
+			ctx, cancel := context.WithTimeout(delegatedBearing(t, denied.token, identity), 5*time.Second)
 			defer cancel()
 			refused, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -432,7 +482,7 @@ func TestWatchEnvironmentClosesAllSourcesOnWatchLoss(t *testing.T) {
 			sources := make(chan *watch.RaceFreeFakeWatcher, 3)
 			objects := interceptor.NewClient(baseReader(t), interceptor.Funcs{
 				Watch: func(_ context.Context, _ client.WithWatch, object client.ObjectList, _ ...client.ListOption) (watch.Interface, error) {
-					if _, second := object.(*corev1.ServiceAccountList); second && failure == "opening second watch" {
+					if _, second := object.(*corev1.PodList); second && failure == "opening second watch" {
 						return nil, errors.New("injected source failure")
 					}
 					source := watch.NewRaceFreeFake()
@@ -440,8 +490,10 @@ func TestWatchEnvironmentClosesAllSourcesOnWatchLoss(t *testing.T) {
 					return source, nil
 				},
 			})
-			rpc := serveDiscovery(t, objects, runtimeconfig.Catalog{})
-			ctx, cancel := context.WithTimeout(bearing(t, matchingToken), 5*time.Second)
+			rpc := serveDiscoveryWithDelegation(t, objects, runtimeconfig.Catalog{}, []string{
+				environmentpb.EnvironmentService_WatchEnvironment_FullMethodName,
+			})
+			ctx, cancel := context.WithTimeout(delegatedBearing(t, actionsToken, auth.Identity{Name: delegatedIdentityName, UID: delegatedIdentityUID}), 5*time.Second)
 			defer cancel()
 			stream, err := rpc.WatchEnvironment(ctx, &environmentpb.WatchEnvironmentRequest{
 				Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID},
@@ -458,7 +510,7 @@ func TestWatchEnvironmentClosesAllSourcesOnWatchLoss(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			wantSources := 3
+			wantSources := 2
 			if failure == "opening second watch" {
 				wantSources = 1
 			}
@@ -544,7 +596,7 @@ func TestWatchEnvironmentsScopesAndIncludesSandboxesWithoutAccounts(t *testing.T
 	}
 }
 
-func TestCollectionWatchUpsertsAndRemovesOnAccountLoss(t *testing.T) {
+func TestCollectionWatchUpsertsAndRemovesOnIdentityBindingLoss(t *testing.T) {
 	f := newWatchFixture(t)
 	stream, err := f.rpc.WatchEnvironments(f.ctx, &emptypb.Empty{})
 	if err != nil {
@@ -576,18 +628,53 @@ func TestCollectionWatchUpsertsAndRemovesOnAccountLoss(t *testing.T) {
 	if err != nil || !changed.GetUpsert().GetConfiguration().GetWakeOnSend() {
 		t.Fatalf("upsert = %v, %v", changed, err)
 	}
-	var account corev1.ServiceAccount
-	key := types.NamespacedName{Namespace: f.target.Namespace, Name: sandboxName}
-	if err := f.objects.Get(f.ctx, key, &account); err != nil {
-		t.Fatal(err)
-	}
-	account.OwnerReferences = nil
-	if err := f.objects.Update(f.ctx, &account); err != nil {
+	sandbox = f.sandbox(t)
+	sandbox.Spec.Identity = nil
+	if err := f.objects.Update(f.ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
 	removed, err := stream.Recv()
 	if err != nil || removed.GetRemoved().GetUid() != f.target.Uid {
-		t.Fatalf("account loss = %v, %v", removed, err)
+		t.Fatalf("Identity binding loss = %v, %v", removed, err)
+	}
+}
+
+func TestCollectionIdentityWatchRevalidatesIdleReplacementAndDeletion(t *testing.T) {
+	for _, change := range []string{"replace Identity", "delete Identity"} {
+		t.Run(change, func(t *testing.T) {
+			f := newWatchFixture(t)
+			stream, err := f.rpc.WatchEnvironments(f.ctx, &emptypb.Empty{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			initial := receiveCollection(t, stream)
+			if len(initial) != 1 || initial[0].GetTarget().GetName() != f.target.Name {
+				t.Fatalf("initial Identity inventory = %v", initial)
+			}
+			var identity policyapi.Identity
+			if err := f.objects.Get(f.ctx, types.NamespacedName{Namespace: f.target.Namespace, Name: f.identityName}, &identity); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.objects.Delete(f.ctx, &identity); err != nil {
+				t.Fatal(err)
+			}
+			if change == "replace Identity" {
+				replacement := &policyapi.Identity{
+					ObjectMeta: metav1.ObjectMeta{Namespace: f.target.Namespace, Name: f.identityName},
+					Spec:       policyapi.IdentitySpec{Description: "Replacement watch test identity"},
+				}
+				if err := f.objects.Create(f.ctx, replacement); err != nil {
+					t.Fatal(err)
+				}
+				if string(replacement.UID) == f.identityUID {
+					t.Fatal("replacement Identity reused the previous UID")
+				}
+			}
+			frame, err := stream.Recv()
+			if status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("idle collection after %s = %v, %v; want PermissionDenied after effective Identity UID changed", change, frame, err)
+			}
+		})
 	}
 }
 

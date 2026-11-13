@@ -136,7 +136,7 @@ func NewInputs() (Inputs, error) {
 	var inputs Inputs
 	var err error
 	if inputs.ListEnvironments, err = newInput[ListEnvironmentsArgs](ActionListEnvironments,
-		"Find existing environments whose execution account matches your authenticated account and can host Sessions. Use this first when choosing a target; it never creates or wakes an environment. Provide a page limit and, when continuing, the opaque `after` token from the prior page. The result contains eligible target references and runtime choices; an empty page is valid and a source failure is reported as an error.",
+		"Find existing environments whose current Identity binding matches your authenticated Identity and that can host Sessions. Use this first when choosing a target; it never creates or wakes an environment. Provide a page limit and, when continuing, the opaque `after` token from the prior page. The result contains eligible target references and runtime choices; an empty page is valid and a source failure is reported as an error.",
 		"List environments", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}); err != nil {
 		return Inputs{}, err
 	}
@@ -151,12 +151,12 @@ func NewInputs() (Inputs, error) {
 		return Inputs{}, err
 	}
 	if inputs.CreateSession, err = newInput[CreateSessionArgs](ActionCreateSession,
-		"Durably create a Session in an exact existing environment whose execution account matches your authenticated account. Supply a caller-minted `session_id`, offered runtime settings, and the target's full UID; `additional_instructions` only adds standing guidance and never starts a turn. Creation does not submit task input, so call `sessions__submit_input` separately to start work. The result is the typed Dispatcher Session resource; after an uncertain reply, look it up by the same Session ID rather than minting another ID.",
+		"Request a Session in an exact existing environment whose current Identity binding matches your authenticated Identity. Supply a caller-minted `session_id`, offered runtime settings, and the target's full UID; `additional_instructions` only adds standing guidance and never starts a turn. Identity-originated Session creation is currently denied pending a separately reviewed lifecycle grant. Creation does not submit task input, so call `sessions__submit_input` separately to start work. The result is the typed Dispatcher Session resource; after an uncertain reply, look it up by the same Session ID rather than minting another ID.",
 		"Create session", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}); err != nil {
 		return Inputs{}, err
 	}
 	if inputs.SubmitInput, err = newInput[SubmitInputArgs](ActionSubmitInput,
-		"Durably submit one message to a Session in the exact target incarnation. Supply a fresh caller-minted `command_id` and reuse it only to recover this same command; the target and Session must belong to your authenticated account. The typed Dispatch receipt means stored or queued, not consumed by the agent. If the reply is uncertain, call `sessions__observe_input` with the same Session and command IDs; this Action never replays the submission.",
+		"Durably submit one message to a Session in the exact target incarnation. Supply a fresh caller-minted `command_id` and reuse it only to recover this same command; the target and Session must be recorded for your exact authenticated Identity incarnation. The typed Dispatch receipt means stored or queued, not consumed by the agent. If the reply is uncertain, call `sessions__observe_input` with the same Session and command IDs; this Action never replays the submission.",
 		"Submit session input", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}); err != nil {
 		return Inputs{}, err
 	}

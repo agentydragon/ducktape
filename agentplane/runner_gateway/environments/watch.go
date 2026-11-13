@@ -27,13 +27,20 @@ const watchWriteTimeout = 5 * time.Second
 
 func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentRequest, stream grpc.ServerStreamingServer[environmentpb.WatchEnvironmentResponse]) error {
 	ctx := stream.Context()
-	identity, err := caller(ctx)
+	identity, err := environmentSubject(ctx)
 	if err != nil {
 		return err
 	}
+	if !identity.valid() {
+		return status.Error(codes.Unauthenticated, "effective environment identity is incomplete")
+	}
+	broad := identity.serviceAccount != nil && s.broadReader(ctx, identity.serviceAccount)
+	if identity.identity == nil && !broad {
+		return status.Error(codes.NotFound, "environment not found")
+	}
 	get := &environmentpb.GetEnvironmentRequest{Target: request.GetTarget()}
 	// Authorize the target before allocating watches or reading any collection.
-	if _, _, err := s.getEnvironment(ctx, get, environmentCaller{serviceAccount: identity}); err != nil {
+	if _, _, err := s.getEnvironment(ctx, get, identity); err != nil {
 		return err
 	}
 	sandboxes, err := s.watchObjects(ctx, &api.SandboxList{}, request.GetTarget())
@@ -41,11 +48,15 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 		return err
 	}
 	defer sandboxes.Stop()
-	accounts, err := s.watchObjects(ctx, &corev1.ServiceAccountList{}, request.GetTarget())
-	if err != nil {
-		return err
+	var accountEvents <-chan watch.Event
+	if broad {
+		accounts, err := s.watchObjects(ctx, &corev1.ServiceAccountList{}, request.GetTarget())
+		if err != nil {
+			return err
+		}
+		defer accounts.Stop()
+		accountEvents = accounts.ResultChan()
 	}
-	defer accounts.Stop()
 	// A Sandbox may name a VM Pod independently of its own name. Watching this namespace-scoped
 	// collection and filtering by the reported Pod name avoids missing a new incarnation between
 	// opening a Pod watch and receiving the Sandbox status event that names it.
@@ -62,7 +73,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 	for {
 		// All watches precede this read, so a change concurrent with the snapshot
 		// is either in the snapshot or wakes another read. Events are never used as authority.
-		current, currentPodName, err := s.getEnvironment(ctx, get, environmentCaller{serviceAccount: identity})
+		current, currentPodName, err := s.getEnvironment(ctx, get, identity)
 		if err != nil {
 			return err
 		}
@@ -87,9 +98,12 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 				if err := auth.RevalidateStream(ctx); err != nil {
 					return err
 				}
+				if _, _, err := s.getEnvironment(ctx, get, identity); err != nil {
+					return err
+				}
 				continue
 			case event, open = <-sandboxes.ResultChan():
-			case event, open = <-accounts.ResultChan():
+			case event, open = <-accountEvents:
 			case event, open = <-pods.ResultChan():
 				podEvent = true
 			}

@@ -89,7 +89,7 @@ func AllowDelegatingSamplers(push auth.Rule, samplers []auth.Account, identities
 	for _, sampler := range samplers {
 		delegators = append(delegators, auth.Delegator{Account: sampler, IdentityCallers: true})
 	}
-	return push.AllowDelegationFrom(delegators, nil, identities)
+	return push.AllowDelegationFrom(delegators, identities)
 }
 
 func (s *Service) Push(stream pushStream) error {

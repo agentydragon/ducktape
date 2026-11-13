@@ -2902,8 +2902,6 @@ data:
       settle_deltas: true
     delegation:
       actor: agentplane-staging/actions
-      caller_namespaces:
-        - agentplane-staging
       identity_callers: true
       methods:
         - /agentplane.history_service.HistoryService/ReadSessionEvents
