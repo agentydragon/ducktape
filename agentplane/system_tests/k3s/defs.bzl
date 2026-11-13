@@ -190,7 +190,7 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
@@ -278,6 +278,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     py_test(
         name = name,
         size = "enormous",
+        args = args,
         srcs = srcs,
         main = main,
         data = data,

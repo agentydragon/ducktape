@@ -1,0 +1,321 @@
+{
+  "graphs": {
+    "candidate": {
+      "actions": {
+        "test_actions": {
+          "action_digest": {
+            "hash": "6054bb8b2231fa61b92d4f99cce77d0193c48f0bffb7bc44a55ae9681995f79f",
+            "sizeBytes": "1218"
+          },
+          "case_envelope_seconds": 130.768,
+          "case_sum_seconds": 172.814,
+          "cleanup_seconds": 29.885,
+          "execution_id": "/uploads/ebe2643e-42a2-4dff-8324-5510e687424e/blobs/6054bb8b2231fa61b92d4f99cce77d0193c48f0bffb7bc44a55ae9681995f79f/1218",
+          "execution_seconds": 326.997,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "8a05498d-8ff6-422d-a3aa-df13fab5e9a8",
+            "namespace_uid": "d7d7073d-9fe7-419f-9e8b-a342f0947a63",
+            "outcome": "warm",
+            "postgres_pod_uid": "6c6704a7-eb78-4aaa-bea6-4ee9459fa278",
+            "root_certificate_uid": "85182b5e-e90c-4d80-9bb3-f1c82fa8f89d",
+            "root_secret_uid": "c0f87a7d-e193-43be-80ac-aabab30dd639"
+          },
+          "junit": {
+            "case_names": [
+              "test_agent_executes_mcp_action",
+              "test_agent_mcp_bff_decision",
+              "test_launcher_drives_only_the_sandbox_it_launched",
+              "test_operator_links_oauth_mcp_server[claude]",
+              "test_operator_links_oauth_mcp_server[codex]"
+            ],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 5
+          },
+          "observed_cpu_seconds": 913.512,
+          "output_upload_seconds": 0.678,
+          "queue_seconds": 0.061,
+          "setup_seconds": 130.256,
+          "worker_preparation_seconds": 0.394
+        },
+        "test_pod_balanced_a_spike": {
+          "action_digest": {
+            "hash": "b2897447b7186388b3a7764de4180a79541d34cf3a94cf1702c780683fcd6762",
+            "sizeBytes": "1218"
+          },
+          "case_envelope_seconds": 121.106,
+          "case_sum_seconds": 202.276,
+          "cleanup_seconds": 28.614,
+          "execution_id": "/uploads/e29f1cce-0d5e-42e1-9e9b-e6703a57cc67/blobs/b2897447b7186388b3a7764de4180a79541d34cf3a94cf1702c780683fcd6762/1218",
+          "execution_seconds": 254.447,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "c8f718ce-7468-48ef-99dd-9819731cdd3c",
+            "namespace_uid": "eb051c49-ec75-47d7-a667-6e339a9801d5",
+            "outcome": "warm",
+            "postgres_pod_uid": "a81dd545-24b5-466f-ac26-2536b2f56399",
+            "root_certificate_uid": "709b029f-9458-406f-906a-3844eecd9c15",
+            "root_secret_uid": "ab47a7dd-9e73-4e0c-b7ef-3b0eb436ecdc"
+          },
+          "junit": {
+            "case_names": [
+              "test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+              "test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+              "test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+              "test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+              "test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]"
+            ],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 5
+          },
+          "observed_cpu_seconds": 700.222,
+          "output_upload_seconds": 0.553,
+          "queue_seconds": 0.063,
+          "setup_seconds": 78.392,
+          "worker_preparation_seconds": 0.318
+        },
+        "test_pod_balanced_b_spike": {
+          "action_digest": {
+            "hash": "69d6a90f0e8525ac98f885fcca75ea2ba724c65d5cd3e554c5439b99f1218ba2",
+            "sizeBytes": "1218"
+          },
+          "case_envelope_seconds": 133.211,
+          "case_sum_seconds": 248.983,
+          "cleanup_seconds": 31.092,
+          "execution_id": "/uploads/8673ef21-7557-4420-9581-afc671c2d08b/blobs/69d6a90f0e8525ac98f885fcca75ea2ba724c65d5cd3e554c5439b99f1218ba2/1218",
+          "execution_seconds": 329.154,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "26343543-a98d-466b-b35e-ea6ab8c5d822",
+            "namespace_uid": "c2667f4e-e516-464f-b5e7-6f1cc2123dab",
+            "outcome": "warm",
+            "postgres_pod_uid": "d5f9adca-6a5f-4907-96c2-41fe3f42b019",
+            "root_certificate_uid": "b048eee8-08b8-435a-b9a2-dc36051f72e9",
+            "root_secret_uid": "ca0cc1a3-5b6a-4809-ad12-9ff4ac1f6570"
+          },
+          "junit": {
+            "case_names": [
+              "test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+              "test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+              "test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+              "test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+              "test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+              "test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+              "test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+              "test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+              "test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+              "test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+              "test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+              "test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+              "test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+              "test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+              "test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+              "test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]"
+            ],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 16
+          },
+          "observed_cpu_seconds": 1016.192,
+          "output_upload_seconds": 0.98,
+          "queue_seconds": 0.061,
+          "setup_seconds": 123.632,
+          "worker_preparation_seconds": 0.352
+        },
+        "test_vm": {
+          "action_digest": {
+            "hash": "d4e4b6830625f6359deeda38d59154550f964fe28db3a48c308a3031bf73d8a0",
+            "sizeBytes": "1852"
+          },
+          "case_envelope_seconds": 205.109,
+          "case_sum_seconds": 205.109,
+          "cleanup_seconds": 30.17,
+          "execution_id": "/uploads/48b01a98-275e-4ae6-adbc-1db8b2f16d18/blobs/d4e4b6830625f6359deeda38d59154550f964fe28db3a48c308a3031bf73d8a0/1852",
+          "execution_seconds": 459.776,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "d83a01d7-2974-4ded-ba04-07a9da7d8d25",
+            "namespace_uid": "787d54db-dc56-40a7-a526-2cf6589eb5a8",
+            "outcome": "cold",
+            "postgres_pod_uid": "e3a85794-6db3-42cc-a42d-eb5546c2454b",
+            "root_certificate_uid": "4ecb6984-eb06-40b7-bbf0-12c169078ef3",
+            "root_secret_uid": "df89021a-4f06-448d-a505-cd3871ca3777"
+          },
+          "junit": {
+            "case_names": ["test_vm_scenarios"],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 1
+          },
+          "observed_cpu_seconds": 1925.319,
+          "output_upload_seconds": 0.846,
+          "queue_seconds": 0.066,
+          "setup_seconds": 181.057,
+          "worker_preparation_seconds": 0.321
+        }
+      },
+      "bazel_elapsed_seconds": 493.956,
+      "bazel_start_utc": "2026-11-13T01:56:56.069Z",
+      "bazel_success": true,
+      "first_test_runner_queued_seconds": 32.695,
+      "invocation_id": "c0bd6ca1-f87a-41ff-ac9d-3f5838dda2e7",
+      "last_pod_worker_completed_seconds": 363.431,
+      "last_test_runner_worker_completed_seconds": 493.703
+    },
+    "control": {
+      "actions": {
+        "test_actions": {
+          "action_digest": {
+            "hash": "6054bb8b2231fa61b92d4f99cce77d0193c48f0bffb7bc44a55ae9681995f79f",
+            "sizeBytes": "1218"
+          },
+          "case_envelope_seconds": 113.592,
+          "case_sum_seconds": 145.526,
+          "cleanup_seconds": 29.3,
+          "execution_id": "/uploads/5ea6b9b5-722d-4fc4-b5ed-397b564357a7/blobs/6054bb8b2231fa61b92d4f99cce77d0193c48f0bffb7bc44a55ae9681995f79f/1218",
+          "execution_seconds": 262.897,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "675a351a-347c-44e5-b606-9d574554a8e9",
+            "namespace_uid": "75629fa1-5391-4328-a713-a248bd94546a",
+            "outcome": "warm",
+            "postgres_pod_uid": "8d4a62aa-1a60-4536-abbf-d8d4c5e2ceee",
+            "root_certificate_uid": "c59bfd00-190f-4521-a471-bfa184b618fc",
+            "root_secret_uid": "4470ef5b-ea6c-4041-a9bb-f6e6b81be69a"
+          },
+          "junit": {
+            "case_names": [
+              "test_agent_executes_mcp_action",
+              "test_agent_mcp_bff_decision",
+              "test_launcher_drives_only_the_sandbox_it_launched",
+              "test_operator_links_oauth_mcp_server[claude]",
+              "test_operator_links_oauth_mcp_server[codex]"
+            ],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 5
+          },
+          "observed_cpu_seconds": 749.109,
+          "output_upload_seconds": 0.734,
+          "queue_seconds": 0.061,
+          "setup_seconds": 92.83,
+          "worker_preparation_seconds": 0.503
+        },
+        "test_pod": {
+          "action_digest": {
+            "hash": "af887689cca7f501453759e0a6e7921f8c76c4d1e57e64bbc83d1b4a03e199bc",
+            "sizeBytes": "1218"
+          },
+          "case_envelope_seconds": 248.625,
+          "case_sum_seconds": 469.248,
+          "cleanup_seconds": 33.464,
+          "execution_id": "/uploads/43ccc5e9-8f2a-43e8-afcd-becf5dd7c45d/blobs/af887689cca7f501453759e0a6e7921f8c76c4d1e57e64bbc83d1b4a03e199bc/1218",
+          "execution_seconds": 422.72,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "d5a1cb56-f765-424f-bc53-058e7a9db595",
+            "namespace_uid": "db1dd248-f98e-4504-81b5-95e27c276350",
+            "outcome": "warm",
+            "postgres_pod_uid": "3dc75769-fa72-4d88-872f-521774d31d1e",
+            "root_certificate_uid": "f7cd5c8a-c918-4605-8da4-b0017d48eae9",
+            "root_secret_uid": "e1760ff2-5900-488f-b04d-5fca51e39a1b"
+          },
+          "junit": {
+            "case_names": [
+              "test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+              "test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+              "test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+              "test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+              "test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+              "test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+              "test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+              "test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+              "test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+              "test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+              "test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+              "test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+              "test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+              "test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+              "test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+              "test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+              "test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+              "test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+              "test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+              "test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+              "test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]"
+            ],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 21
+          },
+          "observed_cpu_seconds": 1224.9,
+          "output_upload_seconds": 0.714,
+          "queue_seconds": 0.06,
+          "setup_seconds": 105.173,
+          "worker_preparation_seconds": 0.428
+        },
+        "test_vm": {
+          "action_digest": {
+            "hash": "d4e4b6830625f6359deeda38d59154550f964fe28db3a48c308a3031bf73d8a0",
+            "sizeBytes": "1852"
+          },
+          "case_envelope_seconds": 195.548,
+          "case_sum_seconds": 195.548,
+          "cleanup_seconds": 31.422,
+          "execution_id": "/uploads/7bf45af8-9261-46e5-a82a-44510ed4bcad/blobs/d4e4b6830625f6359deeda38d59154550f964fe28db3a48c308a3031bf73d8a0/1852",
+          "execution_seconds": 501.375,
+          "fixture": {
+            "cleanup": "complete",
+            "collector_namespace_uid": "0b5c7eb0-55b0-45a1-89fa-04a42808eebb",
+            "namespace_uid": "f8562c5c-01df-4e9f-be73-1a721eddf5ce",
+            "outcome": "cold",
+            "postgres_pod_uid": "a3ac05e8-25f0-4cac-a7f5-475cbd56d8c5",
+            "root_certificate_uid": "e2b8ede0-01f9-41b7-81d3-0e7e206f8e01",
+            "root_secret_uid": "004f8ba7-189c-4f4d-a158-7ab233cc0f31"
+          },
+          "junit": {
+            "case_names": ["test_vm_scenarios"],
+            "errors": 0,
+            "failures": 0,
+            "skipped": 0,
+            "tests": 1
+          },
+          "observed_cpu_seconds": 2034.317,
+          "output_upload_seconds": 0.655,
+          "queue_seconds": 0.066,
+          "setup_seconds": 219.927,
+          "worker_preparation_seconds": 7.823
+        }
+      },
+      "bazel_elapsed_seconds": 548.37,
+      "bazel_start_utc": "2026-11-13T01:47:19.191Z",
+      "bazel_success": true,
+      "first_test_runner_queued_seconds": 38.252,
+      "invocation_id": "0c4b1ad2-fed1-4ee0-97db-040151a659e0",
+      "last_pod_worker_completed_seconds": 462.175,
+      "last_test_runner_worker_completed_seconds": 548.17
+    }
+  },
+  "junit_pod_case_multiset_equal": true,
+  "junit_pod_partitions_disjoint": true,
+  "pod_input_identity": {
+    "common_runfile_subtrees_equal_per_lane": 123,
+    "different_common_path_files_per_lane": 0,
+    "same_image_manifest_content_per_lane": true,
+    "same_platform": true
+  },
+  "schema_version": 1,
+  "selection_collection_invocations": {
+    "original": "1096f224-98a0-49c1-963f-e5de1e415c29",
+    "partitions": "e9a0c08e-411f-49a8-a205-9e6b8b8388cb"
+  },
+  "source_base": "5354b836af88ee17fbabc65c20666f90a0e6216c"
+}
