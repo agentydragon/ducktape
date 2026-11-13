@@ -187,8 +187,9 @@ fn rejected_split_atom_reports_both_destinations() {
             "--full-report",
             "residual-atomic-groups",
         ],
-        3,
+        1,
     );
+    assert!(fixture.stderr.contains("atomic-group conflict"));
     let report = report(&fixture.report_root, &fixture.chunk_id);
     assert_eq!(report["gate_accepts"], false);
     let group = report["groups"]
