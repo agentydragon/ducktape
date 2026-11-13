@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	uri, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

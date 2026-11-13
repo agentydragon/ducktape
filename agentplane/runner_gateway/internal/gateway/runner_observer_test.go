@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
@@ -785,7 +786,7 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	if err := g.validateRunnerDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
-	newURI, err := peertls.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: "test-replacement-credential"}.URI()
+	newURI, err := workloadid.ID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: "test-replacement-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

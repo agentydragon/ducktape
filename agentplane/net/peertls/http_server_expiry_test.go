@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
@@ -35,7 +36,7 @@ func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
 func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	localURI := peertls.EgressProxyURI
-	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *t
 func TestConfigureHTTPServerTLSExpiryDisablesSessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	localURI := peertls.EgressProxyURI
-	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +157,7 @@ func establishHTTPExpiryConnection(
 			t.Fatal(err)
 		}
 	} else {
-		runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+		runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 		if err != nil {
 			t.Fatal(err)
 		}

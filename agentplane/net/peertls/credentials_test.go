@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc"
@@ -27,7 +28,7 @@ import (
 
 func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestGatewayClientAuthenticatesEnvironmentRuntimeServer(t *testing.T) {
 
 func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestWorkloadTLSConfigPinsEgressAndRequiresRuntimeClientAuth(t *testing.T) {
 
 func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := peertls.WorkloadID{Namespace: "test-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	uri, err := workloadid.ID{Namespace: "test-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,11 +195,11 @@ func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 
 func TestClientTLSConfigReloadsSameIdentityAndRejectsChangedIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherRuntimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "rotated-credential-id"}.URI()
+	otherRuntimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "rotated-credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,11 +301,11 @@ func tlsHandshake(t *testing.T, clientConfig, serverConfig *tls.Config) (tls.Con
 
 func TestClientPinsExactPeerURI(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherEnvironmentRuntimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
+	otherEnvironmentRuntimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +327,7 @@ func TestClientPinsExactPeerURI(t *testing.T) {
 
 func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +352,7 @@ func TestEnvironmentRuntimeServerRejectsAnotherRunnerAsClient(t *testing.T) {
 func TestServerVerifiesClientsAgainstClientCAFileAlone(t *testing.T) {
 	root := environmentruntimetransporttesting.NewCA(t)
 	workload := root.Intermediate(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +446,7 @@ func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
 	}
 
 	// The Gateway dialing a runner: the same file also verifies the Gateway's own chain.
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-a", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-a", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +473,7 @@ func TestClientsVerifyServerSVIDsAgainstTheWorkloadCAAlone(t *testing.T) {
 func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 	trustedCA := environmentruntimetransporttesting.NewCA(t)
 	otherCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +501,7 @@ func TestCredentialsRejectUntrustedRootsAndMissingEKU(t *testing.T) {
 func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 	now := time.Now().UTC()
 	validCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +526,7 @@ func TestCredentialsRejectExpiredLeafAndRootCertificates(t *testing.T) {
 
 func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,7 +575,7 @@ func TestServerCredentialsDisableTLS13SessionResumption(t *testing.T) {
 func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 	oldCA := environmentruntimetransporttesting.NewCA(t)
 	newCA := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "pod-uid"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,7 +623,7 @@ func TestCredentialsReloadRotatedCertificateAndRoots(t *testing.T) {
 
 func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -650,7 +651,7 @@ func TestGRPCClientConnReconnectsAfterFileSVIDExpiryAndRotation(t *testing.T) {
 
 func TestGRPCClientConnReconnectsAfterWorkloadAPISVIDExpiryAndRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -821,7 +822,7 @@ func TestPeerIdentityRequiresTLSPeerCertificate(t *testing.T) {
 }
 
 func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
-	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -840,36 +841,6 @@ func TestPeerIdentityRejectsExpiredLeafOnExistingConnection(t *testing.T) {
 	}}})
 	if _, err := peertls.PeerIdentity(ctx); err == nil {
 		t.Fatal("PeerIdentity accepted an expired leaf from an existing TLS connection")
-	}
-}
-
-func TestParseWorkloadURIAcceptsOnlyTheCanonicalForm(t *testing.T) {
-	workload := peertls.WorkloadID{Namespace: "agent-ns", Name: "test-agent.box", CredentialID: "0123456789abcdef0123456789abcdef"}
-	valid, err := workload.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if valid != "spiffe://agentplane/agent-ns/test-agent.box/0123456789abcdef0123456789abcdef" {
-		t.Fatalf("URI = %q", valid)
-	}
-	if parsed, err := peertls.ParseWorkloadURI(valid); err != nil || parsed != workload {
-		t.Fatalf("parsed %+v, %v", parsed, err)
-	}
-	for _, invalid := range []string{
-		"spiffe://agentplane/agent-ns/test-agent",
-		"spiffe://agentplane/agent-ns/test-agent/0123456789abcdef0123456789abcdef/extra",
-		"spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/0123456789abcdef0123456789abcdef",
-		"spiffe://agentplane/Agent-ns/test-agent/0123456789abcdef0123456789abcdef",
-		"spiffe://agentplane/agent-ns/Test-agent/0123456789abcdef0123456789abcdef",
-		"spiffe://agentplane/agent-ns/test-agent/0123456789ABCDEF0123456789abcdef",
-		"spiffe://agentplane/agent-ns/test-agent/credential.id",
-		"spiffe://agentplane/agent-ns/-test-agent/0123456789abcdef0123456789abcdef",
-		"spiffe://other/agent-ns/test-agent/0123456789abcdef0123456789abcdef",
-		"spiffe://agentplane/actions",
-	} {
-		if _, err := peertls.ParseWorkloadURI(invalid); err == nil {
-			t.Errorf("ParseWorkloadURI accepted %q", invalid)
-		}
 	}
 }
 
@@ -992,7 +963,7 @@ func TestCertificateExpiryClosesEachEndpointIndependently(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
 				ca := environmentruntimetransporttesting.NewCA(t)
-				clientURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+				clientURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 				if err != nil {
 					t.Fatal(err)
 				}

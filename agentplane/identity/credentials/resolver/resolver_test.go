@@ -12,7 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
-	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -104,7 +104,7 @@ func issue(t *testing.T, ca *transporttesting.CA, namespace, name string, owner 
 	if err := objects.Create(ctx, record); err != nil {
 		t.Fatal(err)
 	}
-	workload := transport.WorkloadID{Namespace: namespace, Name: name, CredentialID: id}
+	workload := workloadid.ID{Namespace: namespace, Name: name, CredentialID: id}
 	uri, err := workload.URI()
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestAnAcceptedIncarnationResolvesToItsIdentity(t *testing.T) {
 	}
 	want := resolver.Identity{Name: subjectIdentity, UID: identityUID(t, policyNamespace)}
 	if peer.Subject != want || peer.Binding == nil || peer.Binding.PodUID != pod || peer.Owner == nil || peer.Owner.Kind != "Sandbox" ||
-		peer.Workload != (transport.WorkloadID{Namespace: servedNamespace, Name: "test-accepted", CredentialID: credentialIDs[0]}) {
+		peer.Workload != (workloadid.ID{Namespace: servedNamespace, Name: "test-accepted", CredentialID: credentialIDs[0]}) {
 		t.Fatalf("resolved %+v", peer)
 	}
 }
@@ -345,7 +345,7 @@ func TestRefusals(t *testing.T) {
 			return issue(t, ca, unservedNamespace, "test-unserved", sandboxOwner("test-unserved"), podSpec(pod), accepted, credentialIDs[0]).leaf
 		},
 		"no record": func(t *testing.T) *x509.Certificate {
-			uri, err := transport.WorkloadID{Namespace: servedNamespace, Name: "test-missing", CredentialID: credentialIDs[0]}.URI()
+			uri, err := workloadid.ID{Namespace: servedNamespace, Name: "test-missing", CredentialID: credentialIDs[0]}.URI()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -353,7 +353,7 @@ func TestRefusals(t *testing.T) {
 		},
 		"a rotated credential ID": func(t *testing.T) *x509.Certificate {
 			record := issue(t, ca, servedNamespace, "test-rotated", sandboxOwner("test-rotated"), podSpec(pod), accepted, credentialIDs[1])
-			uri, err := transport.WorkloadID{Namespace: servedNamespace, Name: record.record.Name, CredentialID: credentialIDs[0]}.URI()
+			uri, err := workloadid.ID{Namespace: servedNamespace, Name: record.record.Name, CredentialID: credentialIDs[0]}.URI()
 			if err != nil {
 				t.Fatal(err)
 			}

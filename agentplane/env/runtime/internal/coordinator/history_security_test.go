@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	"github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
@@ -16,7 +17,7 @@ import (
 
 func TestHistoryIngressUsesRuntimeOwnedWorkloadAPISource(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	identity, err := environmentruntimetransport.WorkloadID{Namespace: "test", Name: "sandbox", CredentialID: "test-credential"}.URI()
+	identity, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "test-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

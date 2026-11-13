@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/httpconnect"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -31,7 +32,7 @@ import (
 
 func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.T) {
 	ca := peertlstesting.NewCA(t)
-	uri, err := peertls.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	uri, err := workloadid.ID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 
 func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) {
 	ca := peertlstesting.NewCA(t)
-	uri, err := peertls.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	uri, err := workloadid.ID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +325,7 @@ func (h *workloadRouteHealth) Check(ctx context.Context, _ *healthpb.HealthCheck
 
 func TestWorkloadGRPCConnectRoutePresentsRunnerSVIDAndCarriesNativeMetadata(t *testing.T) {
 	ca := peertlstesting.NewCA(t)
-	uri, err := peertls.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	uri, err := workloadid.ID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

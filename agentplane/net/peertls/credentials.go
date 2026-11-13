@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/spiffe/go-spiffe/v2/bundle/x509bundle"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
@@ -108,87 +109,6 @@ func parseWorkloadAPISocket(raw string) (string, error) {
 		return "", errors.New("TLS workload_api_socket must be a canonical unix:///absolute/path URI")
 	}
 	return raw, nil
-}
-
-// WorkloadID is the identity a WorkloadCredential's certificate carries: the record's namespace and
-// name, which pick the record, and the credential ID its status must still hold.
-type WorkloadID struct {
-	Namespace, Name, CredentialID string
-}
-
-// URI is spiffe://agentplane/<namespace>/<name>/<credential-id>.
-func (w WorkloadID) URI() (string, error) {
-	if err := validateNamespace(w.Namespace); err != nil {
-		return "", err
-	}
-	if !isDNSSubdomain(w.Name) {
-		return "", errors.New("workload name must be a lowercase DNS subdomain")
-	}
-	// The issuer mints 32 hexadecimal digits; a verifier compares the whole URI with its record's.
-	if len(w.CredentialID) > 63 || !isDNSSubdomain(w.CredentialID) || strings.Contains(w.CredentialID, ".") {
-		return "", errors.New("credential ID must be a lowercase DNS label")
-	}
-	id, err := spiffeid.FromSegments(trustDomain, w.Namespace, w.Name, w.CredentialID)
-	if err != nil {
-		return "", fmt.Errorf("workload identity: %w", err)
-	}
-	return id.String(), nil
-}
-
-// ParseWorkloadURI accepts only the canonical form URI writes.
-func ParseWorkloadURI(raw string) (WorkloadID, error) {
-	id, err := spiffeid.FromString(raw)
-	if err != nil {
-		return WorkloadID{}, fmt.Errorf("parse workload identity URI: %w", err)
-	}
-	if !id.MemberOf(trustDomain) {
-		return WorkloadID{}, errors.New("workload identity URI must use the agentplane SPIFFE trust domain")
-	}
-	segments := strings.Split(strings.TrimPrefix(id.Path(), "/"), "/")
-	if len(segments) != 3 {
-		return WorkloadID{}, errors.New("workload identity URI must contain namespace, name and credential ID")
-	}
-	workload := WorkloadID{Namespace: segments[0], Name: segments[1], CredentialID: segments[2]}
-	canonical, err := workload.URI()
-	if err != nil {
-		return WorkloadID{}, err
-	}
-	if canonical != raw {
-		return WorkloadID{}, errors.New("workload identity URI is not canonical")
-	}
-	return workload, nil
-}
-
-func validateNamespace(namespace string) error {
-	if len(namespace) == 0 || len(namespace) > 63 {
-		return errors.New("namespace must be 1 to 63 characters")
-	}
-	for _, r := range namespace {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
-			return errors.New("namespace must be a lowercase DNS label")
-		}
-	}
-	if namespace[0] == '-' || namespace[len(namespace)-1] == '-' {
-		return errors.New("namespace must not start or end with a hyphen")
-	}
-	return nil
-}
-
-func isDNSSubdomain(name string) bool {
-	if len(name) == 0 || len(name) > 253 {
-		return false
-	}
-	for _, label := range strings.Split(name, ".") {
-		if label == "" || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, r := range label {
-			if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // ClientCredentials creates mTLS client credentials pinned to the exact
@@ -295,7 +215,7 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls
 		return nil, fmt.Errorf("local certificate identity %q does not match expected identity %q", source.identity, localURI)
 	}
 	authorizeRuntime := func(id spiffeid.ID, verifiedChains [][]*x509.Certificate) error {
-		if _, err := ParseWorkloadURI(id.String()); err != nil {
+		if _, err := workloadid.Parse(id.String()); err != nil {
 			return fmt.Errorf("client identity must be a valid workload URI: %w", err)
 		}
 		if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
@@ -611,7 +531,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 // parseIdentity accepts only GatewayURI or a canonical workload URI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
 	if identity != GatewayURI && !isWorkloadServiceURI(identity) {
-		if _, err := ParseWorkloadURI(identity); err != nil {
+		if _, err := workloadid.Parse(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid workload URI: %w", err)
 		}
 	}

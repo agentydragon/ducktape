@@ -11,7 +11,7 @@ import (
 	"time"
 
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +39,7 @@ type Identity struct {
 
 // Peer is a resolved workload.
 type Peer struct {
-	Workload transport.WorkloadID
+	Workload workloadid.ID
 	Subject  Identity
 	// Owner is the record's controller owner reference; nil for a standing workload.
 	Owner *metav1.OwnerReference
@@ -113,7 +113,7 @@ func (r *Resolver) Resolve(ctx context.Context, leaf *x509.Certificate) (Peer, e
 	if err != nil {
 		return Peer{}, fmt.Errorf("%w: %w", ErrRefused, err)
 	}
-	workload, err := transport.ParseWorkloadURI(id.String())
+	workload, err := workloadid.Parse(id.String())
 	if err != nil {
 		return Peer{}, fmt.Errorf("%w: %w", ErrRefused, err)
 	}

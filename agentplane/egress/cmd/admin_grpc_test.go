@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -239,7 +240,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatalf("Rules with a backend bearer: %v, want Unauthenticated", err)
 	}
 
-	runnerURI, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
+	runnerURI, err := workloadid.ID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +260,7 @@ func TestAdminListenerServesRulesAndBackendAdministrationOverTLS(t *testing.T) {
 		t.Fatalf("SVID Rules response: %v, %v", response, err)
 	}
 	// An Identity caller is answered with the rules of the bindings naming that Identity.
-	agentURI, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
+	agentURI, err := workloadid.ID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +344,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 			t.Fatal(err)
 		}
 	}
-	uri, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
+	uri, err := workloadid.ID{Namespace: "test-ns", Name: "test-sandbox", CredentialID: runnerCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +360,7 @@ func testResolver(t *testing.T) *resolver.Resolver {
 		Status: workloadapi.WorkloadCredentialStatus{CredentialID: runnerCredentialID, URI: uri, AcceptedBinding: pod},
 	}
 	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: "test-ns", Name: "test-sandbox", UID: types.UID("test-account-uid")}}
-	agentURI, err := peertls.WorkloadID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
+	agentURI, err := workloadid.ID{Namespace: "test-ns", Name: "test-agent", CredentialID: agentCredentialID}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

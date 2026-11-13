@@ -14,7 +14,7 @@ import (
 	"time"
 
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
-	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -97,7 +97,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.
 	if status.AcceptedBinding == nil && record.Spec.Binding != nil {
 		status.AcceptedBinding = record.Spec.Binding.DeepCopy()
 	}
-	uri, err := transport.WorkloadID{Namespace: record.Namespace, Name: record.Name, CredentialID: status.CredentialID}.URI()
+	uri, err := workloadid.ID{Namespace: record.Namespace, Name: record.Name, CredentialID: status.CredentialID}.URI()
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("WorkloadCredential %s: %w", request.NamespacedName, err)
 	}

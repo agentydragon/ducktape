@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 )
@@ -86,7 +87,7 @@ func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, san
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}
-	workload, err := environmentruntimetransport.ParseWorkloadURI(identity)
+	workload, err := workloadid.Parse(identity)
 	if err != nil {
 		return fmt.Errorf("Runner control certificate: %w", err)
 	}

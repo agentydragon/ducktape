@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	tlstest "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -142,7 +143,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	}
 	f.ca = tlstest.NewCA(t)
 	f.gatewayTLS = f.ca.Issue(t, peertls.GatewayURI)
-	uri, err := peertls.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
+	uri, err := workloadid.ID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}

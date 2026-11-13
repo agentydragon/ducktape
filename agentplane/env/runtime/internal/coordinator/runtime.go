@@ -27,6 +27,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
@@ -219,7 +220,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		if err != nil {
 			return nil, fmt.Errorf("Runner control certificate: %w", err)
 		}
-		workload, err := environmentruntimetransport.ParseWorkloadURI(identity)
+		workload, err := workloadid.Parse(identity)
 		if err != nil {
 			return nil, fmt.Errorf("Runner control certificate: %w", err)
 		}

@@ -9,7 +9,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/net/peertls",
+        "//agentplane/identity/credentials/workloadid",
         "@com_github_spiffe_go_spiffe_v2//bundle/x509bundle",
         "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
         "@com_github_spiffe_go_spiffe_v2//spiffeid",
