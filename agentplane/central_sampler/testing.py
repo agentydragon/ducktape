@@ -19,8 +19,8 @@ from sqlalchemy.engine import make_url
 from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig, Settings
 from agentplane.env.runtime.control import environment_runtime_pb2
-from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
+from agentplane.net.peertls.config import ClientTLS
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
 from util.net import listen_tcp

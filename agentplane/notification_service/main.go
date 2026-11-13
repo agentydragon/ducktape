@@ -18,7 +18,6 @@ import (
 	"time"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -27,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/rpc"
@@ -256,7 +256,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	// A watch carries no deadline of its own, so the request timeout bounds its admission.
 	maps.Copy(methods, rpc.Methods(options, callers))
 	serverOptions := append(methods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())
-	security, err := c.RPC.ServerCredentials(environment_runtime_transport.NotificationsURI)
+	security, err := c.RPC.ServerCredentials(peertls.NotificationsURI)
 	if err != nil {
 		return err
 	}

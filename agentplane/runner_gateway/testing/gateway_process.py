@@ -16,9 +16,9 @@ import grpc
 import yaml
 from python.runfiles import Runfiles
 
-from agentplane.environment_runtime_transport import config as runtime_transport
 from agentplane.grpc.calls import ServiceError
 from agentplane.identity.auth import listener as workload_listener
+from agentplane.net.peertls import config as runtime_transport
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings

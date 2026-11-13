@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	tlstest "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	tlstest "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -54,7 +54,7 @@ type sandboxFixture struct {
 	dispatcherToken, unboundDispatcherToken               string
 	callerAuth                                            *auth.Resolver
 	ca                                                    *tlstest.CA
-	gatewayTLS, runnerTLS                                 environment_runtime_transport.Config
+	gatewayTLS, runnerTLS                                 peertls.Config
 }
 
 func newSandboxFixture(t *testing.T) *sandboxFixture {
@@ -141,8 +141,8 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		t.Fatal(err)
 	}
 	f.ca = tlstest.NewCA(t)
-	f.gatewayTLS = f.ca.Issue(t, environment_runtime_transport.GatewayURI)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
+	f.gatewayTLS = f.ca.Issue(t, peertls.GatewayURI)
+	uri, err := peertls.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func (f *sandboxFixture) newGatewayReading(
 	t.Helper()
 	gateway, err := New(Config{
 		Namespace:                f.namespace,
-		RunnerSecurity:           environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &f.gatewayTLS},
+		RunnerSecurity:           peertls.Security{Mode: peertls.MutualTLS, TLS: &f.gatewayTLS},
 		CallerAccounts:           []auth.Account{appAccount},
 		DispatcherAccount:        dispatcherAccount,
 		ExecutorCallers:          executorCallers,

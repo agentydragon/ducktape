@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -27,9 +27,9 @@ import (
 )
 
 // startWithSVIDs serves History with workload certificates from ca enabled on its listener.
-func startWithSVIDs(t *testing.T, ca *environmentruntimetransporttesting.CA, tune func(*config)) running {
+func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) running {
 	t.Helper()
-	serving := ca.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
+	serving := ca.IssueWithUsage(t, peertls.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
 	kubeconfig := filepath.Join(t.TempDir(), "kubeconfig")
 	err := clientcmd.WriteToFile(clientcmdapi.Config{
 		Clusters:  map[string]*clientcmdapi.Cluster{"test": {Server: kube.Config.Host, CertificateAuthorityData: kube.Config.CAData}},
@@ -50,9 +50,9 @@ func startWithSVIDs(t *testing.T, ca *environmentruntimetransporttesting.CA, tun
 }
 
 // svidConnection dials service presenting a certificate for a workload URI.
-func svidConnection(t *testing.T, ca *environmentruntimetransporttesting.CA, service running, uri string) *grpc.ClientConn {
+func svidConnection(t *testing.T, ca *peertlstesting.CA, service running, uri string) *grpc.ClientConn {
 	t.Helper()
-	security, err := ca.Issue(t, uri).ClientCredentials(environment_runtime_transport.HistoryIngressURI)
+	security, err := ca.Issue(t, uri).ClientCredentials(peertls.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func svidConnection(t *testing.T, ca *environmentruntimetransporttesting.CA, ser
 
 func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "svid-"+uuid.NewString(), testPolicyNamespace).Workload
-	ca := environmentruntimetransporttesting.NewCA(t)
+	ca := peertlstesting.NewCA(t)
 	sampler := auth.Account{Namespace: "test-sandbox-namespace", Name: "test-sampler"}
 	samplerToken, err := kube.WorkloadToken(t.Context(), sampler, "test-runner-ingress")
 	if err != nil {
@@ -150,7 +150,7 @@ const testPolicyNamespace = "test-policies"
 // An Identity SVID reads exactly the Sessions retained as executing as its Identity incarnation: not
 // another Identity's, and not its predecessor's once a same-named successor replaces it.
 func TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
+	ca := peertlstesting.NewCA(t)
 	first := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "test-first-"+uuid.NewString()[:8], testPolicyNamespace)
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "test-other-"+uuid.NewString()[:8], testPolicyNamespace)
 	service := startWithSVIDs(t, ca, func(c *config) { c.PolicyNamespace = testPolicyNamespace })

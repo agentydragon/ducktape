@@ -10,7 +10,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -145,7 +145,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerCredentials, err := f.runnerTLS.ServerCredentials(environment_runtime_transport.GatewayURI)
+	runnerCredentials, err := f.runnerTLS.ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}

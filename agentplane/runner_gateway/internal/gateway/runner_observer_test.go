@@ -16,7 +16,7 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -78,7 +78,7 @@ func (r *observedRunner) Quiesce(context.Context, *sessionpb.QuiesceRequest) (*s
 }
 
 func TestRunnerObserverPublishesFactsAndFencesRPCs(t *testing.T) {
-	for _, mode := range []environment_runtime_transport.SecurityMode{environment_runtime_transport.MutualTLS, environment_runtime_transport.Insecure} {
+	for _, mode := range []peertls.SecurityMode{peertls.MutualTLS, peertls.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
 			testRunnerObserver(t, mode)
 		})
@@ -146,7 +146,7 @@ func startObservedRunner(t *testing.T, f *sandboxFixture, g *Gateway, runner env
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := (environment_runtime_transport.Security{Mode: environment_runtime_transport.MutualTLS, TLS: &f.runnerTLS}).ServerCredentials(environment_runtime_transport.GatewayURI)
+	creds, err := (peertls.Security{Mode: peertls.MutualTLS, TLS: &f.runnerTLS}).ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,13 +402,13 @@ func TestUnavailableLocalConnectionDoesNotClaimAnotherReplicaOwnsIt(t *testing.T
 	}
 }
 
-func testRunnerObserver(t *testing.T, mode environment_runtime_transport.SecurityMode) {
+func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	t.Helper()
 	f := newSandboxFixture(t)
 	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
-	g.config.RunnerSecurity = environment_runtime_transport.Security{Mode: mode}
-	runnerSecurity := environment_runtime_transport.Security{Mode: mode}
-	if mode == environment_runtime_transport.MutualTLS {
+	g.config.RunnerSecurity = peertls.Security{Mode: mode}
+	runnerSecurity := peertls.Security{Mode: mode}
+	if mode == peertls.MutualTLS {
 		g.config.RunnerSecurity.TLS = &f.gatewayTLS
 		runnerSecurity.TLS = &f.runnerTLS
 	}
@@ -420,7 +420,7 @@ func testRunnerObserver(t *testing.T, mode environment_runtime_transport.Securit
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := runnerSecurity.ServerCredentials(environment_runtime_transport.GatewayURI)
+	creds, err := runnerSecurity.ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -785,7 +785,7 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	if err := g.validateRunnerDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
-	newURI, err := environment_runtime_transport.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: "test-replacement-credential"}.URI()
+	newURI, err := peertls.WorkloadID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: "test-replacement-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -839,7 +839,7 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 		t.Fatal(err)
 	}
 	g := f.newGateway(t, "test-reconnecting-gateway", "192.0.2.30")
-	g.config.RunnerSecurity = environment_runtime_transport.Security{Mode: environment_runtime_transport.Insecure}
+	g.config.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
 	// The Sandbox's only event: transport loss must trigger its own retry.
 	g.RunnerDiscoveryHandler().OnAdd(f.sandbox, true)
 	listener, err := net.Listen("tcp", "127.0.0.1:9090")
@@ -1001,7 +1001,7 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 	}
 	health := watchhealth.New()
 	g := f.newGatewayReading(t, inventory, health, "test-cached-gateway", "192.0.2.32")
-	g.config.RunnerSecurity = environment_runtime_transport.Security{Mode: environment_runtime_transport.Insecure}
+	g.config.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
 	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
 		informer, err := inventory.GetInformer(t.Context(), watched)
 		if err != nil {

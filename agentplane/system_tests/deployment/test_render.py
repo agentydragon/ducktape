@@ -18,10 +18,10 @@ from python.runfiles import Runfiles
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.env.runtime.harness import Harness
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs

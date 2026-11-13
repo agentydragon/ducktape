@@ -6,7 +6,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/facade",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@org_golang_google_grpc//:grpc",

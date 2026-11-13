@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/httpconnect"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -30,8 +30,8 @@ import (
 )
 
 func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	ca := peertlstesting.NewCA(t)
+	uri, err := peertls.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,8 +39,8 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 	release := make(chan struct{})
 	defer close(release)
 	var calls atomic.Int32
-	destination := workloadDestination(t, ca, environment_runtime_transport.EgressProxyURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		identity, err := environment_runtime_transport.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
+	destination := workloadDestination(t, ca, peertls.EgressProxyURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		identity, err := peertls.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
 		if err != nil || identity != uri || r.ProtoMajor != 2 {
 			t.Errorf("destination peer=%q HTTP/%d error=%v", identity, r.ProtoMajor, err)
 			http.Error(w, "bad peer", 400)
@@ -59,7 +59,7 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 		}
 	}))
 	central, observed := workloadCentral(t, ca, uri, strings.TrimPrefix(destination.URL, "https://"))
-	address := workloadSidecar(t, central, credential, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.EgressProxyURI})
+	address := workloadSidecar(t, central, credential, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: peertls.EgressProxyURI})
 	proxyURL, err := url.Parse("http://" + address)
 	if err != nil {
 		t.Fatal(err)
@@ -102,13 +102,13 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 }
 
 func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	ca := peertlstesting.NewCA(t)
+	uri, err := peertls.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var calls atomic.Int32
-	wrongService := ca.IssueWithUsage(t, environment_runtime_transport.GatewayURI, x509.ExtKeyUsageServerAuth)
+	wrongService := ca.IssueWithUsage(t, peertls.GatewayURI, x509.ExtKeyUsageServerAuth)
 	pair, err := tls.LoadX509KeyPair(wrongService.CertFile, wrongService.KeyFile)
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +119,7 @@ func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) 
 	t.Cleanup(destination.Close)
 	credential := ca.Issue(t, uri)
 	central, observed := workloadCentral(t, ca, uri, strings.TrimPrefix(destination.URL, "https://"))
-	address := workloadSidecar(t, central, credential, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.EgressProxyURI})
+	address := workloadSidecar(t, central, credential, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: peertls.EgressProxyURI})
 	proxyURL, err := url.Parse("http://" + address)
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) 
 	}
 }
 
-func workloadDestination(t *testing.T, ca *environmentruntimetransporttesting.CA, uri string, handler http.Handler) *httptest.Server {
+func workloadDestination(t *testing.T, ca *peertlstesting.CA, uri string, handler http.Handler) *httptest.Server {
 	t.Helper()
 	config := ca.IssueWithUsage(t, uri, x509.ExtKeyUsageServerAuth)
 	security, err := config.WorkloadServerTLSConfig(uri)
@@ -169,11 +169,11 @@ func workloadDestination(t *testing.T, ca *environmentruntimetransporttesting.CA
 	return server
 }
 
-func workloadCentral(t *testing.T, ca *environmentruntimetransporttesting.CA, clientURI, target string) (*httptest.Server, <-chan *http.Request) {
+func workloadCentral(t *testing.T, ca *peertlstesting.CA, clientURI, target string) (*httptest.Server, <-chan *http.Request) {
 	t.Helper()
 	requests := make(chan *http.Request, 8)
-	serverCredential := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
-	security, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	serverCredential := ca.Issue(t, peertls.EgressProxyURI)
+	security, err := serverCredential.WorkloadServerTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func workloadCentral(t *testing.T, ca *environmentruntimetransporttesting.CA, cl
 			http.Error(w, "TLS required", http.StatusForbidden)
 			return
 		}
-		identity, err := environment_runtime_transport.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
+		identity, err := peertls.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
 		if err != nil || identity != clientURI {
 			t.Errorf("central proxy client identity=%q, want %q: %v", identity, clientURI, err)
 			http.Error(w, "wrong peer", http.StatusForbidden)
@@ -237,11 +237,11 @@ func workloadCentral(t *testing.T, ca *environmentruntimetransporttesting.CA, cl
 	return server, requests
 }
 
-func workloadSidecar(t *testing.T, central *httptest.Server, proxyCredential environment_runtime_transport.Config, route workloadRouteConfig) string {
+func workloadSidecar(t *testing.T, central *httptest.Server, proxyCredential peertls.Config, route workloadRouteConfig) string {
 	return workloadSidecarFor(t, central, proxyCredential, "rules.test.invalid:80", route)
 }
 
-func workloadSidecarFor(t *testing.T, central *httptest.Server, proxyCredential environment_runtime_transport.Config, authority string, route workloadRouteConfig) string {
+func workloadSidecarFor(t *testing.T, central *httptest.Server, proxyCredential peertls.Config, authority string, route workloadRouteConfig) string {
 	t.Helper()
 	centralURL, err := url.Parse(central.URL)
 	if err != nil {
@@ -311,7 +311,7 @@ func (h *workloadRouteHealth) Check(ctx context.Context, _ *healthpb.HealthCheck
 	if !ok {
 		return nil, fmt.Errorf("TLS peer info missing: %T", remote.AuthInfo)
 	}
-	identity, err := environment_runtime_transport.PeerIdentityFromTLSState(info.State, x509.ExtKeyUsageClientAuth)
+	identity, err := peertls.PeerIdentityFromTLSState(info.State, x509.ExtKeyUsageClientAuth)
 	if err != nil || identity != h.expectedURI {
 		return nil, fmt.Errorf("SVID=%q, want %q: %w", identity, h.expectedURI, err)
 	}
@@ -323,12 +323,12 @@ func (h *workloadRouteHealth) Check(ctx context.Context, _ *healthpb.HealthCheck
 }
 
 func TestWorkloadGRPCConnectRoutePresentsRunnerSVIDAndCarriesNativeMetadata(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	ca := peertlstesting.NewCA(t)
+	uri, err := peertls.WorkloadID{Namespace: "test", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	serviceURI := environment_runtime_transport.EgressProxyURI
+	serviceURI := peertls.EgressProxyURI
 	serverCredential := ca.IssueWithUsage(t, serviceURI, x509.ExtKeyUsageServerAuth)
 	serverTLS, err := serverCredential.WorkloadServerTLSConfig(serviceURI)
 	if err != nil {

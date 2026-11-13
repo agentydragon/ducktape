@@ -12,11 +12,11 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"google.golang.org/grpc"
@@ -92,18 +92,18 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	methods := Methods(auth.AnySubject(svids))
 
 	ca := transporttesting.NewCA(t)
-	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
-	serverTLS, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	serverCredential := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
+	serverTLS, err := serverCredential.WorkloadServerTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	connState, err := environment_runtime_transport.ConfigureHTTPServerTLSExpiry(serverTLS)
+	connState, err := peertls.ConfigureHTTPServerTLSExpiry(serverTLS)
 	if err != nil {
 		t.Fatal(err)
 	}
 	serverTLS.NextProtos = []string{"h2", "http/1.1"}
 	clientCredential := ca.Issue(t, workload.URI)
-	clientTLS, err := clientCredential.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	clientTLS, err := clientCredential.ClientTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 		t.Fatal(err)
 	}
 	ca := transporttesting.NewCA(t)
-	serverCredential := ca.IssueWithUsage(t, environment_runtime_transport.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
+	serverCredential := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
 	listenerConfig := listener.Config{
 		ListenAddress: ":8080",
 		TLS:           &listener.TLS{CertFile: serverCredential.CertFile, KeyFile: serverCredential.KeyFile},
@@ -267,7 +267,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 			&listener.KubernetesBearerAuth{Audiences: []string{workloadAudience}},
 		},
 	}
-	serverTLS, err := listenerConfig.TLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	serverTLS, err := listenerConfig.TLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	t.Cleanup(server.Stop)
 
 	validClient := ca.Issue(t, workload.URI)
-	validClientTLS, err := validClient.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	validClientTLS, err := validClient.ClientTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	}
 	invalidRuntimeURI := "spiffe://agentplane/" + workloadTestNamespace + "/missing-sandbox/credential"
 	invalidClient := ca.Issue(t, invalidRuntimeURI)
-	invalidClientTLS, err := invalidClient.ClientTLSConfig(environment_runtime_transport.SessionDispatcherURI)
+	invalidClientTLS, err := invalidClient.ClientTLSConfig(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}

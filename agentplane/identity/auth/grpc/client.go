@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"google.golang.org/grpc"
@@ -52,7 +52,7 @@ type ClientInterceptors struct {
 // DialDelegated calls target using the destination-audience token at tokenPath and an explicit per-call Delegation
 // envelope. It has no ordinary Bearer interceptor and disables retries. The token file is read for each RPC so
 // projected-token rotation is observed.
-func DialDelegated(target, tokenPath string, timeout time.Duration, transport *environment_runtime_transport.ClientTLS, interceptors ClientInterceptors) (*grpc.ClientConn, error) {
+func DialDelegated(target, tokenPath string, timeout time.Duration, transport *peertls.ClientTLS, interceptors ClientInterceptors) (*grpc.ClientConn, error) {
 	if target == "" || tokenPath == "" || timeout <= 0 {
 		return nil, errors.New("target, token file and a positive timeout are required")
 	}

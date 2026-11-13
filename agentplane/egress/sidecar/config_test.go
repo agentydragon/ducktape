@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 func writeSettingsFile(t *testing.T, contents string) string {
@@ -130,8 +130,8 @@ workload_routes:
 		t.Fatalf("Rules route = %+v", route)
 	}
 	routeTransport, okay := route.Transport.(tlsConnectRouteTransportConfig)
-	if !okay || routeTransport.ServerURI != environment_runtime_transport.EgressProxyURI {
-		t.Fatalf("Rules route transport = %#v, want TLS CONNECT pinned to %q", route.Transport, environment_runtime_transport.EgressProxyURI)
+	if !okay || routeTransport.ServerURI != peertls.EgressProxyURI {
+		t.Fatalf("Rules route transport = %#v, want TLS CONNECT pinned to %q", route.Transport, peertls.EgressProxyURI)
 	}
 	workloadRoute := config.WorkloadRoutes["notifications.agentplane.svc.cluster.local:8080"]
 	if workloadRoute.Upstream != "notifications.agentplane.svc.cluster.local:8443" || workloadRoute.ServerURI != "spiffe://agentplane/notifications" {
@@ -142,7 +142,7 @@ workload_routes:
 func TestSidecarRefusesMalformedOrContradictorySettings(t *testing.T) {
 	required := `proxy: {address: p.example:8888, transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}}` + "\n"
 	validRoute := "platform_routes: {listen_address: 127.0.0.1:3130, routes: {rules: {service_prefixes: [/rules.Service/], upstream: 'rules.test:8081', transport: {mode: plaintext}}}}\n"
-	tlsRoute := "platform_routes: {listen_address: 127.0.0.1:3130, routes: {rules: {service_prefixes: [/rules.Service/], upstream: 'rules.test:8081', transport: {mode: tls_connect, server_uri: " + environment_runtime_transport.EgressProxyURI + "}}}}\n"
+	tlsRoute := "platform_routes: {listen_address: 127.0.0.1:3130, routes: {rules: {service_prefixes: [/rules.Service/], upstream: 'rules.test:8081', transport: {mode: tls_connect, server_uri: " + peertls.EgressProxyURI + "}}}}\n"
 	for name, content := range map[string]string{
 		"unknown key":                              required + "proxy_hots: typo\n",
 		"legacy proxy field":                       "proxy_host: p.example\ntoken_file: /token\n",

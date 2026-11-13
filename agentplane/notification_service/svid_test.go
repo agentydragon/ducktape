@@ -7,11 +7,11 @@ import (
 	"time"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -37,8 +37,8 @@ func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-"+uuid.NewString(), testNamespace)
 	setSandboxIdentity(t, &workload)
 	setSandboxIdentity(t, &other)
-	ca := environmentruntimetransporttesting.NewCA(t)
-	serving := ca.IssueWithUsage(t, environment_runtime_transport.NotificationsURI, x509.ExtKeyUsageServerAuth)
+	ca := peertlstesting.NewCA(t)
+	serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
 	service := start(t, func(c *config) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
@@ -51,7 +51,7 @@ func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 
 	for i, caller := range []workloadauthtesting.IdentityWorkload{workload, other} {
 		config := ca.Issue(t, caller.URI)
-		credentials, err := config.ClientCredentials(environment_runtime_transport.NotificationsURI)
+		credentials, err := config.ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -98,8 +98,8 @@ func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-identity-"+uuid.NewString(), testNamespace)
 	setSandboxIdentity(t, &workload)
 	setSandboxIdentity(t, &other)
-	ca := environmentruntimetransporttesting.NewCA(t)
-	serving := ca.IssueWithUsage(t, environment_runtime_transport.NotificationsURI, x509.ExtKeyUsageServerAuth)
+	ca := peertlstesting.NewCA(t)
+	serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
 	service := start(t, func(c *config) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
@@ -110,7 +110,7 @@ func TestSVIDIdentityCallerOwnsItsSessionsInboxes(t *testing.T) {
 		t.Fatal(err)
 	}
 	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {
-		credentials, err := ca.Issue(t, caller.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+		credentials, err := ca.Issue(t, caller.URI).ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,8 +212,8 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 	actionAddress := notificationtesting.ServeGRPC(t, func(s *grpc.Server) {
 		actionpb.RegisterActionServiceServer(s, identityActions{identity: recipient.Identity})
 	})
-	ca := environmentruntimetransporttesting.NewCA(t)
-	serving := ca.IssueWithUsage(t, environment_runtime_transport.NotificationsURI, x509.ExtKeyUsageServerAuth)
+	ca := peertlstesting.NewCA(t)
+	serving := ca.IssueWithUsage(t, peertls.NotificationsURI, x509.ExtKeyUsageServerAuth)
 	service := start(t, func(c *config) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
@@ -250,7 +250,7 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 		return meta.IsStatusConditionTrue(current.Status.Conditions, "SessionInboxAccessReady")
 	})
 	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {
-		credentials, err := ca.Issue(t, caller.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+		credentials, err := ca.Issue(t, caller.URI).ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
 			t.Fatal(err)
 		}

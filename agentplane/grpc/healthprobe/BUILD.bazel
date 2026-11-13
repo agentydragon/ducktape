@@ -9,7 +9,7 @@ go_binary(
     importpath = "github.com/agentydragon/ducktape/agentplane/grpc/healthprobe",
     pure = "on",
     deps = [
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//health/grpc_health_v1",
     ],

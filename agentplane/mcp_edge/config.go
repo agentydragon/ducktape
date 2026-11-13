@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"gopkg.in/yaml.v3"
@@ -23,9 +23,9 @@ const (
 
 // config is the standalone edge's non-secret deployment contract. DatabaseURL is supplied separately from a Secret.
 type config struct {
-	ActionsTLS    *environment_runtime_transport.ClientTLS `yaml:"actions_tls,omitempty"`
-	DatabaseURL   string                                   `mapstructure:"-" yaml:"-"`
-	ActionsTarget string                                   `yaml:"actions_target"`
+	ActionsTLS    *peertls.ClientTLS `yaml:"actions_tls,omitempty"`
+	DatabaseURL   string             `mapstructure:"-" yaml:"-"`
+	ActionsTarget string             `yaml:"actions_target"`
 	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
 	PolicyNamespace  string `yaml:"policy_namespace"`
 	ActionsTokenFile string `yaml:"actions_token_file"`

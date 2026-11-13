@@ -13,8 +13,8 @@ from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting
 from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
-from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,

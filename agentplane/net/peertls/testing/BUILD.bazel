@@ -5,9 +5,9 @@ package(default_testonly = True)
 go_library(
     name = "testing",
     srcs = ["certificates.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing",
+    importpath = "github.com/agentydragon/ducktape/agentplane/net/peertls/testing",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
     ],
 )

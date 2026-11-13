@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -20,7 +20,7 @@ type Registration func(ctx context.Context, mux *runtime.ServeMux, endpoint stri
 
 // HandlerOptions controls the HTTP/JSON facade without changing the generated gRPC service.
 type HandlerOptions struct {
-	TLS *environment_runtime_transport.ClientTLS
+	TLS *peertls.ClientTLS
 	// RejectUnknownJSONFields refuses request fields absent from the current protobuf contract. In
 	// particular, a removed destination field must not be silently ignored during a wire cutover.
 	RejectUnknownJSONFields bool

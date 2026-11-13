@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -16,7 +16,7 @@ import (
 // ProxyRunner asks a Sandbox's runner through the Sandbox's control Service, as the Session Dispatcher does:
 // every call dials the Service afresh, so it reaches the runner's current connection holder.
 type ProxyRunner struct {
-	TLS *environment_runtime_transport.ClientTLS
+	TLS *peertls.ClientTLS
 	// TokenFile is the projected ServiceAccount token the Runner Gateway proxy admits, read on every call.
 	TokenFile string
 	Timeout   time.Duration

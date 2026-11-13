@@ -11,7 +11,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.egress.platform_routes import PLATFORM_ROUTES_PORT
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI
 from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, history_service, staging
 from cluster.cdk8s.pod_policy import harden, pod_spec
 

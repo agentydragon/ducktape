@@ -31,8 +31,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.environment_runtime_transport.config import MTLS, SESSION_DISPATCHER_URI, TLS
 from agentplane.identity.auth import listener as workload_listener
+from agentplane.net.peertls.config import MTLS, SESSION_DISPATCHER_URI, TLS
 from agentplane.runner_gateway.settings import CentralSamplerTarget, DelegationSettings, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling

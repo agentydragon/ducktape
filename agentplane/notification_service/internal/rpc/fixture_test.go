@@ -11,13 +11,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadresolver "github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
@@ -352,7 +352,7 @@ func identityWorkloadForTest(t *testing.T) workloadauthtesting.IdentityWorkload 
 
 func connectIdentityClient(t *testing.T, ca *transporttesting.CA, workload workloadauthtesting.Workload, address string) *grpc.ClientConn {
 	t.Helper()
-	clientCredentials, err := ca.Issue(t, workload.URI).ClientCredentials(environment_runtime_transport.NotificationsURI)
+	clientCredentials, err := ca.Issue(t, workload.URI).ClientCredentials(peertls.NotificationsURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,8 +464,8 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serving := server.ca.Issue(t, environment_runtime_transport.NotificationsURI)
-	serverTLS, err := serving.WorkloadServerTLSConfig(environment_runtime_transport.NotificationsURI)
+	serving := server.ca.Issue(t, peertls.NotificationsURI)
+	serverTLS, err := serving.WorkloadServerTLSConfig(peertls.NotificationsURI)
 	if err != nil {
 		t.Fatal(err)
 	}

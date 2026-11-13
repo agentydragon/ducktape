@@ -18,7 +18,7 @@ from agentplane.env.config import (
     VMEnvironment,
     VMExecutor,
 )
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, MTLS, TLS
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s.agentplane import history_service, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment

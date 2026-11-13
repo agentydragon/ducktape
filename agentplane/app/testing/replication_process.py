@@ -34,9 +34,9 @@ from agentplane.app.oidc import OIDCSecretInputs, OIDCSettings
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.notifications import FakeNotifications
-from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.net.peertls.config import ClientTLS
 from agentplane.notification_service.api.notifications import notifications_pb2_grpc
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url

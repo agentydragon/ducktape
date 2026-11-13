@@ -13,7 +13,7 @@ import pytest_bazel
 
 from agentplane.egress.sidecar_config import READINESS_PATH, Proxy, SpiffeProxyAuth, TLSProxyTransport
 from agentplane.egress.testing.sidecar_process import SidecarProcess
-from agentplane.environment_runtime_transport.config import EGRESS_PROXY_URI
+from agentplane.net.peertls.config import EGRESS_PROXY_URI
 from agentplane.testing.tls import (
     CertificateAuthority,
     issue_workload_leaf,

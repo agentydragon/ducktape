@@ -12,7 +12,7 @@ from cdk8s_plus_34 import ConfigMap, Container, Secret, Volume
 from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
 from constructs import Construct
 
-from agentplane.environment_runtime_transport.config import TLS, ClientTLS
+from agentplane.net.peertls.config import TLS, ClientTLS
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey

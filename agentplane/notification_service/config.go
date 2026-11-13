@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
@@ -57,7 +57,7 @@ type config struct {
 
 // runnerGateway is how the service reaches a Sandbox's runner through the Runner Gateway's proxy.
 type runnerGateway struct {
-	TLS *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
+	TLS *peertls.ClientTLS `mapstructure:"tls"`
 	// ControlTarget is each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as
 	// `{sandbox}-control.{namespace}.svc:8080`.
 	ControlTarget         string  `mapstructure:"control_target"`
@@ -67,7 +67,7 @@ type runnerGateway struct {
 
 // peer is another Agentplane service the service calls over gRPC as a workload.
 type peer struct {
-	TLS *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
+	TLS *peertls.ClientTLS `mapstructure:"tls"`
 	// Target is the gRPC `host:port`.
 	Target string `mapstructure:"target"`
 	// TokenFile is the projected ServiceAccount token the peer admits, read again for each call.
@@ -77,10 +77,10 @@ type peer struct {
 
 // actionPeer retains the deployment's HTTP(S) URL key while composing the Action Service's gRPC transport.
 type actionPeer struct {
-	TLS                   *environment_runtime_transport.ClientTLS `mapstructure:"tls"`
-	URL                   string                                   `mapstructure:"url"`
-	TokenFile             string                                   `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64                                  `mapstructure:"request_timeout_s"`
+	TLS                   *peertls.ClientTLS `mapstructure:"tls"`
+	URL                   string             `mapstructure:"url"`
+	TokenFile             string             `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64            `mapstructure:"request_timeout_s"`
 }
 
 type actionGRPCEndpoint struct {
@@ -231,7 +231,7 @@ func (c *config) validate() error {
 	if !c.RPC.AllowsBearerAudience(c.TokenAudience) {
 		return errors.New("rpc.auth must allow the configured token_audience")
 	}
-	for _, tls := range []*environment_runtime_transport.ClientTLS{c.Actions.TLS, c.RunnerGateway.TLS, c.HistoryService.TLS, c.SessionDispatcher.TLS} {
+	for _, tls := range []*peertls.ClientTLS{c.Actions.TLS, c.RunnerGateway.TLS, c.HistoryService.TLS, c.SessionDispatcher.TLS} {
 		if tls != nil {
 			if err := tls.Validate(); err != nil {
 				return err

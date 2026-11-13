@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from agentplane.environment_runtime_transport.config import Security
+from agentplane.net.peertls.config import Security
 
 CONFIG_DIRECTORY = "/run/agentplane/config"
 CONFIG_FILE = f"{CONFIG_DIRECTORY}/environment-runtime.json"

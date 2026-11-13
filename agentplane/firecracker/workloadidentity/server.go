@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/spiffe/go-spiffe/v2/bundle/x509bundle"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
@@ -238,7 +238,7 @@ func validateResponse(response *workload.X509SVIDResponse) (string, error) {
 }
 
 func validateEnvironmentRuntimeID(rawID string) error {
-	if _, err := environment_runtime_transport.ParseWorkloadURI(rawID); err != nil {
+	if _, err := peertls.ParseWorkloadURI(rawID); err != nil {
 		return fmt.Errorf("invalid workload SPIFFE ID %q: %w", rawID, err)
 	}
 	return nil

@@ -39,9 +39,9 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import ServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.environment_runtime_transport.config import ACTIONS_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.identity.auth import listener
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
+from agentplane.net.peertls.config import ACTIONS_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import database, notifications, workload_tls

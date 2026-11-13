@@ -7,8 +7,8 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/kubernetes"
@@ -21,7 +21,7 @@ import (
 // Config contains the per-process Gateway role wiring. Public callers use TokenReview;
 // runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
-	RunnerSecurity environment_runtime_transport.Security
+	RunnerSecurity peertls.Security
 	Namespace      string
 	CallerAccounts []auth.Account
 	// DispatcherAccount is the combined Gateway/Dispatcher workload. Its Pod-bound

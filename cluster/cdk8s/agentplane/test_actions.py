@@ -11,7 +11,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from cdk8s_plus_34 import EnvValue
 from more_itertools import one
 
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from cluster.cdk8s.agentplane import (
     actions,
     history_service,

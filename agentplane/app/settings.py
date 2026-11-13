@@ -11,8 +11,8 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.log_levels import LogLevels
+from agentplane.net.peertls.config import ClientTLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from util.urls import HttpEndpointUrl
 

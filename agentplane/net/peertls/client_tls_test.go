@@ -1,33 +1,33 @@
-package environment_runtime_transport_test
+package peertls_test
 
 import (
 	"crypto/tls"
 	"crypto/x509"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 func TestClientTLSValidatesSupportedServerURIs(t *testing.T) {
 	for _, uri := range []string{
-		environment_runtime_transport.GatewayURI,
-		environment_runtime_transport.EgressProxyURI,
-		environment_runtime_transport.HistoryIngressURI,
-		environment_runtime_transport.NotificationsURI,
-		environment_runtime_transport.LLMIngressURI,
-		environment_runtime_transport.SessionDispatcherURI,
-		environment_runtime_transport.ActionsURI,
+		peertls.GatewayURI,
+		peertls.EgressProxyURI,
+		peertls.HistoryIngressURI,
+		peertls.NotificationsURI,
+		peertls.LLMIngressURI,
+		peertls.SessionDispatcherURI,
+		peertls.ActionsURI,
 	} {
 		t.Run(uri, func(t *testing.T) {
-			if err := (environment_runtime_transport.ClientTLS{CAFile: "/test/ca.pem", ServerURI: uri}).Validate(); err != nil {
+			if err := (peertls.ClientTLS{CAFile: "/test/ca.pem", ServerURI: uri}).Validate(); err != nil {
 				t.Fatalf("Validate() error = %v", err)
 			}
 		})
 	}
 	for _, uri := range []string{"spiffe://agentplane/unknown", "spiffe://other/notifications", "https://agentplane/notifications"} {
 		t.Run(uri, func(t *testing.T) {
-			if err := (environment_runtime_transport.ClientTLS{CAFile: "/test/ca.pem", ServerURI: uri}).Validate(); err == nil {
+			if err := (peertls.ClientTLS{CAFile: "/test/ca.pem", ServerURI: uri}).Validate(); err == nil {
 				t.Fatal("Validate() accepted an unsupported service URI")
 			}
 		})
@@ -36,13 +36,13 @@ func TestClientTLSValidatesSupportedServerURIs(t *testing.T) {
 
 func TestClientTLSVerifiesServiceIdentityServerAuthAndRootsWithoutClientCertificate(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	server := ca.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
+	server := ca.IssueWithUsage(t, peertls.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
 	serverPair, err := tls.LoadX509KeyPair(server.CertFile, server.KeyFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	serverTLS := &tls.Config{Certificates: []tls.Certificate{serverPair}}
-	client := environment_runtime_transport.ClientTLS{CAFile: ca.RootFile, ServerURI: environment_runtime_transport.HistoryIngressURI}
+	client := peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.HistoryIngressURI}
 	clientTLS, err := client.TLSConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestClientTLSVerifiesServiceIdentityServerAuthAndRootsWithoutClientCertific
 	}
 
 	wrongIdentity := client
-	wrongIdentity.ServerURI = environment_runtime_transport.NotificationsURI
+	wrongIdentity.ServerURI = peertls.NotificationsURI
 	wrongIdentityTLS, err := wrongIdentity.TLSConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestClientTLSVerifiesServiceIdentityServerAuthAndRootsWithoutClientCertific
 		t.Fatal("client accepted a trusted server with the wrong SPIFFE identity")
 	}
 
-	wrongEKU := ca.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageClientAuth)
+	wrongEKU := ca.IssueWithUsage(t, peertls.HistoryIngressURI, x509.ExtKeyUsageClientAuth)
 	wrongEKUPair, err := tls.LoadX509KeyPair(wrongEKU.CertFile, wrongEKU.KeyFile)
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestClientTLSVerifiesServiceIdentityServerAuthAndRootsWithoutClientCertific
 	}
 
 	forgedCA := environmentruntimetransporttesting.NewCA(t)
-	forgedServer := forgedCA.IssueWithUsage(t, environment_runtime_transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
+	forgedServer := forgedCA.IssueWithUsage(t, peertls.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
 	forgedPair, err := tls.LoadX509KeyPair(forgedServer.CertFile, forgedServer.KeyFile)
 	if err != nil {
 		t.Fatal(err)
@@ -91,8 +91,8 @@ func TestClientTLSVerifiesServiceIdentityServerAuthAndRootsWithoutClientCertific
 }
 
 func TestClientTLSInvalidConfigurationFailsWithoutDowngrade(t *testing.T) {
-	for name, config := range map[string]*environment_runtime_transport.ClientTLS{
-		"missing CA":          {ServerURI: environment_runtime_transport.HistoryIngressURI},
+	for name, config := range map[string]*peertls.ClientTLS{
+		"missing CA":          {ServerURI: peertls.HistoryIngressURI},
 		"unsupported service": {CAFile: "/test/ca.pem", ServerURI: "spiffe://agentplane/unknown"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestClientTLSInvalidConfigurationFailsWithoutDowngrade(t *testing.T) {
 		})
 	}
 
-	plaintext, err := (*environment_runtime_transport.ClientTLS)(nil).Credentials()
+	plaintext, err := (*peertls.ClientTLS)(nil).Credentials()
 	if err != nil {
 		t.Fatal(err)
 	}

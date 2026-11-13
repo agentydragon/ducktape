@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	pb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
-	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"

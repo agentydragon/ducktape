@@ -10,8 +10,8 @@ import (
 	"slices"
 	"time"
 
-	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

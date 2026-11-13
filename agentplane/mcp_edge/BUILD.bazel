@@ -19,7 +19,7 @@ py_library(
     deps = [
         ":oauth_settings",
         "//agentplane/action_service:operator_oidc_settings",
-        "//agentplane/environment_runtime_transport:config",
+        "//agentplane/net/peertls:config",
         "@pypi//pydantic",
     ],
 )
@@ -50,7 +50,6 @@ go_library(
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
         "//agentplane/action_service/callers",
-        "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/facade",
         "//agentplane/grpc/graceful",
         "//agentplane/identity/auth/auth",
@@ -61,6 +60,7 @@ go_library(
         "//agentplane/mcp_edge/internal/connections",
         "//agentplane/mcp_edge/internal/mcpserver",
         "//agentplane/mcp_edge/migrations",
+        "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/client:clientset",

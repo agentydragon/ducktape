@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"

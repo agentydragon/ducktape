@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	transport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

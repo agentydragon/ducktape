@@ -3680,7 +3680,7 @@ flowchart LR
     REFACTOR_COHERENCE_AUDIT[Candidate: whole-refactor coherence audit]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     RUNNER_GATEWAY_RENAME[Unscheduled: Runner Gateway becomes Environment Gateway]
-    TRANSPORT_PACKAGE_RENAME[Unscheduled: shorter home for environment_runtime_transport]
+    TRANSPORT_PACKAGE_RENAME[Selected: move shared peer TLS to net/peertls]
     PROTO_PACKAGE_ALIGNMENT[Future: align protobuf packages with their directories]
     RUNNER_LAYERING_VM[Paused: layered VM guest, section 7] --> K3S_TEST_GUEST_RETIRE[Blocked: delete the k3s test guest]
     HISTORY_SERVICE_RENAME[Decision, section 8] -. takes its name .-> HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
@@ -3763,16 +3763,14 @@ Flux pins, docs and tests. The Environment Runtime protocol/resource and tools-i
 complete; this item covers only the Gateway's own naming and security identity. Its clients already use
 the renamed Runtime API.
 
-#### `TRANSPORT_PACKAGE_RENAME` — a shorter home for `environment_runtime_transport`
+#### `TRANSPORT_PACKAGE_RENAME` — move shared peer TLS to `net/peertls`
 
-**Unscheduled; operator, 2026-11-09: reorganize at some point.** `agentplane/environment_runtime_transport`
-is a long name at the top of `agentplane/`, and it no longer describes its job: it holds the shared
-SPIFFE mTLS trust, URI and EKU checks, and the TLS client and server configuration that every
-first-party service and the egress proxy use, not only Environment Runtime's transport. Choose a
-short name and home that matches that job, and coordinate with the `agentplane/identity/credentials`
-packages ([workload authentication](../docs/workload_authentication.md#workloadcredentials)), which
-may absorb the URI and resolver parts. One mechanical PR moves every Go and Python import, BUILD label
-and doc link. Exit: no import of the old path remains.
+**Selected for implementation; operator, 2026-11-13.** Move the shared peer TLS package intact to
+`agentplane/net/peertls`. It serves all first-party services and the egress proxy, not only Environment
+Runtime. Move its Go package, tests and testing helpers, and Python config together; update every Go
+and Python import, BUILD label and active documentation reference. Keep the workload identity/resolver
+contract in `agentplane/identity/credentials`; do not split that contract in this package move. Exit:
+no active reference imports the old package path.
 
 ### Blocked
 

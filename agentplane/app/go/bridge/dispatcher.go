@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
@@ -15,7 +15,7 @@ import (
 // Session Dispatcher call. Projected bearer tokens are read by bearer.Dial for
 // each RPC, so kubelet token rotation is observed without restarting the app.
 type DispatcherConfig struct {
-	TLS       *environment_runtime_transport.ClientTLS
+	TLS       *peertls.ClientTLS
 	Target    string
 	TokenFile string
 	Timeout   time.Duration

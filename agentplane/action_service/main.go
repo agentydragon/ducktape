@@ -38,7 +38,6 @@ import (
 	orchestrationv1 "github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
 	sessiondelegation "github.com/agentydragon/ducktape/agentplane/action_service/session_delegation"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
@@ -50,6 +49,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -548,7 +548,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	}
-	transport, err := c.RPC.ServerCredentials(environment_runtime_transport.ActionsURI)
+	transport, err := c.RPC.ServerCredentials(peertls.ActionsURI)
 	if err != nil {
 		return fmt.Errorf("Action Service RPC TLS: %w", err)
 	}

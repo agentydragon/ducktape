@@ -16,7 +16,7 @@ go_library(
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/session",
         "//agentplane/env/runtime/supervision",
-        "//agentplane/environment_runtime_transport",
+        "//agentplane/net/peertls",
         "//agentplane/session_instructions",
         "@org_uber_go_zap//:zap",
     ],

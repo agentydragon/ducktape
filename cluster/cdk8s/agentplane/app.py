@@ -26,7 +26,7 @@ from constructs import Construct
 
 from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
-from agentplane.environment_runtime_transport.config import (
+from agentplane.net.peertls.config import (
     ACTIONS_URI,
     EGRESS_PROXY_URI,
     HISTORY_SERVICE_URI,

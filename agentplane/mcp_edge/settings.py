@@ -8,8 +8,8 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
+from agentplane.net.peertls.config import ClientTLS
 
 
 class Settings(BaseModel):

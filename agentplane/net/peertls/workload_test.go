@@ -1,4 +1,4 @@
-package environment_runtime_transport_test
+package peertls_test
 
 import (
 	"context"
@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -24,13 +24,13 @@ import (
 
 func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
+	runnerURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "workload-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	initial := ca.Issue(t, runnerURI)
 	rotated := ca.Issue(t, runnerURI)
-	otherURI, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-credential"}.URI()
+	otherURI, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "other-credential"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,9 +38,9 @@ func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testi
 	rootDER := readCertificateDER(t, ca.RootFile)
 
 	workloadServer := newWorkloadAPITestServer(t, workloadX509SVID(t, initial, runnerURI, rootDER), rootDER)
-	security := environment_runtime_transport.Security{
-		Mode: environment_runtime_transport.MutualTLS,
-		TLS:  &environment_runtime_transport.Config{WorkloadAPISocket: workloadServer.endpoint},
+	security := peertls.Security{
+		Mode: peertls.MutualTLS,
+		TLS:  &peertls.Config{WorkloadAPISocket: workloadServer.endpoint},
 	}
 	opened, err := security.Open(context.Background())
 	if err != nil {
@@ -55,12 +55,12 @@ func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testi
 		t.Fatalf("LocalIdentity() = %q, %v; want %q", got, err, runnerURI)
 	}
 
-	gateway := ca.Issue(t, environment_runtime_transport.GatewayURI)
+	gateway := ca.Issue(t, peertls.GatewayURI)
 	clientCredentials, err := gateway.ClientCredentials(runnerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverCredentials, err := opened.ServerCredentials(environment_runtime_transport.GatewayURI)
+	serverCredentials, err := opened.ServerCredentials(peertls.GatewayURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestOpenedSecurityUsesWorkloadAPIStreamForHandshakeAndPinsIdentity(t *testi
 }
 
 func TestWorkloadAPIConfigurationRequiresOneCanonicalUnixSocket(t *testing.T) {
-	for name, config := range map[string]environment_runtime_transport.Config{
+	for name, config := range map[string]peertls.Config{
 		"valid URI":           {WorkloadAPISocket: "unix:///run/agentplane/workload.sock"},
 		"missing URI slashes": {WorkloadAPISocket: "unix:/run/agentplane/workload.sock"},
 		"relative URI path":   {WorkloadAPISocket: "unix://relative/workload.sock"},
@@ -136,11 +136,11 @@ func TestWorkloadAPIConfigurationRequiresOneCanonicalUnixSocket(t *testing.T) {
 			}
 		})
 	}
-	config := environment_runtime_transport.Security{
-		Mode: environment_runtime_transport.MutualTLS,
-		TLS:  &environment_runtime_transport.Config{WorkloadAPISocket: "unix:///run/agentplane/workload.sock"},
+	config := peertls.Security{
+		Mode: peertls.MutualTLS,
+		TLS:  &peertls.Config{WorkloadAPISocket: "unix:///run/agentplane/workload.sock"},
 	}
-	if _, err := config.TLS.ServerCredentials(environment_runtime_transport.GatewayURI); err == nil || !strings.Contains(err.Error(), "Security.Open(ctx)") {
+	if _, err := config.TLS.ServerCredentials(peertls.GatewayURI); err == nil || !strings.Contains(err.Error(), "Security.Open(ctx)") {
 		t.Fatalf("file-only Config.ServerCredentials() error = %v, want explicit Open(ctx) error", err)
 	}
 }
@@ -271,7 +271,7 @@ streamsStarted:
 	}
 }
 
-func workloadX509SVID(t *testing.T, config environment_runtime_transport.Config, identity string, bundle []byte) *workload.X509SVID {
+func workloadX509SVID(t *testing.T, config peertls.Config, identity string, bundle []byte) *workload.X509SVID {
 	t.Helper()
 	certificatePEM, err := os.ReadFile(config.CertFile)
 	if err != nil {

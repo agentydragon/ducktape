@@ -42,8 +42,8 @@ from agentplane.central_sampler.settings import (
     ResponsesConfig,
 )
 from agentplane.env.config import GuestResources, ResourceLimits
-from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
+from agentplane.net.peertls.config import LLM_INGRESS_URI
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef

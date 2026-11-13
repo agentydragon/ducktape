@@ -16,8 +16,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
-from agentplane.environment_runtime_transport.config import SESSION_DISPATCHER_URI, ClientTLS
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, ClientTLS
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster

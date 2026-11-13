@@ -7,7 +7,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 	"google.golang.org/grpc/codes"
@@ -26,7 +26,7 @@ type RuntimeSuspender interface {
 }
 
 type GatewaySuspender struct {
-	TLS       *environment_runtime_transport.ClientTLS
+	TLS       *peertls.ClientTLS
 	Target    string
 	TokenFile string
 }

@@ -25,8 +25,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/google/uuid"
@@ -808,7 +808,7 @@ func (l *lab) identityCaller(t *testing.T) identityCaller {
 	name := "agent-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	workload := workloadauthtesting.NewIdentityWorkload(t, kube, runner.Namespace, name, policyNamespace)
 	l.index.Rules.PutIdentity(workload.Identity)
-	proxyTLS, err := l.proxyCA.Issue(t, workload.URI).ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	proxyTLS, err := l.proxyCA.Issue(t, workload.URI).ClientTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,10 +28,10 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
     CodexExecServerContainer,
     inspect_codex_exec_server_container,
 )
-from agentplane.environment_runtime_transport.config import MTLS
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER_AUDIENCE, go_history_service, migrate_history_database
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, Message, response_stream
+from agentplane.net.peertls.config import MTLS
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.testing.gateway_process import run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster

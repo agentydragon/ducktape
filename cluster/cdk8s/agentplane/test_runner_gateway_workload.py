@@ -9,7 +9,7 @@ import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
-from agentplane.environment_runtime_transport.config import SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import SESSION_DISPATCHER_URI
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (

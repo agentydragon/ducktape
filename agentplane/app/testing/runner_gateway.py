@@ -15,9 +15,9 @@ from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.environment_runtime_transport.config import MTLS
 from agentplane.grpc.calls import dial
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
+from agentplane.net.peertls.config import MTLS
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway

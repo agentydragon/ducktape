@@ -1,4 +1,4 @@
-package environment_runtime_transport_test
+package peertls_test
 
 import (
 	"context"
@@ -9,19 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := environment_runtime_transport.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
+	uri, err := peertls.WorkloadID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
 	short := ca.IssueWithValidity(t, uri, time.Now().Add(-time.Minute), time.Now().Add(4*time.Second), x509.ExtKeyUsageClientAuth)
-	server := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
-	serverTLS, err := server.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	server := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	serverTLS, err := server.WorkloadServerTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T)
 			}()
 		}
 	}()
-	security, err := short.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	security, err := short.ClientTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T)
 		if err != nil {
 			t.Fatal(err)
 		}
-		connection, err := environment_runtime_transport.ClientTLSConnection(ctx, raw, security)
+		connection, err := peertls.ClientTLSConnection(ctx, raw, security)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -107,7 +107,7 @@ func TestClientTLSConnectionWithoutClientCertificateExpiresAtPeerNotAfter(t *tes
 	ca := environmentruntimetransporttesting.NewCA(t)
 	proxy := ca.IssueWithValidity(
 		t,
-		environment_runtime_transport.EgressProxyURI,
+		peertls.EgressProxyURI,
 		time.Now().Add(-time.Minute),
 		time.Now().Add(1200*time.Millisecond),
 		x509.ExtKeyUsageServerAuth,
@@ -117,7 +117,7 @@ func TestClientTLSConnectionWithoutClientCertificateExpiresAtPeerNotAfter(t *tes
 		t.Fatal(err)
 	}
 	serverTLS := &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequestClientCert}
-	clientTLS, err := (environment_runtime_transport.ClientTLS{CAFile: proxy.CAFile, ServerURI: environment_runtime_transport.EgressProxyURI}).TLSConfig()
+	clientTLS, err := (peertls.ClientTLS{CAFile: proxy.CAFile, ServerURI: peertls.EgressProxyURI}).TLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestClientTLSConnectionWithoutClientCertificateExpiresAtPeerNotAfter(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := environment_runtime_transport.ClientTLSConnection(ctx, raw, clientTLS)
+	client, err := peertls.ClientTLSConnection(ctx, raw, clientTLS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,13 +150,13 @@ func TestClientTLSConnectionWithoutClientCertificateExpiresAtPeerNotAfter(t *tes
 
 func TestClientTLSConnectionRejectsConfiguredClientCertificateWithoutSelection(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	proxy := ca.IssueWithUsage(t, environment_runtime_transport.EgressProxyURI, x509.ExtKeyUsageServerAuth)
+	proxy := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
 	pair, err := tls.LoadX509KeyPair(proxy.CertFile, proxy.KeyFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	serverTLS := &tls.Config{Certificates: []tls.Certificate{pair}, ClientAuth: tls.RequestClientCert}
-	clientTLS, err := (environment_runtime_transport.ClientTLS{CAFile: proxy.CAFile, ServerURI: environment_runtime_transport.EgressProxyURI}).TLSConfig()
+	clientTLS, err := (peertls.ClientTLS{CAFile: proxy.CAFile, ServerURI: peertls.EgressProxyURI}).TLSConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestClientTLSConnectionRejectsConfiguredClientCertificateWithoutSelection(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := environment_runtime_transport.ClientTLSConnection(ctx, raw, clientTLS)
+	client, err := peertls.ClientTLSConnection(ctx, raw, clientTLS)
 	if client != nil {
 		_ = client.Close()
 		t.Fatal("TLS connection succeeded without the configured client certificate")

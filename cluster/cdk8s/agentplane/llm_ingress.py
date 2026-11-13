@@ -21,10 +21,10 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from pydantic import AnyHttpUrl
 
-from agentplane.environment_runtime_transport.config import LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.identity.auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
+from agentplane.net.peertls.config import LLM_INGRESS_URI
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog

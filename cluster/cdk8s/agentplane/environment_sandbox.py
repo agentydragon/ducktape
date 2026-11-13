@@ -42,7 +42,7 @@ from agentplane.env.config import (
     PodEnvironment,
     SVIDEndpoint,
 )
-from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, MTLS, TLS
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium

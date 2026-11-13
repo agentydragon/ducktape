@@ -3,7 +3,7 @@ package gateway
 import (
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	corev1 "k8s.io/api/core/v1"
@@ -14,14 +14,14 @@ import (
 )
 
 func TestVMRunnerRequiresCurrentLauncherVMIAndSandboxOwnerChain(t *testing.T) {
-	for _, mode := range []environment_runtime_transport.SecurityMode{environment_runtime_transport.MutualTLS, environment_runtime_transport.Insecure} {
+	for _, mode := range []peertls.SecurityMode{peertls.MutualTLS, peertls.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
 			testVMRunnerOwnership(t, mode)
 		})
 	}
 }
 
-func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.SecurityMode) {
+func testVMRunnerOwnership(t *testing.T, mode peertls.SecurityMode) {
 	t.Helper()
 	for name, change := range map[string]func(*sandboxapi.Sandbox, *corev1.Pod, *kubevirtv1.VirtualMachineInstance, *kubevirtv1.VirtualMachine){
 		"current": func(*sandboxapi.Sandbox, *corev1.Pod, *kubevirtv1.VirtualMachineInstance, *kubevirtv1.VirtualMachine) {
@@ -80,20 +80,20 @@ func testVMRunnerOwnership(t *testing.T, mode environment_runtime_transport.Secu
 			}
 			objects := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, vmi, vm, pod).Build()
 			g := &Gateway{
-				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: environment_runtime_transport.Security{Mode: mode}}, objects: objects,
+				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: peertls.Security{Mode: mode}}, objects: objects,
 			}
-			uri, err := environment_runtime_transport.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: "current-credential"}.URI()
+			uri, err := peertls.WorkloadID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: "current-credential"}.URI()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if mode == environment_runtime_transport.Insecure {
+			if mode == peertls.Insecure {
 				uri = ""
 			}
 			err = g.validateRunnerDestination(t.Context(), runnerDestination{
 				identity: &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: string(sandbox.UID)},
 				podUID:   "launcher-uid", peerURI: uri,
 			})
-			if name != "current" && !(mode == environment_runtime_transport.Insecure && (name == "stale credential" || name == "missing credential")) {
+			if name != "current" && !(mode == peertls.Insecure && (name == "stale credential" || name == "missing credential")) {
 				if err == nil {
 					t.Fatal("stale or foreign VM credential was accepted")
 				}

@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
@@ -22,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -165,16 +165,16 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
 	}
-	rpcCredentials, err := c.RPC.ServerCredentials(environment_runtime_transport.SessionDispatcherURI)
+	rpcCredentials, err := c.RPC.ServerCredentials(peertls.SessionDispatcherURI)
 	if err != nil {
 		return fmt.Errorf("Gateway RPC listener TLS: %w", err)
 	}
-	if c.RunnerSecurity.Mode == environment_runtime_transport.MutualTLS {
+	if c.RunnerSecurity.Mode == peertls.MutualTLS {
 		identity, err := c.RunnerSecurity.TLS.LocalIdentity(x509.ExtKeyUsageClientAuth)
 		if err != nil {
 			return err
 		}
-		if identity != environment_runtime_transport.GatewayURI {
+		if identity != peertls.GatewayURI {
 			return errors.New("Gateway runner certificate has the wrong identity")
 		}
 	}

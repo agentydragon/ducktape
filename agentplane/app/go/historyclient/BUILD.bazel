@@ -7,9 +7,9 @@ go_library(
     srcs = ["historyclient.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go/historyclient",
     deps = [
-        "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/net/peertls",
         "@org_golang_google_grpc//:grpc",
     ],
 )

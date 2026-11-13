@@ -56,7 +56,7 @@ follows it; code that differs converges on it.
 - Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
-  `environment_runtime_transport` server credentials. `identity/auth/auth.SVIDResolver` resolves
+  `peertls` server credentials. `identity/auth/auth.SVIDResolver` resolves
   the verified peer against the live Sandbox and its accepted runner credential, yielding the
   Sandbox's own ServiceAccount. The sidecar or launcher relay holds the certificate and establishes
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.

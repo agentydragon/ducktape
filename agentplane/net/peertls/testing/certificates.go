@@ -1,5 +1,5 @@
-// Package environmentruntimetransporttesting creates short-lived mTLS fixtures for tests.
-package environmentruntimetransporttesting
+// Package peertlstesting creates short-lived mTLS fixtures for tests.
+package peertlstesting
 
 import (
 	"crypto/ecdsa"
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 // CA is a test certificate authority whose own certificate is written to RootFile.
@@ -96,8 +96,8 @@ func newCA(t *testing.T, parent *CA, notBefore, notAfter time.Time) *CA {
 }
 
 // Issue creates a dual-use client/server certificate for uri and returns the
-// file-backed credentials consumed by environment_runtime_transport.Config.
-func (ca *CA) Issue(t *testing.T, uri string) environment_runtime_transport.Config {
+// file-backed credentials consumed by peertls.Config.
+func (ca *CA) Issue(t *testing.T, uri string) peertls.Config {
 	t.Helper()
 	return ca.IssueWithUsage(t, uri, x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth)
 }
@@ -105,7 +105,7 @@ func (ca *CA) Issue(t *testing.T, uri string) environment_runtime_transport.Conf
 // IssueWithUsage creates a certificate with explicit extended key usages. It
 // lets tests verify that client and server authentication require the intended
 // usage instead of accepting an unconstrained certificate.
-func (ca *CA) IssueWithUsage(t *testing.T, rawURI string, usages ...x509.ExtKeyUsage) environment_runtime_transport.Config {
+func (ca *CA) IssueWithUsage(t *testing.T, rawURI string, usages ...x509.ExtKeyUsage) peertls.Config {
 	t.Helper()
 	now := time.Now().UTC()
 	return ca.IssueWithValidity(t, rawURI, now.Add(-time.Minute), now.Add(24*time.Hour), usages...)
@@ -117,7 +117,7 @@ func (ca *CA) IssueWithValidity(
 	rawURI string,
 	notBefore, notAfter time.Time,
 	usages ...x509.ExtKeyUsage,
-) environment_runtime_transport.Config {
+) peertls.Config {
 	t.Helper()
 	identity, err := url.Parse(rawURI)
 	if err != nil || identity.Scheme == "" || identity.Host == "" {
@@ -154,7 +154,7 @@ func (ca *CA) IssueWithValidity(
 	keyFile := filepath.Join(directory, "tls.key")
 	writeFile(t, certFile, append(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), ca.chain...), 0o644)
 	writeFile(t, keyFile, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600)
-	return environment_runtime_transport.Config{CertFile: certFile, KeyFile: keyFile, CAFile: ca.RootFile}
+	return peertls.Config{CertFile: certFile, KeyFile: keyFile, CAFile: ca.RootFile}
 }
 
 func randomSerial() (*big.Int, error) {

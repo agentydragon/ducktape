@@ -30,13 +30,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/upstream"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
-	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -160,14 +160,14 @@ func newLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	proxyCA := transporttesting.NewCA(t)
-	proxyLeaf := proxyCA.Issue(t, environment_runtime_transport.EgressProxyURI)
-	proxyTLS, err := proxyLeaf.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	proxyLeaf := proxyCA.Issue(t, peertls.EgressProxyURI)
+	proxyTLS, err := proxyLeaf.WorkloadServerTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	proxyTLS.NextProtos = []string{"http/1.1"}
 	clientLeaf := proxyCA.Issue(t, workload.URI)
-	proxyClientTLS, err := clientLeaf.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
+	proxyClientTLS, err := clientLeaf.ClientTLSConfig(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
