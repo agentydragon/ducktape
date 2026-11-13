@@ -2990,51 +2990,59 @@ and assignment construction and output reconstruction belong to materialization.
 
 ### Two classes of atom
 
-A spec is unrealizable when its assignment forces a _constraining
-cycle_ somewhere — but constraints live at two different levels of
-the graph, and the validator surfaces them through two separate
-diagnostic paths. They differ only in _where_ the cycle appears
-(source-unit level vs module-quotient level), not in _what_ the proof
-requires. Both reject the same broad property: "some pair (or set)
-of bindings is forced to co-locate, and the spec splits them."
+Structural atoms and assignment-induced cycles answer different
+questions. A structural atom is an SCC of `G_atomic` over source
+units for a fixed source and analysis contract; it is independent of the
+destination assignment. A module-quotient cycle appears only
+after the current assignment groups source units into destinations;
+the shared gate decides whether that cycle makes the assignment
+unrealizable. Distinct structural atoms are not automatically
+independently extractable, and not every import-graph cycle is unsafe.
 
-| Atom class       | Where the cycle lives                                                   | Detector                                      | Diagnostic                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Structural**   | SCC of `G_atomic` on the **dependency graph** — independent of any spec | `compute_atomic_groups`                       | `AtomicGroupConflict` — names the group's source units + the modules the spec routes them to + the `DepKind` causes |
-| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment   | `check_realizability` + `validate_assignment` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind        |
+| Constraint level       | Where the cycle lives                                                          | Detector                                      | Diagnostic                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Structural**         | SCC of `G_atomic` on the **dependency graph** for fixed source/analysis inputs | `compute_atomic_groups`                       | `AtomicGroupConflict` — names the group's source units + the modules the spec routes them to + the `DepKind` causes |
+| **Assignment-induced** | SCC of the import/order graph after quotienting by the assignment              | `check_realizability` + `validate_assignment` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind        |
 
-`G_atomic` over source units is acyclic-by-quotient on the chunker's
-original output: bundlers can't emit JavaScript that TDZs at runtime
-(the bundle ran for someone). So every source-unit SCC of
-constraining edges (`EagerUse`, `Sequenced`, `EagerRebind`,
-`LazyRebind`, `DeferredRebind`, `CoDeclaration`, `LocalEffect`) reflects a
-_colocation invariant the bundler relied on_. (`DeferredRebind` —
-a rebind nested ≥2 closures deep or past an `await` — joins
-`G_atomic` bidirectionally like the other rebinds because ESM
-imports are read-only whenever the write fires, but it does NOT
-constrain init order: it is excluded from the constraining-edge
-subgraph the realizability gate and the I-graph use.) Any spec assignment that routes the group's
-source units to different modules is invalid — `assemble_assignment`
-detects this before the materializer touches the quotient. **No
-information about the spec is required to identify a structural
-atom**: it is a property of the source bytes plus the analyzer's
-edge classification.
+Every source-unit SCC in `G_atomic` is a co-location rule under the
+current graph and analyzer contract: `assemble_assignment` rejects an
+assignment that routes its members to different modules. That is a
+conservative placement constraint, not proof that the source is
+intrinsically impossible to split in JavaScript. The graph can contain
+both concrete ordering or rebinding effects and conservative effects
+from opaque behavior; inspect the edge kinds and evidence before
+concluding that the runtime itself requires co-location. See
+[structural atoms and extraction candidates](cli.md#structural-atoms-and-extraction-candidates)
+for how this differs from an extraction candidate.
 
-A **spec-induced atom** is one level up. Each source unit may be in its
-own structural atom (singleton), and the _module quotient under the
-spec's assignment_ may still close a cycle through them. The
-worked example in §"Worked example: cycle through a lazy back-edge"
-is exactly this shape: the binding-level read graph is a DAG, but
-the spec's choice to put `B` and `readB` in different modules makes
-the module-level `I ∪ S` graph cyclic (and unrealizable whenever
-Pass 2 proves a TDZ). The fix is identical in
-_shape_ — co-locate the bindings — but the _unit being preserved_ is
-defined by the spec's quotient, not the source bytes.
+For `G_atomic`, `EagerUse` and `Sequenced` contribute directed
+init-order arcs. A `Sequenced` edge alone does not join its endpoints;
+another path must close an SCC. `EagerRebind`, `LazyRebind`,
+`DeferredRebind`, `CoDeclaration`, `CoLocation`, and `LocalEffect`
+contribute symmetric co-location arcs. (`DeferredRebind` — a rebind
+nested ≥2 closures deep or past an `await` — joins `G_atomic` because
+ESM imports are read-only whenever the write fires, but it does not
+constrain init order: the realizability gate and I-graph exclude it from
+their constraining-edge subgraph.) `LazyUse` and `HoistedUse` do not
+create structural co-location by themselves. A pure lazy-read import
+cycle can be realizable; a directed eager read or ordering edge between
+two distinct atoms does not alone require co-location if the resulting
+destination assignment passes the shared gate.
+
+An assignment-induced cycle is one level up. Distinct singleton atoms
+can be grouped into destinations so that the quotient has a constraining
+cycle or a full import SCC whose simulator finds a TDZ. The worked
+example in §"Worked example: cycle through a lazy back-edge" has a
+binding-level read DAG, while the spec's choice to put `B` and `readB`
+in different modules creates a module-level `I ∪ S` cycle; it is
+unrealizable when Pass 2 proves a TDZ. Co-location may repair that
+assignment, but it is only one candidate repair and still needs the
+shared gate.
 
 Why two paths in the implementation: structural conflicts can be
 caught with no module quotient ever built — it's an `O(|V| + |E|)`
 SCC computation on the dependency graph that produces a clean blame
-("these source units can never split"). Spec-induced cycles require the
+("this assignment splits a structural co-location group"). Assignment-induced cycles require the
 quotient (because they're about the assignment) and produce a more
 nuanced blame (which _binding pairs_ on which _cut edges_ close the
 cycle, after `petgraph::algo::greedy_feedback_arc_set` picks the

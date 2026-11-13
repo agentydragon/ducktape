@@ -600,6 +600,38 @@ Bazel with `full_reports = ["residual_atomic_groups"]`.
 Entry import and export declaration units may appear in this inventory as
 scaffolding; their presence does not suggest moving them out of the entry.
 
+### Structural atoms and extraction candidates
+
+An atomic group is the set of source units that the current graph and analyzer
+contract require to share a destination. Separate groups are not necessarily independent
+extraction candidates: directed ordering edges between them can become a cycle
+after the current assignment is projected onto modules. The
+`residual_atomic_groups` inventory describes those groups and their edges for
+the run's actual assignment. The inventory describes the current run assignment
+(including an ownership subset, if selected); its `gate_accepts` value is the
+shared-gate verdict for that assignment. It says nothing about a different
+hypothetical extraction. Run the shared gate on the complete proposed
+destination assignment.
+
+For example, suppose three distinct structural atoms have required execution
+order `A` then `B` then `C`. Extracting only `B` while leaving `A` and `C` in one
+residual destination can project the order constraints like this:
+
+```text
+execution order in the source:  A → B → C
+destinations after the peel:    residual(A,C) → B → residual(A,C)
+```
+
+The arrows here show execution order, not dependency-edge direction. The
+residual destination appears on both sides of `B`, so the complete assignment
+may have a mutual constraining cycle and fail the gate even though no structural
+atom was split. Splitting the residual across destinations or extracting a
+coherent batch can change that quotient and may pass; each resulting assignment
+still needs its own gate verdict. Passing one ownership subset does not imply
+that adding or removing claims will pass, because that changes the destinations
+and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
+for structural atoms, conservative effects, and the accepted lazy-cycle case.
+
 ### Other full reports
 
 `debundle run --full-report export_reentry` writes the original complete
