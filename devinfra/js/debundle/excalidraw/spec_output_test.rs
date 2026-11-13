@@ -46,7 +46,15 @@ fn claimed_modules_export_their_entry_points() {
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
             "editor/packages/excalidraw/element/newElement.js",
-            &["_newElementBase", "newElement", "newTextElement"],
+            &[
+                "_newElementBase",
+                "newElement",
+                "newEmbeddableElement",
+                "newIframeElement",
+                "newFrameElement",
+                "newMagicFrameElement",
+                "newTextElement",
+            ],
         ),
         ("editor/packages/excalidraw/fonts/Fonts.js", &["Fonts"]),
         (
