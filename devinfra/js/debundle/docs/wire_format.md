@@ -122,6 +122,10 @@ dependency edges. `unprobed_reason` is `split_atomic_group`,
 `entry_scaffolding`, or `not_selected`. Candidate verdicts evaluate one whole
 atom moved to a fresh module from the unchanged baseline; they do not
 describe an existing-owner edit or emitted output.
+Each nested `cycles` row uses the `cycles.json` blocking-SCC fields, plus
+`lazy_closure` for Pass-2 evidence and `commuting_premise_locations` as an
+array of `{premise, spec_location}` rows. `premise` identifies its defining
+chunk and input index; a structured premise cannot be a JSON object key.
 
 `dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its

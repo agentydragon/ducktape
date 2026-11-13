@@ -2,12 +2,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::assignment_assembly::AtomicGroupConflict;
 use analysis::reports::{atomic_group_key, source_unit_key};
 use analysis::{ModuleId, ModuleRole, SourceLocation, StatementKind};
 use anyhow::{Result, ensure};
-use gate::{AssignmentAnalysis, CycleReport, RealizabilityVerdict};
-use serde::Serialize;
+use gate::{AssignmentAnalysis, BlockingSccEntry, CycleEdge, CycleReport, RealizabilityVerdict};
+use serde::{Serialize, Serializer};
 use source_identity::SourceUnitId;
 
 use crate::ownership_subset::SelectedModule;
@@ -24,6 +25,7 @@ pub(super) struct Report<'a> {
 #[derive(Serialize)]
 struct Baseline<'a> {
     gate_accepts: bool,
+    #[serde(serialize_with = "serialize_cycles")]
     cycles: &'a [CycleReport],
     atomic_group_conflicts: &'a [AtomicGroupConflict],
     cross_rebinds: &'a [String],
@@ -53,6 +55,7 @@ struct Unit {
 struct Candidate {
     proposed_destination: String,
     gate_accepts: bool,
+    #[serde(serialize_with = "serialize_cycles")]
     cycles: Vec<CycleReport>,
     atomic_group_conflicts: Vec<AtomicGroupConflict>,
     cross_rebinds: Vec<String>,
@@ -64,6 +67,49 @@ struct Candidate {
 struct BlockerUnit {
     id: String,
     source_location: Option<SourceLocation>,
+}
+
+/// The ordinary `cycles.json` wire entry plus report-only Pass-2 and premise
+/// provenance. `CycleReport` itself is an in-memory diagnostic: its premise
+/// location map has structured keys, which JSON objects cannot encode.
+#[derive(Serialize)]
+struct CycleEvidence<'a> {
+    #[serde(flatten)]
+    blocking: BlockingSccEntry,
+    lazy_closure: &'a [CycleEdge],
+    commuting_premise_locations: Vec<PremiseLocation<'a>>,
+}
+
+#[derive(Serialize)]
+struct PremiseLocation<'a> {
+    premise: &'a CommutingStatementsRef,
+    spec_location: &'a str,
+}
+
+fn serialize_cycles<S>(
+    cycles: &[CycleReport],
+    serializer: S,
+) -> std::result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    cycles
+        .iter()
+        .enumerate()
+        .map(|(id, cycle)| CycleEvidence {
+            blocking: BlockingSccEntry::from_cycle_report(id, cycle),
+            lazy_closure: &cycle.lazy_closure,
+            commuting_premise_locations: cycle
+                .commuting_premise_locations
+                .iter()
+                .map(|(premise, spec_location)| PremiseLocation {
+                    premise,
+                    spec_location,
+                })
+                .collect(),
+        })
+        .collect::<Vec<_>>()
+        .serialize(serializer)
 }
 
 #[derive(Clone, Copy, Serialize)]
