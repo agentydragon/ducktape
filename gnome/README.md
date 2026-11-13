@@ -1,9 +1,12 @@
 # gnome
 
 Custom GNOME desktop utilities and Shell extensions for ducktape hosts.
-Extensions are packaged via `nix/packages/gnome-shell-<name>.nix` and wired
-into per-host home-manager config. The ai-quota extension is built from
-`aiquota/gnome/`; `test_image/` here is the gnome-shell container its render test boots.
+The AIQuota and Plaid Spend extension sources live in `aiquota/gnome/` and
+`finance/plaid/spend/gnome/`; Bazel builds their ZIPs, and
+`nix/packages/gnome-shell-aiquota.nix` and
+`nix/packages/plaid-spend-desktop.nix` install the release artifacts through
+Home Manager. `test_image/` is the GNOME Shell container used by their render
+tests.
 
 ## Bazel-built distribution zip
 
@@ -73,18 +76,7 @@ busctl --user call org.gnome.Shell /org/gnome/Shell \
 
 ## Render tests
 
-`//aiquota/gnome:test_render` boots a real `gnome-shell`
-inside a Bazel-built test container
-(`//gnome/test_image:gnome_shell_test_image`; gnome-shell +
-Xvfb + dbus + scrot pulled hermetically via `rules_distroless` apt),
-unzips the distribution zip into the extension dir, launches one
-gnome-shell for the whole module, and uses the extension's test DBus
-interface (`works.allegedly.AiQuotaTest`, exported when `AI_QUOTA_FIXTURE`
-is set) to swap fixtures and toggle the popup menu between renders.
-Each fixture in `aiquota/testing/fixtures/` is screenshotted with `scrot`
-to one PNG (panel indicator plus open menu) that is published to the PR's
-visual-review page.
-
-There is no checked-in pixel golden and no pixel diff: the test passes when
-gnome-shell boots, the extension reaches ENABLED, and every fixture opens its
-menu and screenshots. Details: the docstring of `aiquota/gnome/test_render.py`.
+`//aiquota/gnome:test_render` exercises the extension in GNOME Shell and
+publishes fixture screenshots for visual review. It checks render health; there
+is no pixel golden or diff. Setup and capture details live in
+`aiquota/gnome/test_render.py`.
