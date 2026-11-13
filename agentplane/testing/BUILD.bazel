@@ -115,6 +115,7 @@ py_library(
 py_library(
     name = "codex_model",
     srcs = ["codex_model.py"],
+    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":scripted_model",
         "//agentplane/native/codex/testing:model",

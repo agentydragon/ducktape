@@ -15,7 +15,6 @@ import grpc
 import pytest
 import pytest_bazel
 from grpc_health.v1 import health_pb2, health_pb2_grpc
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.env.config import (
     Configuration,
@@ -53,6 +52,7 @@ from agentplane.x.direct_vm_boot.runtime_guest import (
     sandbox_with_runtime_gateway,
     write_guest_inputs,
 )
+from agentplane.x.direct_vm_boot.session_helpers import history_turn_completed, wait_for_session_ready
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep //agentplane/testing:native_gateway_fixtures
@@ -256,43 +256,6 @@ def model(endpoint: AnthropicMessages) -> ClaudeModel:
     return ClaudeModel(endpoint)
 
 
-async def _history_turn_completed(
-    history: HistoryServiceClient, session_id: str, after_cursor: int
-) -> list[event_log_pb2.EventEntry]:
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(20), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
-    ):
-        with attempt:
-            try:
-                response = await history.read_session_events(session_id, after_cursor=after_cursor, limit=1000)
-            except ServiceError as error:
-                if error.code != grpc.StatusCode.NOT_FOUND:
-                    raise
-                entries: list[event_log_pb2.EventEntry] = []
-            else:
-                entries = list(response.entries)
-            assert any(events.turn_completed(entry) for entry in entries), entries
-            return entries
-    raise AssertionError("History did not commit the Session turn")
-
-
-async def _wait_for_session_ready(
-    gateway: GatewayProcess, client_token: Path, sandbox: SandboxCluster, session_id: str
-) -> session_pb2.EnvironmentRuntimeStatus:
-    remote = gateway.gateway_client(client_token, request_timeout_s=2)
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(20), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
-    ):
-        with attempt:
-            status = await remote.runner(sandbox.destination).status()
-            sessions = [row for row in status.sessions if row.session_id == session_id]
-            assert len(sessions) == 1, status
-            assert sessions[0].execution_state != session_pb2.SESSION_EXECUTION_STATE_FAILED, sessions[0]
-            assert sessions[0].execution_state == session_pb2.SESSION_EXECUTION_STATE_READY, sessions[0]
-            return status
-    raise AssertionError(f"Runtime did not make Session {session_id} ready")
-
-
 async def _run_shell_turn(
     *,
     dispatcher: SessionDispatcherClient,
@@ -321,7 +284,7 @@ async def _run_shell_turn(
     assert not native_output.is_error
     assert native_output.text.splitlines()[0] == expected_output
     await model.reply(tool_request, Text(final_text))
-    entries = await _history_turn_completed(history, session_id, receipt.cursor - 1)
+    entries = await history_turn_completed(history, session_id, receipt.cursor - 1)
     return entries, native_output.text
 
 
@@ -450,7 +413,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             assert first_entries
             assert second_entries
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
-            final_status = await _wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
+            final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
             assert final_status.environment_runtime_boot_id == initial_status.environment_runtime_boot_id
 
     serial = (outputs / "runtime.serial.log").read_text(errors="replace")

@@ -204,9 +204,10 @@ def _runtime_guest_script() -> str:
         }
         trap cleanup EXIT
 
-        # KubeVirt's production virtiofsd runs as 107:107; model that guest-visible ownership here.
-        chown 107:107 /state
-        printf 'state_owner=107:107 (production virtiofsd mapping)\n'
+        # KubeVirt's unprivileged state daemon creates files as 107:107 even for guest root.
+        # Matching only the shared directory's owner leaves root-created 0700 Codex state inaccessible.
+        chown 107:107 /state /tmp/runtime-gateway/sockets
+        printf 'state_owner=107:107 (unprivileged production virtiofsd)\n'
         for volume in config launch trust; do
             source=/tmp/runtime-gateway/empty
             if [ "$volume" = config ]; then source=/inputs/config; fi
@@ -220,8 +221,14 @@ def _runtime_guest_script() -> str:
             tag=$1
             shared_dir=$2
             socket="/tmp/runtime-gateway/sockets/$tag.sock"
-            "$virtiofsd" --socket-path="$socket" --shared-dir="$shared_dir" --sandbox=none \
-                >"/outputs/$tag.virtiofsd.log" 2>&1 &
+            if [ "$tag" = state ]; then
+                setpriv --reuid=107 --regid=107 --clear-groups --no-new-privs \
+                    "$virtiofsd" --socket-path="$socket" --shared-dir="$shared_dir" --sandbox=none \
+                    >"/outputs/$tag.virtiofsd.log" 2>&1 &
+            else
+                "$virtiofsd" --socket-path="$socket" --shared-dir="$shared_dir" --sandbox=none \
+                    >"/outputs/$tag.virtiofsd.log" 2>&1 &
+            fi
             echo "$!" >>/tmp/runtime-gateway/virtiofsd.pids
         }
         start_virtiofs state /state
@@ -342,7 +349,17 @@ async def runtime_guest_container(
         ):
             assert not docker_done.done(), "the bounded guest exited before starting the packaged Runtime"
             await asyncio.sleep(0.05)
-        yield docker_done
+
+        async def require_live_guest() -> None:
+            exit_code = await asyncio.shield(docker_done)
+            raise AssertionError(f"the direct Runtime guest exited during the contract (exit {exit_code})")
+
+        async with asyncio.TaskGroup() as guests:
+            watch = guests.create_task(require_live_guest())
+            try:
+                yield docker_done
+            finally:
+                watch.cancel()
     finally:
         stop_stdout = stop_stderr = ""
         if not docker_done.done():
