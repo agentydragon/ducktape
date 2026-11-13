@@ -255,12 +255,16 @@ If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
 in a pipeline), the default flips to `json`. So
 `debundle modules propose | jq …` works without an explicit `--format json`.
 
-Report rendering, serialization, stdout writes, and the final flush are
-fallible. A report write or flush failure exits nonzero; if stdout returns
-`BrokenPipe` while a report is being emitted, the CLI exits successfully so
-downstream consumers can stop reading early. Text rendering completes before
-its bytes are written, so a rendering failure does not leave a partial text
-report.
+Report rendering, serialization, stdout and stderr writes, and explicit final
+flushes are fallible. A successful operation whose stdout consumer closes the
+pipe exits successfully. A stderr failure exits nonzero, even when stdout also
+closes. If the operation failed, failure to emit its diagnostic on either
+stream preserves that failure and the output error and exits nonzero. Text
+reports finish rendering before writing any bytes.
+
+An output error can happen after a spec edit was written. The CLI leaves that
+edit applied and does not retry it; inspect the files before deciding whether
+to run another mutation.
 
 ### Runtime failures from top-level queries
 

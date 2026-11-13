@@ -390,3 +390,63 @@ fn text_rejection_does_not_emit_json() {
     assert!(!out.stderr.is_empty());
     assert!(serde_json::from_slice::<Value>(&out.stdout).is_err());
 }
+
+#[test]
+fn closed_mutation_output_pipes_preserve_applied_state_and_stderr_failures_are_nonzero() {
+    use std::process::Stdio;
+    for assign in [false, true] {
+        for (close_stdout, close_stderr) in [(true, false), (false, true), (true, true)] {
+            let fixture = GraphFixture::acyclic_pair();
+            let args = if assign {
+                vec!["bindings", "assign", "beta:c", "--format", "json"]
+            } else {
+                // This edit has no pre-outcome warning: only the command boundary's
+                // saved-graph diagnostic must still run after stdout closes.
+                write_text_file(&fixture.modules.join("empty.yaml"), "{}\n");
+                fixture.refresh_graph();
+                vec!["modules", "delete", "empty.yaml", "--format", "json"]
+            };
+            let mut command = fixture.process(&args);
+            if close_stdout {
+                let (reader, writer) = std::io::pipe().unwrap();
+                drop(reader);
+                command.stdout(Stdio::from(writer));
+            }
+            if close_stderr {
+                let (reader, writer) = std::io::pipe().unwrap();
+                drop(reader);
+                command.stderr(Stdio::from(writer));
+            }
+            let result = command.output().unwrap();
+            assert_eq!(
+                result.status.success(),
+                !close_stderr,
+                "assign={assign}, stdout={close_stdout}, stderr={close_stderr}: {result:?}"
+            );
+            if assign {
+                assert!(!fixture.modules.join("b.yaml").exists());
+                let destination: serde_yaml::Value =
+                    serde_yaml::from_slice(&std::fs::read(fixture.modules.join("c.yaml")).unwrap())
+                        .unwrap();
+                assert_eq!(destination["members"].as_sequence().unwrap().len(), 1);
+            } else {
+                assert!(!fixture.modules.join("empty.yaml").exists());
+            }
+            fixture.assert_runs("2\n");
+        }
+    }
+}
+
+#[test]
+fn failed_queries_stay_nonzero_when_stdout_diagnostic_pipe_is_closed() {
+    use std::process::Stdio;
+    let fixture = GraphFixture::acyclic_pair();
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let output = fixture
+        .process(&["describe", "nonexistent", "--format", "json"])
+        .stdout(Stdio::from(writer))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+}

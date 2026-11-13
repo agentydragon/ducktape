@@ -523,6 +523,7 @@ fn emit_selector_debt_ndjson(
 }
 
 pub(super) fn run(
+    stderr: &mut dyn std::io::Write,
     args: SpecNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
@@ -533,11 +534,11 @@ pub(super) fn run(
         SpecNsCommand::SynthesizeSelectors(s) => run_synthesize_selectors_cmd(s, output),
         SpecNsCommand::MatchSelector(s) => run_match_selector_cmd(s, output),
         SpecNsCommand::Validate(v) => {
-            run_validate_cmd(v, output).context("running keep-going selector validation")
+            run_validate_cmd(stderr, v, output).context("running keep-going selector validation")
         }
-        SpecNsCommand::AuditContracts(a) => run_audit_contracts(a, output),
-        SpecNsCommand::Lint(args) => crate::spec_lint::run(args, output),
-        SpecNsCommand::ProjectAnalysis(args) => args.run(),
+        SpecNsCommand::AuditContracts(a) => run_audit_contracts(stderr, a, output),
+        SpecNsCommand::Lint(args) => crate::spec_lint::run(stderr, args, output),
+        SpecNsCommand::ProjectAnalysis(args) => args.run(stderr),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,
             source_context.context("propose-commutations verifies its graph before dispatch")?,

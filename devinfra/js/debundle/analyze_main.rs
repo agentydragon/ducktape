@@ -12,10 +12,10 @@ struct Args {
 
 fn main() -> std::process::ExitCode {
     run_analysis(|| {
-        match Args::parse()
-            .analysis
-            .run(analysis_identity::ANALYSIS_ENGINE_SHA256)
-        {
+        match Args::parse().analysis.run(
+            &mut std::io::stderr().lock(),
+            analysis_identity::ANALYSIS_ENGINE_SHA256,
+        ) {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("{error:#}");

@@ -7,7 +7,7 @@ use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
-use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
+use crate::outcome::emit_gate_rejection_json;
 use crate::source_unit_refine::{
     SourceUnitAssignment, SourceUnitRefineOptions, run_source_unit_refine,
 };
@@ -588,6 +588,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
 }
 
 fn run_module_decompose(
+    stderr: &mut dyn std::io::Write,
     args: ModuleDecomposeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
@@ -596,7 +597,7 @@ fn run_module_decompose(
         !args.include_residual || args.atomic,
         "--include-residual requires --atomic"
     );
-    let report = command_diagnostics::run(|diagnostics| {
+    let report = command_diagnostics::run(stderr, |diagnostics| {
         decompose_modules_from_files_with_options(
             &ProposalOptions {
                 dependency_graph_path: args.common.dependency_graph_path,
@@ -644,6 +645,8 @@ fn run_module_decompose(
 }
 
 fn run_modules_refine(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     args: ModulesRefineArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -680,6 +683,7 @@ fn run_modules_refine(
                 graph_source: context.graph_source,
             });
     let outcome = match run_source_unit_refine(
+        stderr,
         &args.modules_root,
         &args.graph,
         &args.source_root,
@@ -693,20 +697,22 @@ fn run_modules_refine(
     ) {
         Ok(outcome) => outcome,
         Err(err) => {
-            emit_gate_rejection_json("refine", args.format, &err);
-            return Err(err);
+            return Err(emit_gate_rejection_json(output, "refine", args.format, err));
         }
     };
-    outcome.outcome.warn_if_unassessed_write();
+    outcome.outcome.warn_if_unassessed_write(stderr)?;
     match OutputFormat::resolve(args.format) {
-        OutputFormat::Text => println!(
-            "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",
-            outcome.outcome.action,
-            outcome.source_units_reassigned,
-            outcome.outcome.files_written.len(),
-            outcome.outcome.files_deleted.len(),
-        ),
-        format => print_outcome_json(&outcome, format)?,
+        OutputFormat::Text => command_output::write_line(
+            output,
+            format_args!(
+                "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",
+                outcome.outcome.action,
+                outcome.source_units_reassigned,
+                outcome.outcome.files_written.len(),
+                outcome.outcome.files_deleted.len(),
+            ),
+        )?,
+        format => command_output::write_report(&outcome, format, output, |_, _| Ok(()))?,
     }
     Ok(())
 }
@@ -748,15 +754,20 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
 }
 
 pub(super) fn run(
+    stderr: &mut dyn std::io::Write,
     args: ModulesNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
     match args.command {
-        ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-        ModulesNsCommand::Merge(m) => run_merge(*m, source_context, analysis_engine_sha256),
-        ModulesNsCommand::Delete(d) => run_delete(*d, source_context, analysis_engine_sha256),
+        ModulesNsCommand::Comment(c) => run_module_comment_cmd(output, c),
+        ModulesNsCommand::Merge(m) => {
+            run_merge(output, stderr, *m, source_context, analysis_engine_sha256)
+        }
+        ModulesNsCommand::Delete(d) => {
+            run_delete(output, stderr, *d, source_context, analysis_engine_sha256)
+        }
         ModulesNsCommand::Propose(p) => {
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(
@@ -770,12 +781,14 @@ pub(super) fn run(
                 "writing propose output",
             )
         }
-        ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context, output),
+        ModulesNsCommand::Decompose(args) => {
+            run_module_decompose(stderr, args, source_context, output)
+        }
         ModulesNsCommand::Apply(args) => {
-            run_modules_apply(args, source_context, analysis_engine_sha256)
+            run_modules_apply(output, stderr, args, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::Refine(args) => {
-            run_modules_refine(args, source_context, analysis_engine_sha256)
+            run_modules_refine(output, stderr, args, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::List(args) => run_modules_list(args, output),
     }

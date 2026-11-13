@@ -256,12 +256,26 @@ fn possible_discharges(
 }
 
 pub(super) fn run(
+    stderr: &mut dyn std::io::Write,
     args: ExplainIntegrityArgs,
     roots: CurrentRoots,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
     let limit = args.limit.filter(|_| !args.all);
-    let report = explain(&args, limit, &roots)?;
+    let mut changed_sources = Vec::new();
+    let report = explain(&args, limit, &roots, &mut changed_sources);
+    let emission = changed_sources
+        .into_iter()
+        .try_for_each(|path: std::path::PathBuf| {
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "warning: {} changed since the graph was generated; omitting its excerpts",
+                    path.display()
+                ),
+            )
+        });
+    let report = command_diagnostics::finish(report, emission)?;
     emit_report(
         output,
         args.format,
@@ -275,6 +289,7 @@ fn explain(
     args: &ExplainIntegrityArgs,
     limit: Option<usize>,
     roots: &CurrentRoots,
+    changed_sources: &mut Vec<std::path::PathBuf>,
 ) -> Result<IntegrityExplanationReport> {
     let (chunk_id, program_graph_path, selected) = match &args.slot {
         Some(_) => {
@@ -290,7 +305,7 @@ fn explain(
     let program: ProgramGraphReport = report_io::read_json_gzip(
         &graph_provenance::program_graph_path(&args.graph, &program_graph_path),
     )?;
-    let mut sources = Sources::new(program.provenance.as_ref(), roots);
+    let mut sources = Sources::new(program.provenance.as_ref(), roots, changed_sources);
     let dynamic_scope: Vec<_> = program
         .native_prototype_mutations
         .iter()
@@ -518,15 +533,21 @@ fn select_source_units(
 struct Sources<'a> {
     provenance: Option<&'a GraphProvenance>,
     roots: &'a CurrentRoots,
+    changed_sources: &'a mut Vec<std::path::PathBuf>,
     /// Per chunk: its text and line start offsets.
     files: BTreeMap<String, Option<(String, Vec<usize>)>>,
 }
 
 impl<'a> Sources<'a> {
-    fn new(provenance: Option<&'a GraphProvenance>, roots: &'a CurrentRoots) -> Self {
+    fn new(
+        provenance: Option<&'a GraphProvenance>,
+        roots: &'a CurrentRoots,
+        changed_sources: &'a mut Vec<std::path::PathBuf>,
+    ) -> Self {
         Self {
             provenance,
             roots,
+            changed_sources,
             files: BTreeMap::new(),
         }
     }
@@ -566,10 +587,7 @@ impl<'a> Sources<'a> {
                     .ok()?;
                 let bytes = std::fs::read(&path).ok()?;
                 if graph_provenance::sha256(&bytes) != source.sha256 {
-                    eprintln!(
-                        "warning: {} changed since the graph was generated; omitting its excerpts",
-                        path.display()
-                    );
+                    self.changed_sources.push(path);
                     return None;
                 }
                 let text = String::from_utf8(bytes).ok()?;

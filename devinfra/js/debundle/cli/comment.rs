@@ -92,7 +92,10 @@ impl CommentMode {
     }
 }
 
-pub fn run_binding_comment_cmd(args: BindingCommentArgs) -> Result<()> {
+pub fn run_binding_comment_cmd(
+    output: &mut dyn std::io::Write,
+    args: BindingCommentArgs,
+) -> Result<()> {
     let mode = CommentMode::from_flags(args.comment.text, args.comment.edit, args.comment.clear)?;
     let outcome = apply_binding_comment(
         &args.comment.modules_root,
@@ -101,8 +104,7 @@ pub fn run_binding_comment_cmd(args: BindingCommentArgs) -> Result<()> {
         args.comment.dry_run,
     )?;
     let format = peel::OutputFormat::resolve(args.comment.format);
-    print_outcome(&outcome, format);
-    Ok(())
+    write_comment_outcome(output, &outcome, format)
 }
 
 /// Outcome of a single comment edit / read, suitable for printing.
@@ -150,12 +152,19 @@ enum Locator<'a> {
     Module(&'a str),
 }
 
-fn print_outcome(outcome: &CommentOutcome, format: peel::OutputFormat) {
+fn write_comment_outcome(
+    output: &mut dyn std::io::Write,
+    outcome: &CommentOutcome,
+    format: peel::OutputFormat,
+) -> Result<()> {
     match format {
         peel::OutputFormat::Text => {
             // Text keeps the bare-line shape: an unset comment prints an
             // empty line. The null/"" distinction lives in JSON.
-            println!("{}", outcome.comment.as_deref().unwrap_or(""));
+            command_output::write_line(
+                output,
+                format_args!("{}", outcome.comment.as_deref().unwrap_or("")),
+            )?;
         }
         peel::OutputFormat::Json | peel::OutputFormat::Ndjson => {
             let locator = match outcome.kind {
@@ -167,12 +176,12 @@ fn print_outcome(outcome: &CommentOutcome, format: peel::OutputFormat) {
                 comment: outcome.comment.as_deref(),
                 action: outcome.action,
             };
-            println!(
-                "{}",
-                serde_json::to_string(&payload).expect("comment outcome serializes")
-            );
+            command_output::write_report(&payload, peel::OutputFormat::Ndjson, output, |_, _| {
+                Ok(())
+            })?;
         }
     }
+    Ok(())
 }
 
 /// Find the member matching `sym` and apply `mode`. Returns the
@@ -214,7 +223,10 @@ pub fn apply_binding_comment(
 // Module comment
 // ---------------------------------------------------------------------
 
-pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
+pub fn run_module_comment_cmd(
+    output: &mut dyn std::io::Write,
+    args: ModuleCommentArgs,
+) -> Result<()> {
     let mode = CommentMode::from_flags(args.comment.text, args.comment.edit, args.comment.clear)?;
     let outcome = apply_module_comment(
         &args.comment.modules_root,
@@ -223,8 +235,7 @@ pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
         args.comment.dry_run,
     )?;
     let format = peel::OutputFormat::resolve(args.comment.format);
-    print_outcome(&outcome, format);
-    Ok(())
+    write_comment_outcome(output, &outcome, format)
 }
 
 pub fn apply_module_comment(

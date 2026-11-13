@@ -19,7 +19,7 @@ use crate::candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
 use crate::edit_gate::{ExpectedResolvedMember, Gate, GraphEditArgs, post_edit_spec_from_docs};
-use crate::outcome::{MutationOutcome, emit_gate_rejection_json, print_outcome_json};
+use crate::outcome::{MutationOutcome, emit_gate_rejection_json};
 
 #[derive(Debug, Args)]
 pub struct ModulesApplyArgs {
@@ -118,6 +118,8 @@ struct ApplyOutcome {
 }
 
 pub fn run_modules_apply(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     args: ModulesApplyArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -419,12 +421,12 @@ pub fn run_modules_apply(
         source_context,
     };
     if let Err(err) = gate.check_expected(
+        stderr,
         &args.modules_root,
         || post_edit_spec_from_docs(&docs, &deleted),
         &expected,
     ) {
-        emit_gate_rejection_json("apply", args.format, &err);
-        return Err(err);
+        return Err(emit_gate_rejection_json(output, "apply", args.format, err));
     }
     let effect_relocation_assessment = effect_context
         .as_ref()
@@ -434,6 +436,7 @@ pub fn run_modules_apply(
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
             context.assess(
+                stderr,
                 &args.modules_root,
                 &candidate_modules,
                 analysis_engine_sha256,
@@ -462,21 +465,26 @@ pub fn run_modules_apply(
             .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
         effect_relocation_assessment,
     };
-    out.outcome.warn_if_unassessed_write();
-    match OutputFormat::resolve(args.format) {
-        OutputFormat::Text => {
-            println!(
+    out.outcome.warn_if_unassessed_write(stderr)?;
+    command_output::write_report(
+        &out,
+        OutputFormat::resolve(args.format),
+        output,
+        |out, text| {
+            use std::fmt::Write;
+            writeln!(
+                text,
                 "{}: {} proposal(s), {} binding(s), {} file(s)",
                 out.outcome.action,
                 out.proposals_applied,
                 out.bindings_claimed,
                 out.outcome.files_written.len()
-            );
+            )?;
             for review in &out.selector_reviews {
-                println!("{}", serde_yaml::to_string(review)?.trim_end());
+                writeln!(text, "{}", serde_yaml::to_string(review)?.trim_end())?;
             }
-        }
-        format => print_outcome_json(&out, format)?,
-    }
+            Ok(())
+        },
+    )?;
     Ok(())
 }

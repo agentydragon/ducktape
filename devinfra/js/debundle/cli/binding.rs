@@ -471,6 +471,7 @@ pub struct RenameBatchOutcome {
 /// Preflight the complete final map before replacing any file. Persistence is
 /// atomic per file, rather than a crash-atomic transaction across the tree.
 pub fn rename_bindings(
+    stderr: &mut dyn std::io::Write,
     modules_root: &Path,
     requests: Vec<Rename>,
     dry_run: bool,
@@ -493,11 +494,14 @@ pub fn rename_bindings(
                     hit.location.describe()
                 );
             }
-            eprintln!(
-                "duplicate rename for {}#{} collapsed",
-                hit.file.display(),
-                hit.location.describe()
-            );
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "duplicate rename for {}#{} collapsed",
+                    hit.file.display(),
+                    hit.location.describe()
+                ),
+            )?;
         } else {
             resolved.insert(identity, (request, hit));
         }
@@ -836,6 +840,7 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///     skips validation. The CLI dispatcher requires `--graph` unless
 ///     `--no-verify` is set ([`Gate::from_cli`]).
 pub fn run_bindings_assign(
+    stderr: &mut dyn std::io::Write,
     modules_root: &Path,
     moves: Vec<Move>,
     dry_run: bool,
@@ -910,11 +915,14 @@ pub fn run_bindings_assign(
                     (None, Some(_)) => prev.req.readable = planned.req.readable,
                     _ => {}
                 }
-                eprintln!(
-                    "warning: batch contains duplicate moves for one member ({:?} / {:?}); \
+                command_diagnostics::write_diagnostic(
+                    stderr,
+                    format_args!(
+                        "warning: batch contains duplicate moves for one member ({:?} / {:?}); \
                      collapsed",
-                    prev.req.sym, planned.req.sym,
-                );
+                        prev.req.sym, planned.req.sym,
+                    ),
+                )?;
             }
         }
     }
@@ -1077,7 +1085,7 @@ pub fn run_bindings_assign(
             .filter(|(path, _)| !to_delete.contains(*path))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
-        Some(command_diagnostics::run(|diagnostics| {
+        Some(command_diagnostics::run(stderr, |diagnostics| {
             assess_candidate_effect_relocation(
                 context.transform,
                 context.analysis,
@@ -1094,7 +1102,9 @@ pub fn run_bindings_assign(
         pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
     }
     if !no_moves {
-        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+        gate.check(stderr, modules_root, || {
+            post_edit_spec_from_docs(&docs, &to_delete)
+        })?;
     }
 
     let (files_written, files_deleted) =
@@ -1390,6 +1400,7 @@ pub struct UnassignOutcome {
 ///   * [`Gate::Run`] gates the in-memory post-batch spec; cycle or
 ///     atom-split rejections bail before any file is written.
 pub fn run_bindings_unassign(
+    stderr: &mut dyn std::io::Write,
     modules_root: &Path,
     syms: Vec<String>,
     dry_run: bool,
@@ -1426,10 +1437,13 @@ pub fn run_bindings_unassign(
             BindingLocation::SourceMatch { .. } => bail_source_match_unassign(&hit)?,
         };
         if let Some(prev) = plan.insert((hit.module_path, member_index), s.clone()) {
-            eprintln!(
-                "warning: duplicate sym in batch ({prev:?} / {s:?} resolve to one member); \
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "warning: duplicate sym in batch ({prev:?} / {s:?} resolve to one member); \
                  ignoring repeat"
-            );
+                ),
+            )?;
         }
     }
     // Step 3: remove members and their annotations from the snapshot.
@@ -1458,7 +1472,7 @@ pub fn run_bindings_unassign(
             .filter(|(path, _)| !to_delete.contains(*path))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
-        Some(command_diagnostics::run(|diagnostics| {
+        Some(command_diagnostics::run(stderr, |diagnostics| {
             assess_candidate_effect_relocation(
                 context.transform,
                 context.analysis,
@@ -1477,7 +1491,9 @@ pub fn run_bindings_unassign(
     // docs through the run pipeline's claims model, so source_matches[]
     // claims in surviving modules stay claimed.
     if !no_symbols {
-        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+        gate.check(stderr, modules_root, || {
+            post_edit_spec_from_docs(&docs, &to_delete)
+        })?;
     }
 
     let (files_written, files_deleted) =

@@ -471,6 +471,8 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
     let query_format = top_level_query_format(&args.command);
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
+    let stderr = io::stderr();
+    let mut stderr = stderr.lock();
     let result = (|| {
         let invocation = if args.invocation.requested() {
             Some(ResolvedInvocation::capture(
@@ -483,7 +485,13 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
         } else {
             None
         };
-        run_debundle_cli(args, invocation, analysis_engine_sha256, &mut stdout)
+        run_debundle_cli(
+            &mut stderr,
+            args,
+            invocation,
+            analysis_engine_sha256,
+            &mut stdout,
+        )
     })();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -501,22 +509,21 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
                     emit_query_failure(&mut stdout, format, &error)
                 };
                 if let Err(output_error) = output_error {
-                    if report_output_broken_pipe(&output_error) {
-                        return ExitCode::SUCCESS;
-                    }
-                    return report_cli_error(&output_error);
+                    let error = command_output::retain_operation_error(error, Err(output_error));
+                    return report_cli_error(&mut stderr, &error);
                 }
             }
             if error.downcast_ref::<GateRejected>().is_some() {
-                report_cli_error_with_code(&error, GATE_REJECTED_EXIT_CODE)
+                report_cli_error_with_code(&mut stderr, &error, GATE_REJECTED_EXIT_CODE)
             } else {
-                report_cli_error(&error)
+                report_cli_error(&mut stderr, &error)
             }
         }
     }
 }
 
 fn run_debundle_cli(
+    stderr: &mut dyn std::io::Write,
     args: DebundleArgs,
     invocation: Option<ResolvedInvocation>,
     analysis_engine_sha256: &'static str,
@@ -550,7 +557,9 @@ fn run_debundle_cli(
         Ok(source_context) => source_context,
         Err(error) => {
             if top_level_query_format(&args.command).is_none() {
-                emit_graph_mismatch_json(output, command_output_format(&args.command), &error)?;
+                let emission =
+                    emit_graph_mismatch_json(output, command_output_format(&args.command), &error);
+                return Err(command_output::retain_operation_error(error, emission));
             }
             return Err(error);
         }
@@ -584,10 +593,10 @@ fn run_debundle_cli(
             let artifacts = reports_only.map_or(RunArtifacts::Program, |out_root| {
                 RunArtifacts::ReportsOnly { out_root }
             });
-            let output = args.run_output()?;
+            let run_output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.context.resolve()?;
-            command_diagnostics::run(|diagnostics| {
+            command_diagnostics::run(stderr, |diagnostics| {
                 run_transform_with_analysis(
                     &cli,
                     TransformRunOptions {
@@ -595,7 +604,7 @@ fn run_debundle_cli(
                             .as_deref()
                             .map(lowering::ownership_subset::OwnershipSubset::read)
                             .transpose()?,
-                        output,
+                        output: run_output,
                         artifacts,
                         graph_reports: if graphs {
                             lowering::GraphReportSelection::Full
@@ -619,19 +628,24 @@ fn run_debundle_cli(
                     diagnostics,
                 )
             })?;
-            if output == RunOutput::DryRun {
-                println!("dry-run: transform pipeline checks passed; no outputs written");
+            if run_output == RunOutput::DryRun {
+                command_output::write_line(
+                    output,
+                    format_args!("dry-run: transform pipeline checks passed; no outputs written"),
+                )?;
             }
             Ok(())
         }
-        DebundleCommand::Analyze(args) => args.run(analysis_engine_sha256),
+        DebundleCommand::Analyze(args) => args.run(stderr, analysis_engine_sha256),
         DebundleCommand::Bindings(args) => bindings_commands::run(
+            stderr,
             args,
             source_context.as_ref(),
             analysis_engine_sha256,
             output,
         ),
         DebundleCommand::Modules(args) => modules_commands::run(
+            stderr,
             args,
             source_context.as_ref(),
             analysis_engine_sha256,
@@ -639,37 +653,53 @@ fn run_debundle_cli(
         ),
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args, output),
         DebundleCommand::Coverage(args) => {
-            inspection_commands::run_coverage(args, source_context.as_ref(), output)
+            inspection_commands::run_coverage(stderr, args, source_context.as_ref(), output)
         }
         DebundleCommand::GraphSummary(args) => {
             inspection_commands::run_graph_summary(args, source_context.as_ref(), output)
         }
         DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
+            stderr,
             describe_args,
             source_context,
             describe_query.expect("Describe query was validated before graph preflight"),
             output,
         ),
         DebundleCommand::InspectSource(args) => {
-            inspection_commands::run_inspect_source(args, source_context.as_ref(), output)
+            inspection_commands::run_inspect_source(stderr, args, source_context.as_ref(), output)
         }
         DebundleCommand::StaticImports(args) => static_imports::run(args, output),
         DebundleCommand::ExplainIntegrity(explain_args) => {
-            integrity_explanation::run(explain_args, roots, output)
+            integrity_explanation::run(stderr, explain_args, roots, output)
         }
         DebundleCommand::Scc(args) => run_scc(args, output),
         DebundleCommand::Cluster(args) => run_cluster(args, output),
-        DebundleCommand::Spec(args) => spec_commands::run(args, source_context.as_ref(), output),
+        DebundleCommand::Spec(args) => {
+            spec_commands::run(stderr, args, source_context.as_ref(), output)
+        }
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
         // hide them since `main.rs` prints only the top context.
         DebundleCommand::Gate(gate_args) => run_gate_cli(gate_args, roots, output),
-        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(snapshot_args, roots),
+        DebundleCommand::Snapshot(snapshot_args) => snapshot::run(output, snapshot_args, roots),
     };
-    if result.is_ok() && writes_with_graph {
-        eprintln!(
-            "saved graph describes the pre-edit inputs; if spec bytes changed, regenerate it before another graph-backed edit"
+    let operation_completed = result.is_ok()
+        || result.as_ref().is_err_and(|error| {
+            has_report_output_error(error)
+                && error
+                    .downcast_ref::<command_output::FailedOperationOutput>()
+                    .is_none()
+        });
+    if operation_completed && writes_with_graph {
+        return command_diagnostics::finish(
+            result,
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "saved graph describes the pre-edit inputs; if spec bytes changed, regenerate it before another graph-backed edit"
+                ),
+            ),
         );
     }
     result
@@ -680,7 +710,13 @@ fn has_report_output_error(error: &anyhow::Error) -> bool {
 }
 
 fn report_output_broken_pipe(error: &anyhow::Error) -> bool {
-    first_report_output_error(error).is_some_and(ReportOutputError::is_broken_pipe)
+    error
+        .downcast_ref::<command_diagnostics::DiagnosticOutputError>()
+        .is_none()
+        && error
+            .downcast_ref::<command_output::FailedOperationOutput>()
+            .is_none()
+        && first_report_output_error(error).is_some_and(ReportOutputError::is_broken_pipe)
 }
 
 fn first_report_output_error(error: &anyhow::Error) -> Option<&ReportOutputError> {
@@ -689,14 +725,12 @@ fn first_report_output_error(error: &anyhow::Error) -> Option<&ReportOutputError
         .find_map(|cause| cause.downcast_ref::<ReportOutputError>())
 }
 
-fn report_cli_error(error: &anyhow::Error) -> ExitCode {
-    report_cli_error_with_code(error, 1)
+fn report_cli_error(stderr: &mut dyn Write, error: &anyhow::Error) -> ExitCode {
+    report_cli_error_with_code(stderr, error, 1)
 }
 
-fn report_cli_error_with_code(error: &anyhow::Error, code: u8) -> ExitCode {
-    let stderr = io::stderr();
-    let mut stderr = stderr.lock();
-    match writeln!(stderr, "{error:#}").and_then(|()| stderr.flush()) {
+fn report_cli_error_with_code(stderr: &mut dyn Write, error: &anyhow::Error, code: u8) -> ExitCode {
+    match command_diagnostics::write_diagnostic(stderr, format_args!("{error:#}")) {
         Ok(()) => ExitCode::from(code),
         Err(_) => ExitCode::from(1),
     }
@@ -970,5 +1004,151 @@ mod tests {
             let cli = args.context.resolve().expect("resolve cli");
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
         });
+    }
+}
+
+#[cfg(test)]
+mod output_failure_tests {
+    use super::*;
+    use analysis::diagnostics::InvocationDiagnostic;
+    use anyhow::Error;
+    use command_diagnostics::{DiagnosticOutputError, finish};
+    use std::error::Error as _;
+
+    struct FailingWriter {
+        flush: bool,
+    }
+
+    impl Write for FailingWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if self.flush {
+                Ok(bytes.len())
+            } else {
+                Err(io::Error::from(io::ErrorKind::BrokenPipe))
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        }
+    }
+
+    #[test]
+    fn diagnostic_write_and_flush_failures_retain_the_operation_and_native_io_causes() {
+        for flush in [false, true] {
+            for operation_fails in [false, true] {
+                let mut stderr = FailingWriter { flush };
+                let native_operation = "not-an-integer".parse::<u32>().unwrap_err();
+                let result = command_diagnostics::run(&mut stderr, |diagnostics| {
+                    diagnostics.record_invocation(InvocationDiagnostic::OwnershipSubset);
+                    if operation_fails {
+                        Err(Error::new(native_operation).context("operation context"))
+                    } else {
+                        Ok(())
+                    }
+                });
+                let error = result.unwrap_err();
+                assert_eq!(
+                    error.downcast_ref::<std::num::ParseIntError>().is_some(),
+                    operation_fails
+                );
+                let emission = error.downcast_ref::<DiagnosticOutputError>().unwrap();
+                let native = emission
+                    .source()
+                    .unwrap()
+                    .downcast_ref::<io::Error>()
+                    .unwrap();
+                assert_eq!(
+                    native.kind(),
+                    if flush {
+                        io::ErrorKind::PermissionDenied
+                    } else {
+                        io::ErrorKind::BrokenPipe
+                    }
+                );
+                assert!(!report_output_broken_pipe(&error));
+            }
+        }
+    }
+
+    #[test]
+    fn simultaneous_stdout_and_stderr_failures_are_not_successful_pipe_termination() {
+        let stdout = Error::new(ReportOutputError::Write(io::Error::from(
+            io::ErrorKind::BrokenPipe,
+        )));
+        let error = finish::<()>(
+            Err(stdout),
+            Err(DiagnosticOutputError::Write(io::Error::from(
+                io::ErrorKind::BrokenPipe,
+            ))),
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<ReportOutputError>()
+                .unwrap()
+                .is_broken_pipe()
+        );
+        assert!(error.downcast_ref::<DiagnosticOutputError>().is_some());
+        assert!(!report_output_broken_pipe(&error));
+    }
+
+    #[test]
+    fn failed_operation_stays_failed_when_its_stdout_diagnostic_pipe_is_closed() {
+        let operation = "invalid".parse::<u32>().unwrap_err();
+        let error = command_output::retain_operation_error(
+            Error::new(operation),
+            Err(ReportOutputError::Write(io::Error::from(io::ErrorKind::BrokenPipe)).into()),
+        );
+        assert!(error.downcast_ref::<std::num::ParseIntError>().is_some());
+        let emission = error
+            .downcast_ref::<command_output::FailedOperationOutput>()
+            .unwrap();
+        assert!(
+            emission
+                .0
+                .downcast_ref::<ReportOutputError>()
+                .unwrap()
+                .is_broken_pipe()
+        );
+        assert!(!report_output_broken_pipe(&error));
+    }
+
+    #[test]
+    fn comment_write_is_applied_before_output_failure() -> Result<()> {
+        for flush in [false, true] {
+            let directory = tempfile::tempdir()?;
+            let module = directory.path().join("module.yaml");
+            std::fs::write(&module, "members: [{selector: {binding: {name: a}}}]\n")?;
+            let args = DebundleArgs::try_parse_from([
+                "debundle",
+                "modules",
+                "comment",
+                "module",
+                "persisted",
+                "--modules",
+                directory.path().to_str().unwrap(),
+                "--format",
+                "json",
+            ])?;
+            let mut stderr = Vec::new();
+            let error = run_debundle_cli(
+                &mut stderr,
+                args,
+                None,
+                "test-engine",
+                &mut FailingWriter { flush },
+            )
+            .unwrap_err();
+            let emission = error.downcast_ref::<ReportOutputError>().unwrap();
+            assert_eq!(report_output_broken_pipe(&error), !flush);
+            assert!(matches!(
+                emission,
+                ReportOutputError::Write(_) | ReportOutputError::Flush(_)
+            ));
+            let document = spec_modules::read_module_file(&module)?;
+            assert_eq!(document.comment.as_deref(), Some("persisted"));
+            assert!(stderr.is_empty());
+        }
+        Ok(())
     }
 }

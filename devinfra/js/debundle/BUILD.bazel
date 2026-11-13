@@ -1404,6 +1404,7 @@ rust_library(
     deps = [
         ":analysis",
         "@crates//:anyhow",
+        "@crates//:thiserror",
     ],
 )
 
