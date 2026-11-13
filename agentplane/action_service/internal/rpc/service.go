@@ -7,7 +7,7 @@
 // action_service.proto says: a workload of a labeled ServiceAccount submits, reads and cancels its own account's
 // requests, a service reader reads every account's, and an operator reads every account's, decides them, links the
 // MCP servers and keeps its own push subscriptions.
-package api
+package rpc
 
 import (
 	"context"

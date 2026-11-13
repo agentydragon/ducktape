@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//agentplane/action_service:__subpackages__"])
 
 go_library(
-    name = "api",
+    name = "rpc",
     srcs = [
         "catalog.go",
         "errors.go",
@@ -17,11 +17,7 @@ go_library(
         "views.go",
         "watch.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/api",
-    visibility = [
-        "//agentplane/action_service:__subpackages__",
-        "//agentplane/mcp_edge:__subpackages__",
-    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/rpc",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
@@ -67,8 +63,8 @@ go_test(
         "issuer_test.go",
     ],
     data = ["//agentplane/action_service/internal/admission/catalog:golden.json"],
-    embed = [":api"],
-    x_defs = {"github.com/agentydragon/ducktape/agentplane/action_service/api.catalogGoldenRlocation": "$(rlocationpath //agentplane/action_service/internal/admission/catalog:golden.json)"},
+    embed = [":rpc"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/action_service/internal/rpc.catalogGoldenRlocation": "$(rlocationpath //agentplane/action_service/internal/admission/catalog:golden.json)"},
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/internal/admission/catalog",
@@ -101,7 +97,7 @@ go_test(
         "submit_test.go",
         "watch_test.go",
     ],
-    embed = [":api"],
+    embed = [":rpc"],
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",

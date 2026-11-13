@@ -445,7 +445,7 @@ caller ServiceAccounts, and writes `ActionsReady` on bindings. The Go
 [`policies.Provider`](internal/admission/policies/provider.go) evaluates valid `action_auto_approve` rules at admission;
 a matching allow records `PolicyEvidence`, including the matched rule and any resolved GitHub
 repository. A set has no deny form: no match leaves the request for a human. The Go
-[`api.SubmitActionRequest`](api/submit.go) validates arguments and decides before persistence.
+[`rpc.SubmitActionRequest`](internal/rpc/submit.go) validates arguments and decides before persistence.
 
 The Go admission implementation lives under `internal/admission`; the Python `policies/`
 authoring package and its `resources` target remain at their existing path for cdk8s and
