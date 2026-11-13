@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
@@ -19,7 +20,7 @@ type CodeModeHost struct {
 	store *Store
 }
 
-func NewCodeModeHost(parent context.Context, settings Settings, store *Store) *CodeModeHost {
+func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *Store) *CodeModeHost {
 	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second), store: store}
 }
 

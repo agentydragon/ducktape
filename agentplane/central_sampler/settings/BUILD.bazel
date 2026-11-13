@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "settings",
+    srcs = [
+        "model.go",
+        "settings.go",
+        "validation.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/settings",
+    deps = [
+        "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/responses",
+        "//agentplane/environment_runtime_transport",
+    ],
+)
+
+go_test(
+    name = "settings_test",
+    srcs = [
+        "settings_fixture_test.go",
+        "settings_test.go",
+    ],
+    embed = [":settings"],
+    deps = [
+        "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/central_sampler/responses",
+    ],
+)

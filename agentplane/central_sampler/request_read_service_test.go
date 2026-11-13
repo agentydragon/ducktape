@@ -10,6 +10,7 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -40,11 +41,11 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests
 	defer func() { _ = store.Release(context.Background(), owner) }()
 
 	bodyText := strings.Repeat("provider request body ", maxProviderRequestBodyChunkSize/20+100)
-	config := ModelConfig{
+	config := samplersettings.ModelConfig{
 		Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses,
 		Responses: responses.Config{Dialect: responses.DialectLite},
 	}
-	connection := ConnectionConfig{BaseURL: "https://provider.example.test"}
+	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	body := responses.Request{
 		Model: "fixture-model", Instructions: bodyText, Input: []responses.RequestInput{}, Stream: true,
 	}

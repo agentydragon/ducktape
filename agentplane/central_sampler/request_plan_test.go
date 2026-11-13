@@ -12,15 +12,16 @@ import (
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 )
 
 func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *testing.T) {
-	configs := []ModelConfig{anthropicTestConfig()}
+	configs := []samplersettings.ModelConfig{anthropicTestConfig()}
 	for _, dialect := range []responses.Dialect{responses.DialectLite, responses.DialectStandard} {
 		for _, encoding := range []protocol.ExecEncoding{protocol.ExecEncodingJSON, protocol.ExecEncodingFreeform} {
-			configs = append(configs, ModelConfig{Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, ExecEncoding: encoding, Responses: responses.Config{Dialect: dialect}})
+			configs = append(configs, samplersettings.ModelConfig{Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, ExecEncoding: encoding, Responses: responses.Config{Dialect: dialect}})
 		}
 	}
 	for _, config := range configs {
@@ -83,7 +84,7 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 					}
 					return prepared, wire, err
 				}
-				intent := providerRequestIntent(PendingIntentSampling, ConnectionConfig{BaseURL: "https://provider.example.test"}, config)
+				intent := providerRequestIntent(PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config)
 				id, wire, err := store.Begin(t.Context(), owner, intent, wrapped)
 				if err != nil {
 					t.Fatal(err)
@@ -195,14 +196,14 @@ func TestRequestRecipeReconstructsIndependentSuffix(t *testing.T) {
 	if err := store.AppendInput(t.Context(), owner, "question"); err != nil {
 		t.Fatal(err)
 	}
-	config := ModelConfig{Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite}}
+	config := samplersettings.ModelConfig{Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses, ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite}}
 	adapter, _ := adapterFor(config)
 	conversation, err := store.Read(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
 	preparation := adapter.(responsesAdapter).preparation(session, protocol.SessionAttribution{SessionID: session.ID}, true)
-	id, wire, err := store.Begin(t.Context(), owner, providerRequestIntent(PendingIntentSampling, ConnectionConfig{BaseURL: "https://provider.example.test"}, config), preparation)
+	id, wire, err := store.Begin(t.Context(), owner, providerRequestIntent(PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config), preparation)
 	if err != nil {
 		t.Fatal(err)
 	}

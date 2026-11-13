@@ -7,6 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 )
 
 func toolDefinitions() []protocol.CodeToolDefinition {
@@ -30,7 +31,7 @@ func modelToolSurface(encoding protocol.ExecEncoding) (protocol.ToolSurface, err
 	return protocol.ToolSurface{Description: description, Parameters: parameters, FreeformGrammar: execFreeformGrammar, WaitDescription: waitToolDescription(), WaitParameters: waitToolParameters()}, nil
 }
 
-func providerRequestIntent(kind PendingIntentKind, connection ConnectionConfig, config ModelConfig) IntentRequest {
+func providerRequestIntent(kind PendingIntentKind, connection samplersettings.ConnectionConfig, config samplersettings.ModelConfig) IntentRequest {
 	path := "/v1/responses"
 	var headers map[string]string
 	switch config.API {

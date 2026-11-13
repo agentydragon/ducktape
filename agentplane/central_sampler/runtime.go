@@ -4,14 +4,16 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 )
 
 type Runtime struct {
 	store        *Store
-	settings     Settings
+	settings     samplersettings.Settings
 	claimLease   func(context.Context, string, time.Duration) (Owner, error)
 	releaseLease func(context.Context, Owner) error
-	newExecutor  func(context.Context, *Store, Owner, *Session, Settings) (*Executor, func() error, error)
+	newExecutor  func(context.Context, *Store, Owner, *Session, samplersettings.Settings) (*Executor, func() error, error)
 
 	mu               sync.Mutex
 	runCtx           context.Context
@@ -42,7 +44,7 @@ func (s *residentSession) signal() {
 }
 
 // NewRuntime takes the shared Code Mode host it attaches logical sessions to and shuts down.
-func NewRuntime(store *Store, settings Settings, codeHost *CodeModeHost) *Runtime {
+func NewRuntime(store *Store, settings samplersettings.Settings, codeHost *CodeModeHost) *Runtime {
 	return &Runtime{
 		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: NewExecutor,
 		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),

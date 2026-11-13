@@ -15,6 +15,7 @@ import (
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -30,7 +31,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func run(ctx context.Context, settings centralsampler.Settings) error {
+func run(ctx context.Context, settings samplersettings.Settings) error {
 	if settings.PlatformInstructions == nil {
 		slog.Warn("Agentplane platform guidance is not configured; new Sessions retain caller-only instructions")
 	}
@@ -135,7 +136,7 @@ func main() {
 	}
 	configuration := flag.String("config", os.Getenv("AGENTPLANE_CENTRAL_SAMPLER_CONFIG"), "JSON settings path")
 	flag.Parse()
-	settings, err := centralsampler.LoadSettings(*configuration)
+	settings, err := samplersettings.LoadSettings(*configuration)
 	if err == nil {
 		err = run(ctx, settings)
 	}
