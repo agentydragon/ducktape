@@ -260,9 +260,10 @@ query strings or fragments. Callers cannot select connections. Responses setting
 `lite` or `standard` dialect; Anthropic settings declare native request features and require JSON
 exec. Unknown APIs, mixed API settings and invalid feature combinations are rejected.
 
-Startup failure logs identify the failed operation and error type. Settings validation also reports
-the static setting field and rule. Raw parser, filesystem, database and transport error text is
-omitted so configuration values and credentials cannot leak through startup diagnostics.
+The top-level startup failure log identifies the failed operation and error type. Settings
+validation also reports the static setting field and rule. Raw parser, filesystem, database and
+transport error text is omitted from that summary so configuration values and credentials cannot
+leak through the top-level diagnostic.
 
 JSON encoding exposes a single
 function `exec`. Exactly one of `code` (execute JavaScript) or `cell_id` (resume a yielded cell)
