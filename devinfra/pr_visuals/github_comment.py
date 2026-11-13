@@ -252,7 +252,7 @@ def _with_target_sections(head: str, review_tests: list[ReviewTest], url: str, *
         return result
 
     def allocate(unchanged_section: str, detailed_unchanged: bool) -> tuple[str, int, int, bool]:
-        selected = [set() for _ in changed]
+        selected: list[set[int]] = [set() for _ in changed]
         selected_counts = [0 for _ in changed]
         selected_lengths = [0 for _ in changed]
         first_selected: list[int | None] = [None for _ in changed]
