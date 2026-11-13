@@ -172,17 +172,24 @@ pub struct CommutationProposal {
     pub inerted_edges: Vec<InertedEdge>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display, strum::EnumMessage)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum RankReason {
     /// This pair alone breaks the SCC.
-    #[strum(message = "single-pair cut")]
     SinglePairCut,
     /// The SCC stays cyclic; ranked by the parallel edges left on its
     /// module pair.
-    #[strum(message = "partial cut")]
     PartialCut,
+}
+
+impl RankReason {
+    fn explanation(self) -> &'static str {
+        match self {
+            Self::SinglePairCut => "single-pair cut",
+            Self::PartialCut => "partial cut",
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -318,42 +325,37 @@ pub struct BlockingEdgeCount {
     pub count: usize,
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Serialize,
-    strum::Display,
-    strum::EnumMessage,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum BlockingReason {
     /// A third-statement ordering survives the proposed pair assertions.
-    #[strum(message = "third-statement ordering survives the proposed pairs")]
     PreservedOrder,
     /// A premise never inerts this kind (`eager_use` and the other
     /// non-`sequenced` kinds); the remedy is co-location.
-    #[strum(message = "no premise inerts this kind; co-locate")]
     KindNotInertable,
     /// The pair's premise would contradict a source fact.
-    #[strum(message = "the pair's premise contradicts a source fact")]
     KnownConflict,
     /// Strict-chain adjacency of two summarized effects; a premise inerts
     /// nothing.
-    #[strum(message = "summarized effects; a premise inerts nothing")]
     Summarized,
     /// The graph predates retained verdicts.
-    #[strum(message = "no retained premise verdict; regenerate the graph")]
     VerdictNotRecorded,
     /// An endpoint of the pair has no unique selector.
-    #[strum(message = "an endpoint has no unique selector")]
     NoUniqueSelector,
+}
+
+impl BlockingReason {
+    fn explanation(self) -> &'static str {
+        match self {
+            Self::PreservedOrder => "third-statement ordering survives the proposed pairs",
+            Self::KindNotInertable => "no premise inerts this kind; co-locate",
+            Self::KnownConflict => "the pair's premise contradicts a source fact",
+            Self::Summarized => "summarized effects; a premise inerts nothing",
+            Self::VerdictNotRecorded => "no retained premise verdict; regenerate the graph",
+            Self::NoUniqueSelector => "an endpoint has no unique selector",
+        }
+    }
 }
 
 pub(super) fn run(
@@ -1461,7 +1463,7 @@ fn render_draft(chunk: &str, proposals: &[CommutationProposal]) -> Result<String
         let mut comments = vec![format!(
             "rank {} ({}) in SCC {}",
             proposal.rank,
-            strum::EnumMessage::get_message(&proposal.rank_reason).unwrap_or_default(),
+            proposal.rank_reason.explanation(),
             proposal.scc_id,
         )];
         for edge in &proposal.inerted_edges {
@@ -1553,7 +1555,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
                         "    {} {} edge(s): {}\n",
                         row.count,
                         row.kind,
-                        strum::EnumMessage::get_message(&row.reason).unwrap_or_default()
+                        row.reason.explanation()
                     ));
                 }
             }
@@ -1564,7 +1566,7 @@ fn render_text(report: &ProposeCommutationsReport, out: &mut String) {
             "  #{} SCC {} [{}] remaining module-pair edges: {}\n    a: {}\n    b: {}\n",
             proposal.rank,
             proposal.scc_id,
-            strum::EnumMessage::get_message(&proposal.rank_reason).unwrap_or_default(),
+            proposal.rank_reason.explanation(),
             proposal.remaining_module_pair_edges,
             location_text(&proposal.a),
             location_text(&proposal.b),

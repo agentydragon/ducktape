@@ -304,8 +304,12 @@ pub struct NamespaceRequest {
     pub specifier: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, strum::IntoStaticStr,
+)]
+#[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum InteropUseKind {
     ImportMetaRequireLiteralCall,
     ImportMetaRequireDynamicCall,
@@ -328,6 +332,14 @@ pub enum InteropUseKind {
     TsExportAssignment,
     /// `import(...)`; `specifier` is set for a string-literal argument.
     DynamicImport,
+}
+
+impl InteropUseKind {
+    /// Stable snake_case identifier used in machine-facing output.
+    pub fn machine_code(self) -> &'static str {
+        let code: &'static str = self.into();
+        code
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -452,6 +464,7 @@ pub enum TopLevelDeclarationKind {
 mod tests {
     use super::*;
     use std::io;
+    use strum::IntoEnumIterator;
 
     struct FlushFailure;
 
@@ -470,5 +483,15 @@ mod tests {
         let error =
             write_json_to(FlushFailure, Path::new("full.json"), &Vec::<u8>::new()).unwrap_err();
         assert!(error.to_string().contains("flushing full.json"));
+    }
+
+    #[test]
+    fn interop_use_machine_codes_match_serde() {
+        for kind in InteropUseKind::iter() {
+            assert_eq!(
+                serde_json::to_string(&kind).unwrap(),
+                format!("\"{}\"", kind.machine_code())
+            );
+        }
     }
 }

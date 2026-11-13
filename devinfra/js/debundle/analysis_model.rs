@@ -19,47 +19,52 @@ use serde::{Deserialize, Serialize};
     strum::IntoStaticStr,
     strum::Display,
     strum::EnumString,
-    strum::EnumMessage,
 )]
 #[cfg_attr(test, derive(strum::EnumIter))]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum DepKind {
-    #[strum(message = "at-init")]
     EagerUse,
-    #[strum(message = "lazy")]
     LazyUse,
-    #[strum(message = "hoisted read")]
     HoistedUse,
-    #[strum(message = "at-init rebind")]
     EagerRebind,
-    #[strum(message = "lazy rebind")]
     LazyRebind,
     /// Rebinding write that only fires after module init (nested ≥2
     /// closures deep, or past an `await` in an async body). Rejected
     /// across destinations like the other rebinds (ESM imports are
     /// read-only whenever the write fires), but excluded from
     /// init-order constraints and the I-graph.
-    #[strum(message = "deferred rebind")]
     DeferredRebind,
-    #[strum(message = "side-effect")]
     Sequenced,
     /// Two statements declare the same module-scoped var binding. Emitted in
     /// both directions to require one destination without rewriting the AST.
-    #[strum(message = "shared var declaration")]
     CoDeclaration,
     /// A source-prefix proof needs the producer and consumer in one module.
-    #[strum(message = "stable array spread co-location")]
     CoLocation,
-    #[strum(message = "local-effect")]
     LocalEffect,
 }
 
 impl DepKind {
+    /// Stable snake_case identifier used by serde reports and machine-facing output.
+    pub fn machine_code(self) -> &'static str {
+        let code: &'static str = self.into();
+        code
+    }
+
     /// Short human-readable label used in cycle and gate diagnostics.
     pub fn diagnostic_label(self) -> &'static str {
-        strum::EnumMessage::get_message(&self)
-            .expect("every dependency kind has a diagnostic message")
+        match self {
+            Self::EagerUse => "at-init",
+            Self::LazyUse => "lazy",
+            Self::HoistedUse => "hoisted read",
+            Self::EagerRebind => "at-init rebind",
+            Self::LazyRebind => "lazy rebind",
+            Self::DeferredRebind => "deferred rebind",
+            Self::Sequenced => "side-effect",
+            Self::CoDeclaration => "shared var declaration",
+            Self::CoLocation => "stable array spread co-location",
+            Self::LocalEffect => "local-effect",
+        }
     }
 }
 
@@ -149,7 +154,12 @@ mod tests {
     fn every_dependency_kind_has_a_diagnostic_message() {
         for kind in DepKind::iter() {
             assert!(!kind.diagnostic_label().is_empty());
+            assert_eq!(
+                serde_json::to_string(&kind).unwrap(),
+                format!("\"{}\"", kind.machine_code())
+            );
         }
+        assert_eq!(DepKind::EagerUse.machine_code(), "eager_use");
         assert_eq!(DepKind::EagerUse.to_string(), "eager_use");
         assert_eq!(DepKind::EagerUse.diagnostic_label(), "at-init");
     }

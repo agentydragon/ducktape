@@ -310,7 +310,17 @@ pub fn run(args: SpecLintArgs) -> Result<()> {
     if args.probe_analysis {
         probe_annotations(&args, &cli, &spec, &mut report)?;
     }
-    print_report(&report, format, render_text).context("writing spec lint output")
+    let rendered_text = if format == OutputFormat::Text {
+        Some(render_text(&report)?)
+    } else {
+        None
+    };
+    print_report(&report, format, |_, out| {
+        if let Some(rendered_text) = &rendered_text {
+            out.push_str(rendered_text);
+        }
+    })
+    .context("writing spec lint output")
 }
 
 /// The loader keys the spec sets to a value the loader closure accepts:
@@ -541,23 +551,19 @@ fn report_tree(root: &Path) -> Result<BTreeMap<PathBuf, String>> {
     Ok(files)
 }
 
-/// The snake_case spelling a serialized key carries.
-fn snake(value: &impl Serialize) -> String {
-    serde_json::to_string(value).unwrap_or_default()
-}
-
-fn render_text(report: &SpecLintReport, out: &mut String) {
+fn render_text(report: &SpecLintReport) -> Result<String> {
+    let mut out = String::new();
     for finding in &report.findings {
         let (severity, verdict) = match &finding.verdict {
             InferenceVerdict::Inferable { reason } => (
                 "warning",
                 format!(
                     "inferable ({}); remove it in a reviewed spec edit and revalidate",
-                    strum::EnumMessage::get_message(reason).unwrap_or_default()
+                    reason.explanation()
                 ),
             ),
             InferenceVerdict::Inconclusive { reason } => {
-                ("note", format!("inconclusive ({})", reason))
+                ("note", format!("inconclusive ({})", reason.explanation()))
             }
         };
         let subject = match &finding.annotation {
@@ -578,7 +584,7 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
                 check,
             } => format!("admission override `{check}` at {spec_location}"),
             LintedAnnotation::LoaderHostBehavior { key } => {
-                format!("`host_behavior` loader key {}", snake(key))
+                format!("`host_behavior` loader key {}", serde_json::to_string(key)?)
             }
             LintedAnnotation::LoaderProgramPremise { key } => {
                 format!("`program_premises` loader key \"{key}\"")
@@ -638,4 +644,5 @@ fn render_text(report: &SpecLintReport, out: &mut String) {
         );
     }
     let _ = writeln!(out, "{} finding(s)", report.findings.len());
+    Ok(out)
 }

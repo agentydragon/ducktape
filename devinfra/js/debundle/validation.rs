@@ -145,34 +145,44 @@ pub struct BlockingSccEntry {
 
 /// Wire projection of [`SccRejection`] for `cycles.json` and the bail
 /// summary.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::EnumMessage)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockingRejection {
     /// Pass 1: a cycle of constraining edges. The root cause whenever
     /// present.
-    #[strum(
-        message = "  [pass 1: mutual constraining cycle]",
-        detailed_message = " [Pass 1: mutual constraining cycle]"
-    )]
     MutualConstrainingCycle,
     /// Pass 2 under the linker order: an independent blocker.
-    #[strum(
-        message = "  [pass 2: ESM evaluation TDZ]",
-        detailed_message = " [Pass 2: ESM evaluation TDZ]"
-    )]
     EsmEvaluationTdz,
     /// Reported only alongside Pass-1 cycles, which leave no linker order
     /// for Pass 2. Pass 2 run on the same assignment with each Pass-1 SCC
     /// collapsed into one module: what still blocks once those cycles are
     /// resolved by co-location. Conditional, not a verdict of its own.
-    #[strum(
-        message = "  [pass 2, conditional: after collapsing the pass-1 SCCs]",
-        detailed_message = " [Pass 2, conditional: after collapsing the Pass-1 SCCs]"
-    )]
     TdzAfterCollapsingPassOne,
 }
 
 impl BlockingRejection {
+    /// Label appended to a gate-list row, including its leading indentation.
+    pub fn list_label(self) -> &'static str {
+        match self {
+            Self::MutualConstrainingCycle => "  [pass 1: mutual constraining cycle]",
+            Self::EsmEvaluationTdz => "  [pass 2: ESM evaluation TDZ]",
+            Self::TdzAfterCollapsingPassOne => {
+                "  [pass 2, conditional: after collapsing the pass-1 SCCs]"
+            }
+        }
+    }
+
+    /// Suffix appended to a cycle's text summary.
+    pub fn cycle_summary_suffix(self) -> &'static str {
+        match self {
+            Self::MutualConstrainingCycle => " [Pass 1: mutual constraining cycle]",
+            Self::EsmEvaluationTdz => " [Pass 2: ESM evaluation TDZ]",
+            Self::TdzAfterCollapsingPassOne => {
+                " [Pass 2, conditional: after collapsing the Pass-1 SCCs]"
+            }
+        }
+    }
+
     pub fn of(rejection: SccRejection) -> Self {
         match rejection {
             SccRejection::MutualConstrainingCycle => Self::MutualConstrainingCycle,
@@ -435,7 +445,7 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     for (i, cycle) in cycles.iter().enumerate() {
         out.push_str(&format!(
             "Cycle #{i}{}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
-            strum::EnumMessage::get_detailed_message(&cycle.rejection).unwrap_or_default(),
+            cycle.rejection.cycle_summary_suffix(),
             cycle.modules.len(),
             cycle.cut.len(),
             cut_pairs_count(&cycle.cut),

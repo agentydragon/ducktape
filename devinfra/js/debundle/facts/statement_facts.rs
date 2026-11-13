@@ -823,40 +823,38 @@ pub struct StructuralStatementFacts {
 /// purity classifier, so a declared-pure hint or exact completed operation
 /// coverage can discharge it without erasing the source provenance.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    strum::Display,
-    strum::EnumMessage,
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum DataflowOpacityCause {
     /// A member write through a tracked binding or an alias shape: the
     /// written heap cell cannot be attributed.
-    #[strum(message = "member write or alias")]
     MemberWriteOrAlias,
     /// `with`, direct or indirect `eval`, `Function(...)`, a dynamic-key
     /// global access, or `defineProperty`/`Proxy` on the global object:
     /// the statement may write arbitrary cells
     /// ([`StatementFacts::cell_writes_summarizable`]).
-    #[strum(message = "dynamic cell writes")]
     DynamicCellWrites,
     /// The statement reads a binding a bare global-object alias flowed
     /// into (`facts/global_object.rs`), so its summary misses global
     /// property cells.
-    #[strum(message = "global-object alias escape")]
     GlobalObjectAliasEscape,
     /// An at-init call or `new` the purity classifier does not prove
     /// `Pure`: I/O is not a cell and callee bodies may touch globals.
-    #[strum(message = "unproven at-init call")]
     OpaqueAtInitCall,
+}
+
+impl DataflowOpacityCause {
+    /// Human description used in dataflow opacity diagnostics.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::MemberWriteOrAlias => "member write or alias",
+            Self::DynamicCellWrites => "dynamic cell writes",
+            Self::GlobalObjectAliasEscape => "global-object alias escape",
+            Self::OpaqueAtInitCall => "unproven at-init call",
+        }
+    }
 }
 
 impl StatementFacts {

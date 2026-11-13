@@ -1,4 +1,4 @@
-use analysis::purity::{RedundantPurityHint, RedundantPurityProofBasis};
+use analysis::purity::{RedundantPurityHint, RedundantPurityProofBasis, RedundantPurityReason};
 use debundle_e2e_support::{
     ChunkExportPurityBuilder, FixtureOpts, Member, MemberPurity, assert_entry_output,
     logical_module, read_json, run_fixture,
@@ -23,6 +23,20 @@ fn hint_free_function_chain_is_reported_as_independent() {
         )],
     ));
     assert_entry_output(&fixture, "7\n");
+    assert!(
+        fixture
+            .stderr
+            .contains("pure (the function body classifies Pure by recursive analysis)"),
+        "stderr: {}",
+        fixture.stderr,
+    );
+    assert!(
+        fixture.stderr.contains(
+            "This proof uses no `purity: pure` hints. Remove the hint and validate the spec."
+        ),
+        "stderr: {}",
+        fixture.stderr,
+    );
     let report: HintReport = read_json(
         &fixture
             .report_root
@@ -35,6 +49,7 @@ fn hint_free_function_chain_is_reported_as_independent() {
             hint.proof_basis,
             RedundantPurityProofBasis::WithoutPurityHints
         );
+        assert_eq!(hint.reason, RedundantPurityReason::InferredPureFunction);
     }
 }
 

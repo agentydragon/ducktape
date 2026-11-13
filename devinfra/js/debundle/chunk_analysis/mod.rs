@@ -138,8 +138,8 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis
             "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
              the analyzer infers {reason} for this binding without this hint. {basis}",
             binding = hint.binding_name,
-            reason = strum::EnumMessage::get_message(&hint.reason).unwrap_or_default(),
-            basis = strum::EnumMessage::get_message(&hint.proof_basis).unwrap_or_default(),
+            reason = hint.reason.explanation(),
+            basis = hint.proof_basis.explanation(),
         );
     }
     for hint in &analysis.redundant_pure_member_hints {
@@ -149,7 +149,7 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &ChunkFactAnalysis
              Remove the entry from the spec.",
             binding = hint.binding_name,
             property = hint.property,
-            reason = strum::EnumMessage::get_message(&hint.reason).unwrap_or_default(),
+            reason = hint.reason.explanation(),
         );
     }
 }
