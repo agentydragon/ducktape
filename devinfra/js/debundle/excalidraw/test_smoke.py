@@ -880,5 +880,49 @@ async def test_resize_handle_devices(playwright_driver: Playwright, origin: str)
         assert result == {"desktop": [True, default_sides], "mobile": [False, {}], "touch": [True, default_sides]}
 
 
+async def test_command_palette_library_and_icon_picker(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+
+        # The extracted palette filters commands and dispatches through the editor's action manager.
+        await page.keyboard.press("Control+Shift+p")
+        search = page.get_by_placeholder("Search menus, commands, and discover hidden gems")
+        await expect(search).to_be_visible()
+        await search.fill("zzzz_no_such_command")
+        await expect(page.locator(".command-palette-dialog .no-match")).to_be_visible()
+        await search.fill("Zen mode")
+        await expect(page.locator(".command-item.item-selected .name")).to_have_text("Zen mode")
+        await search.press("Enter")
+        await expect(search).to_be_hidden()
+        await page.get_by_role("button", name="Exit zen mode", exact=True).click()
+
+        # Opening the library exercises the extracted menu's empty-library branch.
+        library = page.get_by_role("button", name="Library", exact=True)
+        await library.click()
+        await expect(page.locator(".library-menu-items__no-items")).to_be_visible()
+        await library.click()
+        await expect(page.locator(".library-menu-items__no-items")).to_be_hidden()
+
+        # Arrow properties use both IconPicker and its private Picker implementation.
+        arrow = page.get_by_test_id("toolbar-arrow")
+        await page.locator("label", has=arrow).click()
+        picker = page.get_by_role("button", name="arrowhead_end", exact=True)
+        await picker.click()
+        options = page.get_by_role("dialog", name="arrowhead_end", exact=True)
+        bar = options.get_by_role("button", name="Bar", exact=True)
+        await bar.click()
+        await expect(bar).to_have_class("picker-option active")
+        await bar.press("Escape")
+        await expect(options).to_be_hidden()
+        await picker.click()
+        await expect(options.get_by_role("button", name="Bar", exact=True)).to_have_class("picker-option active")
+        await page.keyboard.press("Escape")
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

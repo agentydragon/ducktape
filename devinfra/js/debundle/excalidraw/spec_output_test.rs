@@ -90,6 +90,18 @@ fn claimed_modules_export_their_entry_points() {
         ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
+            "main/packages/excalidraw/components/CommandPalette/CommandPalette.js",
+            &["CommandPaletteInner"],
+        ),
+        (
+            "main/packages/excalidraw/components/LibraryMenuItems.js",
+            &["LibraryMenuItems"],
+        ),
+        (
+            "main/packages/excalidraw/components/IconPicker.js",
+            &["IconPicker"],
+        ),
+        (
             "main/packages/excalidraw/actions/manager.js",
             &["ActionManager"],
         ),

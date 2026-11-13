@@ -1,0 +1,30 @@
+# Original home: packages/excalidraw/components/IconPicker.tsx
+source_matches:
+  - match: |
+      function selected({
+        options: options,
+        value: value,
+        label: label,
+        onChange: onChange,
+        onClose: onClose,
+        numberOfOptionsToAlwaysShow: visibleCount = options.length
+      }) {
+        STMT_LIST;
+      }
+    bindings:
+      - local: selected
+        name: Picker
+  - match: |
+      function selected({
+        value: value,
+        label: label,
+        options: options,
+        onChange: onChange,
+        group: group = "",
+        numberOfOptionsToAlwaysShow: visibleCount
+      }) {
+        STMT_LIST;
+      }
+    bindings:
+      - local: selected
+        name: IconPicker

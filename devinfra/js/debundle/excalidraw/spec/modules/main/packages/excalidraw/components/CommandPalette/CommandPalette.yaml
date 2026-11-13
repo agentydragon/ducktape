@@ -1,0 +1,9 @@
+# Original home: packages/excalidraw/components/CommandPalette/CommandPalette.tsx
+source_matches:
+  - match: |
+      function selected({ customCommandPaletteItems: items }) {
+        STMT_LIST;
+      }
+    bindings:
+      - local: selected
+        name: CommandPaletteInner
