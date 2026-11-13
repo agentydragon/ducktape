@@ -1,16 +1,23 @@
 """Production service composition without the app or an in-test Kubernetes cluster."""
 
-from collections.abc import AsyncIterator, Iterator
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import pytest
 
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpoint
-from agentplane.env.e2e.testing.fixtures import endpoint, model, sandbox, spec, workspace
+from agentplane.env.e2e.testing import launches
+from agentplane.env.e2e.testing.config import RunnerTestConfig
+from agentplane.env.e2e.testing.fixtures import config, endpoint, model, sandbox, spec, workspace
 from agentplane.env.e2e.testing.history_tunnel import history_tunnel
-from agentplane.net.peertls.config import MTLS
+from agentplane.env.e2e.testing.model_config import model_config
+from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container
 from agentplane.history_service.testing.fixtures import service_database_template, service_history_db_url
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
+from agentplane.net.peertls.config import MTLS
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -29,6 +36,7 @@ from util.testing.postgres_fixtures import (
 __all__ = [
     "api_server",
     "client_token",
+    "config",
     "control",
     "database_clones",
     "database_names",
@@ -36,6 +44,7 @@ __all__ = [
     "dispatcher_database_url",
     "endpoint",
     "gateway_service",
+    "gateway_token",
     "history_service",
     "ingress",
     "kubeconfig",
@@ -43,10 +52,12 @@ __all__ = [
     "postgres_admin_url",
     "postgres_container",
     "postgres_image",
+    "runtime_client",
     "sandbox",
     "service_database_template",
     "service_history_db_url",
     "spec",
+    "start_runtime",
     "workspace",
 ]
 
@@ -62,12 +73,18 @@ def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNam
 
 
 @pytest.fixture
+async def gateway_token(api_server: KubernetesApiServer, sandbox: SandboxCluster, tmp_path: Path) -> Path:
+    workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
+    path = tmp_path / "gateway-token"
+    path.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
+    return path
+
+
+@pytest.fixture
 async def gateway_service(
-    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
+    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, gateway_token: Path
 ) -> AsyncIterator[GatewayProcess]:
     workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
-    token_file = tmp_path / "gateway-token"
-    token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
@@ -80,9 +97,15 @@ async def gateway_service(
         operator_callers=(CLIENT,),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
-        runner_proxy_token_file=token_file,
+        runner_proxy_token_file=gateway_token,
     ) as service:
         yield service
+
+
+@pytest.fixture
+def runtime_client(gateway_service: GatewayProcess, gateway_token: Path) -> SandboxControlClient:
+    # Runtime mutation RPCs accept only the actual Gateway/Dispatcher service account.
+    return gateway_service.gateway_client(gateway_token)
 
 
 @pytest.fixture
@@ -141,3 +164,35 @@ def control(gateway_service: GatewayProcess, sandbox: SandboxCluster, tmp_path: 
             )
         ),
     )
+
+
+@pytest.fixture
+async def start_runtime(
+    config: RunnerTestConfig,
+    control: EnvironmentRuntimeControl,
+    ingress: Endpoint,
+    gateway_service: GatewayProcess,
+    client_token: Path,
+    sandbox: SandboxCluster,
+    tmp_path: Path,
+) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
+    environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
+    remote = gateway_service.gateway_client(client_token, request_timeout_s=2)
+    async with model_config() as model_endpoint, AsyncExitStack() as processes:
+        command = launches.command(config, control=control, ingress=ingress, model_config_target=model_endpoint)
+
+        async def stop(process: RunnerProcess) -> None:
+            try:
+                await process.stop()
+            finally:
+                await process.close()
+
+        async def start() -> RunnerProcess:
+            container = await asyncio.to_thread(pid1_container, command, tmp_path, environment)
+            await asyncio.to_thread(container.__enter__)
+            process = RunnerProcess(container)
+            processes.push_async_callback(stop, process)
+            await gateway_service.wait_for_runner(remote, sandbox.destination)
+            return process
+
+        yield start

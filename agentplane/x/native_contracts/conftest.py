@@ -6,6 +6,7 @@ from agentplane.proto import session_pb2
 from agentplane.testing.native_service_fixtures import (
     api_server,
     client_token,
+    config,
     control,
     database_clones,
     database_names,
@@ -13,6 +14,7 @@ from agentplane.testing.native_service_fixtures import (
     dispatcher_database_url,
     endpoint,
     gateway_service,
+    gateway_token,
     history_service,
     ingress,
     kubeconfig,
@@ -20,10 +22,12 @@ from agentplane.testing.native_service_fixtures import (
     postgres_admin_url,
     postgres_container,
     postgres_image,
+    runtime_client,
     sandbox,
     service_database_template,
     service_history_db_url,
     spec,
+    start_runtime,
     workspace,
 )
 

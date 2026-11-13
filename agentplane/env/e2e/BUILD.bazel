@@ -111,6 +111,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane/env/e2e/testing:claude_transcript",
         "//agentplane/env/e2e/testing:driver",
         "//agentplane/env/e2e/testing:events",
         "//agentplane/env/e2e/testing:failure_journal",
