@@ -1,10 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-<<<<<<< HEAD
 _TEST_VISIBILITY = [
-=======
-_FIXTURE_VISIBILITY = [
->>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
     "//agentplane/action_service:__pkg__",
     "//agentplane/app:__pkg__",
     "//agentplane/app/testing:__pkg__",
@@ -27,11 +23,7 @@ _FIXTURE_VISIBILITY = [
 
 package(
     default_testonly = True,
-<<<<<<< HEAD
     default_visibility = _TEST_VISIBILITY,
-=======
-    default_visibility = _FIXTURE_VISIBILITY,
->>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
 )
 
 py_library(
@@ -72,11 +64,10 @@ py_library(
         "//agentplane/testing/envtest:server",  # keep: fixture subprocess
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
-<<<<<<< HEAD
-    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
-=======
-    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
->>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
+    visibility = _TEST_VISIBILITY + [
+        "//agentplane/notification_service/testing/process_fixture:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = [
         "//agentplane:subjects",
         "//devinfra/testing:undeclared_outputs",
@@ -100,7 +91,7 @@ py_library(
 py_library(
     name = "claude_model",
     srcs = ["claude_model.py"],
-    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":scripted_model",
         "//agentplane/native/claude:blocks",
@@ -115,7 +106,7 @@ py_library(
 py_library(
     name = "codex_model",
     srcs = ["codex_model.py"],
-    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":scripted_model",
         "//agentplane/native/codex/testing:model",
@@ -129,18 +120,17 @@ py_library(
 py_library(
     name = "scripted_model",
     srcs = ["scripted_model.py"],
-    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = ["//agentplane/native/testing:model_endpoint"],
 )
 
 py_library(
     name = "tls",
     srcs = ["tls.py"],
-<<<<<<< HEAD
-    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
-=======
-    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
->>>>>>> 036f54112e (Add packaged guest Runtime Gateway contract and narrow native fixtures)
+    visibility = _TEST_VISIBILITY + [
+        "//agentplane/notification_service/testing/process_fixture:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = ["@pypi//cryptography"],
 )
 
@@ -159,7 +149,7 @@ py_library(
     name = "native_gateway_fixtures",
     testonly = True,
     srcs = ["native_gateway_fixtures.py"],
-    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":kubernetes_apiserver",
         ":kubernetes_apiserver_fixtures",
@@ -181,7 +171,7 @@ py_library(
     name = "native_service_fixtures",
     testonly = True,
     srcs = ["native_service_fixtures.py"],
-    visibility = _FIXTURE_VISIBILITY,
+    visibility = _TEST_VISIBILITY,
     deps = [
         ":kubernetes_apiserver",
         ":native_gateway_fixtures",
