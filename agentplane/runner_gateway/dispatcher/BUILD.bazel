@@ -1,6 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
-load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
-load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 go_library(
@@ -26,7 +24,6 @@ go_library(
         "//agentplane/runner_gateway:__subpackages__",
     ],
     deps = [
-        ":dispatcher_notification_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
@@ -41,6 +38,7 @@ go_library(
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/internal/notification:dispatcher_notification_go_proto",
         "//agentplane/runner_gateway/dispatcher/internal/placement",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",
@@ -186,12 +184,6 @@ go_test(
     ],
 )
 
-proto_library(
-    name = "dispatcher_notification_proto",
-    srcs = ["dispatcher_notification.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-)
-
 py_library(
     name = "testing_client",
     testonly = True,
@@ -205,13 +197,6 @@ py_library(
         "@pypi//protobuf",
         "@pypi//tenacity",
     ],
-)
-
-go_proto_library(
-    name = "dispatcher_notification_go_proto",
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb",
-    proto = ":dispatcher_notification_proto",
-    visibility = ["//agentplane:__subpackages__"],
 )
 
 go_test(
