@@ -31,6 +31,8 @@ from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecTarget,
     BundleSpecTargetConfigMap,
     BundleSpecTargetConfigMapMetadata,
+    BundleSpecTargetNamespaceSelector,
+    BundleSpecTargetNamespaceSelectorMatchExpressions,
 )
 
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
@@ -45,6 +47,8 @@ ROOT_CA_SECRET = "cluster-root-ca-secret"
 INTERNAL_ISSUER = CertificateSpecIssuerRef(name="cluster-internal-ca", kind="ClusterIssuer")
 BUNDLE = "cluster-internal-ca-bundle"
 BUNDLE_KEY = "ca-certificates.crt"
+
+PUBLIC_BUNDLE = "public-web-pki"
 
 WORKLOAD_ISSUER = CertificateSpecIssuerRef(name="agentplane-workload", kind="ClusterIssuer")
 WORKLOAD_BUNDLE = "agentplane-workload-ca-bundle"
@@ -136,6 +140,22 @@ def chart(app: App) -> Chart:
             BundleSpecSources(secret=BundleSpecSourcesSecret(name=f"{LETSENCRYPT_ISSUER}-root-ca", key="ca.crt")),
         ],
         target=BundleSpecTarget(config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY)),
+    )
+    Bundle(
+        chart,
+        "public-web-pki",
+        metadata=ApiObjectMetadata(name=PUBLIC_BUNDLE),
+        sources=[BundleSpecSources(use_default_c_as=True)],
+        target=BundleSpecTarget(
+            config_map=BundleSpecTargetConfigMap(key=BUNDLE_KEY),
+            namespace_selector=BundleSpecTargetNamespaceSelector(
+                match_expressions=[
+                    BundleSpecTargetNamespaceSelectorMatchExpressions(
+                        key="kubernetes.io/metadata.name", operator="In", values=["airlock"]
+                    )
+                ]
+            ),
+        ),
     )
     add_workload_ca(chart)
     return chart
