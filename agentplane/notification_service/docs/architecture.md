@@ -8,7 +8,7 @@ of the worker that delivers notices. The integration app is only a client.
 
 `model` owns subscription definitions, source-event identities, GitHub facts, selection rules and their
 JSON encoding. It has no database, transport or worker dependency. `internal/store` owns PostgreSQL
-transactions, claims, refresh leases and durable recording; `internal/store/internal/entry` maps event
+transactions, claims and durable inbox recording; `internal/store/internal/entry` maps event
 identities to relational entry rows inside a transaction supplied by its caller. The store consumes
 model types without defining their vocabulary.
 
@@ -19,8 +19,10 @@ verifies signatures and handles HTTP ingress. `github/testing` provides the shar
 client and provider tests. The `sources` package dispatches durable source jobs by provider. The `worker` package delivers notices
 for committed entries and runs source-independent inbox retention; it has no GitHub dependency.
 
-Access, subject, check-run, commit-status and review reads have distinct store completion methods.
-Each validates its lease and access fences in the same transaction as its observations and wakeups.
+Access, subject, check-run, commit-status and review reads have distinct source-state completion methods.
+The GitHub-owned `state` package validates each lease and access fence in the same transaction as its
+observations and wakeups. It receives the database and explicit same-transaction inbox effects at service
+construction; it has no dependency on the inbox store.
 Inbox recording retains its existing transaction boundary for deduplication, entries and checkpoints.
 
 ## Storage and scheduling
@@ -75,7 +77,7 @@ cascades to their subject links without removing independent inbox copies.
 
 Shared failure observations belong to their access/subject records, not copies on every
 subscription or inbox history. These are current-state records, not temporal versions. See
-[`github_state.go`](../internal/store/github_state.go), [`github_ingest.go`](../internal/store/github_ingest.go),
+[`state`](../internal/sources/github/state/state.go), [`github_ingest.go`](../internal/store/github_ingest.go),
 [`github_deliveries.go`](../internal/store/github_deliveries.go), and the
 [schema](../migrations/notifications/00013_baseline.sql).
 

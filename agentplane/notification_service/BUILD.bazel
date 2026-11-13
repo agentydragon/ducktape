@@ -73,6 +73,7 @@ go_library(
         "//agentplane/notification_service/internal/sources/github",
         "//agentplane/notification_service/internal/sources/github/client",
         "//agentplane/notification_service/internal/sources/github/settings",
+        "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/sources/github/webhook",
         "//agentplane/notification_service/internal/store",
         "//agentplane/notification_service/internal/worker",

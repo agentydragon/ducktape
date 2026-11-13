@@ -1,4 +1,4 @@
-package store
+package state
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
 )
@@ -19,64 +20,64 @@ import (
 // boundary. Lock order: this lock, then inboxes. It is never held across a call to GitHub.
 const githubIngressLock = 0x474854504E
 
-func githubLock(ctx context.Context, tx *sql.Tx) error {
+func Lock(ctx context.Context, tx *sql.Tx) error {
 	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, githubIngressLock)
 	return err
 }
 
-// querier is a *sql.DB or a *sql.Tx.
-type querier interface {
+// Querier is the read-only SQL surface used for source-state reads inside the caller's transaction.
+type Querier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// GitHubAccessKey names one installation's access to one repository, which is shared by every subscription
+// AccessKey names one installation's access to one repository, which is shared by every subscription
 // that reads the repository through it.
-type GitHubAccessKey struct {
+type AccessKey struct {
 	AppID          int64
 	InstallationID int64
 	RepositoryID   int64
 }
 
-// GitHubSubjectKey names a subject of a repository as its rows are indexed: by kind and by a key made from the
+// SubjectKey names a subject of a repository as its rows are indexed: by kind and by a key made from the
 // subject, which is a decimal number for a pull request or issue, a name for a branch and a SHA for a commit.
-type GitHubSubjectKey struct {
+type SubjectKey struct {
 	RepositoryID int64
 	Kind         string
 	Key          string
 }
 
-// NewGitHubSubjectKey is the key of a subject of the repository, or model.ErrInvalid if the subject breaks the bounds
+// NewSubjectKey is the key of a subject of the repository, or model.ErrInvalid if the subject breaks the bounds
 // a subscription's does.
-func NewGitHubSubjectKey(repositoryID int64, subject model.GitHubSubject) (GitHubSubjectKey, error) {
+func NewSubjectKey(repositoryID int64, subject model.GitHubSubject) (SubjectKey, error) {
 	switch subject := subject.(type) {
 	case model.PullRequestSubject:
 		if subject.Number <= 0 {
-			return GitHubSubjectKey{}, model.Invalid("pull request number must be positive")
+			return SubjectKey{}, model.Invalid("pull request number must be positive")
 		}
-		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "pull_request", Key: strconv.FormatInt(subject.Number, 10)}, nil
+		return SubjectKey{RepositoryID: repositoryID, Kind: "pull_request", Key: strconv.FormatInt(subject.Number, 10)}, nil
 	case model.IssueSubject:
 		if subject.Number <= 0 {
-			return GitHubSubjectKey{}, model.Invalid("issue number must be positive")
+			return SubjectKey{}, model.Invalid("issue number must be positive")
 		}
-		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "issue", Key: strconv.FormatInt(subject.Number, 10)}, nil
+		return SubjectKey{RepositoryID: repositoryID, Kind: "issue", Key: strconv.FormatInt(subject.Number, 10)}, nil
 	case model.BranchSubject:
 		if err := model.CheckText("branch name", subject.Name, 1, 255); err != nil {
-			return GitHubSubjectKey{}, err
+			return SubjectKey{}, err
 		}
-		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "branch", Key: subject.Name}, nil
+		return SubjectKey{RepositoryID: repositoryID, Kind: "branch", Key: subject.Name}, nil
 	case model.CommitSubject:
 		if !model.IsCommitSHA(subject.SHA) {
-			return GitHubSubjectKey{}, model.Invalid("commit SHA must be 40 lowercase hexadecimal characters")
+			return SubjectKey{}, model.Invalid("commit SHA must be 40 lowercase hexadecimal characters")
 		}
-		return GitHubSubjectKey{RepositoryID: repositoryID, Kind: "commit", Key: subject.SHA}, nil
+		return SubjectKey{RepositoryID: repositoryID, Kind: "commit", Key: subject.SHA}, nil
 	default:
-		return GitHubSubjectKey{}, model.Invalid("subject must be a pull request, issue, branch or commit")
+		return SubjectKey{}, model.Invalid("subject must be a pull request, issue, branch or commit")
 	}
 }
 
-// GitHubRefreshKey is a row that holds shared refresh state: a GitHubAccessKey or a GitHubSubjectKey.
-type GitHubRefreshKey interface {
+// RefreshKey is a row that holds shared refresh state: a AccessKey or a SubjectKey.
+type RefreshKey interface {
 	// refresh is the table holding the key's row, with the refresh lease's columns, and the row's key values.
 	refresh() (lease.Table, []any)
 }
@@ -92,7 +93,7 @@ var (
 )
 
 // refreshWhere is the key's table, WHERE clause, and key arguments. The WHERE placeholders start at $1.
-func refreshWhere(key GitHubRefreshKey) (table, where string, args []any) {
+func refreshWhere(key RefreshKey) (table, where string, args []any) {
 	t, args := key.refresh()
 	terms := make([]string, len(t.Key))
 	for i, column := range t.Key {
@@ -101,18 +102,18 @@ func refreshWhere(key GitHubRefreshKey) (table, where string, args []any) {
 	return t.Name, strings.Join(terms, " AND "), args
 }
 
-func (k GitHubAccessKey) refresh() (lease.Table, []any) {
+func (k AccessKey) refresh() (lease.Table, []any) {
 	return accessRefresh, []any{k.AppID, k.InstallationID, k.RepositoryID}
 }
 
-func (k GitHubSubjectKey) refresh() (lease.Table, []any) {
+func (k SubjectKey) refresh() (lease.Table, []any) {
 	return subjectRefresh, []any{k.RepositoryID, k.Kind, k.Key}
 }
 
-// GitHubRefreshLease is a claim on refreshing a shared row. Whoever holds it may call GitHub for the row and
+// RefreshLease is a claim on refreshing a shared row. Whoever holds it may call GitHub for the row and
 // record the outcome, until the claim expires or the row is invalidated.
-type GitHubRefreshLease struct {
-	Key  GitHubRefreshKey
+type RefreshLease struct {
+	Key  RefreshKey
 	held lease.Lease
 	// Generation is the row's generation when claimed: an invalidating event moves it on.
 	Generation int64
@@ -125,10 +126,10 @@ type GitHubRefreshLease struct {
 	HeadSHA           string
 }
 
-// GitHubAccessFence is the validated access a result was read under. It holds only while the grant is
+// AccessFence is the validated access a result was read under. It holds only while the grant is
 // unchanged and still valid.
-type GitHubAccessFence struct {
-	Key                    GitHubAccessKey
+type AccessFence struct {
+	Key                    AccessKey
 	Generation             int64
 	InstallationGeneration int64
 }
@@ -164,7 +165,7 @@ const refreshColumns = `generation, last_success_at, error_kind, error, error_si
 
 const accessColumns = `, validated_installation_generation, checked_at, valid_until`
 
-func loadRefresh(ctx context.Context, q querier, key GitHubRefreshKey) (refreshRow, error) {
+func loadRefresh(ctx context.Context, q Querier, key RefreshKey) (refreshRow, error) {
 	table, where, args := refreshWhere(key)
 	var row refreshRow
 	dests := []any{
@@ -172,7 +173,7 @@ func loadRefresh(ctx context.Context, q querier, key GitHubRefreshKey) (refreshR
 		&row.errorObservedAt, &row.nextAttempt, &row.claim, &row.claimUntil,
 	}
 	columns := refreshColumns
-	if _, ok := key.(GitHubAccessKey); ok {
+	if _, ok := key.(AccessKey); ok {
 		columns += accessColumns
 		dests = append(dests, &row.validatedInstallationGeneration, &row.checkedAt, &row.validUntil)
 	}
@@ -182,7 +183,7 @@ func loadRefresh(ctx context.Context, q querier, key GitHubRefreshKey) (refreshR
 	return row, nil
 }
 
-func installationGeneration(ctx context.Context, q querier, key GitHubAccessKey) (int64, error) {
+func installationGeneration(ctx context.Context, q Querier, key AccessKey) (int64, error) {
 	var generation int64
 	err := q.QueryRowContext(ctx, `SELECT generation FROM github_installation WHERE app_id = $1 AND installation_id = $2`,
 		key.AppID, key.InstallationID).Scan(&generation)
@@ -194,7 +195,7 @@ func installationGeneration(ctx context.Context, q querier, key GitHubAccessKey)
 
 // accessValid reports whether an access row's validation holds at the time: it recorded no error, has not
 // expired, and was made under the installation's current generation.
-func accessValid(ctx context.Context, q querier, key GitHubAccessKey, row refreshRow, at time.Time) (bool, error) {
+func accessValid(ctx context.Context, q Querier, key AccessKey, row refreshRow, at time.Time) (bool, error) {
 	if row.errorMessage.Valid || !row.validUntil.Valid || !row.validUntil.Time.After(at) ||
 		!row.validatedInstallationGeneration.Valid {
 		return false, nil
@@ -203,8 +204,8 @@ func accessValid(ctx context.Context, q querier, key GitHubAccessKey, row refres
 	return err == nil && row.validatedInstallationGeneration.Int64 == generation, err
 }
 
-// fencesValid reports whether every grant still has the generation its fence was taken at and is valid now.
-func fencesValid(ctx context.Context, q querier, fences []GitHubAccessFence) (bool, error) {
+// FencesValidTx reports whether every grant still has the generation its fence was taken at and is valid now.
+func FencesValidTx(ctx context.Context, q *sql.Tx, fences []AccessFence) (bool, error) {
 	at := now()
 	for _, fence := range fences {
 		row, err := loadRefresh(ctx, q, fence.Key)
@@ -222,8 +223,8 @@ func fencesValid(ctx context.Context, q querier, fences []GitHubAccessFence) (bo
 	return true, nil
 }
 
-// addRevisions records the revisions as seen for the subject, with the repositories holding them.
-func addRevisions(ctx context.Context, tx *sql.Tx, key GitHubSubjectKey, revisions []model.GitHubHeadRevision) error {
+// AddRevisionsTx records the revisions as seen for the subject, with the repositories holding them.
+func AddRevisionsTx(ctx context.Context, tx *sql.Tx, key SubjectKey, revisions []model.GitHubHeadRevision) error {
 	for _, revision := range revisions {
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO github_repository (repository_id, full_name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -240,16 +241,44 @@ func addRevisions(ctx context.Context, tx *sql.Tx, key GitHubSubjectKey, revisio
 	return nil
 }
 
-// GitHubState is the refresh state shared by every subscription that reads the same repository access or
+// State is the refresh state shared by every subscription that reads the same repository access or
 // subject: one lease at a time per row, so GitHub is called once however many subscriptions need the answer.
-type GitHubState struct {
-	store *Store
+type State struct {
+	db *sql.DB
 	// freshness is how long a validation or a subject refresh stays good.
 	freshness time.Duration
+	effects   Effects
 }
 
-func NewGitHubState(store *Store, freshness time.Duration) *GitHubState {
-	return &GitHubState{store: store, freshness: freshness}
+// Effects are the generic inbox operations a source-state transaction may need to publish.
+type Effects struct {
+	WakeApp func(context.Context, *sql.Tx, int64) error
+	Publish func(context.Context, *sql.Tx) error
+}
+
+func New(db *sql.DB, freshness time.Duration, effects Effects) *State {
+	return &State{db: db, freshness: freshness, effects: effects}
+}
+
+func (g *State) transaction(ctx context.Context, f func(*sql.Tx) error) error {
+	return postgres.Transaction(ctx, g.db, sql.TxOptions{}, f)
+}
+
+func (g *State) publish(ctx context.Context, tx *sql.Tx, appID int64) error {
+	if g.effects.WakeApp == nil || g.effects.Publish == nil {
+		return errors.New("GitHub state publication effects are not configured")
+	}
+	if err := g.effects.WakeApp(ctx, tx, appID); err != nil {
+		return err
+	}
+	return g.effects.Publish(ctx, tx)
+}
+
+func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
+
+func utc(at time.Time) *time.Time {
+	value := at.UTC()
+	return &value
 }
 
 // refreshLease is how long a claim holds a row.
@@ -258,15 +287,15 @@ const refreshLease = 30 * time.Second
 // Acquire claims the row for a refresh, or returns a nil lease when the row is fresh and needs none. It fails
 // with *RefreshDeferredError, naming when to try again, while another claim is live or a failure's backoff has
 // not passed.
-func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHubRefreshLease, error) {
-	var acquired *GitHubRefreshLease
-	err := g.store.transaction(ctx, func(tx *sql.Tx) error {
-		if err := githubLock(ctx, tx); err != nil {
+func (g *State) Acquire(ctx context.Context, key RefreshKey) (*RefreshLease, error) {
+	var acquired *RefreshLease
+	err := g.transaction(ctx, func(tx *sql.Tx) error {
+		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
 		var commitGeneration *int64
 		var commitHeadSHA string
-		if commit, ok := key.(GitHubCommitRefreshKey); ok {
+		if commit, ok := key.(CommitRefreshKey); ok {
 			if err := ensureGitHubCommitRefresh(ctx, tx, commit); err != nil {
 				return err
 			}
@@ -281,7 +310,7 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 			commitHeadSHA = headSHA
 		}
 		var reviewGeneration *int64
-		if review, ok := key.(GitHubReviewRefreshKey); ok {
+		if review, ok := key.(ReviewRefreshKey); ok {
 			if err := ensureGitHubReviewRefresh(ctx, tx, review); err != nil {
 				return err
 			}
@@ -301,7 +330,7 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		at := now()
 		var installation *int64
 		var fresh bool
-		if access, ok := key.(GitHubAccessKey); ok {
+		if access, ok := key.(AccessKey); ok {
 			generation, err := installationGeneration(ctx, tx, access)
 			if err != nil {
 				return err
@@ -330,7 +359,7 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 		if row.nextAttempt.Valid && row.nextAttempt.Time.After(at) {
 			return &RefreshDeferredError{Until: row.nextAttempt.Time.UTC()}
 		}
-		acquired = &GitHubRefreshLease{
+		acquired = &RefreshLease{
 			Key: key, held: held, Generation: row.generation, InstallationGeneration: installation,
 			SubjectGeneration: commitGeneration, HeadSHA: commitHeadSHA,
 		}
@@ -344,25 +373,25 @@ func (g *GitHubState) Acquire(ctx context.Context, key GitHubRefreshKey) (*GitHu
 
 // Fence is the fence of an access that is valid now, or fails with *RefreshDeferredError, naming now, if it is
 // not.
-func (g *GitHubState) Fence(ctx context.Context, key GitHubAccessKey) (GitHubAccessFence, error) {
-	row, err := loadRefresh(ctx, g.store.db, key)
+func (g *State) Fence(ctx context.Context, key AccessKey) (AccessFence, error) {
+	row, err := loadRefresh(ctx, g.db, key)
 	if err != nil {
-		return GitHubAccessFence{}, err
+		return AccessFence{}, err
 	}
 	at := now()
-	valid, err := accessValid(ctx, g.store.db, key, row, at)
+	valid, err := accessValid(ctx, g.db, key, row, at)
 	if err != nil {
-		return GitHubAccessFence{}, err
+		return AccessFence{}, err
 	}
 	if !valid {
-		return GitHubAccessFence{}, &RefreshDeferredError{Until: at}
+		return AccessFence{}, &RefreshDeferredError{Until: at}
 	}
-	return GitHubAccessFence{Key: key, Generation: row.generation, InstallationGeneration: row.validatedInstallationGeneration.Int64}, nil
+	return AccessFence{Key: key, Generation: row.generation, InstallationGeneration: row.validatedInstallationGeneration.Int64}, nil
 }
 
 // leased loads the row, failing with *RefreshDeferredError at once unless the lease is still the row's: the
 // claim live, and neither the row nor its installation invalidated since.
-func leased(ctx context.Context, tx *sql.Tx, refresh GitHubRefreshLease) (refreshRow, error) {
+func leased(ctx context.Context, tx *sql.Tx, refresh RefreshLease) (refreshRow, error) {
 	table, _ := refresh.Key.refresh()
 	if err := table.Fence(ctx, tx, refresh.held); errors.Is(err, lease.ErrLost) {
 		return refreshRow{}, &RefreshDeferredError{Until: now()}
@@ -375,21 +404,21 @@ func leased(ctx context.Context, tx *sql.Tx, refresh GitHubRefreshLease) (refres
 	}
 	at := now()
 	current := row.generation == refresh.Generation
-	if access, ok := refresh.Key.(GitHubAccessKey); ok && current {
+	if access, ok := refresh.Key.(AccessKey); ok && current {
 		generation, err := installationGeneration(ctx, tx, access)
 		if err != nil {
 			return refreshRow{}, err
 		}
 		current = refresh.InstallationGeneration != nil && generation == *refresh.InstallationGeneration
 	}
-	if commit, ok := refresh.Key.(GitHubCommitRefreshKey); ok && current {
+	if commit, ok := refresh.Key.(CommitRefreshKey); ok && current {
 		generation, headSHA, err := githubCommitParent(ctx, tx, commit)
 		if err != nil {
 			return refreshRow{}, err
 		}
 		current = refresh.SubjectGeneration != nil && generation == *refresh.SubjectGeneration && headSHA == refresh.HeadSHA
 	}
-	if review, ok := refresh.Key.(GitHubReviewRefreshKey); ok && current {
+	if review, ok := refresh.Key.(ReviewRefreshKey); ok && current {
 		generation, exists, err := githubReviewParent(ctx, tx, review)
 		if err != nil {
 			return refreshRow{}, err
@@ -405,10 +434,10 @@ func leased(ctx context.Context, tx *sql.Tx, refresh GitHubRefreshLease) (refres
 // Fail records a failed refresh and releases the lease, and returns when the row may be refreshed again. An
 // access row stops being valid. It fails with *RefreshDeferredError, recording nothing, if the lease no longer
 // holds.
-func (g *GitHubState) Fail(ctx context.Context, lease GitHubRefreshLease, kind SourceFailureKind, message string, retry time.Duration) (time.Time, error) {
+func (g *State) Fail(ctx context.Context, lease RefreshLease, kind model.SourceFailureKind, message string, retry time.Duration) (time.Time, error) {
 	var next time.Time
-	err := g.store.transaction(ctx, func(tx *sql.Tx) error {
-		if err := githubLock(ctx, tx); err != nil {
+	err := g.transaction(ctx, func(tx *sql.Tx) error {
+		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
 		row, err := leased(ctx, tx, lease)
@@ -425,7 +454,7 @@ func (g *GitHubState) Fail(ctx context.Context, lease GitHubRefreshLease, kind S
 		kindPlaceholder := len(args) + 1
 		set := fmt.Sprintf(`error_kind = $%d, error = $%d, error_since = $%d, error_observed_at = $%d, next_attempt = $%d`,
 			kindPlaceholder, kindPlaceholder+1, kindPlaceholder+2, kindPlaceholder+3, kindPlaceholder+4)
-		if _, ok := lease.Key.(GitHubAccessKey); ok {
+		if _, ok := lease.Key.(AccessKey); ok {
 			set += fmt.Sprintf(`, valid_until = NULL, checked_at = $%d`, kindPlaceholder+3)
 		}
 		query := fmt.Sprintf("UPDATE %s SET %s WHERE %s", table, set, where)
@@ -439,7 +468,7 @@ func (g *GitHubState) Fail(ctx context.Context, lease GitHubRefreshLease, kind S
 }
 
 // releaseRefresh gives back the refresh lease on its row.
-func releaseRefresh(ctx context.Context, tx *sql.Tx, refresh GitHubRefreshLease) error {
+func releaseRefresh(ctx context.Context, tx *sql.Tx, refresh RefreshLease) error {
 	table, _ := refresh.Key.refresh()
 	return table.Release(ctx, tx, refresh.held)
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -27,8 +28,8 @@ func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T)
 	f := newFixture(t, defaultQuotas())
 	github := f.body("github")
 	github.Source = model.GitHubSource{Repository: "owner/repository", Subject: model.PullRequestSubject{Number: 1}}
-	access := GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
-	invalidAccess := []GitHubAccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
+	access := githubstate.AccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
+	invalidAccess := []githubstate.AccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
 	for _, bad := range invalidAccess {
 		if _, err := f.Subscribe(t.Context(), f.incarnation(), github, &bad); !errors.Is(err, model.ErrInvalid) {
 			t.Errorf("access %+v: error = %v, want model.ErrInvalid", bad, err)

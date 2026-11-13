@@ -34,6 +34,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/actions"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github"
 	githubclient "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client" // Distinguish GitHub transport from the Kubernetes client.
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state"   // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
@@ -233,7 +234,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		if err != nil {
 			return err
 		}
-		provider := github.NewProvider(githubClient, inboxes, c.GitHub)
+		sharedState := githubstate.New(db, time.Duration(c.GitHub.FreshnessSeconds)*time.Second, store.GitHubEffects())
+		provider := github.NewProvider(githubClient, inboxes, sharedState, c.GitHub)
 		githubAPI, providers["github"] = provider, provider
 		webhookHandler = webhook.New(c.GitHub, inboxes)
 	}

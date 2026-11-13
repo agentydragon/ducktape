@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -81,8 +82,8 @@ func TestRedeliveryStoresNothingAndReusedIDIsRefused(t *testing.T) {
 	changed := first
 	digest := sha256.Sum256([]byte("other content"))
 	changed.Digest = digest[:]
-	if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, ErrDeliveryReused) {
-		t.Errorf("error = %v, want ErrDeliveryReused", err)
+	if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
+		t.Errorf("error = %v, want githubstate.ErrDeliveryReused", err)
 	}
 	if got := g.deliveries(t); got != 1 {
 		t.Errorf("%d deliveries after a refused one, want 1", got)
@@ -198,7 +199,7 @@ type invalidationState struct {
 	claims                        int
 }
 
-func (g githubFixture) invalidationState(t *testing.T, subject GitHubSubjectKey) invalidationState {
+func (g githubFixture) invalidationState(t *testing.T, subject githubstate.SubjectKey) invalidationState {
 	t.Helper()
 	var state invalidationState
 	var validUntil, lastSuccess sql.NullTime
@@ -272,8 +273,8 @@ func TestInstallationEventStopsALeaseInFlightFromRecording(t *testing.T) {
 
 			g.deliver(t, event, withAction("removed"))
 
-			for name, lease := range map[string]*GitHubRefreshLease{"access": access, "subject": subject} {
-				var deferred *RefreshDeferredError
+			for name, lease := range map[string]*githubstate.RefreshLease{"access": access, "subject": subject} {
+				var deferred *githubstate.RefreshDeferredError
 				if err := completeEmptyRefresh(t.Context(), g.state, *lease); !errors.As(err, &deferred) {
 					t.Errorf("recording the %s refresh = %v, want it deferred", name, err)
 				}
@@ -385,7 +386,7 @@ func TestIngestWakesWorkersOnlyForADeliveryItStores(t *testing.T) {
 	check("a refused delivery", false, func() {
 		changed := delivery
 		changed.Digest = []byte("other")
-		if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, ErrDeliveryReused) {
+		if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
 			t.Error(err)
 		}
 	})
@@ -445,7 +446,7 @@ func sameText(got sql.NullString, want *string) bool {
 }
 
 // pythonStored writes a delivery as Python's ingest does, to the rows the schema gives it.
-func (g githubFixture) pythonStored(t *testing.T, ingest GitHubIngest) {
+func (g githubFixture) pythonStored(t *testing.T, ingest githubstate.Ingest) {
 	t.Helper()
 	g.exec(t, `INSERT INTO github_installation (app_id, installation_id, generation) VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`, ingest.AppID, ingest.InstallationID)
 	var repository sql.NullInt64
@@ -480,8 +481,8 @@ func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
 			digest[0] ^= 1
 			changed := ingest
 			changed.Digest = digest
-			if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, ErrDeliveryReused) {
-				t.Errorf("error = %v, want ErrDeliveryReused", err)
+			if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
+				t.Errorf("error = %v, want githubstate.ErrDeliveryReused", err)
 			}
 		})
 	}

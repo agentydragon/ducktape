@@ -130,7 +130,7 @@ into one object or mistake better compression for eliminating duplicate bodies.
 
 Review raw-receipt capture and retention separately from normalized observations. Consider dropping
 unused envelope fields or sharing repository/sender subobjects where full receipt fidelity remains
-useful. In [normalized commit storage](../notification_service/internal/store/github_commit_observations.go),
+useful. In [normalized commit storage](../notification_service/internal/sources/github/state/commit.go),
 evaluate having current state reference its immutable event instead of copying its payload.
 Account for event expiry: a current-state reference must retain its target or materialize the
 required current value before that target expires. Subscription/inbox lifetimes remain independent.

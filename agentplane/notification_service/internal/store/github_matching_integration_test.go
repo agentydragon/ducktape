@@ -353,7 +353,7 @@ func TestADeliveryOfAForkNeedsTheForksGrant(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("lease = %v, %v", lease, err)
 	}
-	if _, err := g.state.Fail(t.Context(), *lease, FailureAccessDenied, "not installed", 10*time.Minute); err != nil {
+	if _, err := g.state.Fail(t.Context(), *lease, model.FailureAccessDenied, "not installed", 10*time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	g.reconcileAll(t, sub)

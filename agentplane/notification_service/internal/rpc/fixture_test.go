@@ -41,6 +41,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -200,12 +201,12 @@ func (a *fakeActions) asked() []actionsCall {
 // fakeGitHub authorizes every source under one access unless it fails.
 type fakeGitHub struct {
 	mu      sync.Mutex
-	access  store.GitHubAccessKey
+	access  githubstate.AccessKey
 	err     error
 	sources []model.GitHubSource
 }
 
-func (g *fakeGitHub) Authorize(_ context.Context, source model.GitHubSource) (store.GitHubAccessKey, error) {
+func (g *fakeGitHub) Authorize(_ context.Context, source model.GitHubSource) (githubstate.AccessKey, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.sources = append(g.sources, source)
@@ -423,7 +424,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 			sandboxName: {testSession, "another-session"}, otherSandboxName: {testSession},
 		}},
 		actions: &fakeActions{},
-		github:  &fakeGitHub{access: store.GitHubAccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
+		github:  &fakeGitHub{access: githubstate.AccessKey{AppID: 11, InstallationID: 22, RepositoryID: 33}},
 		policy:  inboxaccess.NewPolicy(),
 		history: &fakeHistory{sandboxes: map[string]*historypb.SandboxRef{
 			testSession: {Namespace: testNamespace, Name: sandboxName, Uid: proto.String(sandboxUID)},

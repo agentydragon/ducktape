@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
@@ -61,7 +62,7 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 	if !slices.Contains(sessions, body.SessionID) {
 		return store.Subscription{}, errNoSession
 	}
-	var access *store.GitHubAccessKey
+	var access *githubstate.AccessKey
 	switch source := body.Source.(type) {
 	case model.ActionsSource:
 		if _, err := s.actions.Events(ctx, owner, source.RequestID, source.AfterSequence); err != nil {

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -291,7 +292,7 @@ func TestRedeliveryWithOtherContentIsAConflict(t *testing.T) {
 
 	changed := signedDelivery("issue_comment", issueComment(7, "changed"))
 	changed.id = first.id
-	changed.post(t, r.URL).expect(t, http.StatusConflict, refusal{Detail: store.ErrDeliveryReused.Error()})
+	changed.post(t, r.URL).expect(t, http.StatusConflict, refusal{Detail: githubstate.ErrDeliveryReused.Error()})
 	sameJSON(t, r.storedPayload(t, first.id), first.body)
 }
 

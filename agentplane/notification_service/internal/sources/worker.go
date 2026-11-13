@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // stepBudget leaves ten seconds of the inbox lease for fenced writes and release.
@@ -112,7 +113,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (worked bool, err error) {
 	provider, ok := w.Providers[due.SourceProvider]
 	if !ok {
 		return true, w.recordFailure(ctx, *claim, *due, &ProviderError{
-			Kind: store.FailureUnavailable, Message: "source provider is disabled",
+			Kind: model.FailureUnavailable, Message: "source provider is disabled",
 		})
 	}
 
@@ -125,7 +126,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (worked bool, err error) {
 	}
 	if budgetErr != nil && processErr != nil {
 		return true, w.recordFailure(ctx, *claim, *due, &ProviderError{
-			Kind: store.FailureUnavailable, Message: "source processing timed out",
+			Kind: model.FailureUnavailable, Message: "source processing timed out",
 		})
 	}
 	if processErr == nil || errors.Is(processErr, store.ErrClaimLost) {
@@ -142,7 +143,7 @@ func (w *Worker) ProcessOne(ctx context.Context) (worked bool, err error) {
 		return true, w.recordFailure(ctx, *claim, *due, failure)
 	case errors.As(processErr, &quota):
 		return true, w.recordFailure(ctx, *claim, *due, &ProviderError{
-			Kind: store.FailureProcessingError, Message: "QuotaError",
+			Kind: model.FailureProcessingError, Message: "QuotaError",
 		})
 	default:
 		return true, &UnclassifiedProviderError{SubscriptionID: due.ID, Err: processErr}

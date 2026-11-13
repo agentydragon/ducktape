@@ -7,15 +7,12 @@ go_library(
     srcs = [
         "actions.go",
         "claims.go",
-        "github_commit_observations.go",
+        "github_commit_entries.go",
         "github_deliveries.go",
         "github_ingest.go",
-        "github_mergeability.go",
-        "github_pr_state.go",
-        "github_reconcile.go",
-        "github_refresh_completion.go",
-        "github_state.go",
-        "github_status.go",
+        "github_mergeability_entries.go",
+        "github_pr_entries.go",
+        "github_status_projection.go",
         "inboxes.go",
         "messages.go",
         "notices.go",
@@ -25,6 +22,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store",
     deps = [
+        "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/internal/store/internal/entry",
         "//agentplane/notification_service/model",
@@ -48,6 +46,7 @@ go_test(
     embedsrcs = ["golden.json"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
         "//agentplane/proto:event_log_go_proto",
@@ -99,6 +98,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/internal/store/internal/entry",
         "//agentplane/notification_service/migrations",

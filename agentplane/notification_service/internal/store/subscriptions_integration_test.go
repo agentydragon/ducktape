@@ -322,7 +322,7 @@ func TestACurrentSourceFailureShowsWhenItWillBeRetried(t *testing.T) {
 		subscription.ID, since, observed, retry, succeeded)
 
 	failing := f.get(t, subscription.ID)
-	if failing.Failure == nil || failing.Failure.Kind != FailureRateLimited || failing.Failure.Message != "rate limited" ||
+	if failing.Failure == nil || failing.Failure.Kind != model.FailureRateLimited || failing.Failure.Message != "rate limited" ||
 		!failing.Failure.Since.Equal(since) || !failing.Failure.ObservedAt.Equal(observed) {
 		t.Fatalf("failure = %+v", failing.Failure)
 	}

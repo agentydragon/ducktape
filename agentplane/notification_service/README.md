@@ -211,7 +211,8 @@ webhooks; recover missing deliveries through the App's delivery history/redelive
 can remain missing until a later triggering event, subscription renewal or explicit redelivery.
 
 The GitHub source coordinates API access, interpretation, refresh policy, backoff and raw-receipt retention
-under `internal/sources/github/`. Shared refresh SQL still lives in the store. The source coordinator under `internal/sources/` processes due subscriptions
+under `internal/sources/github/`. Its `state/` package owns refresh leases, access fences, webhook facts
+and observations. The source receives that persistence explicitly at service construction. The source coordinator under `internal/sources/` processes due subscriptions
 without a live Sandbox or runner. `internal/worker/` owns inbox notice delivery and source-independent inbox
 retention. The store retains the explicit same-transaction adapters between typed source state and durable
 subscriptions/entries; source access fences, subscription versions, quota checks, publication and progress

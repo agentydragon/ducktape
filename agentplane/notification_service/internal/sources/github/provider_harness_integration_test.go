@@ -12,9 +12,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
-	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/migrations"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -140,8 +142,8 @@ var (
 	// testIncarnation owns the inbox for the exact destination Sandbox.
 	testIncarnation = store.Owner{Identity: model.Identity{Name: "test-identity", UID: "test-identity-uid"}, SandboxUID: testDestination.UID}
 	// baseAccess is the access to the repository the tests follow.
-	baseAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
-	forkAccess = store.GitHubAccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
+	baseAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: baseInstallation, RepositoryID: baseRepository}
+	forkAccess = githubstate.AccessKey{AppID: fixture.AppID, InstallationID: forkInstallation, RepositoryID: forkRepository}
 )
 
 // harness is a Provider over real PostgreSQL and the world.
@@ -171,7 +173,8 @@ func (h *harness) restart() {
 	h.store = store.New(h.db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	settings := settings.DefaultSettings()
 	settings.AppID = fixture.AppID
-	h.provider = NewProvider(newTestClient(h.t, h.fake), h.store, settings)
+	sharedState := githubstate.New(h.db, time.Duration(settings.FreshnessSeconds)*time.Second, store.GitHubEffects())
+	h.provider = NewProvider(newTestClient(h.t, h.fake), h.store, sharedState, settings)
 }
 
 func (h *harness) exec(query string, args ...any) {

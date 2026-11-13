@@ -6,14 +6,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/go-github/v88/github"
 )
 
 // webhookPRState turns complete review and pull request webhook facts into the same current-state observations
 // used by REST recovery. Incomplete payloads remain raw delivery activity and produce no observation.
-func webhookPRState(body object, event string, action *string) (*store.GitHubPRReviewObservation, *model.GitHubPRLifecycleObservation, error) {
+func webhookPRState(body object, event string, action *string) (*githubstate.PRReviewObservation, *model.GitHubPRLifecycleObservation, error) {
 	switch event {
 	case string(model.EventPullRequestReview):
 		if !webhookActionIs(action, "submitted", "dismissed") {
@@ -41,7 +41,7 @@ func webhookPRState(body object, event string, action *string) (*store.GitHubPRR
 			return nil, nil, err
 		}
 		observation.Action = action
-		return &store.GitHubPRReviewObservation{
+		return &githubstate.PRReviewObservation{
 			PullRequestNumber: pullRequestNumber,
 			Review:            *observation,
 		}, nil, nil

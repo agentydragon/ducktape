@@ -9,39 +9,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
-
-// SourceFailureKind is why a source could not be processed.
-type SourceFailureKind string
-
-const (
-	FailureRateLimited     SourceFailureKind = "rate_limited"
-	FailureUnavailable     SourceFailureKind = "unavailable"
-	FailureAccessDenied    SourceFailureKind = "access_denied"
-	FailureSourceChanged   SourceFailureKind = "source_changed"
-	FailureProcessingError SourceFailureKind = "processing_error"
-)
-
-func parseFailureKind(kind string) (SourceFailureKind, error) {
-	switch parsed := SourceFailureKind(kind); parsed {
-	case FailureRateLimited, FailureUnavailable, FailureAccessDenied, FailureSourceChanged, FailureProcessingError:
-		return parsed, nil
-	default:
-		return "", fmt.Errorf("unknown source failure kind %q", kind)
-	}
-}
-
-// SourceFailure is the current failure of a subscription's processing.
-type SourceFailure struct {
-	Kind SourceFailureKind
-	// Message is a safe description, never an upstream body or a credential.
-	Message string
-	// Since is when the failure of this kind began.
-	Since      time.Time
-	ObservedAt time.Time
-}
 
 // Subscription is a subscription as it is read back.
 type Subscription struct {
@@ -56,7 +27,7 @@ type Subscription struct {
 	Cancelled     bool
 	ExpiresAt     time.Time
 	LastSuccessAt *time.Time
-	Failure       *SourceFailure
+	Failure       *model.SourceFailure
 	// RetryAt is when the service will retry the current failure of an active subscription.
 	RetryAt *time.Time
 	// NextSourceCheckAt is when the source is next reconciled, if scheduled.
@@ -64,7 +35,7 @@ type Subscription struct {
 	// Expired is evaluated at the read's observation time.
 	Expired bool
 	// GitHub is the shared state behind a GitHub subscription, nil for any other.
-	GitHub *GitHubStatus
+	GitHub *githubstate.Status
 }
 
 const subscriptionColumns = `s.id, s.inbox_id, s.creation_proto, s.source_provider,
@@ -101,11 +72,11 @@ func scanSubscription(row rowScanner, viewedAt time.Time, extra ...any) (Subscri
 		subscription.LastSuccessAt = utc(lastSuccess.Time)
 	}
 	if message.Valid {
-		parsed, err := parseFailureKind(kind.String)
+		parsed, err := model.ParseSourceFailureKind(kind.String)
 		if err != nil {
 			return Subscription{}, fmt.Errorf("subscription %s: %w", subscription.ID, err)
 		}
-		subscription.Failure = &SourceFailure{
+		subscription.Failure = &model.SourceFailure{
 			Kind: parsed, Message: message.String, Since: since.Time.UTC(), ObservedAt: observed.Time.UTC(),
 		}
 		if nextAttempt.Valid && !subscription.Cancelled && subscription.ExpiresAt.After(viewedAt) {
@@ -162,7 +133,7 @@ type sourceBinding struct {
 
 // checkAccess requires the access a source needs: a GitHub subscription is bound to the repository access it was
 // authorized under, and no other source has any.
-func checkAccess(source model.Source, access *GitHubAccessKey) error {
+func checkAccess(source model.Source, access *githubstate.AccessKey) error {
 	_, github := source.(model.GitHubSource)
 	switch {
 	case !github && access != nil:
@@ -177,12 +148,12 @@ func checkAccess(source model.Source, access *GitHubAccessKey) error {
 
 // bindSource is where subscribing meets a source kind. A GitHub subscription also creates, unless they exist, the
 // shared rows it reads through: its installation, repository, grant and subject. The caller holds the GitHub lock.
-func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *GitHubAccessKey) (sourceBinding, error) {
+func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *githubstate.AccessKey) (sourceBinding, error) {
 	switch source := source.(type) {
 	case model.ActionsSource:
 		return sourceBinding{actionsAfterSequence: sql.NullInt64{Int64: source.AfterSequence, Valid: true}}, nil
 	case model.GitHubSource:
-		subject, err := NewGitHubSubjectKey(access.RepositoryID, source.Subject)
+		subject, err := githubstate.NewSubjectKey(access.RepositoryID, source.Subject)
 		if err != nil {
 			return sourceBinding{}, err
 		}
@@ -198,7 +169,7 @@ func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *Gi
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_pr_state_event`).Scan(&prStateSequence); err != nil {
 			return sourceBinding{}, err
 		}
-		if err := insertGrant(ctx, tx, *access, source.Repository); err != nil {
+		if err := githubstate.GrantTx(ctx, tx, *access, source.Repository); err != nil {
 			return sourceBinding{}, err
 		}
 		if _, err := tx.ExecContext(ctx,
@@ -227,7 +198,7 @@ func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *Gi
 //
 // access is the repository access a GitHub subscription was authorized under, which the caller has just read from
 // GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
-func (s *Store) Subscribe(ctx context.Context, owner Owner, body model.Subscribe, access *GitHubAccessKey) (Subscription, error) {
+func (s *Store) Subscribe(ctx context.Context, owner Owner, body model.Subscribe, access *githubstate.AccessKey) (Subscription, error) {
 	if err := body.Validate(); err != nil {
 		return Subscription{}, err
 	}
@@ -242,7 +213,7 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body model.Subscribe
 	err = s.transaction(ctx, func(tx *sql.Tx) error {
 		if _, github := body.Source.(model.GitHubSource); github {
 			// Lock order: the GitHub lock, then the inbox.
-			if err := githubLock(ctx, tx); err != nil {
+			if err := githubstate.Lock(ctx, tx); err != nil {
 				return err
 			}
 		}
@@ -298,7 +269,7 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body model.Subscribe
 				return err
 			}
 			if source, ok := body.Source.(model.GitHubSource); ok && binding.githubSubjectKind.String == "pull_request" {
-				subject, err := NewGitHubSubjectKey(access.RepositoryID, source.Subject)
+				subject, err := githubstate.NewSubjectKey(access.RepositoryID, source.Subject)
 				if err != nil {
 					return err
 				}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -25,19 +26,19 @@ func commitStatusObservation(g githubFixture, sha string, id int64, context stri
 	return model.GitHubCommitStatus{RepositoryID: g.repository, SHA: sha, ID: id, Context: context, State: state, TargetURL: "https://statuses.example/" + context}
 }
 
-func (g githubFixture) pollCheckRuns(t *testing.T, subject GitHubSubjectKey, runs []model.GitHubCheckRun) {
+func (g githubFixture) pollCheckRuns(t *testing.T, subject githubstate.SubjectKey, runs []model.GitHubCheckRun) {
 	t.Helper()
 	g.pollCommitObservations(t, subject, model.EventCheckRun, runs, nil)
 }
 
-func (g githubFixture) pollCommitStatuses(t *testing.T, subject GitHubSubjectKey, statuses []model.GitHubCommitStatus) {
+func (g githubFixture) pollCommitStatuses(t *testing.T, subject githubstate.SubjectKey, statuses []model.GitHubCommitStatus) {
 	t.Helper()
 	g.pollCommitObservations(t, subject, model.EventStatus, nil, statuses)
 }
 
-func (g githubFixture) pollCommitObservations(t *testing.T, subject GitHubSubjectKey, event model.EventName, runs []model.GitHubCheckRun, statuses []model.GitHubCommitStatus) {
+func (g githubFixture) pollCommitObservations(t *testing.T, subject githubstate.SubjectKey, event model.EventName, runs []model.GitHubCheckRun, statuses []model.GitHubCommitStatus) {
 	t.Helper()
-	key := GitHubCommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: subject, Event: event}
+	key := githubstate.CommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: subject, Event: event}
 	lease, err := g.state.Acquire(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +52,7 @@ func (g githubFixture) pollCommitObservations(t *testing.T, subject GitHubSubjec
 	if err != nil || lease == nil {
 		t.Fatalf("%s refresh lease = %v, %v", event, lease, err)
 	}
-	fences := []GitHubAccessFence{g.validate(t, g.access())}
+	fences := []githubstate.AccessFence{g.validate(t, g.access())}
 	if event == model.EventCheckRun {
 		err = g.state.CompleteCheckRuns(t.Context(), *lease, fences, runs)
 	} else {
@@ -62,7 +63,7 @@ func (g githubFixture) pollCommitObservations(t *testing.T, subject GitHubSubjec
 	}
 }
 
-func normalizedCheckRunDelivery(g githubFixture, run model.GitHubCheckRun) GitHubIngest {
+func normalizedCheckRunDelivery(g githubFixture, run model.GitHubCheckRun) githubstate.Ingest {
 	action := "created"
 	if run.Status == model.CheckRunInProgress {
 		action = "in_progress"
@@ -74,7 +75,7 @@ func normalizedCheckRunDelivery(g githubFixture, run model.GitHubCheckRun) GitHu
 	return ingest
 }
 
-func normalizedCommitStatusDelivery(g githubFixture, status model.GitHubCommitStatus) GitHubIngest {
+func normalizedCommitStatusDelivery(g githubFixture, status model.GitHubCommitStatus) githubstate.Ingest {
 	ingest := g.delivery(string(model.EventStatus), onPullRequest(7), atCommit(status.SHA))
 	ingest.CommitStatus = &status
 	return ingest
@@ -304,7 +305,7 @@ func TestGitHubCommitObservationSelectionAndActionFilters(t *testing.T) {
 
 func TestGitHubCommitStatusIDsContextsAndCheckRunReruns(t *testing.T) {
 	g := newGitHubFixture(t)
-	subject := GitHubSubjectKey{RepositoryID: g.repository, Kind: "pull_request", Key: "7"}
+	subject := githubstate.SubjectKey{RepositoryID: g.repository, Kind: "pull_request", Key: "7"}
 	statusSub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}, model.EventFilter{Event: model.EventStatus}), "statuses")
 	g.observePullRequest(t, statusSub, model.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown})
 	g.pollCommitStatuses(t, subject, []model.GitHubCommitStatus{commitStatusObservation(g, commitA, 50, "ci/unit", model.CommitStatusPending), commitStatusObservation(g, commitA, 3, "security", model.CommitStatusFailure)})
@@ -354,7 +355,7 @@ func TestGitHubCommitRefreshFencesAndCategoryIndependence(t *testing.T) {
 			g := newGitHubFixture(t)
 			sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "fenced")
 			g.observePullRequest(t, sub, model.GitHubPullRequestObservation{BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB, State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown})
-			key := GitHubCommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject, Event: test.keyEvent}
+			key := githubstate.CommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject, Event: test.keyEvent}
 			lease, err := g.state.Acquire(t.Context(), key)
 			if err != nil || lease == nil {
 				t.Fatalf("lease = %v, %v", lease, err)
@@ -369,13 +370,13 @@ func TestGitHubCommitRefreshFencesAndCategoryIndependence(t *testing.T) {
 			} else {
 				g.ingest(t, normalizedCommitStatusDelivery(g, commitStatusObservation(g, commitA, 88, "ci/unit", model.CommitStatusSuccess)))
 			}
-			fences := []GitHubAccessFence{fence}
+			fences := []githubstate.AccessFence{fence}
 			if test.keyEvent == model.EventCheckRun {
 				err = g.state.CompleteCheckRuns(t.Context(), *lease, fences, []model.GitHubCheckRun{checkRunObservation(g, commitA, model.CheckRunCompleted, "success")})
 			} else {
 				err = g.state.CompleteCommitStatuses(t.Context(), *lease, fences, []model.GitHubCommitStatus{commitStatusObservation(g, commitA, 89, "ci/unit", model.CommitStatusSuccess)})
 			}
-			var deferred *RefreshDeferredError
+			var deferred *githubstate.RefreshDeferredError
 			if test.wantDeferred && !errors.As(err, &deferred) {
 				t.Fatalf("stale result error = %v, want deferred", err)
 			}
@@ -442,17 +443,19 @@ func TestTypedCompletionRejectsAnotherResourceWithoutConsumingTheLease(t *testin
 		BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
 		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 	})
-	key := GitHubCommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject, Event: model.EventCheckRun}
+	key := githubstate.CommitRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject, Event: model.EventCheckRun}
 	lease, err := g.state.Acquire(t.Context(), key)
 	if err != nil || lease == nil {
 		t.Fatalf("check-run lease = %v, %v", lease, err)
 	}
-	fences := []GitHubAccessFence{g.validate(t, g.access())}
+	fences := []githubstate.AccessFence{g.validate(t, g.access())}
 	for name, complete := range map[string]func() error{
 		"commit statuses": func() error { return g.state.CompleteCommitStatuses(t.Context(), *lease, fences, nil) },
 		"reviews":         func() error { return g.state.CompleteReviews(t.Context(), *lease, fences, nil) },
-		"subject":         func() error { return g.state.CompleteSubject(t.Context(), *lease, fences, GitHubSubjectObservation{}) },
-		"access":          func() error { return g.state.CompleteAccess(t.Context(), *lease, nil) },
+		"subject": func() error {
+			return g.state.CompleteSubject(t.Context(), *lease, fences, githubstate.SubjectObservation{})
+		},
+		"access": func() error { return g.state.CompleteAccess(t.Context(), *lease, nil) },
 	} {
 		if err := complete(); err == nil {
 			t.Errorf("%s completion accepted a check-run lease", name)

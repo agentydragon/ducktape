@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -16,7 +17,7 @@ type Provider interface {
 
 // ProviderError is a source failure the coordinator records on the subscription and retries.
 type ProviderError struct {
-	Kind store.SourceFailureKind
+	Kind model.SourceFailureKind
 	// Message is a safe description: never an upstream body, a bearer token or content from a native harness.
 	Message    string
 	RetryAfter time.Duration

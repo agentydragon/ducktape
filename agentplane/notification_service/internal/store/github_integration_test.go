@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
@@ -39,7 +40,7 @@ type githubFixture struct {
 	app, installation, repository int64
 	destination                   model.DestinationRef
 	inbox                         uuid.UUID
-	state                         *GitHubState
+	state                         *githubstate.State
 }
 
 func newGitHubFixture(t *testing.T) githubFixture {
@@ -59,17 +60,17 @@ func newGitHubFixtureWithStoreFixture(t *testing.T, f fixture) githubFixture {
 	return githubFixture{
 		fixture: f, app: base, installation: base + 1, repository: base + 2, destination: ref,
 		inbox: f.insertInbox(t, model.DestinationKey(ref, f.sessionID), ref, f.sessionID),
-		state: NewGitHubState(f.Store, testFreshness),
+		state: githubstate.New(f.db, testFreshness, GitHubEffects()),
 	}
 }
 
 // access is the installation's grant on the fixture's repository.
-func (g githubFixture) access() GitHubAccessKey {
-	return GitHubAccessKey{AppID: g.app, InstallationID: g.installation, RepositoryID: g.repository}
+func (g githubFixture) access() githubstate.AccessKey {
+	return githubstate.AccessKey{AppID: g.app, InstallationID: g.installation, RepositoryID: g.repository}
 }
 
-func (g githubFixture) pullRequest(number int64) GitHubSubjectKey {
-	return GitHubSubjectKey{RepositoryID: g.repository, Kind: "pull_request", Key: fmt.Sprint(number)}
+func (g githubFixture) pullRequest(number int64) githubstate.SubjectKey {
+	return githubstate.SubjectKey{RepositoryID: g.repository, Kind: "pull_request", Key: fmt.Sprint(number)}
 }
 
 func (g githubFixture) source(subject model.GitHubSubject, events ...model.EventFilter) model.GitHubSource {
@@ -78,24 +79,28 @@ func (g githubFixture) source(subject model.GitHubSubject, events ...model.Event
 
 // A deliveryOption changes the delivery a test makes. Options apply in order, so one that refers to the
 // delivery's repository comes after the option that sets it.
-type deliveryOption func(*GitHubIngest)
+type deliveryOption func(*githubstate.Ingest)
 
-func withAction(value string) deliveryOption { return func(i *GitHubIngest) { i.Action = &value } }
+func withAction(value string) deliveryOption {
+	return func(i *githubstate.Ingest) { i.Action = &value }
+}
 
-func inInstallation(id int64) deliveryOption { return func(i *GitHubIngest) { i.InstallationID = id } }
+func inInstallation(id int64) deliveryOption {
+	return func(i *githubstate.Ingest) { i.InstallationID = id }
+}
 
 func inRepository(id int64, name string) deliveryOption {
-	return func(i *GitHubIngest) { i.Repository = &model.GitHubRepository{ID: id, Name: name} }
+	return func(i *githubstate.Ingest) { i.Repository = &model.GitHubRepository{ID: id, Name: name} }
 }
 
 // labelled sets a payload that tells the delivery apart in an inbox.
 func labelled(label string) deliveryOption {
-	return func(i *GitHubIngest) { i.Payload = json.RawMessage(fmt.Sprintf(`{"label": %q}`, label)) }
+	return func(i *githubstate.Ingest) { i.Payload = json.RawMessage(fmt.Sprintf(`{"label": %q}`, label)) }
 }
 
 func aboutSubject(kind, key string) deliveryOption {
-	return func(i *GitHubIngest) {
-		i.Subjects = append(i.Subjects, GitHubSubjectKey{RepositoryID: i.Repository.ID, Kind: kind, Key: key})
+	return func(i *githubstate.Ingest) {
+		i.Subjects = append(i.Subjects, githubstate.SubjectKey{RepositoryID: i.Repository.ID, Kind: kind, Key: key})
 	}
 }
 
@@ -107,7 +112,7 @@ func onBranch(name string) deliveryOption { return aboutSubject("branch", name) 
 
 // atCommit makes the delivery about a commit, seen in the delivery's repository.
 func atCommit(sha string) deliveryOption {
-	return func(i *GitHubIngest) {
+	return func(i *githubstate.Ingest) {
 		i.HeadSHA = &sha
 		i.Revisions = append(i.Revisions, model.GitHubHeadRevision{Repository: *i.Repository, SHA: sha})
 	}
@@ -115,16 +120,16 @@ func atCommit(sha string) deliveryOption {
 
 // inFork also puts the delivery's commit in another repository, as a pull request's head is.
 func inFork(id int64, name string) deliveryOption {
-	return func(i *GitHubIngest) {
+	return func(i *githubstate.Ingest) {
 		i.Revisions = append(i.Revisions, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: id, Name: name}, SHA: *i.HeadSHA})
 	}
 }
 
 // delivery is a delivery of the event to the fixture's repository.
-func (g githubFixture) delivery(event string, options ...deliveryOption) GitHubIngest {
+func (g githubFixture) delivery(event string, options ...deliveryOption) githubstate.Ingest {
 	id := uuid.New()
 	digest := sha256.Sum256(id[:])
-	ingest := GitHubIngest{
+	ingest := githubstate.Ingest{
 		AppID: g.app, DeliveryID: id, InstallationID: g.installation,
 		Repository: &model.GitHubRepository{ID: g.repository, Name: testRepositoryName},
 		Event:      event, Digest: digest[:], Payload: json.RawMessage(fmt.Sprintf(`{"delivery": %q}`, id)),
@@ -135,7 +140,7 @@ func (g githubFixture) delivery(event string, options ...deliveryOption) GitHubI
 	return ingest
 }
 
-func (g githubFixture) ingest(t *testing.T, ingest GitHubIngest) bool {
+func (g githubFixture) ingest(t *testing.T, ingest githubstate.Ingest) bool {
 	t.Helper()
 	created, err := g.IngestGitHub(t.Context(), ingest)
 	if err != nil {
@@ -145,7 +150,7 @@ func (g githubFixture) ingest(t *testing.T, ingest GitHubIngest) bool {
 }
 
 // deliver ingests a new delivery of the event to the fixture's repository.
-func (g githubFixture) deliver(t *testing.T, event string, options ...deliveryOption) GitHubIngest {
+func (g githubFixture) deliver(t *testing.T, event string, options ...deliveryOption) githubstate.Ingest {
 	t.Helper()
 	ingest := g.delivery(event, options...)
 	if !g.ingest(t, ingest) {
@@ -157,7 +162,7 @@ func (g githubFixture) deliver(t *testing.T, event string, options ...deliveryOp
 type githubSubscription struct {
 	ID, InboxID uuid.UUID
 	Source      model.GitHubSource
-	Subject     GitHubSubjectKey
+	Subject     githubstate.SubjectKey
 }
 
 // follow subscribes the fixture's inbox to the source, under the fixture's grant.
@@ -169,7 +174,7 @@ func (g githubFixture) follow(t *testing.T, source model.GitHubSource, key strin
 // followIn subscribes the inbox of another destination of the fixture's owner to the source.
 func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, source model.GitHubSource, key string) githubSubscription {
 	t.Helper()
-	subject, err := NewGitHubSubjectKey(g.repository, source.Subject)
+	subject, err := githubstate.NewSubjectKey(g.repository, source.Subject)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +209,7 @@ func (g githubFixture) claimInbox(t *testing.T, inboxID uuid.UUID) Claim {
 }
 
 // validate refreshes the grant as a successful call to GitHub would, unless it is fresh, and returns its fence.
-func (g githubFixture) validate(t *testing.T, key GitHubAccessKey) GitHubAccessFence {
+func (g githubFixture) validate(t *testing.T, key githubstate.AccessKey) githubstate.AccessFence {
 	t.Helper()
 	lease, err := g.state.Acquire(t.Context(), key)
 	if err != nil {
@@ -223,23 +228,23 @@ func (g githubFixture) validate(t *testing.T, key GitHubAccessKey) GitHubAccessF
 }
 
 // refreshSubject refreshes the subject as a successful call to GitHub would, unless it is fresh.
-func (g githubFixture) refreshSubject(t *testing.T, subject GitHubSubjectKey, base GitHubAccessFence) {
+func (g githubFixture) refreshSubject(t *testing.T, subject githubstate.SubjectKey, base githubstate.AccessFence) {
 	t.Helper()
 	lease, err := g.state.Acquire(t.Context(), subject)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if lease != nil {
-		if err := g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{base}, GitHubSubjectObservation{}); err != nil {
+		if err := g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{base}, githubstate.SubjectObservation{}); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
 // addRevisions records commits the subject is known at, as its refresh does.
-func (g githubFixture) addRevisions(t *testing.T, subject GitHubSubjectKey, revisions ...model.GitHubHeadRevision) {
+func (g githubFixture) addRevisions(t *testing.T, subject githubstate.SubjectKey, revisions ...model.GitHubHeadRevision) {
 	t.Helper()
-	err := g.transaction(t.Context(), func(tx *sql.Tx) error { return addRevisions(t.Context(), tx, subject, revisions) })
+	err := g.transaction(t.Context(), func(tx *sql.Tx) error { return githubstate.AddRevisionsTx(t.Context(), tx, subject, revisions) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,9 +259,9 @@ func (g githubFixture) fork(offset int64) model.GitHubRepository {
 }
 
 // grant gives the installation access to the repository, as a pull request's fork has, and returns it.
-func (g githubFixture) grant(t *testing.T, installation int64, repository model.GitHubRepository) GitHubAccessKey {
+func (g githubFixture) grant(t *testing.T, installation int64, repository model.GitHubRepository) githubstate.AccessKey {
 	t.Helper()
-	key := GitHubAccessKey{AppID: g.app, InstallationID: installation, RepositoryID: repository.ID}
+	key := githubstate.AccessKey{AppID: g.app, InstallationID: installation, RepositoryID: repository.ID}
 	if err := g.state.Grant(t.Context(), key, repository.Name); err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +289,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 		t.Fatal(err)
 	}
 	retryAt := subject.RetryAt
-	fences := []GitHubAccessFence{base}
+	fences := []githubstate.AccessFence{base}
 	grants, err := g.state.RevisionGrants(ctx, g.app, sub.Subject)
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +297,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	for _, grant := range grants {
 		if lease, err := g.state.Acquire(ctx, grant); err != nil {
 			// A grant that cannot be refreshed now is left out, and the page is made again when it may be.
-			var deferred *RefreshDeferredError
+			var deferred *githubstate.RefreshDeferredError
 			if !errors.As(err, &deferred) {
 				t.Fatal(err)
 			}
@@ -388,12 +393,12 @@ func (g githubFixture) subscriptionState(t *testing.T, id uuid.UUID) subscriptio
 }
 
 // completeEmptyRefresh settles fixtures that intentionally observe no new subject facts or repository name.
-func completeEmptyRefresh(ctx context.Context, state *GitHubState, lease GitHubRefreshLease) error {
+func completeEmptyRefresh(ctx context.Context, state *githubstate.State, lease githubstate.RefreshLease) error {
 	switch lease.Key.(type) {
-	case GitHubAccessKey:
+	case githubstate.AccessKey:
 		return state.CompleteAccess(ctx, lease, nil)
-	case GitHubSubjectKey:
-		return state.CompleteSubject(ctx, lease, nil, GitHubSubjectObservation{})
+	case githubstate.SubjectKey:
+		return state.CompleteSubject(ctx, lease, nil, githubstate.SubjectObservation{})
 	default:
 		return errors.New("fixture does not support this refresh kind")
 	}

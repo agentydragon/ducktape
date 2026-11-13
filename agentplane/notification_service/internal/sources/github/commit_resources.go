@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // Each commit resource has its own deadline and error state. Pending mergeability retries do not accelerate
 // either read, and a classified failure in one resource does not stop the other's observations or raw activity.
-func (p *Provider) refreshCommitResource(ctx context.Context, key store.GitHubCommitRefreshKey, fences []store.GitHubAccessFence) (*time.Time, error) {
+func (p *Provider) refreshCommitResource(ctx context.Context, key githubstate.CommitRefreshKey, fences []githubstate.AccessFence) (*time.Time, error) {
 	lease, err := p.state.Acquire(ctx, key)
-	var deferred *store.RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if errors.As(err, &deferred) {
 		return &deferred.Until, nil
 	}
@@ -57,7 +57,7 @@ type commitTarget struct {
 	installationID int64
 }
 
-func (p *Provider) commitTargets(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]commitTarget, error) {
+func (p *Provider) commitTargets(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]commitTarget, error) {
 	revisions, err := p.state.CommitTargets(ctx, subject)
 	if err != nil {
 		return nil, err

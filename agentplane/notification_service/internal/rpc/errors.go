@@ -99,7 +99,7 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.PermissionDenied, access.Error())
 	case errors.As(err, &changed):
 		return status.Error(codes.PermissionDenied, changed.Error())
-	case errors.As(err, &providerErr) && providerErr.Kind == store.FailureAccessDenied:
+	case errors.As(err, &providerErr) && providerErr.Kind == model.FailureAccessDenied:
 		return status.Error(codes.PermissionDenied, "Source unavailable or unauthorized")
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "notification request deadline expired")

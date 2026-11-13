@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
@@ -24,14 +25,13 @@ var _ sources.Provider = (*Provider)(nil)
 type Provider struct {
 	client *client.Client
 	store  *store.Store
-	state  *store.GitHubState
+	state  *githubstate.State
 	appID  int64
 }
 
-func NewProvider(client *client.Client, st *store.Store, settings settings.Settings) *Provider {
-	freshness := time.Duration(settings.FreshnessSeconds) * time.Second
+func NewProvider(client *client.Client, st *store.Store, sharedState *githubstate.State, settings settings.Settings) *Provider {
 	return &Provider{
-		client: client, store: st, state: store.NewGitHubState(st, freshness), appID: settings.AppID,
+		client: client, store: st, state: sharedState, appID: settings.AppID,
 	}
 }
 
@@ -44,10 +44,10 @@ func (p *Provider) Process(ctx context.Context, claim store.Claim, due store.Due
 		return fmt.Errorf("subscription %s is not a bound GitHub subscription", due.ID)
 	}
 	if due.GitHubAccess.AppID != p.appID {
-		return &sources.ProviderError{Kind: store.FailureSourceChanged, Message: "GitHub App changed; recreate the subscription"}
+		return &sources.ProviderError{Kind: model.FailureSourceChanged, Message: "GitHub App changed; recreate the subscription"}
 	}
 	err := p.reconcile(ctx, claim, due, source)
-	var deferred *store.RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if errors.As(err, &deferred) {
 		return &sources.ProviderDeferred{Until: deferred.Until}
 	}
@@ -60,7 +60,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	if err != nil {
 		return err
 	}
-	subject, err := store.NewGitHubSubjectKey(binding.RepositoryID, source.Subject)
+	subject, err := githubstate.NewSubjectKey(binding.RepositoryID, source.Subject)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		return err
 	}
 	if state.LastSuccessAt == nil {
-		return &store.RefreshDeferredError{Until: time.Now()}
+		return &githubstate.RefreshDeferredError{Until: time.Now()}
 	}
 	var retryAt *time.Time
 
@@ -81,10 +81,10 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	if err != nil {
 		return err
 	}
-	fences := []store.GitHubAccessFence{base}
+	fences := []githubstate.AccessFence{base}
 	for _, grant := range grants {
 		fence, err := p.refreshAccess(ctx, grant)
-		var deferred *store.RefreshDeferredError
+		var deferred *githubstate.RefreshDeferredError
 		if errors.As(err, &deferred) {
 			// The page is made again once the grant may be refreshed.
 			retryAt = earlierRetryAt(retryAt, &deferred.Until)
@@ -110,7 +110,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 		if !selection.selected {
 			continue
 		}
-		key := store.GitHubCommitRefreshKey{
+		key := githubstate.CommitRefreshKey{
 			AppID: p.appID, InstallationID: base.Key.InstallationID, Subject: subject, Event: selection.event,
 		}
 		resourceRetry, err := p.refreshCommitResource(ctx, key, fences)
@@ -144,7 +144,7 @@ func (p *Provider) reconcile(ctx context.Context, claim store.Claim, due store.D
 	})
 }
 
-func (p *Provider) earliestFenceExpiry(ctx context.Context, fences []store.GitHubAccessFence) (time.Time, error) {
+func (p *Provider) earliestFenceExpiry(ctx context.Context, fences []githubstate.AccessFence) (time.Time, error) {
 	var earliest time.Time
 	for _, fence := range fences {
 		validUntil, err := p.state.ValidUntil(ctx, fence.Key)

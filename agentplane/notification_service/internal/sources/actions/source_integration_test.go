@@ -248,7 +248,7 @@ func (f fixture) lastCursor(t *testing.T, inboxID uuid.UUID) int64 {
 	return page.Inbox.LastCursor
 }
 
-func requireFailure(t *testing.T, err error, kind store.SourceFailureKind, message string) {
+func requireFailure(t *testing.T, err error, kind model.SourceFailureKind, message string) {
 	t.Helper()
 	var failure *sources.ProviderError
 	if !errors.As(err, &failure) {
@@ -356,7 +356,7 @@ func TestReconcileDoesNotFollowRequestsWithoutItsExactIdentity(t *testing.T) {
 
 			err := f.reconcile(t, f.claim(t))
 
-			requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
+			requireFailure(t, err, model.FailureAccessDenied, "SourceNotOwnedError")
 			for _, call := range f.service.log() {
 				if call.Method == "ListActionRequestEvents" {
 					t.Errorf("events were requested: %+v", call)
@@ -390,7 +390,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherIdentity(t *testing.T) {
 	}
 
 	_, err = f.source.Events(t.Context(), store.Owner{Identity: model.Identity{Name: "another-identity", UID: "another-identity-uid"}, SandboxUID: testSandboxUID}, request, 0)
-	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
+	requireFailure(t, err, model.FailureAccessDenied, "SourceNotOwnedError")
 }
 
 func TestEventsMapsTheActionEventActors(t *testing.T) {
@@ -434,60 +434,60 @@ func TestReconcileClassifiesActionServiceResponses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		read    string
 		setup   func(*fakeActionService)
-		kind    store.SourceFailureKind
+		kind    model.SourceFailureKind
 		message string
 	}{
 		"request not found": {
 			read: "request", setup: func(s *fakeActionService) { s.getError = status.Error(codes.NotFound, "test detail") },
-			kind: store.FailureAccessDenied, message: "NotFound",
+			kind: model.FailureAccessDenied, message: "NotFound",
 		},
 		"request unauthenticated": {
 			read: "request", setup: func(s *fakeActionService) { s.getError = status.Error(codes.Unauthenticated, "test detail") },
-			kind: store.FailureAccessDenied, message: "Unauthenticated",
+			kind: model.FailureAccessDenied, message: "Unauthenticated",
 		},
 		"request unavailable": {
 			read: "request", setup: func(s *fakeActionService) {
 				s.getError = status.Error(codes.Unavailable, "the bearer token file is empty")
 			},
-			kind: store.FailureUnavailable, message: "TransportError",
+			kind: model.FailureUnavailable, message: "TransportError",
 		},
 		"request invalid": {
 			read: "request", setup: func(s *fakeActionService) { s.getError = status.Error(codes.InvalidArgument, "test detail") },
-			kind: store.FailureProcessingError, message: "InvalidArgument",
+			kind: model.FailureProcessingError, message: "InvalidArgument",
 		},
 		"events permission denied": {
 			read: "events", setup: func(s *fakeActionService) { s.eventsError = status.Error(codes.PermissionDenied, "test detail") },
-			kind: store.FailureAccessDenied, message: "PermissionDenied",
+			kind: model.FailureAccessDenied, message: "PermissionDenied",
 		},
 		"events rate limited": {
 			read: "events", setup: func(s *fakeActionService) { s.eventsError = status.Error(codes.ResourceExhausted, "test detail") },
-			kind: store.FailureRateLimited, message: "ResourceExhausted",
+			kind: model.FailureRateLimited, message: "ResourceExhausted",
 		},
 		"events server failure": {
 			read: "events", setup: func(s *fakeActionService) { s.eventsError = status.Error(codes.Internal, "test detail") },
-			kind: store.FailureUnavailable, message: "TransportError",
+			kind: model.FailureUnavailable, message: "TransportError",
 		},
 		"request without receipt": {
 			read: "request", setup: func(s *fakeActionService) { s.request = nil },
-			kind: store.FailureProcessingError, message: "ValidationError",
+			kind: model.FailureProcessingError, message: "ValidationError",
 		},
 		"request without Identity": {
 			read: "request", setup: func(s *fakeActionService) { s.request.CallerIdentity = nil },
-			kind: store.FailureAccessDenied, message: "SourceNotOwnedError",
+			kind: model.FailureAccessDenied, message: "SourceNotOwnedError",
 		},
 		"Identity without a name": {
 			read: "request", setup: func(s *fakeActionService) { s.request.CallerIdentity.Name = "" },
-			kind: store.FailureAccessDenied, message: "SourceNotOwnedError",
+			kind: model.FailureAccessDenied, message: "SourceNotOwnedError",
 		},
 		"Identity without a UID": {
 			read: "request", setup: func(s *fakeActionService) { s.request.CallerIdentity.Uid = "" },
-			kind: store.FailureAccessDenied, message: "SourceNotOwnedError",
+			kind: model.FailureAccessDenied, message: "SourceNotOwnedError",
 		},
 		"event without a sequence": {
 			read: "events", setup: func(s *fakeActionService) {
 				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{{At: wireActionEvent(1).GetAt(), State: actionpb.ActionState_ACTION_STATE_ALLOWED}}
 			},
-			kind: store.FailureProcessingError, message: "ValidationError",
+			kind: model.FailureProcessingError, message: "ValidationError",
 		},
 		"event with an unknown state": {
 			read: "events", setup: func(s *fakeActionService) {
@@ -495,7 +495,7 @@ func TestReconcileClassifiesActionServiceResponses(t *testing.T) {
 				event.State = actionpb.ActionState(99)
 				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
 			},
-			kind: store.FailureProcessingError, message: "ValidationError",
+			kind: model.FailureProcessingError, message: "ValidationError",
 		},
 		"event without a time": {
 			read: "events", setup: func(s *fakeActionService) {
@@ -503,7 +503,7 @@ func TestReconcileClassifiesActionServiceResponses(t *testing.T) {
 				event.At = nil
 				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
 			},
-			kind: store.FailureProcessingError, message: "ValidationError",
+			kind: model.FailureProcessingError, message: "ValidationError",
 		},
 		"event with an invalid actor": {
 			read: "events", setup: func(s *fakeActionService) {
@@ -511,7 +511,7 @@ func TestReconcileClassifiesActionServiceResponses(t *testing.T) {
 				event.Actor = &actionpb.Principal{Principal: &actionpb.Principal_Operator{Operator: &actionpb.Operator{Issuer: ""}}}
 				s.useEventOverride, s.events = true, []*actionpb.ActionEvent{event}
 			},
-			kind: store.FailureProcessingError, message: "ValidationError",
+			kind: model.FailureProcessingError, message: "ValidationError",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -540,7 +540,7 @@ func TestReconcileShowsAnUnreachableActionServiceAsUnavailable(t *testing.T) {
 	claim := f.claim(t)
 	f.server.Stop()
 
-	requireFailure(t, f.reconcile(t, claim), store.FailureUnavailable, "TransportError")
+	requireFailure(t, f.reconcile(t, claim), model.FailureUnavailable, "TransportError")
 }
 
 func TestReconcileShowsAnActionServiceCallThatExceedsItsTimeoutAsUnavailable(t *testing.T) {
@@ -550,7 +550,7 @@ func TestReconcileShowsAnActionServiceCallThatExceedsItsTimeoutAsUnavailable(t *
 	f.service.set(func(s *fakeActionService) { s.blockGet = true })
 	impatient := &Source{Service: f.client(t, 0.05), Store: f.store}
 
-	requireFailure(t, f.reconcileWith(t, impatient, claim), store.FailureUnavailable, "TransportError")
+	requireFailure(t, f.reconcileWith(t, impatient, claim), model.FailureUnavailable, "TransportError")
 }
 
 // A cancelled read is the worker stopping, not a source to show as failing.
@@ -586,7 +586,7 @@ func TestReconcileRefusesAGapInTheLogAndRecordsNothing(t *testing.T) {
 
 	err := f.reconcile(t, f.claim(t))
 
-	requireFailure(t, err, store.FailureProcessingError, "ConflictError")
+	requireFailure(t, err, model.FailureProcessingError, "ConflictError")
 	if got := len(f.entries(t, subscription.InboxID)); got != 0 {
 		t.Errorf("entries = %d", got)
 	}
@@ -631,7 +631,7 @@ func TestActionsRequireTheExactRecordedIdentityUID(t *testing.T) {
 			subscription := f.subscribe(t)
 			f.service.set(func(s *fakeActionService) { s.request.CallerIdentity.Uid = uid; s.eventCount = 3 })
 			err := f.reconcile(t, f.claim(t))
-			requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
+			requireFailure(t, err, model.FailureAccessDenied, "SourceNotOwnedError")
 			for _, call := range f.service.log() {
 				if call.Method == "ListActionRequestEvents" {
 					t.Fatal("read events without a matching caller UID")

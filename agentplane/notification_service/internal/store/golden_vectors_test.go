@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -103,13 +104,13 @@ type goldenDelivery struct {
 }
 
 // ingest is what Python's ingest stored for the delivery, as the store takes it.
-func (d goldenDelivery) ingest(t *testing.T) GitHubIngest {
+func (d goldenDelivery) ingest(t *testing.T) githubstate.Ingest {
 	t.Helper()
 	digest, err := hex.DecodeString(d.Ingest.Digest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ingest := GitHubIngest{
+	ingest := githubstate.Ingest{
 		AppID: d.Ingest.AppID, DeliveryID: d.Ingest.DeliveryID, InstallationID: d.Ingest.InstallationID,
 		Event: d.Ingest.Event, Digest: digest, Payload: d.Ingest.Payload, Action: d.Ingest.Action, HeadSHA: d.Ingest.HeadSHA,
 	}
@@ -117,7 +118,7 @@ func (d goldenDelivery) ingest(t *testing.T) GitHubIngest {
 		ingest.Repository = &model.GitHubRepository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
 	}
 	for _, subject := range d.Ingest.Subjects {
-		ingest.Subjects = append(ingest.Subjects, GitHubSubjectKey{RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey})
+		ingest.Subjects = append(ingest.Subjects, githubstate.SubjectKey{RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey})
 	}
 	for _, revision := range d.Ingest.Revisions {
 		ingest.Revisions = append(ingest.Revisions, model.GitHubHeadRevision{

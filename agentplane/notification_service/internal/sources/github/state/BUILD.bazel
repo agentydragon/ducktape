@@ -1,0 +1,25 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "state",
+    srcs = [
+        "commit.go",
+        "completion.go",
+        "ingest.go",
+        "mergeability.go",
+        "pr.go",
+        "reconcile.go",
+        "state.go",
+        "status.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state",
+    deps = [
+        "//agentplane/notification_service/internal/storagecodec",
+        "//agentplane/notification_service/model",
+        "//agentplane/postgres",
+        "//agentplane/postgres/lease",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
