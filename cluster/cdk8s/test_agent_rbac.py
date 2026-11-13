@@ -197,9 +197,12 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(rendering: Rend
 def test_standing_identity_accounts_preserve_exact_previous_kubernetes_rights(
     serviceaccount_rendering: Rendering, identity_rendering: Rendering, caller: str
 ) -> None:
-    """The new named account retains exactly the old direct ServiceAccount and PolicySet rights."""
+    """The new named account retains the old direct and mixed-policy Kubernetes rights."""
     previous = serviceaccount_rendering.rbac.identity("ServiceAccount", caller, _NAMESPACE)
-    previous |= serviceaccount_rendering.binding(caller)
+    # The standing binding itself now names the new account, even in the old catalog rendering.
+    # Reconstruct the pre-cutover mixed PolicySet grants directly so the baseline cannot include
+    # the new account's role sets and mask a lost or widened permission.
+    previous |= serviceaccount_rendering.rbac.held(("coinbase", "plaid-diagnostics"))
     current = identity_rendering.binding(caller)
 
     assert not uncovered(previous, current), f"Identity account lost {sorted(map(str, uncovered(previous, current)))}"
