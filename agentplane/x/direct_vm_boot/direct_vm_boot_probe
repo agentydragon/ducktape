@@ -1,0 +1,40 @@
+#!/bin/busybox sh
+set -eu
+
+fail() {
+	printf 'DIRECT_VM_BOOT_PROBE_FAIL %s\n' "$*"
+	exit 1
+}
+
+mount_type() {
+	awk -v target="$1" '$5 == target { for (i = 6; i <= NF; i++) if ($i == "-") { print $(i + 1); exit } }' /proc/self/mountinfo
+}
+
+assert_mount() {
+	actual=$(mount_type "$1")
+	[ "$actual" = "$2" ] || fail "mount=$1 expected=$2 actual=${actual:-missing}"
+	printf 'DIRECT_VM_BOOT_PROBE_MOUNT path=%s type=%s\n' "$1" "$actual"
+}
+
+[ "$(cat /proc/1/comm)" = systemd ] || fail "pid1=$(cat /proc/1/comm)"
+[ -r /sys/fs/cgroup/cgroup.controllers ] || fail "cgroup2 controllers file missing"
+assert_mount /sys/fs/cgroup cgroup2
+assert_mount /state virtiofs
+assert_mount /state/workspaces ext4
+assert_mount /run/agentplane/config iso9660
+assert_mount /run/agentplane/sandbox iso9660
+assert_mount /run/agentplane/trust iso9660
+assert_mount /run/agentplane/environment erofs
+[ -x /run/agentplane/environment/bin/agentplane-environment-runtime ] || fail "runner binary missing or not executable"
+
+nonce=$(sed -n 's/.*agentplane.direct-vm-boot-nonce=\([^ ]*\).*/\1/p' /proc/cmdline)
+[ -n "$nonce" ] || fail "kernel nonce missing"
+case "$nonce" in *[!a-f0-9]*|"") fail "invalid kernel nonce" ;; esac
+mkdir -p /state/direct-vm-boot-probe
+printf '%s\n' "$nonce" >"/state/direct-vm-boot-probe/$nonce.ready.tmp"
+mv "/state/direct-vm-boot-probe/$nonce.ready.tmp" "/state/direct-vm-boot-probe/$nonce.ready"
+sync
+printf 'DIRECT_VM_BOOT_PROBE_PASS nonce=%s pid1=systemd cgroup2=yes mounts=7 runner=yes\n' "$nonce"
+systemctl poweroff
+printf 'DIRECT_VM_BOOT_PROBE_POWEROFF_REQUESTED nonce=%s\n' "$nonce"
+while :; do sleep 1; done
