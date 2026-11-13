@@ -3982,7 +3982,7 @@ History Service. This is a naming cleanup, not permission to recreate or drop th
 the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and have the CNPG
 `Database` and managed role adopt the new names; recreating the database under a new name would copy
 the log. Verify the History Service and Electric reconnect with no data movement. Update the
-`history_service/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
+`history_service/internal/migrations/migrations.go` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
 
 ## 16. Standard idioms over hand-rolled mechanisms
 
