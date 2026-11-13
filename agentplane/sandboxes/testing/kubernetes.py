@@ -41,6 +41,9 @@ class SandboxCluster:
     # The UIDs the API server gave the Sandbox and its Pod.
     uid: str
     pod_uid: str
+    # The exact Policy Identity attached to this Sandbox's WorkloadCredential.
+    execution_identity_name: str
+    execution_identity_uid: str
 
     @property
     def identity(self) -> SandboxIdentity:
@@ -179,7 +182,15 @@ async def sandbox_cluster(server: KubernetesApiServer, *, name: str = SANDBOX) -
         namespace,
         {"status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]}},
     )
-    cluster = SandboxCluster(server=server, namespace=namespace, name=name, uid=uid, pod_uid=pod.metadata.uid)
+    cluster = SandboxCluster(
+        server=server,
+        namespace=namespace,
+        name=name,
+        uid=uid,
+        pod_uid=pod.metadata.uid,
+        execution_identity_name=identity_name,
+        execution_identity_uid=identity_uid,
+    )
     # The Sandbox's WorkloadCredential, accepted for its Pod, as the Policy Controller reports it.
     record = await custom.create_namespaced_custom_object(
         GROUP,

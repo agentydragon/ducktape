@@ -6,6 +6,7 @@ import io
 import json
 import os
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -44,6 +45,63 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # gazelle:include_dep //agentplane/env/runtime/execution/testing:codex_exec_server_container
 pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
+
+
+@asynccontextmanager
+async def _history_tunnel(target: str) -> AsyncIterator[str]:
+    """Forward CONNECT to the History test listener while preserving end-to-end TLS."""
+    tasks: set[asyncio.Task[None]] = set()
+    host, port = target.rsplit(":", 1)
+
+    async def pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        while data := await reader.read(65536):
+            writer.write(data)
+            await writer.drain()
+
+    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        upstream: asyncio.StreamWriter | None = None
+        try:
+            async with asyncio.timeout(10):
+                headers = await reader.readuntil(b"\r\n\r\n")
+            if headers.split(b"\r\n", 1)[0] != f"CONNECT {target} HTTP/1.1".encode():
+                writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                await writer.drain()
+                return
+            remote, upstream = await asyncio.open_connection(host, int(port))
+            writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            await writer.drain()
+            forward = asyncio.create_task(pump(reader, upstream))
+            backward = asyncio.create_task(pump(remote, writer))
+            try:
+                await asyncio.wait((forward, backward), return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                forward.cancel()
+                backward.cancel()
+                await asyncio.gather(forward, backward, return_exceptions=True)
+        finally:
+            writer.close()
+            if upstream is not None:
+                upstream.close()
+                with suppress(ConnectionError):
+                    await upstream.wait_closed()
+            with suppress(ConnectionError):
+                await writer.wait_closed()
+
+    def accept(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        task = asyncio.create_task(handle(reader, writer))
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+
+    server = await asyncio.start_server(accept, "127.0.0.1", 0)
+    address = server.sockets[0].getsockname()
+    try:
+        yield f"{address[0]}:{address[1]}"
+    finally:
+        server.close()
+        await server.wait_closed()
+        for task in tuple(tasks):
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.fixture
@@ -98,6 +156,9 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 directory=tmp_path,
                 writer_namespaces=[sampler.namespace, sandbox.namespace],
                 sampler_accounts=[sampler],
+                sampler_identity_callers=True,
+                policy_namespace=sandbox.namespace,
+                svid_ca=gateway.environment_runtime_ca,
             ) as history,
         ):
             store = Store(engine)
@@ -122,17 +183,22 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     )
                 ),
             )
-            ingress = configuration.Endpoint(
-                target=history.ingress_target, bearer=await history.writer_token(sandbox.owner)
-            )
-            async with RunningRunner(
-                config,
-                runner_gateway,
-                history=history.reader,
-                ingress_endpoint=ingress,
-                control_endpoint=control,
-                observe_control=False,
-            ) as running_runner:
+            async with (
+                _history_tunnel(history.ingress_target) as history_proxy,
+                RunningRunner(
+                    config,
+                    runner_gateway,
+                    history=history.reader,
+                    ingress_endpoint=configuration.Endpoint(
+                        target=history.ingress_target,
+                        svid=configuration.SVIDEndpoint(
+                            server_uri="spiffe://agentplane/history-ingress", proxy_address=history_proxy
+                        ),
+                    ),
+                    control_endpoint=control,
+                    observe_control=False,
+                ) as running_runner,
+            ):
                 await gateway.wait_for_runner(gateway.gateway_client(gateway_token), sandbox.destination)
                 sampler_settings = settings(
                     database_url,
@@ -146,8 +212,11 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     gateway_token_file=sampler_token,
                     history_target=history.ingress_target,
                     history_token_file=history_token,
+                    history_tls=history.history_tls,
                 )
                 request = create_request(tmp_path / "workspace")
+                request.execution_identity.name = sandbox.execution_identity_name
+                request.execution_identity.uid = sandbox.execution_identity_uid
                 request.executor.CopyFrom(sandbox.destination)
                 request.spec.placement.central_sampler_v1.executor_environment.name = sandbox.destination.target.name
                 request.spec.placement.central_sampler_v1.executor_environment.uid = sandbox.destination.target.uid

@@ -117,6 +117,7 @@ py_library(
     data = ["//agentplane/history_service:history-service"],
     deps = [
         "//agentplane:subjects",
+        "//agentplane/environment_runtime_transport:config",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/history_service/api/history:history_service_pb2",

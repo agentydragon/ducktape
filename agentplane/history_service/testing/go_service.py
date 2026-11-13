@@ -19,6 +19,7 @@ from uuid import UUID
 import grpc
 from python.runfiles import Runfiles
 
+from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
@@ -87,6 +88,7 @@ class GoHistoryService:
     reader: HistoryServiceClient
     api: KubernetesApiServer
     process: GoProcess
+    history_tls: ClientTLS | None = None
     _writer_tokens: dict[ServiceAccountRef, str] = field(default_factory=dict, init=False)
 
     async def writer_token(self, writer: ServiceAccountRef, *, pod_name: str | None = None) -> str:
@@ -196,6 +198,7 @@ async def go_history_service(
     writer_namespaces: Sequence[str] = (WRITER.namespace,),
     watch_lease_s: float = 300,
     sampler_accounts: Sequence[ServiceAccountRef] = (),
+    sampler_identity_callers: bool = False,
     svid_ca: CertificateAuthority | None = None,
     policy_namespace: str = WRITER.namespace,
 ) -> AsyncIterator[GoHistoryService]:
@@ -211,6 +214,7 @@ async def go_history_service(
             auth=[workload_listener.KubernetesBearerAuth(audiences=frozenset({READER_AUDIENCE, WRITER_AUDIENCE}))],
         )
         channel_credentials = None
+        history_tls = None
         if svid_ca is not None:
             tls_directory = directory / "history-tls"
             tls_directory.mkdir()
@@ -221,6 +225,7 @@ async def go_history_service(
             rpc.tls = workload_listener.TLS(cert_file=cert_file, key_file=key_file)
             rpc.auth.append(workload_listener.SPIFFEAuth(ca_file=ca_file))
             channel_credentials = grpc.ssl_channel_credentials(root_certificates=svid_ca.cert_pem)
+            history_tls = ClientTLS(ca_file=ca_file, server_uri="spiffe://agentplane/history-ingress")
         config.write_text(
             json.dumps(
                 {
@@ -234,6 +239,7 @@ async def go_history_service(
                         "token_audience": WRITER_AUDIENCE,
                         "writer_namespaces": list(writer_namespaces),
                         "sampler_accounts": [account.model_dump() for account in sampler_accounts],
+                        "sampler_identity_callers": sampler_identity_callers,
                         # Tests compare the archive with the runner's journal entry by entry.
                         "settle_deltas": False,
                     },
@@ -264,6 +270,7 @@ async def go_history_service(
                 ),
                 api=api,
                 process=process,
+                history_tls=history_tls,
             )
             async with service.reader:
                 yield service
