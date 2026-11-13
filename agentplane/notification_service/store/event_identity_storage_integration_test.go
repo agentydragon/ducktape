@@ -247,7 +247,7 @@ func TestIdentityActionActorReadsSummarizesAndExpiresWithoutChangingEventIdentit
 		t.Fatal(err)
 	}
 	event := model.ActionsEvent{RequestID: body.Source.(model.ActionsSource).RequestID, Sequence: 1}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, string(payload))
 	var decoded storagecodec.ActionEvent
 	page := f.read(t, subscription.InboxID, 0)
 	if len(page.Entries) != 1 {
@@ -283,7 +283,7 @@ func TestIdentityActionActorReadsSummarizesAndExpiresWithoutChangingEventIdentit
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_actor_identity_name IS NULL AND action_actor_identity_uid IS NULL`, subscription.InboxID); got != 1 {
 		t.Fatalf("Identity actor payload not expired: %d", got)
 	}
-	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payload)
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, string(payload))
 	if got := f.read(t, subscription.InboxID, 0).Inbox.LastCursor; got != 1 {
 		t.Fatalf("expired event replayed: cursor %d", got)
 	}
