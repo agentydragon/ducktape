@@ -2,9 +2,32 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Literal, Protocol
 
 ProgressCategory = Literal["PRUNE", "KEEP", "REVIEW"]
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressPhase:
+    """Progress for one dynamically discovered kind of work."""
+
+    discovered: int
+    ready: int
+    active: int
+    completed: int
+    outcomes: Mapping[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressState:
+    """A point-in-time view of work across phases."""
+
+    phases: Mapping[str, ProgressPhase]
+    waiting: int
+    discovering: bool
+    stopped: bool
 
 
 class ProgressSink(Protocol):

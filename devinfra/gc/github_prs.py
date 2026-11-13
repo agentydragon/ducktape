@@ -19,26 +19,24 @@ from typing import Any
 import httpx
 
 from devinfra.gc import git_repo
-from devinfra.gc.pull_request import PrInfo, PrState
+from devinfra.gc.async_io import run_blocking, run_process
+from devinfra.gc.pull_request import PrInfo, PrLookup, PrState
 
 logger = logging.getLogger(__name__)
 
-_PR_RANK = {PrState.MERGED: 3, PrState.OPEN: 2, PrState.CLOSED: 1}
+_PR_RANK = {PrState.OPEN: 3, PrState.MERGED: 2, PrState.CLOSED: 1}
 
 
 async def _github_token() -> str | None:
     if token := os.environ.get("GITHUB_TOKEN"):
         return token
     try:
-        process = await asyncio.create_subprocess_exec(
-            "gh", "auth", "token", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL
-        )
+        process = await run_process("gh", "auth", "token")
     except OSError:
         return None
-    stdout, _ = await process.communicate()
     if process.returncode != 0:
         return None
-    return stdout.decode().strip() or None
+    return process.stdout.strip() or None
 
 
 _REMOTE_SLUG_RE = re.compile(r"(?:github\.com[:/])([^/]+/[^/]+?)(?:\.git)?/?$")
@@ -62,8 +60,13 @@ def _repo_slug(repo: Path) -> str | None:
 
 
 _GRAPHQL_URL = "https://api.github.com/graphql"
-_GRAPHQL_BATCH = 50  # aliased pullRequests fields per request; well under GraphQL node limits
-_MAX_CONCURRENT_REQUESTS = 4  # kept low: GitHub's secondary rate limits penalize bursts of concurrent requests
+PR_BATCH_SIZE = 50  # aliased pullRequests fields per request; well under GraphQL node limits
+MAX_CONCURRENT_REQUESTS = 4  # GitHub's secondary rate limits penalize bursts of concurrent requests
+
+
+def pr_batches(branches: Iterable[str]) -> tuple[frozenset[str], ...]:
+    """Split branch names into the finite requests accepted by the GraphQL query."""
+    return tuple(frozenset(batch) for batch in itertools.batched(sorted(set(branches)), PR_BATCH_SIZE, strict=False))
 
 
 def _pr_query(owner: str, name: str, branches: list[str]) -> tuple[str, dict[str, str]]:
@@ -71,7 +74,8 @@ def _pr_query(owner: str, name: str, branches: list[str]) -> tuple[str, dict[str
     alias_to_branch = {f"b{i}": branch for i, branch in enumerate(branches)}
     fields = " ".join(
         f"{alias}: pullRequests(headRefName: {json.dumps(branch)}, first: 5, "
-        f"orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ number state headRefOid }} }}"
+        f"orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ number state headRefOid }} "
+        "pageInfo { hasNextPage } }"
         for alias, branch in alias_to_branch.items()
     )
     query = f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {fields} }} }}"
@@ -79,7 +83,7 @@ def _pr_query(owner: str, name: str, branches: list[str]) -> tuple[str, dict[str
 
 
 def _most_decisive(nodes: Iterable[Mapping[str, Any]]) -> PrInfo | None:
-    """The merged > open > closed PR among `nodes` (a branch's `pullRequests.nodes`)."""
+    """Prefer OPEN, then MERGED, then CLOSED among a branch's returned PRs."""
     best: PrInfo | None = None
     for node in nodes:
         info = PrInfo(number=node["number"], state=PrState(node["state"]), head_sha=node["headRefOid"])
@@ -102,7 +106,7 @@ async def _fetch_batch(
     *,
     index: int,
     total: int,
-) -> dict[str, PrInfo] | _QuotaExhausted:
+) -> PrLookup | _QuotaExhausted:
     async with semaphore:
         logger.info("Checking GitHub PR state batch %d/%d (%d branches)", index, total, len(batch))
         query, alias_to_branch = _pr_query(owner, name, list(batch))
@@ -115,41 +119,49 @@ async def _fetch_batch(
         raise RuntimeError(f"GraphQL returned no data: {errors}")
     repository = data["repository"]
     states: dict[str, PrInfo] = {}
+    unknown: set[str] = set()
     for alias, branch in alias_to_branch.items():
         connection = repository.get(alias)
-        if connection is not None and (info := _most_decisive(connection["nodes"])) is not None:
+        if connection is None:
+            unknown.add(branch)
+            continue
+        nodes = connection["nodes"]
+        info = _most_decisive(nodes)
+        if connection["pageInfo"]["hasNextPage"] and not any(node["state"] == PrState.OPEN for node in nodes):
+            # An unseen open PR could change the decision. A visible open PR is already
+            # sufficient to keep the branch, regardless of any older merged/closed PR.
+            unknown.add(branch)
+        elif info is not None:
             states[branch] = info
     logger.info("Finished GitHub PR state batch %d/%d", index, total)
-    return states
+    return PrLookup(states, unknown)
 
 
-async def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
-    """Most-decisive PR (merged > open > closed) per branch, via batched GraphQL queries.
+async def pr_states(repo: Path, branches: Iterable[str]) -> PrLookup:
+    """Most-decisive PR (open > merged > closed) per branch, via batched GraphQL queries.
 
     Aliased `pullRequests(headRefName:)` fields fetch ~50 branches per request instead of a
     REST call per branch — a few round-trips rather than hundreds. Up to
-    `_MAX_CONCURRENT_REQUESTS` batches are in flight at once. `headRefName` matches PR
-    records, so a branch whose remote ref was deleted after merge still resolves. Returns {}
-    when there is no token, no GitHub remote, or any batch fails with a GraphQL or HTTP error
-    other than a quota refusal. A batch refused for quota (RATE_LIMIT) is dropped and every
-    batch that did resolve is kept — with concurrent batches, "resolved" means resolved at all,
-    not resolved before the limit hit — so the caller classifies the rest on git signals alone.
+    `MAX_CONCURRENT_REQUESTS` batches are in flight at once. `headRefName` matches PR
+    records, so a branch whose remote ref was deleted after merge still resolves. A failed
+    lookup is distinct from a successful lookup finding no PR: its branches are unknown.
     """
+    branches = set(branches)
     if not branches:
-        return {}
-    slug = _repo_slug(repo)
+        return PrLookup({})
+    slug = await run_blocking(_repo_slug, repo)
     token = await _github_token()
     if slug is None:
         logger.warning("PR check skipped: origin is not a GitHub remote")
-        return {}
+        return PrLookup({}, branches)
     if token is None:
         logger.warning("PR check skipped: no GITHUB_TOKEN and `gh auth token` unavailable")
-        return {}
+        return PrLookup({}, branches)
     owner, name = slug.split("/", 1)
     headers = {"Authorization": f"bearer {token}", "User-Agent": "workspace-gc"}
-    batches = list(itertools.batched(sorted(branches), _GRAPHQL_BATCH, strict=False))
+    batches = [sorted(batch) for batch in pr_batches(branches)]
     logger.info("Checking GitHub PR state for %d branches in %d batches", len(branches), len(batches))
-    semaphore = asyncio.Semaphore(_MAX_CONCURRENT_REQUESTS)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
     try:
         async with httpx.AsyncClient(headers=headers, timeout=30) as client, asyncio.TaskGroup() as group:
             tasks = [
@@ -158,21 +170,21 @@ async def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
             ]
     except Exception:
         logger.warning("PR check skipped: GitHub API error", exc_info=True)
-        return {}
+        return PrLookup({}, branches)
     states: dict[str, PrInfo] = {}
+    unknown: set[str] = set()
     exhausted = 0
-    for task in tasks:
+    for batch, task in zip(batches, tasks, strict=True):
         result = task.result()
         if isinstance(result, _QuotaExhausted):
             exhausted += 1
+            unknown.update(batch)
         else:
-            states.update(result)
+            states.update(result.states)
+            unknown.update(result.unknown)
     if exhausted:
-        # Quota is per-hour and shared with every other GitHub caller, so it says nothing about
-        # this repo: keep the batches that resolved and let the rest classify on git signals.
         logger.warning(
-            "PR check incomplete: GitHub GraphQL quota exhausted for %d of %d batches; "
-            "classified %d of %d branches with PR data",
+            "PR check incomplete: GitHub GraphQL quota exhausted for %d of %d batches; found PRs for %d of %d branches",
             exhausted,
             len(batches),
             len(states),
@@ -180,4 +192,8 @@ async def pr_states(repo: Path, branches: set[str]) -> dict[str, PrInfo]:
         )
     else:
         logger.info("GitHub PR state complete: %d/%d branches resolved", len(states), len(branches))
-    return states
+    # A partial merged/closed answer is not enough to justify a decision when another PR
+    # page may contain an open PR.
+    for branch in unknown:
+        states.pop(branch, None)
+    return PrLookup(states, unknown)

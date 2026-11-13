@@ -233,8 +233,8 @@ def test_scan_covers_session_env_bases_and_names_them_by_path(
 ) -> None:
     session_base = _session_env_base(tmp_path, tmp_path / "gone-too")
 
-    inspections = gc.scan_output_user_root(
-        output_root, session_bases=[session_base], proc_root=proc, mountinfo_path=mountinfo
+    inspections = list(
+        gc.scan_output_user_root(output_root, session_bases=[session_base], proc_root=proc, mountinfo_path=mountinfo)
     )
 
     assert [item.path for item in inspections] == [prunable_base, session_base]
@@ -311,7 +311,7 @@ def test_scan_reports_symlink_and_failed_quarantine(tmp_path: Path, proc: Path, 
     quarantine = root / ".bazel-output-base-gc-dead"
     quarantine.mkdir()
 
-    inspections = gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    inspections = list(gc.scan_output_user_root(root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo))
 
     assert len(inspections) == 2
     assert {_reason(item) for item in inspections} == {
@@ -327,12 +327,12 @@ def test_mount_points_unescapes_kernel_path_encoding(tmp_path: Path) -> None:
     assert gc.mount_points(mountinfo_path=mountinfo) == {Path("/tmp/mounted path")}
 
 
-def test_report_tolerates_size_failure(prunable_base: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_report_tolerates_size_failure(prunable_base: Path) -> None:
     inspection = _inspect(prunable_base)
     assert isinstance(inspection, gc.PrunableBase)
-    monkeypatch.setattr(gc, "allocated_bytes", lambda _path: None)
-
-    report = gc.render_report([inspection], include_kept=False, include_sizes=True)
+    report = gc.render_report(
+        [inspection], include_kept=False, include_sizes=True, measured_sizes={prunable_base: None}
+    )
 
     assert "?" in report
     assert "prunable size unavailable" in report
@@ -440,7 +440,9 @@ def test_bazel_lock_conflicts_with_another_process(tmp_path: Path) -> None:
 def test_scan_and_render_report_flag_a_prunable_base(
     prunable_base: Path, output_root: Path, proc: Path, mountinfo: Path
 ) -> None:
-    inspections = gc.scan_output_user_root(output_root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    inspections = list(
+        gc.scan_output_user_root(output_root, session_bases=(), proc_root=proc, mountinfo_path=mountinfo)
+    )
 
     assert prunable_base.exists()
     assert [type(item) for item in inspections] == [gc.PrunableBase]
