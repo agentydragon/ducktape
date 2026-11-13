@@ -92,12 +92,9 @@ def create_oauth_router(
         """Shared OAuth callback; the provider is resolved from `state`."""
         return await _complete(request, operator)
 
-    # CLEANUP(added 2026-06-29): legacy per-provider callback path. The {provider_name}
-    # segment is cosmetic — it only lets already-registered /oauth/callback/<name> URIs
-    # (and providers piggybacking on one) keep routing
-    # here; the provider is resolved from `state`. Remove once oura/google/bsc are
-    # migrated to the shared /oauth/callback (see config.yaml TODOs) and their old URIs
-    # are deregistered from their OAuth apps.
+    # CLEANUP(added 2026-06-29): Remove after Oura and BSC use `/oauth/callback`
+    # and their old redirect URIs are deregistered. Their provider config and
+    # migration TODOs are in `cluster/cdk8s/airlock.py`.
     @router.get("/callback/{provider_name}", response_model=None)
     async def callback_legacy(
         provider_name: str, request: Request, operator: OperatorSessionDependency
