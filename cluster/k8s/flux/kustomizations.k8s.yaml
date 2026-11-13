@@ -3963,6 +3963,8 @@ spec:
       namespace: ducktape-flux
     - name: kyverno
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/grocy/sf/app
   prune: true
@@ -3990,6 +3992,8 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: kyverno
+      namespace: ducktape-flux
+    - name: cert-manager-environment
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/grocy/vallejo/app

@@ -156,6 +156,7 @@ def _server(scope: Construct, household: str) -> None:
                                     key.env_var(env_name(ServerSettings, *path))
                                     for path, key in _secret_settings(household).items()
                                 ),
+                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
                                 k8s.EnvVar(name="LOG_LEVEL", value="INFO"),
                                 k8s.EnvVar(name=CONFIG_FILE_ENV, value=f"{_CONFIG_DIR}/{_CONFIG_FILE}"),
                             ],
@@ -173,7 +174,12 @@ def _server(scope: Construct, household: str) -> None:
                                     "cpu": k8s.Quantity.from_string("200m"),
                                 },
                             ),
-                            volume_mounts=[k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True)],
+                            volume_mounts=[
+                                k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
+                                k8s.VolumeMount(
+                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                ),
+                            ],
                             readiness_probe=k8s.Probe(
                                 tcp_socket=k8s.TcpSocketAction(port=probe_port),
                                 initial_delay_seconds=3,
@@ -186,7 +192,10 @@ def _server(scope: Construct, household: str) -> None:
                             ),
                         )
                     ],
-                    volumes=[k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP))],
+                    volumes=[
+                        k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)),
+                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                    ],
                 ),
             ),
         ),

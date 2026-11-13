@@ -16,6 +16,7 @@ def grocy_sf(
     mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     name = "grocy-sf"
     return flux_kustomization(
@@ -31,6 +32,7 @@ def grocy_sf(
             monitoring_crds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
             kyverno,
+            cert_manager_environment,
         ),
     )
 
@@ -57,6 +59,7 @@ def grocy_vallejo(
     mcp_oauth_state: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     name = "grocy-vallejo"
     return flux_kustomization(
@@ -72,6 +75,7 @@ def grocy_vallejo(
             monitoring_crds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployments, Job, Namespace and HTTPRoute.
             kyverno,
+            cert_manager_environment,
         ),
     )
 
