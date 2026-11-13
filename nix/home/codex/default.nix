@@ -125,7 +125,30 @@ let
     # the sandbox boundary; this preserves the interactive approval policy and
     # does not expand the sandbox or writable roots.
     approvals_reviewer = cfg.approvalsReviewer;
-    # TODO: Consider a personal [auto_review].policy for command, data-access, and destructive-action limits.
+    auto_review.extra_policy = ''
+      The user grants standing authorization for these development workflows in
+      agentydragon/ducktape and agentydragon/gaffer-private:
+
+      - BuildBuddy is an authorized destination for source code from both
+        repositories, build inputs, generated outputs, and ordinary validation
+        artifacts. Repository-configured builds, tests, queries, reruns, and
+        artifact retrieval do not require separate permission for each target,
+        source revision, or upload. This does not authorize uploading unrelated
+        private data or forwarding additional credentials to remote execution.
+      - Ordinary development PRs may be committed, pushed to feature branches in
+        their corresponding existing GitHub repository origins, opened, and
+        updated, including publishing normal CI evidence and BuildBuddy links.
+        Do not publish private information, secrets, captured sessions, or private
+        gaffer-private source in the public ducktape repository. Authorization to
+        publish a PR does not itself authorize merging it or deleting branches.
+      - An agent may rebase a branch it created when it owns a PR based on that
+        branch, and publish the rebased head with --force-with-lease. This does
+        not authorize rewriting main, devel, shared branches, or branches the
+        agent did not create. Do not use git commit --amend on a pushed commit.
+      - For requested GitHub stack setup, gh pr merge --disable-auto disables
+        ordinary auto-merge; it does not merge the PR. That settings change is
+        authorized as part of preparing the requested stack.
+    '';
     shell_environment_policy = {
       "inherit" = "all";
       "set" = {
