@@ -193,12 +193,28 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(rendering: Rend
     assert not uncovered(expected, actual)
 
 
+@pytest.mark.parametrize("caller", ["claude-ai", "haku-agent"])
+def test_standing_identity_accounts_preserve_exact_previous_kubernetes_rights(
+    serviceaccount_rendering: Rendering, identity_rendering: Rendering, caller: str
+) -> None:
+    """The new named account retains the old direct and mixed-policy Kubernetes rights."""
+    previous = serviceaccount_rendering.rbac.identity("ServiceAccount", caller, _NAMESPACE)
+    # The standing binding itself now names the new account, even in the old catalog rendering.
+    # Reconstruct the pre-cutover mixed PolicySet grants directly so the baseline cannot include
+    # the new account's role sets and mask a lost or widened permission.
+    previous |= serviceaccount_rendering.rbac.held(("coinbase", "plaid-diagnostics"))
+    current = identity_rendering.binding(caller)
+
+    assert not uncovered(previous, current), f"Identity account lost {sorted(map(str, uncovered(previous, current)))}"
+    assert not uncovered(current, previous), f"Identity account gained {sorted(map(str, uncovered(current, previous)))}"
+
+
 def test_agent_permission_denials(rendering: Rendering) -> None:
     rbac = rendering.rbac
     profiles = {name: rendering.launch(name) for name in ("public-coder", "finance-agent", "haku")}
     profiles.update(
         {
-            # Each standing caller's ServiceAccount keeps its own bindings in both renderings.
+            # Direct ServiceAccount RoleBindings remain independent of the standing Identity PolicyBinding.
             caller: rbac.identity("ServiceAccount", caller, _NAMESPACE) | rendering.binding(caller)
             for caller in ("claude-ai", "haku-agent")
         }
@@ -305,8 +321,8 @@ def test_no_holder_gains_access_on_the_switch(
         for preset in identity_rendering.launches
     }
     for name, before in serviceaccount_rendering.bindings.items():
-        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch; a
-        # binding already on an Identity (the standing workloads') has no account of its own.
+        # Only public-coder's optional legacy binding is ServiceAccount-subject. Claude.ai and Haku
+        # are Identity-subject in both renderings and reach Kubernetes through their named accounts.
         subject = before["subject"]
         today = serviceaccount_rendering.binding(name)
         if "identity" not in subject:

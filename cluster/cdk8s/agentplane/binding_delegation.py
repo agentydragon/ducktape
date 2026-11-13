@@ -2,7 +2,7 @@
 
 Each external namespace has its own Flux Kustomization. An absent or suspended
 service namespace cannot make the Agentplane app Kustomization fail to apply.
-The assignable PolicySet grants and retained cleanup scopes remain the only scope inputs.
+Preset and standing-account role grants plus retained cleanup scopes determine the target roles.
 """
 
 from __future__ import annotations

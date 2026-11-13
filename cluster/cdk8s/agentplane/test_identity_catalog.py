@@ -11,8 +11,11 @@ import yaml
 from cdk8s import App, Testing as Cdk8sTesting  # Aliased: pytest would collect a bare `Testing`.
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import binding_delegation, policy_controller, staging
+from cluster.cdk8s import agent_access_profiles
+from cluster.cdk8s.agentplane import binding_delegation, egress, kubernetes_account_ref, policy_controller, staging
+from cluster.cdk8s.agentplane.actions_staging_policies import COMMON_GITHUB_READ_SET
 from cluster.cdk8s.agentplane.egress import BASIC_POLICY, KUBERNETES_HOST
+from cluster.cdk8s.public_coder import egress as public_coder_egress
 
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 
@@ -62,6 +65,88 @@ def test_every_identity_binding_names_a_rendered_identity(staging_manifests: lis
     ]
     assert named
     assert set(named) <= identities
+
+
+def test_standing_callers_always_use_identity_policies_and_exact_account_grants(
+    staging_manifests: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+) -> None:
+    """Backend Identities, effective policy rules, and exact Kubernetes grants ignore the optional catalog."""
+    assert not staging.ENV.identity_catalog
+    effective_rules: dict[str, list[list[dict[str, Any]]]] = {"claude-ai": [], "haku-agent": []}
+    expected_role_set_rules = {
+        "coinbase": [
+            {
+                "namespaces": [staging.ENV.namespace],
+                "role": {"kind": "Role", "name": "claude-ai-coinbase-reader"},
+                "type": "role_binding",
+            }
+        ],
+        "plaid-diagnostics": [
+            {
+                "namespaces": ["plaid-mcp"],
+                "role": {"kind": "Role", "name": "plaid-finance-diagnostics-reader"},
+                "type": "role_binding",
+            }
+        ],
+    }
+    for docs in (staging_manifests, identity_catalog_manifests):
+        identities = _names(docs, "Identity")
+        policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(docs, "PolicySet")}
+        role_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(docs, "KubernetesRoleSet")}
+        credentials = {doc["metadata"]["name"]: doc["spec"]["source"] for doc in _of(docs, "EgressCredential")}
+        grants = _of(docs, "ServiceAccountGrant")
+
+        for name, rule_sets in effective_rules.items():
+            assert (staging.ENV.namespace, name) in identities
+            binding = one(doc for doc in _of(docs, "PolicyBinding") if doc["metadata"]["name"] == name)
+            assert binding["spec"]["subject"] == {"identity": {"name": name}}
+            selected = binding["spec"]["policySets"]
+            rules = [policy_sets[policy] for policy in selected]
+            assert all(not rule["type"].startswith("kubernetes_") for policy in rules for rule in policy)
+            rule_sets.append(rules)
+
+            account = kubernetes_account_ref.account(staging.ENV.namespace, name)
+            assert account.credential_name in selected
+            assert credentials[account.credential_name] == {
+                "kubernetesServiceAccount": {"name": account.name, "namespace": account.namespace}
+            }
+            grant = one(
+                doc
+                for doc in grants
+                if doc["spec"]["serviceAccount"] == {"name": account.name, "namespace": account.namespace}
+            )
+            expected_role_sets = set(expected_role_set_rules)
+            if name == "claude-ai":
+                expected_role_sets.add(agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET)
+            assert set(grant["spec"]["roleSets"]) == expected_role_sets
+            assert {name: role_sets[name] for name in expected_role_set_rules} == expected_role_set_rules
+
+            service_account = one(
+                doc
+                for doc in _of(docs, "ServiceAccount")
+                if doc["metadata"]["name"] == name and doc["metadata"].get("namespace") == staging.ENV.namespace
+            )
+            assert "agentplane.allegedly.works/use-action-service" not in service_account["metadata"].get("labels", {})
+
+    assert all(rules[0] == rules[1] for rules in effective_rules.values())
+
+
+def test_openclaw_identity_and_grants_are_independent_of_the_catalog_switch(
+    staging_manifests: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
+) -> None:
+    """The paused OpenClaw backend keeps its reviewed Identity grants in either policy rendering."""
+    caller = public_coder_egress.OPENCLAW
+    expected_egress = [public_coder_egress.POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY]
+
+    for docs in (staging_manifests, identity_catalog_manifests):
+        assert (staging.ENV.namespace, caller.identity) in _names(docs, "Identity")
+        for binding_name, expected_policy_sets in (
+            (public_coder_egress.POLICY, expected_egress),
+            ("public-coder-openclaw-actions", [COMMON_GITHUB_READ_SET]),
+        ):
+            binding = one(doc for doc in _of(docs, "PolicyBinding") if doc["metadata"]["name"] == binding_name)
+            assert binding["spec"]["subject"] == {"identity": {"name": caller.identity}}
+            assert binding["spec"]["policySets"] == expected_policy_sets
 
 
 def test_every_standing_record_names_a_rendered_identity(staging_manifests: list[dict[str, Any]]) -> None:
@@ -134,70 +219,6 @@ def test_api_server_is_reached_only_as_rendered_accounts(identity_catalog_manife
     presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
     # Every preset grants the shared diagnostics account's use set.
     assert all(account_sets & set(spec["policy_sets"]) for spec in presets.values()), presets
-
-
-def _kubernetes_rules(rules: list[dict[str, Any]]) -> set[tuple[str, str, str | None]]:
-    """(role kind, role name, namespace or None for cluster-wide) of each binding `rules` provision,
-    whether written as `PolicySet` or as `KubernetesRoleSet` rules."""
-    provisioned: set[tuple[str, str, str | None]] = set()
-    for rule in rules:
-        kind = rule["type"].removeprefix("kubernetes_")
-        if kind == "cluster_role_binding":
-            provisioned.add(("ClusterRole", rule["clusterRole"], None))
-        elif kind == "role_binding":
-            provisioned |= {(rule["role"]["kind"], rule["role"]["name"], ns) for ns in rule["namespaces"]}
-    return provisioned
-
-
-def _holders(docs: list[dict[str, Any]]) -> dict[str, list[str]]:
-    """The sets each launch preset and each Flux binding grants."""
-    app_config = one(doc for doc in _of(docs, "ConfigMap") if doc["metadata"]["name"] == "app-config")
-    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
-    return {
-        **{f"preset {name}": spec["policy_sets"] for name, spec in presets.items()},
-        **{f"binding {doc['metadata']['name']}": doc["spec"]["policySets"] for doc in _of(docs, "PolicyBinding")},
-    }
-
-
-def _reachable(docs: list[dict[str, Any]], sets: list[str]) -> set[tuple[str, str, str | None]]:
-    """What the accounts `sets` let their holder act as are granted, through each use rule's credential."""
-    by_name = {doc["metadata"]["name"]: doc for doc in _of(docs, "PolicySet")}
-    credentials = {doc["metadata"]["name"]: doc["spec"]["source"] for doc in _of(docs, "EgressCredential")}
-    role_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(docs, "KubernetesRoleSet")}
-    accounts = {
-        (account["namespace"], account["name"])
-        for name in sets
-        for rule in by_name[name]["spec"]["rules"]
-        if "credentialRef" in rule
-        # Some credentials, such as the proxy's own `agentplane-workload`, are not objects.
-        and (account := credentials.get(rule["credentialRef"]["name"], {}).get("kubernetesServiceAccount")) is not None
-    }
-    return {
-        provisioned
-        for grant in _of(docs, "ServiceAccountGrant")
-        if (grant["spec"]["serviceAccount"]["namespace"], grant["spec"]["serviceAccount"]["name"]) in accounts
-        for role_set in grant["spec"]["roleSets"]
-        for provisioned in _kubernetes_rules(role_sets[role_set])
-    }
-
-
-def test_no_kubernetes_reach_is_lost_on_the_switch(
-    staging_manifests: list[dict[str, Any]], identity_catalog_manifests: list[dict[str, Any]]
-) -> None:
-    """Every role binding a preset or a Flux binding provisions for its holder today is granted to
-    an account the same holder may act as in the identity catalog."""
-    today = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in _of(staging_manifests, "PolicySet")}
-    granted = {
-        holder: {provisioned for name in sets for provisioned in _kubernetes_rules(today[name])}
-        for holder, sets in _holders(staging_manifests).items()
-    }
-    assert any(granted.values())
-    after = _holders(identity_catalog_manifests)
-    lost = {
-        holder: sorted(rules - _reachable(identity_catalog_manifests, after[holder]), key=str)
-        for holder, rules in granted.items()
-    }
-    assert {holder: rules for holder, rules in lost.items() if rules} == {}
 
 
 def _bindable(docs: list[dict[str, Any]], *, namespace: str, account: str) -> set[tuple[str, str | None, str]]:

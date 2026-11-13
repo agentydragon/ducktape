@@ -133,7 +133,7 @@ def relay_volumes() -> list[k8s.Volume]:
 
 
 def add_gateway_resources(
-    scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount, identity_catalog: bool
+    scope: Construct, *, namespace: str, credentials_namespace: str, reader: ServiceAccount
 ) -> None:
     """Copy canonical credentials into Agentplane's isolated store through exact-secret stores."""
     scope = Construct(scope, "public-coder-openclaw-egress")
@@ -233,7 +233,7 @@ def add_gateway_resources(
         scope,
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        subject=OPENCLAW.subject(identity_catalog=identity_catalog),
+        subject=OPENCLAW.identity_subject(),
         policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
     )
     NetworkPolicy(

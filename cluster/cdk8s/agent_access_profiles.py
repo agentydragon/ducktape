@@ -42,6 +42,7 @@ COINBASE_POLICY = "coinbase"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
 SHARED_DIAGNOSTICS_POLICY = "shared-diagnostics"
 CLUSTER_DIAGNOSTICS_POLICY = "cluster-diagnostics"
+CLAUDE_AI_STATIC_ROLE_SET = "claude-ai-static"
 
 
 @dataclass(frozen=True)
@@ -291,6 +292,21 @@ STATIC_GRANTS = {
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
     "haku": (*SHARED_DIAGNOSTICS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),
 }
+
+
+def claude_ai_static_grants() -> tuple[KubernetesGrant, ...]:
+    """The grants on the old Claude caller ServiceAccount, excluding its PolicySet grants.
+
+    The standing Identity's Kubernetes account uses these to preserve the old caller's direct
+    diagnostic footprint. Its `coinbase` and `plaid-diagnostics` PolicySet grants are represented
+    separately by their same-named role sets.
+    """
+    grants = catalog()
+    return (
+        grants[CLUSTER_DIAGNOSTICS_POLICY],
+        *_namespace_read_grants().values(),
+        *(grants[name] for name in STATIC_GRANTS["claude-ai"]),
+    )
 
 
 def profile_subjects(grant: str) -> tuple[Subject, ...]:

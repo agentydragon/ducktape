@@ -697,7 +697,11 @@ def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
 
 
 def assignable_grants() -> tuple[KubernetesGrant, ...]:
-    return tuple(grant for grants in assignable_policy_sets().values() for grant in grants)
+    """Role grants the controller may bind for presets and the standing Claude account."""
+    return (
+        *(grant for grants in assignable_policy_sets().values() for grant in grants),
+        *agent_access_profiles.claude_ai_static_grants(),
+    )
 
 
 def chart(app: App, env: Environment = ENV) -> Chart:
@@ -764,9 +768,9 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     egress_rules = staging_config.assignable_set_egress_rules()
     role_sets: dict[str, KubernetesRoleSet] = {}
     for name, grants in sorted(assignable_sets.items()):
-        # Sandboxes act as Identities and reach the API server only as accounts, which the role
-        # sets grant; in the ServiceAccount catalog the PolicySet keeps its Kubernetes rules for
-        # the ServiceAccount callers that remain until IDENTITY_CUTOVER.
+        # Sandboxes and standing callers act as Identities and reach the API server only as accounts,
+        # which the role sets grant. Mixed-mode PolicySets keep their Kubernetes rules for any
+        # remaining ServiceAccount-subject bindings; Identity bindings use pure-egress siblings.
         role_sets[name] = KubernetesRoleSet(
             chart,
             f"kubernetes-role-set-{name}",
@@ -794,9 +798,15 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
                 rules=egress_rules[name],
             )
+    claude_ai_static_grants = agent_access_profiles.claude_ai_static_grants()
+    role_sets[agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] = KubernetesRoleSet(
+        chart,
+        "kubernetes-role-set-claude-ai-static",
+        metadata=ApiObjectMetadata(name=agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET, namespace=env.namespace),
+        rules=agent_access_profiles.role_set_rules_for_grants(claude_ai_static_grants),
+    )
     _add_launch_accounts(chart, env, role_sets=role_sets)
-    if env.identity_catalog:
-        _add_identity_catalog(chart, env, role_sets=role_sets)
+    _add_standing_identity_access(chart, env, role_sets=role_sets)
     for group in staging_config.INBOX_GROUPS:
         PolicySet(
             chart,
@@ -821,7 +831,10 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         "policy-controller-rbac",
         env,
         account=controller.account,
-        assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
+        assignable_grants=[
+            *(grant for grants in assignable_sets.values() for grant in grants),
+            *claude_ai_static_grants,
+        ],
         accounts_namespace=kubernetes_accounts_namespace(env.namespace),
         workload_namespaces=workload_namespaces,
     )
@@ -933,7 +946,13 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(chart, identity_catalog=env.identity_catalog, haku_ui=haku_ui, haku_ci=haku_ci)
+    add_staging_action_policies(
+        chart,
+        identity_catalog=env.identity_catalog,
+        identity_egress_set_names=set(egress_rules),
+        haku_ui=haku_ui,
+        haku_ci=haku_ci,
+    )
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
     )
@@ -944,10 +963,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         proxy_namespace=env.namespace,
     )
     add_staging_egress_credentials(
-        chart,
-        namespace=env.namespace,
-        credentials_namespace=env.egress.credentials_namespace,
-        identity_catalog=env.identity_catalog,
+        chart, namespace=env.namespace, credentials_namespace=env.egress.credentials_namespace
     )
     return chart
 
@@ -975,12 +991,17 @@ def _add_launch_accounts(chart: Chart, env: Environment, *, role_sets: Mapping[s
         )
 
 
-def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]) -> None:
-    """The standing callers' identities and their own Kubernetes accounts."""
+def _add_standing_identity_access(
+    chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]
+) -> None:
+    """The standing Action callers' Identities and their exact Kubernetes accounts and grants."""
     for caller, description in (
         (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
         (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
-        (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
+        (
+            public_coder_egress.OPENCLAW,
+            "The backend principal for the paused public-coder OpenClaw workload; rendering it does not start that workload.",
+        ),
     ):
         Identity(
             chart,
@@ -990,7 +1011,11 @@ def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[
         )
     # Each standing caller with roles of its own has its own account.
     accounts = [
-        (caller.identity, f"The {caller.identity} agent's own Kubernetes identity.", caller_role_sets())
+        (
+            caller.identity,
+            f"The {caller.identity} agent's own Kubernetes identity.",
+            [*caller_role_sets(), *([agent_access_profiles.CLAUDE_AI_STATIC_ROLE_SET] if caller == CLAUDE_AI else [])],
+        )
         for caller in (CLAUDE_AI, HAKU_AGENT)
     ]
     for name, description, names in accounts:

@@ -14,7 +14,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import staging
+from cluster.cdk8s.agentplane import kubernetes_account_ref, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
@@ -102,12 +102,24 @@ def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, 
         for doc in staging_manifests
         if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] in {"haku-agent", "claude-ai"}
     }
-    claude_only = {"buildbuddy", "mimir-reads", "orchestration-presets"}
+    claude_only = {
+        "buildbuddy",
+        "mimir-reads",
+        "orchestration-presets",
+        kubernetes_account_ref.account(staging.ENV.namespace, "claude-ai").credential_name,
+    }
     haku, claude = bindings["haku-agent"], bindings["claude-ai"]
+    haku_account_use = kubernetes_account_ref.account(staging.ENV.namespace, "haku-agent").credential_name
+    claude_account_use = kubernetes_account_ref.account(staging.ENV.namespace, "claude-ai").credential_name
     assert len(haku) == len(set(haku))
     assert len(claude) == len(set(claude))
     assert set(claude) - set(haku) == claude_only
-    assert [policy for policy in claude if policy not in claude_only] == haku
+    assert set(haku) - set(claude) == {haku_account_use}
+    assert haku[-1] == haku_account_use
+    assert claude[-1] == claude_account_use
+    assert [policy for policy in claude if policy not in claude_only] == [
+        policy for policy in haku if policy != haku_account_use
+    ]
 
 
 if __name__ == "__main__":

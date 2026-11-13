@@ -10319,6 +10319,114 @@ spec:
         name: plaid-spend-finance-config-reader
       type: kubernetes_role_binding
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: KubernetesRoleSet
+metadata:
+  name: claude-ai-static
+  namespace: agentplane-staging
+spec:
+  rules:
+    - namespaces:
+        - activitywatch
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-logs
+      type: role_binding
+    - namespaces:
+        - activitywatch
+        - agent-sandbox-system
+        - agentplane-staging
+        - airlock
+        - authentik
+        - cert-manager
+        - cli-proxy-api
+        - clickhouse
+        - cnpg-system
+        - external-dns
+        - flux-system
+        - forgejo
+        - gatus
+        - grocy-sf
+        - grocy-vallejo
+        - ha-mcp
+        - haku-ci
+        - kyverno
+        - litellm
+        - loki
+        - monitoring
+        - nix-cache
+        - node-feature-discovery
+        - nvidia-device-plugin
+        - oci-cache
+        - ollama
+        - proxmox-proxy
+        - public-coder-agent
+        - study-casino
+        - tana-mcp
+      role:
+        kind: ClusterRole
+        name: agent-readable-namespace-metadata
+      type: role_binding
+    - namespaces:
+        - clickhouse
+      role:
+        kind: Role
+        name: agent-clickhouse-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - haku-console
+      role:
+        kind: Role
+        name: agent-haku-console-metadata-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: agent-public-coder-extended-diagnostics-reader
+      type: role_binding
+    - namespaces:
+        - agentplane-staging
+      role:
+        kind: Role
+        name: claude-ai-sandbox-reader
+      type: role_binding
+    - namespaces:
+        - public-coder-agent
+      role:
+        kind: Role
+        name: public-coder-agent-reader
+      type: role_binding
+    - clusterRole: cluster-diagnostics-reader
+      type: cluster_role_binding
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -10530,6 +10638,135 @@ spec:
     - clusterInternal: true
       credentialRef:
         name: k8s-account-haku
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: claude-ai
+  namespace: agentplane-staging
+spec:
+  description: The agent behind Connections enrolled from the Claude.ai MCP connector.
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: haku-agent
+  namespace: agentplane-staging
+spec:
+  description: Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does.
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: Identity
+metadata:
+  name: public-coder-openclaw
+  namespace: agentplane-staging
+spec:
+  description: The backend principal for the paused public-coder OpenClaw workload; rendering it does not start that workload.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The claude-ai agent's own Kubernetes identity.
+  name: claude-ai
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: claude-ai
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - coinbase
+    - plaid-diagnostics
+    - claude-ai-static
+  serviceAccount:
+    name: claude-ai
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-claude-ai
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/claude-ai ServiceAccount: The claude-ai agent's own Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-claude-ai for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: claude-ai
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-claude-ai
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-claude-ai
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      type: egress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    description: The haku-agent agent's own Kubernetes identity.
+  name: haku-agent
+  namespace: agentplane-staging-k8s-accounts
+automountServiceAccountToken: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: ServiceAccountGrant
+metadata:
+  name: haku-agent
+  namespace: agentplane-staging
+spec:
+  roleSets:
+    - coinbase
+    - plaid-diagnostics
+  serviceAccount:
+    name: haku-agent
+    namespace: agentplane-staging-k8s-accounts
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: k8s-account-haku-agent
+  namespace: agentplane-staging
+spec:
+  description: "Kubernetes API server: https://kubernetes.default.svc.cluster.local, acting as the agentplane-staging-k8s-accounts/haku-agent ServiceAccount: The haku-agent agent's own Kubernetes identity. Use kubectl --server https://kubernetes.default.svc.cluster.local --token agentplane-credential-k8s-account-haku-agent for Kubernetes commands. Check agentplane egress rules for the live host and placeholder."
+  source:
+    kubernetesServiceAccount:
+      name: haku-agent
+      namespace: agentplane-staging-k8s-accounts
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: k8s-account-haku-agent
+  namespace: agentplane-staging
+spec:
+  rules:
+    - clusterInternal: true
+      credentialRef:
+        name: k8s-account-haku-agent
       hosts:
         - kubernetes.default.svc.cluster.local
       type: egress
@@ -10979,6 +11216,14 @@ rules:
       - rbac.authorization.k8s.io
     resourceNames:
       - claude-ai-coinbase-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - claude-ai-sandbox-reader
     resources:
       - roles
     verbs:
@@ -11816,8 +12061,6 @@ kind: ServiceAccount
 metadata:
   annotations:
     description: The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent.
-  labels:
-    agentplane.allegedly.works/use-action-service: "true"
   name: claude-ai
   namespace: agentplane-staging
 automountServiceAccountToken: false
@@ -11827,8 +12070,6 @@ kind: ServiceAccount
 metadata:
   annotations:
     description: "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
-  labels:
-    agentplane.allegedly.works/use-action-service: "true"
   name: haku-agent
   namespace: agentplane-staging
 automountServiceAccountToken: false
@@ -12327,8 +12568,8 @@ spec:
     - quest-read
     - thrive-read
     - haku-mailbox
-    - coinbase
-    - plaid-diagnostics
+    - coinbase-identity
+    - plaid-diagnostics-identity
     - github-downloads
     - github-clone
     - github-agentydragon-agent
@@ -12346,9 +12587,10 @@ spec:
     - grocy-sf-reads
     - ssh-reads
     - kubernetes-inspection-reads
+    - k8s-account-claude-ai
   subject:
-    name: claude-ai
-    namespace: agentplane-staging
+    identity:
+      name: claude-ai
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -12461,8 +12703,8 @@ spec:
     - quest-read
     - thrive-read
     - haku-mailbox
-    - coinbase
-    - plaid-diagnostics
+    - coinbase-identity
+    - plaid-diagnostics-identity
     - github-downloads
     - github-clone
     - github-agentydragon-agent
@@ -12477,9 +12719,10 @@ spec:
     - grocy-sf-reads
     - ssh-reads
     - kubernetes-inspection-reads
+    - k8s-account-haku-agent
   subject:
-    name: haku-agent
-    namespace: agentplane-staging
+    identity:
+      name: haku-agent
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -12726,15 +12969,15 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed common GitHub reads for the OpenClaw ServiceAccount.
+    description: Auto-approves the reviewed common GitHub reads for the OpenClaw Identity.
   name: public-coder-openclaw-actions
   namespace: agentplane-staging
 spec:
   policySets:
     - common-github-read
   subject:
-    name: openclaw
-    namespace: public-coder-agent
+    identity:
+      name: public-coder-openclaw
 ---
 apiVersion: v1
 kind: Namespace
@@ -14275,8 +14518,8 @@ spec:
     - inference-experiments
     - public-internet
   subject:
-    name: openclaw
-    namespace: public-coder-agent
+    identity:
+      name: public-coder-openclaw
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
