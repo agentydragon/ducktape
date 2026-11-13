@@ -4151,7 +4151,7 @@ data:
           - google-readonly
           - activitywatch-read
           - aiquota-read
-          - quest-read
+          - quest-scheduler-read
           - thrive-read
           - haku-mailbox
           - github-clone
@@ -7274,7 +7274,7 @@ data:
                   - google-readonly
                   - activitywatch-read
                   - aiquota-read
-                  - quest-read
+                  - quest-scheduler-read
                   - thrive-read
                   - haku-mailbox
                   - github-clone
@@ -12632,7 +12632,7 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
-    - quest-read
+    - quest-scheduler-read
     - thrive-read
     - haku-mailbox
     - coinbase-identity
@@ -12767,7 +12767,7 @@ spec:
     - google-readonly
     - activitywatch-read
     - aiquota-read
-    - quest-read
+    - quest-scheduler-read
     - thrive-read
     - haku-mailbox
     - coinbase-identity
@@ -13852,14 +13852,14 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressCredential
 metadata:
-  name: quest-read
+  name: quest-scheduler-read
   namespace: agentplane-staging
 spec:
   description: Quest scheduling, account, and insurance lookup API. The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest-scheduler. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
-      name: platform-sessions-quest-bearer
+      name: platform-sessions-quest-scheduler-bearer
   targets:
     - header: Authorization
       method: schemeToken
@@ -13868,56 +13868,40 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: quest-read
+  name: quest-scheduler-read
   namespace: agentplane-staging
 spec:
   rules:
     - credentialRef:
-        name: quest-read
+        name: quest-scheduler-read
       hosts:
         - platform-sessions.allegedly.works
       methods:
         - GET
       paths:
-        - /proxy/quest/guest/getReasons/*
         - /proxy/quest-scheduler/guest/getReasons/*
-        - /proxy/quest/guest/getPscDetails/*
         - /proxy/quest-scheduler/guest/getPscDetails/*
-        - /proxy/quest/api/getInsuranceProfile
         - /proxy/quest-scheduler/api/getInsuranceProfile
-        - /proxy/quest/guest/getTokenBasicInfoAPI/*
         - /proxy/quest-scheduler/guest/getTokenBasicInfoAPI/*
-        - /proxy/quest/guest/getEncounterInfo/appointment
         - /proxy/quest-scheduler/guest/getEncounterInfo/appointment
-        - /proxy/quest/guest/getEncounterInfo/demographics
         - /proxy/quest-scheduler/guest/getEncounterInfo/demographics
-        - /proxy/quest/guest/getEncounterInfo/insurance
         - /proxy/quest-scheduler/guest/getEncounterInfo/insurance
-        - /proxy/quest/guest/getEncounterInfo/secondaryInsurance
         - /proxy/quest-scheduler/guest/getEncounterInfo/secondaryInsurance
-        - /proxy/quest/guest/getPayorList/*
         - /proxy/quest-scheduler/guest/getPayorList/*
-        - /proxy/quest/guest/getAppointment/*
         - /proxy/quest-scheduler/guest/getAppointment/*
       type: egress
     - credentialRef:
-        name: quest-read
+        name: quest-scheduler-read
       hosts:
         - platform-sessions.allegedly.works
       methods:
         - POST
       paths:
-        - /proxy/quest/guest/getPscsWithAvailability
         - /proxy/quest-scheduler/guest/getPscsWithAvailability
-        - /proxy/quest/api/getOpenEorders
         - /proxy/quest-scheduler/api/getOpenEorders
-        - /proxy/quest/api/getUserDemographics
         - /proxy/quest-scheduler/api/getUserDemographics
-        - /proxy/quest/guest/examoneEligibility
         - /proxy/quest-scheduler/guest/examoneEligibility
-        - /proxy/quest/guest/verifyInsurance/V2
         - /proxy/quest-scheduler/guest/verifyInsurance/V2
-        - /proxy/quest/guest/getPricing
         - /proxy/quest-scheduler/guest/getPricing
       type: egress
 ---

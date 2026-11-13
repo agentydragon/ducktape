@@ -81,7 +81,7 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     assert set(preset) <= created, sorted(set(preset) - created)
 
 
-@pytest.mark.parametrize("policy_set", ["quest-read", "thrive-read"])
+@pytest.mark.parametrize("policy_set", ["quest-scheduler-read", "thrive-read"])
 def test_read_policy_grants(staging_manifests: list[dict[str, Any]], policy_set: str) -> None:
     for name in ("haku-agent", "claude-ai"):
         binding = one(

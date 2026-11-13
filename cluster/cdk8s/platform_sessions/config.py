@@ -56,7 +56,7 @@ INTEGRATIONS: dict[str, list[dict[str, str | int]]] = {
         {
             "id": "quest-scheduler",
             "type": "quest-scheduler",
-            "state_dir": "/data/session/quest-platform",
+            "state_dir": "/data/session/quest-scheduler",
             "poll_interval_seconds": 300,
         },
         {"id": "myquest", "type": "myquest", "state_dir": "/data/session/myquest", "poll_interval_seconds": 300},
@@ -114,9 +114,9 @@ BEARERS: dict[str, BearerConfig] = {
             {"instance": "anthropic", "method": "GET", "path": "/api/organizations/*/prepaid/credits"},
         ],
     },
-    "quest-agent": {
+    "quest-scheduler-agent": {
         "role": "routes",
-        "token_file": "/var/run/platform-sessions/quest",
+        "token_file": "/var/run/platform-sessions/quest-scheduler",
         "allow": [
             {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getReasons/*"},
             {"instance": "quest-scheduler", "method": "GET", "path": "/guest/getPscDetails/*"},

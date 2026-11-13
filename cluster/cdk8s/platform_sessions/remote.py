@@ -53,7 +53,7 @@ PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"
 BEARER_FILES = (
     "owner",
     "aiquota",
-    "quest",
+    "quest-scheduler",
     "myquest-read",
     "thrive-scraper",
     "thrive-read",
@@ -71,17 +71,12 @@ _RECORD_TRUST_DIR = "/var/run/session-recorder-trust"
 _RECORD_PORT = 18080
 
 
-def _resource_instance(instance: str) -> str:
-    # Preserve the existing deployment and its PVCs when renaming the scheduler.
-    return "quest" if instance == "quest-scheduler" else instance
-
-
 def _provider_name(instance: str) -> str:
-    return f"platform-sessions-{_resource_instance(instance)}"
+    return f"platform-sessions-{instance}"
 
 
 def _provider_dns(instance: str) -> str:
-    return f"{_resource_instance(instance)}.{NAMESPACE}.svc"
+    return f"{instance}.{NAMESPACE}.svc"
 
 
 def _provider_image(instance: str) -> str:
@@ -230,7 +225,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
     Certificate(
         chart,
         f"{name}-certificate",
-        metadata=ApiObjectMetadata(name=_resource_instance(instance), namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         secret_name=f"{name}-tls",
         issuer_ref=cluster_ca.INTERNAL_ISSUER,
         dns_names=[_provider_dns(instance)],
@@ -401,7 +396,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
     )
     _deployment(
         chart,
-        _resource_instance(instance),
+        instance,
         k8s.Container(
             name="provider",
             image=f"{REGISTRY}/{_provider_image(instance)}:unset",
@@ -468,7 +463,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
     )
     _service(
         chart,
-        _resource_instance(instance),
+        instance,
         [
             k8s.ServicePort(name="https", port=8443, target_port=k8s.IntOrString.from_string("https")),
             k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
@@ -479,7 +474,7 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
     PodMonitor(
         chart,
         f"{name}-monitor",
-        metadata=ApiObjectMetadata(name=_resource_instance(instance), namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         selector=PodMonitorSpecSelector(match_labels={"app": name}),
         pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")]
         + (

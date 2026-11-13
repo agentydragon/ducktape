@@ -1705,7 +1705,7 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: platform-sessions-quest-control
+  name: platform-sessions-quest-scheduler-control
   namespace: platform-sessions
 spec:
   allowRepeat: true
@@ -1717,7 +1717,7 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: platform-sessions-quest-control
+  name: platform-sessions-quest-scheduler-control
   namespace: platform-sessions
 spec:
   dataFrom:
@@ -1725,13 +1725,13 @@ spec:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
-          name: platform-sessions-quest-control
+          name: platform-sessions-quest-scheduler-control
   refreshPolicy: CreatedOnce
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
     immutable: true
-    name: platform-sessions-quest-control
+    name: platform-sessions-quest-scheduler-control
     template:
       data:
         token: "{{ .password }}"
@@ -1740,7 +1740,7 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: platform-sessions-quest-owner
+  name: platform-sessions-quest-scheduler-owner
   namespace: platform-sessions
 spec:
   allowRepeat: true
@@ -1752,7 +1752,7 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: platform-sessions-quest-owner
+  name: platform-sessions-quest-scheduler-owner
   namespace: platform-sessions
 spec:
   dataFrom:
@@ -1760,13 +1760,13 @@ spec:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
-          name: platform-sessions-quest-owner
+          name: platform-sessions-quest-scheduler-owner
   refreshPolicy: CreatedOnce
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
     immutable: true
-    name: platform-sessions-quest-owner
+    name: platform-sessions-quest-scheduler-owner
     template:
       data:
         token: "{{ .password }}"
@@ -1775,7 +1775,7 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
-  name: platform-sessions-quest-route
+  name: platform-sessions-quest-scheduler-route
   namespace: platform-sessions
 spec:
   allowRepeat: true
@@ -1787,7 +1787,7 @@ spec:
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
-  name: platform-sessions-quest-route
+  name: platform-sessions-quest-scheduler-route
   namespace: platform-sessions
 spec:
   dataFrom:
@@ -1795,13 +1795,13 @@ spec:
         generatorRef:
           apiVersion: generators.external-secrets.io/v1alpha1
           kind: Password
-          name: platform-sessions-quest-route
+          name: platform-sessions-quest-scheduler-route
   refreshPolicy: CreatedOnce
   target:
     creationPolicy: Owner
     deletionPolicy: Retain
     immutable: true
-    name: platform-sessions-quest-route
+    name: platform-sessions-quest-scheduler-route
     template:
       data:
         token: "{{ .password }}"
@@ -1810,22 +1810,22 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: quest
+  name: quest-scheduler
   namespace: platform-sessions
 spec:
   dnsNames:
-    - quest.platform-sessions.svc
+    - quest-scheduler.platform-sessions.svc
   issuerRef:
     kind: ClusterIssuer
     name: cluster-internal-ca
-  secretName: platform-sessions-quest-tls
+  secretName: platform-sessions-quest-scheduler-tls
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-quest-piraeus
+  name: platform-sessions-quest-scheduler-piraeus
   namespace: platform-sessions
 spec:
   accessModes:
@@ -1840,7 +1840,7 @@ kind: PersistentVolumeClaim
 metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
-  name: platform-sessions-quest-captures
+  name: platform-sessions-quest-scheduler-captures
   namespace: platform-sessions
 spec:
   accessModes:
@@ -1853,19 +1853,19 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: quest
+  name: quest-scheduler
   namespace: platform-sessions
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: platform-sessions-quest
+      app: platform-sessions-quest-scheduler
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: platform-sessions-quest
+        app: platform-sessions-quest-scheduler
     spec:
       automountServiceAccountToken: false
       containers:
@@ -1907,7 +1907,7 @@ spec:
               value: "true"
             - name: PLATFORM_SESSIONS_PROXY_CA_FILE
               value: /var/run/session-recorder-ca/tls.crt
-          image: git.allegedly.works/ducktape-ci/platform-sessions-quest:unset
+          image: git.allegedly.works/ducktape-ci/platform-sessions-quest-scheduler:unset
           livenessProbe:
             httpGet:
               path: /healthz
@@ -2051,28 +2051,28 @@ spec:
                   items:
                     - key: token
                       path: control
-                  name: platform-sessions-quest-control
+                  name: platform-sessions-quest-scheduler-control
               - secret:
                   items:
                     - key: token
                       path: owner
-                  name: platform-sessions-quest-owner
+                  name: platform-sessions-quest-scheduler-owner
               - secret:
                   items:
                     - key: token
                       path: route
-                  name: platform-sessions-quest-route
+                  name: platform-sessions-quest-scheduler-route
         - name: tls
           secret:
-            secretName: platform-sessions-quest-tls
+            secretName: platform-sessions-quest-scheduler-tls
         - name: data
           persistentVolumeClaim:
-            claimName: platform-sessions-quest-piraeus
+            claimName: platform-sessions-quest-scheduler-piraeus
         - emptyDir: {}
           name: tmp
         - name: captures
           persistentVolumeClaim:
-            claimName: platform-sessions-quest-captures
+            claimName: platform-sessions-quest-scheduler-captures
         - name: recorder-ca
           secret:
             secretName: platform-sessions-recorder-ca
@@ -2091,7 +2091,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: quest
+  name: quest-scheduler
   namespace: platform-sessions
 spec:
   ports:
@@ -2102,12 +2102,12 @@ spec:
       port: 8444
       targetPort: grpc
   selector:
-    app: platform-sessions-quest
+    app: platform-sessions-quest-scheduler
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: quest
+  name: quest-scheduler
   namespace: platform-sessions
 spec:
   podMetricsEndpoints:
@@ -2119,7 +2119,7 @@ spec:
       port: quest-metrics
   selector:
     matchLabels:
-      app: platform-sessions-quest
+      app: platform-sessions-quest-scheduler
 ---
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
@@ -3050,10 +3050,10 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImageRepository
 metadata:
-  name: platform-sessions-quest
+  name: platform-sessions-quest-scheduler
   namespace: flux-system
 spec:
-  image: git.allegedly.works/ducktape-ci/platform-sessions-quest
+  image: git.allegedly.works/ducktape-ci/platform-sessions-quest-scheduler
   interval: 5m
   secretRef:
     name: forgejo-images-creds
@@ -3061,13 +3061,13 @@ spec:
 apiVersion: image.toolkit.fluxcd.io/v1
 kind: ImagePolicy
 metadata:
-  name: platform-sessions-quest
+  name: platform-sessions-quest-scheduler
   namespace: flux-system
 spec:
   filterTags:
     pattern: ^main-\d{14}-[0-9a-f]{7}$
   imageRepositoryRef:
-    name: platform-sessions-quest
+    name: platform-sessions-quest-scheduler
   policy:
     alphabetical:
       order: asc
@@ -3261,17 +3261,17 @@ spec:
                   items:
                     - key: token
                       path: quest-scheduler/control
-                  name: platform-sessions-quest-control
+                  name: platform-sessions-quest-scheduler-control
               - secret:
                   items:
                     - key: token
                       path: quest-scheduler/owner
-                  name: platform-sessions-quest-owner
+                  name: platform-sessions-quest-scheduler-owner
               - secret:
                   items:
                     - key: token
                       path: quest-scheduler/route
-                  name: platform-sessions-quest-route
+                  name: platform-sessions-quest-scheduler-route
               - secret:
                   items:
                     - key: token
@@ -3319,8 +3319,8 @@ spec:
               - secret:
                   items:
                     - key: token
-                      path: quest
-                  name: platform-sessions-quest-bearer
+                      path: quest-scheduler
+                  name: platform-sessions-quest-scheduler-bearer
               - secret:
                   items:
                     - key: token
