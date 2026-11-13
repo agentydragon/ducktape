@@ -124,8 +124,9 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err != nil {
 			return err
 		}
-		// Provider-only failures use the durable attempt path. Native cleanup blocks on
-		// the host still serving the Session require host replacement or operator recovery.
+		// Provider failures recover through their durable attempts. If unconfirmed executor
+		// cleanup blocked this Session while its original host is still alive, wait for
+		// host replacement or explicit operator recovery.
 		if !hostLost && session.Blocked {
 			return nil
 		}

@@ -80,40 +80,29 @@ func providerTurnProgressResponse(w http.ResponseWriter, r *http.Request, lastDe
 	return nil
 }
 
-func waitProviderTurnCommandOutcome(t *testing.T, store *Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
-	t.Helper()
-	deadline := time.NewTimer(10 * time.Second)
-	defer deadline.Stop()
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		command, err := store.GetCommand(t.Context(), sessionID, commandID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if command.GetOutcome() == want {
-			return command
-		}
-		select {
-		case <-deadline.C:
-			t.Fatalf("command %q outcome=%v, want %v", commandID, command.GetOutcome(), want)
-		case <-ticker.C:
-		}
-	}
+func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
+	t.Run("unlimited", func(t *testing.T) { checkRuntimeTurnProgress(t, nil) })
+	t.Run("configured limit", func(t *testing.T) {
+		seconds := 1
+		checkRuntimeTurnProgress(t, &seconds)
+	})
 }
 
-func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
+func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
+	t.Helper()
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	requestObserved := make(chan providerTurnRequest, 1)
 	lastDeltaSent := make(chan time.Time, 1)
 	streamDuration := make(chan time.Duration, 1)
+	streamStopped := make(chan struct{})
 	var requestCount atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if requestCount.Add(1) != 1 {
 			t.Errorf("runtime dispatched more than one provider request")
 			return
 		}
+		defer close(streamStopped)
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
 			t.Errorf("read provider request body: %v", err)
 			return
@@ -134,6 +123,7 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 	headerSeconds, idleSeconds := 1, 1
 	settings := samplersettings.Settings{
 		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60,
+		TurnTimeoutSeconds:                   turnTimeoutSeconds,
 		ProviderResponseHeaderTimeoutSeconds: &headerSeconds,
 		ProviderIdleTimeoutSeconds:           &idleSeconds,
 		Connections: map[string]samplersettings.ConnectionConfig{
@@ -155,7 +145,7 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	cancel, done := startRuntimeForTest(t, runtime)
-	defer cancel()
+	defer func() { cancel(); waitRuntimeDone(t, done) }()
 	runtime.Wake(session.ID)
 
 	var initial providerTurnRequest
@@ -164,7 +154,31 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("runtime did not start its provider request")
 	}
-	waitProviderTurnCommandOutcome(t, store, session.ID, "long-provider-turn", samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+	want := samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED
+	if turnTimeoutSeconds != nil {
+		want = samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED
+	}
+	waitProviderCommandOutcome(t, store, session.ID, "long-provider-turn", want)
+	if turnTimeoutSeconds != nil {
+		select {
+		case <-streamStopped:
+		case <-time.After(5 * time.Second):
+			t.Fatal("turn expiry did not cancel the progressing provider stream")
+		}
+		var status, failureClass string
+		if err := store.DB().QueryRowContext(t.Context(), `SELECT result->>'status',result->>'failure_class' FROM sampler_intent
+			WHERE provider_command_id=$1`, "long-provider-turn").Scan(&status, &failureClass); err != nil {
+			t.Fatal(err)
+		}
+		if status != string(IntentResultAbandoned) || failureClass != string(ProviderAttemptPermanent) {
+			t.Fatalf("expired attempt: status=%s failure_class=%s", status, failureClass)
+		}
+		state, err := store.GetSession(t.Context(), session.ID, "")
+		if err != nil || state.Blocked || requestCount.Load() != 1 {
+			t.Fatalf("expired provider turn: state=%+v requests=%d err=%v", state, requestCount.Load(), err)
+		}
+		return
+	}
 
 	var last time.Time
 	select {
@@ -214,8 +228,60 @@ func TestRuntimeRenewsProviderAttemptAcrossLongSemanticProgress(t *testing.T) {
 	if err != nil || sessionState.Blocked {
 		t.Fatalf("long-progress turn left Session blocked: state=%+v err=%v", sessionState, err)
 	}
-	cancel()
-	waitRuntimeDone(t, done)
+}
+
+func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Error(err)
+			return
+		}
+		if requests.Add(1) == 1 {
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		item := responses.Item{Type: responses.ItemMessage, ID: "after-turn-limit", Role: "assistant", Content: json.RawMessage(`[{"type":"output_text","text":"continued"}]`)}
+		if err := writeProviderTurnEvent(w, flusher, map[string]any{"type": responses.EventOutputItemDone, "item": item}); err != nil {
+			t.Error(err)
+			return
+		}
+		if err := writeProviderTurnEvent(w, flusher, map[string]any{
+			"type":     responses.EventCompleted,
+			"response": map[string]any{"id": "after-limit-response", "status": "completed"},
+		}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	settings := providerSamplingSettings(server.URL, 1)
+	seconds := 1
+	settings.TurnTimeoutSeconds = &seconds
+	runtime, stop := startProviderSamplingRuntime(t, store, settings)
+	defer stop()
+	admitProviderSamplingCommand(t, store, session.ID, "limited-backoff", "start")
+	runtime.Wake(session.ID)
+	waitProviderCommandOutcome(t, store, session.ID, "limited-backoff", samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
+	var attempts, due int
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT COUNT(*),COUNT(provider_retry_not_before) FROM sampler_intent
+		WHERE provider_command_id=$1`, "limited-backoff").Scan(&attempts, &due); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 || due != 0 || requests.Load() != 1 {
+		t.Fatalf("turn limit retried during backoff: attempts=%d due=%d requests=%d", attempts, due, requests.Load())
+	}
+	admitProviderSamplingCommand(t, store, session.ID, "after-limited-backoff", "continue")
+	runtime.Wake(session.ID)
+	waitProviderCommandOutcome(t, store, session.ID, "after-limited-backoff", samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+	state, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil || state.Blocked || requests.Load() != 2 {
+		t.Fatalf("next input after turn expiry: state=%+v requests=%d err=%v", state, requests.Load(), err)
+	}
 }
 
 func TestIndependentSetupTimeoutSettings(t *testing.T) {

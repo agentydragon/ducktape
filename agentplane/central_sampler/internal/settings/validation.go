@@ -123,6 +123,9 @@ func (s Settings) Validate() error {
 	if s.SetupTimeoutSeconds != nil && (*s.SetupTimeoutSeconds <= 0 || int64(*s.SetupTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
 		return errors.New("setup_timeout_seconds must be positive and fit in time.Duration")
 	}
+	if s.TurnTimeoutSeconds != nil && (*s.TurnTimeoutSeconds <= 0 || int64(*s.TurnTimeoutSeconds) > maxExecutorInitializeTimeoutSeconds) {
+		return errors.New("turn_timeout_seconds must be positive and fit in time.Duration")
+	}
 	if s.ExecutorInitializeTimeoutSeconds != nil {
 		seconds := int64(*s.ExecutorInitializeTimeoutSeconds)
 		if seconds <= 0 || seconds > maxExecutorInitializeTimeoutSeconds {

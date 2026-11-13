@@ -230,6 +230,12 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed between durable semantic provider events after response headers.",
     )
+    turn_timeout_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Optional elapsed turn limit; omitted means no maximum.",
+    )
     setup_timeout_seconds: int | None = Field(
         default=None,
         gt=0,

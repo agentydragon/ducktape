@@ -216,6 +216,56 @@ func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *test
 	}
 }
 
+func TestTurnTimeoutIsOptionalAndValidatesConfiguredValues(t *testing.T) {
+	settings := fixtureSettings()
+	if settings.TurnTimeoutSeconds != nil {
+		t.Fatal("turn timeout should be absent by default")
+	}
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fields["turn_timeout_seconds"]; ok {
+		t.Fatal("omitted turn timeout was serialized")
+	}
+
+	configured := 120
+	settings.TurnTimeoutSeconds = &configured
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeSettings(strings.NewReader(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.TurnTimeoutSeconds == nil || *decoded.TurnTimeoutSeconds != configured {
+		t.Fatalf("configured turn timeout did not round-trip: %#v", decoded.TurnTimeoutSeconds)
+	}
+
+	maximum := int(maxExecutorInitializeTimeoutSeconds)
+	settings.TurnTimeoutSeconds = &maximum
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("rejected maximum duration-safe turn timeout: %v", err)
+	}
+	for _, invalid := range []int{0, -1, maximum + 1} {
+		settings.TurnTimeoutSeconds = &invalid
+		if err := settings.Validate(); err == nil {
+			t.Fatalf("accepted turn_timeout_seconds=%d", invalid)
+		}
+	}
+}
+
 func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	for name, config := range map[string]ModelConfig{
 		"missing connection":           {ProviderModel: "test-model", API: protocol.APIStyleResponses, Responses: responses.Config{Dialect: responses.DialectLite}, ExecEncoding: protocol.ExecEncodingFreeform, ReasoningEfforts: []string{"high"}},

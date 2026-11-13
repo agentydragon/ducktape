@@ -31,6 +31,7 @@ type Settings struct {
 	MaxLiveSessions                      int                                      `json:"max_live_sessions"`
 	ProviderResponseHeaderTimeoutSeconds *int                                     `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds           *int                                     `json:"provider_idle_timeout_seconds,omitempty"`
+	TurnTimeoutSeconds                   *int                                     `json:"turn_timeout_seconds,omitempty"`
 	RPCTimeoutSeconds                    int                                      `json:"rpc_timeout_seconds"`
 	CodeModeObservationTimeoutSeconds    *int                                     `json:"code_mode_observation_timeout_seconds,omitempty"`
 	ExecutorInitializeTimeoutSeconds     *int                                     `json:"executor_initialize_timeout_seconds,omitempty"`

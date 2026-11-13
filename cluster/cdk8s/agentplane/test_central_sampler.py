@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 import pytest_bazel
 import yaml
+from cdk8s import App, Testing as Cdk8sTesting  # alias avoids pytest collecting Testing as a test class
 from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
@@ -95,6 +98,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     config = json.loads(_resource(staging_manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
     assert "database_url" not in config
     assert "executor_reconnect_timeout_seconds" not in config
+    assert "turn_timeout_seconds" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
     platform_instructions = config["platform_instructions"]
     assert platform_instructions
@@ -187,6 +191,15 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert anthropic_egress["toPorts"] == [
         {"ports": [{"port": "443", "protocol": "TCP"}], "serverNames": ["api.anthropic.com"]}
     ]
+
+
+def test_central_sampler_turn_timeout_option_is_rendered(scratch_app_factory: Callable[[], App]) -> None:
+    sampler = staging.ENV.central_sampler
+    assert sampler is not None
+    env = replace(staging.ENV, central_sampler=replace(sampler, turn_timeout_seconds=123))
+    manifests = Cdk8sTesting.synth(staging.chart(scratch_app_factory(), env))
+    config = json.loads(_resource(manifests, "ConfigMap", "central-sampler-settings")["data"]["settings.json"])
+    assert config["turn_timeout_seconds"] == 123
 
 
 if __name__ == "__main__":
