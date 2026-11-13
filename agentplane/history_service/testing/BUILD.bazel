@@ -11,7 +11,7 @@ go_library(
     srcs = ["integration_migrations.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/testing",
     deps = [
-        "//agentplane/history_service/migrations",
+        "//agentplane/history_service/internal/migrations",
         "//agentplane/testing/postgres",
     ],
 )

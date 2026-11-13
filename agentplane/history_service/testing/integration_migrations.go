@@ -5,7 +5,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
