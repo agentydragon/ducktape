@@ -78,7 +78,7 @@
               >${"A first-principles architecture, source inventory and staged adoption plan for Agentplane."}<//
             >
             <${Text} component="p" c="dimmed" size="sm"
-              >${"Source inventory refreshed 12 November 2026 PST (13 November UTC) · devel 4145b80811 · proposed architecture, not a live deployment inventory"}<//
+              >${"Source inventory refreshed 12 November 2026 PST (13 November UTC) · devel 93f2ba8eef · proposed architecture, not a live deployment inventory"}<//
             >
           </header>
           <${Group} component="nav" gap="sm" my="md" aria-label="Contents"
@@ -367,8 +367,8 @@
               >${"What owns each fact today"}<//
             ><${Blockquote} color=${"teal"} my="md"
               ><strong>${"Scope and snapshot."}</strong
-              >${" Read-only source and test inventory of local "}<${Code}>${"origin/devel"}</${Code}>${" at "}<${Code}>${"4145b808117479ea603acde9c586545a0875b476"}</${Code}>${", 12 November 2026. This is a repository snapshot, not a live database, Kubernetes, rollout or fresh CI inventory. Earlier proposal sections describe a possible target. This section distinguishes that target from current implementation."}<//
-            ><${Text} component="p" my="sm">${"Changes since the previous snapshot: "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15931"}>${"History reads"}<//>${" and "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15938"}>${"Notification inbox authorization"}<//>${" moved into their owners; "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15920"}>${"sampler code-mode host and session"}<//>${" moved into an internal package. "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15934"}>${"Executor"}<//>${" and "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15921"}>${"store"}<//>${" files were reorganized within the sampler package. "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15925"}>${"Identity-scoped Environment list/get"}<//>${" and "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15945"}>${"Identity actor retention"}<//>${" landed in source; these are not live deployment claims."}<//
+              >${" Read-only source and test inventory of local "}<${Code}>${"origin/devel"}</${Code}>${" at "}<${Code}>${"93f2ba8eeff36265d6e7887836b615c39b4ad985"}</${Code}>${", 12 November 2026. This is a repository snapshot, not a live database, Kubernetes, rollout or fresh CI inventory. Earlier proposal sections describe a possible target. This section distinguishes that target from current implementation."}<//
+            ><${Text} component="p" my="sm">${"Changes since the previous snapshot: "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15931"}>${"History reads"}<//>${" and "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15938"}>${"Notification inbox authorization"}<//>${" moved into their owners; "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15920"}>${"sampler code-mode host and session"}<//>${" moved into an internal package. "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15934"}>${"Executor"}<//>${" and "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15921"}>${"store"}<//>${" files were reorganized within the sampler package. "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15925"}>${"Identity-scoped Environment list/get"}<//>${", "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15945"}>${"Identity actor retention"}<//>${", and "}<${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15917"}>${"Identity-only workload credential subjects"}<//>${" landed in source; these are not live deployment claims."}<//
             >${"\n"}<${Box} style=${{ overflowX: "auto" }}
               ><${Table}
                 withTableBorder=${true}
@@ -387,7 +387,7 @@
                     <td>${"Environment desired and observed state"}</td>
                     <td>
                       ${"Runner Gateway’s EnvironmentService creates and changes Sandbox resources; Sandbox Controller reconciles Pods or VMs, state PVCs, credentials and "}<${Code}>${"Sandbox.status"}</${Code}>${". Kubernetes API is the desired/observed state interface. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/docs/system_overview.md#sandbox-lifecycle-and-runner-control"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/docs/system_overview.md#sandbox-lifecycle-and-runner-control"}
                         >${"Topology"}<//
                       >
                     </td>
@@ -400,7 +400,7 @@
                     <td>${"Session directory and commands"}</td>
                     <td>
                       ${"Dispatcher in Runner Gateway owns logical Session records, placement and queue receipts in its PostgreSQL database. App, CLI and brokers call its gRPC API. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/runner_gateway/dispatcher/SPEC.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/runner_gateway/dispatcher/SPEC.md"}
                         >${"Dispatcher contract"}<//
                       >
                     </td>
@@ -413,7 +413,7 @@
                     <td>${"Native Sessions and execution"}</td>
                     <td>
                       ${"Environment Runtime owns durable local Session records, SQLite journals, native harness state and process execution. Gateway authenticates and proxies to Runtime over mTLS. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/env/runtime/docs/session_protocol.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/env/runtime/docs/session_protocol.md"}
                         >${"Session protocol"}<//
                       >
                     </td>
@@ -426,7 +426,7 @@
                     <td>${"Shutdown and sealing"}</td>
                     <td>
                       ${"Runtime owns admission closure, component drain, native and Execution fencing, journal seal and delivery; its lifecycle worker observes exact-generation component status. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/env/runtime/docs/lifecycle.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/env/runtime/docs/lifecycle.md"}
                         >${"Lifecycle ownership"}<//
                       >
                     </td>
@@ -439,10 +439,10 @@
                     <td>${"History and Thread view"}</td>
                     <td>
                       ${"History Service owns archive ingress, retained history and the Thread fold in "}<${Code}>${"sandbox_service"}</${Code}>${" PostgreSQL; Electric replicates fold data through the app to browsers. App stores presentation metadata separately. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/history_service/README.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/history_service/README.md"}
                         >${"History"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/docs/thread_view_sync.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/docs/thread_view_sync.md"}
                         >${"Thread sync"}<//
                       >
                     </td>
@@ -455,7 +455,7 @@
                     <td>${"Central Sessions"}</td>
                     <td>
                       ${"Optional central sampler owns command/effect journal, provider continuation and leases in its own PostgreSQL database; it exports to History and invokes the environment Executor through Gateway. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/central_sampler/SPEC.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/central_sampler/SPEC.md"}
                         >${"Sampler contract"}<//
                       >
                     </td>
@@ -468,10 +468,10 @@
                     <td>${"Actions and external MCP"}</td>
                     <td>
                       ${"Action Service owns ActionRequests, Decisions, execution and its "}<${Code}>${"actions"}</${Code}>${" DB; MCP edge owns Connections and external OAuth in its own DB and forwards calls. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/action_service/SPEC.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/action_service/SPEC.md"}
                         >${"Action contract"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/mcp_edge/README.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/mcp_edge/README.md"}
                         >${"MCP edge"}<//
                       >
                     </td>
@@ -484,15 +484,15 @@
                     <td>${"Identity, grants and egress"}</td>
                     <td>
                       ${"Policy Controller issues WorkloadCredentials and reconciles grants; Sandbox Controller requests incarnation-bound credentials. Services independently resolve and authorize SVID or token callers. Egress owns network decisions and credential substitution. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/docs/workload_authentication.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/docs/workload_authentication.md"}
                         >${"Workload authentication"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/egress/SPEC.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/egress/SPEC.md"}
                         >${"Egress contract"}<//
                       >
                     </td>
                     <td>
-                      ${"Identity rollout is in progress. UID-bound credentials reject same-name replacements; standing name-only records have different semantics. Identity-scoped EnvironmentService list/get reads now exist; watch, resume and mutations retain their existing gates. An Identity reference is not itself proof or authority."}
+                      ${"WorkloadCredential subjects now require Identity; legacy non-Identity records are retained but refused. UID-bound credentials reject same-name replacements; standing name-only records have different semantics. ServiceAccount TokenReview remains available for platform callers. Identity-scoped EnvironmentService list/get reads now exist; watch, resume and mutations retain their existing gates. An Identity reference is not itself proof or authority."}
                     </td>
                   </tr>
                   ${"\n"}
@@ -500,7 +500,7 @@
                     <td>${"Inbox and notices"}</td>
                     <td>
                       ${"Notification Service owns subscriptions, inboxes, cursors and notice bookkeeping in PostgreSQL. It reads Actions and History through APIs and submits notices through Dispatcher. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/notification_service/docs/architecture.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/notification_service/docs/architecture.md"}
                         >${"Notification internals"}<//
                       >
                     </td>
@@ -513,10 +513,10 @@
                     <td>${"UI, external clients and models"}</td>
                     <td>
                       ${"App is a browser-facing composition client; CLI and MCP expose service-owned operations. LLM ingress authenticates inference calls before LiteLLM. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/docs/service_boundaries.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/docs/service_boundaries.md"}
                         >${"Service boundaries"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/llm_ingress/README.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/llm_ingress/README.md"}
                         >${"LLM ingress"}<//
                       >
                     </td>
@@ -531,7 +531,7 @@
               >${"Storage and ownership implications"}<//
             ><${Text} component="p" my="sm"
               >${"The single proposed Session authority is "}<em>${"not"}</em>${" today’s topology: Dispatcher, History, Runtime, Notification and sampler each own different Session-keyed facts. The current project direction keeps Dispatcher PostgreSQL and History separate until the explicitly deferred ownership review decides otherwise. A shared UUID or PostgreSQL cluster is not a reason to merge the services or tables. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/plans/task_dag.md#session_data_ownership_design--review-session-data-services-and-databases"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/plans/task_dag.md#session_data_ownership_design--review-session-data-services-and-databases"}
                 >${"SESSION_DATA_OWNERSHIP_DESIGN"}<//
               ><//
             ><//
@@ -560,7 +560,7 @@
                     <td>
                       <${Code}>${"TestAdmissionIsDurableAndIdempotent"}<//
                       >${", "}<${Code}>${"TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts"}</${Code}>${", and "}<${Code}>${"TestOnlyRunnerAdmissionRecordsAdmission"}</${Code}>${". "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/runner_gateway/dispatcher/store_integration_test.go"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/runner_gateway/dispatcher/store_integration_test.go"}
                         >${"Dispatcher tests"}<//
                       >
                     </td>
@@ -576,10 +576,10 @@
                       <${Code}
                         >${"TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend"}<//
                       >${", "}<${Code}>${"TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay"}</${Code}>${"; sampler has "}<${Code}>${"TestExecutorDoesNotReplayMutationAfterLostReply"}</${Code}>${". "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/env/runtime/session/native_test.go"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/env/runtime/session/native_test.go"}
                         >${"Native tests"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/central_sampler/executor_test.go"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/central_sampler/executor_test.go"}
                         >${"Sampler tests"}<//
                       >
                     </td>
@@ -594,7 +594,7 @@
                       <${Code}
                         >${"TestDeletionAfterLostCommandReplyRemainsUnknown"}<//
                       >${", "}<${Code}>${"TestDeliveryAttemptAndDeletionFenceOrderings"}</${Code}>${", and system test "}<${Code}>${"test_session_command_cannot_cross_deletion"}</${Code}>${". "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/system_tests/suites/test_session_deletion.py"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/system_tests/suites/test_session_deletion.py"}
                         >${"Deletion suite"}<//
                       >
                     </td>
@@ -609,10 +609,10 @@
                       <${Code}
                         >${"TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement"}<//
                       >${"; "}<${Code}>${"test_history_outage"}</${Code}>${" exercises a central-sampler turn and History catch-up. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/env/runtime/ingress_owner_test.go"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/env/runtime/ingress_owner_test.go"}
                         >${"Runtime tests"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/system_tests/README.md#central-sampler"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/system_tests/README.md#central-sampler"}
                         >${"System test scope"}<//
                       >
                     </td>
@@ -627,10 +627,10 @@
                       <${Code}
                         >${"TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted"}<//
                       >${"; external MCP delegation suite scales the app down and checks its bounded authorization scenario. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/history_service/svid_test.go"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/history_service/svid_test.go"}
                         >${"History identity test"}<//
                       >${" · "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/system_tests/suites/mcp/test_delegation.py"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/system_tests/suites/mcp/test_delegation.py"}
                         >${"MCP delegation test"}<//
                       >
                     </td>
@@ -643,13 +643,13 @@
                     <td>${"Browser synchronization"}</td>
                     <td>
                       ${"History fold and Electric-backed thread synchronization are implemented; system scenarios cover reconnect and suspend/resume. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/system_tests/README.md#behavior-specific-anchors"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/system_tests/README.md#behavior-specific-anchors"}
                         >${"System scenarios"}<//
                       >
                     </td>
                     <td>
                       ${"The saved acceptance note leaves server memory, off-window Electric traffic and Electric failover/scale evidence open. Its checks are dated; remeasure before claiming current behavior. "}<${Anchor}
-                        href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/debug/conversation_acceptance.md"}
+                        href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/debug/conversation_acceptance.md"}
                         >${"Acceptance note"}<//
                       >
                     </td>
@@ -684,10 +684,10 @@
               >${"central_sampler/\n  cmd/                       # existing entry point\n  api/                       # public sampler protocol (future move)\n  protocol/                  # existing provider-neutral content and strict JSON\n  anthropic/  responses/     # existing provider adapters\n  internal/\n    promptimage/             # image preparation and its tests: first slice\n    codemode/                # existing: host, framing and logical-session lifecycle\n    executor/                # candidate: Executor connection and operations\n    historyexport/           # candidate: History outbox delivery and ACKs\n    storage/                 # existing: content storage helpers\n    sessionstore/            # candidate: leases, intents, commands and transactions\n    runtime/                 # candidate: per-Session work and lifecycle orchestration\n  service.go                 # gRPC boundary, until dependencies support moving it\n  settings.go"}<//
             ><${Text} component="p" my="sm"
               >${"Start with "}<${Code}>${"image_preparation.go"}</${Code}>${" and its tests: its model-facing image behavior is a coherent capability used from "}<${Code}>${"codemode.go"}</${Code}>${". It calls "}<${Code}>${"protocol.DecodeObject"}</${Code}>${" from "}<${Code}>${"protocol/json.go"}</${Code}>${"; use that existing shared decoder and preserve its strict object/trailing-data behavior. Keep the tests for image limits, formats and placeholders. Then extract further coherent components one at a time, based on their real dependencies. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/central_sampler/image_preparation.go"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/central_sampler/image_preparation.go"}
                 >${"Image preparation"}<//
               >${" · "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/central_sampler/protocol/json.go"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/central_sampler/protocol/json.go"}
                 >${"Shared decoder"}<//
               ><//
             ><${Text} component="p" my="sm"
@@ -700,7 +700,7 @@
               >${"env/runtime/\n  cmd/  control/  execution/  harness/  journal/  session/  supervision/ # existing\n  internal/\n    lifecycle/               # candidate: environment transition coordination\n    sessioncontrol/          # candidate: Session admission and lifecycle owner\n    executioncontrol/        # candidate: execution lifecycle and fencing\n    historydelivery/         # candidate: journal push and acknowledgement\n  runtime.go                 # composition and process lifetime"}<//
             ><${Text} component="p" my="sm"
               >${"Files such as "}<${Code}>${"session_admission.go"}</${Code}>${", "}<${Code}>${"session_lifecycle_controller.go"}</${Code}>${", "}<${Code}>${"execution_lifecycle.go"}</${Code}>${" and "}<${Code}>${"lifecycle_controller.go"}</${Code}>${" indicate real responsibilities, but many are methods on "}<${Code}>${"*Runtime"}</${Code}>${" or share its admission lock and lifecycle state. Extract a whole controller or coordinator only after defining who owns those facts; do not distribute one lock or generation fence across packages with hidden callbacks. Existing "}<${Code}>${"session/"}</${Code}>${", "}<${Code}>${"execution/"}</${Code}>${" and "}<${Code}>${"supervision/"}</${Code}>${" stay their established owners. First map shutdown and reconciliation, then choose one bounded extraction that preserves exact-generation fencing and final History acknowledgement. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/env/runtime/docs/lifecycle.md"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/env/runtime/docs/lifecycle.md"}
                 >${"Lifecycle contract"}<//
               ><//
             >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
@@ -711,10 +711,10 @@
               >${"notification_service/\n  api/  github/  model/  worker/       # existing responsibilities\n  internal/\n    inboxaccess/                       # first owner-boundary move\n    storage/\n      inbox/                           # candidate: inbox/message operations\n      github/                          # candidate: GitHub observations and ingestion\n      transaction/                     # only if a real shared transaction owner is needed\n  migrations/                          # one database and migration owner remains"}<//
             ><${Text} component="p" my="sm"
               >${"The existing "}<${Code}>${"store/"}</${Code}>${" mixes inbox operations with many "}<${Code}>${"github_*"}</${Code}>${" files, which makes navigation difficult. However, GitHub ingestion allocates positions, invalidates access, wakes inboxes and records notifications in transactions; several methods are on the same "}<${Code}>${"*Store"}</${Code}>${". Map each transaction and its lock order before assigning packages. A split must preserve one atomic transaction when multiple responsibilities participate; it must not turn each directory into an independently committed repository or wrap the same Store repeatedly. Treat the tree as a target candidate, not a mechanical list of files to move. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/notification_service/store/github_ingest.go"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/notification_service/store/github_ingest.go"}
                 >${"GitHub ingestion"}<//
               >${" · "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/notification_service/docs/architecture.md"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/notification_service/docs/architecture.md"}
                 >${"Storage architecture"}<//
               ><//
             >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
@@ -725,7 +725,7 @@
               >${"runner_gateway/dispatcher/\n  api/                       # public contract; RPC implementation may be separate\n  internal/\n    admission/               # candidate: Session / command admission\n    delivery/                # candidate: worker, wake and routing\n    store/                   # candidate: transactions and possible-forwarding fence\n    watch/                   # candidate: watch and terminal delivery\n    placement/               # candidate: placement validation\n  # composition under Dispatcher; current Gateway binary may still host it"}<//
             ><${Text} component="p" my="sm"
               >${"Today "}<${Code}>${"api.go"}</${Code}>${", "}<${Code}>${"delivery.go"}</${Code}>${", "}<${Code}>${"store.go"}</${Code}>${", "}<${Code}>${"watch.go"}</${Code}>${" and "}<${Code}>${"placement.go"}</${Code}>${" provide a useful starting map. Separate the stable delivery responsibility from RPC translation, but first map "}<${Code}>${"Store"}</${Code}>${" methods, terminal snapshots and lease/cleanup transactions. The possible-forwarding marker and deletion fence must remain coordinated in the same durable boundary; package movement does not itself close the existing watcher/reconnect gap. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/runner_gateway/dispatcher/SPEC.md"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/runner_gateway/dispatcher/SPEC.md"}
                 >${"Dispatcher contract"}<//
               ><//
             >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
@@ -758,7 +758,7 @@
             ><${Text} component="p" my="sm"
               ><strong>${"Move:"}</strong
               >${" "}<${Code}>${"agentplane/history_service/reads"}</${Code}>${" → "}<${Code}>${"agentplane/history_service/internal/reads"}</${Code}>${". This landed package implements History-owned reads; updated callers include "}<${Code}>${"main.go"}</${Code}>${", "}<${Code}>${"api/"}</${Code}>${", and projection tests. Public History RPCs and generated contracts remain in their existing locations. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/history_service/internal/reads/BUILD.bazel"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/history_service/internal/reads/BUILD.bazel"}
                 >${"Current reads package"}<//
               ><//
             ><${Text} component="p" my="sm"
@@ -770,7 +770,7 @@
             ><${Text} component="p" my="sm"
               ><strong>${"Move:"}</strong
               >${" "}<${Code}>${"agentplane/notification_service/inboxaccess"}</${Code}>${" → "}<${Code}>${"agentplane/notification_service/internal/inboxaccess"}</${Code}>${". The landed move updated the service, API, tests and BUILD labels; policy implementation and tests were unchanged. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/notification_service/internal/inboxaccess/BUILD.bazel"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/notification_service/internal/inboxaccess/BUILD.bazel"}
                 >${"Current inbox-access package"}<//
               ><//
             ><${Text} component="p" my="sm"
@@ -781,10 +781,10 @@
             ><${Text} component="p" my="sm"
               ><strong>${"Move:"}</strong
               >${" rename "}<${Code}>${"agentplane/environment_runtime_transport"}</${Code}>${" to "}<${Code}>${"agentplane/identity/transport"}</${Code}>${", subject to confirming the destination has no import cycle at implementation time. It supplies shared SPIFFE/TLS transport for many services, not just Runtime. Include its Python configuration module and testing helpers; update Go/Python imports, Bazel visibility and labels, cdk8s and documentation in one coherent change. Identity authentication and credentials were grouped under agentplane/identity in #15919, but the transport package remains at its old path. This is a separate, larger mechanical PR with a broad cross-service reference surface. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/environment_runtime_transport/BUILD.bazel"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/environment_runtime_transport/BUILD.bazel"}
                 >${"Transport package"}<//
               >${" · "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/plans/task_dag.md#transport_package_rename--a-shorter-home-for-environment_runtime_transport"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/plans/task_dag.md#transport_package_rename--a-shorter-home-for-environment_runtime_transport"}
                 >${"Existing rename item"}<//
               ><//
             ><${Text} component="p" my="sm"
@@ -795,7 +795,7 @@
             ><${Text} component="p" my="sm"
               ><strong>${"Move:"}</strong
               >${" put "}<${Code}>${"history_service.proto"}</${Code}>${" and its generated Go/Python/TypeScript targets under "}<${Code}>${"history_service/api/history/"}</${Code}>${", while retaining its protobuf package, fully qualified RPC methods, fields and HTTP routes. Its existing "}<${Code}>${"api/"}</${Code}>${" package contains server handlers; a child package can hold the public contract. Update actual consumers, proto and language imports, BUILD labels, generated schemas and docs atomically. Keep "}<${Code}>${"session_ingress.proto"}</${Code}>${" as a separate follow-up, not a prerequisite. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/history_service/BUILD.bazel"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/history_service/BUILD.bazel"}
                 >${"Existing contract targets"}<//
               ><//
             ><${Text} component="p" my="sm"
@@ -821,7 +821,7 @@
             ><${Text} component="p" my="sm"
               ><strong>${"Dispatcher outcomes:"}</strong
               >${" "}<${Code}>${"SESSION_DELETION_FENCE"}</${Code}>${" needs a bounded, durable post-deletion receipt design for reconnect and delayed watchers. "}<strong>${"Runtime:"}</strong>${" map admission, native/Execution fence, journal seal and exact History acknowledgement, then simplify one evidenced shutdown/reconciliation path with race tests. "}<strong>${"Identity:"}</strong>${" continue the existing admission, rebind and lifecycle-grant decisions and their cutover tests. These can run alongside the moves; none is a global prerequisite for them. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/plans/task_dag.md"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/plans/task_dag.md"}
                 >${"Current task DAG"}<//
               ><//
             >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
@@ -831,7 +831,7 @@
               >${" and "}<${Code}>${"DISPATCHER_PERSISTENCE_MODEL_DESIGN"}</${Code}>${" compare the current split with alternatives using actual facts, lifetimes and measured costs. Dispatcher’s PostgreSQL-backed queue and separate History remain the current direction until reviewed otherwise. Defer a Session-service merge, database migration, new binary topology or broad rename until its own rationale and plan are established; do not make that review a prerequisite for the remaining package moves."}<//
             ><${Text} component="p" my="sm"
               >${"If a reviewed decision later moves state, inventory live writers and data, prove a consistent backup/restore, fence the old owner before enabling the new one, reconcile IDs and cursors, and define rollback or forward repair. Preserve authored work and never replay effects to rebuild history. "}<${Anchor}
-                href=${"https://github.com/agentydragon/ducktape/blob/4145b808117479ea603acde9c586545a0875b476/agentplane/docs/staging_data_preservation.md"}
+                href=${"https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/agentplane/docs/staging_data_preservation.md"}
                 >${"Data preservation procedure"}<//
               ><//
             >${"\n"}<${Blockquote} color=${"yellow"} my="md"
