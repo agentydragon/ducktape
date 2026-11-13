@@ -23,6 +23,8 @@ from laser.material_test.grid_generator import (
     _param_short_label,
     fmt_val,
     generate,
+    generate_rd,
+    main,
 )
 
 # ── fmt_val ────────────────────────────────────────────────────────────────────
@@ -96,6 +98,26 @@ def test_generate_layer_count():
     n_cells = 3 * 2
     # Layer 0 (text) + n_cells cell layers
     assert len(project.cut_settings) == 1 + n_cells
+
+
+def test_rd_grid_accepts_128_layers():
+    config = _minimal_config(
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[20] * 128), y=AxisConfig(param=CutParam.SPEED_MM_S, values=[100])
+    )
+    assert len(generate_rd(config).layers) == 128
+
+
+def test_rd_grid_rejects_border_over_layer_limit_without_truncating_output(tmp_path):
+    config_path = tmp_path / "grid.toml"
+    output_path = tmp_path / "existing.rd"
+    config_path.write_text(
+        '[x]\nparam = "power_pct"\nvalues = [' + ", ".join(["20"] * 128) + "]\n"
+        '[y]\nparam = "speed_mm_s"\nvalues = [100]\n[border]\nenabled = true\n'
+    )
+    output_path.write_bytes(b"existing output")
+    with pytest.raises(ValueError, match="at most 128 layers, got 129"):
+        main([str(config_path), "--format", "rd", "-o", str(output_path)])
+    assert output_path.read_bytes() == b"existing output"
 
 
 def test_generate_rect_count():
