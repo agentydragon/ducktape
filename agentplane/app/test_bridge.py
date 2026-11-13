@@ -1,17 +1,15 @@
 """The real Go app's Runner Gateway path under faults a deployment cannot be made to produce: a
 harness killed or a runner restarted mid-turn, an app replica exiting, History's archive held back,
 and a Session created behind the app's back. The fault-free flows a browser sees are scenarios in
-`agentplane/system_tests/scenarios/thread_stream.py`."""
+`agentplane/system_tests/scenarios/thread_history.py`."""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import shlex
 import signal
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,7 +21,9 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from sqlalchemy import select
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.app.testing.client import Client
 from agentplane.app.testing.history import SessionHistory
+from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
@@ -32,7 +32,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record
-from agentplane.proto import event_pb2, session_pb2
+from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
@@ -120,51 +120,6 @@ async def _kill_harness(runner: RunningRunner, sandbox_runner: SandboxRunner, th
     await kill_harness(runner, await sandbox_runner.status(), str(thread_id))
 
 
-@dataclass(frozen=True)
-class SseMessage:
-    event: str
-    id: int | None
-    data: dict[str, Any]
-
-
-async def next_message(lines: AsyncIterator[str]) -> SseMessage:
-    """The next SSE message; comments (keepalives) are skipped."""
-    event, event_id, data = "", None, ""
-    async for line in lines:
-        if line == "":
-            if event:
-                return SseMessage(event, event_id, json.loads(data))
-            continue
-        if line.startswith(":"):
-            continue
-        field, _, value = line.partition(": ")
-        match field:
-            case "event":
-                event = value
-            case "id":
-                event_id = int(value)
-            case "data":
-                data = value
-    raise AssertionError("the stream ended without a message")
-
-
-async def read_until(lines: AsyncIterator[str], key: str) -> list[SseMessage]:
-    """Entries up to and including the first whose Event payload carries `key`."""
-    seen: list[SseMessage] = []
-    while True:
-        try:
-            message = await next_message(lines)
-        except AssertionError as error:
-            progress = [(row.event, row.id, list(row.data.get("event", {}))) for row in seen[-20:]]
-            raise AssertionError(f"transport EOF before {key}; preceding SSE frames: {progress}") from error
-        seen.append(message)
-        if message.event in ("end", "error"):
-            progress = [(row.event, row.id, list(row.data.get("event", {}))) for row in seen[-20:]]
-            raise AssertionError(f"SSE {message.event} before {key}; preceding SSE frames: {progress}")
-        if key in message.data.get("event", {}):
-            return seen
-
-
 @pytest.fixture
 def sandbox_runner(
     sandbox: SandboxCluster, sandbox_control: SandboxControlClient, runner: RunningRunner
@@ -178,19 +133,49 @@ async def _stored_events(
     thread_id: str,
     *,
     until: str,
-    matches: Callable[[list[dict[str, Any]]], bool] | None = None,
-) -> list[dict[str, Any]]:
-    """The thread's archived entries, replayed from the start up to the first one carrying `until`
-    after which `matches` holds; the feed archives them a moment after the runner emitted them."""
-    entries: list[dict[str, Any]] = []
-    async with asyncio.timeout(30), http.stream("GET", f"/threads/{thread_id}/events/stream") as response:
-        assert response.status_code == 200
-        lines = response.aiter_lines()
-        while not (any(until in entry["event"] for entry in entries) and (matches is None or matches(entries))):
-            message = await next_message(lines)
-            if message.event == "event":
-                entries.append(message.data)
-    return entries
+    matches: Callable[[list[event_log_pb2.EventEntry]], bool] | None = None,
+) -> list[event_log_pb2.EventEntry]:
+    """Read the corrected durable prefix through the first matching typed History observation."""
+    reader = SessionEventReader(Client(http), UUID(thread_id))
+    async with asyncio.timeout(30):
+        while True:
+            entries = list(reader.entries)
+            for index, entry in enumerate(entries):
+                if entry.event.WhichOneof("observation") != until:
+                    continue
+                prefix = entries[: index + 1]
+                if matches is None or matches(prefix):
+                    return prefix
+            await reader.read_page()
+            await reader.wait_for_next_page()
+
+
+def _turn_completed_for_command(
+    entries: list[event_log_pb2.EventEntry], command_id: str, *, status: int | None = None
+) -> bool:
+    admissions = [
+        entry
+        for entry in entries
+        if entry.event.WhichOneof("observation") == "command_admitted"
+        and entry.event.command_admitted.command.command_id == command_id
+    ]
+    if not admissions:
+        return False
+    admission_cursor = admissions[0].cursor
+    turn_ids = {
+        entry.event.harness_user_message_confirmed.turn_id
+        for entry in entries
+        if entry.cursor > admission_cursor
+        and entry.event.WhichOneof("observation") == "harness_user_message_confirmed"
+        and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+    }
+    return any(
+        entry.cursor > admission_cursor
+        and entry.event.WhichOneof("observation") == "turn_completed"
+        and entry.event.turn_completed.turn_id in turn_ids
+        and (status is None or entry.event.turn_completed.status == status)
+        for entry in entries
+    )
 
 
 async def _folded_items(
@@ -278,12 +263,15 @@ async def _open_thread_with_seed(
     request = await _next_model_request(model)
     assert request.user_texts[-1] == seed_prompt
     await model.reply(request, Text(seed_answer))
-    await _stored_events(http, thread_id, until="turnCompleted")
+    await _stored_events(
+        http,
+        thread_id,
+        until="turn_completed",
+        matches=lambda entries: _turn_completed_for_command(
+            entries, "seed-input", status=event_pb2.TURN_STATUS_COMPLETED
+        ),
+    )
     return thread_id
-
-
-def _has_turn_status(entries: list[dict[str, Any]], status: str) -> bool:
-    return any(entry["event"].get("turnCompleted", {}).get("status") == status for entry in entries)
 
 
 @pytest.mark.parametrize("stop_mode", ["interrupt", "shutdown", "kill"])
@@ -355,9 +343,17 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         await _stored_events(
             http,
             thread_id,
-            until="turnCompleted",
-            matches=lambda entries: any(
-                entry["event"].get("itemCompleted", {}).get("text") == "STREAM_RECOVERY_DONE" for entry in entries
+            until="turn_completed",
+            matches=lambda entries: (
+                any(
+                    entry.event.WhichOneof("observation") == "item_completed"
+                    and entry.event.item_completed.WhichOneof("outcome") == "text"
+                    and entry.event.item_completed.text == "STREAM_RECOVERY_DONE"
+                    for entry in entries
+                )
+                and _turn_completed_for_command(
+                    entries, "stream-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
+                )
             ),
         )
 
@@ -395,19 +391,20 @@ async def _interrupt_and_recover(
                 assert dispatch["state"] == "DELIVERY_STATE_RUNNER_ADMITTED", dispatch
     else:
         await runner.restart()
-    expected = "TURN_STATUS_PROCESS_LOST" if mode == "kill" else "TURN_STATUS_INTERRUPTED"
+    expected = event_pb2.TURN_STATUS_PROCESS_LOST if mode == "kill" else event_pb2.TURN_STATUS_INTERRUPTED
     await _stored_events(
         http,
         thread_id,
-        until="turnCompleted",
+        until="turn_completed",
         matches=lambda entries: any(
-            entry["event"].get("turnCompleted", {}).get("turnId") == turn_id
-            and entry["event"]["turnCompleted"]["status"] == expected
+            entry.event.WhichOneof("observation") == "turn_completed"
+            and entry.event.turn_completed.turn_id == turn_id
+            and entry.event.turn_completed.status == expected
             for entry in entries
         ),
     )
     if mode != "interrupt":
-        await _stored_events(http, thread_id, until="harnessExited")
+        await _stored_events(http, thread_id, until="harness_exited")
 
     return turn_id, before
 
@@ -430,18 +427,20 @@ async def _wait_for_conversation_reconciliation(
     entries = await _stored_events(
         http,
         thread_id,
-        until="conversationReconciled",
+        until="conversation_reconciled",
         matches=lambda entries: any(
-            int(entry["origin"]["sequence"]) == expected_report
-            and entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id
+            entry.origin.sequence == expected_report
+            and entry.event.WhichOneof("observation") == "conversation_reconciled"
+            and entry.event.conversation_reconciled.turn_id == turn_id
             for entry in entries
         ),
     )
     return next(
-        int(entry["cursor"])
+        entry.cursor
         for entry in entries
-        if int(entry["origin"]["sequence"]) == expected_report
-        and entry["event"].get("conversationReconciled", {}).get("turnId") == turn_id
+        if entry.origin.sequence == expected_report
+        and entry.event.WhichOneof("observation") == "conversation_reconciled"
+        and entry.event.conversation_reconciled.turn_id == turn_id
     )
 
 
@@ -558,8 +557,10 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         await _stored_events(
             http,
             thread_id,
-            until="turnCompleted",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED"),
+            until="turn_completed",
+            matches=lambda entries: _turn_completed_for_command(
+                entries, "tool-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
+            ),
         )
         assert marker.read_text().splitlines() == [token]
 
@@ -610,9 +611,10 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         await _stored_events(
             http,
             thread_id,
-            until="textDelta",
+            until="text_delta",
             matches=lambda entries: any(
-                entry["event"].get("textDelta", {}).get("text") == partial for entry in entries
+                entry.event.WhichOneof("observation") == "text_delta" and entry.event.text_delta.text == partial
+                for entry in entries
             ),
         )
         await _wait_for_folded_items(
@@ -677,13 +679,15 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         await _stored_events(
             http,
             thread_id,
-            until="turnCompleted",
-            matches=lambda entries: _has_turn_status(entries, "TURN_STATUS_COMPLETED"),
+            until="turn_completed",
+            matches=lambda entries: _turn_completed_for_command(
+                entries, "completed-tool-recovery-input", status=event_pb2.TURN_STATUS_COMPLETED
+            ),
         )
         assert marker.read_text().splitlines() == [token]
 
 
-async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
+async def test_replica_commands_and_history_reads_survive_owner_replica_exit(
     app: AppProcess,
     db_url: str,
     history_client: HistoryServiceClient,
@@ -713,53 +717,51 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
                 response = await survivor_http.get(f"/upstream/app/v1/threads/{thread}")
                 assert response.status_code == 200, response.text
 
-        async with survivor_http.stream("GET", f"/threads/{thread}/events/stream") as response:
-            assert response.status_code == 200, await response.aread()
-            lines = response.aiter_lines()
-            assert (await next_message(lines)).event == "attached"
+        first_submit = await survivor_http.post(
+            f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
+            json={"sandbox": SANDBOX, "sandboxUid": sandbox.uid, "commandId": "input-1", "text": "FIRST_REPLICA_TURN"},
+        )
+        assert first_submit.status_code == 200, first_submit.text
+        await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
+        first = await _stored_events(
+            survivor_http,
+            str(thread),
+            until="turn_completed",
+            matches=lambda entries: _turn_completed_for_command(
+                entries, "input-1", status=event_pb2.TURN_STATUS_COMPLETED
+            ),
+        )
 
-            first_submit = await survivor_http.post(
-                f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
-                json={
-                    "sandbox": SANDBOX,
-                    "sandboxUid": sandbox.uid,
-                    "commandId": "input-1",
-                    "text": "FIRST_REPLICA_TURN",
-                },
-            )
-            assert first_submit.status_code == 200, first_submit.text
-            await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
-            async with asyncio.timeout(20):
-                first = await read_until(lines, "turnCompleted")
-
-            await app.kill()
-            assert app.process.returncode == -signal.SIGKILL
-            second_submit = await survivor_http.post(
-                f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
-                json={
-                    "sandbox": SANDBOX,
-                    "sandboxUid": sandbox.uid,
-                    "commandId": "input-2",
-                    "text": "AFTER_OWNER_EXIT",
-                },
-            )
-            assert second_submit.status_code == 200, second_submit.text
-            request = await model.request()
-            await model.reply(request, Text("AFTER_OWNER_EXIT"))
-            async with asyncio.timeout(20):
-                second = await read_until(lines, "turnCompleted")
-            seen = [*first, *second]
-            cursors = [message.id for message in seen if message.id is not None]
-            assert cursors == list(range(1, len(cursors) + 1))
-            assert [
-                message.data["event"]["itemCompleted"]["text"]
-                for message in seen
-                if "itemCompleted" in message.data["event"]
-            ] == ["FIRST_REPLICA_TURN", "AFTER_OWNER_EXIT"]
-            await runner.restart()
-            async with asyncio.timeout(10):
-                await read_until(lines, "harnessExited")
-                assert (await next_message(lines)).event == "end"
+        await app.kill()
+        assert app.process.returncode == -signal.SIGKILL
+        second_submit = await survivor_http.post(
+            f"/upstream/dispatcher/v1/sessions/{thread}:submitInput",
+            json={"sandbox": SANDBOX, "sandboxUid": sandbox.uid, "commandId": "input-2", "text": "AFTER_OWNER_EXIT"},
+        )
+        assert second_submit.status_code == 200, second_submit.text
+        request = await model.request()
+        await model.reply(request, Text("AFTER_OWNER_EXIT"))
+        seen = await _stored_events(
+            survivor_http,
+            str(thread),
+            until="turn_completed",
+            matches=lambda entries: _turn_completed_for_command(
+                entries, "input-2", status=event_pb2.TURN_STATUS_COMPLETED
+            ),
+        )
+        assert _turn_completed_for_command(first, "input-1", status=event_pb2.TURN_STATUS_COMPLETED)
+        assert _turn_completed_for_command(seen, "input-1", status=event_pb2.TURN_STATUS_COMPLETED)
+        assert _turn_completed_for_command(seen, "input-2", status=event_pb2.TURN_STATUS_COMPLETED)
+        cursors = [entry.cursor for entry in seen]
+        assert cursors == sorted(set(cursors))
+        assert [
+            entry.event.item_completed.text
+            for entry in seen
+            if entry.event.WhichOneof("observation") == "item_completed"
+            and entry.event.item_completed.WhichOneof("outcome") == "text"
+        ] == ["FIRST_REPLICA_TURN", "AFTER_OWNER_EXIT"]
+        await runner.restart()
+        await _stored_events(survivor_http, str(thread), until="harness_exited")
 
 
 async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(

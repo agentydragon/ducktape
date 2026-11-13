@@ -9,8 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
-	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -18,14 +16,10 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -37,28 +31,16 @@ type streamSandboxInventory interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
 }
 
-type streamHistoryStore interface {
-	threadReadHistory
-	ReadWatermark(context.Context, uuid.UUID) (uint64, error)
-}
-
-// streamingDependencies are the narrow runtime interfaces used by SSE and raw upstream routes.
-// All route authorization still goes through httpServer.RegisterRawRoute.
 type actionFederator interface {
 	Exchange(context.Context, federation.SessionLoginRow) (string, error)
 }
 
+// streamingDependencies are the runtime interfaces for the raw facades and console stream.
+// All route authorization goes through httpServer.RegisterRawRoute.
 type streamingDependencies struct {
 	Auth             *auth.Auth
-	Updates          auth.ChangeSource
-	UpdatesConnected func() bool
 	SandboxNamespace string
 	Sandboxes        streamSandboxInventory
-	Threads          threadReadStore
-	History          streamHistoryStore
-	HistoryFollower  interface {
-		FollowSession(context.Context, *historypb.FollowSessionRequest) (grpc.ServerStreamingClient[historypb.FollowSessionResponse], error)
-	}
 	Federator        actionFederator
 	DispatcherHTTP   streamingUpstream
 	EnvironmentHTTP  streamingUpstream
@@ -68,13 +50,12 @@ type streamingDependencies struct {
 	ConnectionHTTP   streamingUpstream
 	HistoryHTTP      streamingUpstream
 	NotificationHTTP streamingUpstream
-	ThreadHeartbeat  time.Duration
 	Console          sandboxes.ConsoleSource
 	Logger           *slog.Logger
 }
 
-// registerStreamingRoutes installs the live snapshots, event/notice/console streams, and
-// operator-facing HTTP facades. The server owns the shared auth/session middleware and drain gate.
+// registerStreamingRoutes installs raw upstream facades and the console stream.
+// The server owns the shared auth/session middleware and drain gate.
 func registerStreamingRoutes(server *httpServer, dependencies streamingDependencies) {
 	routes := newStreamingRoutes(server, dependencies)
 	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete} {
@@ -84,7 +65,6 @@ func registerStreamingRoutes(server *httpServer, dependencies streamingDependenc
 		server.RegisterRawRoute(method+" /upstream/policy/{path...}", http.HandlerFunc(routes.policyFacade), true)
 	}
 	server.RegisterRawRoute("GET /upstream/egress/{path...}", http.HandlerFunc(routes.egressFacade), true)
-	server.RegisterRawRoute("GET /threads/{thread_id}/events/stream", http.HandlerFunc(routes.threadEvents), false)
 	server.RegisterRawRoute("GET /upstream/notifications/{path...}", http.HandlerFunc(routes.notificationFacade), true)
 	server.RegisterRawRoute("GET /sandboxes/{name}/console/stream", http.HandlerFunc(routes.console), true)
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
@@ -344,7 +324,7 @@ func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) 
 	if err != nil {
 		var unavailable *sandboxes.ConsoleUnavailableError
 		if errors.As(err, &unavailable) {
-			_ = writeSSE(w, "unavailable", err.Error(), nil)
+			_ = writeSSE(w, "unavailable", err.Error())
 		} else {
 			r.logger().WarnContext(ctx, "Sandbox console stream failed", "error", err)
 		}
@@ -372,274 +352,20 @@ func (r *streamingRoutes) relayConsole(w http.ResponseWriter, ctx context.Contex
 		case <-ctx.Done():
 			return
 		case result := <-read:
-			if result.count > 0 && writeSSE(w, "output", base64.StdEncoding.EncodeToString(buffer[:result.count]), nil) != nil {
+			if result.count > 0 && writeSSE(w, "output", base64.StdEncoding.EncodeToString(buffer[:result.count])) != nil {
 				return
 			}
 			if result.err != nil {
 				if result.err != io.EOF && ctx.Err() == nil {
 					var unavailable *sandboxes.ConsoleUnavailableError
 					if errors.As(result.err, &unavailable) {
-						_ = writeSSE(w, "unavailable", result.err.Error(), nil)
+						_ = writeSSE(w, "unavailable", result.err.Error())
 					} else {
 						r.logger().WarnContext(ctx, "Sandbox console stream ended", "error", result.err)
 					}
 				}
 				return
 			}
-		}
-	}
-}
-
-func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Request) {
-	if r.deps.Threads == nil || r.deps.History == nil || r.deps.HistoryFollower == nil || r.deps.Updates == nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Thread event stream is unavailable")
-		return
-	}
-	id, err := uuid.Parse(request.PathValue("thread_id"))
-	if err != nil {
-		writeDetailError(w, http.StatusUnprocessableEntity, "thread_id must be a UUID")
-		return
-	}
-	thread, err := r.deps.Threads.GetThread(request.Context(), id)
-	if err != nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Thread metadata is unavailable")
-		return
-	}
-	if thread == nil {
-		writeDetailError(w, http.StatusNotFound, "no thread "+id.String())
-		return
-	}
-	cursor := uint64(0)
-	if text := request.URL.Query().Get("after"); text != "" {
-		cursor, err = strconv.ParseUint(text, 10, 64)
-		if err != nil {
-			writeDetailError(w, http.StatusUnprocessableEntity, "after must be a non-negative integer")
-			return
-		}
-	}
-	if text := request.Header.Get("Last-Event-ID"); text != "" {
-		cursor, err = strconv.ParseUint(text, 10, 64)
-		if err != nil {
-			writeDetailError(w, http.StatusUnprocessableEntity, "Last-Event-ID must be a non-negative integer")
-			return
-		}
-	}
-	if cursor > 0 {
-		watermark, err := r.deps.History.ReadWatermark(request.Context(), id)
-		if err != nil {
-			writeDetailError(w, http.StatusServiceUnavailable, "Thread archive is unavailable")
-			return
-		}
-		if cursor > watermark {
-			writeDetailError(w, http.StatusConflict, "cursor is beyond the archived Thread prefix")
-			return
-		}
-	}
-	var awaiting *string
-	if value, ok := request.URL.Query()["awaiting_command_id"]; ok && len(value) > 0 {
-		awaiting = &value[0]
-	}
-	ctx, cancel := r.requestLifetime(request)
-	defer cancel()
-	changes, unsubscribe, err := r.deps.Updates.Subscribe(threads.UpdatesChannel)
-	if err != nil {
-		writeDetailError(w, http.StatusServiceUnavailable, "Thread updates are unavailable")
-		return
-	}
-	defer unsubscribe()
-	if startSSE(w) != nil {
-		return
-	}
-	attachedSent := false
-	checkSummary := func() bool {
-		summary, err := r.deps.History.GetSummary(ctx, id)
-		if err != nil {
-			r.logger().WarnContext(ctx, "read Thread event feed status", "error", err)
-			return true
-		}
-		attached := summary.GetAttached()
-		if !attachedSent && attached != nil {
-			data, marshalErr := (protojson.MarshalOptions{}).Marshal(attached)
-			if marshalErr != nil || writeSSEData(w, "attached", data, nil) != nil {
-				return true
-			}
-			attachedSent = true
-		}
-		terminal := summary.GetFeedStatus() == historypb.FeedStatus_FEED_STATUS_ENDED || summary.GetFeedStatus() == historypb.FeedStatus_FEED_STATUS_FAILED
-		if awaiting == nil && terminal && attached != nil && summary.GetCommittedCursor() <= cursor && attached.GetLastCursor() >= cursor {
-			if summary.GetFeedStatus() == historypb.FeedStatus_FEED_STATUS_FAILED {
-				_ = writeSSE(w, "error", map[string]string{"message": summary.GetFeedError()}, nil)
-			} else {
-				_ = writeSSE(w, "end", map[string]any{}, nil)
-			}
-			return true
-		}
-		return false
-	}
-	heartbeat := r.deps.ThreadHeartbeat
-	if heartbeat <= 0 {
-		heartbeat = 15 * time.Second
-	}
-	timer := time.NewTimer(heartbeat)
-	defer timer.Stop()
-	resetHeartbeat := func() {
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer.Reset(heartbeat)
-	}
-	waitForHistory := func() bool {
-		select {
-		case <-ctx.Done():
-			return true
-		case <-changes:
-			resetHeartbeat()
-			return checkSummary()
-		case <-timer.C:
-			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
-				return true
-			}
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
-			}
-			if checkSummary() {
-				return true
-			}
-			timer.Reset(heartbeat)
-			return false
-		}
-	}
-	if checkSummary() {
-		return
-	}
-	type followOutcome int
-	const (
-		followStop followOutcome = iota
-		followRenew
-		followRetryMissing
-	)
-	followOnce := func() followOutcome {
-		followCtx, cancelFollow := context.WithCancel(ctx)
-		defer cancelFollow()
-		stream, err := r.deps.HistoryFollower.FollowSession(followCtx, &historypb.FollowSessionRequest{
-			SessionId: id.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: cursor}, Follow: true,
-		})
-		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				return followRetryMissing
-			}
-			r.logger().WarnContext(ctx, "open Thread event follow", "error", err)
-			return followStop
-		}
-		received := make(chan struct {
-			response *historypb.FollowSessionResponse
-			err      error
-		}, 1)
-		startReceive := func() {
-			go func() {
-				response, err := stream.Recv()
-				received <- struct {
-					response *historypb.FollowSessionResponse
-					err      error
-				}{response: response, err: err}
-			}()
-		}
-		startReceive()
-		for {
-			select {
-			case <-ctx.Done():
-				return followStop
-			case <-changes:
-				if checkSummary() {
-					return followStop
-				}
-				resetHeartbeat()
-			case <-timer.C:
-				if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
-					return followStop
-				}
-				if flusher, ok := w.(http.Flusher); ok {
-					flusher.Flush()
-				}
-				if checkSummary() {
-					return followStop
-				}
-				timer.Reset(heartbeat)
-			case result := <-received:
-				if result.err != nil {
-					if ctx.Err() != nil {
-						return followStop
-					}
-					if status.Code(result.err) == codes.NotFound {
-						return followRetryMissing
-					}
-					if errors.Is(result.err, io.EOF) {
-						r.logger().WarnContext(ctx, "Thread event follow ended before a terminal frame", "error", result.err)
-					} else {
-						r.logger().WarnContext(ctx, "Thread event follow ended", "error", result.err)
-					}
-					return followStop
-				}
-				if result.response == nil {
-					r.logger().WarnContext(ctx, "Thread event follow returned an empty frame")
-					return followStop
-				}
-				response := result.response
-				switch frame := response.GetFrame().(type) {
-				case *historypb.FollowSessionResponse_Entries:
-					if frame.Entries == nil {
-						r.logger().WarnContext(ctx, "Thread event follow returned an empty entries frame")
-						return followStop
-					}
-					for _, entry := range frame.Entries.GetEntries() {
-						if entry == nil {
-							r.logger().WarnContext(ctx, "Thread event follow returned an empty entry")
-							return followStop
-						}
-						data, marshalErr := (protojson.MarshalOptions{}).Marshal(entry)
-						entryCursor := entry.GetCursor()
-						if marshalErr != nil || writeSSEData(w, "event", data, &entryCursor) != nil {
-							return followStop
-						}
-						if awaiting != nil && entry.GetEvent() != nil && entry.GetEvent().GetCommandAdmitted() != nil && entry.GetEvent().GetCommandAdmitted().GetCommand().GetCommandId() == *awaiting {
-							awaiting = nil
-						}
-					}
-					cursor = response.GetThroughCursor()
-				case *historypb.FollowSessionResponse_CaughtUp:
-					cursor = response.GetThroughCursor()
-					if checkSummary() {
-						return followStop
-					}
-				case *historypb.FollowSessionResponse_Settled, *historypb.FollowSessionResponse_Removed:
-				case *historypb.FollowSessionResponse_ReconnectRequired:
-					cursor = response.GetThroughCursor()
-					if checkSummary() {
-						return followStop
-					}
-					return followRenew
-				default:
-					r.logger().WarnContext(ctx, "Thread event follow returned an unknown frame")
-					return followStop
-				}
-				resetHeartbeat()
-				startReceive()
-			}
-		}
-	}
-	for {
-		switch followOnce() {
-		case followRenew:
-			continue
-		case followRetryMissing:
-			if waitForHistory() {
-				return
-			}
-		default:
-			return
 		}
 	}
 }
@@ -665,22 +391,13 @@ func startSSE(w http.ResponseWriter) error {
 	return nil
 }
 
-func writeSSE(w http.ResponseWriter, event string, value any, id *uint64) error {
+func writeSSE(w http.ResponseWriter, event string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	return writeSSEData(w, event, data, id)
-}
-
-func writeSSEData(w http.ResponseWriter, event string, data []byte, id *uint64) error {
 	if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
 		return err
-	}
-	if id != nil {
-		if _, err := fmt.Fprintf(w, "id: %d\n", *id); err != nil {
-			return err
-		}
 	}
 	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
 		return err
@@ -689,15 +406,4 @@ func writeSSEData(w http.ResponseWriter, event string, data []byte, id *uint64) 
 		flusher.Flush()
 	}
 	return nil
-}
-
-func waitContext(ctx context.Context, duration time.Duration) bool {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }

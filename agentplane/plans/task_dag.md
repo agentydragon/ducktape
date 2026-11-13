@@ -2190,24 +2190,7 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
-    THREAD_EVENTS_SSE_RETIREMENT[In progress: retire App Thread-events SSE]
 ```
-
-### `THREAD_EVENTS_SSE_RETIREMENT` — retire App Thread-events SSE
-
-**In progress; Codex, 2026-11-13 UTC, after operator approval of the first migration PR.** The test
-Client and its driver/scenario consumers use typed `ReadSessionEvents` pages through the existing
-authenticated App History facade. Callers own exact-command admission and completion predicates;
-the reader validates raw cursor coverage and applies settlement/removal corrections. Archive readers
-capture `committed_cursor`, independently of the lagging folded Thread view. The browser uses Electric.
-
-**Remaining, not dispatched:** migrate the direct HTTP readers in `app/test_bridge.py` and
-`system_tests/scenarios/thread_stream.py`, then remove `GET /threads/{thread_id}/events/stream` and
-its route-specific code. Preserve authorization, concurrent readers, cursor reconnect and terminal
-coverage, command idempotency/no replay, unwatched-turn archival, and failed-turn/next-input isolation.
-Only SSE framing and endpoint-specific assertions disappear. `FollowSession` remains a native gRPC
-contract; no new compatibility adapter or reader authority is needed. **Exit:** these callers and
-their durable behavioral coverage use History reads, and the obsolete App SSE route is removed.
 
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
 which other consumers may move to it. Automatic titles remain deferred under
@@ -3014,8 +2997,7 @@ OpenAPI-derived contracts, mirrored wire types and handwritten route implementat
 UI-specific view models and adapters may remain.
 
 Frontend configuration (#14786), system status (#14792) and Sandbox policy grant/revoke
-(#14796, #14800) have moved; the Sandbox console stream remains. Thread event stream retirement is tracked separately in
-`THREAD_EVENTS_SSE_RETIREMENT` (section 11). Inventory other remaining app-owned contracts and raw
+(#14796, #14800) have moved; the Sandbox console stream remains. Inventory other remaining app-owned contracts and raw
 streams before converting them. Electric synchronization remains a
 protocol-specific transport for now.
 Login/OAuth redirects, static assets, health probes, API documentation and OTLP telemetry are also
@@ -3704,8 +3686,6 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   operator-chosen migration); (3) `drop_block` only as a last resort, since it silently loses
   reasoning. Test by rendering a stored conversation under a changed tool description and asserting
   the provider accepts the continuation. Covers the Responses and Anthropic Messages paths.
-- **`THREAD_EVENTS_SSE_RETIREMENT`** (section 11): in progress; test Client consumers use typed History
-  reads. Direct HTTP tests and route removal remain undispatched. Stays in section 11.
 
 #### Authentication: dead or stale today
 

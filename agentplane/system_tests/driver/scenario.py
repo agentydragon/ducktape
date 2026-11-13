@@ -19,7 +19,7 @@ async def open_resources(
     cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer, *, native_diagnostics: bool = True
 ) -> AsyncIterator[tuple[Client, Sandboxes]]:
     async with AsyncExitStack() as resources:
-        client = await resources.enter_async_context(Client(base_url=base_url, token=token))
+        client = await resources.enter_async_context(Client.connect(base_url=base_url, token=token))
         sandbox = await resources.enter_async_context(sandbox_scope(cluster, client, phase_tracer))
 
         if native_diagnostics:

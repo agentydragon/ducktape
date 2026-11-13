@@ -13,17 +13,10 @@ import (
 )
 
 type fakeHistoryReader struct {
-	observations        *historypb.ReadSessionObservationsResponse
-	observationRequests []*historypb.ReadSessionObservationsRequest
-	findSessions        *historypb.FindSessionsRequest
-	summary             *historypb.SessionSummary
-	summaryErr          error
-	batch               *historypb.BatchGetSessionSummariesResponse
-}
-
-func (f *fakeHistoryReader) ReadSessionObservations(_ context.Context, request *historypb.ReadSessionObservationsRequest) (*historypb.ReadSessionObservationsResponse, error) {
-	f.observationRequests = append(f.observationRequests, request)
-	return f.observations, nil
+	findSessions *historypb.FindSessionsRequest
+	summary      *historypb.SessionSummary
+	summaryErr   error
+	batch        *historypb.BatchGetSessionSummariesResponse
 }
 
 func (f *fakeHistoryReader) GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
@@ -37,25 +30,6 @@ func (f *fakeHistoryReader) BatchGetSessionSummaries(context.Context, *historypb
 func (f *fakeHistoryReader) FindSessions(_ context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
 	f.findSessions = request
 	return &historypb.FindSessionsResponse{}, nil
-}
-
-func TestReadWatermarkReturnsTheHistoryCommittedCursor(t *testing.T) {
-	reader := &fakeHistoryReader{observations: &historypb.ReadSessionObservationsResponse{LastCursor: 5}}
-	store, err := New(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id := uuid.New()
-	watermark, err := store.ReadWatermark(t.Context(), id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if watermark != 5 {
-		t.Fatalf("ReadWatermark() = %d, want committed cursor 5", watermark)
-	}
-	if len(reader.observationRequests) != 1 || reader.observationRequests[0].GetSessionId() != id.String() || reader.observationRequests[0].GetLimit() != 1 {
-		t.Fatalf("ReadWatermark requests = %+v, want one metadata request for the Session", reader.observationRequests)
-	}
 }
 
 func TestGetSummaryReturnsGeneratedMessage(t *testing.T) {

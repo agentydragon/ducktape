@@ -134,9 +134,9 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	}), false)
 	handler := server.Handler(nil)
 	for _, request := range []struct{ method, path string }{
-		{http.MethodGet, "/threads/form/observations"},
-		{http.MethodGet, "/threads/form/events/stream"},
+		{http.MethodGet, "/threads/form/sync/v1/shape"},
 		// uuid.Parse accepts this compact spelling; route converters do not.
+		{http.MethodGet, "/threads/9b6d568a225343d7a7d4190e98359594/sync/v1/shape"},
 	} {
 		t.Run(request.method+" "+request.path, func(t *testing.T) {
 			response := httptest.NewRecorder()

@@ -1,7 +1,8 @@
 """Scenario ownership overlaps teardown and drains resources on failure or cancellation."""
 
 import asyncio
-from types import TracebackType
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import cast
 from unittest.mock import create_autospec
 from uuid import uuid4
@@ -22,9 +23,10 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     events: list[tuple[str, str]] = []
     views: dict[str, environment_service_pb2.EnvironmentDescriptor] = {}
 
-    def new_client(*, base_url: str, token: str) -> Client:
+    @asynccontextmanager
+    async def new_client(*, base_url: str, token: str) -> AsyncIterator[Client]:
+        del base_url, token
         client = create_autospec(Client, instance=True)
-        client.__aenter__.return_value = client
         client.opened_sandbox_uids = set()
 
         async def create(spec: environment_service_pb2.CreateEnvironmentRequest) -> identity_pb2.EnvironmentTarget:
@@ -38,9 +40,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
             client.opened_sandbox_uids.add(view.target.uid)
             return view.target
 
-        async def close(
-            opened: Client, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
-        ) -> None:
+        async def close(opened: Client) -> None:
             events.extend(
                 ("client-close", view.target.name)
                 for view in views.values()
@@ -48,8 +48,10 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
             )
 
         client.create_sandbox.side_effect = create
-        client.__aexit__.side_effect = close
-        return cast(Client, client)
+        try:
+            yield cast(Client, client)
+        finally:
+            await close(cast(Client, client))
 
     async def create_identity(_cluster: Cluster, name: str, _policy_sets: list[str]) -> dict[str, str]:
         return {"namespace": "test", "name": name, "uid": f"identity-{name}"}
@@ -73,7 +75,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
     async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
         events.append(("delete", name))
 
-    monkeypatch.setattr(scenario, "Client", new_client)
+    monkeypatch.setattr(Client, "connect", staticmethod(new_client))
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
     monkeypatch.setattr(sandbox, "suspend_and_delete", delete)
     monkeypatch.setattr(native_artifacts, "capture", capture)

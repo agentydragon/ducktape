@@ -110,8 +110,8 @@ edge use separate loopback HTTP origins, which `stack.py` port-forwards to their
 login callback and MCP linkage callback use the app origin; the edge's upstream OAuth callback uses
 the edge origin. Each satisfies endpoint validation without allowing insecure non-loopback URLs.
 
-The stack's tests drive the app's REST/SSE API and omit Electric and the browser frontend. Tests of the
-frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
+The stack's tests drive the app's generated facades and History reads, and omit Electric and the
+browser frontend. Tests of the frontend sync protocol run Electric separately. The database bootstrap still creates the `electric`
 role required by the existing migrations; it does not start an Electric process.
 
 k3s runs its bundled kube-proxy, so the fixture's Services are ordinary ClusterIP Services and Pods

@@ -102,7 +102,7 @@ async def _app(
 
     server = await asyncio.start_server(serve, "127.0.0.1", port)
     bound = server.sockets[0].getsockname()[1]
-    async with server, Client(base_url=f"http://127.0.0.1:{bound}", token="test-token") as client:
+    async with server, Client.connect(base_url=f"http://127.0.0.1:{bound}", token="test-token") as client:
         yield client, server
 
 
@@ -123,6 +123,23 @@ async def test_client_propagates_active_trace_context() -> None:
         async with _app(accepted, requests=observed) as (client, _):
             await client.presets()
     assert "traceparent: 00-1234567890abcdef1234567890abcdef-1234567890abcdef-01\r\n" in observed[0].lower()
+
+
+async def test_client_uses_the_callers_authentication_and_lifetime() -> None:
+    observed: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        return httpx.Response(200, json={"presets": []})
+
+    async with httpx.AsyncClient(
+        base_url="https://app.test", cookies={"operator": "cookie-token"}, transport=httpx.MockTransport(respond)
+    ) as http:
+        client = Client(http)
+        await client.presets()
+        assert observed[0].headers.get("cookie") == "operator=cookie-token"
+        assert "authorization" not in observed[0].headers
+        assert not http.is_closed
 
 
 @pytest.mark.parametrize(("overrides", "setup_script"), [(None, None), ({"model": "", "instructions": None}, "")])
