@@ -72,8 +72,10 @@ Parallel chunk work is reported in chunk order. `analyze` and the standalone
 analyzer emit the same hint and admission diagnostics as `run`, including
 `run --analysis`; each occurrence is rendered once per analysis operation.
 Project-analysis performs selector resolution and reports its selector warnings,
-but does not compute purity-hint facts. Progress and analysis telemetry have
-independent instrumentation owners.
+but does not compute purity-hint facts. Synchronous purity-completion
+disagreements remain in facts and reports and are recorded as typed chunk
+diagnostics at the shared fresh/loaded fact check. Progress telemetry has a
+separate instrumentation owner.
 
 Command output is fallible through text rendering, JSON serialization, stdout
 and stderr writes, and each stream's explicit final flush. Text reports are

@@ -382,8 +382,8 @@ fn stable_top_level_var_candidates(
 /// pre-computed structural layer and a set of `AnalysisInputs`. Builds
 /// the chunk code graph (hint-gated purity propagation), the
 /// local-effect context (gated by `hints.local_effect_policy`), the
-/// per-statement purity classification, and the redundant-hint
-/// diagnostics. Folds the policy-independent facts in to produce the
+/// per-statement purity classification, and the redundant-hint facts. Folds
+/// the policy-independent facts in to produce the
 /// full [`ChunkFactAnalysis`].
 pub fn analyze_chunk_with_policy(
     structural: StructuralChunkAnalysis<'_>,
@@ -638,23 +638,6 @@ fn analyze_chunk_with_policy_and_sync(
             hints,
             &graph,
             &global_object_names,
-        );
-    }
-    let disagreements: Vec<_> = facts
-        .iter()
-        .filter(|fact| {
-            fact.synchronous_calls
-                .as_ref()
-                .is_some_and(|calls| calls.purity_disagreement.is_some())
-        })
-        .map(|fact| (fact.ordinal, fact.source_location.as_ref()))
-        .collect();
-    if !disagreements.is_empty() {
-        eprintln!(
-            "purity-completion-disagreement count={} source={} sites={:?}",
-            disagreements.len(),
-            locator.map_or("<unknown>", |locator| locator.source_path),
-            disagreements
         );
     }
     for fact in &mut facts {

@@ -395,6 +395,17 @@ pub struct ReturnedRecordUseFact {
 }
 
 impl StatementFacts {
+    /// The report evidence that prepared purity was contradicted at owner
+    /// completion, if the synchronous interpreter observed that invariant
+    /// failure.
+    pub fn purity_completion_disagreement(
+        &self,
+    ) -> Option<&crate::reports::schema::PurityCompletionDisagreement> {
+        self.synchronous_calls
+            .as_ref()
+            .and_then(|calls| calls.purity_disagreement.as_ref())
+    }
+
     /// What one synchronous call of the function or class this statement
     /// declares runs first-order (before nested closures and `await`):
     /// a class runs its constructor. The view at-init call promotion uses.

@@ -62,6 +62,23 @@ pub fn report(
                         reason = hint.reason.explanation(),
                     ),
                 )?,
+                ChunkDiagnostic::PurityCompletionDisagreement {
+                    ordinal,
+                    source_location,
+                    evidence,
+                } => write_diagnostic(
+                    stderr,
+                    format_args!(
+                        "warning: chunk {chunk}: synchronous purity completion disagreed at \
+                         statement #{ordinal} ({location}): prepared {prepared}, completed {completed}",
+                        location = source_location.as_ref().map_or_else(
+                            || "source location unavailable".to_owned(),
+                            render_source_location,
+                        ),
+                        prepared = render_purity(&evidence.prepared),
+                        completed = render_purity(&evidence.completed),
+                    ),
+                )?,
                 ChunkDiagnostic::AdmissionOverride { shape, statements } => {
                     let check = shape.check();
                     let description = shape.explanation();
@@ -96,6 +113,40 @@ pub fn report(
         }
     }
     Ok(())
+}
+
+fn render_source_location(location: &analysis::SourceLocation) -> String {
+    match location.start_column {
+        Some(column) => format!("{}:{}:{column}", location.source_path, location.start_line),
+        None => format!("{}:{}", location.source_path, location.start_line),
+    }
+}
+
+fn render_purity(purity: &analysis::Purity) -> String {
+    match purity {
+        analysis::Purity::Pure { .. } => "pure".to_owned(),
+        analysis::Purity::NotPure { reasons } if reasons.is_empty() => "not pure".to_owned(),
+        analysis::Purity::NotPure { reasons } => format!(
+            "not pure ({})",
+            reasons
+                .iter()
+                .map(|reason| {
+                    let location = reason
+                        .source_location
+                        .as_ref()
+                        .map(|location| format!(" at {}", render_source_location(location)))
+                        .unwrap_or_default();
+                    let detail = reason
+                        .detail
+                        .as_ref()
+                        .map(|detail| format!(": {detail}"))
+                        .unwrap_or_default();
+                    format!("{}{location}{detail}", reason.rule)
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
 }
 
 /// A stderr failure retains its native I/O cause and is never a successful closed stdout.
