@@ -73,8 +73,10 @@ supplied MCP schemas and policy-authored argument schemas retain their own JSON 
 
 ## Caller admission and Connection authority
 
-A caller is either a directly authenticated platform ServiceAccount in a configured caller
-namespace, or an `Identity` of the policy namespace. Agent workload `WorkloadCredential`s and
+A caller is either a directly authenticated platform ServiceAccount carrying
+`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace, or an
+`Identity` of the policy namespace. Configured service readers retain their separate role and need
+no caller label. Agent workload `WorkloadCredential`s and
 command/build boxes now name Identity subjects; the retained ServiceAccount authentication path is
 for component callers, not a newly issued workload credential.
 The shared TLS RPC listener on 8080 verifies an agentplane Runtime SVID with explicit
