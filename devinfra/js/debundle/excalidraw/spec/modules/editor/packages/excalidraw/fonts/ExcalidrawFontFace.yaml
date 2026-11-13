@@ -1,0 +1,16 @@
+# Original home: packages/excalidraw/fonts/ExcalidrawFontFace.ts
+source_matches:
+  - match: |
+      var selected = class fontFaceClass {
+        ANYTHING;
+        toCSS(ANYTHING) { STMT_LIST; }
+        async getContent(ANYTHING) { STMT_LIST; }
+        fetchFont(ANYTHING) { STMT_LIST; }
+        getUnicodeRangeRegex() { STMT_LIST; }
+        static createUrls(ANYTHING) { STMT_LIST; }
+        static getFormat(ANYTHING) { STMT_LIST; }
+        static normalizeBaseUrl(ANYTHING) { STMT_LIST; }
+      };
+    bindings:
+      - local: selected
+        name: ExcalidrawFontFace

@@ -541,6 +541,57 @@ async def test_fonts_class(playwright_driver: Playwright, origin: str) -> None:
         assert result == {"families": [1, 3], "updates": [1, 1], "sharedRegistration": True}
 
 
+async def test_font_face_class(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { ExcalidrawFontFace: Face } = await import(
+                    './editor/packages/excalidraw/fonts/ExcalidrawFontFace.js');
+                const data = 'data:font/woff2;base64,AQID';
+                const face = new Face('Debundle Probe', data,
+                    {unicodeRange: 'U+0041-005A, U+1F600', style: 'italic', weight: '700'});
+                const range = face.getUnicodeRangeRegex();
+                const originalPath = window.EXCALIDRAW_ASSET_PATH;
+                let relativeUrls;
+                try {
+                    window.EXCALIDRAW_ASSET_PATH = ['/probe-fonts', './fallback-fonts/'];
+                    relativeUrls = Face.createUrls('/example.woff2').map(url => url.toString());
+                } finally {
+                    window.EXCALIDRAW_ASSET_PATH = originalPath;
+                }
+                return {
+                    descriptors: [face.fontFace.family, face.fontFace.style, face.fontFace.weight],
+                    dataUrls: face.urls,
+                    localUrls: Face.createUrls('local:Example'),
+                    remoteUrls: Face.createUrls('https://example.invalid/font.woff2').map(String),
+                    relativePaths: relativeUrls.slice(0, 2).map(url => new URL(url).pathname),
+                    fallback: relativeUrls[2] === new URL('example.woff2', Face.ASSETS_FALLBACK_URL).href,
+                    formats: [Face.getFormat(new URL('https://example.invalid/font.woff2')), Face.getFormat(data)],
+                    range: [range.test('A'), range.test('Z'), range.test('😀'), range.test('a'), range.test('界')],
+                    skipped: face.toCSS('a') === undefined,
+                    fetched: Array.from(new Uint8Array(await face.fetchFont(data)))
+                };
+            }"""
+        )
+        assert result == {
+            "descriptors": ["Debundle Probe", "italic", "700"],
+            "dataUrls": ["data:font/woff2;base64,AQID"],
+            "localUrls": [],
+            "remoteUrls": ["https://example.invalid/font.woff2"],
+            "relativePaths": ["/probe-fonts/example.woff2", "/fallback-fonts/example.woff2"],
+            "fallback": True,
+            "formats": ["format('woff2')", ""],
+            "range": [True, True, True, False, False],
+            "skipped": True,
+            "fetched": [1, 2, 3],
+        }
+
+
 async def test_element_construction(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
