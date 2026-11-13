@@ -137,26 +137,25 @@ func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID st
 // ensureInbox creates an Identity-owned inbox or locks that exact owner's existing inbox.
 // owner_namespace and owner_name retain the destination Sandbox key used by the per-Sandbox quota.
 func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner Owner, ref model.DestinationRef, sessionID string) (Inbox, error) {
-	account := model.ServiceAccount{Namespace: ref.Namespace, Name: ref.Name}
 	if owner.Identity.Name == "" || owner.Identity.UID == "" || owner.SandboxUID == "" || owner.SandboxUID != ref.UID {
 		return Inbox{}, ErrNotFound
 	}
 	written := now()
 	key := model.DestinationKey(ref, sessionID)
-	// Serialize only creation for an owner, to enforce the total destination quota.
-	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, account.Namespace+"/"+account.Name); err != nil {
+	// Serialize creation per destination Sandbox to enforce its inbox quota.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, ref.Namespace+"/"+ref.Name); err != nil {
 		return Inbox{}, err
 	}
 	var existing uuid.UUID
 	err := tx.QueryRowContext(ctx,
 		`SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3`,
-		account.Namespace, account.Name, key).Scan(&existing)
+		ref.Namespace, ref.Name, key).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
 		var count int
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FROM inbox WHERE owner_namespace = $1 AND owner_name = $2
 				AND destination_uid = $3`,
-			account.Namespace, account.Name, ref.UID).Scan(&count); err != nil {
+			ref.Namespace, ref.Name, ref.UID).Scan(&count); err != nil {
 			return Inbox{}, err
 		}
 		if count >= s.quotas.InboxesPerAccount {
@@ -172,7 +171,7 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner Owner, ref mo
 			owner_identity_name, owner_identity_uid)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10, $11, $12)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), account.Namespace, account.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written, nil,
+		uuid.New(), ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written, nil,
 		owner.Identity.Name, owner.Identity.UID); err != nil {
 		return Inbox{}, err
 	}

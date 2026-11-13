@@ -471,13 +471,17 @@ func TestReconcileClassifiesActionServiceResponses(t *testing.T) {
 			read: "request", setup: func(s *fakeActionService) { s.request = nil },
 			kind: store.FailureProcessingError, message: "ValidationError",
 		},
-		"request without caller": {
-			read: "request", setup: func(s *fakeActionService) { s.request.Caller = nil },
-			kind: store.FailureProcessingError, message: "ValidationError",
+		"request without Identity": {
+			read: "request", setup: func(s *fakeActionService) { s.request.CallerIdentity = nil },
+			kind: store.FailureAccessDenied, message: "SourceNotOwnedError",
 		},
-		"caller without a name": {
-			read: "request", setup: func(s *fakeActionService) { s.request.Caller.Name = "" },
-			kind: store.FailureProcessingError, message: "ValidationError",
+		"Identity without a name": {
+			read: "request", setup: func(s *fakeActionService) { s.request.CallerIdentity.Name = "" },
+			kind: store.FailureAccessDenied, message: "SourceNotOwnedError",
+		},
+		"Identity without a UID": {
+			read: "request", setup: func(s *fakeActionService) { s.request.CallerIdentity.Uid = "" },
+			kind: store.FailureAccessDenied, message: "SourceNotOwnedError",
 		},
 		"event without a sequence": {
 			read: "events", setup: func(s *fakeActionService) {

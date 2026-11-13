@@ -668,7 +668,7 @@ func TestLegacyInboxIsRetainedButNotAdoptedByTheSandboxIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := server.store.Subscribe(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: sandboxName}, model.Subscribe{
+	legacy, err := server.store.Subscribe(t.Context(), store.Owner{Identity: model.Identity{Name: server.identity.GetName(), UID: server.identity.GetUid()}, SandboxUID: sandboxUID}, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: testNamespace, Name: sandboxName, UID: sandboxUID},
 		SessionID:      testSession, IdempotencyKey: request.GetIdempotencyKey(), Source: source, LifetimeDays: 7,
 	}, nil)
