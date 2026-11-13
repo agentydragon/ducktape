@@ -274,68 +274,85 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	stop()
 }
 
-func TestRuntimePermanentSamplingFailureLeavesNextInputUsable(t *testing.T) {
-	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
-	const failedCommandID = "permanent-sampling-failure"
-	const failedInput = "input whose provider route is rejected"
-	admitProviderSamplingCommand(t, store, session.ID, failedCommandID, failedInput)
+func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		status, attempts int
+	}{
+		{name: "permanent", status: http.StatusBadRequest, attempts: 1},
+		{name: "exhausted", status: http.StatusServiceUnavailable, attempts: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newTestStore(t)
+			session := openSessionForStore(t, store, "")
+			const failedCommandID = "permanent-sampling-failure"
+			const failedInput = "input whose provider route is rejected"
+			admitProviderSamplingCommand(t, store, session.ID, failedCommandID, failedInput)
 
-	requests := make(chan []byte, 2)
-	var count atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read provider request: %v", err)
-			return
-		}
-		requests <- body
-		if count.Add(1) == 1 {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-		if err := writeSamplingSuccess(w, "next-input-response", "next input succeeded"); err != nil {
-			t.Errorf("write provider success: %v", err)
-		}
-	}))
-	t.Cleanup(server.Close)
-	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
-	runtime.Wake(session.ID)
-	_ = receiveProviderRequest(t, requests)
-	waitProviderAttemptStatus(t, store, failedCommandID, 1, string(IntentResultAbandoned))
-	failed := waitProviderCommandOutcome(t, store, session.ID, failedCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
-	if failed.GetFailureReason() == "" {
-		t.Fatal("permanent provider failure did not retain a command failure reason")
-	}
-	sessionState, err := store.GetSession(t.Context(), session.ID, "")
-	if err != nil || sessionState.Blocked {
-		t.Fatalf("permanent provider failure blocked the Session: state=%+v err=%v", sessionState, err)
-	}
+			requests := make(chan []byte, tc.attempts+1)
+			var count atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read provider request: %v", err)
+					return
+				}
+				requests <- body
+				if count.Add(1) <= int32(tc.attempts) {
+					w.Header().Set("Retry-After", "30")
+					http.Error(w, "provider unavailable", tc.status)
+					return
+				}
+				if err := writeSamplingSuccess(w, "next-input-response", "next input succeeded"); err != nil {
+					t.Errorf("write provider success: %v", err)
+				}
+			}))
+			t.Cleanup(server.Close)
+			runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
+			runtime.Wake(session.ID)
+			for attempt := 1; attempt <= tc.attempts; attempt++ {
+				_ = receiveProviderRequest(t, requests)
+				intentID := waitProviderAttemptStatus(t, store, failedCommandID, attempt, string(IntentResultAbandoned))
+				if attempt < tc.attempts {
+					setProviderRetryDueNow(t, store, intentID)
+					runtime.Wake(session.ID)
+				}
+			}
+			failed := waitProviderCommandOutcome(t, store, session.ID, failedCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
+			if failed.GetFailureReason() == "" {
+				t.Fatal("terminal provider failure did not retain a command failure reason")
+			}
+			sessionState, err := store.GetSession(t.Context(), session.ID, "")
+			if err != nil || sessionState.Blocked {
+				t.Fatalf("terminal provider failure blocked the Session: state=%+v err=%v", sessionState, err)
+			}
 
-	const nextCommandID = "input-after-permanent-sampling-failure"
-	const nextInput = "next accepted input remains usable"
-	admitProviderSamplingCommand(t, store, session.ID, nextCommandID, nextInput)
-	runtime.Wake(session.ID)
-	nextBody := receiveProviderRequest(t, requests)
-	if !strings.Contains(string(nextBody), nextInput) {
-		t.Fatalf("next provider request omitted newly accepted input: %s", nextBody)
+			const nextCommandID = "input-after-permanent-sampling-failure"
+			const nextInput = "next accepted input remains usable"
+			admitProviderSamplingCommand(t, store, session.ID, nextCommandID, nextInput)
+			runtime.Wake(session.ID)
+			nextBody := receiveProviderRequest(t, requests)
+			if !strings.Contains(string(nextBody), nextInput) {
+				t.Fatalf("next provider request omitted newly accepted input: %s", nextBody)
+			}
+			waitProviderCommandOutcome(t, store, session.ID, nextCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
+			if got := count.Load(); got != int32(tc.attempts+1) {
+				t.Fatalf("provider requests=%d, want %d failed attempts and one next-input request", got, tc.attempts)
+			}
+			owner := runtimeOwner(t, runtime, session.ID)
+			conversation, err := store.Read(t.Context(), owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := countUserMessage(t, conversation.Context(), failedInput); got != 1 {
+				t.Fatalf("failed command input appears %d times, want once", got)
+			}
+			if got := countUserMessage(t, conversation.Context(), nextInput); got != 1 {
+				t.Fatalf("next command input appears %d times, want once", got)
+			}
+			stop()
+		})
 	}
-	waitProviderCommandOutcome(t, store, session.ID, nextCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
-	if got := count.Load(); got != 2 {
-		t.Fatalf("provider requests=%d, want one permanent failure and one next-input request", got)
-	}
-	owner := runtimeOwner(t, runtime, session.ID)
-	conversation, err := store.Read(t.Context(), owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := countUserMessage(t, conversation.Context(), failedInput); got != 1 {
-		t.Fatalf("failed command input appears %d times, want once", got)
-	}
-	if got := countUserMessage(t, conversation.Context(), nextInput); got != 1 {
-		t.Fatalf("next command input appears %d times, want once", got)
-	}
-	stop()
 }
 
 func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T) {
@@ -598,7 +615,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 		FROM sampler_intent WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, commandID).Scan(&attempts, &secondID, &previousID, &stepID, &number, &budget, &firstSuppression); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 1 || previousID != intentID || stepID == "" || number != 2 || budget != 3 || firstSuppression != string(ProviderRetrySuppressionHostLoss) || secondID == "" {
+	if attempts != 2 || previousID != intentID || stepID != intentID || number != 2 || budget != 3 || firstSuppression != string(ProviderRetrySuppressionHostLoss) || secondID == "" {
 		t.Fatalf("host-loss attempt lineage: attempts=%d second=%q previous=%q step=%q number=%d budget=%d suppression=%q", attempts, secondID, previousID, stepID, number, budget, firstSuppression)
 	}
 	owner := runtimeOwner(t, runtime, session.ID)

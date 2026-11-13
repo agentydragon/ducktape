@@ -79,7 +79,7 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			}
 			command, err := store.GetCommand(t.Context(), session.ID, "compaction-control")
 			if err != nil || command.GetOutcome() != samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED ||
-				!strings.Contains(command.GetFailureReason(), "compaction suffix or effort policy changed") {
+				!strings.Contains(command.GetFailureReason(), "changed during recovery") {
 				t.Fatalf("command=%v err=%v", command, err)
 			}
 			got, err := store.GetSession(t.Context(), session.ID, "")
