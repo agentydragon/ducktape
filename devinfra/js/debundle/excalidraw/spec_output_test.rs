@@ -46,6 +46,10 @@ fn claimed_modules_export_their_entry_points() {
         ),
         ("editor/packages/excalidraw/fonts/Fonts.js", &["Fonts"]),
         (
+            "editor/packages/excalidraw/fonts/ExcalidrawFontFace.js",
+            &["ExcalidrawFontFace"],
+        ),
+        (
             "editor/packages/excalidraw/element/linearElementEditor.js",
             &["LinearElementEditor"],
         ),
