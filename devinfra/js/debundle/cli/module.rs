@@ -39,7 +39,9 @@ use yaml_edit::write_yaml_atomic;
 use crate::binding::load_module_docs;
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
-use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json};
+use crate::outcome::{
+    GateOutcome, MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json,
+};
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
@@ -287,7 +289,7 @@ pub fn run_merge(
     if let Err(err) = validation {
         return Err(emit_gate_rejection_json(
             output,
-            "merge",
+            MutationVerb::Merge,
             merge.edit.format,
             err,
         ));
@@ -306,12 +308,12 @@ pub fn run_merge(
         }
     }
     let action = if merge.edit.dry_run {
-        "dry-run"
+        MutationAction::DryRun
     } else {
-        "applied"
+        MutationAction::Applied
     };
     let outcome = MutationOutcome::ownership_edit(
-        "merge",
+        MutationVerb::Merge,
         action,
         gate.outcome(),
         effect_relocation_assessment.as_ref(),
@@ -822,7 +824,7 @@ pub fn run_delete(
         if let Err(err) = validation {
             return Err(emit_gate_rejection_json(
                 output,
-                "delete",
+                MutationVerb::Delete,
                 args.edit.format,
                 err,
             ));
@@ -833,11 +835,11 @@ pub fn run_delete(
     let summary = delete_modules(delete_paths, args.edit.dry_run)?;
     let delete_outcome = DeleteOutcome {
         outcome: MutationOutcome::ownership_edit(
-            "delete",
+            MutationVerb::Delete,
             if summary.dry_run {
-                "dry-run"
+                MutationAction::DryRun
             } else {
-                "applied"
+                MutationAction::Applied
             },
             gate_outcome,
             effect_relocation_assessment.as_ref(),

@@ -9,7 +9,7 @@ use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
-use crate::outcome::emit_gate_rejection_json;
+use crate::outcome::{MutationVerb, emit_gate_rejection_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
@@ -389,7 +389,7 @@ fn run_bindings_assign_cmd(
         Err(err) => {
             return Err(emit_gate_rejection_json(
                 output,
-                "assign",
+                MutationVerb::Assign,
                 args.edit.format,
                 err,
             ));
@@ -431,7 +431,7 @@ fn run_bindings_unassign_cmd(
         Err(err) => {
             return Err(emit_gate_rejection_json(
                 output,
-                "unassign",
+                MutationVerb::Unassign,
                 args.edit.format,
                 err,
             ));
