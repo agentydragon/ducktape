@@ -10,9 +10,6 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 package(default_visibility = ["//visibility:public"])
 
-
-
-
 py_library(
     name = "testing",
     testonly = True,
@@ -178,7 +175,6 @@ py_test(
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
-
 
 py_test(
     name = "test_gateway_integration",
@@ -373,8 +369,8 @@ go_library(
         "//agentplane/history_service/ingress:__pkg__",  # real ingress exporter integration test
     ],
     deps = [
-        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/outputbuffer",
@@ -442,8 +438,8 @@ go_test(
     race = "on",
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/anthropic",
+        "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/outputbuffer",

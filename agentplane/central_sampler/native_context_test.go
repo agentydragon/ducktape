@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"google.golang.org/protobuf/proto"
 )
 

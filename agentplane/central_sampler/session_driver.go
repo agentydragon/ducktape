@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"google.golang.org/protobuf/proto"
 )
