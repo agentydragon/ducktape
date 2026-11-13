@@ -253,10 +253,3 @@ resource "github_actions_variable" "props_registry_url" {
   variable_name = "PROPS_REGISTRY_URL"
   value         = "props-registry.allegedly.works"
 }
-
-# Data sources for harbor_ci_robot, attic_push_token, and
-# vm_images_s3_credentials were removed (no `removed` block needed for data
-# sources — just delete). The GitHub Actions secrets VM_IMAGES_S3_* are no
-# longer needed after the qcow2 publisher moved in-cluster. The in-cluster
-# vm-images publisher has since been retired; active VM images publish as OCI.
-# Removing the resource blocks here destroys the GitHub secrets on next apply.
