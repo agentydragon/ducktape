@@ -1562,6 +1562,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         kubevirt_kustomization,
         monitoring_crds_kustomization,
+        cert_manager_environment_kustomization,
     )
     claude_session_sync_artifact = artifact(
         "claude-session-sync", claude_session_sync.OUTPUT_DIR, claude_session_sync.PINS_DIR

@@ -175,7 +175,12 @@ def chart(app: App) -> Chart:
                             restart_policy="OnFailure",
                             node_selector=node_scheduling.OPTIPLEX.node_selector,
                             automount_service_account_token=False,
-                            volumes=[k8s.Volume(name="workdir", empty_dir=k8s.EmptyDirVolumeSource())],
+                            volumes=[
+                                k8s.Volume(name="workdir", empty_dir=k8s.EmptyDirVolumeSource()),
+                                k8s.Volume(
+                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
+                                ),
+                            ],
                             containers=[
                                 k8s.Container(
                                     name="sync",
@@ -200,11 +205,19 @@ def chart(app: App) -> Chart:
                                         # The clone (initial re-seed: the card's full history) lands in
                                         # TMPDIR — keep it on the emptyDir, not the container layer.
                                         k8s.EnvVar(name="TMPDIR", value=_WORKDIR),
+                                        k8s.EnvVar(
+                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        ),
                                         _GIT_CREDENTIALS.key("repo_url").env_var("GIT_REPO_URL"),
                                         _GIT_CREDENTIALS.key("username").env_var("GIT_USERNAME"),
                                         _GIT_CREDENTIALS.key("password").env_var("GIT_PASSWORD"),
                                     ],
-                                    volume_mounts=[k8s.VolumeMount(name="workdir", mount_path=_WORKDIR)],
+                                    volume_mounts=[
+                                        k8s.VolumeMount(name="workdir", mount_path=_WORKDIR),
+                                        k8s.VolumeMount(
+                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                        ),
+                                    ],
                                     resources=k8s.ResourceRequirements(
                                         requests={
                                             "cpu": k8s.Quantity.from_string("100m"),
@@ -404,11 +417,14 @@ def cpap_sync(
     external_secrets_operator: Kustomization,
     kubevirt: Kustomization,
     monitoring_crds: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator, kubevirt, monitoring_crds, cert_manager_environment
+        ),
     )
