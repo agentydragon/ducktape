@@ -192,3 +192,44 @@ compare app/session admission and Electric delivery; if absent, retain Chromium
 request timing/interception evidence. Review the next seven days of target
 outcomes with cache and physical-execution counts kept separate. No scheduled
 monitor or failure-rate reduction is claimed.
+## Keep interception active across the resumed entity request
+
+The fresh failure's final entity GET begins 2.298 ms after removal of the
+page's final route. Repository history contains an independently observed instance
+of this exact failure shape: [PR #10094](https://github.com/agentydragon/ducktape/pull/10094),
+commit `667ebf6c2d4`, retained one-shot routes because a request beginning 3 ms after
+Chromium `Fetch.disable` stayed paused forever and never reached nginx or the app.
+The existing `test_thread_browser.route_once` documents and implements that
+lifetime rule. That earlier investigation is historical evidence, not a new
+measurement of this cursor failure.
+
+`_holding_older_pages` violated that rule by unregistering its final route as
+soon as pagination finished, exactly when Electric resumed its live GET. It now
+releases the hold and leaves the route registered until page cleanup. Later
+requests continue to the actual network immediately. This keeps the real
+Electric stream, reconnect behavior, one-shape assertion, reading position,
+draft and cursor334 assertion. No timeout, retry, server or browser dependency
+changes. This is a candidate repair for the fresh failure's interception race;
+post-change passes alone cannot prove the historical cursor failure is eliminated.
+
+The [ingress retention PR #16045](https://github.com/agentydragon/ducktape/pull/16045)
+records the direct334/freshElectric334/DOM264 boundary and preserves each fixture's
+logs for the next recurrence. It is independent of this route-lifetime change.
+[Issue #16033](https://github.com/agentydragon/ducktape/issues/16033) stays open for
+seven days of post-change physical exposure and the next natural failure's final
+request/proxy comparison. In particular, an arriving cursor334 update with an
+unchanged DOM would reject this candidate as a complete explanation.
+
+The initial [ten-run candidate](https://app.buildbuddy.io/invocation/bda85d87-6eda-4425-aa29-f1251167693e)
+passed the cursor334, anchor and draft assertions in all ten attempts; nine
+whole cases passed. The remaining case subsequently failed when `_older_page`
+attempted UTF-8 decoding of a binary OTLP POST to `/telemetry/v1/traces` while
+counting all recorded requests. The helper now checks the entity endpoint before
+reading `post_data`. A
+[focused regression](https://app.buildbuddy.io/invocation/812209ce-3a6d-467b-a3d7-70c17adab038)
+proves a telemetry POST's decoding property is never read while a JSON entity
+pagination POST still matches. The
+[final ten-run real streaming candidate](https://app.buildbuddy.io/invocation/a853f6ab-0978-426d-bdd2-7a35a97abe56)
+passed ten remote runs with zero cached results and ten distinct TestRunner IDs.
+These use `4415ac2544` plus the scoped test changes. They validate the candidate
+under ten fresh schedules, not elimination of a rarely recurring natural fault.

@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
+from unittest.mock import Mock, PropertyMock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -103,7 +104,27 @@ async def _scopes(requests: list[Request]) -> list[history_service_pb2.ReadThrea
 
 def _older_page(request: Request) -> bool:
     """Whether a request is for the page before the oldest row the reader holds."""
-    return request.method == "POST" and "entity_index < $1" in (request.post_data or "")
+    return (
+        request.method == "POST"
+        and urlsplit(request.url).path.endswith("/sync/entities")
+        and "entity_index < $1" in (request.post_data or "")
+    )
+
+
+def test_older_page_filter_ignores_binary_telemetry_posts() -> None:
+    telemetry = Mock(spec=Request, method="POST", url="https://app.test/telemetry/v1/traces")
+    # Playwright decodes post_data as UTF-8; real OTLP protobuf bytes raised here on RBE.
+    type(telemetry).post_data = PropertyMock(
+        side_effect=UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+    )
+    assert not _older_page(telemetry)
+    page = Mock(
+        spec=Request,
+        method="POST",
+        url="https://app.test/threads/session/sync/entities?offset=0_inf",
+        post_data='{"where":"entity_index < $1","params":{"1":"44"}}',
+    )
+    assert _older_page(page)
 
 
 def _recording_requests(page: Page) -> list[Request]:
@@ -143,7 +164,9 @@ async def _holding_older_pages(page: Page) -> AsyncIterator[_HeldPages]:
         yield held
     finally:
         held.release.set()
-        await page.unroute("**/sync/entities?*", hold)
+        # Keep the released route until page close, like test_thread_browser.route_once.
+        # Removing the last route disables Chromium interception while the next live GET
+        # starts, which can leave that request paused forever (see PR #10094).
 
 
 @dataclass
