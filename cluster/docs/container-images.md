@@ -38,8 +38,8 @@ registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
      (with `secretRef: forgejo-images-creds` on the repository) or, for a GHCR image,
      in `generated/flux-image-automation-ghcr/`
    - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
-   - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** at
-     `cdk8s/flux_webhook/chart.py` — without this, the image only
+   - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** in
+     [`flux_webhook.py`](../cdk8s/flux_webhook.py) — without this, the image only
      gets picked up on the 5m poll interval instead of immediately on push. A Forgejo
      image needs nothing here: the `forgejo-images` Receiver is built from the same
      roster that generates its `ImageRepository`, and `cluster/validation` fails an
