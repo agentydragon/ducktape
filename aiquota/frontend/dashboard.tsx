@@ -47,15 +47,13 @@ export function Dashboard({
           </Button>
         </div>
       </header>
-      <p className="aiquota-connection-help">
-        {connecting
-          ? "Opening the live quota stream."
-          : stopped
+      {(stopped || error) && (
+        <p className="aiquota-connection-help">
+          {stopped
             ? "The stream has closed. Reconnect will reload the page and start a fresh stream; data freshness is shown on each provider."
-            : error
-              ? "The last quota view remains visible. The browser is retrying the live stream; use Reconnect to start a new connection. Data freshness is shown on each provider."
-              : "Live updates are connected. Data freshness is shown on each provider."}
-      </p>
+            : "The last quota view remains visible. The browser is retrying the live stream; use Reconnect to start a new connection. Data freshness is shown on each provider."}
+        </p>
+      )}
       {error && <p className="aiquota-notice">{error}</p>}
       {quotas ? (
         <QuotaBoard quotas={quotas} now={now} />

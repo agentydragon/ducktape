@@ -44,13 +44,19 @@ export function QuotaBoard({ quotas, now }: { quotas: AllQuotasView; now: number
 
   return (
     <section className="aiquota-scope aiquota-board">
-      <p className="aiquota-board-help">
-        Meter: fill = quota used; tick = time elapsed. Forecasts use average usage since the window started.
-      </p>
       {connectionError && <ConnectionError error={connectionError} />}
       {subscriptions.length > 0 && <ProviderGroup label="Subscriptions" providers={subscriptions} now={now} />}
       {apiBalances.length > 0 && <ProviderGroup label="API balances" providers={apiBalances} now={now} />}
       {quotas.providers.length === 0 && <p className="aiquota-empty">No quota providers are available.</p>}
+      {subscriptions.length > 0 && (
+        <details className="aiquota-board-help">
+          <summary>How to read the meters</summary>
+          <p>
+            Meter: fill = quota used; tick = time elapsed. The hatched section is usage ahead of elapsed time. Forecasts
+            use average usage since the window started.
+          </p>
+        </details>
+      )}
     </section>
   );
 }
@@ -144,6 +150,22 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
       {status && (
         <p className={`aiquota-status-row${!isStale && !resetPending ? " aiquota-status-urgent" : ""}`}>{status}</p>
       )}
+      {windows.length > 0
+        ? windows.map(({ window, resetPending: windowResetPending }) => (
+            <WindowRow
+              key={`${window.name ?? ""}-${window.window_seconds}`}
+              window={window}
+              stale={isStale || windowResetPending}
+              resetPending={windowResetPending}
+            />
+          ))
+        : !hasReadings && (
+            <p className="aiquota-empty">
+              {errorSummary !== null
+                ? "No current or cached quota readings are available."
+                : "No quota, balance, or grant readings are available for this provider."}
+            </p>
+          )}
       {(balances.length > 0 || grants.length > 0) && <Readings balances={balances} grants={grants} now={now} />}
       {quota.resetCredits !== null && (
         <ResetCredits count={quota.resetCredits} quota={quota} now={new Date(now)} showSummary={showResetSummary} />
@@ -162,23 +184,6 @@ function ProviderCard({ provider, now }: { provider: ProviderView; now: number }
           )}
         </>
       )}
-
-      {windows.length > 0
-        ? windows.map(({ window, resetPending: windowResetPending }) => (
-            <WindowRow
-              key={`${window.name ?? ""}-${window.window_seconds}`}
-              window={window}
-              stale={isStale || windowResetPending}
-              resetPending={windowResetPending}
-            />
-          ))
-        : !hasReadings && (
-            <p className="aiquota-empty">
-              {errorSummary !== null
-                ? "No current or cached quota readings are available."
-                : "No quota, balance, or grant readings are available for this provider."}
-            </p>
-          )}
     </Paper>
   );
 }
@@ -269,7 +274,7 @@ function GrantRow({ grant, now }: { grant: GrantView; now: number }): JSX.Elemen
     `Expires ${expiry ?? "unknown"}`,
   ].filter((note): note is string => note !== null);
   return (
-    <div className="aiquota-reading-row">
+    <div className="aiquota-reading-row aiquota-grant-row">
       <dt>{grant.label}</dt>
       <dd>{grant.remaining} remaining</dd>
       <span className="aiquota-reading-note">{notes.join(" · ")}</span>
@@ -363,7 +368,7 @@ function WindowRow({
 }): JSX.Element {
   const tint = stale ? "stale" : window.tint;
   return (
-    <section className="aiquota-window">
+    <section className={`aiquota-window aiquota-tint-${tint}`}>
       <div className="aiquota-window-head">
         <span className="aiquota-window-label">{window.label}</span>
         <span className="aiquota-window-used">{window.used}%</span>
@@ -378,7 +383,7 @@ function WindowRow({
       <div className="aiquota-window-meta">
         <span>{resetPending ? "Awaiting updated usage" : `Resets in ${window.reset}`}</span>
         {window.exhausted && !resetPending && <span className="aiquota-exhausted">exhausted</span>}
-        {window.forecast && !window.exhausted && <span>{window.forecast}</span>}
+        {window.forecast && !window.exhausted && <span className="aiquota-forecast">{window.forecast}</span>}
       </div>
       {window.pace && (
         <details className="aiquota-details">

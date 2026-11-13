@@ -18,7 +18,7 @@ body {
 main {
   max-width: 1080px;
   margin: auto;
-  padding: 48px 24px 64px;
+  padding: 32px 24px 56px;
 }
 
 .aiquota-page-heading {
@@ -28,12 +28,12 @@ main {
   flex-wrap: wrap;
   gap: 10px 16px;
   justify-content: space-between;
-  margin-bottom: 24px;
-  padding-bottom: 20px;
+  margin-bottom: 22px;
+  padding-bottom: 16px;
 }
 
 h1 {
-  font-size: clamp(1.6rem, 3.5vw, 2.25rem);
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
   letter-spacing: -0.03em;
   line-height: 1.05;
   margin: 0;
@@ -80,6 +80,12 @@ h1 {
 
 @media (max-width: 560px) {
   main {
-    padding: 28px 16px 40px;
+    padding: 20px 16px 40px;
+  }
+
+  .aiquota-page-status {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
   }
 }
