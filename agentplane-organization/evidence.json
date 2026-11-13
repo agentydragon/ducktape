@@ -7465,14 +7465,14 @@
     "notes": "Preserved the newly landed provider-recovery implementation and rewrote its new settings/provider imports in the appropriate move layers. Both native stacks are complete."
   },
   "go_batch": {
-    "observed_at_utc": "2026-11-13T14:25:18+00:00",
-    "source_sha": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+    "observed_at_utc": "2026-11-13T19:38:31+00:00",
+    "source_sha": "60336d35f33a4b796962327d6c7e9c07cea56af7",
     "scope": "Every tracked .go file under agentplane, including tests, experiments and generated files. No directory or filename exclusions.",
     "counts": {
-      "files": 1227,
-      "directories": 205,
-      "production": 674,
-      "tests": 553
+      "files": 1241,
+      "directories": 217,
+      "production": 682,
+      "tests": 559
     },
     "native_stack": 16208,
     "lanes": [
@@ -7492,6 +7492,16 @@
         "ci_attempts": [
           {
             "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:21:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447277/job/131855506529",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T11:21:54Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
             "completedAt": "2026-11-13T11:34:16Z",
             "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739",
@@ -7499,6 +7509,16 @@
             "startedAt": "2026-11-13T11:21:47Z",
             "status": "COMPLETED",
             "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:37:26Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418514541/job/131862344682",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T11:37:12Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
@@ -7521,6 +7541,76 @@
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:34:17Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131861052690",
+            "name": "release",
+            "startedAt": "2026-11-13T11:34:17Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:21:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447277/job/131855457627",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T11:21:47Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:21:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447277/job/131855458844",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T11:21:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:34:17Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131861053159",
+            "name": "push-images",
+            "startedAt": "2026-11-13T11:34:17Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:21:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43416447277/job/131855499130",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T11:21:53Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:36:12Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131861916222",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T11:36:12Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:36:17Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131855744418",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T11:22:25Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
             "startedAt": "2026-11-13T11:33:50Z",
@@ -7530,14 +7620,14 @@
         ],
         "ci": [
           {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43416446983/job/131855446687"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/feba5bfb-2f0b-570a-8211-48e3387bbc98"
           },
           {
             "name": "Pre-commit checks",
@@ -7545,11 +7635,13 @@
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43416446816/job/131855445788"
           },
           {
-            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "name": "bazel-ci / Test & Build",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/feba5bfb-2f0b-570a-8211-48e3387bbc98"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43416447018/job/131855446739"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T11:37:07Z",
+        "merge_commit": "cc29adcd14531755a33c4d7c06273617508bab4d"
       },
       {
         "id": "app-settings",
@@ -7573,6 +7665,16 @@
         "ci_attempts": [
           {
             "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:37:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418540912/job/131862439208",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T11:37:24Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
             "completedAt": "2026-11-13T11:47:13Z",
             "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165",
@@ -7580,6 +7682,16 @@
             "startedAt": "2026-11-13T11:37:28Z",
             "status": "COMPLETED",
             "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:55:03Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43420821664/job/131870067498",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T11:54:51Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
@@ -7602,11 +7714,81 @@
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:47:13Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131866717479",
+            "name": "release",
+            "startedAt": "2026-11-13T11:47:13Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:37:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418540912/job/131862482195",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T11:37:30Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:37:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418540912/job/131862481662",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T11:37:30Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:47:13Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131866718019",
+            "name": "push-images",
+            "startedAt": "2026-11-13T11:47:14Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:37:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43418540912/job/131862503399",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T11:37:33Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
             "startedAt": "2026-11-13T11:47:04Z",
             "state": "SUCCESS",
             "targetUrl": "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:48:33Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131867298273",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T11:48:33Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T11:48:38Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131862703951",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T11:38:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           }
         ],
         "ci": [
@@ -7616,9 +7798,9 @@
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547332/job/131862454456"
           },
           {
-            "name": "bazel-ci / Test & Build",
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165"
+            "url": "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35"
           },
           {
             "name": "Pre-commit checks",
@@ -7626,11 +7808,13 @@
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547355/job/131862455559"
           },
           {
-            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "name": "bazel-ci / Test & Build",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/f4150fc0-0d50-588c-8ba5-e00adec41d35"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43418547364/job/131862455165"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T11:54:46Z",
+        "merge_commit": "d865fea587d717ee6df83546df6c585b404412ae"
       },
       {
         "id": "auth-namespace",
@@ -7641,11 +7825,21 @@
         "preserve": "Resolver caching, Pod/UID proof, live SVID lookup, delegation and per-method authorization.",
         "checks": "Mandatory hooks pass; existing authentication/service suites run in hosted CI.",
         "dependency": "Path cleanup only; SPIFFE/TokenReview/configurability design stays deferred.",
-        "status": "OPEN",
+        "status": "MERGED",
         "head": "a902851443a64abf355bad65ea07b06294e4062a",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16210",
         "ci_attempts": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703097/job/131876362275",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
           {
             "__typename": "CheckRun",
             "completedAt": "2026-11-13T12:11:55Z",
@@ -7655,6 +7849,16 @@
             "startedAt": "2026-11-13T12:09:05Z",
             "status": "COMPLETED",
             "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:41:25Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485014957/job/132091034758",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T18:41:11Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
@@ -7677,23 +7881,93 @@
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:56Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131877815613",
+            "name": "release",
+            "startedAt": "2026-11-13T12:11:56Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703097/job/131876363505",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703097/job/131876363218",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:11:56Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131877815340",
+            "name": "push-images",
+            "startedAt": "2026-11-13T12:11:56Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703097/job/131876435728",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T12:08:57Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
             "startedAt": "2026-11-13T12:11:45Z",
             "state": "SUCCESS",
             "targetUrl": "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:13:33Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131878560442",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T12:13:33Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:13:38Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131877284369",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T12:10:47Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           }
         ],
         "ci": [
           {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131876385808"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712067/job/131876385883"
+          },
+          {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b"
           },
           {
             "name": "Pre-commit checks",
@@ -7701,11 +7975,13 @@
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711978/job/131876385555"
           },
           {
-            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "name": "bazel-ci / Test & Build",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/16c6cb97-23da-56e8-95ce-ab29f1e4632b"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711961/job/131876385808"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T18:41:04Z",
+        "merge_commit": "371b6226b69de0e3bd02d1ec228a2646758118b6"
       },
       {
         "id": "runner-control",
@@ -7720,7 +7996,7 @@
         "preserve": "Controller keeps its consumer interfaces, state machines and generations; command wires the concrete RPC clients.",
         "checks": "Controller and adapter tests passed; controller command library built on RBE.",
         "dependency": "Independent extraction; uses peer TLS at its accepted path.",
-        "status": "OPEN",
+        "status": "MERGED",
         "head": "46187487baa58b2c4efe7c68b198bd9d025eef21",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16211",
@@ -7747,6 +8023,26 @@
           },
           {
             "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422702377/job/131876359267",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T12:08:47Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:48Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703839/job/131876364351",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
             "completedAt": "2026-11-13T12:10:32Z",
             "conclusion": "SUCCESS",
             "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710640/job/131876380740",
@@ -7764,6 +8060,16 @@
             "startedAt": "2026-11-13T12:09:00Z",
             "status": "COMPLETED",
             "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:41:27Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485018268/job/132091045471",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T18:41:11Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
@@ -7786,6 +8092,116 @@
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:32Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710640/job/131877174296",
+            "name": "release",
+            "startedAt": "2026-11-13T12:10:33Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:46Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131877276370",
+            "name": "release",
+            "startedAt": "2026-11-13T12:10:46Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422702377/job/131876360553",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T12:08:47Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:48Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703839/job/131876365260",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422702377/job/131876405385",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T12:08:53Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:48Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703839/job/131876417104",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T12:08:55Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:32Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710640/job/131877174490",
+            "name": "push-images",
+            "startedAt": "2026-11-13T12:10:33Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:10:46Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131877276560",
+            "name": "push-images",
+            "startedAt": "2026-11-13T12:10:46Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:47Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422702377/job/131876361071",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:08:48Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422703839/job/131876365847",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T12:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T12:12:37Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/131878140574",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T12:12:37Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
             "startedAt": "2026-11-13T12:10:35Z",
@@ -7800,6 +8216,11 @@
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712563/job/131876393417"
           },
           {
+            "name": "BuildBuddy / Bazel ordinary tests (live)",
+            "state": "SUCCESS",
+            "url": "https://app.buildbuddy.io/invocation/7eb796e9-cb23-564d-a19e-9d9e461c9bbf"
+          },
+          {
             "name": "Pre-commit checks",
             "state": "SUCCESS",
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712554/job/131876392852"
@@ -7808,13 +8229,10 @@
             "name": "bazel-ci / Test & Build",
             "state": "SUCCESS",
             "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712645/job/131876388615"
-          },
-          {
-            "name": "BuildBuddy / Bazel ordinary tests (live)",
-            "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/7eb796e9-cb23-564d-a19e-9d9e461c9bbf"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T18:41:05Z",
+        "merge_commit": "edda44699fedfe465f49a222620d57f7f60e2f98"
       },
       {
         "id": "terminal-notice",
@@ -7828,101 +8246,163 @@
         "preserve": "Deletion and NOTIFY stay in one SQL transaction. WatchHub keeps subscriptions and reconnects; codec owns bounded multipart assembly.",
         "checks": "Store integration, multipart/out-of-order notices and watch tests passed; Gateway executable built.",
         "dependency": "Independent of controller adapters; ordered in the requested native stack.",
-        "status": "OPEN",
-        "head": "25a1fa4aa0090957c710d650425bc0fa6af073c5",
+        "status": "MERGED",
+        "head": "2e28a1f884823ed094faa48cdddf7c86214f0665",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16212",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709479/job/131876376292",
-            "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:08:49Z",
+            "completedAt": "2026-11-13T18:41:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485051593/job/132091238678",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:41:31Z",
             "status": "COMPLETED",
-            "workflowName": "Nix wheel check"
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709365/job/131876376070",
-            "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:08:49Z",
-            "status": "COMPLETED",
-            "workflowName": "Pre-commit checks"
-          },
-          {
-            "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:18Z",
+            "completedAt": "2026-11-13T18:52:08Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709490/job/131876377026",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485058250/job/132091180708",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:37Z",
+            "startedAt": "2026-11-13T18:41:27Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:24Z",
+            "completedAt": "2026-11-13T18:56:05Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712382/job/131876387093",
-            "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:43Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487328568/job/132099118898",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T18:55:51Z",
             "status": "COMPLETED",
-            "workflowName": "CI"
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:32Z",
+            "completedAt": "2026-11-13T18:42:58Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712306/job/131876391500",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485058210/job/132091180349",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:10:23Z",
+            "startedAt": "2026-11-13T18:41:26Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:22Z",
+            "completedAt": "2026-11-13T18:42:34Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712302/job/131876390864",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485058240/job/132091180477",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:10:18Z",
+            "startedAt": "2026-11-13T18:41:26Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:52:08Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485058250/job/132097125158",
+            "name": "release",
+            "startedAt": "2026-11-13T18:52:09Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:41:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485051593/job/132091168890",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:41:23Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:41:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485051593/job/132091229302",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:41:30Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:52:08Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485058250/job/132097125523",
+            "name": "push-images",
+            "startedAt": "2026-11-13T18:52:09Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:41:23Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43485051593/job/132091170475",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:41:23Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T12:11:17Z",
+            "startedAt": "2026-11-13T18:52:00Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/eeac4f30-9fcd-5d9d-92ef-dd5683ae5cb7"
+            "targetUrl": "https://app.buildbuddy.io/invocation/2a6e23df-fa9b-5c70-a62f-ff42b1cc0479"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:52:52Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132097517261",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T18:52:52Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:52:57Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132091589310",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:42:09Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712306/job/131876391500"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712302/job/131876390864"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712382/job/131876387093"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43485058210/job/132091180349"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/eeac4f30-9fcd-5d9d-92ef-dd5683ae5cb7"
+            "url": "https://app.buildbuddy.io/invocation/2a6e23df-fa9b-5c70-a62f-ff42b1cc0479"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43485058240/job/132091180477"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43485058250/job/132091180708"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T18:55:44Z",
+        "merge_commit": "c44703ab366062b97cc1e372b0bf48d3c0157f92"
       },
       {
         "id": "sandbox-inventory",
@@ -7936,101 +8416,163 @@
         "preserve": "Dispatcher keeps SandboxSnapshot/Catalog contracts; adapter keeps cached inventory and authoritative uncached checks.",
         "checks": "Existing inventory and Dispatcher/Gateway tests; verify constructor wiring and stale/replaced Sandbox refusal.",
         "dependency": "Command wires adapter through the existing structural interface.",
-        "status": "OPEN",
-        "head": "5a332ac8b0aa459156c5edcf51a0354c0f4f6528",
+        "status": "MERGED",
+        "head": "45f6b8306cbd8512de8596306db7b248317c7f4a",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16213",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711070/job/131876382601",
-            "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:08:50Z",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353907/job/132099214436",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
-            "workflowName": "Nix wheel check"
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711073/job/131876382856",
-            "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:08:50Z",
-            "status": "COMPLETED",
-            "workflowName": "Pre-commit checks"
-          },
-          {
-            "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:10:59Z",
+            "completedAt": "2026-11-13T19:04:32Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711272/job/131876383600",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354244/job/132099204093",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:00Z",
+            "startedAt": "2026-11-13T18:56:01Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:11Z",
+            "completedAt": "2026-11-13T19:08:04Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711965/job/131876385807",
-            "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:25Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489238363/job/132105687438",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:07:50Z",
             "status": "COMPLETED",
-            "workflowName": "CI"
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:08Z",
+            "completedAt": "2026-11-13T18:57:32Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711707/job/131876390288",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354082/job/132099203666",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:09:58Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:12Z",
+            "completedAt": "2026-11-13T18:57:03Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711815/job/131876391172",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353947/job/132099202510",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:10:08Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:04:33Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354244/job/132103889477",
+            "name": "release",
+            "startedAt": "2026-11-13T19:04:33Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353907/job/132099296973",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:56:09Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353907/job/132099271116",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:56:06Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:04:33Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354244/job/132103889610",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:04:33Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353907/job/132099215346",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T12:11:03Z",
+            "startedAt": "2026-11-13T19:04:25Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/cf101977-d81a-58a3-8fdf-6ad38c63bdfe"
+            "targetUrl": "https://app.buildbuddy.io/invocation/3b801062-3dda-516c-a379-b871cec4b550"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:06:09Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132104775635",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T19:06:09Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:06:15Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132099673501",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:56:51Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711707/job/131876390288"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711815/job/131876391172"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711965/job/131876385807"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487354082/job/132099203666"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/cf101977-d81a-58a3-8fdf-6ad38c63bdfe"
+            "url": "https://app.buildbuddy.io/invocation/3b801062-3dda-516c-a379-b871cec4b550"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487353947/job/132099202510"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487354244/job/132099204093"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:07:44Z",
+        "merge_commit": "28400ceff8de6d2bdd78bdeb7efad7203124fa05"
       },
       {
         "id": "workload-uri",
@@ -8044,71 +8586,163 @@
         "preserve": "Exact trust domain, canonical URI format, validation errors and record identity semantics. TLS implementation consumes the contract.",
         "checks": "Canonical URI test moves with codec; peer-TLS, issuer and resolver tests stay intact.",
         "dependency": "Requires peer-TLS base; no new SPIFFE authentication rollout.",
-        "status": "OPEN",
-        "head": "c6f87560ab8bbb39eeb3a4a008c5b23af299b11d",
+        "status": "MERGED",
+        "head": "52ed529e3bc885441ca3212fe77ebe0ad6201214",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16214",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:52Z",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353791/job/132099216784",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:05:58Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710561/job/131876380859",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353315/job/132099202639",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:26Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:10:17Z",
+            "completedAt": "2026-11-13T19:08:07Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710494/job/131876380118",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489240935/job/132105695275",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:07:51Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:57:28Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352992/job/132099202632",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:08:52Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:10:25Z",
+            "completedAt": "2026-11-13T18:57:02Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710462/job/131876380185",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352896/job/132099202037",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:09:22Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:05:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353315/job/132104687631",
+            "name": "release",
+            "startedAt": "2026-11-13T19:05:59Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:56:00Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353791/job/132099269331",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:56:06Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:56:00Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353791/job/132099218088",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:05:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353315/job/132104687441",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:05:59Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:56:00Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353791/job/132099219443",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T12:11:38Z",
+            "startedAt": "2026-11-13T19:05:45Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/529d0a67-a92b-5ae5-a855-08c6f7ac385d"
+            "targetUrl": "https://app.buildbuddy.io/invocation/45cddfb3-03c0-58fc-a7e2-019aa9166bc8"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:07:22Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132105452538",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T19:07:22Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:07:28Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132099634410",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:56:46Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710494/job/131876380118"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710462/job/131876380185"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710561/job/131876380859"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352992/job/132099202632"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/529d0a67-a92b-5ae5-a855-08c6f7ac385d"
+            "url": "https://app.buildbuddy.io/invocation/45cddfb3-03c0-58fc-a7e2-019aa9166bc8"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352896/job/132099202037"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487353315/job/132099202639"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:07:45Z",
+        "merge_commit": "de137115c9116930eb852f30bd25898cd2c17a43"
       },
       {
         "id": "app-private",
@@ -8133,101 +8767,163 @@
         "preserve": "All imports, BUILD targets, embeds, fixtures and image/runfiles callers move together. Backends remain independent of the App.",
         "checks": "Existing App package/HTTP/settings tests and generated staging contract; complete old-path search.",
         "dependency": "Builds on the App settings extraction.",
-        "status": "OPEN",
-        "head": "d8eb561b65135b0b3886285278fc71c749e3a242",
+        "status": "MERGED",
+        "head": "bd6f51dfdb7329a525a5088d1d207175ebb34de0",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16216",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:50Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709802/job/131876377611",
-            "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:08:50Z",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352662/job/132099211519",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:55:59Z",
             "status": "COMPLETED",
-            "workflowName": "Nix wheel check"
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:50Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709929/job/131876378186",
-            "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:08:50Z",
-            "status": "COMPLETED",
-            "workflowName": "Pre-commit checks"
-          },
-          {
-            "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:33Z",
+            "completedAt": "2026-11-13T19:05:58Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422709937/job/131876378760",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352542/job/132099201051",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:21Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:12:39Z",
+            "completedAt": "2026-11-13T19:08:08Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711250/job/131876383101",
-            "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:10:51Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489244461/job/132105706913",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:07:52Z",
             "status": "COMPLETED",
-            "workflowName": "CI"
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:12:11Z",
+            "completedAt": "2026-11-13T18:57:15Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711258/job/131876388889",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352384/job/132099200293",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:10:49Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:10:39Z",
+            "completedAt": "2026-11-13T18:56:58Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711136/job/131876387608",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352343/job/132099199588",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:09:38Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:05:58Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352542/job/132104684314",
+            "name": "release",
+            "startedAt": "2026-11-13T19:05:59Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352662/job/132099213029",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:55:59Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352662/job/132099212694",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:55:59Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:05:58Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352542/job/132104684229",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:05:59Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352662/job/132099213706",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T12:12:29Z",
+            "startedAt": "2026-11-13T19:05:46Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/cc587447-b734-5223-8e3f-f810bacfd04c"
+            "targetUrl": "https://app.buildbuddy.io/invocation/09ccdbd9-1102-583b-bb00-749ef285e2db"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:06:52Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132105175727",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T19:06:52Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:06:58Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132099722958",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:56:56Z",
+            "status": "COMPLETED",
+            "workflowName": "Pre-commit checks"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711258/job/131876388889"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711136/job/131876387608"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422711250/job/131876383101"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352384/job/132099200293"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/cc587447-b734-5223-8e3f-f810bacfd04c"
+            "url": "https://app.buildbuddy.io/invocation/09ccdbd9-1102-583b-bb00-749ef285e2db"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352343/job/132099199588"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352542/job/132099201051"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:07:46Z",
+        "merge_commit": "53b88770be5afb3d09cc6cf52fb617ca1048b537"
       },
       {
         "id": "app-server-command",
@@ -8241,101 +8937,163 @@
         "preserve": "Command owns process signals, logging and CLI modes; server owns HTTP wiring and handlers. Schema and route behavior stay unchanged.",
         "checks": "Schema export, HTTP routes, staging settings and binary/image callers; tests follow their owner.",
         "dependency": "Follows App-private libraries; no service or deployment split.",
-        "status": "OPEN",
-        "head": "9d636ab12e1a54260d4b07eaf11ed85edc000325",
+        "status": "MERGED",
+        "head": "df2add542ac92882e8534a6060b80cee1f35cb35",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16217",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710610/job/131876380346",
-            "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:08:50Z",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353595/job/132099211536",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:55:59Z",
             "status": "COMPLETED",
-            "workflowName": "Nix wheel check"
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:50Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710552/job/131876379947",
-            "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:08:50Z",
-            "status": "COMPLETED",
-            "workflowName": "Pre-commit checks"
-          },
-          {
-            "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:12:18Z",
+            "completedAt": "2026-11-13T18:58:15Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710618/job/131876380935",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352983/job/132099200843",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:10:28Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:12:21Z",
+            "completedAt": "2026-11-13T19:08:11Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710790/job/131876381578",
-            "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:10:30Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489248500/job/132105722006",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:07:54Z",
             "status": "COMPLETED",
-            "workflowName": "CI"
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:00Z",
+            "completedAt": "2026-11-13T18:57:32Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710684/job/131876390468",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353583/job/132099201839",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:09:31Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:10:27Z",
+            "completedAt": "2026-11-13T18:57:13Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422710535/job/131876387045",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352894/job/132099200585",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:09:17Z",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:58:16Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352983/job/132100432982",
+            "name": "release",
+            "startedAt": "2026-11-13T18:58:16Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353595/job/132099212855",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:55:59Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353595/job/132099213845",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:58:16Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487352983/job/132100433205",
+            "name": "push-images",
+            "startedAt": "2026-11-13T18:58:16Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487353595/job/132099212831",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:55:59Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T12:12:06Z",
+            "startedAt": "2026-11-13T18:58:03Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/b7911ed4-885a-50eb-a985-ecd3a7819256"
+            "targetUrl": "https://app.buildbuddy.io/invocation/1214597a-a97f-59fd-b546-67b9a67de01b"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:59:39Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132101173312",
+            "name": "PR visual diffs",
+            "startedAt": "2026-11-13T18:59:39Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:59:44Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132099608148",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:56:44Z",
+            "status": "COMPLETED",
+            "workflowName": "Nix wheel check"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710684/job/131876390468"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710535/job/131876387045"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422710790/job/131876381578"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487353583/job/132099201839"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/b7911ed4-885a-50eb-a985-ecd3a7819256"
+            "url": "https://app.buildbuddy.io/invocation/1214597a-a97f-59fd-b546-67b9a67de01b"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352894/job/132099200585"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487352983/job/132099200843"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:07:48Z",
+        "merge_commit": "c67538a3feaa61ca0a8a1d91435384919a2288ca"
       },
       {
         "id": "sampler-leaves",
@@ -8353,101 +9111,153 @@
         "preserve": "Content IDs and canonical bytes; unchanged SQL files, Goose history table, lock ID and embed basenames. No Store/Executor transaction split.",
         "checks": "Existing content, migration/adoption and sampler/export integration coverage; SQL byte hashes unchanged.",
         "dependency": "Implemented in proposed PR; real History ingress integration uses a narrowly visible migrations contract.",
-        "status": "OPEN",
-        "head": "daa539e6ca2d6dbe340c7906e17612f3b9ee2308",
+        "status": "MERGED",
+        "head": "7a2d9f7af600b21d0ceaa11a78180166ab22121c",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16219",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711434/job/131876383425",
-            "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:08:50Z",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354062/job/132099214055",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:56:00Z",
             "status": "COMPLETED",
-            "workflowName": "Nix wheel check"
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:08:51Z",
-            "conclusion": "CANCELLED",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711495/job/131876383648",
-            "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:08:50Z",
-            "status": "COMPLETED",
-            "workflowName": "Pre-commit checks"
-          },
-          {
-            "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:12:32Z",
+            "completedAt": "2026-11-13T18:59:13Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422711568/job/131876384050",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487530989/job/132099823623",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:13Z",
+            "startedAt": "2026-11-13T18:57:14Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:12:32Z",
+            "completedAt": "2026-11-13T19:08:07Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712568/job/131876388576",
-            "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:09:23Z",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489251546/job/132105732025",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:07:55Z",
             "status": "COMPLETED",
-            "workflowName": "CI"
+            "workflowName": "Cancel CI for closed PR"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:27Z",
+            "completedAt": "2026-11-13T18:58:43Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712486/job/131876391913",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487530891/job/132099822882",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:10:13Z",
+            "startedAt": "2026-11-13T18:57:09Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:11:16Z",
+            "completedAt": "2026-11-13T18:58:11Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43422712479/job/131876392542",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487530886/job/132099822759",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:10:13Z",
+            "startedAt": "2026-11-13T18:57:09Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:59:13Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487530989/job/132100944753",
+            "name": "release",
+            "startedAt": "2026-11-13T18:59:14Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354062/job/132099215030",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354062/job/132099287594",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:56:08Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:59:13Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487530989/job/132100943892",
+            "name": "push-images",
+            "startedAt": "2026-11-13T18:59:13Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354062/job/132099305968",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:56:10Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:59:56Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132100182809",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:57:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
           },
           {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T12:12:25Z",
+            "startedAt": "2026-11-13T18:59:04Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/4e6971af-b579-54d6-86e8-ac3634688f82"
+            "targetUrl": "https://app.buildbuddy.io/invocation/1b52698f-8f94-5b78-96a5-5ddb25ec37c2"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712486/job/131876391913"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712479/job/131876392542"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43422712568/job/131876388576"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487530891/job/132099822882"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/4e6971af-b579-54d6-86e8-ac3634688f82"
+            "url": "https://app.buildbuddy.io/invocation/1b52698f-8f94-5b78-96a5-5ddb25ec37c2"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487530886/job/132099822759"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487530989/job/132099823623"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:07:49Z",
+        "merge_commit": "2661a5366ca8ef90b8348de6c9872a2a1ed5f66b"
       },
       {
         "id": "operator-verifier",
@@ -8461,71 +9271,153 @@
         "preserve": "Exact claim validation, issuer routing, JWKS cache, timeouts and cancellation. Shared verifier returns issuer/subject; each service owns authorization. Python settings and all callers move together.",
         "checks": "Five affected Go suites, seven changed Python library/aspect builds, three settings/catalog suites and hooks passed. Executable verifier tokens match after explicit API substitutions.",
         "dependency": "Shared verification primitive only; no new privileged-workload authentication mechanism.",
-        "status": "OPEN",
-        "head": "82954aa9ade85564ebf9963e217ca2da7b04bcc5",
+        "status": "MERGED",
+        "head": "62424a2ac5f11c5973718ab09763ed85188c2b08",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16225",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:04:14Z",
+            "completedAt": "2026-11-13T18:55:59Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354676/job/132099218084",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:58:10Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429274285/job/131898372542",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487366912/job/132099247432",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:55:43Z",
+            "startedAt": "2026-11-13T18:56:05Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:56:56Z",
+            "completedAt": "2026-11-13T19:08:06Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429274381/job/131898372683",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489254936/job/132105744263",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:07:56Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:57:23Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487366830/job/132099246535",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:55:42Z",
+            "startedAt": "2026-11-13T18:56:05Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T12:56:46Z",
+            "completedAt": "2026-11-13T18:57:20Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429274280/job/131898372130",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487366831/job/132099246730",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:55:42Z",
+            "startedAt": "2026-11-13T18:56:06Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:58:11Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487366912/job/132100386377",
+            "name": "release",
+            "startedAt": "2026-11-13T18:58:11Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:56:00Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354676/job/132099219052",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:56:00Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354676/job/132099220566",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:58:11Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487366912/job/132100387186",
+            "name": "push-images",
+            "startedAt": "2026-11-13T18:58:11Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:56:00Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43487354676/job/132099220323",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T18:56:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T18:58:51Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132099857741",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T18:57:11Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T13:04:06Z",
+            "startedAt": "2026-11-13T18:57:59Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/d7c84ea4-63c3-5e69-b9e3-8eba1367f34d"
+            "targetUrl": "https://app.buildbuddy.io/invocation/f8b049cd-1df2-569f-8d37-512eb4a6b2da"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429274381/job/131898372683"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429274280/job/131898372130"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429274285/job/131898372542"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487366830/job/132099246535"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/d7c84ea4-63c3-5e69-b9e3-8eba1367f34d"
+            "url": "https://app.buildbuddy.io/invocation/f8b049cd-1df2-569f-8d37-512eb4a6b2da"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487366831/job/132099246730"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43487366912/job/132099247432"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:07:50Z",
+        "merge_commit": "5fa72bbe222f37dc0bb0322a3809126fd72cb6b9"
       },
       {
         "id": "mcp-admission",
@@ -8539,71 +9431,153 @@
         "preserve": "Connection method allowlist, public health, unknown-method refusal, no workload/delegated credentials, stream revalidation and drain behavior.",
         "checks": "Boundary tests include all Connection/health methods, real verifier acceptance/refusals, identity continuity, drain and status mapping; existing MCP and affected Action tests remain.",
         "dependency": "Uses the neutral operator verifier; removes MCP import of Action handlers.",
-        "status": "OPEN",
-        "head": "fb524c4965300535a4fee430d233748db451bf74",
+        "status": "MERGED",
+        "head": "f514bec319d22dcdce8f813c0c5e58c6f22a1046",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16226",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:08:52Z",
+            "completedAt": "2026-11-13T19:08:05Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489282928/job/132105847823",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T19:08:06Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:56Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429810577/job/131900207785",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289075/job/132105857022",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T12:59:46Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:01:15Z",
+            "completedAt": "2026-11-13T19:11:15Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429810583/job/131900208120",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489749612/job/132107455177",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:10:59Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:38Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289010/job/132105857658",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T12:59:46Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:00:45Z",
+            "completedAt": "2026-11-13T19:09:13Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43429810533/job/131900207615",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289052/job/132105856915",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T12:59:45Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:56Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289075/job/132106882565",
+            "name": "release",
+            "startedAt": "2026-11-13T19:09:57Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:05Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489282928/job/132105851191",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T19:08:06Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:05Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489282928/job/132105849458",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T19:08:06Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:56Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289075/job/132106882391",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:09:57Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:05Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489282928/job/132105849757",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T19:08:06Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:36Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132106239916",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T19:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T13:08:46Z",
+            "startedAt": "2026-11-13T19:09:45Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/cd5cec03-4848-56f2-b6ef-6787e9836709"
+            "targetUrl": "https://app.buildbuddy.io/invocation/dc46c5c0-6e9c-5820-95d9-9601dca97141"
           }
         ],
         "ci": [
           {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429810533/job/131900207615"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429810577/job/131900207785"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43429810583/job/131900208120"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489289010/job/132105857658"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/cd5cec03-4848-56f2-b6ef-6787e9836709"
+            "url": "https://app.buildbuddy.io/invocation/dc46c5c0-6e9c-5820-95d9-9601dca97141"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489289052/job/132105856915"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489289075/job/132105857022"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:10:52Z",
+        "merge_commit": "a1d7320100d18b21c92ab49483e28d98734ac9e0"
       },
       {
         "id": "action-private-rpc",
@@ -8614,71 +9588,153 @@
         "preserve": "Public proto/API contract directories stay public; service admission, principal conversion, watches and status behavior move with their owner.",
         "checks": "Existing Action unit/integration/config suites and command build; every active import, BUILD, golden fixture and documentation reference updated.",
         "dependency": "MCP owns admission first; no visibility exception or forwarding API.",
-        "status": "OPEN",
-        "head": "6f7511ea5539bee2e843ba89c6409c7e7f42468b",
+        "status": "MERGED",
+        "head": "36ab5d9006e0c230b7d6ff0c51a36ba2738028b8",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16227",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:11:27Z",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279554/job/132105833304",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T19:08:04Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:04Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43430374131/job/131902062715",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291209/job/132105865745",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T13:03:38Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:05:07Z",
+            "completedAt": "2026-11-13T19:11:14Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43430374168/job/131902062840",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489752101/job/132107465932",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:11:00Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:32Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291004/job/132105864244",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T13:03:38Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:04:44Z",
+            "completedAt": "2026-11-13T19:09:12Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43430373953/job/131902062828",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291129/job/132105865319",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T13:03:38Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291209/job/132106956025",
+            "name": "release",
+            "startedAt": "2026-11-13T19:10:05Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279554/job/132105834873",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T19:08:04Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279554/job/132105834321",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T19:08:04Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291209/job/132106955434",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:10:05Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279554/job/132105834892",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T19:08:04Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:42Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132106245586",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T19:08:48Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T13:11:19Z",
+            "startedAt": "2026-11-13T19:09:53Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/5e1545e3-9b1f-54ec-8b4e-8bab6717b0eb"
+            "targetUrl": "https://app.buildbuddy.io/invocation/4309f6d4-3e2b-5fbb-b547-f795d9869670"
           }
         ],
         "ci": [
           {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43430374131/job/131902062715"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43430374168/job/131902062840"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43430373953/job/131902062828"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489291004/job/132105864244"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/5e1545e3-9b1f-54ec-8b4e-8bab6717b0eb"
+            "url": "https://app.buildbuddy.io/invocation/4309f6d4-3e2b-5fbb-b547-f795d9869670"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489291129/job/132105865319"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489291209/job/132105865745"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:10:53Z",
+        "merge_commit": "8371bcce1217b745c100978d6b8360ea4bcfce7c"
       },
       {
         "id": "sampler-sessionstore",
@@ -8696,71 +9752,153 @@
         "preserve": "SQL, lease and row/advisory lock order, atomic admission, provider intent preparation, request bytes, evidence and History outbox checkpoints. Runtime retains provider I/O.",
         "checks": "Store, sampler unit and real History ingress suites pass; sampler integration passes after correcting the request-read test fixture. All 141 production SQL literals, two migration files and 290 existing sampler test functions are preserved.",
         "dependency": "Concrete provider-request recipe runs at the original locked preparation point; no exported callback plumbing or production test hooks.",
-        "status": "OPEN",
-        "head": "6a94f681ea978c98f2a35674c7ebbef4de294dfb",
+        "status": "MERGED",
+        "head": "55b75f699cb3c828ff6dcdcf7ed400b744942958",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16228",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:00:48Z",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280410/job/132105837863",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T19:08:05Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:05Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438062152/job/131928188610",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288282/job/132105854146",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T13:56:24Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:58:03Z",
+            "completedAt": "2026-11-13T19:11:15Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438062087/job/131928187293",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489756263/job/132107478734",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:11:01Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:30Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288317/job/132105854664",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T13:56:24Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:57:30Z",
+            "completedAt": "2026-11-13T19:09:08Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438062111/job/131928187998",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288324/job/132105854351",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T13:56:24Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:05Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288282/job/132106965861",
+            "name": "release",
+            "startedAt": "2026-11-13T19:10:06Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280410/job/132105924480",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T19:08:14Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280410/job/132105838727",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T19:08:05Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:05Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288282/job/132106964771",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:10:05Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280410/job/132105839531",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T19:08:05Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:48Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132106319735",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T19:08:56Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T14:00:41Z",
+            "startedAt": "2026-11-13T19:09:53Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/c9a01391-7d4a-52c8-b1a2-24ec32247105"
+            "targetUrl": "https://app.buildbuddy.io/invocation/180cd09f-039f-5096-91a1-c6fa659f7fd1"
           }
         ],
         "ci": [
           {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438062152/job/131928188610"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438062087/job/131928187293"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438062111/job/131928187998"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489288317/job/132105854664"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/c9a01391-7d4a-52c8-b1a2-24ec32247105"
+            "url": "https://app.buildbuddy.io/invocation/180cd09f-039f-5096-91a1-c6fa659f7fd1"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489288324/job/132105854351"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489288282/job/132105854146"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:10:55Z",
+        "merge_commit": "9586dabc75492b180006a3b5501e8ffac17bd991"
       },
       {
         "id": "sampler-rpc",
@@ -8776,71 +9914,153 @@
         "preserve": "Caller authentication and per-UID authorization, atomic command validation, status/redaction, retained-request streaming and event following. Command composes all concrete owners.",
         "checks": "RPC unit and real PostgreSQL integration pass, including exact prepared/stored/streamed bytes, multi-chunk transmission, credential redaction and cross-account/session denial.",
         "dependency": "Uses private sessionstore and residentruntime; public protocol/provider contracts remain separate.",
-        "status": "OPEN",
-        "head": "b3cfd10ca98c16c98e7f0c1f41c13e54e6710f37",
+        "status": "MERGED",
+        "head": "e8b5f2a2ba4ca633d1595c6f0e3a3850bb0476e7",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16229",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:05:26Z",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280409/job/132105931410",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T19:08:15Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:44Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438333933/job/131929136330",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288829/job/132105856579",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T13:58:18Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:59:44Z",
+            "completedAt": "2026-11-13T19:11:19Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438333811/job/131929135038",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489757350/job/132107484813",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:11:02Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:35Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288850/job/132105856069",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T13:58:18Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T13:59:24Z",
+            "completedAt": "2026-11-13T19:09:18Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43438333802/job/131929134845",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288802/job/132105855600",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T13:58:18Z",
+            "startedAt": "2026-11-13T19:08:08Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:45Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288829/job/132106779269",
+            "name": "release",
+            "startedAt": "2026-11-13T19:09:45Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280409/job/132105840047",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T19:08:05Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280409/job/132105888676",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T19:08:10Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:45Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489288829/job/132106779033",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:09:45Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489280409/job/132105841432",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T19:08:05Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:29Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132106285465",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T19:08:53Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T14:05:19Z",
+            "startedAt": "2026-11-13T19:09:34Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/cfc4ac1c-9c67-523d-b5dd-68068d1732a4"
+            "targetUrl": "https://app.buildbuddy.io/invocation/7d468751-11af-5b55-b539-b431cbf39eb7"
           }
         ],
         "ci": [
           {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438333933/job/131929136330"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438333811/job/131929135038"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43438333802/job/131929134845"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489288850/job/132105856069"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/cfc4ac1c-9c67-523d-b5dd-68068d1732a4"
+            "url": "https://app.buildbuddy.io/invocation/7d468751-11af-5b55-b539-b431cbf39eb7"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489288802/job/132105855600"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489288829/job/132105856579"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:10:56Z",
+        "merge_commit": "7c3b57a833b3c41c0baf1ce4fc7767b034a87096"
       },
       {
         "id": "sampler-executor",
@@ -8853,71 +10073,153 @@
         "preserve": "Runner handshake/rebind/incarnation fencing, output cursors, uncertain outcomes, no replay and transport closure.",
         "checks": "Executor race suite and sampler unit pass. Combined resident-runtime/RPC suites also pass with a real loopback gRPC drain fixture; unknown outcomes and no-replay assertions remain.",
         "dependency": "Independent of RPC after Store; consumes concrete sessionstore state and exposes real runtime operations.",
-        "status": "OPEN",
-        "head": "890f935a905a47dad5b377ed44a40f2fe1971d4f",
+        "status": "MERGED",
+        "head": "bcb08879fc5e24f4d999161f51a9b6da02ce3c4a",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16230",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:19:54Z",
+            "completedAt": "2026-11-13T19:08:12Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489284231/job/132105909006",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T19:08:12Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:13Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43440468210/job/131936453544",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289935/job/132105860156",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T14:12:08Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:13:25Z",
+            "completedAt": "2026-11-13T19:11:19Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43440468087/job/131936452908",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489760272/job/132107492643",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:11:03Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:34Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289970/job/132105860237",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T14:12:08Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:13:17Z",
+            "completedAt": "2026-11-13T19:09:17Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43440468421/job/131936453923",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489290180/job/132105860556",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T14:12:08Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:13Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289935/job/132107044372",
+            "name": "release",
+            "startedAt": "2026-11-13T19:10:14Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:17Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489284231/job/132105957322",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T19:08:17Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:17Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489284231/job/132105958108",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T19:08:17Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:13Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489289935/job/132107043442",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:10:14Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:20Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489284231/job/132105986215",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T19:08:20Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:57Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132106236143",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T19:08:47Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T14:19:48Z",
+            "startedAt": "2026-11-13T19:10:03Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/3ec80984-373d-53ad-83ad-95a2da924c3a"
+            "targetUrl": "https://app.buildbuddy.io/invocation/4adc64da-96cb-57c9-9250-b9070092ff6c"
           }
         ],
         "ci": [
           {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43440468210/job/131936453544"
-          },
-          {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43440468087/job/131936452908"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43440468421/job/131936453923"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489289970/job/132105860237"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/3ec80984-373d-53ad-83ad-95a2da924c3a"
+            "url": "https://app.buildbuddy.io/invocation/4adc64da-96cb-57c9-9250-b9070092ff6c"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489290180/job/132105860556"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489289935/job/132105860156"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:10:57Z",
+        "merge_commit": "59c0fd634977e4992f69ad1150008a9a74a74aa0"
       },
       {
         "id": "sampler-runtime",
@@ -8930,112 +10232,194 @@
         "preserve": "Owner admission, permits, provider frontiers/backoff, interruption, effects settlement and drain/claim/release ordering.",
         "checks": "All 25 moved Go files match package/constructor-only changes. Both resident-runtime and both RPC suites pass on the combined tree; sampler service image builds. Root contains zero Go files.",
         "dependency": "Final move after private Store, Executor and RPC APIs; removes the root Go implementation package.",
-        "status": "OPEN",
-        "head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+        "status": "MERGED",
+        "head": "d0cf5541817570c14d65448fc7ee11981cb1fa7d",
         "native_member": true,
         "url": "https://github.com/agentydragon/ducktape/pull/16232",
         "ci_attempts": [
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:23:57Z",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279724/job/132105904768",
+            "name": "fork-context / Resolve fork PR context",
+            "startedAt": "2026-11-13T19:08:12Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:02Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43441173422/job/131938865059",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291466/job/132105866320",
             "name": "bazel-ci / Test & Build",
-            "startedAt": "2026-11-13T14:16:35Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "CI"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:18:03Z",
+            "completedAt": "2026-11-13T19:11:23Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43441173332/job/131938845298",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489764919/job/132107511076",
+            "name": "cancel-closed-pr-ci",
+            "startedAt": "2026-11-13T19:11:05Z",
+            "status": "COMPLETED",
+            "workflowName": "Cancel CI for closed PR"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:09:33Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291421/job/132105865197",
             "name": "Build artifacts + imports check",
-            "startedAt": "2026-11-13T14:16:32Z",
+            "startedAt": "2026-11-13T19:08:09Z",
             "status": "COMPLETED",
             "workflowName": "Nix wheel check"
           },
           {
             "__typename": "CheckRun",
-            "completedAt": "2026-11-13T14:17:37Z",
+            "completedAt": "2026-11-13T19:09:17Z",
             "conclusion": "SUCCESS",
-            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43441173497/job/131938846793",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291645/job/132105866525",
             "name": "Pre-commit checks",
-            "startedAt": "2026-11-13T14:16:32Z",
+            "startedAt": "2026-11-13T19:08:10Z",
             "status": "COMPLETED",
             "workflowName": "Pre-commit checks"
           },
           {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:03Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291466/job/132106941059",
+            "name": "release",
+            "startedAt": "2026-11-13T19:10:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279724/job/132105883098",
+            "name": "bazel-ci",
+            "startedAt": "2026-11-13T19:08:10Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279724/job/132105834675",
+            "name": "nix-wheel-check",
+            "startedAt": "2026-11-13T19:08:04Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:03Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489291466/job/132106939639",
+            "name": "push-images",
+            "startedAt": "2026-11-13T19:10:03Z",
+            "status": "COMPLETED",
+            "workflowName": "CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:08:04Z",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43489279724/job/132105836364",
+            "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+            "startedAt": "2026-11-13T19:08:04Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-11-13T19:10:47Z",
+            "conclusion": "NEUTRAL",
+            "detailsUrl": "https://github.com/agentydragon/ducktape/runs/132106139550",
+            "name": "PR visual review",
+            "startedAt": "2026-11-13T19:08:37Z",
+            "status": "COMPLETED",
+            "workflowName": "Trusted fork PR CI"
+          },
+          {
             "__typename": "StatusContext",
             "context": "BuildBuddy / Bazel ordinary tests (live)",
-            "startedAt": "2026-11-13T14:23:48Z",
+            "startedAt": "2026-11-13T19:09:58Z",
             "state": "SUCCESS",
-            "targetUrl": "https://app.buildbuddy.io/invocation/1a433496-55cb-5d95-bf35-d6cc094b5515"
+            "targetUrl": "https://app.buildbuddy.io/invocation/cea87e3a-2a47-5451-8aa4-e0b270e09890"
           }
         ],
         "ci": [
           {
             "name": "Build artifacts + imports check",
             "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43441173332/job/131938845298"
-          },
-          {
-            "name": "Pre-commit checks",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43441173497/job/131938846793"
-          },
-          {
-            "name": "bazel-ci / Test & Build",
-            "state": "SUCCESS",
-            "url": "https://github.com/agentydragon/ducktape/actions/runs/43441173422/job/131938865059"
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489291421/job/132105865197"
           },
           {
             "name": "BuildBuddy / Bazel ordinary tests (live)",
             "state": "SUCCESS",
-            "url": "https://app.buildbuddy.io/invocation/1a433496-55cb-5d95-bf35-d6cc094b5515"
+            "url": "https://app.buildbuddy.io/invocation/cea87e3a-2a47-5451-8aa4-e0b270e09890"
+          },
+          {
+            "name": "Pre-commit checks",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489291645/job/132105866525"
+          },
+          {
+            "name": "bazel-ci / Test & Build",
+            "state": "SUCCESS",
+            "url": "https://github.com/agentydragon/ducktape/actions/runs/43489291466/job/132105866320"
           }
-        ]
+        ],
+        "merged_at": "2026-11-13T19:10:58Z",
+        "merge_commit": "68e379a52ba3b15a60eaf5d804d82cf0ad0e7872"
       }
     ],
     "ownership_gates": [
       {
         "owner": "central_sampler",
-        "counts": "Baseline: 51 other Go + 27 *_test.go; proposed root: 0 other Go + 0 *_test.go",
+        "counts": "Baseline root: 51 other Go + 27 *_test.go; merged root: 0 other Go + 0 *_test.go",
         "target": "Private sessionstore owns transactions and durable state; executor owns Runner effects; residentruntime owns scheduling, provider I/O and host lifecycle; rpc owns admission and streaming. Tests follow each owner.",
-        "next": "Review and land the four concrete proposed boundaries. Keep SQL/request bytes, ownership fences, no-replay behavior and lifecycle assertions unchanged; do not create a root forwarding package.",
-        "state": "Implemented in published proposed stack; zero direct root Go files."
+        "next": "Complete. Preserve SQL/request bytes, ownership fences, no-replay behavior and lifecycle assertions in future edits; no root forwarding package remains.",
+        "state": "MERGED: all four ownership stages and content/migration leaves."
       },
       {
         "owner": "env/runtime/internal/coordinator",
-        "counts": "24 production + 33 test files",
+        "counts": "24 other Go + 33 *_test.go",
         "target": "Retain the coordinator aggregate; separate a lifecycle owner only when its admissions, cancellation and shutdown protocol is explicit.",
         "next": "Map shutdown/reconciliation ownership, generation fencing, journal sealing and final History ACK; simplify one bounded path with existing race/lifecycle tests.",
         "state": "Design gate; runner lifecycle follow-up remains open."
       },
       {
         "owner": "env/runtime/session and env/runtime/supervision",
-        "counts": "14 production + 11 tests in each",
+        "counts": "session: 14 other Go + 11 *_test.go; supervision: 14 other Go + 11 *_test.go",
         "target": "Retain native-session and subprocess-supervision ownership as two cohesive packages.",
         "next": "Move a real separate responsibility if future source evidence identifies one; do not split methods across packages just to reduce a file count.",
         "state": "Retain current scope for this batch."
       },
       {
         "owner": "notification_service/internal/store",
-        "counts": "17 production + 32 test files",
+        "counts": "17 other Go + 32 *_test.go",
         "target": "Keep inbox/cursor updates, provider observations and lease/advisory locks under one transaction authority.",
         "next": "Define a transaction API before extracting query families; preserve generation, row/advisory lock ordering and receipt/cursor atomicity.",
         "state": "Design gate; not a filename-prefix split."
       },
       {
         "owner": "action_service/api and MCP admission",
-        "counts": "Baseline: 12 other Go + 16 *_test.go files in Action handlers; no direct Go files remain in proposed action_service/api",
+        "counts": "Merged Action api root: 0 other Go + 0 *_test.go",
         "target": "Shared verification lives in identity/operator; MCP owns admission in internal/admission; Action owns handlers and tests in internal/rpc. Public protobuf contracts remain in api/.",
-        "next": "Review and land the three proposed ownership PRs, preserving claim verification, service-specific authorization and stream/drain checks. No unresolved package-boundary decision remains in this group.",
-        "state": "Implemented in published proposed stack; per-PR merge/check states above."
+        "next": "Complete. Keep claim verification, service-specific authorization and stream/drain checks with their concrete owners.",
+        "state": "MERGED: shared verifier, MCP admission and private Action RPC."
       },
       {
         "owner": "All remaining Go directories, commands, tests and experiments",
-        "counts": "205 directories covered by the full file inventory",
+        "counts": "217 directories covered by the current full file inventory",
         "target": "Keep cohesive owners and colocated tests; improve names and placement when a concrete owner/caller boundary justifies it.",
         "next": "Every tracked Go file is eligible, including support libraries and x/. The directory ledger lists all current files and identifies selected moves; unselected files are not declared permanently exempt.",
         "state": "In scope; no arbitrary package-size limit."
@@ -9057,10 +10441,12 @@
           "baseline_migration_test.go",
           "provider_attempt_test.go:TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance"
         ],
-        "status": "OPEN: PR #16219",
+        "status": "MERGED: PR #16219",
         "package_path": "central_sampler/internal/content + central_sampler/migrations",
-        "review_head": "daa539e6ca2d6dbe340c7906e17612f3b9ee2308",
-        "url": "https://github.com/agentydragon/ducktape/pull/16219"
+        "review_head": "7a2d9f7af600b21d0ceaa11a78180166ab22121c",
+        "url": "https://github.com/agentydragon/ducktape/pull/16219",
+        "merge_commit": "2661a5366ca8ef90b8348de6c9872a2a1ed5f66b",
+        "merged_at": "2026-11-13T19:07:49Z"
       },
       {
         "step": 1,
@@ -9086,10 +10472,12 @@
           "central_sampler/BUILD.bazel",
           "root Go test target declarations"
         ],
-        "status": "OPEN: PR #16228",
+        "status": "MERGED: PR #16228",
         "package_path": "central_sampler/internal/sessionstore",
-        "review_head": "6a94f681ea978c98f2a35674c7ebbef4de294dfb",
-        "url": "https://github.com/agentydragon/ducktape/pull/16228"
+        "review_head": "55b75f699cb3c828ff6dcdcf7ed400b744942958",
+        "url": "https://github.com/agentydragon/ducktape/pull/16228",
+        "merge_commit": "9586dabc75492b180006a3b5501e8ffac17bd991",
+        "merged_at": "2026-11-13T19:10:55Z"
       },
       {
         "step": 2,
@@ -9106,10 +10494,12 @@
           "central_sampler/BUILD.bazel",
           "cmd/main.go registration and dependency wiring"
         ],
-        "status": "OPEN: PR #16229",
+        "status": "MERGED: PR #16229",
         "package_path": "central_sampler/internal/rpc",
-        "review_head": "b3cfd10ca98c16c98e7f0c1f41c13e54e6710f37",
-        "url": "https://github.com/agentydragon/ducktape/pull/16229"
+        "review_head": "e8b5f2a2ba4ca633d1595c6f0e3a3850bb0476e7",
+        "url": "https://github.com/agentydragon/ducktape/pull/16229",
+        "merge_commit": "7c3b57a833b3c41c0baf1ce4fc7767b034a87096",
+        "merged_at": "2026-11-13T19:10:56Z"
       },
       {
         "step": 3,
@@ -9137,10 +10527,12 @@
           "central_sampler/BUILD.bazel",
           "runtime call sites in session_setup.go and session_host.go"
         ],
-        "status": "OPEN: PR #16230",
+        "status": "MERGED: PR #16230",
         "package_path": "central_sampler/internal/executor",
-        "review_head": "890f935a905a47dad5b377ed44a40f2fe1971d4f",
-        "url": "https://github.com/agentydragon/ducktape/pull/16230"
+        "review_head": "bcb08879fc5e24f4d999161f51a9b6da02ce3c4a",
+        "url": "https://github.com/agentydragon/ducktape/pull/16230",
+        "merge_commit": "59c0fd634977e4992f69ad1150008a9a74a74aa0",
+        "merged_at": "2026-11-13T19:10:57Z"
       },
       {
         "step": 4,
@@ -9173,10 +10565,12 @@
           "central_sampler/BUILD.bazel",
           "cmd/main.go construction and work-channel wiring"
         ],
-        "status": "OPEN: PR #16232",
+        "status": "MERGED: PR #16232",
         "package_path": "central_sampler/internal/residentruntime",
-        "review_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
-        "url": "https://github.com/agentydragon/ducktape/pull/16232"
+        "review_head": "d0cf5541817570c14d65448fc7ee11981cb1fa7d",
+        "url": "https://github.com/agentydragon/ducktape/pull/16232",
+        "merge_commit": "68e379a52ba3b15a60eaf5d804d82cf0ad0e7872",
+        "merged_at": "2026-11-13T19:10:58Z"
       }
     ],
     "sampler_design_source": {
@@ -9217,7 +10611,8 @@
         "agentplane/central_sampler/provider_dispatch.go",
         "agentplane/central_sampler/provider_request_read.go"
       ],
-      "note": "Published proposed source tree; these counts do not imply merge or deployment. Full baseline and proposed manifests include test-only support, generated code, and experiments."
+      "note": "Historical completed proposal snapshot. All 17 ownership groups are merged; its complete Agentplane Go manifest is byte-identical to the current merged source pin. Tests recorded against this proposal remain historical evidence, not a fresh run on devel.",
+      "status": "MERGED"
     },
     "sampler_validation": {
       "proposed_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
@@ -9254,7 +10649,7 @@
           "invocation": "76b75277-45b5-4fa1-b4a5-bc48a6f5044f"
         }
       ],
-      "scope_note": "Focused runs, source-preservation review and current-head hosted CI are distinct evidence. No deployment or fresh live-provider claim. Existing test assertions, deadlines and race configuration are retained."
+      "scope_note": "Historical focused runs and source-preservation review at the recorded proposal heads. The fresh full-Go-manifest comparison proves the merged Go files match that proposal; final-head hosted CI is recorded separately per merged PR. No fresh focused test run, deployment or live-provider claim."
     },
     "retain_decisions": [
       {
@@ -9379,7 +10774,7 @@
         "area": "Sampler native-provider protocol contracts",
         "decision": "Keep protocol/ as the shared provider contract package; split Store/Executor/Runtime implementations rather than scattering the common typed protocol values.",
         "evidence": [
-          "All production importers are sampler-owned: providers, tool contracts/output, code-mode, settings and root sampling/persistence.",
+          "All production importers are sampler-owned: providers, tool contracts/output, code-mode, settings and resident-runtime sampling/persistence.",
           "History ingress projection/export integration tests also use the native protocol and provider codecs; these remain real cross-service tests.",
           "protocol/ contains typed Context, content/tool/event/error/provider-hook contracts, with no Store or Runtime dependency."
         ]
@@ -9393,7 +10788,25 @@
           "Action session_delegation/dispatcher_integration_test.go intentionally tests against the real Dispatcher; a future Go-internal move needs an owner-local test fixture, not a production forwarding shim."
         ]
       }
-    ]
+    ],
+    "historical_baseline": {
+      "source_sha": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
+      "counts": {
+        "files": 1227,
+        "directories": 205,
+        "production": 674,
+        "tests": 553
+      }
+    },
+    "native_stack_open": false,
+    "source_comparison": {
+      "source_sha": "60336d35f33a4b796962327d6c7e9c07cea56af7",
+      "completed_proposal_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+      "go_files": 1241,
+      "paths_and_sha256_identical": true,
+      "manifest_sha256": "f68b58561f0cbef22d5aea84bfc7b33ba03161314953dccc7418f055b139b6c9",
+      "scope": "Every tracked Agentplane Go path and file SHA-256 matches the completed proposal. This is a fresh source comparison, not a fresh test or deployment run."
+    }
   },
   "completed_batch_report_validation": {
     "test": {
@@ -9524,11 +10937,11 @@
     }
   },
   "report_validation": {
-    "observed_at_utc": "2026-11-13T14:29:35+00:00",
+    "observed_at_utc": "2026-11-13T19:56:02+00:00",
     "test": {
       "command": "bbr test //x/agentplane_plan_preview:visual_test --noremote_accept_cached",
-      "invocation_id": "4ca4de64-c59a-409b-9f37-5c590d4512b4",
-      "url": "https://app.buildbuddy.io/invocation/4ca4de64-c59a-409b-9f37-5c590d4512b4",
+      "invocation_id": "036f367f-2b91-406c-b4f7-7022093b09c0",
+      "url": "https://app.buildbuddy.io/invocation/036f367f-2b91-406c-b4f7-7022093b09c0",
       "target_status": "PASSED",
       "parametrized_case_count": 8,
       "passed_cases": [
@@ -9542,36 +10955,41 @@
         "test_pages[report-mobile-dark]"
       ],
       "failed_cases": [],
-      "test_duration_seconds": 35.321
+      "test_duration_seconds": 25.65
     },
     "served_assets_sha256": {
-      "index.html": "b3103b9aef876f12d48915c0206240047de5b6509784c99a320e338ef41c064a",
+      "index.html": "b6f77d377739164d4938fd8ebd501b10a19ffdcbfa89bf9264237152e205a703",
       "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
       "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-      "agentplane-organization/index.html": "3eaf75c1f856e55614277055a58fe63cb2ab6ab0dbe18a74a51d9f3b04088b58",
-      "agentplane-organization/go-plan.json": "195e903039766f4258a1927dd98f7007b8f1f541363f16a972ac698458c678b9",
-      "agentplane-organization/go-files.json": "f024798da33bfc9b477cdb4418a8b734bf77349b566871a02e03bb3ff43e5245"
+      "agentplane-organization/index.html": "8aa6045a7901ff3dedfcabd2b3549be01a7349c294cee4033cb1bcb84563f0d9",
+      "agentplane-organization/go-plan.json": "c58e93cfb7f688aeb7f8456fe6bd2057cb068da702e34d9c27f7fb36d8e00308",
+      "agentplane-organization/go-files.json": "736428476eba25144b9b64841ee29a45d786fadc644c17496c2e0aee807eb96b"
     },
-    "tested_evidence_file_sha256": "0cd93933defaf7c0f5390c29085e9d0ceca49a32fbbd761bf425912729cace48",
-    "validated_evidence_payload_sha256": "14380901591cdf9fcebffda65768b9991633966e26bea6ef00a8e71973d79538",
-    "evidence_hash_scope": "Canonical evidence excluding report_validation and go_batch_verification. Only these non-rendered annotations change after browser validation.",
+    "tested_evidence_file_sha256": "9b3fbf8db2b4151905f35912a000dc8aba6f90496a30b1c9a0772bd9cd7c000a",
+    "validated_evidence_payload_sha256": "e438dbe182f1df7f93b22b8b66885128f8c2624b9ecba69cc8bde4634f2f51a3",
+    "evidence_hash_scope": "Canonical JSON excluding report_validation. Only this non-rendered annotation changes after browser validation.",
     "screenshots_reviewed": {
       "themes": ["light", "dark"],
       "viewports": ["1280x900", "390x844"],
       "checkpoints": [
-        "whole Go-tree plan",
-        "sampler ownership sequence",
+        "current and goal trees",
+        "flat App trees",
+        "Notification candidate tree",
+        "remaining-work details",
         "home organization card"
       ]
     },
     "controls_checked": [
       "Real pinned esm.sh and jsDelivr assets",
       "Live system color-scheme changes",
-      "Navigation anchors",
-      "Retain decisions and all 205 directory disclosures",
-      "1,227 unique baseline entries and full proposed ledger downloaded over HTTP",
-      "Page/table overflow",
-      "Completed historical batch controls"
+      "Current/goal tree component selection",
+      "File-name toggle",
+      "Desktop side-by-side alignment",
+      "App layout equal with no go directory",
+      "Candidate directories absent from current tree and marked in goal",
+      "Whole-tree and source/validation disclosures",
+      "Remaining-only plan JSON and all 1,241 current Go file paths downloaded over HTTP",
+      "Page overflow and navigation anchors"
     ]
   },
   "go_batch_verification": {
@@ -9599,21 +11017,21 @@
         "failed_head": "2b02d73500acaf309438a35e7f88dab41c3ae6e8",
         "invocation": "fb394e77-1fa0-5424-aba9-c4f94e3fa7a0",
         "failure": "Analysis failure: concurrently landed startup test referenced the removed environment_runtime_transport package.",
-        "resolution": "Existing devel PR #16218 repairs the importer; all open layers rebased onto d9b2064b76. Current exact-head CI passes."
+        "resolution": "Existing devel PR #16218 repairs the importer; all open layers rebased onto d9b2064b76. That rebased head passed CI; final merged heads are recorded in go_batch.lanes."
       },
       {
         "pr": 16214,
         "failed_head": "b6383b2e7a2b6cc4323f199b56010f83e70e6046",
         "invocation": "14210264-6c40-56fa-8094-f162ac369b07",
         "failure": "Pod suite: 20 passed, 1 idle-resume scenario timed out while Sandbox stayed Suspended/Idle with no Pod. Suite-level ALREADY_EXISTS warnings lack method, command ID and timestamp; they cannot be attributed to this case or outcome.",
-        "resolution": "Current rebased head passes full CI; test_pod is a remote-cache pass, which establishes current CI status rather than a fresh reproduction. No timeout/assertion/runtime change or targeted retry cleared this failure. The lifecycle cause remains unproven.",
-        "current_ci": {
+        "resolution": "The historical rebased head passed full CI; test_pod is a remote-cache pass, which establishes current CI status rather than a fresh reproduction. No timeout/assertion/runtime change or targeted retry cleared this failure. The lifecycle cause remains unproven.",
+        "visibility_limit": "Failed artifacts lack sandbox-controller, runner-gateway and environment-runtime component logs. Reorganization diff preserves adapter RPC construction, arguments, identity metadata and command wiring. Keep lifecycle ownership/reconciliation follow-up open.",
+        "historical_rebased_ci": {
           "head": "c6f87560ab8bbb39eeb3a4a008c5b23af299b11d",
           "invocation": "529d0a67-a92b-5ae5-a855-08c6f7ac385d",
           "result": "PASSED",
           "test_pod_remote_cache": true
-        },
-        "visibility_limit": "Failed artifacts lack sandbox-controller, runner-gateway and environment-runtime component logs. Reorganization diff preserves adapter RPC construction, arguments, identity metadata and command wiring. Keep lifecycle ownership/reconciliation follow-up open."
+        }
       }
     ],
     "sampler_preservation": {
@@ -9652,6 +11070,30 @@
         }
       ],
       "scope_note": "Focused runs, source-preservation review and current-head hosted CI are distinct evidence. No deployment or fresh live-provider claim. Existing test assertions, deadlines and race configuration are retained."
-    }
+    },
+    "merged_source": {
+      "source_sha": "60336d35f33a4b796962327d6c7e9c07cea56af7",
+      "completed_proposal_head": "80ebb5325f94fb56451584ed9116edf65c4515ea",
+      "go_files": 1241,
+      "paths_and_sha256_identical": true,
+      "manifest_sha256": "f68b58561f0cbef22d5aea84bfc7b33ba03161314953dccc7418f055b139b6c9",
+      "scope": "Every tracked Agentplane Go path and file SHA-256 matches the completed proposal. This is a fresh source comparison, not a fresh test or deployment run."
+    },
+    "all_17_merge_commits_in_source": true,
+    "native_stack_open": false
+  },
+  "current_structure": {
+    "source_sha": "60336d35f33a4b796962327d6c7e9c07cea56af7",
+    "observed_at_utc": "2026-11-13T19:44:10+00:00",
+    "counts": {
+      "files": 1241,
+      "directories": 217,
+      "production": 682,
+      "tests": 559
+    },
+    "app_go_directory_exists": false,
+    "candidate_extraction_source_paths_verified": true,
+    "candidate_target_directories_do_not_exist": true,
+    "historical_file_ledger": "https://github.com/agentydragon/ducktape/blob/a2e69b1af1e5060f75e56ef85153d9cfd56cd309/agentplane-organization/go-files.json"
   }
 }
