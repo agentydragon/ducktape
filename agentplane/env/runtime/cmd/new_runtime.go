@@ -1,7 +1,7 @@
 package main
 
-import runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
+import "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/coordinator"
 
-func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
-	return runtime.New(config)
+func newRuntime(config coordinator.Config) (*coordinator.Runtime, error) {
+	return coordinator.New(config)
 }

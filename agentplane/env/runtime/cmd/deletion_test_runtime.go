@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/coordinator"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -16,7 +16,7 @@ import (
 
 // This file replaces new_runtime.go only in the system-test executable. The gate holds one
 // authenticated command before Runtime admission without holding control/Session locks or Quiesce.
-func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
+func newRuntime(config coordinator.Config) (*coordinator.Runtime, error) {
 	directory := filepath.Join(config.StateDir, "deletion-test-admission")
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
@@ -61,5 +61,5 @@ func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
 			}
 		}
 	}
-	return runtime.New(config)
+	return coordinator.New(config)
 }

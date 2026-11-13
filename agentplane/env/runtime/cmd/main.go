@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/coordinator"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"go.opentelemetry.io/otel/attribute"
@@ -112,7 +112,7 @@ func runService(ctx context.Context, args []string) error {
 	if settings.Codex != nil {
 		codexBinary = settings.Codex.Binary
 	}
-	instance, err := newRuntime(runtime.Config{
+	instance, err := newRuntime(coordinator.Config{
 		Control: settings.Control, StateDir: settings.StateDir, Launch: settings.Launch,
 		Supervision: settings.Supervision, PodPID1: settings.PodPID1, VMProcessLauncher: settings.VMProcessLauncher,
 		CodexExecServer: settings.CodexExecServer, CodexBinary: codexBinary,
