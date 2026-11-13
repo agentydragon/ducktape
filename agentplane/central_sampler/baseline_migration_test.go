@@ -28,6 +28,9 @@ func TestFreshSamplerBaseline(t *testing.T) {
 	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=15 AND is_applied`); count != 1 {
 		t.Fatal("baseline not recorded")
 	}
+	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
+		t.Fatal("provider attempt migration not recorded")
+	}
 	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_conversation WHERE id=$1 AND api='responses'`, session.ConversationID); count != 1 {
 		t.Fatal("current session was not created")
 	}
@@ -55,7 +58,7 @@ func TestSamplerBaselineAdoptsCompletedRewriteWithoutTouchingData(t *testing.T) 
 	if got.ConversationID != session.ConversationID || got.SourceID != session.SourceID || got.Cursor != session.Cursor {
 		t.Fatal("adoption changed session identity")
 	}
-	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id BETWEEN 1 AND 15 AND is_applied`); count != 15 {
+	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id BETWEEN 1 AND 16 AND is_applied`); count != 16 {
 		t.Fatal("adoption rewrote Goose history")
 	}
 	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM pg_class WHERE oid=$1 AND relname='sampler_event'`, relation); count != 1 {
@@ -106,5 +109,8 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 	}
 	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=15 AND is_applied`); count != 1 {
 		t.Fatal("baseline recorded more than once")
+	}
+	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`); count != 1 {
+		t.Fatal("provider attempt migration recorded more than once")
 	}
 }

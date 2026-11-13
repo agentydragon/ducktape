@@ -61,6 +61,17 @@ To roll back, stop the sampler and restore its pre-cutover database backup with 
 or recreate its database using that image and start fresh. An image-only rollback cannot read the
 new schema.
 
+Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
+It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
+new constraint prevents an older sampler image from inserting provider intents. For this incompatible
+writer cutover, suspend the owning rollout and stop every old central-sampler Pod before migration;
+verify no old writer remains, run the new image once with `--migrate-only` and the same
+`AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`, then deploy the new image and resume the desired replicas.
+Do not rely on the normal rolling Deployment strategy to drain old writers before startup migrations.
+If rollback is needed after migration 16, stop all new writers and restore the pre-cutover central-sampler
+database backup before starting the previous image. A previous image alone cannot write provider intents
+under the new required-metadata constraint.
+
 `//agentplane/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its
 own Pod, migrate before serving, and use projected service-account tokens for

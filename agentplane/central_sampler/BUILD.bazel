@@ -319,6 +319,7 @@ go_library(
         "native_store.go",
         "notification.go",
         "protocol_adapter.go",
+        "provider_attempt.go",
         "provider_dispatch.go",
         "provider_evidence.go",
         "provider_request_read.go",
@@ -350,6 +351,7 @@ go_library(
     ],
     embedsrcs = [
         "schema/0015_baseline.sql",
+        "schema/0016_provider_attempts.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler",
     visibility = [
@@ -414,6 +416,7 @@ go_test(
         "integration_testmain_test.go",
         "native_context_test.go",
         "notification_test.go",
+        "provider_attempt_test.go",
         "request_plan_test.go",
         "request_read_service_test.go",
         "runtime_lifecycle_test.go",

@@ -278,7 +278,7 @@ func TestStoreFencesEveryWriteToTheLiveLeaseGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -320,7 +320,7 @@ func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
+	intentID, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil, providerAttemptTestPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +380,7 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -394,7 +394,7 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 				if err != nil || !changed {
 					t.Fatalf("same-owner code host loss was not reconciled: changed=%v err=%v", changed, err)
 				}
-				if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); err != nil {
+				if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer()); err != nil {
 					t.Fatalf("new sampling intent after abandonment: %v", err)
 				}
 			}
@@ -426,18 +426,18 @@ func TestStoreIntentJournalBlocksReplayAndPersistsKnownRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	first, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); !errors.As(err, new(*protocol.UnknownEffectError)) {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer()); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("pending intent was replayable: %v", err)
 	}
 	call := responses.Item{Type: responses.ItemCustomToolCall, CallID: "call-1", Name: "exec", Input: "{}", ID: "item-1"}
 	if err := store.Finish(t.Context(), owner, first, map[string]any{"id": "response-1"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	second, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	second, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +493,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "fixture-old-process", false); err != nil {
 		t.Fatal(err)
 	}
-	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +502,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{"id": "response"}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall}, nil)
+	cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,7 +667,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	sampling, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -679,7 +679,7 @@ func TestStoreRecoverSessionPreservesKnownRejectedCellResult(t *testing.T) {
 	if err := store.RegisterProcess(t.Context(), owner, "other-process", false); err != nil {
 		t.Fatal(err)
 	}
-	cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall}, nil)
+	cellIntent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell, Call: &toolCall}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -805,7 +805,7 @@ func TestStoreRecoverSessionAbandonsSoleUnresolvedSamplingIntent(t *testing.T) {
 	if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -894,7 +894,7 @@ func TestStoreRecoverSessionRejectsSamplingWithOtherUnresolvedEffect(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); err != nil {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "process/start"}); err != nil {
@@ -922,7 +922,7 @@ func TestStoreRecoverSessionRejectsSamplingPendingWithWrongIntentKind(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -965,7 +965,11 @@ func TestStoreRecoverSessionRejectsCompactionAndSetupBoundaries(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentKind(kind)}, nil); err != nil {
+				conversation, err := store.Read(t.Context(), owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil, providerAttemptTestPolicy()); err != nil {
 					t.Fatal(err)
 				}
 				if err := store.FailExecution(t.Context(), owner, session.ID, nil, errors.New("unknown outcome")); err != nil {
@@ -1016,7 +1020,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			if changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, previous, encoding); err != nil || changed {
 				t.Fatalf("same-host use emitted loss: changed=%v err=%v", changed, err)
 			}
-			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1212,7 +1216,7 @@ func TestStoreStaleGenerationSamplingIntentIsAbandonedForResampling(t *testing.T
 			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 				t.Fatal(err)
 			}
-			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1320,7 +1324,7 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 	if err := store.StampCodeHostInstance(t.Context(), owner, uuid.NewString()); err != nil {
 		t.Fatal(err)
 	}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1350,7 +1354,7 @@ func TestStoreCodeHostLossLeavesUnrelatedPendingCallForDispatcher(t *testing.T) 
 	// The normal dispatcher can settle this call independently. The notice follows
 	// after pairing, before any subsequent sampling step.
 	notDispatched := false
-	toolIntent, _, err := store.Begin(t.Context(), successor, IntentRequest{Kind: PendingIntentCell, Call: &calls[0], Dispatched: &notDispatched}, nil)
+	toolIntent, _, err := store.Begin(t.Context(), successor, IntentRequest{Kind: PendingIntentCell, Call: &calls[0], Dispatched: &notDispatched}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1517,7 +1521,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil)
+	intent, _, err := store.BeginCompaction(t.Context(), owner, IntentRequest{Kind: PendingIntentCompaction}, conversation.Context(), nil, providerAttemptTestPolicy())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1683,7 +1687,7 @@ func TestAcknowledgeIncompleteInterruptPersistsBlockingIntent(t *testing.T) {
 	if conversation.Pending == nil || conversation.Pending.Kind != PendingIntentInterrupt {
 		t.Fatalf("incomplete interrupt did not persist a blocking intent: %v", conversation.Pending)
 	}
-	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil); !errors.As(err, new(*protocol.UnknownEffectError)) {
+	if _, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer()); !errors.As(err, new(*protocol.UnknownEffectError)) {
 		t.Fatalf("incomplete interrupt allowed a new effect: %v", err)
 	}
 }
@@ -1808,7 +1812,7 @@ func TestKnownRejectionPreservesOtherEffectUncertainty(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1856,7 +1860,7 @@ func TestWorkScansRetainAcceptedInputAfterKnownRejection(t *testing.T) {
 			if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 				t.Fatal(err)
 			}
-			intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil)
+			intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -2218,7 +2222,7 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	admitInput(t, store, session.ID, "after-model", "next turn text")
 	// A running cell's unresolved intent still reports the input, so its observation can yield, but
 	// the input only joins once the intent has an outcome.
-	intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil)
+	intent, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentCell}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,0 +1,394 @@
+package centralsampler
+
+import (
+	"bytes"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+)
+
+func providerAttemptTestPolicy() ProviderAttemptPolicy {
+	return ProviderAttemptPolicy{Budget: 3, Lease: time.Minute}
+}
+
+func providerAttemptTestPolicyPointer() *ProviderAttemptPolicy {
+	policy := providerAttemptTestPolicy()
+	return &policy
+}
+
+func providerAttemptTestPolicyForKind(kind PendingIntentKind) *ProviderAttemptPolicy {
+	if kind == PendingIntentSampling {
+		return providerAttemptTestPolicyPointer()
+	}
+	return nil
+}
+
+func providerAttemptTestRequest(kind PendingIntentKind) (IntentRequest, requestPreparation) {
+	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
+	model := samplersettings.ModelConfig{
+		Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
+		ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite},
+	}
+	request := responses.Request{Model: model.ProviderModel, Stream: true}
+	compact := kind == PendingIntentCompaction
+	if compact {
+		request.Input = []responses.RequestInput{responses.Item{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque-summary"}}
+	}
+	prepare := func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
+		return prepareResponsesRequest(store, conversation, metadata, request, model.Responses, model.ExecEncoding, compact)
+	}
+	return providerRequestIntent(kind, connection, model), prepare
+}
+
+func admitProviderCommand(t *testing.T, store *Store, owner Owner, sessionID, commandID string, compact bool) {
+	t.Helper()
+	if compact {
+		if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{
+			CommandId: commandID,
+			Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}},
+		}, "fixture-account", nil); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		admitInput(t, store, sessionID, commandID, "provider retry fixture")
+	}
+	command, err := store.NextCommand(t.Context(), owner, sessionID)
+	if err != nil || command == nil || command.ID != commandID {
+		t.Fatalf("next provider command=%v err=%v", command, err)
+	}
+	if _, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setProviderRetryDueNow(t *testing.T, store *Store, intentID string) {
+	t.Helper()
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()-interval '1 millisecond' WHERE id=$1`, intentID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func reopenProviderAttemptStore(t *testing.T, store *Store, dsn string) *Store {
+	t.Helper()
+	if err := store.DB().Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return New(db, 30*time.Second)
+}
+
+func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := ProviderAttemptPolicy{Budget: 2, Lease: time.Minute}
+	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, &policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := store.CurrentProviderAttempt(t.Context(), owner, session.ID)
+	if err != nil || attempt == nil || attempt.IntentID != intentID || attempt.Generation != owner.Generation || attempt.Expired {
+		t.Fatalf("current attempt=%+v err=%v", attempt, err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_attempt_lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, intentID); err != nil {
+		t.Fatal(err)
+	}
+	attempt, err = store.CurrentProviderAttempt(t.Context(), owner, session.ID)
+	if err != nil || attempt == nil || !attempt.Expired {
+		t.Fatalf("expired attempt=%+v err=%v", attempt, err)
+	}
+	if err := store.RenewProviderAttempt(t.Context(), owner, intentID, time.Minute); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("expired attempt was renewed: %v", err)
+	}
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, session.ConversationID); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RenewProviderAttempt(t.Context(), owner, intentID, time.Minute); !errors.As(err, new(*LostOwnershipError)) {
+		t.Fatalf("expired owner renewed provider attempt: %v", err)
+	}
+	newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newOwner.Generation != owner.Generation+1 {
+		t.Fatalf("new generation=%d, old=%d", newOwner.Generation, owner.Generation)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), newOwner, intentID, ProviderAttemptFailure{
+		Class: ProviderAttemptPermanent, Reason: "recovered after owner expiry",
+	}); err != nil {
+		t.Fatalf("current owner could not abandon unresolved old-generation provider attempt: %v", err)
+	}
+}
+
+func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "pre-attempt-schema-command"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Recreate the committed v15 baseline shape and apply only migration 16 to the live row.
+	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_retry_due_idx`)
+	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_predecessor_idx`)
+	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_attempt_step_idx`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent DROP CONSTRAINT sampler_intent_provider_attempt_fields_check`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent DROP CONSTRAINT sampler_intent_provider_previous_fk`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent DROP CONSTRAINT sampler_intent_provider_step_fk`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent
+		DROP COLUMN provider_step_id, DROP COLUMN provider_attempt_no, DROP COLUMN provider_attempt_budget,
+		DROP COLUMN provider_attempt_lease_until, DROP COLUMN provider_retry_not_before,
+		DROP COLUMN previous_provider_intent_id, DROP COLUMN provider_command_id`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=16 AND is_applied`)
+	if err := Migrate(t.Context(), store.DB()); err != nil {
+		t.Fatalf("apply provider-attempt migration to old unresolved intent: %v", err)
+	}
+
+	var stepID string
+	var number, budget int
+	var leaseUntil, ownerLease time.Time
+	var migratedCommand sql.NullString
+	var retryAt sql.NullTime
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT i.provider_step_id::text,i.provider_attempt_no,
+		i.provider_attempt_budget,i.provider_attempt_lease_until,i.provider_command_id,i.provider_retry_not_before,c.lease_until
+		FROM sampler_intent i JOIN sampler_conversation c ON c.id=i.conversation_id WHERE i.id=$1`, intentID).
+		Scan(&stepID, &number, &budget, &leaseUntil, &migratedCommand, &retryAt, &ownerLease); err != nil {
+		t.Fatal(err)
+	}
+	if stepID != intentID || number != 1 || budget != 1 || !migratedCommand.Valid || migratedCommand.String != commandID ||
+		leaseUntil.After(ownerLease) || retryAt.Valid {
+		t.Fatalf("backfilled attempt step=%s number=%d budget=%d command=%v lease=%s owner=%s retry=%v",
+			stepID, number, budget, migratedCommand, leaseUntil, ownerLease, retryAt)
+	}
+}
+
+func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *testing.T) {
+	store, dsn := newTestStoreWithDSN(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "durable-provider-command"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, originalWire, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	partialID := "partial-provider-item"
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(),
+		protocol.WireBytes{Bytes: []byte("partial native provider frame")},
+		&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: partialID}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
+		Class: ProviderAttemptTransient, Reason: "provider stream stalled", RetryAfter: 5 * time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late frame")}); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("late provider evidence after abandon: %v", err)
+	}
+	if err := store.Finish(t.Context(), owner, intentID, map[string]any{"status": "complete"}, nil, nil); !errors.Is(err, protocol.ErrPrecondition) {
+		t.Fatalf("Finish after abandon: %v", err)
+	}
+	var result []byte
+	var due bool
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result,provider_retry_not_before IS NOT NULL FROM sampler_intent WHERE id=$1`, intentID).Scan(&result, &due); err != nil {
+		t.Fatal(err)
+	}
+	var resultValue map[string]any
+	if err := json.Unmarshal(result, &resultValue); err != nil {
+		t.Fatal(err)
+	}
+	if resultValue["failure_reason"] != "provider stream stalled" || !due || resultValue["output_committed"] != false {
+		t.Fatalf("stored abandonment=%v due=%v", resultValue, due)
+	}
+	events, err := store.Events(t.Context(), session.ID, 0, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rawEvidence, absent bool
+	for _, entry := range events {
+		event := entry.GetEvent()
+		if boundary := event.GetBoundaryRecord(); boundary != nil && boundary.GetCorrelationId() == intentID {
+			var evidence protocol.WireBytes
+			if err := json.Unmarshal(boundary.GetPayload(), &evidence); err == nil && bytes.Equal(evidence.Bytes, []byte("partial native provider frame")) {
+				rawEvidence = true
+			}
+		}
+		if reconciled := event.GetConversationReconciled(); reconciled != nil {
+			for _, item := range reconciled.GetItems() {
+				absent = absent || (item.GetItemId() == partialID && item.GetDisposition() == eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT)
+			}
+		}
+	}
+	if !rawEvidence || !absent {
+		t.Fatalf("provider raw evidence retained=%v partial item ABSENT=%v", rawEvidence, absent)
+	}
+	setProviderRetryDueNow(t, store, intentID)
+	reopened := reopenProviderAttemptStore(t, store, dsn)
+	frontier, err := reopened.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier == nil || frontier.IntentID != intentID || frontier.Number != 1 || frontier.Budget != 3 || frontier.StepID != intentID || frontier.CommandID != commandID {
+		t.Fatalf("reopened retry frontier=%+v err=%v", frontier, err)
+	}
+	newID, retryWire, err := reopened.BeginSamplingRetry(t.Context(), owner, intentID, providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newID == intentID || !bytes.Equal(originalWire, retryWire) {
+		t.Fatalf("retry id reused=%v wire exact=%v", newID == intentID, bytes.Equal(originalWire, retryWire))
+	}
+	current, err := reopened.CurrentProviderAttempt(t.Context(), owner, session.ID)
+	if err != nil || current == nil || current.IntentID != newID || current.StepID != intentID || current.PreviousID != intentID ||
+		current.Number != 2 || current.Budget != 3 || current.CommandID != commandID {
+		t.Fatalf("retried attempt=%+v err=%v", current, err)
+	}
+	var predecessor, stepID string
+	var number, budget int
+	if err := reopened.DB().QueryRowContext(t.Context(), `SELECT previous_provider_intent_id::text,provider_step_id::text,provider_attempt_no,provider_attempt_budget FROM sampler_intent WHERE id=$1`, newID).
+		Scan(&predecessor, &stepID, &number, &budget); err != nil {
+		t.Fatal(err)
+	}
+	if predecessor != intentID || stepID != intentID || number != 2 || budget != 3 {
+		t.Fatalf("persisted chain prev=%s step=%s number=%d budget=%d", predecessor, stepID, number, budget)
+	}
+}
+
+func TestProviderRecoveryFrontierPersistsExhaustedFailureAcrossStoreReopen(t *testing.T) {
+	store, dsn := newTestStoreWithDSN(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "exhausted-provider-command"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	policy := ProviderAttemptPolicy{Budget: 1, Lease: time.Minute}
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, &policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
+		Class: ProviderAttemptTransient, Reason: "one-attempt budget exhausted", RetryAfter: time.Second,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reopened := reopenProviderAttemptStore(t, store, dsn)
+	frontier, err := reopened.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier == nil || frontier.IntentID != intentID || frontier.CommandID != commandID ||
+		frontier.FailureClass != ProviderAttemptTransient || frontier.Retryable || frontier.Ready || frontier.Number != 1 || frontier.Budget != 1 {
+		t.Fatalf("reopened exhausted provider frontier=%+v err=%v", frontier, err)
+	}
+}
+
+func TestCompactionRetryRetainsOriginalNativeContext(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const commandID = "durable-compaction-command"
+	admitProviderCommand(t, store, owner, session.ID, commandID, true)
+	original, err := store.Read(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, prepare := providerAttemptTestRequest(PendingIntentCompaction)
+	intentID, originalWire, err := store.BeginCompaction(t.Context(), owner, request, original.Context(), prepare, providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
+		Class: ProviderAttemptTransient, Reason: "compaction provider stream stalled", RetryAfter: time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	setProviderRetryDueNow(t, store, intentID)
+	frontier, err := store.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier == nil || frontier.Kind != PendingIntentCompaction {
+		t.Fatalf("compaction retry frontier=%+v err=%v", frontier, err)
+	}
+	current, err := store.Read(t.Context(), owner)
+	if err != nil || !sameNativeContext(current.Context(), original.Context()) {
+		t.Fatalf("abandonment changed original compaction context: err=%v", err)
+	}
+	newID, retryWire, err := store.BeginCompactionRetry(t.Context(), owner, intentID, original.Context(), providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newID == intentID || !bytes.Equal(originalWire, retryWire) {
+		t.Fatalf("compaction retry id reused=%v wire exact=%v", newID == intentID, bytes.Equal(originalWire, retryWire))
+	}
+	current, err = store.Read(t.Context(), owner)
+	if err != nil || !sameNativeContext(current.Context(), original.Context()) {
+		t.Fatalf("compaction retry changed original context: err=%v", err)
+	}
+}
+
+func TestProviderRetryDueIsClearedOnHostLossWithoutErasingAncestry(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
+		t.Fatal(err)
+	}
+	admitProviderCommand(t, store, owner, session.ID, "host-loss-provider-command", false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
+		Class: ProviderAttemptTransient, Reason: "provider stalled", RetryAfter: time.Second,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	setProviderRetryDueNow(t, store, intentID)
+	changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, "00000000-0000-4000-8000-000000000002", protocol.ExecEncodingFreeform)
+	if err != nil || !changed {
+		t.Fatalf("host loss changed=%v err=%v", changed, err)
+	}
+	frontier, err := store.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier != nil {
+		t.Fatalf("host-loss retry frontier=%+v err=%v", frontier, err)
+	}
+	var stepID, previous sql.NullString
+	var number, budget int
+	var retry sql.NullTime
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_step_id::text,previous_provider_intent_id::text,provider_attempt_no,provider_attempt_budget,provider_retry_not_before FROM sampler_intent WHERE id=$1`, intentID).
+		Scan(&stepID, &previous, &number, &budget, &retry); err != nil {
+		t.Fatal(err)
+	}
+	if !stepID.Valid || stepID.String != intentID || number != 1 || budget != 3 || retry.Valid {
+		t.Fatalf("host loss changed attempt ancestry step=%v previous=%v number=%d budget=%d due=%v", stepID, previous, number, budget, retry)
+	}
+}

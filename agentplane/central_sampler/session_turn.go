@@ -128,7 +128,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			notDispatched := false
-			intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil)
+			intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil, nil)
 			if err != nil {
 				return "", err
 			}
@@ -144,7 +144,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if live == nil {
 			return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
-		intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call}, nil)
+		intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call}, nil, nil)
 		if err != nil {
 			return "", err
 		}
@@ -235,7 +235,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	}
 	preparation := adapter.Prepare(session, metadata)
 	request := providerRequestIntent(PendingIntentSampling, connection, config)
-	intentID, wire, err := r.store.Begin(ctx, owner, request, preparation)
+	intentID, wire, err := r.store.Begin(ctx, owner, request, preparation, &ProviderAttemptPolicy{Budget: 3, Lease: time.Duration(r.settings.TurnTimeoutSeconds) * time.Second})
 	if err != nil {
 		return "", err
 	}

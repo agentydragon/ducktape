@@ -55,7 +55,7 @@ func (r *Runtime) compact(ctx context.Context, owner Owner, model string) error 
 	}
 	original := conversation.Context()
 	request := providerRequestIntent(PendingIntentCompaction, connection, r.settings.Models[model])
-	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare)
+	intentID, wire, err := r.store.BeginCompaction(ctx, owner, request, original, plan.Prepare, runtimeProviderAttemptPolicy(r.settings.TurnTimeoutSeconds))
 	if err != nil {
 		return err
 	}

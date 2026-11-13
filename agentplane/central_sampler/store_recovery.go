@@ -131,6 +131,14 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if !hostLost && session.Blocked {
 			return nil
 		}
+		// A real host reset changes the model-visible execution context. Preserve attempt
+		// ancestry and failure evidence, but suppress a retry of its frozen request.
+		if (hostLost || staleWork) && session.ActiveCommand != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET provider_retry_not_before=NULL
+				WHERE conversation_id=$1 AND provider_command_id=$2`, conversation.ID, *session.ActiveCommand); err != nil {
+				return err
+			}
+		}
 		intents, err := lostIntents(ctx, tx, conversation.ID)
 		if err != nil {
 			return err

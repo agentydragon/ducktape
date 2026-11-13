@@ -80,7 +80,7 @@ func dispatchStoredResponsesRequest(t *testing.T, store *Store, owner Owner, req
 		Responses:     responses.Config{Dialect: responses.DialectLite},
 	}
 	intent := providerRequestIntent(PendingIntentSampling, connection, config)
-	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(request))
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(request), providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}

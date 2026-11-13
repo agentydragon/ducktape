@@ -28,6 +28,7 @@ func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.Provider
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
 			SELECT 1 FROM sampler_intent WHERE id=$1 AND conversation_id=$2 AND generation=$3
 				AND result IS NULL AND request->>'kind'=$4
+				AND provider_attempt_lease_until > clock_timestamp()
 		)`, e.IntentID, conversation.ID, e.Owner.Generation, string(conversation.Pending.Kind)).Scan(&current); err != nil {
 			return err
 		}

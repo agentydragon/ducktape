@@ -54,6 +54,13 @@ func (c *Conversation) Context() protocol.Context {
 	return c.ActiveContext
 }
 
+func (c *Conversation) nativeContextID() string {
+	if c.ActiveContext == nil {
+		return c.transcriptContextID
+	}
+	return c.activeContextID
+}
+
 func (c *Conversation) apply(change func(protocol.Context) error) error {
 	if err := change(c.Transcript); err != nil {
 		return err
@@ -199,18 +206,24 @@ type IntentRequest struct {
 // ProviderRequest records a provider call before dispatch. Authentication is deliberately absent:
 // it is committed in the same transaction as the pending intent, before any upstream request.
 type ProviderRequest struct {
-	API             protocol.APIStyle    `json:"api"`
-	Connection      string               `json:"connection"`
-	ProviderModel   string               `json:"provider_model"`
-	Method          string               `json:"method"`
-	URL             string               `json:"url"`
-	Headers         map[string]string    `json:"headers"`
-	ContextID       string               `json:"context_id,omitempty"`
-	ProfileID       storage.ContentID    `json:"profile_id"`
-	SourceContextID string               `json:"source_context_id,omitempty"`
-	ProjectionKey   requestProjectionKey `json:"projection_key,omitempty"`
-	PrefixIDs       []storage.ContentID  `json:"prefix_ids,omitempty"`
-	SuffixIDs       []storage.ContentID  `json:"suffix_ids,omitempty"`
+	API             protocol.APIStyle `json:"api"`
+	Connection      string            `json:"connection"`
+	ProviderModel   string            `json:"provider_model"`
+	Method          string            `json:"method"`
+	URL             string            `json:"url"`
+	Headers         map[string]string `json:"headers"`
+	ContextID       string            `json:"context_id,omitempty"`
+	ProfileID       storage.ContentID `json:"profile_id"`
+	SourceContextID string            `json:"source_context_id,omitempty"`
+	// SourceNativeContextID pins the native conversation head independently of the provider's
+	// projected content prefix in SourceContextID.
+	SourceNativeContextID string `json:"source_native_context_id,omitempty"`
+	// SourceControl pins model-visible control state (execution handles and, for Anthropic,
+	// pending effort) alongside the native record head for a durable provider retry.
+	SourceControl json.RawMessage      `json:"source_control,omitempty"`
+	ProjectionKey requestProjectionKey `json:"projection_key,omitempty"`
+	PrefixIDs     []storage.ContentID  `json:"prefix_ids,omitempty"`
+	SuffixIDs     []storage.ContentID  `json:"suffix_ids,omitempty"`
 }
 
 // IntentResultStatus is the "status" of an intent result the sampler itself writes. Nested
@@ -250,6 +263,53 @@ type Intent struct {
 	CallID string
 	// ResultWire is the raw JSON result; nil while unresolved.
 	ResultWire []byte
+}
+
+// ProviderAttemptPolicy bounds one logical sampling or compaction step. Budget is the total
+// number of provider requests in the step; Lease is measured from PostgreSQL's clock.
+type ProviderAttemptPolicy struct {
+	Budget int
+	Lease  time.Duration
+}
+
+// ProviderAttemptFailureClass separates retryable provider failures from explicit cancellation
+// and lifecycle boundaries, which must not create automatic retry work.
+type ProviderAttemptFailureClass string
+
+const (
+	ProviderAttemptTransient   ProviderAttemptFailureClass = "transient"
+	ProviderAttemptPermanent   ProviderAttemptFailureClass = "permanent"
+	ProviderAttemptInterrupted ProviderAttemptFailureClass = "interrupted"
+	ProviderAttemptDraining    ProviderAttemptFailureClass = "draining"
+)
+
+type ProviderAttemptFailure struct {
+	Class      ProviderAttemptFailureClass
+	Reason     string
+	RetryAfter time.Duration
+}
+
+// ProviderAttempt is the durable provider recovery frontier exposed to the runtime. Expired,
+// Retryable, and Ready are evaluated by PostgreSQL when read; callers still need a fenced
+// transaction before changing the attempt.
+type ProviderAttempt struct {
+	IntentID      string
+	StepID        string
+	PreviousID    string
+	CommandID     string
+	Kind          PendingIntentKind
+	FailureClass  ProviderAttemptFailureClass
+	Number        int
+	Budget        int
+	Generation    int
+	LeaseUntil    time.Time
+	Expired       bool
+	RetryAt       *time.Time
+	RetryIn       time.Duration
+	Retryable     bool
+	Ready         bool
+	FailureReason string
+	ResultStatus  string
 }
 
 // TurnResult is how a turn step or a whole command ended.
