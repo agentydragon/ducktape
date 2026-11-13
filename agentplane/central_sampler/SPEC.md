@@ -784,7 +784,7 @@ lease only after its event evidence is durable. Initial leases cover response-he
 budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
-attempt count and budget. The elapsed turn deadline remains until its separate retirement.
+attempt count and budget. There is no elapsed turn deadline.
 
 Before sampling, the first snapshot of model-visible execution handles and subsequent changes
 append as native notices, after the

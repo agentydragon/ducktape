@@ -43,7 +43,7 @@ func providerCompactionRuntime(t *testing.T, store *Store, server *httptest.Serv
 	t.Helper()
 	manager, _ := newFakeCodeModeManager(t)
 	settings := samplersettings.Settings{
-		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60, TurnTimeoutSeconds: 30,
+		MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60,
 		Connections: map[string]samplersettings.ConnectionConfig{
 			"provider": {BaseURL: server.URL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}},
 		},

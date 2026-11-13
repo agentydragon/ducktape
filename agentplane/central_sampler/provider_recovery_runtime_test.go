@@ -24,7 +24,7 @@ import (
 
 func providerSamplingSettings(baseURL string, maxLiveSessions int) samplersettings.Settings {
 	return samplersettings.Settings{
-		MaxLiveSessions: maxLiveSessions, RPCTimeoutSeconds: 5, LeaseSeconds: 60, TurnTimeoutSeconds: 30,
+		MaxLiveSessions: maxLiveSessions, RPCTimeoutSeconds: 5, LeaseSeconds: 60,
 		Connections: map[string]samplersettings.ConnectionConfig{
 			"provider": {BaseURL: baseURL, Auth: samplersettings.AuthConfig{Type: samplersettings.AuthTypeBearer, Credential: "fixture-credential"}},
 		},

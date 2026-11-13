@@ -32,7 +32,6 @@ def settings_data() -> dict[str, Any]:
         "executor_codex": "codex",
         "logs": Path("/fixture/logs"),
         "max_live_sessions": 1,
-        "turn_timeout_seconds": 3600,
         "rpc_timeout_seconds": 30,
         "lease_seconds": 60,
         "gateway_target": "gateway.invalid",

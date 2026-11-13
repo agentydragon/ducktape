@@ -440,6 +440,7 @@ go_test(
         "provider_compaction_recovery_test.go",
         "provider_finish_runtime_test.go",
         "provider_recovery_runtime_test.go",
+        "provider_turn_progress_test.go",
         "request_plan_test.go",
         "request_read_service_test.go",
         "runtime_lifecycle_test.go",

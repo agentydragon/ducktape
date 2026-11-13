@@ -24,7 +24,7 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # A live turn samples the model several times and runs a nested command; generous but bounded.
 TURN_TIMEOUT_SECONDS = 240
-# Following a turn also covers the sampler's own turn deadline.
+# Bound the live test's wait independently of the sampler's provider phase budgets.
 FOLLOW_SECONDS = TURN_TIMEOUT_SECONDS + 30
 EFFORT = "low"
 

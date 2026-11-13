@@ -37,7 +37,7 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.sqlalchemy_engines import postgres_async_engine
 
 TURN_TIMEOUT_SECONDS = 150
-# Following a turn also covers the sampler's own turn deadline.
+# Bound the live test's wait independently of the sampler's provider phase budgets.
 FOLLOW_SECONDS = TURN_TIMEOUT_SECONDS + 30
 ROUTE = "anthropic-live"
 DEFAULT_MODEL = "claude-haiku-5-5"
