@@ -19,9 +19,6 @@ from concurrent.futures import Future
 from contextlib import asynccontextmanager, contextmanager
 
 import uvicorn
-from fastmcp import FastMCP
-from starlette.applications import Starlette
-from starlette.routing import Mount
 from starlette.types import ASGIApp
 
 from util.net import Listener, listen_tcp
@@ -305,12 +302,3 @@ def serve_app_sync(app: ASGIApp) -> Generator[str]:
     """Serve an app in a dedicated thread from a synchronous test or fixture."""
     with bind_http_server() as endpoint, endpoint.serve_sync(app) as origin:
         yield origin
-
-
-@contextmanager
-def serve_fastmcp(server: FastMCP) -> Generator[str]:
-    """Serve a FastMCP app and yield its streamable HTTP URL, including ``/mcp``."""
-    mcp_app = server.http_app(path="/")
-    app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
-    with serve_app_sync(app) as origin:
-        yield f"{origin}/mcp"
