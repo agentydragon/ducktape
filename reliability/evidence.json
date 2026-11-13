@@ -4408,5 +4408,12 @@
       "setup": "The0a9 native profile has93.111s before the first physical Bridge action. APT spans cover5.747s and its exact log has no Debian404s; the remaining combined analysis/build gap is unclassified. The separate manual8a5 run has45live-mirror package404s plus22snapshot metadata misses, with no attributable delay established.",
       "historical_observed_at_utc": "2026-11-13T18:08:10.196892Z"
     }
+  },
+  "architecture_iteration10": {
+    "observed_at_utc": "2026-11-13T22:27:42Z",
+    "source_head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "evidence_file": "../agentplane-test-architecture/iteration10.json",
+    "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "scope": "Supplemental source194 snapshot and manual contract evidence only; original fleet windows, populations, rates and denominators remain unchanged."
   }
 }

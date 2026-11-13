@@ -194,6 +194,7 @@
         const iteration4 = data?.iteration4;
         const iteration5 = data?.iteration5;
         const iteration9 = data?.iteration9;
+        const iteration10 = data?.iteration10;
         const iteration8 = data?.iteration8;
         const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
@@ -837,23 +838,24 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
-              >Iteration 9 ·
-              ${iteration9 ? "all three required checks passed" : "Loading"}<//
+              >Iteration 10 ·
+              ${iteration10 ? "1948106: all three required checks passed" : "Loading"}<//
             ><${Badge} color="orange">devel merge gate unchanged<//
             ><${Badge} color="gray">Iterations 2–8 retained below<//><//
           >
           <${Text} size="sm"
-            >${iteration9?.finding || "Current source evidence is loading; no result is inferred while it is unavailable."}<//
+            >${iteration10 ? "Snapshot head 1948106 passed all three required checks by 22:10:16Z; no current-head physical/JUnit cohort is curated. The earlier 542 checkpoint's 13 K3s target summaries are metadata-only. Three CLI composition runs produced six failed NEW physical actions across parser/harness and shutdown stages. A Python-only child GO_TEST_WRAP=0 control passed; the uncommitted full packaged-guest composition then passed 2/2 NEW actions (239.693s)." : "Current source evidence is loading; no result is inferred while it is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} (tested merge base is recorded separately) · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration9", "Iteration 9 current evidence"],
+              ["iteration10", "Iteration 10 current evidence"],
+              ["iteration9", "Iteration 9 snapshot · 8a555"],
               ["iteration8", "Iteration 8 snapshot · 0a9"],
               ["iteration7", "Iteration 7 snapshot · 5699"],
               ["iteration6", "Iteration 6 evidence · 663"],
@@ -872,8 +874,325 @@
                 html`<${Anchor} key=${id} href=${`#${id}`}>${label}<//>`,
             )}
           <//>
-          <${Alert} color="orange" title="Current architecture evidence">
-            ${iteration9?.finding || "Loading current source evidence…"}
+          <${Alert} color="yellow" title="Current architecture evidence">
+            ${iteration10?.required_checks || "Loading current source evidence…"}
+            Snapshot head 1948106 is witness-only; all three required checks
+            passed by 22:10:16Z. The real Egress/Notification composition is
+            uncommitted and excluded from this commit; no physical/JUnit cohort
+            is curated for 1948106. Selected K3s summaries are metadata-only,
+            and observed origin/devel 2d2be67 is not established as the tested
+            base.
+          <//>
+          <${Section}
+            id="iteration10"
+            title="Iteration 10: exact-head checks, packaged guest proof, and port disposition"
+          >
+            ${p(
+              "PR #16102 exact head 194810646c5122f5574ae7d6ad9fe02044cc7113 passed all three required checks by 22:10:16Z. No current-head physical/JUnit cohort is curated. The earlier fully curated checkpoint 2196229 remains historical and is not a matched saving. Separately, 13 selected K3s target summaries passed: the Pod target ended 51.265s after VM within those summary clocks, while targets outside this selected-summary set are not represented. Three real-CLI runs executed both guests and all failed; six NEW physical TestRunner records are audited. The first run failed on an array-parser assumption; the second had one contaminated host-reminder parse and one 10s shutdown failure. Both tests in the third run failed during teardown at the unchanged 10s Notification shutdown deadline; a later wrapper-disabled packaged run passed. Their bodies passed CLI, setup, History, sameBootId, host identity, old-SVID revocation and fixed WorkloadCredential/same-Pod-UID assertions before teardown. The shell delimiter and stdout drain did not fix shutdown. A Python-only fixture then reproduced the 10s TERM failure without Gateway, Runtime, Egress or guest; its child GO_TEST_WRAP=0 control passed, supporting but not proving the rules_go XML-wrapper hypothesis. The subsequent uncommitted full packaged guest run d68330b6 passed 2/2 NEW actions in 239.693s (Codex 140.3s; Claude 198.4s). This is not covered by current-head CI, a fleet reliability rate or a speed comparison. The independent wrong-server-URI negative then returned an error object instead of the seeded subscription; teardown completed normally, and the exact TLS error payload was not inspected.",
+            )}
+            <${Rows}
+              headers=${["Evidence", "Observed result", "Boundary"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/commit/194810646c5122f5574ae7d6ad9fe02044cc7113"
+                    >Snapshot PR head · 1948106<//
+                  >`,
+                  html`Nix
+                    <${Anchor}
+                      href="https://github.com/agentydragon/ducktape/actions/runs/43515531247"
+                      >SUCCESS<//
+                    >
+                    · Pre-commit
+                    <${Anchor}
+                      href="https://github.com/agentydragon/ducktape/actions/runs/43515531102"
+                      >SUCCESS<//
+                    >
+                    · Bazel CI
+                    <${Anchor}
+                      href="https://github.com/agentydragon/ducktape/actions/runs/43515531246"
+                      >SUCCESS<//
+                    >.`,
+                  "Witness-only commit pushed at 21:59:59Z. The uncommitted real CLI/Egress/Notification composition is not included in these successful checks; no current-head physical/JUnit cohort is curated.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/actions/runs/43508024093"
+                    >Required checks · source 542e615<//
+                  >`,
+                  html`Three required checks passed on exact source 542e615;
+                    tested merge 569b825 had base parent a1121a0. This is a
+                    prior curated checkpoint. Native invocation:
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/657b546d-1a27-599f-8f0a-ff2bd114ad28"
+                      >657b546d<//
+                    >.`,
+                  "This is a prior required-check checkpoint with selected K3s metadata. The last complete physical/JUnit audit is historical 2196229; snapshot head 1948106 also passed all three required checks.",
+                ],
+                [
+                  html`<${Anchor} href="required-542-k3s-summary.json"
+                      >Source 542e615 · selected K3s target summaries<//
+                    >
+                    >`,
+                  "13/13 reported K3s target summaries passed. Pod summary 404.835s (ends 21:19:04.948Z); VM 324.917s (ends 21:18:13.683Z); MCP services 330.881s. Pod ended 51.265s after VM within this summary set.",
+                  "Filtered target-summary metadata only (12 of 13 plus separately queried exact VM); not the full required population, physical/REAPI actions, JUnit, cache/retry classification or CPU. Other targets/checks may finish later; not a whole-feedback bound or comparison with 2196229.",
+                ],
+                [
+                  html`<${Anchor} href="iteration10.json"
+                    >Last detailed required checkpoint · 2196229<//
+                  >`,
+                  "Tested base f138aff; 650s from required workflow creation to last check; 138 fresh test launches across 128 labels, 1,023 JUnit cases and 13 fresh K3s suite actions. Zero failures, errors, skips, retries or merged/failed physical records; CPU was reported for 137/138 actions.",
+                  "Exact-head historical evidence. One XML-generator action is excluded. Source/base exposure differs from the earlier checkpoint; this is not a matched saving or an independent-trial count.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/e75b5d2d-0710-45fc-949b-1ad456bf3f08"
+                    >Packaged setup assertion transfer<//
+                  >`,
+                  "Three NEW physical actions and three passing JUnit cases exercise both direct packaged guests plus the full deployed VM scenario. Both guests run the existing setup assertions and a second fresh Session checks detached-descendant and cgroup cleanup.",
+                  "Manual focused validation at 2196229 plus patch 464e9e; no latency saving, reliability rate, OOM enforcement, or transfer of controller/issuer/KubeVirt/PVC/private-kernel guarantees.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/ad13dcbd-b4f3-4942-90c1-9591507657a9"
+                    >Wrong process-limit control<//
+                  >`,
+                  "One intended failure sees actual TasksMax=96 and pids.max=96 where the shared assertion requires 512, after the original two Shell turns complete.",
+                  "Deliberate negative control, not healthy reliability exposure.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/f8bf3c52-44c2-4d32-bb8c-18d5796c15e3"
+                    >Notification subprocess contract<//
+                  >`,
+                  "One fresh test returns the exact seeded subscription to an accepted WorkloadCredential SVID; a trusted but unrecorded SVID receives Unauthenticated.",
+                  "This focused case proves an owned nonempty read only. The later uncommitted CLI/Egress/sidecar composition reached old-SVID rejection assertions; three earlier runs failed, then d68330b6 passed 2/2 packaged guest actions with child GO_TEST_WRAP=0. The wrong-server-URI negative d2cba508 failed at CLI response interpretation but tore down normally; exact TLS payload not inspected.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/e7a6dbad-406f-462b-be87-768f5f756dfb"
+                    >Real CLI composition · first physical run<//
+                  >`,
+                  "Both guest tests failed; two unique NEW TestRunner records (no merged/extra): Codex 115.917s/216.577 CPU s, Claude 121.272s/256.793 CPU s. CLI returned the accepted Identity and seeded Notification row; the prototype parser wrongly expected an array.",
+                  html`The CLI source documents compact JSON, one object per
+                    line. This parser bug was corrected for later attempts, but
+                    later tests still failed on harness-output separation and
+                    Notification shutdown. The first run’s SIGINT (-2) was
+                    followed by later 10s shutdown failures. A later
+                    wrapper-disabled composition passed both guest actions; no
+                    production server repair is established.
+                    <${Anchor}
+                      href="https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/cli/output.go#L18-L24"
+                      >CLI output contract<//
+                    >.`,
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/4787345e-c7ae-4d07-b7ec-e4c70dadf48b"
+                    >Real CLI composition · second physical run<//
+                  >`,
+                  "Both tests failed. Two unique NEW TestRunner records (no merged/extra): Codex 149.106s/299.753 CPU s and Claude 110.349s/215.563 CPU s. Codex reached content/SVID assertions before shutdown exceeded 10s; Claude’s CLI output was followed by native harness reminder text.",
+                  "Four failed NEW physical exposures total across the two audited runs; excluded from fleet reliability. Whole-tool-output parsing was contaminated by the harness. An unread PIPE plus wait() was considered as a possible shutdown wedge, not established as the cause.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/ec2558a9-92dd-4591-8c0d-f0247397b4e5"
+                    >Real CLI composition · third physical run<//
+                  >`,
+                  "Both guest tests failed at Notification-child shutdown with the unchanged 10s deadline, after real CLI, setup, History, sameBootId, host identity, old-SVID revocation and fixed WorkloadCredential/PodUID assertions passed. Two unique NEW TestRunner records; Codex 154.396s/327.094 CPU s and Claude 216.341s/462.897 CPU s.",
+                  "The shell delimiter and stdout drain did not resolve shutdown. A Python-only fixture then reproduced the 10s TERM failure without Gateway, Runtime, Egress or guest; the focused child GO_TEST_WRAP=0 control passed. This supports, but does not prove, the rules_go XML-wrapper hypothesis. The wrapper-disabled packaged composition later passed 2/2; no production server change, fleet-rate update or speed claim is made.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/d2cba508-bfdb-4cf5-b23f-ce9eeb35b115"
+                    >Wrong-server-URI Notification negative<//
+                  >`,
+                  "The independent Claude control failed at CLI response interpretation: it returned an error object where the test expected the seeded subscription. Teardown completed without the Notification shutdown failure.",
+                  "The exact TLS error payload was not inspected, so no transport cause is inferred. This is a negative-contract/prototype result, not a fleet reliability exposure.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/e1822efe-6946-4b67-9774-f176cf62939d"
+                    >Thin candidate witness<//
+                  >`,
+                  "One physical pytest passed (1/1) in 307.24s; overall Bazel elapsed was 591s per worker and the final trace assertion ran on the patched 542 worktree before commit 1948106.",
+                  "Root reverified all four selected witness-file hashes after commit. The invocation is still not a literal-head check, matched speed comparison or replacement for deployed full-VM acceptance.",
+                ],
+                [
+                  html`Go controls:
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/0bbd486a-d7be-44b7-bf09-9b771c257917"
+                      >seeded identity/SVID/TERM<//
+                    >
+                    and
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/1e313f9e-37c7-4743-a74c-5a935d7eb854"
+                      >TERM-only<//
+                    >`,
+                  "Both passed: 35.5s and 43s respectively.",
+                  html`Neither reproduced the Python composition wedge or proves
+                    a production repair. The
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/c142d99a-b2e0-447e-adcb-8b3908f3a2dc"
+                      >Python-only child GO_TEST_WRAP=0 control<//
+                    >
+                    passed in 45.5s (56.578s invocation), supporting but not
+                    proving the rules_go wrapper hypothesis. The full packaged
+                    guest run
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/d68330b6-2d7c-4dbe-b3e7-ade6cd9fc5f7"
+                      >passed 2/2<//
+                    >
+                    in 239.693s (Codex 140.3s; Claude 198.4s). The independent
+                    wrong-server-URI negative
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/d2cba508-bfdb-4cf5-b23f-ce9eeb35b115"
+                      >failed at CLI response interpretation<//
+                    >
+                    but tore down normally.`,
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/b1e55f70-8748-4bff-9619-ec6fcc42d516"
+                    >Composition implementation attempts<//
+                  >`,
+                  html`mypy stopped on the sync/async Notifications stub
+                    mismatch before guest tests. A second attempt,
+                    <${Anchor}
+                      href="https://app.buildbuddy.io/invocation/b1582db4-ba88-48ec-8bac-2e316779deb6"
+                      >b1582db4<//
+                    >, stopped on Ruff before test execution.`,
+                  "These two failures preceded guest execution. The async stub type and compound assertion were corrected; they are implementation failures, not guest failures or reliability exposures.",
+                ],
+              ]}
+            />
+            ${p("The guest-session record retains earlier implementation failures and intended executor-boundary and wrong-History negatives. Earlier setup and Notification positives remain separate from the six failed NEW physical guest actions across three composition invocations and the later two passing NEW actions in d68330b6. These are focused manual prototype exposures, not independent fleet reliability trials, and do not change the retained denominator.")}
+            <${Title} order=${3} mt="lg">Merged port dispositions<//>
+            <${Rows}
+              headers=${["Port", "Status", "Scope and limit"]}
+              minWidth=${760}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16233"
+                    >#16233 Runtime listener ownership<//
+                  >`,
+                  "Merged",
+                  "Listener port allocation and real-socket regression.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16235"
+                    >#16235 ASGI/MCP ownership<//
+                  >`,
+                  "Merged",
+                  "Owner boundary only.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16241"
+                    >#16241 App/Gateway ownership<//
+                  >`,
+                  "Merged",
+                  "Owner boundary only.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16247"
+                    >#16247 live-grant Pod UID<//
+                  >`,
+                  "Merged",
+                  "A live policy grant must keep the same Pod UID.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16251"
+                    >#16251 Dispatcher/deletion MCP inputs<//
+                  >`,
+                  "Merged",
+                  "Inputs follow their owning cases.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16252"
+                    >#16252 CLI artifact ownership<//
+                  >`,
+                  "Merged",
+                  "Artifact ownership boundary.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16264"
+                    >#16264 central recovery fixture<//
+                  >`,
+                  "Merged",
+                  "Removed three Dex/MCP fixture and OAuth-service dependencies from four fault suites. The default 120s timeout and required gate stayed unchanged; required CI was green before merge.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/pull/16040"
+                    >#16040 usable OCI import<//
+                  >`,
+                  "Merged",
+                  "Warm same-worker ABBA setup fell 46.992s → 32.216s (14.776s); no cold or whole-CI saving is established.",
+                ],
+              ]}
+            />
+            <${Title} order=${3} mt="lg"
+              >Candidate ports and current qualification<//
+            >
+            <${Text}>
+              Origin/devel was refreshed to
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/commit/2d2be67f54ad4af19db9b478b32f83ceddbe7096"
+                >2d2be67<//
+              >, but there is no evidence that source head 542e615 was tested
+              against that base. Selected-label archive diagnostics and Central
+              Sampler auth/History-outage coverage are candidates for separate
+              focused ports; neither is a measured speed improvement. The
+              four-case concurrency screen mixed whole-suite conditions and
+              remains unqualified.
+            <//>
+            ${p("Do not make a concurrency recommendation or promote test frequency from that screen. Qualification still requires 30 qualified source pairs, 100 honest fresh contract actions, three busy windows and a four-PR burst.")}
+            <${Title} order=${3} mt="lg">What remains and exact triggers<//>
+            ${p("Strengthen the wrong-server-URI control to assert the intended authentication failure before gate qualification. d2cba508 returned an error object instead of the seeded subscription, then tore down normally; the exact TLS error payload has not been inspected, so no transport cause is inferred. Keep d68330b6’s two passing actions and the six earlier failed actions separate. The positive composition remains uncommitted and outside current-head CI, fleet reliability rates and speed evidence. Preserve deployed VM setup assertions, issued identity, launcher relay and mount, private guest kernel and OOM ownership until equivalent proof is collected.")}
+            ${p("By 20 November, record the naturally selected backend head with warm/cold conditions, last-gate CPU and retries (#16028), and complete the CaseBatch/PVC follow-up (#16034). The full selected graph must account for both Pod and VM tails. Existing balanced Pod slices keep 21 cases but duplicate setup CPU. No full-graph tail bound is established; selected-graph timing must include both Pod and VM tails. Keep deployed VM identity, real launcher, mount/relay, private guest kernel and OOM ownership until faithful proof transfer. Before changing test frequency or promoting a gate, finish 30 qualified source pairs, 100 honest fresh contract actions, three busy windows and a four-PR burst. None is complete; do not claim diminishing returns or change the devel gate.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >#16099 architecture tracker<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16028"
+                >#16028 naturally selected backend head<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16034"
+                >#16034 CaseBatch/PVC<//
+              >
+            <//>
+            ${p("Retain the limits: eight Bridge shards reduced selected elapsed 24.9% while increasing summed CPU 62.8% and remain unqualified on devel; bytecode stays off after 4,202.992 cold/full-workload compile CPU seconds; eight read-only-mount passes are confounded by the first warm run. The managed action-VM panic (#16222) is not a rate repair. The observer proof (#13270) remains unshipped and separate from #16025. The held image baseline (#15214) has no proved saving; the source-branch 45s budget experiment remains a tradeoff. Renderer batching and annotation proposals remain rejected.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor} href="iteration10.json"
+                >Iteration 10 evidence and source hashes<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_iteration5.md"
+                >Source owning note<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_guest_setup_contract.json"
+                >Guest setup evidence<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_required_2196229.json"
+                >2196229 required-CI evidence<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_guest_session.md"
+                >Guest Session history<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration9"

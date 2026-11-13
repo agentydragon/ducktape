@@ -9623,5 +9623,15 @@
     ],
     "setup": "The0a9 native profile has93.111s before the first physical Bridge action. APT spans cover5.747s and its exact log has no Debian404s; the remaining combined analysis/build gap is unclassified. The separate manual8a5 run has45live-mirror package404s plus22snapshot metadata misses, with no attributable delay established.",
     "historical_observed_at_utc": "2026-11-13T18:08:10.196892Z"
+  },
+  "iteration10": {
+    "observed_at_utc": "2026-11-13T22:27:42Z",
+    "source_head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "required_checks": "Snapshot head1948106 passed all three required checks by22:10:16Z. Native invocation metadata and merge parents are verified; no current-head physical/JUnit cohort is curated.",
+    "evidence_file": "iteration10.json",
+    "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "scope": "Selected architecture evidence; detailed source/check/guest/control records have one owner in iteration10.json. Original fleet populations and rates are unchanged.",
+    "k3s_summary_source": "542e6152491f16e1cd677ad25b81cd5b7243cef8",
+    "k3s_summary_file": "required-542-k3s-summary.json"
   }
 }

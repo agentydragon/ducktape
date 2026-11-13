@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-13T21:43:08.001252+00:00",
+  "source_head": "542e6152491f16e1cd677ad25b81cd5b7243cef8",
+  "tested_merge": "569b82520907d2c89e6c0f501e67b7ef2ce4f7e0",
+  "tested_merge_parents": [
+    "a1121a0ad80a6c65485f177e3d55a682cddd6249",
+    "542e6152491f16e1cd677ad25b81cd5b7243cef8"
+  ],
+  "native_invocation_id": "657b546d-1a27-599f-8f0a-ff2bd114ad28",
+  "invocation_url": "https://app.buildbuddy.io/invocation/657b546d-1a27-599f-8f0a-ff2bd114ad28",
+  "native_elapsed_seconds": 549.365,
+  "scope": "All 13 reported PASSED K3s-suite target summaries, obtained from a 12-of-13 filtered metadata page plus the exact missing VM label. This is not the complete required target population.",
+  "k3s_summaries_by_descending_finish": [
+    {
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:20.113Z",
+      "test_summary_last_stop": "2026-11-13T21:19:04.948Z",
+      "test_summary_duration": "404.835s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:48.766Z",
+      "test_summary_last_stop": "2026-11-13T21:18:13.683Z",
+      "test_summary_duration": "324.917s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_services",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:00.448Z",
+      "test_summary_last_stop": "2026-11-13T21:17:31.329Z",
+      "test_summary_duration": "330.881s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_dispatcher",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:13:00.529Z",
+      "test_summary_last_stop": "2026-11-13T21:17:26.977Z",
+      "test_summary_duration": "266.448s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_firecracker",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:13:04.106Z",
+      "test_summary_last_stop": "2026-11-13T21:17:19.776Z",
+      "test_summary_duration": "255.670s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:28.869Z",
+      "test_summary_last_stop": "2026-11-13T21:16:32.610Z",
+      "test_summary_duration": "243.741s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:41.751Z",
+      "test_summary_last_stop": "2026-11-13T21:15:51.390Z",
+      "test_summary_duration": "189.639s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:48.638Z",
+      "test_summary_last_stop": "2026-11-13T21:15:35.201Z",
+      "test_summary_duration": "166.563s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:11:58.391Z",
+      "test_summary_last_stop": "2026-11-13T21:15:31.007Z",
+      "test_summary_duration": "212.616s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_session_deletion",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:29.001Z",
+      "test_summary_last_stop": "2026-11-13T21:15:20.891Z",
+      "test_summary_duration": "171.890s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:44.724Z",
+      "test_summary_last_stop": "2026-11-13T21:15:17.983Z",
+      "test_summary_duration": "153.259s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:11:56.981Z",
+      "test_summary_last_stop": "2026-11-13T21:15:09.394Z",
+      "test_summary_duration": "192.413s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    },
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_delegation",
+      "status": "PASSED",
+      "test_summary_first_start": "2026-11-13T21:12:44.726Z",
+      "test_summary_last_stop": "2026-11-13T21:15:04.153Z",
+      "test_summary_duration": "139.427s",
+      "reported_total_run_count": 1,
+      "reported_attempt_count": 1
+    }
+  ],
+  "pod_finish_after_vm_seconds": 51.265,
+  "limits": [
+    "Target-summary duration and completion clocks are not physical REAPI execution, queue or CPU measurements.",
+    "No JUnit files or full required-target census were collected for this checkpoint. Freshness, per-case counts, physical retries, action merging and cache classification remain unqualified.",
+    "The Pod/VM finish difference is confined to the observed K3s cohort. Other required targets and workflow gates may end later; this is not a complete-feedback saving or ceiling.",
+    "This checkpoint differs in source and selected population from 2196229; do not treat their durations as a matched comparison.",
+    "A broad invocation export and separate target-log retrieval were denied by automatic approval review. No denied payload was downloaded; only the permitted target and invocation-status metadata were used."
+  ]
+}

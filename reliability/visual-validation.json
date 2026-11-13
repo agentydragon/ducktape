@@ -1,136 +1,77 @@
 {
   "schema_version": 1,
-  "scope": "Iteration9 source8a555 architecture checkpoint, latency/reliability supplements and root report navigation. Source qualification is separate.",
-  "verified_at_utc": "2026-11-13T18:45:10.741572+00:00",
-  "invocation_url": "https://app.buildbuddy.io/invocation/9e1236f9-78f3-4c65-af49-6cadf217fa12",
-  "target": "//x/ci_architecture_preview:test_report",
-  "prior_attempt": {
-    "invocation_url": "https://app.buildbuddy.io/invocation/13e73716-afc9-40a9-9a4e-9cc3f2a5aa40",
-    "result": "3 passed; 1 failed",
-    "cause": "The first preview recorded two failed esm.sh dependency requests in desktop-light. It had no reported console error or HTTP status >=400; the underlying request failure reason was not captured. Final formatted report bytes and metadata were rechecked in the passing invocation."
-  },
+  "scope": "Iteration10 architecture snapshot, selected latency/reliability supplements and root navigation; original fleet populations unchanged.",
+  "verified_at_utc": "2026-11-13T23:07:24.285273+00:00",
+  "reviewed_report_head": "1318317f31529572c97991d1bd349d90dfdab182",
+  "source_snapshot_sha256": "fb44af7955810bdf04ce074acf9f9a70958e955abdea3385cc0e1d53f292cfaa",
+  "invocation_url": "https://app.buildbuddy.io/invocation/4b05be9c-348b-4828-b28b-9129aa7e49b0",
+  "target": "//x/report10_visual_preview:test_report",
   "native_result": {
     "tests": 4,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
-    "cached_results": 0,
+    "status": "PASSED",
     "run": 1,
     "shard": 1,
     "attempt": 1,
-    "status": "PASSED"
+    "cached_results": 0,
+    "remote_command_exit_code": 0,
+    "bbr_exit_code": 0
   },
   "physical_test_runner": {
     "new_records": 1,
     "stage": "COMPLETED",
     "reported_reapi_code": 0,
-    "execution_id": "/uploads/3af5640f-de23-48f8-98fd-b42314d2aaaa/blobs/de9239c81a40be9de27b60a6e5965151daa70400da3a2bbd35c65c3c3ef88341/501"
+    "execution_id": "/uploads/e59afc36-5b8c-4944-8809-47ad204ad98f/blobs/a148e5156ad7b718eb97f7c1ed30241ca520b49b8fae9a9a279ca39dd59927d6/499"
   },
-  "final_asset_sha256": {
+  "rendered_asset_sha256": {
     "ci-lanes.js": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
-    "index.html": "bb30bf5cd7c9d8c4aafa8cc9d997bc1a49a9763a7ba85ee0c4f8773de60b6519",
-    "README.md": "141906ec782ec49e092fcd4cd941ac1f7578a0e59dc37d8d7c3e98a16314e0a7",
-    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
-    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
-    "visual-reliability/manifest.json": "bc6f869f2635be34c4a91fea6e7c93d6f48ee0b477decbc458ad13ffdc13401a",
-    "agentplane-test-architecture/render-batching-rejected.json": "e7642fe4ab3ec96d2f51e6d7326ad173a439fbae4dca524a7667b29fea456efc",
-    "agentplane-test-architecture/guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
-    "agentplane-test-architecture/required-ci-135-workflow.json": "9d1e7378694fd384ba4bec4ff348a415da959490abfc11aa8d414bd7ef9ede0e",
-    "agentplane-test-architecture/setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
-    "agentplane-test-architecture/historical-selector-first-pair.json": "52acf259c93e476f05e80e7073fe40a2024bf78507b037372b39215a1417ff8b",
-    "agentplane-test-architecture/asgi-mcp-ownership.json": "44b7a1ba7d6e8bf4e69f1b457ff0f786af9cbdbb5862416c83fefa10b6db210d",
-    "agentplane-test-architecture/historical-app-cut-pair-deltas.jsonl": "79a184682caa8c3b9e90853ff80e237bfaee1507e1779df74c9af515ce81caf8",
-    "agentplane-test-architecture/app-fixture-ownership.json": "436f76dbc8053790f9a186981e17a2e32bbaa891469bb18e7258e29930328cb2",
-    "agentplane-test-architecture/accepted-run-observer-binary-build.json": "6ae74edb0e3aa46af04cf2994a7f0896a920073c38453b3b74db003773b37152",
-    "agentplane-test-architecture/accepted-run-observer-reconciliation.patch": "84db76b8c8d24930de852fc5a0b68d432828dc1bac3bf382e3aef4b6eff7d859",
-    "agentplane-test-architecture/native-contract-validation.json": "786867a5cb5a0e934261bd0148f29cd8723ecd10d1a4e7b10582d776c237c5ac",
-    "agentplane-test-architecture/render-batching-candidate.patch": "16f48390d6d34ccfafe5efca9bddb3c15bb119894f9bd89d1aeb2e3bc2d070cb",
-    "agentplane-test-architecture/historical-app-cut-stage.json": "4e416cb61566a4999cb595056e18e71cfe06dc1bb8606aa939b8f14ebe14e1fa",
-    "agentplane-test-architecture/historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
-    "agentplane-test-architecture/python-bytecode-collection-screen.json": "6bc254fc641ea37f081510b36bad745260796ca77b124989403224b56f4138da",
-    "agentplane-test-architecture/manifest.json": "7523ff4370a0c79ea91a4e61b2e867a9a0b273d33a40b17780d49e7ff02fdff4",
-    "agentplane-test-architecture/app-fixture-selector.json": "f249519b006bbd71fafdcfe04970089c5db61ff32e24e47ab7cdafb81f903b68",
-    "agentplane-test-architecture/index.html": "dd74b3733e4aa8c3db174a8984f294029c5956a76d508bdf6ad141bfcecb06bb",
-    "agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7",
-    "agentplane-test-architecture/required-ci-a16-workflow.json": "8584a810536a43562cb1a94a427ce8ca7551e404d98ae79b8d82316ccc812f03",
-    "agentplane-test-architecture/accepted-run-observer-live.json": "6e7fdb05669548081c50495127d7ecb36dbf142a1e78745c8208a58972ed6f0f",
-    "agentplane-test-architecture/managed-vm-kernel-failure.json": "362cafa84ab380b85a5d58c3f38fdc27bbdd1b84361d851320a77687f73b8232",
-    "agentplane-test-architecture/native-gateway-fixture-split.json": "78850becdca63bc6520d2f04b5e07414acfaf5f8e1647c3d30046df03ccb52ec",
-    "agentplane-test-architecture/historical-app-cut-selector.json": "86555b1d64c998d0ae23dddcb67c6741a9d2725b74d76d955c538d5f7b65a26d",
-    "agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
-    "agentplane-test-architecture/evidence.json": "86ac70aded64941f27e131ed3df0bbb6b6200e1c132e7a30d3aa66c6542fea4c",
-    "agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
-    "agentplane-test-architecture/native-setup-profile.json": "2e3d446b90a0f64a88677fdd463d155566faa8fa2982046034191f060f674cbc",
-    "agentplane-test-architecture/historical-app-cut-pair-asts.jsonl": "236d894ac0b8b875bbc4c2dae46abf30cc0109d82df314ab603db0856f4a4206",
-    "agentplane-test-architecture/runtime-control-listener-repair.json": "38f72a255773273126db83d3828797ad6b4977525368869222dced67721ee8d5",
-    "agentplane-test-architecture/selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2",
-    "agentplane-test-architecture/configured-guest-runtime-gateway.json": "52d941e1b26d77c3281e2563b9818fc948c2cf3e849596d18c75a84bb4185938",
-    "agentplane-test-architecture/accepted-run-observer-reconciliation.json": "4242d59aa3711a74c9ea7a06b1b12bf225a1ecd10c05090058df74091684b1ab",
-    "agentplane-test-architecture/required-ci-5699-workflow.json": "e37f5d2ea4daba1e41179d559dfe522512545164044c8502c9bd5c190f7bdeb0",
-    "agentplane-test-architecture/accepted-run-observer-live-helper.patch": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
-    "agentplane-test-architecture/kvm-capacity-feasibility.json": "954589a61986dd9303bfbe1cb4141c459937546a1e093f8552eee8c0645e1c77",
-    "agentplane-test-architecture/required-ci-8a5-workflow.json": "c7b1bedc52c6401ae830a9337726d746a75f7a060a344789d7bd18f66d2113f8",
-    "upstream-patches/manifest.json": "0f71727506efa258cb54206222972ef05e30ab38c31422de8dba713ba83dfc4d",
-    "storage/manifest.json": "276c48a94f6e2b506299ccb766415cfba2e3ad0f400b13f59cfeaaa52b807845",
-    "fixture-model-audit/manifest.json": "2e6e2a1088d37e4aa68e5e428c75efebec4dd86434fc60f7dcf17b3a608a8334",
+    "index.html": "9e6429dfb8691e0d08fb67c0aa6c757d538f13b593555382357349dd4f831fff",
     "latency/bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
-    "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
-    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
-    "latency/manifest.json": "3d79458f18a5d4d748b5d978187cb6ae81f4384c667feae0e9d79a42a5fc21ff",
-    "latency/index.html": "fac397d808a006fbb8fb118fa90ab73f1e820d6bb16e4545d0b168f6f60cf665",
-    "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
-    "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
-    "latency/evidence.json": "9e3032bcbd9d463ca7f7f35c13ffc2ed2105750313876b7226f1b22759f7511f",
     "latency/crd-ordering-spike.patch": "28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5",
-    "reliability/manifest.json": "06ce5fbbb7446eed5b7662de6174fb34fcbd18cf34b7dbf73fd370bbb1f7592c",
+    "latency/critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
+    "latency/evidence.json": "6c36e06f307d40fb1921b581af2f55d0f64cd64218bdef1e56e339de23b1d746",
+    "latency/evidence.md": "f56776d75d36cb921821ae96e3a13ce202b993c61a7c70ce8e2cef3d9556e627",
+    "latency/index.html": "2208ff1811e01ae6ed38b89b62c9a6a83a52cdb4443bddc9d76ed0f4ea654e87",
+    "latency/manifest.json": "bceced2d72ec8e9c6300e37b58aeecd2eebd5185e53703fcda9f91409e1d646a",
+    "latency/resource-followup.js": "5d9c207c9d41aa4874accbe422f03de1d4e5cd5f80fe248aabac338d1dfdb870",
+    "latency/resource-timeline.png": "93e85c13f3d97684a12cdef44694990a71f283878022c3cc4103ad6afd899a4e",
+    "latency/visual-validation.json": "fd42af7eae3f9246d6fcfa2d1965f5bc592d44ff4a1dfdb1d8decb89d91317b2",
     "reliability/charts.js": "ee77367c9d8124c2fe1013d341998994edbdce02eb77a3e67ccb0996fda06866",
-    "reliability/index.html": "077a0f88e4ad9d62db2f22dd43cb7f4116f52e69386b9aca5effdb70ef6621e3",
-    "reliability/evidence.json": "430820b2b5d814cb472efd83d8e3d209f73a7795538058de33dd9f26294214f8"
+    "reliability/evidence.json": "6177a436b1a72ccc5184e607dbc4bb6699cfa1c4d65f16889bc15cc892d6c94c",
+    "reliability/index.html": "36d77baee186690da58e096a506f9448e2dde4a585cbd3f984ef713e03aa3f83",
+    "reliability/manifest.json": "a075547d8d70bb7ed00103c2ed4f7e9f7daa98f96e5bd90209ed37927bd17bb9",
+    "reliability/visual-validation.json": "fd42af7eae3f9246d6fcfa2d1965f5bc592d44ff4a1dfdb1d8decb89d91317b2",
+    "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+    "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8"
   },
   "cases": [
     {
-      "theme": "light",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "status": "passed",
-      "pages_checked": [
-        "agentplane-test-architecture",
-        "latency",
-        "reliability"
-      ],
-      "live_theme_change_each_page": true,
-      "section_capture_counts": {
-        "agentplane-test-architecture": 3,
-        "latency": 5,
-        "reliability": 4
-      },
-      "document_overflow": false,
-      "console_errors": [],
-      "failed_requests": []
-    },
-    {
       "theme": "dark",
       "viewport": {
-        "width": 390,
-        "height": 844
+        "width": 1280,
+        "height": 900
       },
       "status": "passed",
       "pages_checked": [
-        "agentplane-test-architecture",
+        "root",
+        "architecture",
         "latency",
         "reliability"
       ],
-      "live_theme_change_each_page": true,
-      "section_capture_counts": {
-        "agentplane-test-architecture": 3,
-        "latency": 5,
-        "reliability": 4
+      "capture_counts": {
+        "root": 3,
+        "architecture": 5,
+        "latency": 1,
+        "reliability": 1
       },
+      "live_theme_change": true,
       "document_overflow": false,
       "console_errors": [],
-      "failed_requests": []
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
     },
     {
       "theme": "light",
@@ -140,351 +81,221 @@
       },
       "status": "passed",
       "pages_checked": [
-        "agentplane-test-architecture",
+        "root",
+        "architecture",
         "latency",
         "reliability"
       ],
-      "live_theme_change_each_page": true,
-      "section_capture_counts": {
-        "agentplane-test-architecture": 2,
+      "capture_counts": {
+        "root": 3,
+        "architecture": 5,
+        "latency": 1,
+        "reliability": 1
+      },
+      "live_theme_change": true,
+      "document_overflow": false,
+      "console_errors": [],
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
+    },
+    {
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "status": "passed",
+      "pages_checked": [
+        "root",
+        "architecture",
+        "latency",
+        "reliability"
+      ],
+      "capture_counts": {
+        "root": 6,
+        "architecture": 11,
         "latency": 2,
         "reliability": 2
       },
+      "live_theme_change": true,
       "document_overflow": false,
       "console_errors": [],
-      "failed_requests": []
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
     },
     {
       "theme": "dark",
       "viewport": {
-        "width": 1280,
-        "height": 900
+        "width": 390,
+        "height": 844
       },
       "status": "passed",
       "pages_checked": [
-        "agentplane-test-architecture",
+        "root",
+        "architecture",
         "latency",
         "reliability"
       ],
-      "live_theme_change_each_page": true,
-      "section_capture_counts": {
-        "agentplane-test-architecture": 2,
+      "capture_counts": {
+        "root": 6,
+        "architecture": 11,
         "latency": 2,
         "reliability": 2
       },
+      "live_theme_change": true,
       "document_overflow": false,
       "console_errors": [],
-      "failed_requests": []
+      "page_errors": [],
+      "failed_requests": [],
+      "http_errors": []
     }
   ],
   "screenshots": {
-    "count": 76,
+    "count": 78,
     "cases": 4,
-    "coverage": "Root navigation, every viewport of all three added report sections, retained selectors, six expanded plan stages, and both CI-report failure disclosures.",
+    "coverage": "Root navigation and current architecture, latency and reliability sections; desktop/mobile, light/dark and live browser theme changes.",
     "artifact_paths": [
-      "test.outputs/test-outputs/files/25e644978c536d8465d4065ad608cd35966df429d56dc1c6a4ea6e5f582f89da.png",
-      "test.outputs/test-outputs/files/a4db53029cf18dfe0f0c0c9edc489f5f915cb65ea66c3a9261362012569984d6.png",
-      "test.outputs/test-outputs/files/f07d07f41d8cab569a9950aa668ea26e0794dd1ab41dc4681e935e4c24dd3f3c.png",
-      "test.outputs/test-outputs/files/8394d18f6adc56d4ce3c5ff750d94a2138498638f318a57a34647d3575fa1bd8.png",
-      "test.outputs/test-outputs/files/fca459cc2322137179272d1b7cceef1c510c5de9dd3cfcbed9c31107a575c828.png",
-      "test.outputs/test-outputs/files/aeca2d86ba595527ce94dd677d9d2224b996baac30ed293cd114aa104e477d5c.png",
-      "test.outputs/test-outputs/files/1f0a62495610eb4548d9cd9ee426e52be44da5c46fa1fc6513da2b22f4e2d0db.png",
-      "test.outputs/test-outputs/files/af724af8c49c0e3048caf4d8046c2314cdc9a278cbb4ea3ee28c1e72c708770c.png",
-      "test.outputs/test-outputs/files/c7cd820bd851e5cc82624685c8d6d88131987b3cc5e40bd9e3d68873a157662b.png",
-      "test.outputs/test-outputs/files/5f7a261bca0d6f48c1c581899ecf377caf8bb70231e73082fa436804647b943e.png",
-      "test.outputs/test-outputs/files/904bc159d7e651c284bdd7396d6518ec6d4963b2fa94b5b5a573942aff00862c.png",
-      "test.outputs/test-outputs/files/6c04dbcb409ad06df7055a9d965178a61971ea908a7ccbb9f2542056eece1355.png",
-      "test.outputs/test-outputs/files/2e90227a2ae24f357bc19f3bdd901be6b6d9c1ba2a05972bba11009a87459a43.png",
-      "test.outputs/test-outputs/files/bbf1233a21a92620deb6dff66db48d9e5e0f5a23c90ff5eb010ca8c0630294c7.png",
-      "test.outputs/test-outputs/files/9f82c47967dec43f1066c8460f7f6027c8d5e1325dacd9cc18af8bf6566a8ad1.png",
-      "test.outputs/test-outputs/files/dc287051666549477056fc5588b21d2b4d270f090f99a64cbb06c7bf3424f4e8.png",
-      "test.outputs/test-outputs/files/4e48a36aaccfa1d7185a3f1ab5a2969970f5e9189318f98986cb31edbe945192.png",
-      "test.outputs/test-outputs/files/101f744eb414ef17996db986e3b96e8cd4d054147fce9b44bbc9927374582e5f.png",
-      "test.outputs/test-outputs/files/8e73d3c01b0ece5391dd00f617d1cc1310cf8773440fe68cf4e037a852e8204e.png",
-      "test.outputs/test-outputs/files/a3f6b02c595a28d49862c75f851c1da057a98389e3a21cb6f02503243677c765.png",
-      "test.outputs/test-outputs/files/80ee6741658988067e9a84c8132b071061417b879992ac654a4047b82fdff475.png",
-      "test.outputs/test-outputs/files/4b8b803373f71f10e638329c4ccabf18ae059a021068803f39b5452dbc4862bd.png",
-      "test.outputs/test-outputs/files/5977ef66342d24ee771815f1e0d398ae1f1ebaba3d4f68756737cd2e9e34338d.png",
-      "test.outputs/test-outputs/files/f8d091fcc998bd198cfa38568f090acd7a337e178a3d68540086a75e194c14bf.png",
-      "test.outputs/test-outputs/files/d3079ab1aaacc2edd307700a9a39b466daae403537b9c567ac1958417e719ac6.png",
-      "test.outputs/test-outputs/files/dd5ac436f65b76f836e373ef7a6efc9f96a9c1d85f3a1e13d46f8c418ac8113b.png",
-      "test.outputs/test-outputs/files/d5d5af456a4f99c471f118ebeb877749793c5343cde2122c814bed52a378b3cc.png",
-      "test.outputs/test-outputs/files/9fdfeea6b1a0a9bbe68a16736032e265cf8692c2ec741652df73df2685ad67d3.png",
-      "test.outputs/test-outputs/files/5b83779991cd00adc97fb408ee2feab988c7da79a060140ea3a3f76f9dfaba20.png",
-      "test.outputs/test-outputs/files/9c61a4dfa7255313945d51d99e3e4ea0e667975cb8ac56118a3202fd5684af2e.png",
-      "test.outputs/test-outputs/files/50e65db415720a99ba16098470d305b53b544fd43f96a38b4f7a782beee814f8.png",
-      "test.outputs/test-outputs/files/04328ba166807b249f26eb75b23fd7387ffece91887840aba5e2a44405b28253.png",
-      "test.outputs/test-outputs/files/f964159b9e42db2a5125a267218ba92ca246b2fe9848925ed085601b6a20b984.png",
-      "test.outputs/test-outputs/files/30b3678005c5278113626673db0b4963b7bf83fb73966f282ab5abb154f7ec73.png",
-      "test.outputs/test-outputs/files/02cdac29bdbd2b51f2a67dca3e909fc663213debd5975f70f993c51cb9627859.png",
-      "test.outputs/test-outputs/files/41a11a59074c8972eb1c53d951fefaf7b0f6687f4fda966f81f818340ae8ffc3.png",
-      "test.outputs/test-outputs/files/7efabdda6c5008a85a0603736bb04c64c36bc814496eb8398b506f68927a2331.png",
-      "test.outputs/test-outputs/files/7fd0e389c4e2fbb0167e99d7f236a0610205df86b0602d9191307bac09c925df.png",
-      "test.outputs/test-outputs/files/888bf90d0d67b31efddf06d7a55884d3ba80332d69c928d2bc203cfe77603db6.png",
-      "test.outputs/test-outputs/files/0b357be06e0aa17bdd52908a33af149aace3103a93924e91f103d2f5d2a14956.png",
-      "test.outputs/test-outputs/files/06ff8c74483d15b1fdc309a423d036e2e9635331b9690b25d3b5fd144b736030.png",
-      "test.outputs/test-outputs/files/d46621bf80d86bd5af22dc60a8e7958015014bacee87999511a2705b764f52d0.png",
-      "test.outputs/test-outputs/files/306b255577318f15e9c241113320742c5e979ee2c26877a8570e48cabbac92d9.png",
-      "test.outputs/test-outputs/files/af862531d87f331dbd7bde128d9da17d6f542ddad4aea29acdd2fb1ca6424576.png",
-      "test.outputs/test-outputs/files/a2675d6a41b7f77d9de3e08163d6928cd2ec5904e847bfaf1f4413a42ec43e49.png",
-      "test.outputs/test-outputs/files/4d2be22dfb5dafb797dc1ab5c9a2697b5d5a5e4310381f1d1a06c108f4a90fcc.png",
-      "test.outputs/test-outputs/files/45ca61ed044a1f778b0b9ef978a1fa41f42e3d6b8b179cab43dd727c08f62d1b.png",
-      "test.outputs/test-outputs/files/d626725e0db48e14eed68ece9b40ea7e876d65342c5624ac91c77f2feaa1272e.png",
-      "test.outputs/test-outputs/files/18baafbf45ddf97276af8e32eb47ceda75106c61c752701e09214358fdbf3388.png",
-      "test.outputs/test-outputs/files/a2e32eb97deb1164625df28274e02a83392ea811e8cd208aaaf48732eb150a0d.png",
-      "test.outputs/test-outputs/files/f5d715642f7117841684c6a6f9e36709d0bdfce39cd4646ce517e0d63f2e1e9b.png",
-      "test.outputs/test-outputs/files/600ce8e9ca22f8ff1451c682fcec4a26eda9d9a8cd70edc6ba45231042042d8e.png",
-      "test.outputs/test-outputs/files/3972629c9fc1323c802f08f2faf5c3a1a28db01025ecf0508bfeec886dadff5c.png",
-      "test.outputs/test-outputs/files/d201d488ad4b080f1e788b3c197be2ed24fec6b64d6e40582b4315e014616891.png",
-      "test.outputs/test-outputs/files/12870ed736dcd81a6bd7a67d219f17e551f0b12fbac3f483f939c4d917cc9073.png",
-      "test.outputs/test-outputs/files/f04275e7394362668a8ad8486901e09097e1acdf23cb521333789d56c251fb84.png",
-      "test.outputs/test-outputs/files/cda45fc9cf8792b5f93ec9eb45f814c25747799c9ab54a2a16e3277092e1d43e.png",
-      "test.outputs/test-outputs/files/9f79d4af7859f6ddbbc76a684cb27bfe4d34332ff3bee84f1f6e70a907bc957c.png",
-      "test.outputs/test-outputs/files/59165ffb65dd90cc97c45175774833c18fd3a68c7f06f13c856e4dabeb3fa0e4.png",
-      "test.outputs/test-outputs/files/64ecc38ba07517014e01e6db85b8c269b02c4714087d391cac413d22ccd8e7fd.png",
-      "test.outputs/test-outputs/files/2347586a7f50fb05692c72aac3752755f6852323e9c6c7ee86d8225364de6867.png",
-      "test.outputs/test-outputs/files/c638f78b0805b65a986a075d657f959029a9848379fa6c3e7519ae864019d21a.png",
-      "test.outputs/test-outputs/files/a87cea3cbe8e1678fd4ae383895db7d931eac9cac59b7169a8e6205a79886c9a.png",
-      "test.outputs/test-outputs/files/fd4ab279f98aebd8a4ab98642cd7189c30199da9bd46dacb603f9fcc89750cf3.png",
-      "test.outputs/test-outputs/files/9e54036273dc4c2db695d36e3ada1e8edfeae6926309525570c080a52b4b528b.png",
-      "test.outputs/test-outputs/files/c6d9d77b0f8de02b337f9e0d949b81f93fb9be14b46fae1280e53c0cb97565f2.png",
-      "test.outputs/test-outputs/files/559c2f0040284c285d1e75d024c7082dd16684cea25ff44094c635843b855b06.png",
-      "test.outputs/test-outputs/files/69b90fc04531863ae6093cc72a93e14b3162648ae2886643cfa285c2943676c5.png",
-      "test.outputs/test-outputs/files/8387c26d59431bb97414938ba128bb65eb3e79ae7c95266e8b3aa955ab2bddd6.png",
-      "test.outputs/test-outputs/files/112e64566828ea12bec94309dca8c32fe053b5f89dbc06b8e9297bd18b49e339.png",
-      "test.outputs/test-outputs/files/d92716c9f63a3151b1a0ca52a0726de92ef649e5d91c5023e96d28851c5d3172.png",
-      "test.outputs/test-outputs/files/74f6bd35572ade82c1dd830760c7554c3b649fa5337e452bfe178e0bf996ce47.png",
-      "test.outputs/test-outputs/files/c2c4a83ba93a140046654980e277960419e1f3dd772baabea0f6bfea73d57305.png",
-      "test.outputs/test-outputs/files/d0163d68e4b47b3735527736943ec1911b8266eedbf4f8131744b024fa768a90.png",
-      "test.outputs/test-outputs/files/f7c17ea51e18539ee1c5836d4c8b7e4246aac5154e741be9fb318a5e1c8e26f4.png",
-      "test.outputs/test-outputs/files/c610725c875e4d4cbe7b7ea4095f1725c0a790fff44d85eb860fd7872c19fcea.png"
+      "test.outputs/test-outputs/files/190dd46f9b56d01534ecdf2dcd5af54fd6b14b6a926ff6bcea519a483774be09.png",
+      "test.outputs/test-outputs/files/06fa2fa050c51f1ded0b64b0d905ba23077c9c8faca82d3b10c1c21299a70c55.png",
+      "test.outputs/test-outputs/files/98ffa86cb48dc16a63d80a6c080f1723dff1d74f7c17d81474d9eeb1b8d6ff02.png",
+      "test.outputs/test-outputs/files/7b07453f8a7f78749ec235f28f290b2eeb3d835f93014f70b663ade574b3f3ed.png",
+      "test.outputs/test-outputs/files/c9107bf12bd297bb2f2c4b5f245017446ea7b46e0b4bd91dec071e1e252d3fd2.png",
+      "test.outputs/test-outputs/files/940cd531fe775824fc2f1520874b549db93898ee71f8691927466953242fee37.png",
+      "test.outputs/test-outputs/files/ff6419a735e2fe00bea11e70917462181ea589192897665b50e2fc9b0fcebd49.png",
+      "test.outputs/test-outputs/files/47402edc3fc08d61901e646bf920202fa612d3f56ee7fbf915f7f1d7d5e4cc95.png",
+      "test.outputs/test-outputs/files/7636a93c902a3d09753cbe109f3b1b2c8a7d4e98c781b06a557c0090ab4746de.png",
+      "test.outputs/test-outputs/files/ba40c3a2624c1087af08f6b6ef78b2e915f5ae122bcd1a6e64acf3a4bcae03ba.png",
+      "test.outputs/test-outputs/files/625c71bf595823053d3d94c834e715e9873c0f37893982ada16d70aec81dfc9c.png",
+      "test.outputs/test-outputs/files/b90516e51ca5ddb86b0ee3074f32a1a6ff43ab4284da400a52ec451e9cc05899.png",
+      "test.outputs/test-outputs/files/580497bf07b6ffc3eea3b5e91c04554889d416fd25526662152cf8ba373c001a.png",
+      "test.outputs/test-outputs/files/5ca9e0b80ff5f52b100ade9ce74d08b3c7fe77312e956e8c6c7288736678d686.png",
+      "test.outputs/test-outputs/files/7b0951c128a0e1afbaf67061938da65dde7a816fdef4d171f0487a5ddc05b01f.png",
+      "test.outputs/test-outputs/files/50a67bad185388384d0339e5ffaa8a446395ecafb4a7a181f28480625f396e04.png",
+      "test.outputs/test-outputs/files/ef7afb411ff95606cd17140e67ce1e5687efeff3e621928bc5d20792fb91bb95.png",
+      "test.outputs/test-outputs/files/7af68b95ecb4bd775771e687b9c320673ca5e3a758a3716e5237622c8b5a9bbc.png",
+      "test.outputs/test-outputs/files/3103acc96f0c97d0f90ed7a8a234f5423a2e05768ddada4715c96ffbcbb85325.png",
+      "test.outputs/test-outputs/files/86d7a2bfe2b36ea4b545f2a7c6a43a3527e94a87050fd28c0f901aa111648eb3.png",
+      "test.outputs/test-outputs/files/54daedd6cd37bf3fd2122b2d2ff71eed6f6c1f7d532ab82550ef2cbaa5dc48c5.png",
+      "test.outputs/test-outputs/files/2a99a5e9eaa09decc033bc7f1c4dc1283665e1b3c88c0d7cbc13c09b054e9cc1.png",
+      "test.outputs/test-outputs/files/4403541e0d2064715edfb9ba4be9271b0e50b83cfebfed47a88b2bf4cb7ab595.png",
+      "test.outputs/test-outputs/files/a6838e0e6b9577b11ee4760aed6b81cf4d8302776ec437eb01497e92b38f82f5.png",
+      "test.outputs/test-outputs/files/fe2100619f11c14b58d6f6ed425139f24210304524ef17bcabaa5e8ddcb50be3.png",
+      "test.outputs/test-outputs/files/8bd04448b3ada5cd9cfb6b7d029bcc777ba7c866f61197e869cec5b87d0d0c13.png",
+      "test.outputs/test-outputs/files/b740495b9cc4423162f425e5e69dff5f7a0c5843e60b030fae1b240489f446a1.png",
+      "test.outputs/test-outputs/files/9591ea5ea21becc35af4f59cd930375850db589a5b258885f0f9ba1b5d08f8ed.png",
+      "test.outputs/test-outputs/files/885efd2fc29aa78f21211a9a5805377da2a0194794183d3f2865eb73f416eba3.png",
+      "test.outputs/test-outputs/files/324f74801b197a8ffd8b33dc2723303e095e8a2e1bbeba59c28ee131257f1361.png",
+      "test.outputs/test-outputs/files/52072c36754ad040602d09da1394f971e6d90f642ddb23910b0b633ec624b3fd.png",
+      "test.outputs/test-outputs/files/60194a802fe46eec0b53c2de8854f9ac305c1f512758a43a07dc0d797e5503b2.png",
+      "test.outputs/test-outputs/files/51ae3a0bfb11cec2c604405ae8bbbc38af8f485916224e23980ad26b2c409f4a.png",
+      "test.outputs/test-outputs/files/910cb02428988d06a91b9d5f1ebdd7b461f7fb9db3f22a24c3d4373f35b22fe1.png",
+      "test.outputs/test-outputs/files/76e684bb8c65125211f0307ad0616a74e04c0238485324c7da760f5f86a21637.png",
+      "test.outputs/test-outputs/files/ad6552c7a913d355dd054bf6a0601fb9826c2664776653e002d0ca1cfb97a68c.png",
+      "test.outputs/test-outputs/files/3d378068d1c2c64e808f4fe27b5b2bea1b4855c3860606d64fea32d12bbee909.png",
+      "test.outputs/test-outputs/files/40ae7c3c4d73ebc41dcec8d514c036682efef664a036f601dca8336e0168fcae.png",
+      "test.outputs/test-outputs/files/aec62fde92a2248cb597320f64851f185d7dcd6e33c5bff4575a61405d5199ae.png",
+      "test.outputs/test-outputs/files/b5f9598f1bee36acf24134258a98921dbf91d351ffad1e9d250569290c5d3473.png",
+      "test.outputs/test-outputs/files/d4f9f6b4a364462dd583ea5482713e3cd7da4e4ba6a9c0cf869ac505cf6f574d.png",
+      "test.outputs/test-outputs/files/d6ba3592aad63f89a20eb2392d89dc4afe8518275fb344bd2c3cc95e15812f21.png",
+      "test.outputs/test-outputs/files/4b6600eaf5f107def3bc763f574e44beb33c0a2e526e7bcb3ed463592dcbaf39.png",
+      "test.outputs/test-outputs/files/d3159b56aae88491837cdb8412717a1a7a4d415ccf86f84e1fd43cc78df6110f.png",
+      "test.outputs/test-outputs/files/6f7953bcce3474dc8df36f797acff2ef66282fda6e85ee53ddbcc11cd7572e71.png",
+      "test.outputs/test-outputs/files/1ca2c945cd1583a24fb4ac144301ca738d532b26cf7c3e9441b62f68429db1c3.png",
+      "test.outputs/test-outputs/files/089b5fdfa2c4533a27c554353816b82d544052bc02fc9be64815efeb6593c3f4.png",
+      "test.outputs/test-outputs/files/aced1a168a30cb6b8619fa8edf2b1f683a0b9f0f8cd6e87fd60cdbeee88c11ff.png",
+      "test.outputs/test-outputs/files/6ebb7d29ff69bdd3223265b9e4842f2b062206d2a1fdcebafc0032fe1e7b2826.png",
+      "test.outputs/test-outputs/files/eae527574e288e972ec2e1d4a34f0023e9fc68166642c75b0a8409d7dc47e90f.png",
+      "test.outputs/test-outputs/files/b3cd001901b20c4fbfaeccc9d893e6d9085823f782fd84d1af9c8796c3e27b9d.png",
+      "test.outputs/test-outputs/files/d3c198b32a79459ae86c26bb1fb962e283471aebb5e3d069d88200582a9dea17.png",
+      "test.outputs/test-outputs/files/828d2694def11141877a5efb4c283fd2adfb480e3fdca5a1960226d81870965f.png",
+      "test.outputs/test-outputs/files/243638d1d983acab981283c50823c867d7719e1f33d073b00b696fa77cd24a85.png",
+      "test.outputs/test-outputs/files/9ca90033244c6313f3c120353a46492a929581e0ba5fae81a906c5b763629193.png",
+      "test.outputs/test-outputs/files/91ee97a0f1b49cf6eeef9b486dff45409448e438efd75aa5f24194d85ab5b3a6.png",
+      "test.outputs/test-outputs/files/2fc5ae477b520dc2bb7f189b4a3eb723bd3e537b6b30a8756a8cb7998b4608df.png",
+      "test.outputs/test-outputs/files/c57a3086b6efc9f487317fb04e1f81c8690e16f7dcadecb02c3cc622e548bcc2.png",
+      "test.outputs/test-outputs/files/b074d09a336a614a4a78f1b8d7f0c666f952fb692b01c3c4fcd1618b5391291e.png",
+      "test.outputs/test-outputs/files/002534ab12d352b55ff6a986a12c39aab7a0cfc13046a434f22e68dc1c24c4db.png",
+      "test.outputs/test-outputs/files/b781d9145f44b93adf6fee070a88772d4119a61beaeabac2ea05b32fb77cf26d.png",
+      "test.outputs/test-outputs/files/f01af14132b42d716d393bbccae274a79168d6a663dd4a55116d8ceca005a4b7.png",
+      "test.outputs/test-outputs/files/05ae9fb272738b1c2710d9c41362c1851e0e6ea5c579519faf27a885d34c4123.png",
+      "test.outputs/test-outputs/files/8e161d57a2263ee5f4355ce39da906c3a5ae58006e60b6832aa490851ab5eb21.png",
+      "test.outputs/test-outputs/files/369ae65b10f3e5180f69b41ed7743148116e3d088266f88946d278897813e971.png",
+      "test.outputs/test-outputs/files/d948eb94724e7792af878696c49c735b10cf7bb0517d829a4bad8ce3106b2aa4.png",
+      "test.outputs/test-outputs/files/b485dfa310558fee26098919f41de729dd0e053939934253925c98e37ef8f51c.png",
+      "test.outputs/test-outputs/files/b0321436c2952e35f2f02519babba060b5b6613c854f1c5b5e7ef421d38771bf.png",
+      "test.outputs/test-outputs/files/ac3f82b7dabf75c7c16876b142d9573208c753d4234455a6aa5bc45ed30e3432.png",
+      "test.outputs/test-outputs/files/fb68930b6cb218634923f79e3c3d165c8b64b2563c68313f63c46849d21edc8e.png",
+      "test.outputs/test-outputs/files/e09e4f3ba27c90db722118714fb9f67a293cc3f89ef9d7869ccb049c2c4c8650.png",
+      "test.outputs/test-outputs/files/7b3b6fc20603ce86be8b3c7985be48cf4eb6201b60e1144e6f59e6e238654c44.png",
+      "test.outputs/test-outputs/files/a817ebb959d5e0dd1f10b05bc3d4970d138f2a95a214d72cd6afc4e0fa83d745.png",
+      "test.outputs/test-outputs/files/5110260d8fd8ff92fd797118127f343a905f79d35ac73f342b0e1c923f8ce0eb.png",
+      "test.outputs/test-outputs/files/1ccf3e36fcd5e2743ae658ad678576ee5c7f688940d7332cca7b66f9affed394.png",
+      "test.outputs/test-outputs/files/98a86a3723a14e6be541dcfa85a8cda2c145b7db754c29440c84fabbf9f03b90.png",
+      "test.outputs/test-outputs/files/9d559654c4327f4794e1cd164fdfec4b9740edd8dc68bff3acf18bc7240511ff.png",
+      "test.outputs/test-outputs/files/f91586e4378eb8adf9bad257f8be4b262616527146f3f012ee6cf2f1a3cdf187.png"
     ]
   },
   "screenshot_review": {
     "reviewer": "root",
-    "result": "Changed sections reviewed in desktop/mobile and light/dark; readable prose and labels, retained distinctions, tables contained within the page.",
+    "result": "Representative final desktop/mobile light/dark screenshots reviewed: readable content, tables contained and no page clipping.",
     "images": [
       {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[desktop-dark]",
-        "checkpoint": "agentplane-test-architecture-section-0",
-        "role": "screenshot",
-        "path": "files/06ff8c74483d15b1fdc309a423d036e2e9635331b9690b25d3b5fd144b736030.png",
-        "label": "agentplane-test-architecture-section-0",
-        "title": "Agentplane CI architecture checkpoint"
+        "case": "x/report10_visual_preview/test_report.py::test_report10_pages[desktop-light]",
+        "checkpoint": "architecture-first-screen",
+        "artifact_basename": "76e684bb8c65125211f0307ad0616a74e04c0238485324c7da760f5f86a21637.png"
       },
       {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[desktop-dark]",
-        "checkpoint": "latency-section-0",
-        "role": "screenshot",
-        "path": "files/112e64566828ea12bec94309dca8c32fe053b5f89dbc06b8e9297bd18b49e339.png",
-        "label": "latency-section-0",
-        "title": "Agentplane CI architecture checkpoint"
+        "case": "x/report10_visual_preview/test_report.py::test_report10_pages[mobile-dark]",
+        "checkpoint": "architecture-current-00",
+        "artifact_basename": "089b5fdfa2c4533a27c554353816b82d544052bc02fc9be64815efeb6593c3f4.png"
       },
       {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[desktop-dark]",
-        "checkpoint": "reliability-section-0",
-        "role": "screenshot",
-        "path": "files/41a11a59074c8972eb1c53d951fefaf7b0f6687f4fda966f81f818340ae8ffc3.png",
-        "label": "reliability-section-0",
-        "title": "Agentplane CI architecture checkpoint"
+        "case": "x/report10_visual_preview/test_report.py::test_report10_pages[desktop-dark]",
+        "checkpoint": "reliability-current-00",
+        "artifact_basename": "c57a3086b6efc9f487317fb04e1f81c8690e16f7dcadecb02c3cc622e548bcc2.png"
       },
       {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[desktop-light]",
-        "checkpoint": "agentplane-test-architecture-section-0",
-        "role": "screenshot",
-        "path": "files/5b83779991cd00adc97fb408ee2feab988c7da79a060140ea3a3f76f9dfaba20.png",
-        "label": "agentplane-test-architecture-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[desktop-light]",
-        "checkpoint": "latency-section-0",
-        "role": "screenshot",
-        "path": "files/af862531d87f331dbd7bde128d9da17d6f542ddad4aea29acdd2fb1ca6424576.png",
-        "label": "latency-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[desktop-light]",
-        "checkpoint": "reliability-section-0",
-        "role": "screenshot",
-        "path": "files/d626725e0db48e14eed68ece9b40ea7e876d65342c5624ac91c77f2feaa1272e.png",
-        "label": "reliability-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "agentplane-test-architecture-section-0",
-        "role": "screenshot",
-        "path": "files/cda45fc9cf8792b5f93ec9eb45f814c25747799c9ab54a2a16e3277092e1d43e.png",
-        "label": "agentplane-test-architecture-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "agentplane-test-architecture-section-1",
-        "role": "screenshot",
-        "path": "files/5f7a261bca0d6f48c1c581899ecf377caf8bb70231e73082fa436804647b943e.png",
-        "label": "agentplane-test-architecture-section-1",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "agentplane-test-architecture-section-2",
-        "role": "screenshot",
-        "path": "files/f07d07f41d8cab569a9950aa668ea26e0794dd1ab41dc4681e935e4c24dd3f3c.png",
-        "label": "agentplane-test-architecture-section-2",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "latency-section-0",
-        "role": "screenshot",
-        "path": "files/a2675d6a41b7f77d9de3e08163d6928cd2ec5904e847bfaf1f4413a42ec43e49.png",
-        "label": "latency-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "latency-section-2",
-        "role": "screenshot",
-        "path": "files/80ee6741658988067e9a84c8132b071061417b879992ac654a4047b82fdff475.png",
-        "label": "latency-section-2",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "latency-section-4",
-        "role": "screenshot",
-        "path": "files/600ce8e9ca22f8ff1451c682fcec4a26eda9d9a8cd70edc6ba45231042042d8e.png",
-        "label": "latency-section-4",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "reliability-section-0",
-        "role": "screenshot",
-        "path": "files/9c61a4dfa7255313945d51d99e3e4ea0e667975cb8ac56118a3202fd5684af2e.png",
-        "label": "reliability-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "reliability-section-2",
-        "role": "screenshot",
-        "path": "files/8394d18f6adc56d4ce3c5ff750d94a2138498638f318a57a34647d3575fa1bd8.png",
-        "label": "reliability-section-2",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-dark]",
-        "checkpoint": "reliability-section-3",
-        "role": "screenshot",
-        "path": "files/74f6bd35572ade82c1dd830760c7554c3b649fa5337e452bfe178e0bf996ce47.png",
-        "label": "reliability-section-3",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "agentplane-test-architecture-section-0",
-        "role": "screenshot",
-        "path": "files/f04275e7394362668a8ad8486901e09097e1acdf23cb521333789d56c251fb84.png",
-        "label": "agentplane-test-architecture-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "agentplane-test-architecture-section-1",
-        "role": "screenshot",
-        "path": "files/2e90227a2ae24f357bc19f3bdd901be6b6d9c1ba2a05972bba11009a87459a43.png",
-        "label": "agentplane-test-architecture-section-1",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "agentplane-test-architecture-section-2",
-        "role": "screenshot",
-        "path": "files/f7c17ea51e18539ee1c5836d4c8b7e4246aac5154e741be9fb318a5e1c8e26f4.png",
-        "label": "agentplane-test-architecture-section-2",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "latency-section-0",
-        "role": "screenshot",
-        "path": "files/306b255577318f15e9c241113320742c5e979ee2c26877a8570e48cabbac92d9.png",
-        "label": "latency-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "latency-section-2",
-        "role": "screenshot",
-        "path": "files/4d2be22dfb5dafb797dc1ab5c9a2697b5d5a5e4310381f1d1a06c108f4a90fcc.png",
-        "label": "latency-section-2",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "latency-section-4",
-        "role": "screenshot",
-        "path": "files/30b3678005c5278113626673db0b4963b7bf83fb73966f282ab5abb154f7ec73.png",
-        "label": "latency-section-4",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "reliability-section-0",
-        "role": "screenshot",
-        "path": "files/c638f78b0805b65a986a075d657f959029a9848379fa6c3e7519ae864019d21a.png",
-        "label": "reliability-section-0",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "reliability-section-2",
-        "role": "screenshot",
-        "path": "files/9e54036273dc4c2db695d36e3ada1e8edfeae6926309525570c080a52b4b528b.png",
-        "label": "reliability-section-2",
-        "title": "Agentplane CI architecture checkpoint"
-      },
-      {
-        "schema": "ducktape.test-output.v1",
-        "case_id": "x/ci_architecture_preview/test_report.py::test_architecture_report[mobile-light]",
-        "checkpoint": "reliability-section-3",
-        "role": "screenshot",
-        "path": "files/d0163d68e4b47b3735527736943ec1911b8266eedbf4f8131744b024fa768a90.png",
-        "label": "reliability-section-3",
-        "title": "Agentplane CI architecture checkpoint"
+        "case": "x/report10_visual_preview/test_report.py::test_report10_pages[mobile-light]",
+        "checkpoint": "root-first-screen",
+        "artifact_basename": "1ccf3e36fcd5e2743ae658ad678576ee5c7f688940d7332cca7b66f9affed394.png"
       }
+    ],
+    "additional_reviewer": "live_grant_uid_backport",
+    "observations": [
+      "Architecture status pill ellipsizes on mobile; full status remains in body text.",
+      "Reliability inline link lacks whitespace after previous sentence; readable but cosmetic defect retained."
     ]
   },
+  "prior_attempts": [
+    {
+      "invocation": "7a0abfa1-ed1e-4f8f-a74d-56f600327fad",
+      "outcome": "Preview fixture event-loop mismatch; failed before screenshots."
+    },
+    {
+      "invocation": "9801320e-396a-49f7-9400-81840d8ad16a",
+      "outcome": "Root rendered; current-page navigation failed because harness URL omitted slash."
+    },
+    {
+      "invocation": "ba3c797f-5b8c-4470-9bc2-42708696eddd",
+      "outcome": "Four cases pass on pre-correction report bytes; final textual review corrections required a new preview."
+    },
+    {
+      "invocation": "ad299a15-ca14-4320-962d-69785baee3c2",
+      "outcome": "Wrong-checkout mirrored request exceeded transport size before runner start; no execution recorded."
+    }
+  ],
   "limits": [
-    "Proof JSON excluded from asset hashes to avoid self-reference; all other packaged assets match final publication bytes.",
-    "Visual validation does not establish source-test coverage, a CI saving, or adoption qualification.",
-    "Other report manifests are packaged for root navigation only; their measurement populations were not refreshed."
-  ]
+    "Browser validation is presentation proof, not source-test coverage, a CI saving or architecture qualification.",
+    "Raw test logs, environments and fixture diagnostics are not published.",
+    "After the tested snapshot, only this proof JSON and publication/visual-review metadata in three manifests are added. Their final bytes are statically checked; rendered HTML and measured evidence remain unchanged.",
+    "The browser HTTP hash enumeration mistakenly used the architecture alias as a directory, so architecture bytes are absent from the19rendered hashes. All four browser cases rendered that page; source-copy hashes above and screenshots establish candidate provenance. Canonical deployment hashes are verified separately. The three final proof files and publication/visual-review manifest metadata are added after the preview and statically checked."
+  ],
+  "packaged_architecture_source_sha256": {
+    "agentplane-test-architecture/index.html": "7a90256c8730d4faf4c276479f508de9619922cdbc9dc177690daf2a76205adb",
+    "agentplane-test-architecture/evidence.json": "f680395bac6a31e6f31b98516c4ea2ce7c367dd4b3c54a5ee1e2f76fd3cac6a4",
+    "agentplane-test-architecture/iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "agentplane-test-architecture/required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69"
+  }
 }
