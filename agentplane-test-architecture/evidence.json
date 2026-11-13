@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+  "scope": "Agentplane test architecture, initial native pilot and iteration2 implementation. Devel gate unchanged; experimental branch changes four existing fixture profiles, not their scenarios. No measured complete required-CI improvement.",
   "source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
   "observed_at_utc": "2026-11-13T05:01:20.727796+00:00",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
@@ -580,5 +580,2600 @@
     "reliability": "Browser/VM/auth/result-stream natural exposure and recurrence tasks remain in existing tracker; no lower natural failure rate inferred.",
     "image_split_15214": "Held pending its own actual saving.",
     "shared_cluster": "Parked spike, not an operational assumed fixture."
+  },
+  "initial_scope": "Proposed Agentplane test architecture with bounded real-service pilot. Current merge gate unchanged; no measured complete-CI improvement.",
+  "iteration2_status": {
+    "source_head": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+    "source_merge_parent": "73c214534dc211f8460fb233d3a63e4808947399",
+    "source_branch": "agent/test-architecture-pivot",
+    "source_pr": "https://github.com/agentydragon/ducktape/pull/16102",
+    "source_note": "Draft PR #16102 remains on agent/test-architecture-pivot at e81dd61bc9. All three required checks passed (Bazel finished 06:08:35 UTC). GitHub CI tested synthetic merge a7e97ab of that head with devel ca8e6f4; separate pinned benchmarks/manual validation tested the literal head. This head needed 10m39s from workflow creation to last required check. No complete-CI saving is established.",
+    "complete_ci_saving_established": false,
+    "remaining": [
+      "P2 reusable fixtures and more native fault contracts",
+      "P3 broader explicit service/image ownership",
+      "P4 owner-clock vs real lifecycle contracts",
+      "P5 at least30 pinned pairs,100 fresh executions, whole-PR and busy-window evidence",
+      "P6 adoption after coverage and reliability evidence"
+    ],
+    "reviewed_at_utc": "2026-11-13T06:11:06.819976+00:00",
+    "next_measured_bottleneck": "The 21-case Pod action finished last: 426.158s process, 113.311s setup. Largest cases: idle/resume acceptance 83.213s; mTLS replacement 47.364s; inter-agent messaging 44.799s; post-start policy grant 42.670s. Preserve real idle and Pod lifecycle behavior while moving suitable authorization, History and state-machine guarantees into smaller native contracts. MCP services at 334.860s and VM at 315.047s are the next observed longest actions."
+  },
+  "iteration2_native": {
+    "scope_note": "Fresh A1/B1/B2/A2 recovery screen on pinned d9235bb control and the native BUILD overlay later committed as 3c82b52fab. All four passed; two observations per arm and substantial A1/A2 spread. Actual input CAS proves Codex removed and identical Claude retained. Timings are a bounded screen; causal latency and complete-CI savings are not established. No transfer-byte saving is inferred.",
+    "observations": [
+      {
+        "arm": "A1",
+        "invocation": "3efb4a12-2ff7-489a-8534-eb6ba0174608",
+        "test_seconds": 62.878498,
+        "process_seconds": 62.878498,
+        "cpu_seconds": 118.722045,
+        "bazel_seconds": 66.065,
+        "queue_seconds": 0.064037,
+        "worker_prepare_seconds": 0.480194,
+        "input_fetch_seconds": 0.439107,
+        "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+        "junit_case_seconds": 45.603,
+        "action_digest": {
+          "hash": "be64577ebde7ca674f818a8000028c1026287b33f2d4f2ef6c95be0213c04197",
+          "sizeBytes": "581"
+        }
+      },
+      {
+        "arm": "B1",
+        "invocation": "bde6cfe2-6aa1-4c3f-ada3-7abc7b735d2b",
+        "test_seconds": 38.142764,
+        "process_seconds": 38.142764,
+        "cpu_seconds": 48.695219,
+        "bazel_seconds": 41.116,
+        "queue_seconds": 0.064997,
+        "worker_prepare_seconds": 0.24564,
+        "input_fetch_seconds": 0.161442,
+        "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+        "junit_case_seconds": 25.625,
+        "action_digest": {
+          "hash": "274e71589e33430475c6b06014d65462533408dc32230559734a94cb3549c516",
+          "sizeBytes": "581"
+        }
+      },
+      {
+        "arm": "B2",
+        "invocation": "018b4d52-33e6-458a-907a-6dc4bcc2d4eb",
+        "test_seconds": 35.829817,
+        "process_seconds": 35.829817,
+        "cpu_seconds": 46.203448,
+        "bazel_seconds": 38.523,
+        "queue_seconds": 0.060173,
+        "worker_prepare_seconds": 0.288884,
+        "input_fetch_seconds": 0.204699,
+        "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+        "junit_case_seconds": 23.837,
+        "action_digest": {
+          "hash": "274e71589e33430475c6b06014d65462533408dc32230559734a94cb3549c516",
+          "sizeBytes": "581"
+        }
+      },
+      {
+        "arm": "A2",
+        "invocation": "79853de8-038c-44e4-9064-eb54350565df",
+        "test_seconds": 41.85372,
+        "process_seconds": 41.85372,
+        "cpu_seconds": 57.711118,
+        "bazel_seconds": 45.046,
+        "queue_seconds": 0.063795,
+        "worker_prepare_seconds": 0.257076,
+        "input_fetch_seconds": 0.172539,
+        "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+        "junit_case_seconds": 27.77,
+        "action_digest": {
+          "hash": "be64577ebde7ca674f818a8000028c1026287b33f2d4f2ef6c95be0213c04197",
+          "sizeBytes": "581"
+        }
+      }
+    ],
+    "primary_digests": {
+      "action_digest": {
+        "A": {
+          "hash": "be64577ebde7ca674f818a8000028c1026287b33f2d4f2ef6c95be0213c04197",
+          "size_bytes": 581
+        },
+        "B": {
+          "hash": "274e71589e33430475c6b06014d65462533408dc32230559734a94cb3549c516",
+          "size_bytes": 581
+        }
+      },
+      "aquery_codex_bundle_file_paths": {
+        "A": {
+          "count": 86,
+          "file": "codex-action-inputs-base.txt"
+        },
+        "B": {
+          "count": 0,
+          "file": "codex-action-inputs-candidate.txt"
+        },
+        "query": "inputs(\".*agentplane_codex_cli_linux_x64.*\", //agentplane/x/native_contracts:test_recovery)"
+      },
+      "build_files_sha256": {
+        "agentplane/env/e2e/testing/BUILD.bazel": "9dc89ef1a0dcbb6a4faf9236058d8bc72a54621ddc02da713139b2991ad76f1e",
+        "agentplane/env/runtime/execution/testing/BUILD.bazel": "ce932c0cf125b799cd5dcbb391ca9926d6061d44069a8d72ba8d355e602aa0b9",
+        "agentplane/x/native_contracts/BUILD.bazel": "42837baeed4a871507916a2d10899c5c6ec2e61b85f18a180bd0cbbced4d5bba"
+      },
+      "command_digest": {
+        "hash": "4aeb941981786381afb0f404151381adc80cb6c14c4db21103eed90d73be23b4",
+        "same_for_A_and_B": true,
+        "size_bytes": 3751
+      },
+      "file_size_note": "Individual CAS file size metadata is listed only alongside content digests; it is not summed or treated as invocation-download savings.",
+      "input_root_directory_digest": {
+        "A": {
+          "hash": "98f8a0ddb68fce152adab13dc2e540e3902890a49bcfcd81c974ca3e7fb02a8f",
+          "size_bytes": 165
+        },
+        "B": {
+          "hash": "abc6836c081b53934a140eae8479bbc50442134f250be005a2e3c225756508bc",
+          "size_bytes": 165
+        }
+      },
+      "native_recovery_runfiles_directory_digest": {
+        "A": {
+          "hash": "f81c365f6fa3a1e6c357c11ad50702bd7ffe51d5513aa49fe841019e807e0a90",
+          "size_bytes": 9760
+        },
+        "B": {
+          "hash": "3b7ed5a4b07710a32c388b04b77e3d02e9cbc3d789971900fdc54df97e74a3b7",
+          "size_bytes": 9641
+        }
+      },
+      "runfiles_bundle_files": {
+        "claude": {
+          "A": [
+            {
+              "executable": true,
+              "hash": "a715a45105e593fc9808d035d77781f88480b9897975a9df41837f0c591bd4b3",
+              "path": "+http_archive+claude_code_cli_linux_x64/claude",
+              "size_bytes": 214371672
+            }
+          ],
+          "B": [
+            {
+              "executable": true,
+              "hash": "a715a45105e593fc9808d035d77781f88480b9897975a9df41837f0c591bd4b3",
+              "path": "+http_archive+claude_code_cli_linux_x64/claude",
+              "size_bytes": 214371672
+            }
+          ]
+        },
+        "codex": {
+          "A": [
+            {
+              "executable": true,
+              "hash": "b8a11fedf24b2dfb59a70c9e52b030f9a508dcd49cd2dd0d41956f4c785156b8",
+              "path": "+http_archive+agentplane_codex_cli_linux_x64/bin/codex",
+              "size_bytes": 319346888
+            },
+            {
+              "executable": true,
+              "hash": "657f4e902726e05867c937b583049d5997e057f8cd0ab40450633c9c9ef8d630",
+              "path": "+http_archive+agentplane_codex_cli_linux_x64/bin/codex-code-mode-host",
+              "size_bytes": 77997328
+            },
+            {
+              "executable": true,
+              "hash": "e62198eb19b136b88c330af83647b5a962cb99b6b1f066758568f12de1974849",
+              "path": "+http_archive+agentplane_codex_cli_linux_x64/codex-path/rg",
+              "size_bytes": 5408904
+            },
+            {
+              "executable": true,
+              "hash": "77360cb751ccedc5971391444ac86a8a33c15b04d6b4a6fe45f5d25496e62c4c",
+              "path": "+http_archive+agentplane_codex_cli_linux_x64/codex-resources/bwrap",
+              "size_bytes": 529776
+            }
+          ],
+          "B": []
+        }
+      },
+      "runfiles_bundle_subtrees": {
+        "claude": {
+          "A": {
+            "hash": "aa07b31ea28f50b1c9d87030ccf4f08638acec5ba3afc26200e68e1c87105052",
+            "size_bytes": 85
+          },
+          "B": {
+            "hash": "aa07b31ea28f50b1c9d87030ccf4f08638acec5ba3afc26200e68e1c87105052",
+            "size_bytes": 85
+          }
+        },
+        "codex": {
+          "A": {
+            "hash": "480758acc54b0af37293fe6e762d8ebc94b153bdff2deb7837794a1d1e0dba43",
+            "size_bytes": 347
+          },
+          "B": null
+        }
+      }
+    },
+    "source": {
+      "A_control_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+      "B_candidate_native_commit": "3c82b52fab",
+      "B_candidate_overlay_sha256": "3d8a3a30815a44e4906285e90a58fe3f0507f448592605f1db391b9cbd7fda56",
+      "B_note": "The overlay also contained concurrent system-test and cluster changes; the native target CAS runfiles tree and action inputs below show the CLI closure difference directly.",
+      "B_recorded_base_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4"
+    },
+    "interpretation": {
+      "causal_ci_latency_claim": false,
+      "causal_latency_claim": false,
+      "note": "Two ABBA samples show noisy end-to-end and worker phase timings; no causal CI-latency claim is made from this small sample. The primary result is verified removal of the Codex runfiles subtree, Codex CLI file digests, and 86-to-0 Codex action-input paths while the Claude executable digest remains unchanged. Aggregate invocation transfer metrics are not used as artifact-savings estimates."
+    },
+    "checks": [
+      {
+        "name": "native positive",
+        "invocation": "15da1073-a44d-41c3-ac57-0fcc317b5e21",
+        "result": "PASSED"
+      },
+      {
+        "name": "deliberate lost-journal control",
+        "invocation": "dd9c4647-1b51-4137-b513-834f50e1502b",
+        "result": "EXPECTED_FAILURE at retainedSession inventory; did not reach receipt assertions"
+      },
+      {
+        "name": "both-harness instructions",
+        "invocation": "dd5c70bd-4dce-4a7f-b9cc-153198329c52",
+        "result": "PASSED"
+      },
+      {
+        "name": "Codex companion caller",
+        "invocation": "8940de1d-4169-4a0b-b48f-2b3d87d07adb",
+        "result": "PASSED"
+      }
+    ]
+  },
+  "iteration2_experiments": {
+    "central_profile": {
+      "objects_before": 175,
+      "objects_after": 162,
+      "deployments_before": 15,
+      "deployments_after": 12,
+      "removed_workloads": ["dex", "mcp-everything", "oauth-fixture"],
+      "feasibility_invocation": "8b92eb38-291f-4a4d-ae1e-bbe0efcb32db",
+      "ordinary_deadline_seconds": 120,
+      "result": "4unchanged cases passed,1attempt each,warm baseline,clean teardown; six-target invocation includes render tests and is not a four-target wall comparison",
+      "auth_boundary": "Testoperator uses existing pinned Ed25519 issuer instead of Dex. These four native scenarios do not use operatorlogin; actual app/Gateway Pod-bound credentials are unchanged.",
+      "closure_source": "Initial d9235bb + central profile overlay. Final e81dd61 render relation checks still prove only the three excluded Deployments and identical native service objects."
+    },
+    "deadline_5s": {
+      "invocation": "d58fb8fc-a7a3-48b3-b3f2-da44de8cf737",
+      "result": "FAILED original-session resume assertion; teardown unsettledexchange",
+      "decision": "REJECTED",
+      "diagnosis": "Initial exhaustion succeeded in5.8s; subsequent probe exhausted5.1s against deletedGateway address despite Ready replacement EndpointSlice. Pinned grpc-go minimum re-resolution interval30s. This is an explained failed candidate, not a hidden retry."
+    },
+    "deadline_45s": {
+      "invocation": "0d2e6499-e9a9-43ef-9ec2-d16c6ffd5ed8",
+      "result": "PASSED unchanged real scenario plus rendering/determinism checks",
+      "process_seconds": 197.421089,
+      "setup_seconds": 71.888612,
+      "case_seconds": 73.825376,
+      "cleanup_seconds": 30.716079,
+      "cpu_seconds": 481.060246,
+      "baseline": "warm",
+      "cleanup": "complete",
+      "attempts": 1,
+      "skips": 0,
+      "executed_branch": "Definitive retained-session loss; no automatic probe replay; fresh session; explicit once-only marker verification; next input and single-settlement assertions. Alternative original-session resume branch was not executed.",
+      "tradeoff": "Only this fixture configures45s vs productiondefault120s. Removes full-default-duration integration exposure here; production and other recovery profiles remain120s and default/config unit checks remain. Assertions and scenario source unchanged.",
+      "dns_source": "https://github.com/grpc/grpc-go/blob/v1.83.2/internal/resolver/dns/dns_resolver.go#L46-L48"
+    },
+    "default_configuration": {
+      "invocation": "8d4d479d-82fb-4d90-80c4-18229c6cacef",
+      "result": "PASSED existing Go default/configuration test",
+      "filter": "TestExecutorReconnectTimeoutDefaultsIndependentlyAndCanBeConfigured"
+    },
+    "secret_projection_annotation": {
+      "control_invocation": "d1b16a2c-b1ca-4d2c-a856-e16c0b9e2dae",
+      "candidate_invocation": "c8b75114-c0d3-46da-a6f9-e3e183c770c1",
+      "control_process_seconds": 154.693683,
+      "candidate_process_seconds": 156.215709,
+      "control_setup_seconds": 75.228965,
+      "candidate_setup_seconds": 73.599044,
+      "control_case_seconds": 23.386548,
+      "candidate_case_seconds": 25.508102,
+      "result": "Bothpassed negative/positive trust assertions andcleaned warmbaseline;1unmatched-workerpair showed no saving",
+      "decision": "WITHDRAWN; no source change retained",
+      "followup": "At next natural slow event inspect producer/projection/consumer evidence; no weakened polling or samePod assertions"
+    }
+  },
+  "iteration2_older_base_runs": [
+    {
+      "invocation": "aac4b20f-b5c2-4bd6-9000-315d8a7b9808",
+      "url": "https://app.buildbuddy.io/invocation/aac4b20f-b5c2-4bd6-9000-315d8a7b9808",
+      "recorded_commit": "d9235bb36a95f58e70f351f756464bd8ed3d48d4",
+      "source_note": "Literal published d9235bb36a95f58e70f351f756464bd8ed3d48d4; run_from_commit disables local patches",
+      "success": true,
+      "status": "COMPLETE_INVOCATION_STATUS",
+      "bazel_seconds": 447.97,
+      "actions": [
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 82.380029,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_budget.py::test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "seconds": 164.521033
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "279.983",
+            "timestamp": "2026-11-13T05:23:53.894460+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_budget",
+              "name": "test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "time": "278.590"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/b62cf399-a93a-4bf3-9688-52e8c5e64799/blobs/686b2ccfb1d0acbf82f5a0d610cf058246bf8d04c529a013b78f972b683e9adb/1218",
+              "action_digest": {
+                "hash": "686b2ccfb1d0acbf82f5a0d610cf058246bf8d04c529a013b78f972b683e9adb",
+                "sizeBytes": "1218"
+              },
+              "worker": "298cab4b-2d91-47fb-a7e8-23d60ccc811f",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.061,
+              "worker_prepare_seconds": 0.301676,
+              "input_fetch_seconds": 0.217451,
+              "process_seconds": 295.57102,
+              "cpu_seconds": 722.784832,
+              "reported_peak_memory_bytes": 5434519552,
+              "io_stats": {
+                "fileDownloadDurationUsec": "295629110",
+                "fileUploadCount": "84",
+                "fileUploadSizeBytes": "22296791",
+                "fileUploadDurationUsec": "495968"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 69.9578,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_crash.py::test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "seconds": 72.190601
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "175.365",
+            "timestamp": "2026-11-13T05:23:52.298984+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_crash",
+              "name": "test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "time": "174.176"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/4b96cabe-d521-46af-90df-00ad5bb149ce/blobs/8f593852fda9f7f36ff81c743d570a2d91f3e3e374eb8d2f4ef2fb60f886cb70/1218",
+              "action_digest": {
+                "hash": "8f593852fda9f7f36ff81c743d570a2d91f3e3e374eb8d2f4ef2fb60f886cb70",
+                "sizeBytes": "1218"
+              },
+              "worker": "55d5d106-ba96-4d50-ae2c-6db73bfceb36",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.057337,
+              "worker_prepare_seconds": 0.313311,
+              "input_fetch_seconds": 0.225407,
+              "process_seconds": 191.719677,
+              "cpu_seconds": 497.978398,
+              "reported_peak_memory_bytes": 5612736512,
+              "io_stats": {
+                "fileDownloadDurationUsec": "191764219",
+                "fileUploadCount": "81",
+                "fileUploadSizeBytes": "20739134",
+                "fileUploadDurationUsec": "464897"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 73.176059,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_history_outage.py::test_history_outage_backfills_completed_turn",
+              "seconds": 28.24831
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "135.532",
+            "timestamp": "2026-11-13T05:23:55.384670+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_history_outage",
+              "name": "test_history_outage_backfills_completed_turn",
+              "time": "134.117"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/b0f5b85e-3912-405a-8394-7c1ffc12fc0d/blobs/192d500545e9f26585de8f10cec60cd19e0218329ed2b0ec891681fd997dc12e/1218",
+              "action_digest": {
+                "hash": "192d500545e9f26585de8f10cec60cd19e0218329ed2b0ec891681fd997dc12e",
+                "sizeBytes": "1218"
+              },
+              "worker": "70d7de37-63f8-4ed9-ba49-49a84d304da1",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.063561,
+              "worker_prepare_seconds": 0.288755,
+              "input_fetch_seconds": 0.202822,
+              "process_seconds": 153.142616,
+              "cpu_seconds": 403.034019,
+              "reported_peak_memory_bytes": 5412700160,
+              "io_stats": {
+                "fileDownloadDurationUsec": "153187364",
+                "fileUploadCount": "73",
+                "fileUploadSizeBytes": "19399432",
+                "fileUploadDurationUsec": "432600"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 85.927318,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_sampler_roll.py::test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "seconds": 72.783965
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "191.993",
+            "timestamp": "2026-11-13T05:23:54.270227+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_sampler_roll",
+              "name": "test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "time": "190.882"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/a20683da-0e42-4141-b183-98f0a8f869a8/blobs/98ddfb98e1ed77efd0d2b290fc19b1f5876b728535f49146e122d5dca130c5ed/1218",
+              "action_digest": {
+                "hash": "98ddfb98e1ed77efd0d2b290fc19b1f5876b728535f49146e122d5dca130c5ed",
+                "sizeBytes": "1218"
+              },
+              "worker": "2ef47ed5-3193-4091-914c-1d06d1434af9",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.057544,
+              "worker_prepare_seconds": 0.265062,
+              "input_fetch_seconds": 0.175619,
+              "process_seconds": 208.291033,
+              "cpu_seconds": 512.752181,
+              "reported_peak_memory_bytes": 5679239168,
+              "io_stats": {
+                "fileDownloadDurationUsec": "208339639",
+                "fileUploadCount": "76",
+                "fileUploadSizeBytes": "19986314",
+                "fileUploadDurationUsec": "472188"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "invocation": "1f4f75dd-7197-4588-8ce0-da4e2d75bf53",
+      "url": "https://app.buildbuddy.io/invocation/1f4f75dd-7197-4588-8ce0-da4e2d75bf53",
+      "recorded_commit": "336ca97b1caf9b7ee53ebaf5062939e6740ead47",
+      "source_note": "Literal published336ca97 on older d9c9base; exploratory pair before append-only devel integration",
+      "success": true,
+      "status": "COMPLETE_INVOCATION_STATUS",
+      "bazel_seconds": 275.058,
+      "actions": [
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 81.494396,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_budget.py::test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "seconds": 73.642191
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "190.557",
+            "timestamp": "2026-11-13T05:54:37.918630+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_budget",
+              "name": "test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "time": "189.082"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/f1694489-caaf-4ce1-a856-0b7a5ada1a1b/blobs/37bd9cd91fd342199355d560d74c56f2387e7742bb3dbc265eb5658aeac3171f/1218",
+              "action_digest": {
+                "hash": "37bd9cd91fd342199355d560d74c56f2387e7742bb3dbc265eb5658aeac3171f",
+                "sizeBytes": "1218"
+              },
+              "worker": "298cab4b-2d91-47fb-a7e8-23d60ccc811f",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.061329,
+              "worker_prepare_seconds": 0.419058,
+              "input_fetch_seconds": 0.288076,
+              "process_seconds": 212.271096,
+              "cpu_seconds": 513.402407,
+              "reported_peak_memory_bytes": 4782477312,
+              "io_stats": {
+                "fileDownloadDurationUsec": "212384076",
+                "fileUploadCount": "74",
+                "fileUploadSizeBytes": "20814219",
+                "fileUploadDurationUsec": "354491"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 68.453693,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_crash.py::test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "seconds": 71.159558
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "171.393",
+            "timestamp": "2026-11-13T05:54:35.690132+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_crash",
+              "name": "test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "time": "169.852"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/78b0a8b3-dd26-496f-8d8c-83dd4a250503/blobs/faa9b6b07b7cfc2270537a4e7c9ba8d7efc955e466e7d1874f4e824a2e458403/1218",
+              "action_digest": {
+                "hash": "faa9b6b07b7cfc2270537a4e7c9ba8d7efc955e466e7d1874f4e824a2e458403",
+                "sizeBytes": "1218"
+              },
+              "worker": "55d5d106-ba96-4d50-ae2c-6db73bfceb36",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.058247,
+              "worker_prepare_seconds": 0.665238,
+              "input_fetch_seconds": 0.459077,
+              "process_seconds": 189.774292,
+              "cpu_seconds": 445.769467,
+              "reported_peak_memory_bytes": 4845907968,
+              "io_stats": {
+                "fileDownloadDurationUsec": "189850964",
+                "fileUploadCount": "83",
+                "fileUploadSizeBytes": "21383404",
+                "fileUploadDurationUsec": "420344"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 74.123238,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_history_outage.py::test_history_outage_backfills_completed_turn",
+              "seconds": 29.012201
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "136.966",
+            "timestamp": "2026-11-13T05:54:38.409271+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_history_outage",
+              "name": "test_history_outage_backfills_completed_turn",
+              "time": "134.921"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/7e261f0f-0e10-4e5e-b30f-e992a2d50fa3/blobs/203a121bfab973215ea20c80d327ded8a0ab6dcf6d1ad722096b5573111c46ab/1218",
+              "action_digest": {
+                "hash": "203a121bfab973215ea20c80d327ded8a0ab6dcf6d1ad722096b5573111c46ab",
+                "sizeBytes": "1218"
+              },
+              "worker": "70d7de37-63f8-4ed9-ba49-49a84d304da1",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.061661,
+              "worker_prepare_seconds": 0.396429,
+              "input_fetch_seconds": 0.262576,
+              "process_seconds": 158.154751,
+              "cpu_seconds": 404.409284,
+              "reported_peak_memory_bytes": 4790759424,
+              "io_stats": {
+                "fileDownloadDurationUsec": "158209247",
+                "fileUploadCount": "70",
+                "fileUploadSizeBytes": "19220524",
+                "fileUploadDurationUsec": "353395"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 86.587289,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_sampler_roll.py::test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "seconds": 72.806168
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "193.175",
+            "timestamp": "2026-11-13T05:54:37.944618+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_sampler_roll",
+              "name": "test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "time": "191.328"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/a95619dd-3e16-4d64-81d3-205ac22e9f60/blobs/6e5f28717156207242ea37d783e7b7f41ab50fef6ccedd922d9b29d6afd1d9e1/1218",
+              "action_digest": {
+                "hash": "6e5f28717156207242ea37d783e7b7f41ab50fef6ccedd922d9b29d6afd1d9e1",
+                "sizeBytes": "1218"
+              },
+              "worker": "2ef47ed5-3193-4091-914c-1d06d1434af9",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.060403,
+              "worker_prepare_seconds": 0.415212,
+              "input_fetch_seconds": 0.31425,
+              "process_seconds": 213.928201,
+              "cpu_seconds": 444.268449,
+              "reported_peak_memory_bytes": 4806443008,
+              "io_stats": {
+                "fileDownloadDurationUsec": "214002757",
+                "fileUploadCount": "79",
+                "fileUploadSizeBytes": "20667409",
+                "fileUploadDurationUsec": "323698"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "iteration2_final_validation": {
+    "invocation": "6287a3f2-2be5-434f-a848-1c0e8ea414bb",
+    "url": "https://app.buildbuddy.io/invocation/6287a3f2-2be5-434f-a848-1c0e8ea414bb",
+    "recorded_commit": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+    "source_note": "Literal final e81dd61 source; manual native positive, render+determinism, production-default staging render, explicit three changed Python libraries",
+    "success": true,
+    "status": "COMPLETE_INVOCATION_STATUS",
+    "bazel_seconds": 65.44,
+    "actions": [
+      {
+        "label": "//agentplane/system_tests/deployment:test_render",
+        "run": 1,
+        "shard": 1,
+        "attempt": 1,
+        "baseline": "unknown",
+        "cleanup": null,
+        "fingerprint": null,
+        "setup_seconds": null,
+        "cases": [
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_direct_fixture_uses_gateway_and_embedded_migrations",
+            "seconds": 0.094698
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling",
+            "seconds": 0.006545
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode",
+            "seconds": 0.000569
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_vm_boot_evidence_selects_only_oom_guest_at_runtime",
+            "seconds": 0.002465
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_libvirt_monitor_debug_is_opt_in_and_confined_to_test_vms",
+            "seconds": 0.005057
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_vm_fixture_uses_raw_block_workspace_and_filesystem_state",
+            "seconds": 0.004557
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_FIXTURE_RLOCATION]",
+            "seconds": 0.016197
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_CENTRAL_FIXTURE_RLOCATION]",
+            "seconds": 0.016449
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION]",
+            "seconds": 0.015861
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_central_recovery_keeps_native_services_without_oauth_fixture_workloads",
+            "seconds": 0.012274
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline",
+            "seconds": 0.00787
+          },
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render.py::test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary",
+            "seconds": 0.006765
+          }
+        ],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "12",
+          "time": "1.485",
+          "timestamp": "2026-11-13T06:00:09.636660+00:00",
+          "hostname": "192.168.241.2"
+        },
+        "junit_cases": [
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_direct_fixture_uses_gateway_and_embedded_migrations",
+            "time": "0.093"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling",
+            "time": "0.013"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode",
+            "time": "0.001"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_vm_boot_evidence_selects_only_oom_guest_at_runtime",
+            "time": "0.003"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_libvirt_monitor_debug_is_opt_in_and_confined_to_test_vms",
+            "time": "0.005"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_vm_fixture_uses_raw_block_workspace_and_filesystem_state",
+            "time": "0.005"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_FIXTURE_RLOCATION]",
+            "time": "0.016"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_CENTRAL_FIXTURE_RLOCATION]",
+            "time": "0.017"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION]",
+            "time": "0.016"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_central_recovery_keeps_native_services_without_oauth_fixture_workloads",
+            "time": "0.012"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline",
+            "time": "0.008"
+          },
+          {
+            "classname": "agentplane.system_tests.deployment.test_render",
+            "name": "test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary",
+            "time": "0.008"
+          }
+        ],
+        "physical_executions": [
+          {
+            "id": "/uploads/3160a6ec-1514-4ca1-bb9c-66da28a67e3d/blobs/2cba30a833c0cadd098a6e32cf05262a554116d06418c421e4dfee2a37e57e93/501",
+            "action_digest": {
+              "hash": "2cba30a833c0cadd098a6e32cf05262a554116d06418c421e4dfee2a37e57e93",
+              "sizeBytes": "501"
+            },
+            "worker": "2442a0c5-99ad-48cd-b461-05cebdbb7d93",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.062618,
+            "worker_prepare_seconds": 0.290555,
+            "input_fetch_seconds": 0.212695,
+            "process_seconds": 24.157426,
+            "cpu_seconds": 28.035746,
+            "reported_peak_memory_bytes": 1014562816,
+            "io_stats": {
+              "fileDownloadCount": "3",
+              "fileDownloadSizeBytes": "541983",
+              "fileDownloadDurationUsec": "24222612",
+              "fileUploadCount": "8",
+              "fileUploadSizeBytes": "36131",
+              "fileUploadDurationUsec": "111679"
+            }
+          }
+        ]
+      },
+      {
+        "label": "//agentplane/system_tests/deployment:test_render_determinism",
+        "run": 1,
+        "shard": 1,
+        "attempt": 1,
+        "baseline": "unknown",
+        "cleanup": null,
+        "fingerprint": null,
+        "setup_seconds": null,
+        "cases": [
+          {
+            "nodeid": "agentplane/system_tests/deployment/test_render_determinism.py::test_independent_renders_are_byte_identical",
+            "seconds": 31.490577
+          }
+        ],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "35.786",
+          "timestamp": "2026-11-13T05:59:23.554545+00:00",
+          "hostname": "192.168.241.2"
+        },
+        "junit_cases": [
+          {
+            "classname": "agentplane.system_tests.deployment.test_render_determinism",
+            "name": "test_independent_renders_are_byte_identical",
+            "time": "31.484"
+          }
+        ],
+        "physical_executions": [
+          {
+            "id": "/uploads/91b13c37-3c4e-4c4c-b85d-4811ea29d9bb/blobs/73d7db0fe70dfa60b389e548754c0d354c740e685a58cfdb10214cc3786a9b7b/501",
+            "action_digest": {
+              "hash": "73d7db0fe70dfa60b389e548754c0d354c740e685a58cfdb10214cc3786a9b7b",
+              "sizeBytes": "501"
+            },
+            "worker": "c3011d6a-d80e-4110-ad70-92e950f84b0d",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.059071,
+            "worker_prepare_seconds": 0.281194,
+            "input_fetch_seconds": 0.200413,
+            "process_seconds": 42.767488,
+            "cpu_seconds": 53.610862,
+            "reported_peak_memory_bytes": 1161355264,
+            "io_stats": {
+              "fileDownloadDurationUsec": "42838644",
+              "fileUploadCount": "8",
+              "fileUploadSizeBytes": "12318",
+              "fileUploadDurationUsec": "97867"
+            }
+          }
+        ]
+      },
+      {
+        "label": "//agentplane/x/native_contracts:test_recovery",
+        "run": 1,
+        "shard": 1,
+        "attempt": 1,
+        "baseline": "unknown",
+        "cleanup": null,
+        "fingerprint": null,
+        "setup_seconds": null,
+        "cases": [],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "25.642",
+          "timestamp": "2026-11-13T05:59:30.196881+00:00",
+          "hostname": "192.168.241.2"
+        },
+        "junit_cases": [
+          {
+            "classname": "agentplane.x.native_contracts.test_recovery",
+            "name": "test_runtime_transport_outage_retains_history_and_accepts_next_input",
+            "time": "25.210"
+          }
+        ],
+        "physical_executions": [
+          {
+            "id": "/uploads/fa88b96d-6b96-4c14-b7fe-fd809a0d948b/blobs/680dc7e99bcf2dc5a12d987290e4e45d47ad493487ac142f8c5f884a3c5d3ba4/581",
+            "action_digest": {
+              "hash": "680dc7e99bcf2dc5a12d987290e4e45d47ad493487ac142f8c5f884a3c5d3ba4",
+              "sizeBytes": "581"
+            },
+            "worker": "72215c3f-9bab-4c8b-9aad-6eacebb8a798",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.059584,
+            "worker_prepare_seconds": 0.485852,
+            "input_fetch_seconds": 0.400452,
+            "process_seconds": 36.49513,
+            "cpu_seconds": 47.106786,
+            "reported_peak_memory_bytes": 1079128064,
+            "io_stats": {
+              "fileDownloadCount": "4",
+              "fileDownloadSizeBytes": "119913048",
+              "fileDownloadDurationUsec": "36797619",
+              "fileUploadCount": "16",
+              "fileUploadSizeBytes": "84289",
+              "fileUploadDurationUsec": "96883"
+            }
+          }
+        ]
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_central_sampler",
+        "run": 1,
+        "shard": 1,
+        "attempt": 1,
+        "baseline": "unknown",
+        "cleanup": null,
+        "fingerprint": null,
+        "setup_seconds": null,
+        "cases": [],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "1.591",
+          "timestamp": "2026-11-13T05:59:40.139184+00:00",
+          "hostname": "192.168.241.2"
+        },
+        "junit_cases": [
+          {
+            "classname": "cluster.cdk8s.agentplane.test_central_sampler",
+            "name": "test_central_sampler_workload_and_cross_service_grants",
+            "time": "1.374"
+          }
+        ],
+        "physical_executions": [
+          {
+            "id": "/uploads/a6b060b4-8717-47d4-9115-a194873603ae/blobs/f7d2cf6ced9d55470a2f15c8a9f92d1323ee0466601ddebc1d204c15ecb73fb5/501",
+            "action_digest": {
+              "hash": "f7d2cf6ced9d55470a2f15c8a9f92d1323ee0466601ddebc1d204c15ecb73fb5",
+              "sizeBytes": "501"
+            },
+            "worker": "4929d540-75a8-4b54-9883-d88eedf47827",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.060466,
+            "worker_prepare_seconds": 0.29912,
+            "input_fetch_seconds": 0.213909,
+            "process_seconds": 22.236563,
+            "cpu_seconds": 28.536331,
+            "reported_peak_memory_bytes": 1076449280,
+            "io_stats": {
+              "fileDownloadDurationUsec": "22312204",
+              "fileUploadCount": "6",
+              "fileUploadSizeBytes": "10903",
+              "fileUploadDurationUsec": "83002"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "iteration2_submission_errors": [
+    {
+      "submission_id": "d1d20d5c-eefb-4615-afdb-f81195e8f0de",
+      "arm": "candidate",
+      "result": "Remote Git fetch rejected abbreviated commit e81dd61bc9; no Bazel invocation or test execution began. Resubmitted with full published40-character SHA."
+    },
+    {
+      "submission_id": "17a2ff2f-b7e5-42b9-834d-845b653458d5",
+      "arm": "control",
+      "result": "Remote Git fetch rejected abbreviated commit73c214534d; no Bazel invocation or test execution began. Resubmitted with full published40-character SHA."
+    }
+  ],
+  "iteration2_comparison": {
+    "scope_note": "One concurrent pair on the same base: identical four target labels and case nodeids, literal devel 73c214534d control and its e81dd61 experimental merge head; no local patches. Control 342.108s versus candidate 271.736s Bazel wall: 70.372s (20.57%) lower in this observation. All eight physical tests used warm baselines, one uncached attempt and clean teardown. Different workers and setup exposure remain; this is not a population estimate or a complete required-CI saving. The budget profile deliberately shortens the configured deadline from 120 to 45 seconds. Other setup changes cannot be causally separated in this pair.",
+    "control_url": "https://app.buildbuddy.io/invocation/e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
+    "candidate_url": "https://app.buildbuddy.io/invocation/d285e3ca-547c-4e5d-89d9-c6cbd5b74510",
+    "control_link_text": "Control 73c214534d \u00b7 four targets \u00b7 342.108s",
+    "control": {
+      "invocation": "e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
+      "url": "https://app.buildbuddy.io/invocation/e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
+      "recorded_commit": "73c214534dc211f8460fb233d3a63e4808947399",
+      "source_note": "Literal devel73c214534d, direct merge parent of candidatee81dd61;4target fresh graph, one concurrent pair, no local patch",
+      "success": true,
+      "status": "COMPLETE_INVOCATION_STATUS",
+      "bazel_seconds": 342.108,
+      "actions": [
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 86.804628,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_budget.py::test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "seconds": 163.483051
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "283.944",
+            "timestamp": "2026-11-13T06:02:05.632763+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_budget",
+              "name": "test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "time": "282.311"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/40240a81-ba40-492a-bf43-b990f757ca09/blobs/f42fbe2a476343e476e7104983a387857163a951547c420676e4a40cd5689b5e/1218",
+              "action_digest": {
+                "hash": "f42fbe2a476343e476e7104983a387857163a951547c420676e4a40cd5689b5e",
+                "sizeBytes": "1218"
+              },
+              "worker": "f779e900-570c-4f0d-97bd-9a4433993f36",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.100547,
+              "worker_prepare_seconds": 1.579223,
+              "input_fetch_seconds": 1.529765,
+              "process_seconds": 305.445324,
+              "cpu_seconds": 684.003554,
+              "reported_peak_memory_bytes": 5451886592,
+              "io_stats": {
+                "fileDownloadCount": "588",
+                "fileDownloadSizeBytes": "2256753694",
+                "fileDownloadDurationUsec": "306878818",
+                "fileUploadCount": "84",
+                "fileUploadSizeBytes": "22912048",
+                "fileUploadDurationUsec": "330544"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 118.901108,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_crash.py::test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "seconds": 73.48231
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "224.452",
+            "timestamp": "2026-11-13T06:02:00.260666+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_crash",
+              "name": "test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "time": "222.600"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/78835134-e354-483d-9eab-0c398986357e/blobs/7857bcf78465ef219d990d9e826f0eb222f588a5c51d4848853a42735412f77d/1218",
+              "action_digest": {
+                "hash": "7857bcf78465ef219d990d9e826f0eb222f588a5c51d4848853a42735412f77d",
+                "sizeBytes": "1218"
+              },
+              "worker": "55d5d106-ba96-4d50-ae2c-6db73bfceb36",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.059862,
+              "worker_prepare_seconds": 0.317051,
+              "input_fetch_seconds": 0.226833,
+              "process_seconds": 241.27288,
+              "cpu_seconds": 534.484992,
+              "reported_peak_memory_bytes": 5439098880,
+              "io_stats": {
+                "fileDownloadDurationUsec": "241362734",
+                "fileUploadCount": "81",
+                "fileUploadSizeBytes": "21792694",
+                "fileUploadDurationUsec": "348253"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 122.393117,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_history_outage.py::test_history_outage_backfills_completed_turn",
+              "seconds": 29.604524
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "188.924",
+            "timestamp": "2026-11-13T06:02:04.086975+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_history_outage",
+              "name": "test_history_outage_backfills_completed_turn",
+              "time": "187.019"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/9756495a-7866-481e-b585-456b5abe7b22/blobs/76833bda1d63cfc09b3c43c0f4f7023142feae199959e3192b368cb430f63409/1218",
+              "action_digest": {
+                "hash": "76833bda1d63cfc09b3c43c0f4f7023142feae199959e3192b368cb430f63409",
+                "sizeBytes": "1218"
+              },
+              "worker": "70d7de37-63f8-4ed9-ba49-49a84d304da1",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.063178,
+              "worker_prepare_seconds": 0.372112,
+              "input_fetch_seconds": 0.278135,
+              "process_seconds": 209.620721,
+              "cpu_seconds": 548.005758,
+              "reported_peak_memory_bytes": 5423923200,
+              "io_stats": {
+                "fileDownloadDurationUsec": "209788009",
+                "fileUploadCount": "70",
+                "fileUploadSizeBytes": "19433403",
+                "fileUploadDurationUsec": "374172"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 117.744243,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_sampler_roll.py::test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "seconds": 72.056541
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "222.992",
+            "timestamp": "2026-11-13T06:02:04.362577+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_sampler_roll",
+              "name": "test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "time": "220.701"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/59999794-4843-4c50-bd93-2c7baafc53ac/blobs/0abef122670869971a8a3a1cf75853ebed4aca7f4f3eff6c5022ec0494b7e4a5/1218",
+              "action_digest": {
+                "hash": "0abef122670869971a8a3a1cf75853ebed4aca7f4f3eff6c5022ec0494b7e4a5",
+                "sizeBytes": "1218"
+              },
+              "worker": "2ef47ed5-3193-4091-914c-1d06d1434af9",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.05692,
+              "worker_prepare_seconds": 0.31427,
+              "input_fetch_seconds": 0.226305,
+              "process_seconds": 244.578355,
+              "cpu_seconds": 554.57283,
+              "reported_peak_memory_bytes": 5451001856,
+              "io_stats": {
+                "fileDownloadDurationUsec": "244677827",
+                "fileUploadCount": "76",
+                "fileUploadSizeBytes": "20870931",
+                "fileUploadDurationUsec": "366712"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "candidate": {
+      "invocation": "d285e3ca-547c-4e5d-89d9-c6cbd5b74510",
+      "url": "https://app.buildbuddy.io/invocation/d285e3ca-547c-4e5d-89d9-c6cbd5b74510",
+      "recorded_commit": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+      "source_note": "Literal published e81dd61 mergehead;4target fresh graph, parent73c214534d; one concurrent control/candidate pair, no local patch",
+      "success": true,
+      "status": "COMPLETE_INVOCATION_STATUS",
+      "bazel_seconds": 271.736,
+      "actions": [
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 75.156243,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_budget.py::test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "seconds": 73.327922
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "180.367",
+            "timestamp": "2026-11-13T06:02:11.985898+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_budget",
+              "name": "test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input",
+              "time": "178.869"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/8b5b3af3-0c37-4212-b546-8210e510e977/blobs/3bd2697b3637bfa8a3f15d5a75085a3008f7e1e23e84c3707e2c239f39939f10/1218",
+              "action_digest": {
+                "hash": "3bd2697b3637bfa8a3f15d5a75085a3008f7e1e23e84c3707e2c239f39939f10",
+                "sizeBytes": "1218"
+              },
+              "worker": "36445349-7947-43c7-b1bf-6290d9c404b3",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.100146,
+              "worker_prepare_seconds": 1.085548,
+              "input_fetch_seconds": 1.038434,
+              "process_seconds": 200.047154,
+              "cpu_seconds": 513.681715,
+              "reported_peak_memory_bytes": 4784259072,
+              "io_stats": {
+                "fileDownloadCount": "69",
+                "fileDownloadSizeBytes": "807571394",
+                "fileDownloadDurationUsec": "200971350",
+                "fileUploadCount": "78",
+                "fileUploadSizeBytes": "21352665",
+                "fileUploadDurationUsec": "343767"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 105.1317,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_gateway_crash.py::test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "seconds": 72.054839
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "209.675",
+            "timestamp": "2026-11-13T06:02:10.450590+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_gateway_crash",
+              "name": "test_gateway_crash_settles_live_central_read_and_accepts_next_input",
+              "time": "207.943"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/051a9d26-768e-4eb9-b8aa-3092984d0ddb/blobs/26a0294b5800447d1ae51cfe0c01bc51dfbba69c887880159c9fa0f67745dcf2/1218",
+              "action_digest": {
+                "hash": "26a0294b5800447d1ae51cfe0c01bc51dfbba69c887880159c9fa0f67745dcf2",
+                "sizeBytes": "1218"
+              },
+              "worker": "55d5d106-ba96-4d50-ae2c-6db73bfceb36",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.06016,
+              "worker_prepare_seconds": 0.258637,
+              "input_fetch_seconds": 0.166895,
+              "process_seconds": 228.065822,
+              "cpu_seconds": 501.219597,
+              "reported_peak_memory_bytes": 4844601344,
+              "io_stats": {
+                "fileDownloadDurationUsec": "228130415",
+                "fileUploadCount": "82",
+                "fileUploadSizeBytes": "21541326",
+                "fileUploadDurationUsec": "367875"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 76.453011,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_history_outage.py::test_history_outage_backfills_completed_turn",
+              "seconds": 34.749094
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "143.803",
+            "timestamp": "2026-11-13T06:02:12.374358+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_history_outage",
+              "name": "test_history_outage_backfills_completed_turn",
+              "time": "142.195"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/95da8ec8-00ac-4a08-89cf-384a619aebcf/blobs/19fccda29b92acb5096e0e53b1fccc7a3cf11130beb1c4d44a650dff5a820bd8/1218",
+              "action_digest": {
+                "hash": "19fccda29b92acb5096e0e53b1fccc7a3cf11130beb1c4d44a650dff5a820bd8",
+                "sizeBytes": "1218"
+              },
+              "worker": "94283993-6948-4a28-9bde-beb5030d80e8",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.099284,
+              "worker_prepare_seconds": 1.215977,
+              "input_fetch_seconds": 1.160038,
+              "process_seconds": 163.640818,
+              "cpu_seconds": 445.084898,
+              "reported_peak_memory_bytes": 4775243776,
+              "io_stats": {
+                "fileDownloadCount": "158",
+                "fileDownloadSizeBytes": "2014897270",
+                "fileDownloadDurationUsec": "164687487",
+                "fileUploadCount": "75",
+                "fileUploadSizeBytes": "20230415",
+                "fileUploadDurationUsec": "362570"
+              }
+            }
+          ]
+        },
+        {
+          "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+          "run": 1,
+          "shard": 1,
+          "attempt": 1,
+          "baseline": "warm",
+          "cleanup": "complete",
+          "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+          "setup_seconds": 93.122175,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_sampler_roll.py::test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "seconds": 75.247456
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "202.184",
+            "timestamp": "2026-11-13T06:02:17.805940+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "junit_cases": [
+            {
+              "classname": "agentplane.system_tests.suites.mcp.test_sampler_roll",
+              "name": "test_sampler_roll_retains_active_turn_and_history_accepts_next_input",
+              "time": "200.356"
+            }
+          ],
+          "physical_executions": [
+            {
+              "id": "/uploads/b11f8c18-0403-455d-8cf2-4588b77c02ed/blobs/00823d36e153539bdb774721317676287cc442728569a708b2158d15ed3a7f40/1218",
+              "action_digest": {
+                "hash": "00823d36e153539bdb774721317676287cc442728569a708b2158d15ed3a7f40",
+                "sizeBytes": "1218"
+              },
+              "worker": "c04d6bd5-5ad9-4fc9-b6bc-dd4bf6e25ee3",
+              "stage": "COMPLETED",
+              "status": {},
+              "queue_seconds": 0.095605,
+              "worker_prepare_seconds": 1.464066,
+              "input_fetch_seconds": 1.40836,
+              "process_seconds": 227.73173,
+              "cpu_seconds": 531.287957,
+              "reported_peak_memory_bytes": 4728463360,
+              "io_stats": {
+                "fileDownloadCount": "90",
+                "fileDownloadSizeBytes": "807868216",
+                "fileDownloadDurationUsec": "229008173",
+                "fileUploadCount": "79",
+                "fileUploadSizeBytes": "21980002",
+                "fileUploadDurationUsec": "393945"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "targets": [
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+        "control_process_seconds": 305.445324,
+        "candidate_process_seconds": 200.047154,
+        "control_setup_seconds": 86.804628,
+        "candidate_setup_seconds": 75.156243,
+        "control_case_seconds": 163.483051,
+        "candidate_case_seconds": 73.327922,
+        "control_cpu_seconds": 684.003554,
+        "candidate_cpu_seconds": 513.681715,
+        "outcome": "Both passed; one uncached attempt each; same case; warm baseline; cleanup complete"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+        "control_process_seconds": 241.27288,
+        "candidate_process_seconds": 228.065822,
+        "control_setup_seconds": 118.901108,
+        "candidate_setup_seconds": 105.1317,
+        "control_case_seconds": 73.48231,
+        "candidate_case_seconds": 72.054839,
+        "control_cpu_seconds": 534.484992,
+        "candidate_cpu_seconds": 501.219597,
+        "outcome": "Both passed; one uncached attempt each; same case; warm baseline; cleanup complete"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+        "control_process_seconds": 209.620721,
+        "candidate_process_seconds": 163.640818,
+        "control_setup_seconds": 122.393117,
+        "candidate_setup_seconds": 76.453011,
+        "control_case_seconds": 29.604524,
+        "candidate_case_seconds": 34.749094,
+        "control_cpu_seconds": 548.005758,
+        "candidate_cpu_seconds": 445.084898,
+        "outcome": "Both passed; one uncached attempt each; same case; warm baseline; cleanup complete"
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+        "control_process_seconds": 244.578355,
+        "candidate_process_seconds": 227.73173,
+        "control_setup_seconds": 117.744243,
+        "candidate_setup_seconds": 93.122175,
+        "control_case_seconds": 72.056541,
+        "candidate_case_seconds": 75.247456,
+        "control_cpu_seconds": 554.57283,
+        "candidate_cpu_seconds": 531.287957,
+        "outcome": "Both passed; one uncached attempt each; same case; warm baseline; cleanup complete"
+      }
+    ],
+    "wall_reduction_seconds": 70.37200000000001,
+    "wall_reduction_percent_observed": 20.57011236217803,
+    "total_process_seconds": {
+      "control": 1000.91728,
+      "candidate": 819.4855239999999
+    },
+    "total_cpu_seconds": {
+      "control": 2321.067134,
+      "candidate": 1991.274167
+    },
+    "limits": [
+      "One pair, not P5 replay sample",
+      "Different hosted workers; no matched capacity guarantee",
+      "Warm retained baselines only; no cold or burst estimate",
+      "Only four targets; GitHub queues, other tests and required gates excluded",
+      "45s test trades full120s integration-duration exposure; unchanged assertions do not imply identical temporal exposure",
+      "All previous-base runs and failed submission attempts retained separately"
+    ]
+  },
+  "iteration2_ci": {
+    "invocation": "be0dff81-add1-5d6a-b8a4-e1f6d578aea3",
+    "url": "https://app.buildbuddy.io/invocation/be0dff81-add1-5d6a-b8a4-e1f6d578aea3",
+    "recorded_commit": "a7e97abfa650f2b610bc700d0529ef5284501d28",
+    "source_note": "Required checks attached to PR head e81dd61; BuildBuddy actually tests synthetic GitHub merge a7e97ab of base ca8e6f4 and head e81dd61. Artifact subset contains only Pod cleanup/cases, not all CI cleanup.",
+    "success": true,
+    "status": "COMPLETE_INVOCATION_STATUS",
+    "bazel_seconds": 552.224,
+    "actions": [
+      {
+        "label": "//agentplane/system_tests/suites:test_pod",
+        "run": 1,
+        "shard": 1,
+        "attempt": 1,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "fingerprint": "18d9907c799b8b9b04206feb07e3a5549ecfbbc4ebb2a4b4d78bb0b93f024f75",
+        "setup_seconds": 113.310883,
+        "cases": [
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+            "seconds": 27.593206
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+            "seconds": 24.882653
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+            "seconds": 14.815569
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+            "seconds": 16.460696
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+            "seconds": 83.213317
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+            "seconds": 44.799344
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+            "seconds": 20.915675
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+            "seconds": 42.669532
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+            "seconds": 20.444893
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+            "seconds": 24.600696
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+            "seconds": 1.475297
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+            "seconds": 4.227397
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+            "seconds": 24.614922
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+            "seconds": 47.364364
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+            "seconds": 0.01706
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+            "seconds": 2.183456
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+            "seconds": 1.94818
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+            "seconds": 22.361692
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+            "seconds": 14.174676
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+            "seconds": 6.097416
+          },
+          {
+            "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+            "seconds": 22.914268
+          }
+        ],
+        "junit": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "21",
+          "time": "406.294",
+          "timestamp": "2026-11-13T06:01:14.434484+00:00",
+          "hostname": "192.168.241.2"
+        },
+        "junit_cases": [
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+            "time": "201.139"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+            "time": "24.884"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+            "time": "14.816"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+            "time": "16.461"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+            "time": "44.800"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+            "time": "42.670"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+            "time": "20.916"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+            "time": "24.602"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+            "time": "20.447"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+            "time": "1.476"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+            "time": "47.365"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+            "time": "27.594"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+            "time": "4.228"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+            "time": "24.615"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+            "time": "22.362"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+            "time": "0.018"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+            "time": "2.184"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+            "time": "1.949"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+            "time": "22.916"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+            "time": "14.176"
+          },
+          {
+            "classname": "agentplane.system_tests.suites.test_pod",
+            "name": "test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+            "time": "46.098"
+          }
+        ],
+        "physical_executions": [
+          {
+            "id": "/uploads/8418d2e9-13d1-4ac4-9d97-2c7d8680973c/blobs/e9ccad4eba13571a93791d00b6b8fed0b11ee4dc57598a68b6208d7ce88e1f18/1216",
+            "action_digest": {
+              "hash": "e9ccad4eba13571a93791d00b6b8fed0b11ee4dc57598a68b6208d7ce88e1f18",
+              "sizeBytes": "1216"
+            },
+            "worker": "dbd6fa1f-1dae-4f18-a290-f7a3f055a7b5",
+            "stage": "COMPLETED",
+            "status": {},
+            "queue_seconds": 0.058274,
+            "worker_prepare_seconds": 0.285367,
+            "input_fetch_seconds": 0.153348,
+            "process_seconds": 426.158464,
+            "cpu_seconds": 1239.599252,
+            "reported_peak_memory_bytes": 5486428160,
+            "io_stats": {
+              "fileDownloadDurationUsec": "426210493",
+              "fileUploadCount": "140",
+              "fileUploadSizeBytes": "64414225",
+              "fileUploadDurationUsec": "569059"
+            }
+          }
+        ]
+      }
+    ],
+    "merge_provenance": {
+      "parents": [
+        "ca8e6f40aefc655b3d19365066f1e0c23b537570",
+        "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b"
+      ],
+      "sha": "a7e97abfa650f2b610bc700d0529ef5284501d28",
+      "tree": "81a228f8ac319821715d3d310691dd66f12bbbf5"
+    },
+    "workflow": {
+      "conclusion": "success",
+      "created_at": "2026-11-13T05:57:56Z",
+      "head_sha": "e81dd61bc98dbfd0e9ddf1c72ac3281cd4e4eb3b",
+      "id": 43375430504,
+      "run_started_at": "2026-11-13T05:57:56Z",
+      "updated_at": "2026-11-13T06:08:36Z"
+    },
+    "required_checks": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-11-13T06:08:35Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375430504/job/131720704239",
+        "name": "bazel-ci / Test & Build",
+        "startedAt": "2026-11-13T05:57:58Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-11-13T05:59:12Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375430421/job/131720704106",
+        "name": "Build artifacts + imports check",
+        "startedAt": "2026-11-13T05:57:58Z",
+        "status": "COMPLETED",
+        "workflowName": "Nix wheel check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-11-13T05:58:54Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43375430341/job/131720703667",
+        "name": "Pre-commit checks",
+        "startedAt": "2026-11-13T05:57:58Z",
+        "status": "COMPLETED",
+        "workflowName": "Pre-commit checks"
+      }
+    ],
+    "reviewed_at_utc": "2026-11-13T06:11:06.819976+00:00",
+    "workflow_created_to_last_required_seconds": 639.0,
+    "physical_test_actions": [
+      {
+        "label": "//agentplane/system_tests/suites:test_pod",
+        "process_seconds": 426.158464,
+        "completion": "2026-11-13T06:08:03.165595Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_services",
+        "process_seconds": 334.859906,
+        "completion": "2026-11-13T06:05:54.986264Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_vm",
+        "process_seconds": 315.046988,
+        "completion": "2026-11-13T06:06:00.751522Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_session_deletion",
+        "process_seconds": 269.141591,
+        "completion": "2026-11-13T06:05:27.149338Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_dispatcher",
+        "process_seconds": 257.591064,
+        "completion": "2026-11-13T06:05:14.968180Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_actions",
+        "process_seconds": 247.79308,
+        "completion": "2026-11-13T06:04:39.151202Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+        "process_seconds": 240.166244,
+        "completion": "2026-11-13T06:04:54.625176Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+        "process_seconds": 224.464713,
+        "completion": "2026-11-13T06:04:20.138210Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_firecracker",
+        "process_seconds": 216.050937,
+        "completion": "2026-11-13T06:04:31.767099Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+        "process_seconds": 207.059246,
+        "completion": "2026-11-13T06:03:56.687382Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_history_outage",
+        "process_seconds": 175.232894,
+        "completion": "2026-11-13T06:03:27.709733Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_delegation",
+        "process_seconds": 163.115203,
+        "completion": "2026-11-13T06:03:35.108341Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/suites/mcp:test_parent_delegation",
+        "process_seconds": 148.457055,
+        "completion": "2026-11-13T06:03:11.455714Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 116.484463,
+        "completion": "2026-11-13T06:02:40.250023Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_window_browser",
+        "process_seconds": 109.44313,
+        "completion": "2026-11-13T06:02:21.155285Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 103.992238,
+        "completion": "2026-11-13T06:02:16.738006Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 102.362983,
+        "completion": "2026-11-13T06:02:14.172301Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 100.586599,
+        "completion": "2026-11-13T06:02:17.771813Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 99.862492,
+        "completion": "2026-11-13T06:02:24.240663Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 98.482422,
+        "completion": "2026-11-13T06:02:22.497048Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 96.622319,
+        "completion": "2026-11-13T06:02:11.908715Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 92.602577,
+        "completion": "2026-11-13T06:02:23.746888Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 91.995583,
+        "completion": "2026-11-13T06:02:24.622919Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 90.018293,
+        "completion": "2026-11-13T06:02:06.661399Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 85.971292,
+        "completion": "2026-11-13T06:01:57.704798Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 81.089726,
+        "completion": "2026-11-13T06:02:14.318488Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_launcher_relay",
+        "process_seconds": 80.464671,
+        "completion": "2026-11-13T06:01:38.415924Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 80.198246,
+        "completion": "2026-11-13T06:02:00.298068Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_api",
+        "process_seconds": 79.719291,
+        "completion": "2026-11-13T06:02:12.368344Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 77.61118,
+        "completion": "2026-11-13T06:01:51.162307Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 74.645572,
+        "completion": "2026-11-13T06:02:00.068848Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_browser",
+        "process_seconds": 72.885743,
+        "completion": "2026-11-13T06:01:44.525151Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_electric_chunk_compaction",
+        "process_seconds": 68.810546,
+        "completion": "2026-11-13T06:01:36.508364Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_sync",
+        "process_seconds": 64.578579,
+        "completion": "2026-11-13T06:01:34.266060Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_electric_wal_recovery",
+        "process_seconds": 62.605268,
+        "completion": "2026-11-13T06:01:21.754935Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_native_facades",
+        "process_seconds": 62.346469,
+        "completion": "2026-11-13T06:01:42.974381Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_live",
+        "process_seconds": 54.032812,
+        "completion": "2026-11-13T06:01:44.793280Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_notifications_stream",
+        "process_seconds": 51.532479,
+        "completion": "2026-11-13T06:01:36.038946Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_action_api",
+        "process_seconds": 50.618903,
+        "completion": "2026-11-13T06:01:24.041625Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s:test_generate_manifests",
+        "process_seconds": 49.26926,
+        "completion": "2026-11-13T06:01:08.829043Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s:test_haku_anki_egress",
+        "process_seconds": 46.790471,
+        "completion": "2026-11-13T06:01:01.604961Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_workload_certificate_admission",
+        "process_seconds": 46.757974,
+        "completion": "2026-11-13T06:01:14.520719Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/runner_gateway/migrations:test_migrations",
+        "process_seconds": 45.625098,
+        "completion": "2026-11-13T06:01:39.238392Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_executor_container",
+        "process_seconds": 44.895043,
+        "completion": "2026-11-13T06:01:15.699190Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/deployment:test_render_determinism",
+        "process_seconds": 44.275661,
+        "completion": "2026-11-13T06:01:00.096119Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_codex_code_mode",
+        "process_seconds": 42.618688,
+        "completion": "2026-11-13T06:01:02.916165Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_thread_debug",
+        "process_seconds": 42.511348,
+        "completion": "2026-11-13T06:01:26.671629Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_policy_controller_rbac",
+        "process_seconds": 42.269435,
+        "completion": "2026-11-13T06:01:09.774425Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/central_sampler:test_gateway_integration",
+        "process_seconds": 39.913702,
+        "completion": "2026-11-13T06:01:07.486307Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s:test_agent_rbac",
+        "process_seconds": 37.60166,
+        "completion": "2026-11-13T06:00:56.919327Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/x/runner_layering:test_sparse_root",
+        "process_seconds": 37.483308,
+        "completion": "2026-11-13T06:01:32.071271Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_runner_gateway_workload",
+        "process_seconds": 36.868008,
+        "completion": "2026-11-13T06:01:01.998076Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_managed_account_admission",
+        "process_seconds": 36.502498,
+        "completion": "2026-11-13T06:01:06.575216Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_sandbox_controller",
+        "process_seconds": 35.15011,
+        "completion": "2026-11-13T06:01:03.111444Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_codex_shared_process",
+        "process_seconds": 34.48602,
+        "completion": "2026-11-13T06:01:04.121115Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_notifications",
+        "process_seconds": 33.902848,
+        "completion": "2026-11-13T06:00:55.507707Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_identity_catalog",
+        "process_seconds": 33.89665,
+        "completion": "2026-11-13T06:00:58.332990Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_prompt_instructions",
+        "process_seconds": 33.356662,
+        "completion": "2026-11-13T06:00:52.529377Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/ssh_mcp:test_consumers",
+        "process_seconds": 33.078086,
+        "completion": "2026-11-13T06:00:53.744452Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_sandbox_templates",
+        "process_seconds": 32.464627,
+        "completion": "2026-11-13T06:00:50.984632Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_actions",
+        "process_seconds": 32.328024,
+        "completion": "2026-11-13T06:01:02.793275Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_pid1_container",
+        "process_seconds": 31.088979,
+        "completion": "2026-11-13T06:01:15.587927Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_codex_catalog",
+        "process_seconds": 30.728054,
+        "completion": "2026-11-13T06:01:01.453360Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_workload_trust",
+        "process_seconds": 28.596335,
+        "completion": "2026-11-13T06:00:58.611211Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_egress",
+        "process_seconds": 28.535866,
+        "completion": "2026-11-13T06:00:50.187742Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s:test_haku_ui_egress",
+        "process_seconds": 28.132752,
+        "completion": "2026-11-13T06:00:43.155812Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_pid1_container",
+        "process_seconds": 27.874235,
+        "completion": "2026-11-13T06:01:16.761792Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_service_boundaries",
+        "process_seconds": 27.518673,
+        "completion": "2026-11-13T06:00:44.655443Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/haku:test_mailbox",
+        "process_seconds": 26.81389,
+        "completion": "2026-11-13T06:00:39.155528Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_frontend",
+        "process_seconds": 26.4934,
+        "completion": "2026-11-13T06:00:43.547241Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_environment_firecracker",
+        "process_seconds": 26.347327,
+        "completion": "2026-11-13T06:00:55.777123Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_environment_vm",
+        "process_seconds": 25.99737,
+        "completion": "2026-11-13T06:00:53.486676Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/system_tests/deployment:test_render",
+        "process_seconds": 25.699342,
+        "completion": "2026-11-13T06:00:43.698945Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_pid1_container",
+        "process_seconds": 24.900175,
+        "completion": "2026-11-13T06:01:13.480302Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_session_dispatcher",
+        "process_seconds": 24.323678,
+        "completion": "2026-11-13T06:00:42.006258Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_egress_staging_credentials",
+        "process_seconds": 23.712969,
+        "completion": "2026-11-13T06:00:42.904788Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/public_coder:test_app",
+        "process_seconds": 21.919098,
+        "completion": "2026-11-13T06:00:39.672536Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_launcher_grant_admission",
+        "process_seconds": 21.902521,
+        "completion": "2026-11-13T06:00:49.602023Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/haku_ci:test_secret_contract",
+        "process_seconds": 21.5736,
+        "completion": "2026-11-13T06:00:38.250613Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_central_sampler",
+        "process_seconds": 21.288008,
+        "completion": "2026-11-13T06:00:39.371240Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/app:test_electric_subset_window",
+        "process_seconds": 19.064442,
+        "completion": "2026-11-13T06:01:01.948637Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/haku_ci:test_runner",
+        "process_seconds": 18.572701,
+        "completion": "2026-11-13T06:00:34.343023Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//cluster/cdk8s/agentplane:test_model_selections",
+        "process_seconds": 16.77028,
+        "completion": "2026-11-13T06:00:29.787224Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e:test_pid1_container",
+        "process_seconds": 12.231489,
+        "completion": "2026-11-13T06:01:03.273843Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/env/e2e/testing:failure_journal_test",
+        "process_seconds": 11.532111,
+        "completion": "2026-11-13T06:00:42.869451Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/runner_gateway/dispatcher:test_testing_client",
+        "process_seconds": 11.426148,
+        "completion": "2026-11-13T06:00:43.603215Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      },
+      {
+        "label": "//agentplane/runner_gateway:test_settings",
+        "process_seconds": 10.354196,
+        "completion": "2026-11-13T06:01:02.865299Z",
+        "stage": "COMPLETED",
+        "link_type": 1
+      }
+    ],
+    "limits": "One experimental head, not a before/after cohort; broad graph includes all 13 ordinary K3s suites. Physical action durations do not sum to gate wall time. Cleanup artifact subset covers the last-running Pod action only."
   }
 }
