@@ -1918,6 +1918,7 @@ def generate_manifests(root: Path) -> None:
         ),
         crossplane_provider_kustomization,
         litellm_kustomization,
+        cert_manager_environment_kustomization,
     )
     litellm_buildbuddy_crossplane_artifact = artifact(
         litellm_buildbuddy_crossplane.NAME, litellm_buildbuddy_crossplane.OUTPUT_DIR
