@@ -258,6 +258,40 @@ async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str)
         }
 
 
+async def test_library_class(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const { Library } = await import('./main/packages/excalidraw/data/library.js');
+                const notifications = [];
+                const library = new Library({props: {onLibraryChange: items => notifications.push(items)}});
+                const original = [{id: 'library-item', elements: []}];
+                await library.setLibrary(original);
+                const latest = await library.getLatestLibrary();
+                await library.resetLibrary();
+                const afterReset = await library.getLatestLibrary();
+                library.destroy();
+                return {
+                    cloned: [latest !== original, latest[0] !== original[0]],
+                    latest: latest.map(item => item.id),
+                    afterReset: afterReset.map(item => item.id),
+                    notifications: notifications.map(items => items.map(item => item.id)),
+                };
+            }"""
+        )
+        assert result == {
+            "cloned": [True, True],
+            "latest": ["library-item"],
+            "afterReset": [],
+            "notifications": [["library-item"], []],
+        }
+
+
 async def test_scene_class(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
