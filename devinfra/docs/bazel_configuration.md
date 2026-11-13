@@ -206,8 +206,9 @@ GitHub runner. On both clients it proves from execution logs that:
 
 `.github/workflows/nixos-bazel-rbe.yml` runs both FHS and NixOS variants for
 relevant internal pull requests, pushes to `devel`, and manual dispatches.
-GitHub cannot provide the SOPS decryption secret to fork pull requests, so those
-runs are skipped.
+The workflow skips pull requests whose head repository differs from this
+repository. It uses `BUILDBUDDY_API_KEY` and `ATTIC_READ_TOKEN` for BuildBuddy
+and Nix-cache setup.
 
 For cache layout and worktree mechanics, see
 <bazel_worktree_cache_sharing.md>. For `bb remote`'s outer-runner behavior, see
