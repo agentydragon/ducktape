@@ -63,6 +63,7 @@ class CentralSamplerProps:
     # projected there, keyed by connection name.
     connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
     executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
+    executor_reconnect_timeout_seconds: int | None = None
     turn_timeout_seconds: int | None = None
     auto_compact_tokens: int | None = None
 
