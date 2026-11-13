@@ -226,6 +226,7 @@ describe("QuotaBoard", () => {
     expect(container.querySelectorAll(".aiquota-card")).toHaveLength(2);
     expect(container.textContent).toContain("Meter: fill = quota used; tick = time elapsed.");
     expect(container.textContent).toContain("Forecasts use average usage since the window started.");
+    expect(container.querySelector(".aiquota-board-help")?.hasAttribute("open")).toBe(false);
     expect(container.textContent).toContain("Paid credits");
     expect(container.textContent).toContain("5h");
     expect(container.textContent).toContain("On pace");
@@ -247,6 +248,16 @@ describe("QuotaBoard", () => {
     expect(container.querySelector(".aiquota-card .aiquota-error-details pre")?.textContent).toBe(
       "401 invalid_token returned from the provider"
     );
+  });
+
+  it("places subscription usage before balances and reset details", () => {
+    render(sampleQuotas());
+    const card = container.querySelector('.aiquota-card[aria-label="Codex quota"]')!;
+    const window = card.querySelector(".aiquota-window")!;
+    const readings = card.querySelector(".aiquota-readings")!;
+    const resets = card.querySelector(".aiquota-strip")!;
+    expect(window.compareDocumentPosition(readings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(window.compareDocumentPosition(resets) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("uses the optional grant hint while keeping older payloads compatible", () => {

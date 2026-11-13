@@ -64,7 +64,7 @@ describe("quota subscription", () => {
     act(() => stream.view("2026-01-15T12:00:00Z"));
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Live updates connected");
     expect(container.textContent).toContain("No quota providers are available.");
-    expect(container.textContent).toContain("Data freshness is shown on each provider.");
+    expect(container.querySelector(".aiquota-connection-help")).toBeNull();
     act(() => {
       vi.advanceTimersByTime(600_000);
     });
