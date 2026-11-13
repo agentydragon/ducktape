@@ -261,6 +261,11 @@
         "checkpoint": "root-first-screen",
         "artifact_basename": "1ccf3e36fcd5e2743ae658ad678576ee5c7f688940d7332cca7b66f9affed394.png"
       }
+    ],
+    "additional_reviewer": "live_grant_uid_backport",
+    "observations": [
+      "Architecture status pill ellipsizes on mobile; full status remains in body text.",
+      "Reliability inline link lacks whitespace after previous sentence; readable but cosmetic defect retained."
     ]
   },
   "prior_attempts": [
@@ -285,6 +290,12 @@
     "Browser validation is presentation proof, not source-test coverage, a CI saving or architecture qualification.",
     "Raw test logs, environments and fixture diagnostics are not published.",
     "After the tested snapshot, only this proof JSON and publication/visual-review metadata in three manifests are added. Their final bytes are statically checked; rendered HTML and measured evidence remain unchanged.",
-    "Existing visual proof JSON was excluded from rendered asset hashes to avoid self-reference."
-  ]
+    "The browser HTTP hash enumeration mistakenly used the architecture alias as a directory, so architecture bytes are absent from the19rendered hashes. All four browser cases rendered that page; source-copy hashes above and screenshots establish candidate provenance. Canonical deployment hashes are verified separately. The three final proof files and publication/visual-review manifest metadata are added after the preview and statically checked."
+  ],
+  "packaged_architecture_source_sha256": {
+    "agentplane-test-architecture/index.html": "7a90256c8730d4faf4c276479f508de9619922cdbc9dc177690daf2a76205adb",
+    "agentplane-test-architecture/evidence.json": "f680395bac6a31e6f31b98516c4ea2ce7c367dd4b3c54a5ee1e2f76fd3cac6a4",
+    "agentplane-test-architecture/iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "agentplane-test-architecture/required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69"
+  }
 }
