@@ -9,7 +9,7 @@ import (
 )
 
 // loadGitHubStatus attaches the source-owned shared state to a generic subscription read.
-func loadGitHubStatus(ctx context.Context, q querier, subscription *Subscription) error {
+func loadGitHubStatus(ctx context.Context, q githubstate.Querier, subscription *Subscription) error {
 	if _, ok := subscription.Source.(model.GitHubSource); !ok {
 		return nil
 	}

@@ -169,7 +169,7 @@ func bindSource(ctx context.Context, tx *sql.Tx, source model.Source, access *gi
 		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_pr_state_event`).Scan(&prStateSequence); err != nil {
 			return sourceBinding{}, err
 		}
-		if err := insertGrant(ctx, tx, *access, source.Repository); err != nil {
+		if err := githubstate.GrantTx(ctx, tx, *access, source.Repository); err != nil {
 			return sourceBinding{}, err
 		}
 		if _, err := tx.ExecContext(ctx,

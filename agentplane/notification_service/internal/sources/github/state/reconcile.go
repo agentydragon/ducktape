@@ -90,12 +90,12 @@ func (g *State) Grant(ctx context.Context, key AccessKey, repositoryName string)
 		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
-		return insertGrant(ctx, tx, key, repositoryName)
+		return GrantTx(ctx, tx, key, repositoryName)
 	})
 }
 
-// insertGrant writes the rows of a grant that are not there. The caller holds the GitHub lock.
-func insertGrant(ctx context.Context, tx *sql.Tx, key AccessKey, repositoryName string) error {
+// GrantTx writes the rows of a grant that are not there. The caller holds the GitHub lock.
+func GrantTx(ctx context.Context, tx *sql.Tx, key AccessKey, repositoryName string) error {
 	for _, statement := range []struct {
 		query string
 		args  []any
