@@ -107,7 +107,11 @@ impl ValidateReport {
     }
 }
 
-pub fn run_validate_cmd(args: ValidateArgs, output: &mut dyn std::io::Write) -> Result<()> {
+pub fn run_validate_cmd(
+    stderr: &mut dyn std::io::Write,
+    args: ValidateArgs,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     let report_only = args.report_only;
     let report = if args.source_only_requested() {
@@ -116,7 +120,7 @@ pub fn run_validate_cmd(args: ValidateArgs, output: &mut dyn std::io::Write) -> 
             commuting_statements_diagnostics: Vec::new(),
         }
     } else {
-        run_spec_validate(args)?
+        run_spec_validate(stderr, args)?
     };
     if format == OutputFormat::Ndjson {
         emit_validate_ndjson(&report, output)?;
@@ -150,14 +154,17 @@ pub(crate) struct CapturedPass {
     pub expected_chunks: BTreeSet<String>,
 }
 
-pub(crate) fn run_captured_pass(transform: TransformArgs) -> Result<CapturedPass> {
+pub(crate) fn run_captured_pass(
+    stderr: &mut dyn std::io::Write,
+    transform: TransformArgs,
+) -> Result<CapturedPass> {
     let keep_going = !transform.fail_fast;
     let cli = transform.context.resolve()?;
     let expected_chunks = expected_validation_chunks(&cli.spec_source)?;
     // Dry-run + a report dir makes the materialize pass emit per-chunk
     // reports, independent of how the spec configures `report_out_dir`.
     let capture = tempfile::tempdir().context("creating report capture dir")?;
-    let pass = command_diagnostics::run(|diagnostics| {
+    let pass = command_diagnostics::run(stderr, |diagnostics| {
         run_transform(
             &cli,
             TransformRunOptions {
@@ -176,6 +183,16 @@ pub(crate) fn run_captured_pass(transform: TransformArgs) -> Result<CapturedPass
             diagnostics,
         )
     });
+    let pass = match pass {
+        Err(error)
+            if error
+                .downcast_ref::<command_diagnostics::DiagnosticOutputError>()
+                .is_some() =>
+        {
+            return Err(error);
+        }
+        result => result,
+    };
     Ok(CapturedPass {
         capture,
         error: pass.err(),
@@ -200,9 +217,12 @@ impl CapturedPass {
     }
 }
 
-fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
+fn run_spec_validate(
+    stderr: &mut dyn std::io::Write,
+    args: ValidateArgs,
+) -> Result<ValidateReport> {
     let keep_going = !args.transform.fail_fast;
-    let pass = run_captured_pass(args.transform)?;
+    let pass = run_captured_pass(stderr, args.transform)?;
     let expected_chunks = &pass.expected_chunks;
     let chunks: Vec<(String, SelectorOutcomeReport<InvalidSelectorReport>)> =
         pass.chunk_reports(SELECTOR_DIAGNOSTICS_REPORT)?;

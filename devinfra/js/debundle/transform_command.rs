@@ -22,8 +22,8 @@ pub struct ProjectAnalysisArgs {
 impl ProjectAnalysisArgs {
     /// Resolve the shared transform arguments and write the canonical
     /// analysis projection.
-    pub fn run(self) -> Result<()> {
-        command_diagnostics::run(|diagnostics| {
+    pub fn run(self, stderr: &mut dyn std::io::Write) -> Result<()> {
+        command_diagnostics::run(stderr, |diagnostics| {
             project_analysis(&self.transform.context.resolve()?, &self.out, diagnostics)
         })
     }

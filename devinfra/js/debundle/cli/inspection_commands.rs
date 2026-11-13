@@ -389,6 +389,7 @@ fn resolve_id_as_module_path(id: &str, module_paths: &[String]) -> Option<String
 }
 
 pub(super) fn run_describe(
+    stderr: &mut dyn std::io::Write,
     args: DescribeArgs,
     source_context: Option<VerifiedGraphSourceContext>,
     validated: ValidatedDescribeQuery,
@@ -417,7 +418,7 @@ pub(super) fn run_describe(
         .into_iter()
         .enumerate()
         .map(|(index, selection)| {
-            command_diagnostics::run(|diagnostics| {
+            command_diagnostics::run(stderr, |diagnostics| {
                 session.explain(
                     &ExplainArgs {
                         selection,
@@ -472,6 +473,7 @@ pub(super) fn run_describe(
 }
 
 pub(super) fn run_inspect_source(
+    stderr: &mut dyn std::io::Write,
     args: InspectSourceArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
@@ -489,7 +491,7 @@ pub(super) fn run_inspect_source(
         let graph = args.graph.clone().context("--id requires --graph")?;
         let modules = args.modules.clone().context("--id requires --modules")?;
         let selection = dispatch_id_selection(id, &mut ModulePathIndex::under(&modules))?;
-        let selected = command_diagnostics::run(|diagnostics| {
+        let selected = command_diagnostics::run(stderr, |diagnostics| {
             run_source_selection_report(
                 &SourceSelectionArgs {
                     common: PeelCommonArgs {
@@ -1054,11 +1056,12 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs, output: &mut dyn std::io::Write)
 }
 
 pub(super) fn run_coverage(
+    stderr: &mut dyn std::io::Write,
     args: PatchPlanArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
-    let report = command_diagnostics::run(|diagnostics| {
+    let report = command_diagnostics::run(stderr, |diagnostics| {
         run_patch_plan_report(&args, source_context, diagnostics)
     })?;
     emit_report(

@@ -15,7 +15,9 @@ fn main() -> std::process::ExitCode {
         let matches = Args::command().get_matches();
         let result = (|| -> anyhow::Result<()> {
             validate_transform_arg_matches(&matches)?;
-            Args::from_arg_matches(&matches)?.project.run()
+            Args::from_arg_matches(&matches)?
+                .project
+                .run(&mut std::io::stderr().lock())
         })();
         match result {
             Ok(()) => std::process::ExitCode::SUCCESS,

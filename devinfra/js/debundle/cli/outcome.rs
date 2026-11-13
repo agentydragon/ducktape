@@ -110,13 +110,17 @@ impl MutationOutcome {
 
     /// Warn on stderr when this outcome wrote ownership changes that only
     /// graph-backed claim checks covered.
-    pub fn warn_if_unassessed_write(&self) {
+    pub fn warn_if_unassessed_write(&self, stderr: &mut dyn std::io::Write) -> Result<()> {
         if self.needs_full_assessment && self.action == "applied" {
-            eprintln!(
-                "warning: {}: write passed graph claim checks but was not assessed against the full candidate (needs_full_assessment; preview with --dry-run --analysis)",
-                self.verb
-            );
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "warning: {}: write passed graph claim checks but was not assessed against the full candidate (needs_full_assessment; preview with --dry-run --analysis)",
+                    self.verb
+                ),
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -131,38 +135,26 @@ pub struct GateRejectionOutcome<'a> {
     pub rejection: &'a GateRejectionReport,
 }
 
-/// Print `value` as JSON on stdout: pretty for `json`, one line for
-/// `ndjson`. Callers handle `text` themselves.
-pub fn print_outcome_json<T: Serialize>(value: &T, format: OutputFormat) -> Result<()> {
-    match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(value)?),
-        OutputFormat::Ndjson => println!("{}", serde_json::to_string(value)?),
-        OutputFormat::Text => unreachable!("text outcomes are rendered per verb"),
-    }
-    Ok(())
-}
-
-/// If `err` is a realizability-gate rejection and a JSON format is
-/// selected (explicitly or because stdout is a pipe), mirror the
-/// stderr blame report as a structured [`GateRejectionOutcome`] on
-/// stdout so machine readers don't have to scrape prose. The error
-/// still propagates — the command exits non-zero either way.
+/// Attach any rejection-report failure to the original typed gate rejection.
 pub fn emit_gate_rejection_json(
+    output: &mut dyn std::io::Write,
     verb: &'static str,
     format: Option<OutputFormat>,
-    err: &anyhow::Error,
-) {
+    err: anyhow::Error,
+) -> anyhow::Error {
     let Some(rejection) = err.downcast_ref::<GateRejection>() else {
-        return;
+        return err;
     };
     let format = OutputFormat::resolve(format);
     if format == OutputFormat::Text {
-        return;
+        return err;
     }
     let outcome = GateRejectionOutcome {
         verb,
         action: "rejected",
         rejection: &rejection.report,
     };
-    print_outcome_json(&outcome, format).expect("rejection outcome serializes");
+    let emission = command_output::write_report(&outcome, format, output, |_, _| Ok(()))
+        .map_err(anyhow::Error::from);
+    command_output::retain_operation_error(err, emission)
 }

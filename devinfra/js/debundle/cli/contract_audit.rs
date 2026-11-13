@@ -307,7 +307,11 @@ impl CheckpointSession {
     }
 }
 
-pub(super) fn run(args: AuditContractsArgs, output: &mut dyn std::io::Write) -> Result<()> {
+pub(super) fn run(
+    stderr: &mut dyn std::io::Write,
+    args: AuditContractsArgs,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
     ensure!(args.max_probes > 0, "--max-probes must be positive");
     ensure!(
         !args.transform.dry_run && !args.transform.fail_fast,
@@ -332,20 +336,31 @@ pub(super) fn run(args: AuditContractsArgs, output: &mut dyn std::io::Write) -> 
     );
 
     let eligible = targets.len().min(args.max_probes);
-    eprintln!("audit-progress baseline start eligible={eligible} completed=0");
-    let audit = match command_diagnostics::run(|diagnostics| {
+    command_diagnostics::write_diagnostic(
+        stderr,
+        format_args!("audit-progress baseline start eligible={eligible} completed=0"),
+    )?;
+    let audit = match command_diagnostics::run(stderr, |diagnostics| {
         ContractAudit::prepare(&cli, &spec, diagnostics)
     }) {
         Ok(audit) => audit,
         Err(error) => {
-            eprintln!(
-                "audit-progress baseline complete eligible={eligible} completed=0 verdict=failed"
+            let emission = command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "audit-progress baseline complete eligible={eligible} completed=0 verdict=failed"
+                ),
             );
-            return Err(error)
+            return command_diagnostics::finish(Err(error), emission)
                 .context("baseline full acceptance failed; no removal probes were run");
         }
     };
-    eprintln!("audit-progress baseline complete eligible={eligible} completed=0 verdict=passed");
+    command_diagnostics::write_diagnostic(
+        stderr,
+        format_args!(
+            "audit-progress baseline complete eligible={eligible} completed=0 verdict=passed"
+        ),
+    )?;
     let baseline_provenance = audit.provenance();
 
     if let Some(checkpoint) = &mut checkpoint {
@@ -374,35 +389,45 @@ pub(super) fn run(args: AuditContractsArgs, output: &mut dyn std::io::Write) -> 
             baseline_provenance
                 .verify(&CurrentRoots::default())
                 .context("audit inputs changed after baseline")?;
-            eprintln!(
-                "audit-progress probe reused ordinal={ordinal}/{eligible} completed={ordinal} verdict={} target={target:?}",
-                saved.verdict
-            );
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!(
+                    "audit-progress probe reused ordinal={ordinal}/{eligible} completed={ordinal} verdict={} target={target:?}",
+                    saved.verdict
+                ),
+            )?;
             results.push(saved.clone());
             continue;
         }
-        eprintln!(
-            "audit-progress probe start ordinal={ordinal}/{eligible} completed={index} target={target:?}"
-        );
+        command_diagnostics::write_diagnostic(
+            stderr,
+            format_args!(
+                "audit-progress probe start ordinal={ordinal}/{eligible} completed={index} target={target:?}"
+            ),
+        )?;
         let mut contracts = spec.chunk_export_purity.clone();
         remove_one(&mut contracts, &target)?;
-        let (verdict, error) =
-            match command_diagnostics::run(|diagnostics| audit.probe(contracts, diagnostics))? {
-                ContractProbeOutcome::Accepted => {
-                    (ProbeVerdict::RemovableUnderRemainingAssumptions, None)
-                }
-                ContractProbeOutcome::Rejected(error) => (
-                    ProbeVerdict::FailedFullAcceptance,
-                    Some(format!("{error:#}")),
-                ),
-                ContractProbeOutcome::Inconclusive(error) => {
-                    (ProbeVerdict::Inconclusive, Some(format!("{error:#}")))
-                }
-            };
-        eprintln!(
-            "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict={} target={target:?}",
-            ordinal, verdict
-        );
+        let (verdict, error) = match command_diagnostics::run(stderr, |diagnostics| {
+            audit.probe(contracts, diagnostics)
+        })? {
+            ContractProbeOutcome::Accepted => {
+                (ProbeVerdict::RemovableUnderRemainingAssumptions, None)
+            }
+            ContractProbeOutcome::Rejected(error) => (
+                ProbeVerdict::FailedFullAcceptance,
+                Some(format!("{error:#}")),
+            ),
+            ContractProbeOutcome::Inconclusive(error) => {
+                (ProbeVerdict::Inconclusive, Some(format!("{error:#}")))
+            }
+        };
+        command_diagnostics::write_diagnostic(
+            stderr,
+            format_args!(
+                "audit-progress probe complete ordinal={ordinal}/{eligible} completed={} verdict={} target={target:?}",
+                ordinal, verdict
+            ),
+        )?;
         let result = ProbeResult {
             target,
             verdict,

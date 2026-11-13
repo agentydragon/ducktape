@@ -169,3 +169,41 @@ fn comment_edit_modes_are_mutually_exclusive_in_both_namespaces() {
         }
     }
 }
+
+#[test]
+fn closed_stdout_does_not_replay_the_comment_editor_or_lose_the_written_comment() {
+    use std::process::Stdio;
+    let fixture = fixture();
+    let counter = fixture.root().join("editor-invocations");
+    let editor = fixture.root().join("counting-editor");
+    fs::write(
+        &editor,
+        format!(
+            "#!/bin/sh\nprintf 'called\\n' >> '{}'\nprintf 'written once' > \"$1\"\n",
+            counter.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
+    let (reader, writer) = std::io::pipe().unwrap();
+    drop(reader);
+    let output = fixture
+        .process(&[
+            "modules",
+            "comment",
+            "runtime/plugin",
+            "--edit",
+            "--format",
+            "json",
+        ])
+        .env("EDITOR", editor)
+        .stdout(Stdio::from(writer))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(fs::read_to_string(counter).unwrap().lines().count(), 1);
+    let saved: Value =
+        serde_yaml::from_slice(&fs::read(fixture.modules.join("runtime/plugin.yaml")).unwrap())
+            .unwrap();
+    assert_eq!(saved["comment"], "written once");
+}

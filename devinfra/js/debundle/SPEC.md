@@ -75,10 +75,14 @@ Project-analysis performs selector resolution and reports its selector warnings,
 but does not compute purity-hint facts. Progress and analysis telemetry have
 independent instrumentation owners.
 
-Report output is fallible through text rendering, JSON serialization, stdout
-writes, and the final flush. Text is fully rendered before its first write.
-The process adapter treats `BrokenPipe` from a report write or flush as
-successful early termination; other report output failures are command errors.
+Command output is fallible through text rendering, JSON serialization, stdout
+and stderr writes, and each stream's explicit final flush. Text reports are
+fully rendered before their first write. A successful operation may terminate
+successfully when its stdout write or flush returns `BrokenPipe`. Stderr
+failures are command errors, including when stdout also reports `BrokenPipe`.
+An operation that already failed stays failed if emitting its stdout or stderr
+diagnostic also fails; both native causes remain available. Output failures do
+not replay or roll back mutations that have already been applied.
 
 ## Read-only query failures
 

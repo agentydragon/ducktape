@@ -223,14 +223,18 @@ impl ProbeTarget {
     }
 }
 
-pub fn run(args: SpecLintArgs, output: &mut dyn Write) -> Result<()> {
+pub fn run(
+    stderr: &mut dyn std::io::Write,
+    args: SpecLintArgs,
+    output: &mut dyn Write,
+) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
     if let Some(max_probes) = args.max_probes {
         ensure!(max_probes > 0, "--max-probes must be positive");
     }
     let cli = args.transform.context.clone().resolve()?;
     let spec = load_transform_spec_source(&cli.spec_source)?;
-    let pass = run_captured_pass(args.transform.clone())?;
+    let pass = run_captured_pass(stderr, args.transform.clone())?;
     let reports: Vec<(String, ChunkSpecLint)> = pass.chunk_reports(SPEC_LINT_REPORT)?;
     if reports.is_empty()
         && let Some(error) = pass.error
@@ -310,7 +314,7 @@ pub fn run(args: SpecLintArgs, output: &mut dyn Write) -> Result<()> {
         probes: Vec::new(),
     };
     if args.probe_analysis {
-        probe_annotations(&args, &cli, &spec, &mut report)?;
+        probe_annotations(stderr, &args, &cli, &spec, &mut report)?;
     }
     write_report(&report, format, output, |report, out| {
         out.push_str(&render_text(report)?);
@@ -345,6 +349,7 @@ fn authored_loader_host_keys(host: &spec::HostBehavior) -> Vec<HostBehaviorKey> 
 /// some analysis consumed (an unconsumed one is already exact). A probed
 /// annotation's finding replaces its cheap lead.
 fn probe_annotations(
+    stderr: &mut dyn std::io::Write,
     args: &SpecLintArgs,
     cli: &pipeline::TransformRequest,
     spec: &TransformSpec,
@@ -400,7 +405,7 @@ fn probe_annotations(
     let scratch = tempfile::tempdir().context("creating probe scratch dir")?;
     let baseline_root = scratch.path().join("baseline");
     let mut probed = Vec::new();
-    let baseline = match command_diagnostics::run(|diagnostics| {
+    let baseline = match command_diagnostics::run(stderr, |diagnostics| {
         probe.run(probe.spec(), &baseline_root, diagnostics)
     })? {
         AnnotationProbeRun::Accepted => Some(report_tree(&baseline_root)?),
@@ -427,7 +432,7 @@ fn probe_annotations(
             }
             let root = scratch.path().join(format!("probe-{index}"));
             let started = Instant::now();
-            let verdict = match command_diagnostics::run(|diagnostics| {
+            let verdict = match command_diagnostics::run(stderr, |diagnostics| {
                 probe.run(&target.withhold(probe.spec())?, &root, diagnostics)
             })? {
                 AnnotationProbeRun::Accepted if report_tree(&root)? == baseline => {

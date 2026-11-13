@@ -95,6 +95,7 @@ struct PlannedSourceUnitMove {
 /// come from the canonical joint resolver; names, selector text, annotations,
 /// and anonymous-statement metadata are preserved from the original YAML.
 pub fn run_source_unit_refine(
+    stderr: &mut dyn std::io::Write,
     modules_root: &Path,
     dependency_graph_path: &Path,
     source_root: &Path,
@@ -131,7 +132,7 @@ pub fn run_source_unit_refine(
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
     let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
-    let resolved = command_diagnostics::run(|diagnostics| {
+    let resolved = command_diagnostics::run(stderr, |diagnostics| {
         resolve_source_claims(
             anonymous_resolution::SourceClaimsContext {
                 graph: dependency_graph,
@@ -472,6 +473,7 @@ pub fn run_source_unit_refine(
         source_context,
     }
     .check_source_units(
+        stderr,
         modules_root,
         &post_spec,
         &expected_source_unit_modules,
@@ -483,7 +485,7 @@ pub fn run_source_unit_refine(
             .filter(|(path, _)| !to_delete.contains(*path))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
-        Some(command_diagnostics::run(|diagnostics| {
+        Some(command_diagnostics::run(stderr, |diagnostics| {
             assess_candidate_effect_relocation(
                 context.transform,
                 context.analysis,

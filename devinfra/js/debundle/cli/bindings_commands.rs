@@ -9,7 +9,7 @@ use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
-use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
+use crate::outcome::emit_gate_rejection_json;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
@@ -265,7 +265,11 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
     }
 }
 
-fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
+fn run_bindings_rename_cmd(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+    args: BindingsRenameArgs,
+) -> Result<()> {
     if let Some(path) = &args.batch {
         use std::io::Read;
         let text = if path == "-" {
@@ -276,18 +280,28 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
             std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
         };
         let requests: Vec<Rename> = serde_json::from_str(&text)?;
-        let out = rename_bindings(&args.modules_root, requests, args.dry_run, args.no_verify)?;
+        let out = rename_bindings(
+            stderr,
+            &args.modules_root,
+            requests,
+            args.dry_run,
+            args.no_verify,
+        )?;
         return match OutputFormat::resolve(args.format) {
             OutputFormat::Text => {
-                println!(
-                    "{}: {} rename(s); {} file(s) written",
-                    out.outcome.action,
-                    out.renames_applied,
-                    out.outcome.files_written.len()
-                );
+                command_output::write_line(
+                    output,
+                    format_args!(
+                        "{}: {} rename(s); {} file(s) written",
+                        out.outcome.action,
+                        out.renames_applied,
+                        out.outcome.files_written.len()
+                    ),
+                )?;
                 Ok(())
             }
-            format => print_outcome_json(&out, format),
+            format => command_output::write_report(&out, format, output, |_, _| Ok(()))
+                .map_err(Into::into),
         };
     }
     let out = rename_binding(
@@ -310,17 +324,22 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
                 .as_deref()
                 .map(str::to_string)
                 .unwrap_or_else(|| out.identity.to_string());
-            println!(
-                "{}: {} -> {}{file}",
-                out.outcome.action, previous_name, out.new_readable,
-            );
+            command_output::write_line(
+                output,
+                format_args!(
+                    "{}: {} -> {}{file}",
+                    out.outcome.action, previous_name, out.new_readable,
+                ),
+            )?;
         }
-        format => print_outcome_json(&out, format)?,
+        format => command_output::write_report(&out, format, output, |_, _| Ok(()))?,
     }
     Ok(())
 }
 
 fn run_bindings_assign_cmd(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     args: BindingsAssignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -359,6 +378,7 @@ fn run_bindings_assign_cmd(
                 graph_source: context.graph_source,
             });
     let out = match run_bindings_assign(
+        stderr,
         &args.edit.modules_root,
         moves,
         args.edit.dry_run,
@@ -367,15 +387,21 @@ fn run_bindings_assign_cmd(
     ) {
         Ok(out) => out,
         Err(err) => {
-            emit_gate_rejection_json("assign", args.edit.format, &err);
-            return Err(err);
+            return Err(emit_gate_rejection_json(
+                output,
+                "assign",
+                args.edit.format,
+                err,
+            ));
         }
     };
     let format = OutputFormat::resolve(args.edit.format);
-    print_assign_outcome(&out, format)
+    print_assign_outcome(output, stderr, &out, format)
 }
 
 fn run_bindings_unassign_cmd(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     args: BindingsUnassignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -394,6 +420,7 @@ fn run_bindings_unassign_cmd(
             });
     let gate = args.edit.gate(source_context)?;
     let out = match run_bindings_unassign(
+        stderr,
         &args.edit.modules_root,
         args.syms,
         args.edit.dry_run,
@@ -402,63 +429,88 @@ fn run_bindings_unassign_cmd(
     ) {
         Ok(out) => out,
         Err(err) => {
-            emit_gate_rejection_json("unassign", args.edit.format, &err);
-            return Err(err);
+            return Err(emit_gate_rejection_json(
+                output,
+                "unassign",
+                args.edit.format,
+                err,
+            ));
         }
     };
     let format = OutputFormat::resolve(args.edit.format);
-    print_unassign_outcome(&out, format)
+    print_unassign_outcome(output, stderr, &out, format)
 }
 
-fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result<()> {
-    out.outcome.warn_if_unassessed_write();
+fn print_unassign_outcome(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+    out: &UnassignOutcome,
+    format: OutputFormat,
+) -> Result<()> {
+    out.outcome.warn_if_unassessed_write(stderr)?;
     match format {
         OutputFormat::Text => {
-            println!(
-                "{}: {} unassign(s); {} file(s) written, {} file(s) deleted",
-                out.outcome.action,
-                out.unassigned,
-                out.outcome.files_written.len(),
-                out.outcome.files_deleted.len()
-            );
+            command_output::write_line(
+                output,
+                format_args!(
+                    "{}: {} unassign(s); {} file(s) written, {} file(s) deleted",
+                    out.outcome.action,
+                    out.unassigned,
+                    out.outcome.files_written.len(),
+                    out.outcome.files_deleted.len()
+                ),
+            )?;
             Ok(())
         }
-        format => print_outcome_json(out, format),
+        format => {
+            command_output::write_report(out, format, output, |_, _| Ok(())).map_err(Into::into)
+        }
     }
 }
 
-fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {
-    out.outcome.warn_if_unassessed_write();
+fn print_assign_outcome(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+    out: &AssignOutcome,
+    format: OutputFormat,
+) -> Result<()> {
+    out.outcome.warn_if_unassessed_write(stderr)?;
     match format {
         OutputFormat::Text => {
-            println!(
-                "{}: {} move(s); {} file(s) written, {} file(s) deleted",
-                out.outcome.action,
-                out.moves_applied,
-                out.outcome.files_written.len(),
-                out.outcome.files_deleted.len()
-            );
+            command_output::write_line(
+                output,
+                format_args!(
+                    "{}: {} move(s); {} file(s) written, {} file(s) deleted",
+                    out.outcome.action,
+                    out.moves_applied,
+                    out.outcome.files_written.len(),
+                    out.outcome.files_deleted.len()
+                ),
+            )?;
             Ok(())
         }
-        format => print_outcome_json(out, format),
+        format => {
+            command_output::write_report(out, format, output, |_, _| Ok(())).map_err(Into::into)
+        }
     }
 }
 
 pub(super) fn run(
+    stderr: &mut dyn std::io::Write,
     args: BindingsNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
     match args.command {
-        BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
+        BindingsNsCommand::Comment(c) => run_binding_comment_cmd(output, c),
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l, output),
-        BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
+        BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(output, stderr, r),
         BindingsNsCommand::Assign(a) => {
-            run_bindings_assign_cmd(*a, source_context, analysis_engine_sha256)
+            run_bindings_assign_cmd(output, stderr, *a, source_context, analysis_engine_sha256)
         }
         BindingsNsCommand::Unassign(u) => {
-            run_bindings_unassign_cmd(*u, source_context, analysis_engine_sha256)
+            run_bindings_unassign_cmd(output, stderr, *u, source_context, analysis_engine_sha256)
         }
     }
 }

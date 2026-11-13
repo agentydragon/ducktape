@@ -170,11 +170,12 @@ impl ResolvedCandidateEffectAssessment<'_> {
     /// graph input and canonical staged analysis pipeline.
     pub fn assess(
         &self,
+        stderr: &mut dyn std::io::Write,
         edit_modules_root: &std::path::Path,
         candidate_modules: &BTreeMap<String, LogicalModule>,
         analysis_engine_sha256: &'static str,
     ) -> Result<gate::CandidateRelocationAssessmentReport> {
-        command_diagnostics::run(|diagnostics| {
+        command_diagnostics::run(stderr, |diagnostics| {
             pipeline::assess_candidate_effect_relocation(
                 &self.transform,
                 AnalysisArtifactInput {

@@ -177,16 +177,18 @@ impl<'a> Gate<'a> {
     /// skipped gates don't pay for spec assembly.
     pub fn check(
         &self,
+        stderr: &mut dyn std::io::Write,
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
     ) -> Result<()> {
-        self.check_expected(modules_root, post_spec, &[])
+        self.check_expected(stderr, modules_root, post_spec, &[])
     }
 
     /// Check the gate and prove newly authored selectors still claim the
     /// binding their edit intended, not merely some unique declaration.
     pub fn check_expected(
         &self,
+        stderr: &mut dyn std::io::Write,
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
         expected: &[ExpectedResolvedMember],
@@ -198,6 +200,7 @@ impl<'a> Gate<'a> {
                 source_root,
                 source_context,
             } => gate_post_edit_assignment_with_expected(
+                stderr,
                 graph_path,
                 input,
                 modules_root,
@@ -216,6 +219,7 @@ impl<'a> Gate<'a> {
     /// residual, against the same graph used to plan the edit.
     pub fn check_source_units(
         &self,
+        stderr: &mut dyn std::io::Write,
         modules_root: &Path,
         post_spec: &PostEditSpec,
         assignments: &SourceUnitModuleAssignments,
@@ -228,6 +232,7 @@ impl<'a> Gate<'a> {
                 source_root,
                 source_context,
             } => gate_post_edit_assignment_with_expected(
+                stderr,
                 graph_path,
                 input,
                 modules_root,
@@ -836,6 +841,7 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 }
 
 fn gate_post_edit_assignment_with_expected(
+    stderr: &mut dyn std::io::Write,
     dependency_graph_path: &Path,
     input: &DependencyGraphInput,
     modules_root: &Path,
@@ -852,7 +858,7 @@ fn gate_post_edit_assignment_with_expected(
     // source, unmatched/ambiguous selector) is a hard error — the claimed
     // source unit must never silently fall to residual.
     let claim_sets = source_claim_sets_from_post_spec(post_spec);
-    let resolved_claims = command_diagnostics::run(|diagnostics| {
+    let resolved_claims = command_diagnostics::run(stderr, |diagnostics| {
         resolve_source_claims(
             anonymous_resolution::SourceClaimsContext {
                 graph: dependency_graph_report,
@@ -1021,12 +1027,17 @@ fn gate_post_edit_assignment_with_expected(
         }
         let summary =
             render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, dependency_graph);
-        eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
-        return Err(GateRejection {
+        let error = GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },
             message: "realizability gate rejected the edit (atom-split)",
-        }
-        .into());
+        };
+        return command_diagnostics::finish(
+            Err(error.into()),
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!("error: post-edit spec splits one or more atomic groups:\n{summary}"),
+            ),
+        );
     }
 
     // Check 2 — module-quotient cycles.
@@ -1038,12 +1049,17 @@ fn gate_post_edit_assignment_with_expected(
             &blocking_sccs,
         )?;
         let summary = render_cycle_summary(&report.cycles);
-        eprintln!("error: post-edit spec is unrealizable:\n{summary}");
-        return Err(GateRejection {
+        let error = GateRejection {
             report: GateRejectionReport::UnrealizableCycles { blocking_sccs },
             message: "realizability gate rejected the edit",
-        }
-        .into());
+        };
+        return command_diagnostics::finish(
+            Err(error.into()),
+            command_diagnostics::write_diagnostic(
+                stderr,
+                format_args!("error: post-edit spec is unrealizable:\n{summary}"),
+            ),
+        );
     }
     Ok(())
 }

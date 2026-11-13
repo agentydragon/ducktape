@@ -70,6 +70,32 @@ where
     output.flush().map_err(ReportOutputError::Flush)
 }
 
+/// Write one text record followed by a newline.
+pub fn write_line(
+    output: &mut dyn Write,
+    text: std::fmt::Arguments<'_>,
+) -> std::result::Result<(), ReportOutputError> {
+    let mut text = text.to_string();
+    text.push('\n');
+    output
+        .write_all(text.as_bytes())
+        .map_err(ReportOutputError::Write)?;
+    output.flush().map_err(ReportOutputError::Flush)
+}
+
+/// An operation failed before its stdout diagnostic failed. The original
+/// operation remains the anyhow cause; stdout closure cannot make it successful.
+#[derive(Debug, thiserror::Error)]
+#[error("emitting failed operation report: {0:#}")]
+pub struct FailedOperationOutput(#[source] pub anyhow::Error);
+
+pub fn retain_operation_error(error: anyhow::Error, emission: anyhow::Result<()>) -> anyhow::Error {
+    match emission {
+        Ok(()) => error,
+        Err(emission) => error.context(FailedOperationOutput(emission)),
+    }
+}
+
 /// For a command whose primary output is an array: when `format` is `Ndjson`,
 /// write one compact JSON line per item and return `true` (the caller should
 /// stop). Otherwise emit nothing and return `false`, so the caller falls

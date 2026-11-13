@@ -92,12 +92,16 @@ struct SnapshotOutcome {
     regeneration_argv: Vec<String>,
 }
 
-pub(super) fn run(args: SnapshotArgs, current: CurrentRoots) -> Result<()> {
+pub(super) fn run(
+    output: &mut dyn std::io::Write,
+    args: SnapshotArgs,
+    current: CurrentRoots,
+) -> Result<()> {
     let outcome = match args.command {
         SnapshotCommand::Create(args) => create(args, current)?,
         SnapshotCommand::Verify(args) => verify(&args.directory)?,
     };
-    println!("{}", serde_json::to_string_pretty(&outcome)?);
+    command_output::write_report(&outcome, peel::OutputFormat::Json, output, |_, _| Ok(()))?;
     Ok(())
 }
 

@@ -39,7 +39,7 @@ use yaml_edit::write_yaml_atomic;
 use crate::binding::load_module_docs;
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
-use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
+use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json};
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
@@ -215,15 +215,20 @@ impl DeleteSummary {
 /// * `--dry-run`: run the gate but do not modify any file.
 /// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
 pub fn run_merge(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     merge: MergeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     if merge.edit.no_verify {
-        eprintln!(
-            "warning: --no-verify skips the realizability gate; the merge YAML splice will \
+        command_diagnostics::write_diagnostic(
+            stderr,
+            format_args!(
+                "warning: --no-verify skips the realizability gate; the merge YAML splice will \
              not be re-checked for cross-module cycles."
-        );
+            ),
+        )?;
     }
     let gate = merge.edit.gate(source_context)?;
     let is_batch = merge.batch.is_some();
@@ -261,6 +266,7 @@ pub fn run_merge(
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
             let assessment = context.assess(
+                stderr,
                 &merge.edit.modules_root,
                 &candidate_modules,
                 analysis_engine_sha256,
@@ -270,15 +276,21 @@ pub fn run_merge(
             (None, None)
         };
     let validation = if let Some(docs) = candidate_docs.as_ref() {
-        gate.check(&modules_root, || {
+        gate.check(stderr, &modules_root, || {
             post_edit_spec_from_docs(docs, &BTreeSet::new())
         })
     } else {
-        gate.check(&modules_root, || post_merge_spec(&modules_root, &plans))
+        gate.check(stderr, &modules_root, || {
+            post_merge_spec(&modules_root, &plans)
+        })
     };
     if let Err(err) = validation {
-        emit_gate_rejection_json("merge", merge.edit.format, &err);
-        return Err(err);
+        return Err(emit_gate_rejection_json(
+            output,
+            "merge",
+            merge.edit.format,
+            err,
+        ));
     }
     if !merge.edit.dry_run {
         // Every target is written before any source is deleted. Per-file writes
@@ -313,22 +325,28 @@ pub fn run_merge(
             .map(|p| p.display().to_string())
             .collect(),
     );
-    outcome.warn_if_unassessed_write();
+    outcome.warn_if_unassessed_write(stderr)?;
     match OutputFormat::resolve(merge.edit.format) {
         OutputFormat::Text => {
             if is_batch {
-                println!("{action}: {} merge target(s)", plans.len());
+                command_output::write_line(
+                    output,
+                    format_args!("{action}: {} merge target(s)", plans.len()),
+                )?;
                 return Ok(());
             }
             let summary = &plans[0].summary;
             if merge.edit.dry_run {
-                println!(
-                    "dry-run: would merge {} source(s) into {}",
-                    summary.merged_sources.len(),
-                    summary.target.display()
-                );
+                command_output::write_line(
+                    output,
+                    format_args!(
+                        "dry-run: would merge {} source(s) into {}",
+                        summary.merged_sources.len(),
+                        summary.target.display()
+                    ),
+                )?;
             } else {
-                println!("{}", summary.summary_line());
+                command_output::write_line(output, format_args!("{}", summary.summary_line()))?;
             }
         }
         format if is_batch => {
@@ -336,22 +354,26 @@ pub fn run_merge(
                 .iter()
                 .map(|p| p.summary.target.display().to_string())
                 .collect();
-            print_outcome_json(
+            command_output::write_report(
                 &MergeBatchOutcome {
                     outcome,
                     targets,
                     effect_relocation_assessment,
                 },
                 format,
+                output,
+                |_, _| Ok(()),
             )?;
         }
-        format => print_outcome_json(
+        format => command_output::write_report(
             &MergeOutcome {
                 outcome,
                 target: plans[0].summary.target.display().to_string(),
                 effect_relocation_assessment,
             },
             format,
+            output,
+            |_, _| Ok(()),
         )?,
     }
     Ok(())
@@ -688,15 +710,20 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 /// best-effort atomic (collect-then-remove) but cannot roll back a
 /// partial removal if the filesystem fails midway.
 pub fn run_delete(
+    output: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
     args: DeleteArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     if args.edit.no_verify {
-        eprintln!(
-            "warning: --no-verify skips the realizability gate; the deletion will not be \
+        command_diagnostics::write_diagnostic(
+            stderr,
+            format_args!(
+                "warning: --no-verify skips the realizability gate; the deletion will not be \
              re-checked for cross-module cycles."
-        );
+            ),
+        )?;
     }
 
     let paths_abs: Vec<PathBuf> = args
@@ -756,6 +783,7 @@ pub fn run_delete(
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
             let assessment = context.assess(
+                stderr,
                 &args.edit.modules_root,
                 &candidate_modules,
                 analysis_engine_sha256,
@@ -783,17 +811,21 @@ pub fn run_delete(
         let validation = if let (Some(docs), Some(deleted_module_paths)) =
             (candidate_docs.as_ref(), deleted_module_paths.as_ref())
         {
-            gate.check(&args.edit.modules_root, || {
+            gate.check(stderr, &args.edit.modules_root, || {
                 post_edit_spec_from_docs(docs, deleted_module_paths)
             })
         } else {
-            gate.check(&args.edit.modules_root, || {
+            gate.check(stderr, &args.edit.modules_root, || {
                 post_delete_spec(&args.edit.modules_root, delete_paths)
             })
         };
         if let Err(err) = validation {
-            emit_gate_rejection_json("delete", args.edit.format, &err);
-            return Err(err);
+            return Err(emit_gate_rejection_json(
+                output,
+                "delete",
+                args.edit.format,
+                err,
+            ));
         }
         gate.outcome()
     };
@@ -818,10 +850,12 @@ pub fn run_delete(
         ),
         effect_relocation_assessment,
     };
-    delete_outcome.outcome.warn_if_unassessed_write();
+    delete_outcome.outcome.warn_if_unassessed_write(stderr)?;
     match OutputFormat::resolve(args.edit.format) {
-        OutputFormat::Text => println!("{}", summary.summary_line()),
-        format => print_outcome_json(&delete_outcome, format)?,
+        OutputFormat::Text => {
+            command_output::write_line(output, format_args!("{}", summary.summary_line()))?
+        }
+        format => command_output::write_report(&delete_outcome, format, output, |_, _| Ok(()))?,
     }
     Ok(())
 }
