@@ -15,7 +15,7 @@ excluded from the MCP server entirely.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,6 @@ class ToolOverride:
     name: str
     extra_description: str | None = None
     enabled: bool = True
-    tags: set[str] = field(default_factory=set)
 
 
 _enabled = ToolOverride
