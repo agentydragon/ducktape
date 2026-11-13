@@ -77,6 +77,6 @@ busctl --user call org.gnome.Shell /org/gnome/Shell \
 ## Render tests
 
 `//aiquota/gnome:test_render` exercises the extension in GNOME Shell and
-publishes fixture screenshots for visual review. It checks render health; there
-is no pixel golden or diff. Setup and capture details live in
-`aiquota/gnome/test_render.py`.
+publishes fixture screenshots for visual review. There is no checked-in pixel
+golden, and screenshot differences are not a test assertion; the gate checks
+render health. Setup and capture details live in `aiquota/gnome/test_render.py`.
