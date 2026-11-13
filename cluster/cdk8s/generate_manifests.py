@@ -1697,6 +1697,7 @@ def generate_manifests(root: Path) -> None:
         mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        cert_manager_environment_kustomization,
     )
     grocy_vallejo_artifact = artifact(
         "grocy-vallejo", grocy_app.output_dir("vallejo"), grocy_mcp.output_dir("vallejo"), grocy_mcp.PINS_DIR
@@ -1709,6 +1710,7 @@ def generate_manifests(root: Path) -> None:
         mcp_oauth_state_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        cert_manager_environment_kustomization,
     )
     haku_mailbox_artifact = artifact("haku-mailbox", haku_mailbox.OUTPUT_DIR)
     haku_flux_kustomizations.haku_mailbox(

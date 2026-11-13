@@ -92,6 +92,8 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: mcp-oauth-db-credentials
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: LOG_LEVEL
               value: INFO
             - name: GROCY_MCP_CONFIG_FILE
@@ -127,6 +129,9 @@ spec:
             - mountPath: /etc/grocy-mcp
               name: config
               readOnly: true
+            - mountPath: /var/run/public-web-pki
+              name: public-web-pki
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       nodeSelector:
@@ -142,6 +147,9 @@ spec:
         - configMap:
             name: grocy-mcp-config
           name: config
+        - configMap:
+            name: public-web-pki
+          name: public-web-pki
 ---
 apiVersion: v1
 kind: Service
