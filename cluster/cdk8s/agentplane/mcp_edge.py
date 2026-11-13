@@ -24,8 +24,8 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSel
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import ACTIONS_URI
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.settings import Settings
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment

@@ -8,12 +8,12 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policyclient "github.com/agentydragon/ducktape/agentplane/policy/client/clientset/versioned"
 	policyinformers "github.com/agentydragon/ducktape/agentplane/policy/client/informers/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"

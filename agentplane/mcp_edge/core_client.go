@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
