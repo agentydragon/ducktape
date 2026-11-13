@@ -19,7 +19,7 @@ report snapshots. The CI reports are:
 
 - **Cluster storage:** [HDD budget scenarios, volume fullness and interventions](storage/index.html), with dated Langfuse, SeaweedFS, ClickHouse, Zot, Mimir and Loki evidence and the earlier inventory retained below it.
 - **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
-- **Agentplane organization:** [architecture, ownership inventory and staged package plan](agentplane-organization/index.html), with original ownership inventory at `93f2ba8eef`, reorganization preflight at `3370398e42` (2026-11-13 07:04:58 UTC), 25 merged moves, two open PRs and ten scoped next PRs. [Evidence](agentplane-organization/evidence.json).
+- **Agentplane organization:** [architecture, ownership inventory and staged package plan](agentplane-organization/index.html), with original ownership inventory at `93f2ba8eef`, reorganization preflight at `1f7caaa9dc` (implementation baseline; GitHub PR state observed 2026-11-13 10:40:29 UTC), 36 earlier tracked PRs merged; this set: 19 merged, 0 open; native stack #16183 is complete; separate CI repairs: #16180 merged, #16199 merged. [Evidence](agentplane-organization/evidence.json).
 - **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
 
 Each CI refresh replaces its own directory's `index.html`, `evidence.json`,
