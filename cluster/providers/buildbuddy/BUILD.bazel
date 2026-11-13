@@ -46,7 +46,6 @@ oci_image(
         ":binary_layer",
         ":license_layer",
         ":package_layer",
-        "//third_party/debian_slim:cacerts",
     ],
     user = "65532:65532",
     visibility = ["//visibility:public"],
