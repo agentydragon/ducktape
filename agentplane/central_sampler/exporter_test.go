@@ -286,7 +286,9 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	store, databaseURL := newTestStoreWithDSN(t)
 	session := exportFixtureSession(t, store)
-	for i := 0; i < 257; i++ {
+	// Leave a full quantum for the replacement exporter to drain after the direct first turn.
+	const eventsBeyondTwoQuanta = 2*16*16 + 1
+	for i := 0; i < eventsBeyondTwoQuanta; i++ {
 		if err := admitExportEvent(t.Context(), store, session.ID, i); err != nil {
 			t.Fatal(err)
 		}

@@ -25,6 +25,7 @@ go_test(
     name = "historyexport_test",
     srcs = ["exporter_test.go"],
     embed = [":historyexport"],
+    race = "on",
     deps = [
         "//agentplane/central_sampler:sampler_go_proto",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
