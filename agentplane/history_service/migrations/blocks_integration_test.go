@@ -20,13 +20,12 @@ func TestEventBlockMigrationPreservesExistingHistoryAndStartsDisabled(t *testing
 		}
 	}
 	var payload []byte
-	var after *int64
-	if err := db.QueryRowContext(t.Context(), `SELECT e.payload,h.compaction_after_cursor FROM session_history h
-		JOIN session_event e ON e.session_id=h.id WHERE h.id=$1`, id).Scan(&payload, &after); err != nil {
+	var compactable bool
+	if err := db.QueryRowContext(t.Context(), `SELECT payload,compactable FROM session_event WHERE session_id=$1`, id).Scan(&payload, &compactable); err != nil {
 		t.Fatal(err)
 	}
-	if string(payload) != "retained source bytes" || after != nil {
-		t.Fatalf("retained payload %q, compaction cursor %v", payload, after)
+	if string(payload) != "retained source bytes" || compactable {
+		t.Fatalf("retained payload %q, compactable %t", payload, compactable)
 	}
 	if versionCount(t, db, 16) != 1 {
 		t.Fatal("event-block migration not recorded exactly once")

@@ -103,14 +103,14 @@ func insertBlock(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entries [
 	return err
 }
 
-// compactEvents only visits the current enabled interval. A first enabled append starts after the
-// preexisting prefix, so enabling the flag cannot synchronously rewrite a Session's old history.
-func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, after uint64) error {
+// compactEvents seeks only the partial index of eligible new writes. Oversized frames and entries
+// written with compaction disabled cannot make each append rescan an ever-growing retained prefix.
+func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) error {
 	for _, kind := range compactKinds {
 		for {
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM session_event
-				WHERE session_id=$1 AND kind=$2 AND cursor>$3 AND octet_length(payload)<=$4
-				ORDER BY cursor LIMIT $5`, sessionID, kind, after, blockBytes/2, blockEntries)
+				WHERE session_id=$1 AND kind=$2 AND compactable
+				ORDER BY cursor LIMIT $3`, sessionID, kind, blockEntries)
 			if err != nil {
 				return err
 			}

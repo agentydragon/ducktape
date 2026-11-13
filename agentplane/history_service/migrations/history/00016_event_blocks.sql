@@ -1,5 +1,8 @@
 -- +goose Up
-ALTER TABLE session_history ADD COLUMN compaction_after_cursor BIGINT;
+-- Only new writes made with compaction enabled enter this index. Existing rows and oversized
+-- frames cannot turn each append into a scan of an ever-growing unpacked prefix.
+ALTER TABLE session_event ADD COLUMN compactable BOOLEAN NOT NULL DEFAULT FALSE;
+CREATE INDEX ix_session_event_compactable_cursor ON session_event (session_id, kind, cursor) WHERE compactable;
 
 CREATE TABLE session_event_block (
     session_id UUID NOT NULL REFERENCES session_history (id),

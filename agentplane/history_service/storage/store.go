@@ -218,10 +218,9 @@ func marshal(message proto.Message) ([]byte, error) {
 }
 
 type historyRow struct {
-	sourceID        *string
-	lastCursor      uint64
-	feedState       []byte
-	compactionAfter *uint64
+	sourceID   *string
+	lastCursor uint64
+	feedState  []byte
 	// writer is nil while no push has bound the Session.
 	writer             Writer
 	sandboxUID         *string
@@ -237,11 +236,11 @@ func lockRow(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*historyRow,
 	var identityName, identityUID, executionIdentityName, executionIdentityUID *string
 	err := tx.QueryRowContext(ctx, `SELECT source_id, last_cursor, feed_state, writer_namespace, writer_name, writer_uid, sandbox_uid,
 		execution_principal_namespace, execution_principal_name, execution_principal_uid,
-		writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid, compaction_after_cursor
+		writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid
 		FROM session_history WHERE id = $1 FOR UPDATE`, sessionID).
 		Scan(&row.sourceID, &row.lastCursor, &row.feedState, &namespace, &name, &uid, &row.sandboxUID,
 			&executionNamespace, &executionName, &executionUID,
-			&identityName, &identityUID, &executionIdentityName, &executionIdentityUID, &row.compactionAfter)
+			&identityName, &identityUID, &executionIdentityName, &executionIdentityUID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, sessionID)
 	}
@@ -469,12 +468,6 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		if err != nil {
 			return err
 		}
-		if s.options.CompactDeltas && row.compactionAfter == nil {
-			after := row.lastCursor
-			row.compactionAfter = &after
-		} else if !s.options.CompactDeltas {
-			row.compactionAfter = nil
-		}
 		var appended []*eventlogpb.EventEntry
 		for _, entry := range entries {
 			cursor, sourceID := entry.GetCursor(), entry.GetOrigin().GetSourceId()
@@ -497,8 +490,10 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind) VALUES ($1, $2, $3, $4)",
-				sessionID, cursor, payload, observationNumber(entry)); err != nil {
+			kind := observationNumber(entry)
+			compactable := s.options.CompactDeltas && len(payload) <= blockBytes/2 && slices.Contains(compactKinds, historypb.EventKind(kind))
+			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind, compactable) VALUES ($1, $2, $3, $4, $5)",
+				sessionID, cursor, payload, kind, compactable); err != nil {
 				return err
 			}
 			row.sourceID, row.lastCursor, appended = &sourceID, cursor, append(appended, entry)
@@ -518,12 +513,12 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 		}
 		if len(appended) > 0 {
 			if s.options.CompactDeltas {
-				if err := compactEvents(ctx, tx, sessionID, *row.compactionAfter); err != nil {
+				if err := compactEvents(ctx, tx, sessionID); err != nil {
 					return err
 				}
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE session_history SET source_id = $2, last_cursor = $3, compaction_after_cursor = $4 WHERE id = $1",
-				sessionID, *row.sourceID, row.lastCursor, row.compactionAfter); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE session_history SET source_id = $2, last_cursor = $3 WHERE id = $1",
+				sessionID, *row.sourceID, row.lastCursor); err != nil {
 				return err
 			}
 			if err := notify(ctx, tx, ChannelHistory); err != nil {

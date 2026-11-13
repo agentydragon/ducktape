@@ -35,3 +35,5 @@ ordinary representation. Unpacking is required before reverting to a binary with
 Blocks contain at most 256 entries and approximately 128 KiB of uncompressed event bodies. Larger
 individual frames remain ordinary entries. A block is never extended with an accumulated prefix;
 only explicit settlement can prune an existing block. This bounds decompression and rewrite work.
+Only eligible entries written with the flag enabled enter the packer's partial index. Old history
+and oversized frames cannot cause repeated scans of a growing unpacked prefix.
