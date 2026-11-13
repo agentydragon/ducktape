@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
-  "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
-  "observed_at_utc": "2026-11-13T22:14:00+00:00",
+  "source_sha": "268a4964625568924d968d082df6e14293a07a48",
+  "observed_at_utc": "2026-11-13T23:08:11+00:00",
   "scope": "Every tracked Go file and package under agentplane; every top-level Agentplane area is represented, with protocol, frontend, native-driver and documentation context. No Go directory or filename exclusions.",
   "counts": {
-    "files": 1253,
+    "files": 1256,
     "directories": 219,
     "production": 691,
-    "tests": 562
+    "tests": 565
   },
   "directories": [
     {
@@ -2402,17 +2402,21 @@
     {
       "path": "agentplane/notification_service/internal/sources/github/state",
       "production": 8,
-      "tests": 0,
+      "tests": 4,
       "generated": 0,
-      "source_lines": 2036,
+      "source_lines": 2587,
       "files": [
         "agentplane/notification_service/internal/sources/github/state/commit.go",
         "agentplane/notification_service/internal/sources/github/state/completion.go",
+        "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
         "agentplane/notification_service/internal/sources/github/state/ingest.go",
+        "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
         "agentplane/notification_service/internal/sources/github/state/mergeability.go",
         "agentplane/notification_service/internal/sources/github/state/pr.go",
         "agentplane/notification_service/internal/sources/github/state/reconcile.go",
+        "agentplane/notification_service/internal/sources/github/state/reconcile_integration_test.go",
         "agentplane/notification_service/internal/sources/github/state/state.go",
+        "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
         "agentplane/notification_service/internal/sources/github/state/status.go"
       ]
     },
@@ -2456,9 +2460,9 @@
     {
       "path": "agentplane/notification_service/internal/store",
       "production": 14,
-      "tests": 32,
+      "tests": 31,
       "generated": 0,
-      "source_lines": 12565,
+      "source_lines": 12259,
       "files": [
         "agentplane/notification_service/internal/store/actions.go",
         "agentplane/notification_service/internal/store/actions_integration_test.go",
@@ -2481,10 +2485,9 @@
         "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
         "agentplane/notification_service/internal/store/github_pr_entries.go",
         "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-        "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
         "agentplane/notification_service/internal/store/github_record_integration_test.go",
-        "agentplane/notification_service/internal/store/github_state_integration_test.go",
         "agentplane/notification_service/internal/store/github_status_projection.go",
+        "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
         "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
         "agentplane/notification_service/internal/store/golden_test.go",
         "agentplane/notification_service/internal/store/golden_vectors_test.go",
@@ -13827,6 +13830,17 @@
       "disposition": "Keep current owner; remains in scope"
     },
     {
+      "path": "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
+      "package": "state",
+      "test": true,
+      "generated": false,
+      "lines": 178,
+      "sha256": "a96bc8888c46f06a8c6ff6d6c23cff1856f02c81ec23b12139de788225c50a8a",
+      "planned_path": "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
+      "pending_tracks": [],
+      "disposition": "Keep current owner; remains in scope"
+    },
+    {
       "path": "agentplane/notification_service/internal/sources/github/state/ingest.go",
       "package": "state",
       "test": false,
@@ -13834,6 +13848,17 @@
       "lines": 264,
       "sha256": "2c92eb8c8d53c3187afb2e2b5dec0ff7d44beb5c316b6e6bfa8c6fca05400f71",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/ingest.go",
+      "pending_tracks": [],
+      "disposition": "Keep current owner; remains in scope"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
+      "package": "state",
+      "test": true,
+      "generated": false,
+      "lines": 27,
+      "sha256": "d26eb52c77c52458313de6caec71ea9fa6f7d3eb81aa9ccae34643e4d3736b26",
+      "planned_path": "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
       "pending_tracks": [],
       "disposition": "Keep current owner; remains in scope"
     },
@@ -13871,6 +13896,17 @@
       "disposition": "Keep current owner; remains in scope"
     },
     {
+      "path": "agentplane/notification_service/internal/sources/github/state/reconcile_integration_test.go",
+      "package": "state",
+      "test": true,
+      "generated": false,
+      "lines": 74,
+      "sha256": "af6fbc37afb465934ab1eeaba371db5fef0ab011de9fb98280ded05c2b9879f6",
+      "planned_path": "agentplane/notification_service/internal/sources/github/state/reconcile_integration_test.go",
+      "pending_tracks": [],
+      "disposition": "Keep current owner; remains in scope"
+    },
+    {
       "path": "agentplane/notification_service/internal/sources/github/state/state.go",
       "package": "state",
       "test": false,
@@ -13878,6 +13914,17 @@
       "lines": 474,
       "sha256": "d06a0a2934b4cf6033ef8a117a0fdb6ba32817dc4c8bda60e9d10486ceea89c0",
       "planned_path": "agentplane/notification_service/internal/sources/github/state/state.go",
+      "pending_tracks": [],
+      "disposition": "Keep current owner; remains in scope"
+    },
+    {
+      "path": "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
+      "package": "state",
+      "test": true,
+      "generated": false,
+      "lines": 272,
+      "sha256": "0fd82c01e92d52785ec6b3cbbf16ee4d1a708c6a7b29b145fbb5084b16b8dfc3",
+      "planned_path": "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
       "pending_tracks": [],
       "disposition": "Keep current owner; remains in scope"
     },
@@ -14216,8 +14263,8 @@
       "package": "store",
       "test": true,
       "generated": false,
-      "lines": 405,
-      "sha256": "6a69bfc4a6238d50867c9348f01538a1b545e0949297bc764629500a1ef83bd1",
+      "lines": 423,
+      "sha256": "4cd2d33e0cb5f90126d7da3c9bd3a1f0cbb551c49796006c263437b90918ab3a",
       "planned_path": "agentplane/notification_service/internal/store/github_integration_test.go",
       "pending_tracks": [],
       "disposition": "Keep current owner; remains in scope"
@@ -14289,17 +14336,6 @@
       "disposition": "Keep current owner; remains in scope"
     },
     {
-      "path": "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 66,
-      "sha256": "ff2922b5ea94638a1f4700455c48f7d4983731cea20f7faf5f02d8fdb7ab70e7",
-      "planned_path": "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
-      "pending_tracks": [],
-      "disposition": "Keep current owner; remains in scope"
-    },
-    {
       "path": "agentplane/notification_service/internal/store/github_record_integration_test.go",
       "package": "store",
       "test": true,
@@ -14311,17 +14347,6 @@
       "disposition": "Keep current owner; remains in scope"
     },
     {
-      "path": "agentplane/notification_service/internal/store/github_state_integration_test.go",
-      "package": "store",
-      "test": true,
-      "generated": false,
-      "lines": 351,
-      "sha256": "f26e9c3644073609cc67923b3c82189e64d5657af622a6ca15143ebf65f630e4",
-      "planned_path": "agentplane/notification_service/internal/store/github_state_integration_test.go",
-      "pending_tracks": [],
-      "disposition": "Keep current owner; remains in scope"
-    },
-    {
       "path": "agentplane/notification_service/internal/store/github_status_projection.go",
       "package": "store",
       "test": false,
@@ -14329,6 +14354,17 @@
       "lines": 31,
       "sha256": "c14ef7352b58dc7c9361afe32fe8427e105b3d9c3c9ef47164cad220b88c0d2f",
       "planned_path": "agentplane/notification_service/internal/store/github_status_projection.go",
+      "pending_tracks": [],
+      "disposition": "Keep current owner; remains in scope"
+    },
+    {
+      "path": "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
+      "package": "store",
+      "test": true,
+      "generated": false,
+      "lines": 93,
+      "sha256": "23b83d5a449b29bce3099896d41ff3746c0dbddbc32ab8cf3e526986c9a6dfbd",
+      "planned_path": "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
       "pending_tracks": [],
       "disposition": "Keep current owner; remains in scope"
     },

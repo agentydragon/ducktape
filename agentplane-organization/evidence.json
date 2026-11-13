@@ -1,28 +1,28 @@
 {
   "schema_version": 2,
   "artifact_kind": "agentplane_organization_current_plan",
-  "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
-  "observed_at_utc": "2026-11-13T22:14:00+00:00",
+  "source_sha": "268a4964625568924d968d082df6e14293a07a48",
+  "observed_at_utc": "2026-11-13T23:08:11+00:00",
   "scope": "All tracked Go files and packages under agentplane at the pinned source SHA, plus every top-level Agentplane area and protocol/browser context.",
   "inventory": {
-    "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
+    "source_sha": "268a4964625568924d968d082df6e14293a07a48",
     "counts": {
-      "files": 1253,
+      "files": 1256,
       "directories": 219,
       "production": 691,
-      "tests": 562
+      "tests": 565
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
   },
   "current_structure": {
-    "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
-    "observed_at_utc": "2026-11-13T22:14:00+00:00",
+    "source_sha": "268a4964625568924d968d082df6e14293a07a48",
+    "observed_at_utc": "2026-11-13T23:08:11+00:00",
     "counts": {
-      "files": 1253,
+      "files": 1256,
       "directories": 219,
       "production": 691,
-      "tests": 562
+      "tests": 565
     },
     "app_go_directory_exists": false,
     "all_top_level_areas": [
@@ -66,13 +66,13 @@
     "remaining_only_plan": true
   },
   "organization_scope_review": {
-    "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
+    "source_sha": "268a4964625568924d968d082df6e14293a07a48",
     "scope_coverage": {
       "top_level_areas": 36,
       "go_packages": 219,
-      "go_files": 1253,
+      "go_files": 1256,
       "all_source_directories_accounted_for": true,
-      "review_source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
+      "review_source_sha": "268a4964625568924d968d082df6e14293a07a48",
       "review_slices": [
         {
           "slice": "action_service",
@@ -198,7 +198,7 @@
           "slice": "notification_service",
           "components": ["notification_service"],
           "packages": 20,
-          "go_files": 176
+          "go_files": 179
         },
         {
           "slice": "observability",
@@ -9367,18 +9367,24 @@
         "files": [
           "agentplane/notification_service/internal/sources/github/state/commit.go",
           "agentplane/notification_service/internal/sources/github/state/completion.go",
+          "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/ingest.go",
+          "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
           "agentplane/notification_service/internal/sources/github/state/mergeability.go",
           "agentplane/notification_service/internal/sources/github/state/pr.go",
           "agentplane/notification_service/internal/sources/github/state/reconcile.go",
+          "agentplane/notification_service/internal/sources/github/state/reconcile_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/state.go",
+          "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/status.go"
         ],
         "evidence_paths": [
           "agentplane/notification_service/internal/sources/github/state/BUILD.bazel",
           "agentplane/notification_service/internal/sources/github/state/state.go",
           "agentplane/notification_service/internal/sources/github/state/ingest.go",
-          "agentplane/notification_service/internal/sources/github/state/completion.go"
+          "agentplane/notification_service/internal/sources/github/state/completion.go",
+          "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
+          "agentplane/notification_service/internal/sources/github/state/state_integration_test.go"
         ],
         "importing_files": [
           "agentplane/notification_service/internal/rpc/fixture_test.go",
@@ -9412,9 +9418,7 @@
           "agentplane/notification_service/internal/store/github_mergeability_integration_test.go",
           "agentplane/notification_service/internal/store/github_pr_entries.go",
           "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-          "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
           "agentplane/notification_service/internal/store/github_record_integration_test.go",
-          "agentplane/notification_service/internal/store/github_state_integration_test.go",
           "agentplane/notification_service/internal/store/github_status_projection.go",
           "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
           "agentplane/notification_service/internal/store/golden_vectors_test.go",
@@ -9423,7 +9427,7 @@
         ],
         "decision": "KEEP",
         "goal_path": "agentplane/notification_service/internal/sources/github/state",
-        "rationale": "Own GitHub refresh leases, observations, webhook facts and shared status. Expose explicit same-transaction adapters for fenced inbox publication.",
+        "rationale": "Own GitHub refresh leases, observations, webhook facts and shared status. Expose explicit same-transaction adapters for fenced inbox publication. Source-only lease/refresh tests use their own cloned PostgreSQL database without an inbox-store import.",
         "build": {
           "path": "agentplane/notification_service/internal/sources/github/state/BUILD.bazel",
           "default_visibility": [
@@ -9434,6 +9438,15 @@
             {
               "kind": "go_library",
               "label": "//agentplane/notification_service/internal/sources/github/state:state",
+              "visibility": [
+                "//agentplane/notification_service:__subpackages__"
+              ],
+              "visibility_source": "package/default",
+              "declared_testonly": false
+            },
+            {
+              "kind": "go_test",
+              "label": "//agentplane/notification_service/internal/sources/github/state:state_integration_test",
               "visibility": [
                 "//agentplane/notification_service:__subpackages__"
               ],
@@ -9622,10 +9635,9 @@
           "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
           "agentplane/notification_service/internal/store/github_pr_entries.go",
           "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-          "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
           "agentplane/notification_service/internal/store/github_record_integration_test.go",
-          "agentplane/notification_service/internal/store/github_state_integration_test.go",
           "agentplane/notification_service/internal/store/github_status_projection.go",
+          "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
           "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
           "agentplane/notification_service/internal/store/golden_test.go",
           "agentplane/notification_service/internal/store/golden_vectors_test.go",
@@ -9892,6 +9904,7 @@
           "agentplane/notification_service/internal/rpc/integration_testmain_test.go",
           "agentplane/notification_service/internal/sources/actions/integration_testmain_test.go",
           "agentplane/notification_service/internal/sources/github/provider_harness_integration_test.go",
+          "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
           "agentplane/notification_service/internal/sources/github/webhook/integration_testmain_test.go",
           "agentplane/notification_service/internal/store/entry_native_content_contract_integration_test.go",
           "agentplane/notification_service/internal/store/integration_testmain_test.go",
@@ -9999,10 +10012,13 @@
           "agentplane/notification_service/internal/sources/github/reviews_provider.go",
           "agentplane/notification_service/internal/sources/github/state/commit.go",
           "agentplane/notification_service/internal/sources/github/state/completion.go",
+          "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/ingest.go",
           "agentplane/notification_service/internal/sources/github/state/mergeability.go",
           "agentplane/notification_service/internal/sources/github/state/pr.go",
+          "agentplane/notification_service/internal/sources/github/state/reconcile_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/state.go",
+          "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/status.go",
           "agentplane/notification_service/internal/sources/github/subjects.go",
           "agentplane/notification_service/internal/sources/github/webhook.go",
@@ -10034,10 +10050,9 @@
           "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
           "agentplane/notification_service/internal/store/github_pr_entries.go",
           "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-          "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
           "agentplane/notification_service/internal/store/github_record_integration_test.go",
-          "agentplane/notification_service/internal/store/github_state_integration_test.go",
           "agentplane/notification_service/internal/store/github_status_projection.go",
+          "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
           "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
           "agentplane/notification_service/internal/store/golden_test.go",
           "agentplane/notification_service/internal/store/golden_vectors_test.go",
@@ -10692,6 +10707,7 @@
           "agentplane/mcp_edge/internal/authserver/authserver.go",
           "agentplane/mcp_edge/internal/connections/store.go",
           "agentplane/mcp_edge/main.go",
+          "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
           "agentplane/notification_service/internal/sources/github/state/state.go",
           "agentplane/notification_service/internal/store/store.go",
           "agentplane/notification_service/main.go",
@@ -12461,6 +12477,7 @@
           "agentplane/notification_service/internal/sources/actions/integration_testmain_test.go",
           "agentplane/notification_service/internal/sources/actions/source_integration_test.go",
           "agentplane/notification_service/internal/sources/github/provider_harness_integration_test.go",
+          "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
           "agentplane/notification_service/internal/sources/github/webhook/handler_integration_test.go",
           "agentplane/notification_service/internal/sources/github/webhook/integration_testmain_test.go",
           "agentplane/notification_service/internal/store/integration_testmain_test.go",
@@ -12619,7 +12636,7 @@
   "report_validation": {
     "state": "PASS",
     "command": "bbr test //x/agentplane_plan_preview:visual_test",
-    "invocation": "https://app.buildbuddy.io/invocation/e3f8cbbf-a11a-419d-a35d-68f4414022ad",
+    "invocation": "https://app.buildbuddy.io/invocation/c3047285-be71-439f-8c81-d1b03232a351",
     "browser_cases": 8,
     "pages": ["/", "/agentplane-organization/"],
     "viewports": ["1280x900", "390x844"],
@@ -12636,13 +12653,25 @@
       "report-desktop-dark-first-screen",
       "report-mobile-light-first-screen",
       "report-mobile-dark-first-screen",
-      "report-desktop-light-notification-tree",
-      "report-mobile-dark-notification-tree",
       "home-desktop-light-organization-card",
       "home-desktop-dark-organization-card",
       "home-mobile-light-organization-card",
       "home-mobile-dark-organization-card"
     ],
-    "visual_review": "Readable side-by-side desktop trees and stacked mobile trees, working pane scrolling, no page-width overflow, readable theme contrast and updated organization navigation."
+    "visual_review": "Readable side-by-side desktop trees and stacked mobile trees, working pane scrolling, no page-width overflow, readable theme contrast and updated organization navigation.",
+    "post_rebase_home_validation": {
+      "state": "PASS",
+      "command": "bbr test //x/agentplane_plan_preview:visual_test --test_arg=-k --test_arg=home --test_output=errors",
+      "invocation": "https://app.buildbuddy.io/invocation/a0640083-a1bd-4842-be3a-82659fd5be8d",
+      "browser_cases": 4,
+      "reason": "The rebase incorporated unrelated report summaries in the shared home page; the organization report and its inventory were unchanged.",
+      "screenshots_reviewed": [
+        "home-desktop-light-organization-card",
+        "home-desktop-dark-organization-card",
+        "home-mobile-light-organization-card",
+        "home-mobile-dark-organization-card"
+      ],
+      "visual_review": "Updated organization counts and source pin remain readable in both themes on desktop and mobile, with no page-width overflow."
+    }
   }
 }

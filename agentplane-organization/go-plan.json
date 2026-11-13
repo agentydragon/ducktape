@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
-  "source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
-  "observed_at_utc": "2026-11-13T22:14:00+00:00",
+  "source_sha": "268a4964625568924d968d082df6e14293a07a48",
+  "observed_at_utc": "2026-11-13T23:08:11+00:00",
   "scope": "Every tracked Go file and package under agentplane; every top-level Agentplane area is represented, with protocol, frontend, native-driver and documentation context. No Go directory or filename exclusions.",
   "counts": {
-    "files": 1253,
+    "files": 1256,
     "directories": 219,
     "production": 691,
-    "tests": 562
+    "tests": 565
   },
   "legend": {
     "=": "Keep current owner / structure",
@@ -2640,7 +2640,7 @@
       "id": "notification_service",
       "path": "agentplane/notification_service",
       "counts": {
-        "files": 176,
+        "files": 179,
         "directories": 20
       },
       "directories": [
@@ -2799,15 +2799,19 @@
         {
           "path": "agentplane/notification_service/internal/sources/github/state",
           "production": 8,
-          "tests": 0,
+          "tests": 4,
           "files": [
             "agentplane/notification_service/internal/sources/github/state/commit.go",
             "agentplane/notification_service/internal/sources/github/state/completion.go",
+            "agentplane/notification_service/internal/sources/github/state/fixture_integration_test.go",
             "agentplane/notification_service/internal/sources/github/state/ingest.go",
+            "agentplane/notification_service/internal/sources/github/state/integration_testmain_test.go",
             "agentplane/notification_service/internal/sources/github/state/mergeability.go",
             "agentplane/notification_service/internal/sources/github/state/pr.go",
             "agentplane/notification_service/internal/sources/github/state/reconcile.go",
+            "agentplane/notification_service/internal/sources/github/state/reconcile_integration_test.go",
             "agentplane/notification_service/internal/sources/github/state/state.go",
+            "agentplane/notification_service/internal/sources/github/state/state_integration_test.go",
             "agentplane/notification_service/internal/sources/github/state/status.go"
           ]
         },
@@ -2845,7 +2849,7 @@
         {
           "path": "agentplane/notification_service/internal/store",
           "production": 14,
-          "tests": 32,
+          "tests": 31,
           "files": [
             "agentplane/notification_service/internal/store/actions.go",
             "agentplane/notification_service/internal/store/actions_integration_test.go",
@@ -2868,10 +2872,9 @@
             "agentplane/notification_service/internal/store/github_mergeability_retention_integration_test.go",
             "agentplane/notification_service/internal/store/github_pr_entries.go",
             "agentplane/notification_service/internal/store/github_pr_state_integration_test.go",
-            "agentplane/notification_service/internal/store/github_reconcile_integration_test.go",
             "agentplane/notification_service/internal/store/github_record_integration_test.go",
-            "agentplane/notification_service/internal/store/github_state_integration_test.go",
             "agentplane/notification_service/internal/store/github_status_projection.go",
+            "agentplane/notification_service/internal/store/github_status_projection_integration_test.go",
             "agentplane/notification_service/internal/store/github_subscribe_integration_test.go",
             "agentplane/notification_service/internal/store/golden_test.go",
             "agentplane/notification_service/internal/store/golden_vectors_test.go",
@@ -2967,7 +2970,7 @@
         "state": "KEEP",
         "role": "Event-driven provider sources and independently delivered notifications",
         "goal_summary": "Keep event-driven sources independent from inbox delivery. GitHub owns API interpretation, refresh leases and facts; internal/sources/github/state owns SQL and shared status. The inbox store retains fenced publication, binding, quotas, cursors and delivery adapters.",
-        "reason": "Concrete GitHub state is injected into the provider at composition. Source-state writes and inbox publication share the PostgreSQL transaction and generation fences. Successful quiet refreshes remain idle; cache expiry alone creates no API work.",
+        "reason": "Concrete GitHub state is injected into the provider at composition. Source-state writes and inbox publication share the PostgreSQL transaction and generation fences. Successful quiet refreshes remain idle; cache expiry alone creates no API work. Lease/refresh tests now run beside source state with a GitHub-only PostgreSQL fixture; inbox projection and publication checks stay with the inbox store.",
         "evidence_paths": [
           "agentplane/notification_service/README.md",
           "agentplane/notification_service/main.go",
@@ -3009,7 +3012,7 @@
           },
           {
             "path": "agentplane/notification_service/internal/sources/github/state",
-            "note": "GitHub SQL, facts, leases and shared status"
+            "note": "GitHub SQL, facts, leases and shared status; independent source-only tests"
           },
           {
             "path": "agentplane/notification_service/internal/store",
@@ -3027,7 +3030,7 @@
           },
           {
             "path": "agentplane/notification_service/internal/sources/github/state",
-            "note": "GitHub SQL, facts, leases and shared status"
+            "note": "GitHub SQL, facts, leases and shared status; independent source-only tests"
           },
           {
             "path": "agentplane/notification_service/internal/store",
@@ -4228,9 +4231,9 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 219,
-    "go_files": 1253,
+    "go_files": 1256,
     "all_source_directories_accounted_for": true,
-    "review_source_sha": "be79cd0c8a9f4056e059f986cc5e09c648c2edae",
+    "review_source_sha": "268a4964625568924d968d082df6e14293a07a48",
     "review_slices": [
       {
         "slice": "action_service",
@@ -4356,7 +4359,7 @@
         "slice": "notification_service",
         "components": ["notification_service"],
         "packages": 20,
-        "go_files": 176
+        "go_files": 179
       },
       {
         "slice": "observability",
