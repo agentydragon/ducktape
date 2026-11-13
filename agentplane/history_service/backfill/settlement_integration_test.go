@@ -41,7 +41,7 @@ func retained(t *testing.T, span *spans.Span) fixture {
 	f := fixture{db: db, history: storage.NewStore(db, storage.Options{}), id: uuid.New(), span: span}
 	if _, err := f.history.BindWriter(t.Context(), f.id, storage.ServiceAccountWriter{
 		Namespace: "test-namespace", Name: "test-runner", UID: "test-uid",
-	}, "", nil); err != nil {
+	}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.history.Append(t.Context(), f.id, span.Entries); err != nil {
