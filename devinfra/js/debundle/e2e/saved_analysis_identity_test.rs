@@ -6,6 +6,7 @@ use analysis_model::DepKind;
 use std::fs;
 
 use analysis::DependencyGraphReport;
+use analysis_projection::AnalysisSpec;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 
@@ -69,6 +70,187 @@ fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {
             assert!(!out.exists(), "{label} wrote a rejected projection");
         }
     }
+}
+
+#[test]
+fn analysis_projection_preserves_semantic_note_keys_and_ignores_author_notes() {
+    const APP: &str = "import { note } from './note.js';\nconst value = Symbol('value');\nconsole.log(note.note(), value.description);\nexport { value };\n";
+    const PROVIDER: &str = "export const note = { note() { return 1; } };\n";
+    let purity = ChunkExportPurityBuilder::new("note")
+        .with_pure_members("note", &["note"])
+        .build();
+    let native_input = NativeOperationInputContract {
+        selector: SourceUnitSelector::SourceMatch(source_match_selector(
+            "const value = Symbol('value');",
+            &["value"],
+        )),
+        operation: NativeOperationKind::Symbol,
+        audited_source_sha256: source_sha256(APP),
+        note: Some("native rationale before edit".to_owned()),
+    };
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(APP, vec![logical_module("all", &[Member::new("value")])])
+            .with_extra_chunks(&[("note", PROVIDER)])
+            .with_chunk_export_purity(&[purity])
+            .with_native_operation_inputs("static/app", vec![native_input])
+            .with_program_premises(
+                serde_yaml::from_str(
+                    "intrinsics_never_written:\n  families: all\n  note: intrinsic rationale before edit\n",
+                )
+                .unwrap(),
+            ),
+    );
+
+    let projection = AnalysisSpec::decode(&fs::read(&staged.projection).unwrap()).unwrap();
+    assert_eq!(
+        projection.chunk_export_purity["note"].pure_members["note"],
+        ["note".to_owned()].into_iter().collect(),
+        "chunk, export, and property names equal to `note` are semantic keys",
+    );
+    assert_eq!(projection.native_operation_inputs["static/app"].len(), 1);
+
+    let mut vendor_spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    vendor_spec["vendor"]["note.js"] = serde_yaml::from_str(
+        "identity: fixture-vendor\nlevel: partial_swap\npackages:\n  note:\n    version: '1.0.0'\n    subpath: index.js\nsymbols:\n  note:\n    package: note\n    kind: named\n    upstream_export: note\n",
+    )
+    .unwrap();
+    let package_root = staged.root().join("vendor-package-note");
+    fs::create_dir_all(&package_root).unwrap();
+    write_text_file(
+        &package_root.join("package.json"),
+        "{\"name\":\"note\",\"version\":\"1.0.0\"}\n",
+    );
+    write_text_file(&package_root.join("index.js"), "export const note = 1;\n");
+    let vendor_spec_path = staged.root().join("vendor-note.yaml");
+    write_yaml_file(&vendor_spec_path, &vendor_spec);
+    let vendor_projection_path = staged.root().join("vendor-note.projection");
+    let package_root_arg = format!("note={}", package_root.display());
+    assert_ok(
+        &command(&[
+            "spec",
+            "project-analysis",
+            "--spec",
+            path(&vendor_spec_path),
+            "--out",
+            path(&vendor_projection_path),
+            "--package-root",
+            &package_root_arg,
+        ]),
+        "project semantic vendor package and symbol maps named note",
+    );
+    let vendor_projection =
+        AnalysisSpec::decode(&fs::read(vendor_projection_path).unwrap()).unwrap();
+    let VendorLevel::PartialSwap(vendor) = &vendor_projection.vendor["note.js"].level else {
+        panic!("partial swap vendor level was not retained");
+    };
+    assert!(vendor.packages.contains_key("note"));
+    assert!(vendor.symbols.contains_key("note"));
+
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    spec["host_behavior"]["note"] = "host audit source changed".into();
+    spec["program_premises"]["note"] = "program audit source changed".into();
+    spec["program_premises"]["intrinsics_never_written"]["note"] =
+        "intrinsic audit source changed".into();
+    spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0]["note"] =
+        "native rationale after edit".into();
+    spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0]["source_match"]["note"] =
+        "selector rationale added".into();
+    let edited_spec = staged.root().join("author-notes.yaml");
+    write_yaml_file(&edited_spec, &spec);
+
+    let edited_projection = staged.root().join("author-notes.projection");
+    assert_ok(
+        &command(&[
+            "spec",
+            "project-analysis",
+            "--spec",
+            path(&edited_spec),
+            "--out",
+            path(&edited_projection),
+        ]),
+        "project analysis after note edits",
+    );
+    assert_eq!(
+        fs::read(&staged.projection).unwrap(),
+        fs::read(&edited_projection).unwrap(),
+        "adding or changing actual author notes must leave analysis identity stable",
+    );
+    fs::copy(&edited_spec, &staged.spec).unwrap();
+    let replay = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&replay.result, "reuse saved analysis after note edits");
+    let replay_spec: serde_yaml::Value = serde_yaml::from_slice(
+        &fs::read(
+            replay
+                .invocation_spec()
+                .expect("run records invocation spec"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        replay_spec["host_behavior"]["note"],
+        "host audit source changed"
+    );
+    assert_eq!(
+        replay_spec["program_premises"]["note"],
+        "program audit source changed"
+    );
+    assert_eq!(
+        replay_spec["program_premises"]["intrinsics_never_written"]["note"],
+        "intrinsic audit source changed"
+    );
+    assert_eq!(
+        replay_spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0]["note"],
+        "native rationale after edit"
+    );
+    assert_eq!(
+        replay_spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0]["source_match"]
+            ["note"],
+        "selector rationale added"
+    );
+}
+
+#[test]
+fn graph_only_commuting_note_remains_in_report_provenance() {
+    const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
+    const RECORD_INSTALL: &str = "globalThis.record = (key) => { trace.push(key); };";
+    let mut pair = commuting_pair(
+        member_source_unit("probes/inner", "beta"),
+        member_source_unit("probes/outer", "gamma"),
+    );
+    pair.note = Some("the graph audit provenance".to_owned());
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "probes/outer",
+                    &[
+                        Member::new("trace"),
+                        Member::new("alpha"),
+                        Member::new("gamma"),
+                    ],
+                    &[RECORD_INSTALL],
+                ),
+                logical_module("probes/inner", &[Member::new("beta")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_commuting_statements("static/app", vec![pair]),
+    );
+
+    let run = staged.run(&[]);
+    assert_ok(&run.result, "run with graph-only note");
+    let graph: DependencyGraphReport = read_gzip_json(
+        &run.output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let [premise] = graph.commuting_statements.as_slice() else {
+        panic!("expected one applied commuting premise: {graph:#?}");
+    };
+    assert_eq!(premise.note.as_deref(), Some("the graph audit provenance"));
 }
 
 fn assert_projector_matches_flat(staged: &Staged, label: &str) {

@@ -741,13 +741,16 @@ debundle run <run args> --analysis analysis.dba
 ```
 
 The projection holds everything analysis reads from the spec; its bytes stay
-the same across assignment edits, module renames, notes and
-`commuting_statements`. `run --analysis` refuses an artifact computed by
-another engine, from other sources, or for another projection, naming what
-differs; rerun the first two commands then. Its output equals `debundle run`'s. Under Bazel, `debundle_pipeline` runs
-these as three actions, so an assignment edit reuses the cached
-`DebundleAnalyze` result; its `analysis` output group holds the projection and
-the artifact for running the last command locally.
+the same across assignment edits, module renames, YAML-only author notes and
+graph-only `commuting_statements`. Only fields declared as author notes are
+omitted. Semantic map entries remain data even when a chunk, export, or property
+name is literally `note`; commuting-contract notes stay with the graph report.
+`run --analysis` refuses an artifact computed by another engine, from other
+sources, or for another projection, naming what differs; rerun the first two
+commands then. Its output equals `debundle run`'s. Under Bazel,
+`debundle_pipeline` runs these as three actions, so an assignment edit reuses
+the cached `DebundleAnalyze` result; its `analysis` output group holds the
+projection and the artifact for running the last command locally.
 
 After a graph-only build, the analysis artifact may still be in the remote
 cache rather than the local output directory. Request its output group before

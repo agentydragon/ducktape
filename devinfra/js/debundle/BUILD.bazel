@@ -1149,7 +1149,6 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rmp-serde",
         "@crates//:serde",
-        "@crates//:serde_json",
     ],
 )
 

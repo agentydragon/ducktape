@@ -305,6 +305,11 @@ Saved graphs and snapshots retain their full executable identity and their
 source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.
 
+The analysis projection omits only fields explicitly declared as author-note
+provenance. Semantic map entries remain data even when a chunk, export, or
+property name is literally `note`. Graph-only commuting-statement notes remain
+authored report provenance and do not affect analysis identity.
+
 ### Reading-only output on gate rejection
 
 `debundle run --emit-on-rejection` changes only what a realizability-gate
