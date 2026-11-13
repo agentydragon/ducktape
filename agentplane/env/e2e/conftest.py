@@ -7,19 +7,17 @@ from agentplane.env.e2e.testing.fixtures import (
     endpoint,
     gateway,
     harness,
+    history_service,
+    history_writer_namespaces,
     model,
     runner,
     runner_gateway,
+    sandbox,
     spec,
     workspace,
 )
 from agentplane.env.e2e.testing.process_fixtures import start_runner
-from agentplane.history_service.testing.fixtures import (
-    history_service,
-    history_writer_namespaces,
-    service_database_template,
-    service_history_db_url,
-)
+from agentplane.history_service.testing.fixtures import service_database_template, service_history_db_url
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from util.testing.postgres_fixtures import (
     database_clones,

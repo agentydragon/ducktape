@@ -7,14 +7,17 @@ import socket
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import grpc
 
 from agentplane.env.config import EnvironmentRuntimeControl
 from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
-from agentplane.environment_runtime_transport.config import Insecure
-from agentplane.proto import environment_runtime_state_pb2
+from agentplane.environment_runtime_transport.config import MTLS, TLS, Insecure
+from agentplane.proto import environment_runtime_state_pb2, identity_pb2
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS, CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -41,9 +44,10 @@ class _RunnerMetadataInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
 
 
 class ControlListener:
-    """Observe Runner facts and call its RPCs as an insecure test Gateway peer."""
+    """Observe Runner facts and call its RPCs as the test Gateway workload."""
 
-    def __init__(self) -> None:
+    def __init__(self, client_credentials: grpc.ChannelCredentials) -> None:
+        self._client_credentials = client_credentials
         self.connections = 0
         self.facts: list[environment_runtime_state_pb2.EnvironmentRuntimeFacts] = []
         self.facts_published = asyncio.Condition()
@@ -113,10 +117,15 @@ class ControlListener:
     async def _new_channel(
         self, endpoint: EnvironmentRuntimeControl, metadata: tuple[tuple[str, str], ...] = ()
     ) -> grpc.aio.Channel:
-        if not isinstance(endpoint.security, Insecure):
-            raise ValueError("subprocess test Gateway requires an insecure Runner endpoint")
         interceptors = (_RunnerMetadataInterceptor(metadata),) if metadata else ()
-        return grpc.aio.insecure_channel(endpoint.listen_address, interceptors=interceptors)
+        if isinstance(endpoint.security, Insecure):
+            raise ValueError("the test Runner must present its Sandbox workload SVID")
+        return grpc.aio.secure_channel(
+            endpoint.listen_address,
+            self._client_credentials,
+            options=(("grpc.ssl_target_name_override", RUNNER_GATEWAY_TEST_DNS),),
+            interceptors=interceptors,
+        )
 
     async def disconnect(self) -> None:
         task, self._watch_task = self._watch_task, None
@@ -199,24 +208,49 @@ class ControlListener:
 
 @dataclass
 class Gateway:
-    """A direct Runner client that supplies insecure control security to subprocesses."""
+    """A direct test Gateway with a Sandbox identity and the matching workload TLS trust root."""
 
     control: ControlListener
     target: str
+    sandbox: SandboxCluster
+    ca: CertificateAuthority
+    execution_identity: identity_pb2.Identity
+    runtime_tls: TLS
 
     @property
     def endpoint(self) -> EnvironmentRuntimeControl:
-        return EnvironmentRuntimeControl(listen_address=self.target, security=Insecure())
+        return EnvironmentRuntimeControl(listen_address=self.target, security=MTLS(tls=self.runtime_tls))
 
 
 @asynccontextmanager
-async def serve_gateway() -> AsyncIterator[Gateway]:
-    """Serve the plaintext control peer used by subprocess behavior tests."""
+async def serve_gateway(sandbox: SandboxCluster, directory: Path) -> AsyncIterator[Gateway]:
+    """Prepare the test Gateway client and Runner listener with one Sandbox workload CA."""
+    ca = make_ca("session-e2e-workloads")
+    tls_directory = directory / "runner-control-tls"
+    tls_directory.mkdir()
+    ca_file, _ = write_ca(ca, tls_directory, "ca")
+    runtime_cert, runtime_key = issue_workload_leaf(ca, sandbox.environment_runtime_identity_uri, tls_directory)
+    runtime_tls = TLS(
+        cert_file=str(runtime_cert), key_file=str(runtime_key), ca_file=str(ca_file), client_ca_file=str(ca_file)
+    )
+    gateway_directory = directory / "gateway-client-tls"
+    gateway_directory.mkdir()
+    gateway_cert, gateway_key = issue_workload_leaf(ca, "spiffe://agentplane/runner-gateway", gateway_directory)
+    credentials = grpc.ssl_channel_credentials(
+        root_certificates=ca.cert_pem, private_key=gateway_key.read_bytes(), certificate_chain=gateway_cert.read_bytes()
+    )
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         target = f"127.0.0.1:{listener.getsockname()[1]}"
-    control = ControlListener()
+    control = ControlListener(credentials)
     try:
-        yield Gateway(control, target)
+        yield Gateway(
+            control,
+            target,
+            sandbox,
+            ca,
+            identity_pb2.Identity(name=sandbox.execution_identity_name, uid=sandbox.execution_identity_uid),
+            runtime_tls,
+        )
     finally:
         await control.disconnect()

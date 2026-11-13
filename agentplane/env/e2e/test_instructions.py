@@ -53,7 +53,7 @@ async def test_instructions_name_the_platform_the_sandbox_and_the_session_ahead_
     assert instructions.endswith(INSTRUCTIONS)
     assert f"Your Session ID is: {session.attached.session_id}" in instructions
     assert "destination_ref" not in instructions
-    assert launches.SANDBOX.uid not in instructions
+    assert driver.gateway.sandbox.uid not in instructions
 
 
 async def test_reopening_a_session_with_its_own_spec_confirms_it(

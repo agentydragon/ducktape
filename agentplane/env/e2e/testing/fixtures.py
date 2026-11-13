@@ -7,25 +7,29 @@ Only the model fixture knows the harness dialect.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-from agentplane.env.config import Endpoint
+from agentplane.env.config import Endpoint, SVIDEndpoint
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.driver import RunnerDriver
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway, serve_gateway
+from agentplane.env.e2e.testing.history_tunnel import history_tunnel
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.history_service.testing.go_service import WRITER, GoHistoryService
+from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.codex_model import CodexModel
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ScriptedModel
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -69,8 +73,38 @@ def workspace(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def spec(harness: session_pb2.Harness, workspace: Path) -> session_pb2.SessionSpec:
-    return launches.spec(harness, workspace)
+async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster(api_server) as started:
+        yield started
+
+
+@pytest.fixture
+def history_writer_namespaces(sandbox: SandboxCluster) -> Sequence[str]:
+    return (sandbox.namespace, WRITER.namespace)
+
+
+@pytest.fixture
+async def history_service(
+    service_history_db_url: str,
+    api_server: KubernetesApiServer,
+    history_writer_namespaces: Sequence[str],
+    runner_gateway: Gateway,
+    tmp_path: Path,
+) -> AsyncIterator[GoHistoryService]:
+    async with go_history_service(
+        service_history_db_url,
+        api=api_server,
+        directory=tmp_path,
+        writer_namespaces=history_writer_namespaces,
+        svid_ca=runner_gateway.ca,
+        policy_namespace=runner_gateway.sandbox.namespace,
+    ) as service:
+        yield service
+
+
+@pytest.fixture
+def spec(harness: session_pb2.Harness, workspace: Path, sandbox: SandboxCluster) -> session_pb2.SessionSpec:
+    return launches.spec(harness, workspace, sandbox.identity)
 
 
 @pytest.fixture
@@ -83,18 +117,23 @@ async def runner(
     request: pytest.FixtureRequest, config: RunnerTestConfig, runner_gateway: Gateway, history_service: GoHistoryService
 ) -> AsyncIterator[RunningRunner]:
     """The production Go runner, pushing its journal to the Go History Service ingress."""
-    ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
-    async with RunningRunner(
-        config, runner_gateway, history=history_service.reader, ingress_endpoint=ingress
-    ) as started:
-        yield started
-        if (evidence := FailureEvidence.for_failed_call(request)) is not None:
-            await evidence.preserve_runner(started)
+    launched = replace(config, launch=replace(config.launch, sandbox=runner_gateway.sandbox.identity))
+    async with history_tunnel(history_service.ingress_target) as proxy:
+        ingress = Endpoint(
+            target=history_service.ingress_target,
+            svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
+        )
+        async with RunningRunner(
+            launched, runner_gateway, history=history_service.reader, ingress_endpoint=ingress
+        ) as started:
+            yield started
+            if (evidence := FailureEvidence.for_failed_call(request)) is not None:
+                await evidence.preserve_runner(started)
 
 
 @pytest.fixture
-async def runner_gateway() -> AsyncIterator[Gateway]:
-    async with serve_gateway() as gateway:
+async def runner_gateway(sandbox: SandboxCluster, tmp_path: Path) -> AsyncIterator[Gateway]:
+    async with serve_gateway(sandbox, tmp_path) as gateway:
         yield gateway
 
 
