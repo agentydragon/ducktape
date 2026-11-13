@@ -15,6 +15,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
@@ -297,7 +298,7 @@ func updateSamplerModel(t *testing.T, store *centralsampler.Store, session *cent
 
 func startSamplerExport(ctx context.Context, f samplerExportFixture, sessionID string) <-chan error {
 	done := make(chan error, 1)
-	go func() { done <- centralsampler.ExportSession(ctx, f.sampler, sessionID, f.target, f.token, nil) }()
+	go func() { done <- historyexport.ExportSession(ctx, f.sampler, sessionID, f.target, f.token, nil) }()
 	return done
 }
 

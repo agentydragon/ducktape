@@ -9,13 +9,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
@@ -29,7 +29,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/client-go/util/workqueue"
 )
 
 type fixtureHistory struct {
@@ -153,72 +152,18 @@ func admitExportEvent(ctx context.Context, store *Store, id string, index int) e
 	return err
 }
 
-// recordingDelayingQueue stands in for the queue's clock: it records each
-// requested retry delay and makes the item ready at once.
-type recordingDelayingQueue struct {
-	workqueue.TypedDelayingInterface[string]
-	delays []time.Duration
-}
-
-func (q *recordingDelayingQueue) AddAfter(item string, delay time.Duration) {
-	q.delays = append(q.delays, delay)
-	q.Add(item)
-}
-
-type exportOutcome struct {
-	caughtUp bool
-	err      error
-}
-
-func TestExportAcknowledgementValidatesTheSessionJournal(t *testing.T) {
+func TestExportSnapshotDescribesTheSameCursorItReturns(t *testing.T) {
 	store := newTestStore(t)
 	session := exportFixtureSession(t, store)
 	if err := admitExportEvent(t.Context(), store, session.ID, 0); err != nil {
 		t.Fatal(err)
 	}
-	for _, test := range []struct {
-		name     string
-		previous uint64
-		ack      *ingresspb.Acknowledgement
-		invalid  bool
-	}{
-		{"unchanged", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor}, false},
-		{"newer source commit", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor + 1}, false},
-		{"backwards", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor - 1}, true},
-		{"beyond journal", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor + 2}, true},
-		{"sealed", session.Cursor, &ingresspb.Acknowledgement{Cursor: session.Cursor, Sealed: true}, true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			err := checkExportAcknowledgement(t.Context(), store, session.ID, test.ack, test.previous, session.Cursor)
-			if (err != nil) != test.invalid {
-				t.Fatalf("ack=%v err=%v invalid=%v", test.ack, err, test.invalid)
-			}
-		})
+	snapshot, err := store.ExportSnapshot(t.Context(), session.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestExportQueueBacksOffFailuresAndResetsAfterProgress(t *testing.T) {
-	delaying := &recordingDelayingQueue{TypedDelayingInterface: workqueue.NewTypedDelayingQueue[string]()}
-	unavailable := errors.New("History unavailable")
-	outcomes := []exportOutcome{{err: unavailable}, {err: unavailable}, {caughtUp: false}, {err: unavailable}, {caughtUp: true}}
-	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{DelayingQueue: delaying}, func(context.Context, string) (bool, error) {
-		outcome := outcomes[0]
-		outcomes = outcomes[1:]
-		return outcome.caughtUp, outcome.err
-	})
-	defer queue.queue.ShutDown()
-	queue.queue.Add("backoff-session")
-	for range 5 {
-		if !queue.processNext(t.Context()) {
-			t.Fatal("export queue shut down")
-		}
-	}
-	// Failures double the delay; an exhausted quantum is progress, so the next failure starts over.
-	if expected := []time.Duration{exportRetryBase, 2 * exportRetryBase, exportRetryBase}; !slices.Equal(delaying.delays, expected) {
-		t.Fatalf("retry delays=%v expected=%v", delaying.delays, expected)
-	}
-	if queue.queue.Len() != 0 || queue.queue.NumRequeues("backoff-session") != 0 {
-		t.Fatalf("caught-up Session left queued=%d requeues=%d", queue.queue.Len(), queue.queue.NumRequeues("backoff-session"))
+	if snapshot.Cursor != snapshot.Description.GetAttached().GetLastCursor() {
+		t.Fatalf("snapshot cursor=%d but described cursor=%d", snapshot.Cursor, snapshot.Description.GetAttached().GetLastCursor())
 	}
 }
 
@@ -235,10 +180,10 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
-	if err := ExportSession(ctx, store, session.ID, target, token, nil); err == nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err == nil {
 		t.Fatal("first export did not observe the lost acknowledgement")
 	}
-	if err := ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
 	current, err := store.GetSession(ctx, session.ID, "")
@@ -269,7 +214,7 @@ func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testi
 	if _, err := store.DB().ExecContext(ctx, "DELETE FROM sampler_export_checkpoint"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint, err = store.Checkpoint(ctx, session.ID, target)
@@ -298,7 +243,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 	}
 	defer hub.Close()
 	stopped := make(chan error, 1)
-	go func() { stopped <- RunExporter(ctx, store, target, token, hub, nil) }()
+	go func() { stopped <- historyexport.Run(ctx, store, target, token, OutboxChannel, hub, nil) }()
 	defer func() {
 		cancel()
 		if err := <-stopped; err != nil && !errors.Is(err, context.Canceled) {
@@ -341,7 +286,7 @@ func TestHistoryExporterWakesForAnotherWriterAndListenerReconnect(t *testing.T) 
 func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	store, databaseURL := newTestStoreWithDSN(t)
 	session := exportFixtureSession(t, store)
-	for i := 0; i < 2*exportPageSize*exportPagesPerTurn+1; i++ {
+	for i := 0; i < 257; i++ {
 		if err := admitExportEvent(t.Context(), store, session.ID, i); err != nil {
 			t.Fatal(err)
 		}
@@ -354,7 +299,7 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	if err := ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
+	if err := historyexport.ExportSession(ctx, store, session.ID, target, token, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The first quantum makes durable remote progress without finishing the
@@ -373,7 +318,7 @@ func TestHistoryExporterRotatesOneSessionAcrossFiniteQuanta(t *testing.T) {
 	}
 	defer hub.Close()
 	stopped := make(chan error, 1)
-	go func() { stopped <- RunExporter(ctx, store, target, token, hub, nil) }()
+	go func() { stopped <- historyexport.Run(ctx, store, target, token, OutboxChannel, hub, nil) }()
 	defer func() {
 		cancel()
 		if err := <-stopped; err != nil && !errors.Is(err, context.Canceled) {

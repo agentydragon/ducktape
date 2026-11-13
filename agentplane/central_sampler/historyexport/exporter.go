@@ -1,4 +1,4 @@
-package centralsampler
+package historyexport
 
 import (
 	"context"
@@ -21,6 +21,24 @@ import (
 	"google.golang.org/grpc"
 	"k8s.io/client-go/util/workqueue"
 )
+
+// Snapshot is the Session description and event cursor read from the same durable sampler row.
+// Keeping the cursor beside the description prevents an export from announcing newer metadata
+// than the event prefix it is prepared to send.
+type Snapshot struct {
+	Description *samplerpb.GetSessionResponse
+	Cursor      uint64
+}
+
+// Outbox is the sampler's narrow durable boundary for exporting History.
+type Outbox interface {
+	ExportSnapshot(context.Context, string) (Snapshot, error)
+	CurrentCursor(context.Context, string) (uint64, error)
+	Events(context.Context, string, uint64, int) ([]*eventlogpb.EventEntry, error)
+	Checkpoint(context.Context, string, string) (*uint64, error)
+	CommitCheckpoint(context.Context, string, string, uint64) error
+	PendingSessionIDs(context.Context, string, string, int) ([]string, error)
+}
 
 // exportChannels are the exporter's two connections to History, both authenticated by the
 // sampler's own token: delegated carries the Identity a Session executes as in each call's
@@ -74,31 +92,27 @@ const (
 	exportRetryMax     = 5 * time.Minute
 )
 
-func ExportSession(ctx context.Context, store *Store, sessionID, target, tokenFile string, tls *environment_runtime_transport.ClientTLS) error {
+func ExportSession(ctx context.Context, outbox Outbox, sessionID, target, tokenFile string, tls *environment_runtime_transport.ClientTLS) error {
 	channels, err := dialExportChannels(target, tokenFile, tls)
 	if err != nil {
 		return err
 	}
 	defer channels.close()
-	_, err = exportSession(ctx, store, sessionID, target, channels)
+	_, err = exportSession(ctx, outbox, sessionID, target, channels)
 	return err
 }
 
 // exportSession sends at most one scheduling quantum and reports whether History has caught up.
-func exportSession(ctx context.Context, store *Store, sessionID, target string, channels exportChannels) (bool, error) {
+func exportSession(ctx context.Context, outbox Outbox, sessionID, target string, channels exportChannels) (bool, error) {
 	pages := 0
 	for refresh := 0; refresh < exportPagesPerTurn; refresh++ {
-		session, err := store.GetSession(ctx, sessionID, "")
-		if err != nil {
-			return false, err
-		}
-		snapshot, err := Describe(session)
+		session, err := outbox.ExportSnapshot(ctx, sessionID)
 		if err != nil {
 			return false, err
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err = func() error {
-			pushCtx, channel, err := channels.pushContext(callCtx, snapshot)
+			pushCtx, channel, err := channels.pushContext(callCtx, session.Description)
 			if err != nil {
 				return err
 			}
@@ -106,19 +120,19 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 			if err != nil {
 				return err
 			}
-			if err := call.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: &ingresspb.SamplerAnnouncement{Session: snapshot.GetAttached(), Executor: snapshot.GetExecutor()}}}); err != nil {
+			if err := call.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: &ingresspb.SamplerAnnouncement{Session: session.Description.GetAttached(), Executor: session.Description.GetExecutor()}}}); err != nil {
 				return err
 			}
 			first, err := call.Recv()
 			if err != nil {
 				return fmt.Errorf("History initial acknowledgement: %w", err)
 			}
-			if err := checkExportAcknowledgement(callCtx, store, sessionID, first, 0, session.Cursor); err != nil {
+			if err := checkExportAcknowledgement(callCtx, outbox, sessionID, first, 0, session.Cursor); err != nil {
 				return err
 			}
 			acknowledged, sent := first.GetCursor(), first.GetCursor()
 			for acknowledged < session.Cursor && pages < exportPagesPerTurn {
-				entries, err := store.Events(callCtx, sessionID, sent, min(exportPageSize, int(session.Cursor-sent)))
+				entries, err := outbox.Events(callCtx, sessionID, sent, min(exportPageSize, int(session.Cursor-sent)))
 				if err != nil {
 					return err
 				}
@@ -138,7 +152,7 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 				next := acknowledged
 				tasks.Go(func() error {
 					var err error
-					next, err = acknowledgeExportPage(pageCtx, store, sessionID, call, acknowledged, through, session.Cursor)
+					next, err = acknowledgeExportPage(pageCtx, outbox, sessionID, call, acknowledged, through, session.Cursor)
 					if err != nil {
 						cancel()
 					}
@@ -164,7 +178,7 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 				if err != nil {
 					return err
 				}
-				if err := checkExportAcknowledgement(callCtx, store, sessionID, ack, acknowledged, session.Cursor); err != nil {
+				if err := checkExportAcknowledgement(callCtx, outbox, sessionID, ack, acknowledged, session.Cursor); err != nil {
 					return err
 				}
 				acknowledged = ack.GetCursor()
@@ -173,7 +187,7 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 			// covered snapshot and successful RPC completion advance the durable
 			// completion checkpoint; a partial quantum stays pending locally.
 			if acknowledged >= session.Cursor {
-				return store.CommitCheckpoint(callCtx, sessionID, target, session.Cursor)
+				return outbox.CommitCheckpoint(callCtx, sessionID, target, session.Cursor)
 			}
 			return nil
 		}()
@@ -181,15 +195,15 @@ func exportSession(ctx context.Context, store *Store, sessionID, target string, 
 		if err != nil {
 			return false, err
 		}
-		current, err := store.GetSession(ctx, sessionID, "")
+		current, err := outbox.CurrentCursor(ctx, sessionID)
 		if err != nil {
 			return false, err
 		}
-		checkpoint, err := store.Checkpoint(ctx, sessionID, target)
+		checkpoint, err := outbox.Checkpoint(ctx, sessionID, target)
 		if err != nil {
 			return false, err
 		}
-		caughtUp := checkpoint != nil && *checkpoint == current.Cursor && session.Cursor == current.Cursor
+		caughtUp := checkpoint != nil && *checkpoint == current && session.Cursor == current
 		if caughtUp || pages == exportPagesPerTurn {
 			return caughtUp, nil
 		}
@@ -206,13 +220,13 @@ func sendExportPage(call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb
 	return call.Send(&ingresspb.PushFrame{Frame: &ingresspb.PushFrame_Heartbeat{Heartbeat: &ingresspb.Heartbeat{}}})
 }
 
-func acknowledgeExportPage(ctx context.Context, store *Store, sessionID string, call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb.Acknowledgement], after, through, journalCursor uint64) (uint64, error) {
+func acknowledgeExportPage(ctx context.Context, outbox Outbox, sessionID string, call grpc.BidiStreamingClient[ingresspb.PushFrame, ingresspb.Acknowledgement], after, through, journalCursor uint64) (uint64, error) {
 	for after < through {
 		ack, err := call.Recv()
 		if err != nil {
 			return 0, fmt.Errorf("History batch acknowledgement: %w", err)
 		}
-		if err := checkExportAcknowledgement(ctx, store, sessionID, ack, after, journalCursor); err != nil {
+		if err := checkExportAcknowledgement(ctx, outbox, sessionID, ack, after, journalCursor); err != nil {
 			return 0, err
 		}
 		after = ack.GetCursor()
@@ -220,7 +234,7 @@ func acknowledgeExportPage(ctx context.Context, store *Store, sessionID string, 
 	return after, nil
 }
 
-func checkExportAcknowledgement(ctx context.Context, store *Store, sessionID string, ack *ingresspb.Acknowledgement, previous, journalCursor uint64) error {
+func checkExportAcknowledgement(ctx context.Context, outbox Outbox, sessionID string, ack *ingresspb.Acknowledgement, previous, journalCursor uint64) error {
 	if ack.GetSealed() || ack.GetCursor() < previous {
 		return errors.New("History acknowledgement conflicts with sampler journal")
 	}
@@ -228,11 +242,11 @@ func checkExportAcknowledgement(ctx context.Context, store *Store, sessionID str
 		return nil
 	}
 	// Another copier can export commits newer than this call's snapshot.
-	current, err := store.GetSession(ctx, sessionID, "")
+	current, err := outbox.CurrentCursor(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-	if ack.GetCursor() > current.Cursor {
+	if ack.GetCursor() > current {
 		return errors.New("History acknowledgement exceeds sampler journal")
 	}
 	return nil
@@ -254,10 +268,10 @@ func newExportQueue(config workqueue.TypedRateLimitingQueueConfig[string], expor
 	}
 }
 
-func (q *exportQueue) enqueuePending(ctx context.Context, store *Store, target string) error {
+func (q *exportQueue) enqueuePending(ctx context.Context, outbox Outbox, target string) error {
 	after := ""
 	for {
-		ids, err := store.PendingSessionIDs(ctx, target, after, exportListPage)
+		ids, err := outbox.PendingSessionIDs(ctx, target, after, exportListPage)
 		if err != nil {
 			return err
 		}
@@ -296,8 +310,8 @@ func (q *exportQueue) processNext(ctx context.Context) bool {
 	return true
 }
 
-func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hub *wakeups.Hub, tls *environment_runtime_transport.ClientTLS) error {
-	changed, unsubscribe, err := hub.Subscribe(OutboxChannel)
+func Run(ctx context.Context, outbox Outbox, target, tokenFile, outboxChannel string, hub *wakeups.Hub, tls *environment_runtime_transport.ClientTLS) error {
+	changed, unsubscribe, err := hub.Subscribe(outboxChannel)
 	if err != nil {
 		return err
 	}
@@ -308,7 +322,7 @@ func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hu
 	}
 	defer channels.close()
 	queue := newExportQueue(workqueue.TypedRateLimitingQueueConfig[string]{}, func(ctx context.Context, sessionID string) (bool, error) {
-		return exportSession(ctx, store, sessionID, target, channels)
+		return exportSession(ctx, outbox, sessionID, target, channels)
 	})
 	tasks, taskCtx := errgroup.WithContext(ctx)
 	for range exportConcurrency {
@@ -321,7 +335,7 @@ func RunExporter(ctx context.Context, store *Store, target, tokenFile string, hu
 	tasks.Go(func() error {
 		defer queue.queue.ShutDown()
 		for {
-			if err := queue.enqueuePending(taskCtx, store, target); err != nil {
+			if err := queue.enqueuePending(taskCtx, outbox, target); err != nil {
 				if taskCtx.Err() != nil {
 					return taskCtx.Err()
 				}

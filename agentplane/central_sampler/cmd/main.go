@@ -13,6 +13,7 @@ import (
 	"time"
 
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
@@ -95,7 +96,7 @@ func run(ctx context.Context, settings centralsampler.Settings) error {
 	running.Go(func() error { return runtime.Run(runningCtx, work) })
 	if settings.HistoryTarget != "" {
 		running.Go(func() error {
-			return centralsampler.RunExporter(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, hub, settings.HistoryTLS)
+			return historyexport.Run(runningCtx, store, settings.HistoryTarget, settings.HistoryTokenFile, centralsampler.OutboxChannel, hub, settings.HistoryTLS)
 		})
 	}
 	running.Go(func() error {
