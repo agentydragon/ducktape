@@ -501,6 +501,39 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
+- **W9 — Give extraction searches one assignment and validation contract.**
+  The graph proposer, decomposition/coarsening and residual routing currently
+  solve different placement problems: graph commands cannot read an ownership
+  subset, decomposition may change existing owners, and residual routing can
+  move the entire remainder. The proposer's `landable_today` is only a graph
+  readiness signal. Treating these as interchangeable extraction strategies
+  obscures both the permitted edits and the strength of the result.
+
+  Start every extraction strategy from the same prepared source/spec context
+  and exact current assignment, including ownership subsets. Return an explicit
+  batch of destination changes; every source unit outside that batch keeps its
+  destination, including the remaining residual. Preserve existing selected
+  owners by default. Repartitioning them is an explicit different scope, never
+  an implicit strategy choice. Strategies generate candidates; one shared
+  complete-candidate checker decides acceptance and the apply path reuses it.
+  Local contraction checks cannot certify global scheduling or emitted output.
+
+  Consolidate discovery behind one planning/checking/applying workflow. Keep
+  cheap structural inspection separate and retain residual layout policies as
+  output configuration. Reuse `AssignmentAnalysis` and validated assignments,
+  not another graph model. Replace misleading readiness labels with explicit
+  validation scope; unsupported inputs, execution failures, budget exhaustion
+  and no candidates must remain distinct from candidate rejection or a claim
+  that extraction is impossible. Migrate the private caller directly when
+  retiring overlapping interfaces rather than adding compatibility shims.
+
+  Close with neutral CLI bundle/spec/starting-assignment regressions: the same
+  candidate gets the same complete verdict through every strategy; a valid
+  joint batch passes even when individual moves reject; remote ESM TDZs reject;
+  anonymous statements are covered; and units outside a plan stay put. Verify
+  preview/apply agreement and demonstrate a useful passing-subset extraction
+  through the unified workflow before retiring existing paths.
+
 ### Planner CLI follow-ups
 
 - **Diagnostics toggle for `modules propose`.** `--limit` now bounds
