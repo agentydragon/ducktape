@@ -502,7 +502,12 @@ def running_stack(
                 pki_infrastructure.prepare(k3s.kubectl, cert_manager, trust_manager, warm=baseline_warm)
                 setup.add_event("cert-manager and trust-manager ready")
                 fixture_import.result()
-                setup.add_event("fixture images imported" if guest_images else "service images imported")
+                if guest_images:
+                    setup.add_event("fixture images imported")
+                elif deferred_images:
+                    setup.add_event("service images imported")
+                else:
+                    setup.add_event("images imported")
                 if guest_images:
                     # The VM root image is this stack's largest cold import. Sampling proceeds while
                     # the importer and the rest of setup work; joining happens at fixture teardown.
