@@ -6,6 +6,7 @@ go_library(
     name = "settings",
     srcs = [
         "model.go",
+        "public_roots.go",
         "settings.go",
         "validation.go",
     ],
@@ -25,6 +26,7 @@ go_library(
 go_test(
     name = "settings_test",
     srcs = [
+        "public_roots_test.go",
         "settings_fixture_test.go",
         "settings_test.go",
     ],

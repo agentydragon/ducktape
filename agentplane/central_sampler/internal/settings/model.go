@@ -111,7 +111,7 @@ type ConnectionConfig struct {
 // service SVID. External providers continue to use the standard HTTPS verifier.
 func (c ConnectionConfig) HTTPClient(client *http.Client) (*http.Client, error) {
 	if c.TLS == nil {
-		return client, nil
+		return clientWithPublicRoots(client)
 	}
 	config, err := c.TLS.TLSConfig()
 	if err != nil {
