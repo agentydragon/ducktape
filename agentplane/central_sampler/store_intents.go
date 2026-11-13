@@ -284,7 +284,7 @@ func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request Intent
 		}
 		if request.ProviderRequest != nil {
 			request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
-			request.ProviderRequest.SourceControl, err = conversation.contextControl(original)
+			request.ProviderRequest.SourceControl, err = conversation.contextControl(conversation.Context())
 			if err != nil {
 				return err
 			}

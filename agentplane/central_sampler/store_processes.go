@@ -442,8 +442,10 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 		// A user interrupt ends the current command's retry chain. Keep its attempt
 		// ancestry and failure evidence, but never leave transient retry work runnable.
 		if session.ActiveCommand != nil {
-			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET provider_retry_not_before=NULL
-				WHERE conversation_id=$1 AND provider_command_id=$2`, conversation.ID, *session.ActiveCommand); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent
+				SET provider_retry_not_before=NULL,
+					result=jsonb_set(result,'{provider_retry_suppressed}',to_jsonb('interrupted'::text),TRUE)
+				WHERE conversation_id=$1 AND provider_command_id=$2 AND provider_retry_not_before IS NOT NULL`, conversation.ID, *session.ActiveCommand); err != nil {
 				return err
 			}
 		}

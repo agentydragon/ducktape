@@ -103,23 +103,31 @@ const providerAttemptColumns = `id::text,provider_step_id::text,COALESCE(previou
 	COALESCE(provider_command_id,''),request->>'kind',provider_attempt_no,provider_attempt_budget,generation,
 	provider_attempt_lease_until,provider_attempt_lease_until<=clock_timestamp(),provider_retry_not_before,
 	COALESCE(result->>'failure_class',''),COALESCE(result->>'failure_reason',''),COALESCE(result->>'status',''),
+	COALESCE(result->>'provider_retry_suppressed',''),
 	(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before IS NOT NULL AND provider_attempt_no<provider_attempt_budget),
-	(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before<=clock_timestamp() AND provider_attempt_no<provider_attempt_budget),
-	GREATEST(COALESCE(EXTRACT(EPOCH FROM (provider_retry_not_before-clock_timestamp())),0),0)`
+	COALESCE(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before<=clock_timestamp() AND provider_attempt_no<provider_attempt_budget,FALSE),
+	GREATEST(COALESCE(EXTRACT(EPOCH FROM (provider_retry_not_before-clock_timestamp())),0),0),request`
 
 func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 	var attempt ProviderAttempt
-	var kind, failureClass string
+	var kind, failureClass, retrySuppressed string
 	var number, budget int
 	var retryAt sql.NullTime
 	var retryInSeconds float64
+	var requestWire []byte
 	if err := row.Scan(&attempt.IntentID, &attempt.StepID, &attempt.PreviousID, &attempt.CommandID, &kind, &number, &budget,
-		&attempt.Generation, &attempt.LeaseUntil, &attempt.Expired, &retryAt, &failureClass, &attempt.FailureReason, &attempt.ResultStatus,
-		&attempt.Retryable, &attempt.Ready, &retryInSeconds); err != nil {
+		&attempt.Generation, &attempt.LeaseUntil, &attempt.Expired, &retryAt, &failureClass, &attempt.FailureReason, &attempt.ResultStatus, &retrySuppressed,
+		&attempt.Retryable, &attempt.Ready, &retryInSeconds, &requestWire); err != nil {
 		return nil, err
 	}
 	attempt.Kind, attempt.FailureClass, attempt.Number, attempt.Budget = PendingIntentKind(kind), ProviderAttemptFailureClass(failureClass), number, budget
+	attempt.RetrySuppressed = ProviderRetrySuppression(retrySuppressed)
 	attempt.RetryIn = time.Duration(retryInSeconds * float64(time.Second))
+	var request IntentRequest
+	if err := json.Unmarshal(requestWire, &request); err != nil {
+		return nil, err
+	}
+	attempt.ProviderRequest = request.ProviderRequest
 	if retryAt.Valid {
 		attempt.RetryAt = &retryAt.Time
 	}
@@ -177,8 +185,9 @@ func (s *Store) CurrentProviderAttempt(ctx context.Context, owner Owner, session
 
 // ProviderRecoveryFrontier returns the terminal explicit provider-abandon frontier belonging to
 // the still-accepted original command, including whether another attempt is allowed and its
-// DB-clock readiness. Host-loss and interrupt settlements without failure_class are excluded. An
-// expired attempt never transfers Session ownership or makes a retry due.
+// DB-clock readiness. RetrySuppressed describes an interrupted or host-lost frontier; the latter
+// requires a new model-visible context and cannot reuse its frozen request. An expired attempt
+// never transfers Session ownership or makes a retry due.
 func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessionID string) (*ProviderAttempt, error) {
 	var attempt *ProviderAttempt
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -212,7 +221,8 @@ func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessi
 		}
 		attempt, err = scanProviderAttempt(tx.QueryRowContext(ctx, `SELECT `+providerAttemptColumns+`
 			FROM sampler_intent i WHERE i.conversation_id=$1 AND i.provider_command_id=$2
-				AND i.result->>'status'='abandoned' AND i.result->>'failure_class' IS NOT NULL
+				AND i.result->>'status'='abandoned'
+				AND (i.result->>'failure_class' IS NOT NULL OR i.result->>'provider_retry_suppressed'='host_loss')
 				AND NOT EXISTS(SELECT 1 FROM sampler_intent n WHERE n.previous_provider_intent_id=i.id)
 			ORDER BY i.id LIMIT 1`, owner.ConversationID, *session.ActiveCommand))
 		if errors.Is(err, sql.ErrNoRows) {

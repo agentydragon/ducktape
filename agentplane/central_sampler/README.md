@@ -63,14 +63,17 @@ new schema.
 
 Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
 It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
-new constraint prevents an older sampler image from inserting provider intents. For this incompatible
-writer cutover, suspend the owning rollout and stop every old central-sampler Pod before migration;
-verify no old writer remains, run the new image once with `--migrate-only` and the same
-`AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`, then deploy the new image and resume the desired replicas.
-Do not rely on the normal rolling Deployment strategy to drain old writers before startup migrations.
-If rollback is needed after migration 16, stop all new writers and restore the pre-cutover central-sampler
-database backup before starting the previous image. A previous image alone cannot write provider intents
-under the new required-metadata constraint.
+new constraint prevents an older sampler image from inserting provider intents. This incompatible
+writer cutover configures only the staging Central Sampler Deployment with Kubernetes `Recreate`,
+keeping its two replicas, five-second readiness delay and one available-Pod disruption budget. Expect
+sampler downtime while old Pods stop and the new image starts the migration; serving resumes when a
+new Pod passes readiness. Verify all old Pods are gone and the new revision is ready. After that
+rollout confirms every writer uses migration 16, a follow-up may remove the explicit replica profile
+and restore the inherited rolling strategy. The migration can run at normal startup because
+`Recreate` prevents old and new writer images from overlapping. Take a pre-cutover database backup.
+If rollback is needed after migration 16, stop all new writers and restore that backup before starting
+the previous image. A previous image alone cannot write provider intents under the new required-metadata
+constraint.
 
 `//agentplane/central_sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its

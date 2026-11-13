@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -304,6 +305,86 @@ func TestProviderRecoveryFrontierPersistsExhaustedFailureAcrossStoreReopen(t *te
 		frontier.FailureClass != ProviderAttemptTransient || frontier.Retryable || frontier.Ready || frontier.Number != 1 || frontier.Budget != 1 {
 		t.Fatalf("reopened exhausted provider frontier=%+v err=%v", frontier, err)
 	}
+	if request := frontier.ProviderRequest; request == nil || request.API != protocol.APIStyleResponses ||
+		request.Connection != "fixture-connection" || request.ProviderModel != "fixture-provider-model" ||
+		request.Method != "POST" || request.URL != "https://provider.example.test/v1/responses" || request.ProfileID == "" ||
+		request.SourceNativeContextID == "" || request.ProjectionKey == "" {
+		t.Fatalf("reopened provider route/reference metadata=%+v", request)
+	}
+}
+
+func TestProviderEvidenceRaceWithAbandonmentIsFenced(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admitProviderCommand(t, store, owner, session.ID, "provider-evidence-race", false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	recordResult := make(chan error, 1)
+	abandonResult := make(chan error, 1)
+	var racers sync.WaitGroup
+	racers.Add(2)
+	go func() {
+		defer racers.Done()
+		<-start
+		recordResult <- (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(),
+			protocol.WireBytes{Bytes: []byte("frame racing abandonment")},
+			&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: "race-item"}}})
+	}()
+	go func() {
+		defer racers.Done()
+		<-start
+		abandonResult <- store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
+			Class: ProviderAttemptPermanent, Reason: "provider stream abandoned during race",
+		})
+	}()
+	close(start)
+	racers.Wait()
+	recordErr, abandonErr := <-recordResult, <-abandonResult
+	if abandonErr != nil {
+		t.Fatalf("abandon race result: %v", abandonErr)
+	}
+	if recordErr != nil && !errors.Is(recordErr, protocol.ErrPrecondition) {
+		t.Fatalf("provider evidence race result: %v", recordErr)
+	}
+	events, err := store.Events(t.Context(), session.ID, 0, 256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidenceSequence, abandonedSequence uint64
+	var absent bool
+	for _, entry := range events {
+		event := entry.GetEvent()
+		if boundary := event.GetBoundaryRecord(); boundary != nil && boundary.GetCorrelationId() == intentID {
+			var evidence protocol.WireBytes
+			if json.Unmarshal(boundary.GetPayload(), &evidence) == nil && bytes.Equal(evidence.Bytes, []byte("frame racing abandonment")) {
+				evidenceSequence = entry.GetCursor()
+			}
+		}
+		if progress := event.GetExecutionProgress(); progress != nil && progress.GetOperationId() == intentID &&
+			progress.GetPhase() == eventpb.ExecutionProgress_PHASE_ABANDONED {
+			abandonedSequence = entry.GetCursor()
+		}
+		if reconciliation := event.GetConversationReconciled(); reconciliation != nil {
+			for _, item := range reconciliation.GetItems() {
+				absent = absent || item.GetItemId() == "race-item" && item.GetDisposition() == eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT
+			}
+		}
+	}
+	if recordErr == nil {
+		if evidenceSequence == 0 || abandonedSequence <= evidenceSequence || !absent {
+			t.Fatalf("accepted pre-abandon evidence was not retained/reconciled: evidence=%d abandoned=%d absent=%v", evidenceSequence, abandonedSequence, absent)
+		}
+	} else if evidenceSequence != 0 || abandonedSequence == 0 {
+		t.Fatalf("rejected late evidence left a record or missing abandonment: evidence=%d abandoned=%d", evidenceSequence, abandonedSequence)
+	}
 }
 
 func TestCompactionRetryRetainsOriginalNativeContext(t *testing.T) {
@@ -378,7 +459,7 @@ func TestProviderRetryDueIsClearedOnHostLossWithoutErasingAncestry(t *testing.T)
 		t.Fatalf("host loss changed=%v err=%v", changed, err)
 	}
 	frontier, err := store.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
-	if err != nil || frontier != nil {
+	if err != nil || frontier == nil || frontier.IntentID != intentID || frontier.RetrySuppressed != ProviderRetrySuppressionHostLoss || frontier.Retryable || frontier.Ready {
 		t.Fatalf("host-loss retry frontier=%+v err=%v", frontier, err)
 	}
 	var stepID, previous sql.NullString
@@ -390,5 +471,42 @@ func TestProviderRetryDueIsClearedOnHostLossWithoutErasingAncestry(t *testing.T)
 	}
 	if !stepID.Valid || stepID.String != intentID || number != 1 || budget != 3 || retry.Valid {
 		t.Fatalf("host loss changed attempt ancestry step=%v previous=%v number=%d budget=%d due=%v", stepID, previous, number, budget, retry)
+	}
+}
+
+func TestProviderAttemptAbandonedByHostLossKeepsRecoveryFrontier(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.StampCodeHostInstance(t.Context(), owner, "00000000-0000-4000-8000-000000000001"); err != nil {
+		t.Fatal(err)
+	}
+	admitProviderCommand(t, store, owner, session.ID, "unresolved-host-loss-provider-command", false)
+	request, prepare := providerAttemptTestRequest(PendingIntentSampling)
+	intentID, _, err := store.Begin(t.Context(), owner, request, prepare, providerAttemptTestPolicyPointer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := store.ReconcileCodeHostLoss(t.Context(), owner, "00000000-0000-4000-8000-000000000002", protocol.ExecEncodingFreeform)
+	if err != nil || !changed {
+		t.Fatalf("host loss changed=%v err=%v", changed, err)
+	}
+	frontier, err := store.ProviderRecoveryFrontier(t.Context(), owner, session.ID)
+	if err != nil || frontier == nil || frontier.IntentID != intentID || frontier.FailureClass != "" || frontier.RetrySuppressed != ProviderRetrySuppressionHostLoss || frontier.Retryable || frontier.Ready {
+		t.Fatalf("unresolved host-loss frontier=%+v err=%v", frontier, err)
+	}
+	var result []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE id=$1`, intentID).Scan(&result); err != nil {
+		t.Fatal(err)
+	}
+	var resultValue map[string]any
+	if err := json.Unmarshal(result, &resultValue); err != nil {
+		t.Fatal(err)
+	}
+	if resultValue["provider_retry_suppressed"] != string(ProviderRetrySuppressionHostLoss) || resultValue["provider_completion_unknown"] != true || resultValue["output_committed"] != false {
+		t.Fatalf("host-loss result=%v", resultValue)
 	}
 }

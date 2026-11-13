@@ -134,8 +134,10 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		// A real host reset changes the model-visible execution context. Preserve attempt
 		// ancestry and failure evidence, but suppress a retry of its frozen request.
 		if (hostLost || staleWork) && session.ActiveCommand != nil {
-			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET provider_retry_not_before=NULL
-				WHERE conversation_id=$1 AND provider_command_id=$2`, conversation.ID, *session.ActiveCommand); err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE sampler_intent
+				SET provider_retry_not_before=NULL,
+					result=jsonb_set(result,'{provider_retry_suppressed}',to_jsonb('host_loss'::text),TRUE)
+				WHERE conversation_id=$1 AND provider_command_id=$2 AND provider_retry_not_before IS NOT NULL`, conversation.ID, *session.ActiveCommand); err != nil {
 				return err
 			}
 		}
@@ -158,7 +160,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			if intent.Kind == IntentSampling && conversation.Pending != nil && intent.ID == conversation.Pending.ID {
 				linked = reconciliation
 			}
-			if err := s.abandonIntent(ctx, tx, owner, conversation, session, intent.ID, intent.Kind, linked); err != nil {
+			if err := s.abandonIntent(ctx, tx, owner, conversation, session, intent.ID, intent.Kind, linked, ProviderRetrySuppressionHostLoss); err != nil {
 				return err
 			}
 			switch intent.Kind {
@@ -307,12 +309,15 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 // abandonIntent settles one unresolved intent as an unknown remote outcome that is never replayed
 // and records the abandonment; a sampling reconciliation, when given, is appended linked to it.
 func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
-	intentID string, kind IntentKind, reconciliation *eventpb.Event,
+	intentID string, kind IntentKind, reconciliation *eventpb.Event, suppression ProviderRetrySuppression,
 ) error {
 	abandoned := map[string]any{"status": IntentResultAbandoned, "remote_outcome": NestedUnknown, "automatic_replay": false}
 	if kind == IntentSampling || kind == IntentCompaction {
 		abandoned["provider_completion_unknown"] = true
 		abandoned["output_committed"] = false
+		if suppression != "" {
+			abandoned["provider_retry_suppressed"] = string(suppression)
+		}
 	}
 	wire, err := marshal(abandoned)
 	if err != nil {
@@ -483,7 +488,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		abandonedIntentIDs := make([]string, 0, len(unresolved))
 		for _, intent := range unresolved {
-			if err := s.abandonIntent(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation, session, intent.id, intent.kind, reconciliation); err != nil {
+			if err := s.abandonIntent(ctx, tx, Owner{ConversationID: conversation.ID, Generation: conversation.Generation}, conversation, session, intent.id, intent.kind, reconciliation, ""); err != nil {
 				return err
 			}
 			abandonedIntentIDs = append(abandonedIntentIDs, intent.id)

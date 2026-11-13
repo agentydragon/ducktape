@@ -289,27 +289,39 @@ type ProviderAttemptFailure struct {
 	RetryAfter time.Duration
 }
 
+// ProviderRetrySuppression explains why a terminal provider attempt cannot use its frozen
+// request as a transient retry. A host loss may use a new context after the model-visible reset
+// notice; interruption is terminal for the accepted command.
+type ProviderRetrySuppression string
+
+const (
+	ProviderRetrySuppressionHostLoss    ProviderRetrySuppression = "host_loss"
+	ProviderRetrySuppressionInterrupted ProviderRetrySuppression = "interrupted"
+)
+
 // ProviderAttempt is the durable provider recovery frontier exposed to the runtime. Expired,
 // Retryable, and Ready are evaluated by PostgreSQL when read; callers still need a fenced
 // transaction before changing the attempt.
 type ProviderAttempt struct {
-	IntentID      string
-	StepID        string
-	PreviousID    string
-	CommandID     string
-	Kind          PendingIntentKind
-	FailureClass  ProviderAttemptFailureClass
-	Number        int
-	Budget        int
-	Generation    int
-	LeaseUntil    time.Time
-	Expired       bool
-	RetryAt       *time.Time
-	RetryIn       time.Duration
-	Retryable     bool
-	Ready         bool
-	FailureReason string
-	ResultStatus  string
+	IntentID        string
+	StepID          string
+	PreviousID      string
+	CommandID       string
+	Kind            PendingIntentKind
+	FailureClass    ProviderAttemptFailureClass
+	Number          int
+	Budget          int
+	Generation      int
+	LeaseUntil      time.Time
+	Expired         bool
+	RetryAt         *time.Time
+	RetryIn         time.Duration
+	Retryable       bool
+	Ready           bool
+	FailureReason   string
+	ResultStatus    string
+	RetrySuppressed ProviderRetrySuppression
+	ProviderRequest *ProviderRequest
 }
 
 // TurnResult is how a turn step or a whole command ended.

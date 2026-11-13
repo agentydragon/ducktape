@@ -5,11 +5,8 @@ ALTER TABLE sampler_intent
     ADD COLUMN provider_attempt_budget SMALLINT,
     ADD COLUMN provider_attempt_lease_until TIMESTAMPTZ,
     ADD COLUMN provider_retry_not_before TIMESTAMPTZ,
-    ADD COLUMN previous_provider_intent_id UUID REFERENCES sampler_intent(id),
-    ADD COLUMN provider_command_id VARCHAR,
-    ADD CONSTRAINT sampler_intent_provider_step_fk
-        FOREIGN KEY (provider_step_id) REFERENCES sampler_intent(id)
-        DEFERRABLE INITIALLY DEFERRED;
+    ADD COLUMN previous_provider_intent_id UUID,
+    ADD COLUMN provider_command_id VARCHAR;
 
 -- Existing attempts have no recorded retry policy. Treat each as a one-attempt step, and do not
 -- invent retry work. An unresolved attempt expires no later than its current Session owner lease.
@@ -31,6 +28,11 @@ WHERE c.id = i.conversation_id
   AND i.request->>'kind' IN ('sampling', 'compaction');
 
 ALTER TABLE sampler_intent
+    ADD CONSTRAINT sampler_intent_provider_step_fk
+        FOREIGN KEY (provider_step_id) REFERENCES sampler_intent(id)
+        DEFERRABLE INITIALLY DEFERRED,
+    ADD CONSTRAINT sampler_intent_provider_previous_fk
+        FOREIGN KEY (previous_provider_intent_id) REFERENCES sampler_intent(id),
     ADD CONSTRAINT sampler_intent_provider_attempt_fields_check CHECK (
         (request->>'kind' IN ('sampling', 'compaction')
             AND provider_step_id IS NOT NULL
