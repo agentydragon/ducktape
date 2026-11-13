@@ -5,6 +5,10 @@ filesystem and Runtime disk with the pinned KubeVirt launcher image's QEMU and
 virtiofsd. It runs through Docker on managed RBE, using software emulation rather
 than KVM. No K3s cluster or service-image stack is started.
 
+The Runtime contracts bind those four image runfiles into Docker read-only;
+they remain required Bazel inputs. The observed A/B/B/A action timings, CPU and
+cache limits are in [the mount investigation](../../system_tests/debug/2026_11_13_guest_mounts.md).
+
 ```sh
 bbr test //agentplane/x/direct_vm_boot:test_guest_boot --nocache_test_results
 ```
@@ -86,6 +90,8 @@ The guest launches the root image's pinned Claude CLI. Two Dispatcher inputs dri
 Claude Shell calls: the first writes a nonce to the workspace and the next reads that same file.
 The test checks both requested command IDs in contiguous, sourced History events and requires two
 completed turns under one Runtime boot ID.
+The first turn also runs the shared unprivileged guest probe: UID 107, systemd as PID 1, the Claude
+service cgroup under `agentplane-workloads.slice`, and denial of a `systemctl restart` request.
 
 The guest reaches the fixture model-config endpoint and History through the slirp host address;
 both are real local services. Runtime presents its fixture-issued client SVID, and validates History's
