@@ -8,7 +8,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
     newTag: main-20261113214300-047a0ac # {"$imagepolicy": "flux-system:platform-sessions-chatgpt:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-quest-scheduler
-    newTag: main-20261113225648-5b212fe # {"$imagepolicy": "flux-system:platform-sessions-quest-scheduler:tag"}
+    newTag: main-20261113231742-284a309 # {"$imagepolicy": "flux-system:platform-sessions-quest-scheduler:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-myquest
     newTag: main-20261113225648-5b212fe # {"$imagepolicy": "flux-system:platform-sessions-myquest:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-providers
