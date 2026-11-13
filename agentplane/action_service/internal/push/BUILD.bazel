@@ -9,7 +9,7 @@ go_library(
         "notifier.go",
         "subscriptions.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/push",
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/push",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/internal/store",
