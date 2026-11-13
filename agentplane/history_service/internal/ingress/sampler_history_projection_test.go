@@ -456,6 +456,7 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 		name                 string
 		failure              error
 		failWithNilCommandID bool
+		providerFailure      bool
 		wantActive           samplerpb.CommandOutcome
 		wantQueued           samplerpb.CommandOutcome
 		wantQueueError       bool
@@ -463,6 +464,10 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 	}{
 		{
 			name: "known failure", failure: &protocol.KnownFailureError{Message: "provider rejected request"},
+			wantActive: samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED, wantQueued: samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED,
+		},
+		{
+			name: "permanent provider attempt", providerFailure: true,
 			wantActive: samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED, wantQueued: samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED,
 		},
 		{
@@ -511,7 +516,21 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 			if !test.failWithNilCommandID {
 				localCommandID = &active.ID
 			}
-			if err := store.FailExecution(t.Context(), owner, session.ID, localCommandID, test.failure); err != nil {
+			if test.providerFailure {
+				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{Kind: centralsampler.PendingIntentSampling}, nil,
+					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, centralsampler.ProviderAttemptFailure{
+					Class: centralsampler.ProviderAttemptPermanent, Reason: "provider rejected request",
+				}); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.FailProviderCommand(t.Context(), owner, session.ID, active.ID, intentID, "provider rejected request"); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := store.FailExecution(t.Context(), owner, session.ID, localCommandID, test.failure); err != nil {
 				t.Fatal(err)
 			}
 			for commandID, want := range map[string]samplerpb.CommandOutcome{

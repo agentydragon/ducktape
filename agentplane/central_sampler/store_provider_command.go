@@ -51,6 +51,10 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 		if payload.GetSubmitInput() == nil && payload.GetCompact() == nil {
 			return protocol.ErrPrecondition
 		}
+		confirmedInput := payload.GetSubmitInput() != nil
+		if confirmedInput && session.ActiveTurn == nil {
+			return protocol.ErrPrecondition
+		}
 
 		var status, failureClass, suppressed string
 		var attemptNo, budget int
@@ -91,10 +95,14 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 		if err := setCommandOutcome(ctx, tx, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED, &reason); err != nil {
 			return err
 		}
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
-			CommandFailed: &eventpb.CommandFailed{CommandId: commandID, Reason: reason},
-		}}); err != nil {
-			return err
+		// Input confirmation has already settled the command as effected in History.
+		// Preserve that receipt while failing the sampler run and its turn.
+		if !confirmedInput {
+			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+				CommandFailed: &eventpb.CommandFailed{CommandId: commandID, Reason: reason},
+			}}); err != nil {
+				return err
+			}
 		}
 		if session.ActiveTurn != nil {
 			if err := settleTurnInterrupts(ctx, tx, session, TurnFailed); err != nil {

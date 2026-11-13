@@ -454,6 +454,8 @@ Other provider failures are permanent. Permanent failure or exhausted attempts a
 only the original command and turn, leaving the Session usable and known live cells/processes
 intact. Unresolved native effects still prevent this settlement. No partial response dispatches
 a model tool call. Explicit interruption suppresses the remaining retry chain.
+Confirmed input retains its effected receipt in History; the failed turn records the later
+provider failure. A failed explicit compaction receives a command-failure observation.
 
 Evidence/progress persistence failures, lost ownership and caller cancellation retain durable
 recovery state rather than becoming upstream retry classifications. A fully validated response
