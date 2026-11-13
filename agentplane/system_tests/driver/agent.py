@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from contextlib import aclosing
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Any, TypeVar
@@ -26,7 +25,9 @@ from pydantic import BaseModel
 from tenacity import AsyncRetrying, retry_if_exception, retry_if_result, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
+from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.models import ThreadView
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -218,49 +219,67 @@ class Agent:
 
     async def _collect(self, *, after: int, awaiting_command_id: str | None) -> Turn:
         with tracer.start_as_current_span("system_test.turn.wait", attributes={"thread.id": str(self._thread_id)}):
-            turn = Turn(accepted=time.monotonic())
-            command_admitted = awaiting_command_id is None
-            async with (
-                asyncio.timeout(TURN_SECONDS),
-                aclosing(
-                    self._client.events(
-                        self._thread_id, after=after, read_seconds=TURN_SECONDS, awaiting_command_id=awaiting_command_id
-                    )
-                ) as entries,
-            ):
-                async for entry in entries:
-                    self._cursor = entry.cursor
-                    event = entry.event
-                    match event.WhichOneof("observation"):
-                        case "command_admitted" if event.command_admitted.command.command_id == awaiting_command_id:
-                            command_admitted = True
-                        case "command_failed" if (
-                            awaiting_command_id is None or event.command_failed.command_id == awaiting_command_id
-                        ):
-                            failed = event.command_failed
-                            raise AssertionError(f"command {failed.command_id!r} failed: {failed.reason!r}")
-                        case "harness_launch_failed" if command_admitted:
-                            raise AssertionError(f"harness launch failed: {event.harness_launch_failed.reason!r}")
-                        case "harness_started":
+            accepted = time.monotonic()
+            reader = SessionEventReader(self._client, self._thread_id, after_cursor=after)
+            async with asyncio.timeout(TURN_SECONDS):
+                while True:
+                    await reader.read_page()
+                    turn = Turn(accepted=accepted)
+                    command_admitted = awaiting_command_id is None
+                    for entry in reader.entries:
+                        event = entry.event
+                        match event.WhichOneof("observation"):
+                            case "command_admitted" if event.command_admitted.command.command_id == awaiting_command_id:
+                                command_admitted = True
+                            case "command_failed" if (
+                                awaiting_command_id is None or event.command_failed.command_id == awaiting_command_id
+                            ):
+                                failed = event.command_failed
+                                self._cursor = entry.cursor
+                                raise AssertionError(f"command {failed.command_id!r} failed: {failed.reason!r}")
+                            case _:
+                                pass
+                        if event.HasField("harness_started"):
+                            # A resumed runner may start before the submitted command is admitted.
                             turn.resumed = event.harness_started.resumed
-                        case "harness_user_message_confirmed":
+                        elif event.HasField("harness_user_message_confirmed") and (
+                            awaiting_command_id is None
+                            or awaiting_command_id in event.harness_user_message_confirmed.origin_command_ids
+                        ):
                             turn.input_confirmed = True
-                        case "item_completed":
-                            _completed(event.item_completed, turn)
-                        case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
-                            turn.native.append(event.native.line)
-                        case "turn_completed":
-                            completed = event.turn_completed
-                            turn.status = completed.status
-                            if turn.status != event_pb2.TURN_STATUS_COMPLETED:
-                                raise AssertionError(
-                                    f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
-                                    f"{completed.error=}"
-                                )
-                            return turn
-                        case _:
+                        # A retained successful turn before this request's exact admission belongs to
+                        # prior work. Do not accept it, its outputs, or its terminal as this result.
+                        if not command_admitted:
+                            if event.HasField("turn_completed"):
+                                # Discard lifecycle metadata that belonged to a prior completed turn.
+                                turn.resumed = False
+                                turn.input_confirmed = False
                             continue
-            raise AssertionError(f"the session's stream ended before the turn completed:\n{turn.transcript}")
+                        self._cursor = entry.cursor
+                        match event.WhichOneof("observation"):
+                            case "harness_launch_failed":
+                                raise AssertionError(f"harness launch failed: {event.harness_launch_failed.reason!r}")
+                            case "harness_started" | "harness_user_message_confirmed":
+                                continue
+                            case "item_completed":
+                                _completed(event.item_completed, turn)
+                            case "native" if event.native.direction == event_pb2.DIRECTION_FROM_HARNESS:
+                                turn.native.append(event.native.line)
+                            case "turn_completed":
+                                completed = event.turn_completed
+                                turn.status = completed.status
+                                if turn.status != event_pb2.TURN_STATUS_COMPLETED:
+                                    raise AssertionError(
+                                        f"turn {completed.turn_id!r} ended with "
+                                        f"{event_pb2.TurnStatus.Name(turn.status)}: {completed.error=}"
+                                    )
+                                # A page may include data past the turn we are returning. Re-read it
+                                # on the next call instead of advancing our caller cursor past it.
+                                return turn
+                            case _:
+                                continue
+                    self._cursor = reader.cursor
+                    await reader.wait_for_next_page()
 
 
 def _completed(item: event_pb2.ItemCompleted, turn: Turn) -> None:
@@ -311,24 +330,34 @@ async def scripted_turn_with_admission_and_history(
     ), f"History did not retain command admission {command_id}"
     # FollowSession exposes committed archive entries before History's asynchronous fold applies
     # them. The Thread summary is authoritative only once it covers this completed turn.
-    view: ThreadView = await AsyncRetrying(
+    summary: history_service_pb2.SessionSummary = await AsyncRetrying(
         stop=stop_after_delay(REQUEST_SECONDS),
         wait=wait_fixed(0.05),
-        retry=retry_if_result(lambda row: row.last_cursor < entries[-1].cursor),
-    )(client.thread, agent.thread_id)
+        retry=retry_if_result(
+            lambda row: row.committed_cursor < entries[-1].cursor or row.folded_through < entries[-1].cursor
+        ),
+    )(client.session_summary, agent.thread_id)
+    assert summary.committed_cursor >= entries[-1].cursor
+    assert summary.folded_through >= entries[-1].cursor
+    view: ThreadView = await client.thread(agent.thread_id)
     assert view.last_turn_status == "TURN_STATUS_COMPLETED"
     return turn, entries, request
 
 
 async def _history(client: Client, thread_id: UUID, *, completed_turns: int) -> list[event_log_pb2.EventEntry]:
-    entries: list[event_log_pb2.EventEntry] = []
+    reader = SessionEventReader(client, thread_id, after_cursor=0)
     observed_turns = 0
+    terminal_cursor: int | None = None
     async with asyncio.timeout(TURN_SECONDS):
-        async for entry in client.events(thread_id, after=0, read_seconds=TURN_SECONDS):
-            entries.append(entry)
-            if entry.event.HasField("turn_completed"):
-                observed_turns += 1
-                if observed_turns == completed_turns:
-                    break
+        while terminal_cursor is None:
+            entries = await reader.read_page()
+            for entry in entries:
+                if entry.event.HasField("turn_completed"):
+                    observed_turns += 1
+                    if observed_turns == completed_turns:
+                        terminal_cursor = entry.cursor
+                        break
+            if terminal_cursor is None:
+                await reader.wait_for_next_page()
     assert observed_turns == completed_turns, f"History ended after {observed_turns} completed turns"
-    return entries
+    return [entry for entry in reader.entries if entry.cursor <= terminal_cursor]

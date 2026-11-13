@@ -14,6 +14,7 @@ from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.env.runtime.harness import Harness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.native.codex.testing import responses_sse
@@ -69,18 +70,32 @@ def _storage_volumes(cluster: Cluster, sandbox_uid: str) -> dict[str, tuple[str,
 
 
 async def _history(client: Client, thread_id: UUID, *, completed_turns: int | None) -> list[event_log_pb2.EventEntry]:
-    entries = []
+    reader = SessionEventReader(client, thread_id, after_cursor=0)
     turns = 0
+    terminal_cursor: int | None = None
+    watermark = 0
+    if completed_turns is None:
+        watermark = (await client.session_summary(thread_id)).committed_cursor
     async with asyncio.timeout(TURN_SECONDS):
-        async for entry in client.events(thread_id, after=0, read_seconds=TURN_SECONDS):
-            entries.append(entry)
-            if entry.event.HasField("turn_completed"):
-                turns += 1
-                if turns == completed_turns:
-                    break
+        while (completed_turns is not None and terminal_cursor is None) or (
+            completed_turns is None and reader.cursor < watermark
+        ):
+            entries = await reader.read_page()
+            for entry in entries:
+                if entry.event.HasField("turn_completed"):
+                    turns += 1
+                    if completed_turns is not None and turns == completed_turns:
+                        terminal_cursor = entry.cursor
+                        break
+            if (completed_turns is not None and terminal_cursor is None) or (
+                completed_turns is None and reader.cursor < watermark
+            ):
+                await reader.wait_for_next_page()
     if completed_turns is not None:
         assert turns == completed_turns, f"history ended after {turns} completed turns"
-    return entries
+        assert terminal_cursor is not None
+        return [entry for entry in reader.entries if entry.cursor <= terminal_cursor]
+    return [entry for entry in reader.entries if entry.cursor <= watermark]
 
 
 def _assert_prefix(before: list[event_log_pb2.EventEntry], after: list[event_log_pb2.EventEntry]) -> None:

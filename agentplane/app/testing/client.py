@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import time
 from collections.abc import AsyncGenerator
 from http import HTTPStatus
@@ -19,7 +18,7 @@ from uuid import UUID
 
 import grpc
 import httpx
-from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
+from google.protobuf.json_format import MessageToDict, ParseDict
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_delay, wait_fixed
 
@@ -27,21 +26,18 @@ from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import ThreadMetadata, ThreadView, thread_view_from_proto_json
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
-from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
+from agentplane.history_service.api.history import history_service_pb2
+from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 
-logger = logging.getLogger(__name__)
-
 REQUEST_SECONDS = 30.0
 
 
-# How long a Thread's stream may stay down, reconnecting, before the caller is told. Testing's app
-# Deployment recreates its only replica, which took about three minutes to answer again (migrate
-# initContainer, then startup) when its pod was deleted on 2026-10-13.
+# How long idempotent History reads may retry while the app has no ready replica.
 RECONNECT_SECONDS = 600.0
 RECONNECT_PAUSE_SECONDS = 2.0
 GRPC_UNAVAILABLE = 14
@@ -61,14 +57,6 @@ def _no_app_answered(response: httpx.Response) -> bool:
 def _thread_not_found(error: BaseException) -> bool:
     """History has not projected the Thread row yet."""
     return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.NOT_FOUND
-
-
-class SessionStreamError(Exception):
-    """The app ended a session's event stream with an error frame, or it stayed down too long."""
-
-
-class _StreamDroppedError(Exception):
-    """The stream's replica went away; the stream is to be reopened after its last entry."""
 
 
 class Client:
@@ -345,6 +333,11 @@ class Client:
             reraise=True,
         )(self.thread, thread_id)
 
+    async def thread_metadata(self, thread_id: UUID) -> ThreadMetadata:
+        """The app-owned Thread row, independent of History's projection."""
+        data = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
+        return ThreadMetadata.model_validate(data)
+
     async def threads(self, *, sandbox_uid: str) -> AsyncGenerator[ThreadView]:
         """Every retained Thread of this Sandbox incarnation, including archived Threads."""
         params = {"include_archived": "true", "limit": "200"}
@@ -372,80 +365,20 @@ class Client:
         summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
         return thread_view_from_proto_json(metadata, summary)
 
-    async def events(
-        self, thread_id: UUID, *, after: int, read_seconds: float, awaiting_command_id: str | None = None
-    ) -> AsyncGenerator[event_log_pb2.EventEntry]:
-        """The Thread's events from `after`, ending when the app sends the `end` frame, and not before
-        the admission of `awaiting_command_id` (a command submitted after `after`).
+    async def read_session_events(
+        self, thread_id: UUID, *, after_cursor: int = 0, limit: int = 128
+    ) -> history_service_pb2.ReadSessionEventsResponse:
+        """Read one typed History page through the authenticated App facade."""
+        if after_cursor < 0 or not 1 <= limit <= 1000:
+            raise ValueError("invalid session history page")
+        data = await self._json(
+            "GET",
+            f"/upstream/history/v1/sessions/{quote(str(thread_id), safe='')}/events",
+            params={"after_cursor": after_cursor, "limit": limit},
+        )
+        return ParseDict(data, history_service_pb2.ReadSessionEventsResponse())
 
-        A stream that drops without one -- an app rollout or crash, a closed connection, a `502`, `503` or `504`, or the proxy's plain-text `403`, while no replica is up -- is reopened after the last entry yielded, so a
-        caller sees every entry once and in order. An outage that outlasts `RECONNECT_SECONDS`
-        without delivering an entry raises. `read_seconds` bounds how long a single frame may take
-        to arrive, so a wedged session fails a caller rather than hanging it.
-
-        Server-sent events, parsed as the format actually specifies: a frame is terminated by a
-        blank line, `data:` may repeat and is joined with newlines, and a comment line (`:`) is a
-        keepalive. A frame carrying no data resets the parser like any other, so a name never
-        leaks into the frame after it.
-        """
-        timeout = httpx.Timeout(REQUEST_SECONDS, read=read_seconds)
-        url = f"/threads/{thread_id}/events/stream"
-        cursor = after
-        outage_began: float | None = None
-        while True:
-            try:
-                params: dict[str, str | int] = {"after": cursor}
-                if awaiting_command_id is not None:
-                    params["awaiting_command_id"] = awaiting_command_id
-                async with self._http.stream(
-                    "GET", url, params=params, headers={"Accept": "text/event-stream"}, timeout=timeout
-                ) as response:
-                    if _no_app_answered(response):
-                        raise _StreamDroppedError(f"{response.status_code=}")
-                    response.raise_for_status()
-                    kind, data = "message", []
-                    async for line in response.aiter_lines():
-                        if line.startswith(":"):
-                            continue
-                        if line.startswith("event:"):
-                            kind = line.removeprefix("event:").strip()
-                        elif line.startswith("data:"):
-                            data.append(line.removeprefix("data:").strip())
-                        elif not line:
-                            frame, payload = kind, "\n".join(data)
-                            kind, data = "message", []
-                            if frame == "end":
-                                return
-                            if frame == "error":
-                                raise SessionStreamError(f"Thread {thread_id}: {payload}")
-                            if frame == "event" and payload:
-                                entry = _event(payload)
-                                cursor = entry.cursor
-                                outage_began = None
-                                if (
-                                    entry.event.HasField("command_admitted")
-                                    and entry.event.command_admitted.command.command_id == awaiting_command_id
-                                ):
-                                    # A reopened stream starts past the admission, so it must not await it.
-                                    awaiting_command_id = None
-                                yield entry
-                    reason = "the stream closed without an end frame"
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError, httpx.RemoteProtocolError) as error:
-                reason = f"{error!r}"
-            except _StreamDroppedError as error:
-                reason = str(error)
-            outage_began = outage_began if outage_began is not None else time.monotonic()
-            if time.monotonic() - outage_began > RECONNECT_SECONDS:
-                raise SessionStreamError(
-                    f"Thread {thread_id}: no event for {RECONNECT_SECONDS}s after {cursor=}: {reason}"
-                )
-            logger.warning("Thread %s stream dropped (%s); resuming after cursor %d", thread_id, reason, cursor)
-            await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
-
-
-def _event(payload: str) -> event_log_pb2.EventEntry:
-    """One `event` frame's data as an EventEntry; a payload that is not one says so."""
-    try:
-        return ParseDict(json.loads(payload), event_log_pb2.EventEntry())
-    except (ValueError, ParseError) as error:
-        raise SessionStreamError(f"not an EventEntry: {error}: {payload[:400]!r}") from error
+    async def session_summary(self, thread_id: UUID) -> history_service_pb2.SessionSummary:
+        """Read History's raw commit and feed state, without substituting the folded Thread view."""
+        data = await self._json("GET", f"/upstream/history/v1/sessions/{quote(str(thread_id), safe='')}/summary")
+        return ParseDict(data, history_service_pb2.SessionSummary())

@@ -1,4 +1,4 @@
-"""Thread reconnect behavior and event-driven Sandbox inventory subscriptions."""
+"""App client contracts and event-driven Sandbox inventory subscriptions."""
 
 from __future__ import annotations
 
@@ -6,24 +6,30 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import create_autospec
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import httpx
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import MessageToDict, ParseError
+import tenacity
+from google.protobuf.json_format import ParseError
 from opentelemetry import trace
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
-from agentplane.app.testing import client as client_module
-from agentplane.app.testing.client import Client, SessionStreamError
+from agentplane.app.testing import history_reads as history_reads_module
+from agentplane.app.testing.client import Client
+from agentplane.app.testing.history_reads import SessionEventReader, covered_cursor
 from agentplane.app.testing.models import thread_view_from_proto_json
 from agentplane.env.runtime.harness import Harness as NamedHarness
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 
-# A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
-# test is how the client reads a connection that dies, which an ASGI transport cannot produce.
+# A server answers one connection per call: `(after_cursor, writer)`. Raw sockets let the tests
+# observe the exact generated-facade request and response.
 Connection = Callable[[int, asyncio.StreamWriter], Awaitable[None]]
 
 
@@ -61,17 +67,8 @@ def test_thread_view_preserves_typed_or_historical_harness(
     assert view.harness == want
 
 
-def _frame(name: str, data: dict[str, object], *, cursor: int | None = None) -> bytes:
-    ident = f"id: {cursor}\n" if cursor is not None else ""
-    return f"{ident}event: {name}\ndata: {json.dumps(data)}\n\n".encode()
-
-
-def _entry(cursor: int) -> bytes:
-    return _frame("event", MessageToDict(event_log_pb2.EventEntry(cursor=cursor)), cursor=cursor)
-
-
 async def _respond(
-    writer: asyncio.StreamWriter, status: str, body: bytes = b"", content_type: str = "text/event-stream"
+    writer: asyncio.StreamWriter, status: str, body: bytes = b"", content_type: str = "application/json"
 ) -> None:
     writer.write(f"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n".encode() + body)
     await writer.drain()
@@ -85,6 +82,7 @@ async def _app(
 
     async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         request = (await reader.readuntil(b"\r\n\r\n")).decode()
+        request_target = request.splitlines()[0].split()[1]
         if requests is not None:
             length = next(
                 (
@@ -96,7 +94,7 @@ async def _app(
             )
             body = (await reader.readexactly(length)).decode() if length else ""
             requests.append(request + body)
-        after = int(request.split("after=")[1].split(" ")[0].split("&")[0]) if "after=" in request else 0
+        after = int(parse_qs(urlsplit(request_target).query).get("after_cursor", ["0"])[0])
         try:
             await remaining.pop(0)(after, writer)
         finally:
@@ -106,28 +104,6 @@ async def _app(
     bound = server.sockets[0].getsockname()[1]
     async with server, Client(base_url=f"http://127.0.0.1:{bound}", token="test-token") as client:
         yield client, server
-
-
-@pytest.fixture(autouse=True)
-def quick_reconnects(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(client_module, "RECONNECT_PAUSE_SECONDS", 0.01)
-    monkeypatch.setattr(client_module, "RECONNECT_SECONDS", 0.5)
-
-
-async def _cursors(client: Client, after: int = 0) -> list[int]:
-    return [entry.cursor async for entry in client.events(uuid4(), after=after, read_seconds=5)]
-
-
-async def _first_two_then_close(after: int, writer: asyncio.StreamWriter) -> None:
-    await _respond(writer, "200 OK", _entry(after + 1) + _entry(after + 2))
-
-
-async def _rest_then_end(after: int, writer: asyncio.StreamWriter) -> None:
-    await _respond(writer, "200 OK", _entry(after + 1) + _frame("end", {}))
-
-
-async def _unavailable(after: int, writer: asyncio.StreamWriter) -> None:
-    await _respond(writer, "503 Service Unavailable")
 
 
 async def test_client_propagates_active_trace_context() -> None:
@@ -237,11 +213,6 @@ async def test_app_config_client_decodes_generated_proto_json() -> None:
     assert not preset.session_defaults.HasField("reasoning_effort")
 
 
-async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_end_frame() -> None:
-    async with _app(_first_two_then_close, _rest_then_end) as (client, _):
-        assert await _cursors(client) == [1, 2, 3]
-
-
 async def test_runner_status_decodes_proto_json_and_preserves_optional_and_64_bit_fields() -> None:
     async def status(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
@@ -310,72 +281,249 @@ async def test_runner_status_rejects_unknown_proto_json_fields() -> None:
             await client.runner_status("test-sandbox", "sandbox-uid")
 
 
-async def _proxy_denied(after: int, writer: asyncio.StreamWriter) -> None:
-    await _respond(writer, "403 Forbidden", b"Access denied\r\n", "text/plain")
+def _entry(cursor: int) -> event_log_pb2.EventEntry:
+    return event_log_pb2.EventEntry(cursor=cursor)
 
 
-async def test_waits_out_a_rollout_that_has_no_replica_up() -> None:
-    async with _app(_first_two_then_close, _unavailable, _proxy_denied, _unavailable, _rest_then_end) as (client, _):
-        assert await _cursors(client) == [1, 2, 3]
+def _unavailable_error(status: int = 503) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", "https://app.test.invalid/history")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(f"History returned {status}", request=request, response=response)
 
 
-async def test_resumes_after_a_connection_reset_mid_frame() -> None:
-    async def torn(after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "200 OK", _entry(after + 1) + b"event: event\ndata: {")
-        writer.transport.abort()
+def test_covered_cursor_does_not_skip_the_tail_of_a_full_page() -> None:
+    page = history_service_pb2.ReadSessionEventsResponse(last_cursor=100)
+    page.entries.add(cursor=1)
+    page.entries.add(cursor=5)
+    page.settlements.add().ranges.add(first=2, last=4)
 
-    async with _app(torn, _rest_then_end) as (client, _):
-        assert await _cursors(client) == [1, 2]
-
-
-async def test_resumes_after_connection_refused_while_no_replica_listens() -> None:
-    async with _app(_first_two_then_close) as (client, server):
-        events = client.events(uuid4(), after=0, read_seconds=5)
-        assert [(await anext(events)).cursor, (await anext(events)).cursor] == [1, 2]
-        port = server.sockets[0].getsockname()[1]
-        server.close()
-        await server.wait_closed()
-        reopened = asyncio.create_task(_serve_again(port))
-        try:
-            assert [entry.cursor async for entry in events] == [3]
-        finally:
-            (await reopened).close()
+    assert covered_cursor(0, 2, page) == 5
 
 
-async def _serve_again(port: int) -> asyncio.Server:
-    """Listen on `port` again after the client has had a connection refused."""
-    await asyncio.sleep(0.1)
+def test_covered_cursor_accepts_a_large_removed_range_without_enumerating_it() -> None:
+    page = history_service_pb2.ReadSessionEventsResponse(last_cursor=2**63)
+    page.removed.add(first=1, last=2**63)
 
-    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        request = (await reader.readuntil(b"\r\n\r\n")).decode()
-        await _rest_then_end(int(request.split("after=")[1].split(" ")[0].split("&")[0]), writer)
-        writer.close()
-
-    return await asyncio.start_server(serve, "127.0.0.1", port)
+    assert covered_cursor(0, 1, page) == 2**63
 
 
-async def test_an_outage_with_no_entries_is_reported() -> None:
-    async with _app(*[_unavailable] * 100) as (client, _):
-        with pytest.raises(SessionStreamError):
-            await _cursors(client)
+def test_covered_cursor_rejects_an_unreported_gap() -> None:
+    page = history_service_pb2.ReadSessionEventsResponse(last_cursor=4)
+    page.entries.add(cursor=1)
+    page.entries.add(cursor=4)
+
+    with pytest.raises(ValueError, match="cursor 2"):
+        covered_cursor(0, 2, page)
 
 
-async def test_an_app_refusal_is_not_retried() -> None:
-    async def refused(after: int, writer: asyncio.StreamWriter) -> None:
+async def test_client_reads_generated_history_pages_with_the_exact_facade_route() -> None:
+    observed: list[str] = []
+    thread_id = uuid4()
+
+    async def history(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(
+            writer, "200 OK", b'{"lastCursor":"18446744073709551615","entries":[{"cursor":"9223372036854775808"}]}'
+        )
+
+    async with _app(history, requests=observed) as (client, _):
+        page = await client.read_session_events(thread_id, after_cursor=9223372036854775807, limit=1)
+
+    assert page.last_cursor == 18446744073709551615
+    assert page.entries[0].cursor == 9223372036854775808
+    request = observed[0].split("\r\n", 1)[0]
+    assert request == (
+        f"GET /upstream/history/v1/sessions/{thread_id}/events?after_cursor=9223372036854775807&limit=1 HTTP/1.1"
+    )
+    assert "authorization: bearer test-token\r\n" in observed[0].lower()
+
+
+async def test_client_reads_raw_summary_cursors_without_collapsing_folded_and_committed() -> None:
+    thread_id = uuid4()
+
+    async def summary(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", b'{"committedCursor":"22","foldedThrough":"19"}')
+
+    async with _app(summary) as (client, _):
+        result = await client.session_summary(thread_id)
+
+    assert result.committed_cursor == 22
+    assert result.folded_through == 19
+
+
+async def test_history_reader_applies_settlement_and_removal_corrections() -> None:
+    client = create_autospec(Client, instance=True)
+    first = history_service_pb2.ReadSessionEventsResponse(last_cursor=2)
+    first.entries.extend([_entry(1), _entry(2)])
+    second = history_service_pb2.ReadSessionEventsResponse(last_cursor=3)
+    second.entries.append(_entry(3))
+    second.settlements.add(item_id="item", completion_cursor=3).ranges.add(first=1, last=1)
+    second.removed.add(first=2, last=2)
+    client.read_session_events.side_effect = [first, second]
+    reader = SessionEventReader(client, uuid4(), limit=2)
+
+    assert [entry.cursor for entry in await reader.read_page()] == [1, 2]
+    assert [entry.cursor for entry in await reader.read_page()] == [3]
+    assert [entry.cursor for entry in reader.entries] == [3]
+
+
+async def test_history_reader_returns_one_page_so_callers_can_evaluate_predicates() -> None:
+    client = create_autospec(Client, instance=True)
+    first = history_service_pb2.ReadSessionEventsResponse(last_cursor=3)
+    first.entries.extend([_entry(1), _entry(2)])
+    second = history_service_pb2.ReadSessionEventsResponse(last_cursor=10)
+    second.entries.extend([_entry(3), _entry(4)])
+    client.read_session_events.side_effect = [first, second]
+    reader = SessionEventReader(client, uuid4(), limit=2)
+
+    assert [entry.cursor for entry in await reader.read_page()] == [1, 2]
+    # A full page ending at cursor 2 must not jump to the first response's global watermark 3.
+    assert reader.cursor == 2
+    assert reader.more_available
+    assert [entry.cursor for entry in await reader.read_page()] == [3, 4]
+    assert reader.cursor == 4
+    assert client.read_session_events.await_count == 2
+
+
+@pytest.mark.parametrize("healthy_kind", ["empty_page", "pending_attachment"])
+async def test_history_reader_resets_outage_budget_after_a_healthy_response(
+    healthy_kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(history_reads_module, "RECONNECT_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(history_reads_module, "RECONNECT_SECONDS", 10)
+    elapsed = [0.0]
+    monkeypatch.setattr(tenacity, "time", SimpleNamespace(monotonic=lambda: elapsed[0]))
+    client = create_autospec(Client, instance=True)
+    reader = SessionEventReader(client, uuid4())
+    healthy = history_service_pb2.ReadSessionEventsResponse()
+    if healthy_kind == "empty_page":
+        responses: list[BaseException | history_service_pb2.ReadSessionEventsResponse] = [
+            _unavailable_error(),
+            healthy,
+            _unavailable_error(),
+            healthy,
+        ]
+        advances = [9.0, 100.0, 0.5, 0.0]
+    else:
+        missing_request = httpx.Request("GET", "https://app.test.invalid/history")
+        missing = httpx.HTTPStatusError(
+            "pending", request=missing_request, response=httpx.Response(404, request=missing_request)
+        )
+        responses = [_unavailable_error(), missing, _unavailable_error(), healthy]
+        advances = [9.0, 0.0, 0.5, 0.0]
+
+        async def metadata(_thread_id: object) -> object:
+            elapsed[0] += 100
+            return object()
+
+        client.thread_metadata.side_effect = metadata
+
+    async def read(_thread_id: object, *, after_cursor: int, limit: int) -> object:
+        del after_cursor, limit
+        elapsed[0] += advances.pop(0)
+        response = responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    client.read_session_events.side_effect = read
+
+    assert await reader.read_page() == []
+    if healthy_kind == "pending_attachment":
+        assert reader.pending_attachment
+    # The healthy response ends the first outage window. A later brief outage gets a fresh budget.
+    assert await reader.read_page() == []
+    assert client.read_session_events.await_count == 4
+
+
+async def test_history_reader_retries_proxy_outage_but_not_real_authorization_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(history_reads_module, "RECONNECT_PAUSE_SECONDS", 0)
+    requests: list[str] = []
+
+    async def unavailable(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "503 Service Unavailable")
+
+    async def proxy_denied(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "403 Forbidden", b"Access denied\r\n", "text/plain")
+
+    async def healthy(_after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "200 OK", b'{"lastCursor":"0"}')
+
+    async with _app(unavailable, proxy_denied, healthy, requests=requests) as (client, _):
+        assert await SessionEventReader(client, uuid4()).read_page() == []
+    assert len(requests) == 3
+
+    async def app_refused(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(writer, "403 Forbidden", b"{}", "application/json")
 
-    async with _app(refused) as (client, _):
+    async with _app(app_refused, requests=requests) as (client, _):
         with pytest.raises(httpx.HTTPStatusError):
-            await _cursors(client)
+            await SessionEventReader(client, uuid4()).read_page()
+    assert len(requests) == 4
 
 
-async def test_a_client_error_is_not_retried() -> None:
-    async def conflict(after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "409 Conflict")
+async def test_history_reader_bounds_a_prolonged_outage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(history_reads_module, "RECONNECT_SECONDS", 10)
+    monkeypatch.setattr(history_reads_module, "RECONNECT_PAUSE_SECONDS", 0)
+    elapsed = [0.0]
+    monkeypatch.setattr(tenacity, "time", SimpleNamespace(monotonic=lambda: elapsed[0]))
+    client = create_autospec(Client, instance=True)
 
-    async with _app(conflict) as (client, _):
-        with pytest.raises(Exception, match="409"):
-            await _cursors(client)
+    async def unavailable(*_args: object, **_kwargs: object) -> None:
+        elapsed[0] += 6
+        raise _unavailable_error()
+
+    client.read_session_events.side_effect = unavailable
+
+    with pytest.raises(TimeoutError, match="stayed unavailable"):
+        await SessionEventReader(client, uuid4()).read_page()
+    assert client.read_session_events.await_count == 2
+
+
+async def test_history_reader_treats_only_initial_history_404_as_pending_attachment() -> None:
+    thread_id = uuid4()
+    client = create_autospec(Client, instance=True)
+    client.read_session_events.return_value = history_service_pb2.ReadSessionEventsResponse()
+    reader = SessionEventReader(client, thread_id)
+    await reader.read_page()
+    missing_request = httpx.Request("GET", f"https://app.test.invalid/sessions/{thread_id}/events")
+    missing = httpx.HTTPStatusError(
+        "missing", request=missing_request, response=httpx.Response(404, request=missing_request)
+    )
+    client.read_session_events.side_effect = missing
+
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        await reader.read_page()
+
+    assert caught.value is missing
+    client.thread_metadata.assert_not_awaited()
+
+
+async def test_history_reader_waits_for_history_attachment_when_thread_metadata_exists() -> None:
+    client = create_autospec(Client, instance=True)
+    request = httpx.Request("GET", "https://app.test.invalid/history")
+    missing = httpx.HTTPStatusError("missing", request=request, response=httpx.Response(404, request=request))
+    client.read_session_events.side_effect = missing
+    client.thread_metadata.return_value = object()
+    reader = SessionEventReader(client, uuid4())
+
+    assert await reader.read_page() == []
+    assert reader.pending_attachment
+    assert client.thread_metadata.await_count == 1
+
+
+async def test_history_reader_propagates_unknown_initial_session() -> None:
+    client = create_autospec(Client, instance=True)
+    request = httpx.Request("GET", "https://app.test.invalid/history")
+    missing = httpx.HTTPStatusError("missing", request=request, response=httpx.Response(404, request=request))
+    client.read_session_events.side_effect = missing
+    client.thread_metadata.side_effect = missing
+
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        await SessionEventReader(client, uuid4()).read_page()
+
+    assert caught.value is missing
 
 
 async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:
