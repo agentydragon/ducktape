@@ -619,6 +619,11 @@ RPC deadline; each write still checks the owner lease. A DB write failure preven
 dispatch or leaves an already-dispatched intent unknown. History is a separate retained evidence/read model. A transactional event outbox emits
 raw `BoundaryRecord` observations plus source-linked normalized reasoning, text, tool and turn
 records. `ExecutionProgress` preserves code-cell visibility where upstream native APIs lack it.
+Successful sampling and compaction audits retain the terminal response and metadata without an
+embedded `events` array. Their result boundary and individual ordered provider boundaries share the
+intent ID as `correlation_id` within the Session. Read that stream for the provider events; derived
+observations retain exact fragment references in `source_sequences`. Failure diagnostics may retain
+transient event collections. `FollowEvents` and History expose this same compact result shape.
 Thread is a lossy display projection; it is not suitable for reconstructing provider continuation.
 Raw records use at most 1 MiB byte fragments with a shared record ID, zero-based fragment index
 and total count. Concatenating payload bytes in index order reconstructs the full UTF-8 JSON

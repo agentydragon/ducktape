@@ -54,7 +54,7 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 	stream := strings.Join([]string{
 		`data: {"type":"response.output_item.done","item":{"type":"reasoning","opaque_sequence":9007199254740993}}`,
 		"",
-		`data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"reasoning","opaque_sequence":9007199254740993}]}}`,
+		`data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":11,"total_tokens":17,"provider_usage":{"cache":3}},"provider_metadata":{"opaque_sequence":9007199254740993},"output":[{"type":"reasoning","opaque_sequence":9007199254740993}]}}`,
 		"",
 		"",
 	}, "\n")
@@ -65,8 +65,30 @@ func TestProviderKeepsOpaqueLargeJSONNumbersExact(t *testing.T) {
 	if got := protocol.CanonicalJSON(response.Output); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
 		t.Fatalf("opaque provider number changed during decoding: %s", got)
 	}
-	if got := protocol.CanonicalJSON(response.Audit()); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
-		t.Fatalf("opaque provider number changed in audit evidence: %s", got)
+	if got := protocol.CanonicalJSON(response.Audit()); strings.Contains(got, `"events"`) {
+		t.Fatalf("successful audit retained transient events: %s", got)
+	} else if !strings.Contains(got, `"opaque_sequence":9007199254740993`) ||
+		!strings.Contains(got, `"total_tokens":17`) || !strings.Contains(got, `"provider_usage":{"cache":3}`) {
+		t.Fatalf("terminal response metadata changed or was omitted from audit evidence: %s", got)
+	}
+	if got := protocol.CanonicalJSON(response.Events); !strings.Contains(got, `"opaque_sequence":9007199254740993`) {
+		t.Fatalf("transient per-event evidence was lost: %s", got)
+	}
+}
+
+func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
+	stream := strings.Join([]string{
+		`data: {"type":"response.failed","response":{"status":"failed","provider_error":{"code":"fixture"}}}`,
+		"",
+		"",
+	}, "\n")
+	response, err := readStream(context.Background(), strings.NewReader(stream), nil)
+	var known *protocol.KnownFailureError
+	if response != nil || !errors.As(err, &known) {
+		t.Fatalf("failed provider response=%+v err=%v; want a known failure", response, err)
+	}
+	if got := protocol.CanonicalJSON(known.Evidence); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
+		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
 }
 
@@ -224,7 +246,7 @@ func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []json.RawMessage{[]byte(`{"type":"compaction","encrypted_content":"opaque","provider_number":9007199254740993}`)}
-	replacement, err := ValidateCompaction(original, records, &Audit{Events: []Event{}}, "Current environment")
+	replacement, err := ValidateCompaction(original, records, &Audit{}, nil, "Current environment")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,9 +265,28 @@ func TestValidateCompactionRejectsUnusableSummary(t *testing.T) {
 		{[]byte(`{"type":"message","role":"assistant","content":"not a compaction"}`)},
 		{[]byte(`{"type":"compaction"}`)},
 	} {
-		if _, err := ValidateCompaction(original, records, nil, "environment"); err == nil {
+		if _, err := ValidateCompaction(original, records, nil, nil, "environment"); err == nil {
 			t.Fatalf("accepted unusable summary %s", records)
 		}
+	}
+}
+
+func TestValidateCompactionFailureKeepsTransientEvents(t *testing.T) {
+	original := &Context{items: []Item{{Type: ItemMessage, Role: "user", Content: json.RawMessage(`"long original context"`)}}}
+	var event Event
+	if err := json.Unmarshal([]byte(`{"type":"response.output_item.done","item":{"type":"reasoning","provider_event_marker":"fixture"}}`), &event); err != nil {
+		t.Fatal(err)
+	}
+	audit := &Audit{Response: &Terminal{Raw: json.RawMessage(`{"status":"completed","provider_terminal_marker":"fixture"}`)}}
+	_, err := ValidateCompaction(original, nil, audit, []Event{event}, "environment")
+	var known *protocol.KnownFailureError
+	if !errors.As(err, &known) {
+		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
+	}
+	got := protocol.CanonicalJSON(known.Evidence["response"])
+	if !strings.Contains(got, `"events":[{"type":"response.output_item.done"`) ||
+		!strings.Contains(got, `"provider_event_marker":"fixture"`) || !strings.Contains(got, `"provider_terminal_marker":"fixture"`) {
+		t.Fatalf("compaction failure diagnostics lost transient events or terminal response: %s", got)
 	}
 }
 

@@ -60,8 +60,10 @@ func providerAuthorization(connection samplersettings.ConnectionConfig, attribut
 type sampleResult struct {
 	Records []json.RawMessage
 	// Audit is the adapter's stored intent result: *responses.Audit or *anthropic.Audit.
-	Audit         any
-	ContextTokens *int
+	Audit           any
+	ResponsesEvents []responses.Event
+	AnthropicEvents []json.RawMessage
+	ContextTokens   *int
 }
 
 type compactionPlan struct {
@@ -171,7 +173,7 @@ func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, conne
 		}
 		records = append(records, record)
 	}
-	return &sampleResult{Records: records, Audit: response.Audit(), ContextTokens: response.Terminal.TotalTokens()}, nil
+	return &sampleResult{Records: records, Audit: response.Audit(), ResponsesEvents: response.Events, ContextTokens: response.Terminal.TotalTokens()}, nil
 }
 
 // The direct Anthropic API is called with its own key; it attributes nothing to the Session.
@@ -184,7 +186,7 @@ func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, conne
 	if err != nil {
 		return nil, err
 	}
-	return &sampleResult{Records: []json.RawMessage{response.Message}, Audit: response.Audit(), ContextTokens: response.ContextTokens}, nil
+	return &sampleResult{Records: []json.RawMessage{response.Message}, Audit: response.Audit(), AnthropicEvents: response.Events, ContextTokens: response.ContextTokens}, nil
 }
 
 func readProviderCredential(connection samplersettings.ConnectionConfig) (string, error) {
@@ -204,7 +206,7 @@ func (a anthropicAdapter) AutoCompactTokens(_ *int) *int {
 
 func (a responsesAdapter) PrepareCompaction(c *Conversation, s *Session, state *ExecutionState, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
 	return &compactionPlan{Prepare: a.preparation(s, attribution, true), Apply: func(result *sampleResult) (protocol.Context, error) {
-		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), environment)
+		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), result.ResponsesEvents, environment)
 	}}, nil
 }
 
@@ -235,6 +237,6 @@ func (a anthropicAdapter) PrepareCompaction(c *Conversation, s *Session, _ *Exec
 		}
 		return finishStoredRequest(store, metadata, profile, ids)
 	}, Apply: func(result *sampleResult) (protocol.Context, error) {
-		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit))
+		return plan.Apply(result.Records, result.Audit.(*anthropic.Audit), result.AnthropicEvents)
 	}}, nil
 }

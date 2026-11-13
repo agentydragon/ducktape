@@ -188,7 +188,7 @@ type Response struct {
 var errProviderComplete = errors.New("provider response complete")
 
 func (r Response) Audit() *Audit {
-	return &Audit{Response: r.Message, Events: r.Events, ContextTokens: r.ContextTokens, HTTPStatus: r.HTTPStatus, ProviderRequestID: r.ProviderRequestID}
+	return &Audit{Response: r.Message, ContextTokens: r.ContextTokens, HTTPStatus: r.HTTPStatus, ProviderRequestID: r.ProviderRequestID}
 }
 
 func Sample(ctx context.Context, client *http.Client, baseURL, credential string, config Config, wire []byte, evidence protocol.EvidenceSink, compaction bool) (*Response, error) {

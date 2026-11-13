@@ -77,14 +77,16 @@ serving consumer was found that deserializes those successful audit arrays for c
 recovery. Compaction validates native output records; its audit is diagnostic, with Anthropic also
 recording the replacement context. Recovery checks unresolved intents and rejection metadata.
 
-Propose a compact successful audit without `events`, retaining the terminal response, usage and
-provider HTTP metadata. Keep transient event collections needed by failure diagnostics, per-event
-evidence and the atomic evidence/observation commit unchanged. Test both ordinary sampling and
-compaction, evidence-write failure, partial/malformed streams and restart recovery. This changes
-new successful diagnostic summaries; it does not rewrite existing events. Raw wire capture remains
-a separate policy decision because the current SPEC promises received bytes, including incomplete
-SSE tails. The 33 MB result-payload group is the measured target, not a guaranteed saving; replacing
-it does not remove the other response representations.
+The compact successful audit omits `events`, retaining the terminal response, usage and provider
+HTTP metadata. Transient event collections remain for failure diagnostics, with per-event evidence
+and atomic evidence/observation commits unchanged. Migrations 14 (sampler) and 17 (History) rewrite
+existing successful results only after matching every duplicate event against its correlated
+provider boundary. Fragment cursors, IDs/counts and source links are preserved. Stop sampler and
+History writers/exporters for the coordinated rewrite, then vacuum the three affected tables.
+After live verification, squash both migration chains and delete the rewrite implementation and
+superseded compatibility paths. Raw wire capture remains a separate policy decision because the
+SPEC promises received bytes, including incomplete SSE tails. The 33 MB result-payload group is
+the measured target, not a guaranteed saving; the other response representations remain.
 
 `FollowEvents` and History export expose the result boundary records unchanged, so the new summary
 shape is an externally visible evidence-contract change even without a serving decoder for its
