@@ -141,6 +141,7 @@ py_test(
         ":rendered_fixture",
         "//:conftest",
         "//agentplane/central_sampler:settings",
+        "//agentplane/egress:settings",
         "//agentplane/env/runtime:harness",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/identity/auth:audience",

@@ -139,7 +139,6 @@ py_library(
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

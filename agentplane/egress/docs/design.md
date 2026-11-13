@@ -33,14 +33,17 @@ rewrite responses (`Date`, sniffed `Content-Type`, re-chunking, hop-by-hop strip
 malformed requests without the `x-agentplane-egress-sidecar` refusal header the `agentplane` CLI
 classifies errors by. CONNECT needs a hijacked tunnel either way.
 
-## Sidecar settings: strict `yaml.v3`, not Viper
+## Settings: a required YAML file, not Viper
 
-The proxy and the other Go services read their settings through Viper. The sidecar does not, because
-its `platform_routes.routes` map is keyed by route name; each route also allowlists exact gRPC service prefixes.
-Viper lowercases every key, map keys included. With v1.21.0 (`ExperimentalBindStruct`,
-`UnmarshalExact`) two audiences that differ only in case merge into one entry and a route name loses
-its case, so a Pod could offer one audience the other's token. `config_test.go` keeps both spellings
-apart. A move to Viper first needs those maps to become lists of records.
+Both Go proxy processes read one required YAML settings file and reject unknown keys and extra
+documents. The main proxy decodes YAML through `mapstructure` with its existing listener decode
+hooks, keeping its structured authentication settings in sync with the application model. The
+sidecar uses `yaml.v3` directly because its `platform_routes.routes` map is keyed by route name; each
+route also allowlists exact gRPC service prefixes. Viper lowercases every key, map keys included.
+With v1.21.0 (`ExperimentalBindStruct`, `UnmarshalExact`) two audiences that differ only in case
+merge into one entry and a route name loses its case, so a Pod could offer one audience the other's
+token. `config_test.go` keeps both spellings apart. Static settings have no per-setting environment
+or CLI overrides; the proxy database URL remains an explicit Secret-backed environment input.
 
 ## Test tiers
 

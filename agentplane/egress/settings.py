@@ -1,7 +1,7 @@
 """Authoring model for the Go egress proxy's deployment configuration.
 
-cdk8s and black-box fixtures serialize these values; the Go process owns loading
-flags, environment variables and its YAML file.
+cdk8s and black-box fixtures serialize these values; the Go process loads the
+required YAML file and reads the database URL through its explicit Secret input.
 """
 
 from __future__ import annotations
@@ -10,8 +10,7 @@ from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, Field, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.log_levels import LogLevels
@@ -20,7 +19,7 @@ from agentplane.log_levels import LogLevels
 class APIServer(BaseModel):
     """An API server the proxy acts on by ServiceAccount impersonation."""
 
-    model_config = SettingsConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid")
 
     host: str = Field(min_length=1, description="The host requests to this API server name.")
     port: int = Field(ge=1, le=65535, description="The port requests to this API server name.")
@@ -31,10 +30,11 @@ class APIServer(BaseModel):
 
 
 class Settings(BaseModel):
-    """Typed values and environment naming metadata, without runtime settings loading."""
+    """Static deployment settings rendered into a required YAML file."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_CONFIG_FILE"
-    model_config = SettingsConfigDict(extra="forbid", env_prefix="AGENTPLANE_EGRESS_")
+    database_url_env: ClassVar[str] = "AGENTPLANE_EGRESS_DATABASE_URL"
+    model_config = ConfigDict(extra="forbid")
 
     rules_namespace: str = Field(
         description="The one namespace holding the PolicySet, PolicyBinding and EgressCredential objects this "
@@ -47,6 +47,11 @@ class Settings(BaseModel):
         "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
         "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
+
+    @field_serializer("allowed_service_account_namespaces")
+    def sort_allowed_service_account_namespaces(self, value: frozenset[str]) -> list[str]:
+        return sorted(value)
+
     tls_passthrough_targets: list[str] = Field(
         default_factory=list,
         description="Exact service authorities carried as opaque TLS; each destination verifies its caller.",
@@ -75,17 +80,9 @@ class Settings(BaseModel):
         "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
-    # CLEANUP(added 2026-11-12): remove after staging egress-go-settings is observed without this key.
-    projected_token_audiences: list[str] = Field(
-        default_factory=list,
-        exclude=True,
-        description="Compatibility with existing deployment ConfigMaps during rollout; authentication no longer "
-        "uses projected workload tokens, and newly rendered settings omit this field.",
-    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels
 
-    database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")
     decision_history_size: int = Field(default=200, ge=1, le=1000)
     decision_retention_days: int = Field(default=7, ge=1, le=365)
     decision_queue_size: int = Field(default=2000, ge=1, le=100000)

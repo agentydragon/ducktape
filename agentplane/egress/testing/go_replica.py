@@ -29,13 +29,16 @@ class GoReplica:
 
 
 @asynccontextmanager
-async def go_replica(settings: Settings, *, directory: Path, tunnel_rules: bool = False) -> AsyncIterator[GoReplica]:
-    """The Go proxy on `settings`, with normal startup initializing `settings.database_url`.
+async def go_replica(
+    settings: Settings, *, database_url: str, directory: Path, tunnel_rules: bool = False
+) -> AsyncIterator[GoReplica]:
+    """The Go proxy on static `settings` and a separate history-database Secret input.
 
     The Go binary reads the same YAML keys the Python `Settings` model authors, so a key one side
-    gains without the other is rejected here rather than ignored.
+    gains without the other is rejected here rather than ignored. The database URL stays out of the
+    file and reaches the process through its explicit runtime environment input.
     """
-    database_url = render_postgresql_url(settings.database_url, "postgresql", query={"sslmode": "disable"})
+    database_url = render_postgresql_url(database_url, "postgresql", query={"sslmode": "disable"})
     with ExitStack() as listeners:
         proxy_listener = listeners.enter_context(listen_tcp())
         admin_listener = listeners.enter_context(listen_tcp())
@@ -54,7 +57,6 @@ async def go_replica(settings: Settings, *, directory: Path, tunnel_rules: bool 
             json.dumps(
                 {
                     **settings.model_dump(mode="json", exclude_none=True),
-                    "database_url": database_url,
                     "forward": {
                         **settings.forward.model_dump(mode="json"),
                         "listen_address": f"fd:{proxy_listener.socket.fileno()}",
@@ -71,7 +73,7 @@ async def go_replica(settings: Settings, *, directory: Path, tunnel_rules: bool 
             health_credentials = grpc.ssl_channel_credentials(root_certificates=roots[0].read_bytes())
         async with go_process(
             _PROXY,
-            env={"AGENTPLANE_EGRESS_CONFIG_FILE": str(config)},
+            env={Settings.config_file_env: str(config), Settings.database_url_env: database_url},
             stderr=config.with_suffix(".stderr"),
             health_port=admin_listener.port,
             health_credentials=health_credentials,

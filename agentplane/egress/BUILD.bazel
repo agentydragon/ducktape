@@ -165,7 +165,6 @@ py_library(
         "//agentplane:log_levels",
         "//agentplane/identity/auth:listener",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 

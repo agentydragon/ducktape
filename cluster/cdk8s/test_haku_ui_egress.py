@@ -162,7 +162,7 @@ def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str
     """The proxy reads the record, and its Identity in the policy namespace, live on each request; a
     missing grant fails closed."""
     allowed = set(_settings(resources, "egress-go-settings")["allowed_service_account_namespaces"])
-    policy_namespace = _container_env(resources, "egress")["AGENTPLANE_EGRESS_RULES_NAMESPACE"]
+    policy_namespace = _settings(resources, "egress-go-settings")["rules_namespace"]
     identities = {(d["metadata"]["namespace"], d["metadata"]["name"]) for d in resources if d["kind"] == "Identity"}
     assert ("identities", "get") in _granted(resources, policy_namespace, ("agentplane-staging", "egress"))
     for record in _standing_records(resources):

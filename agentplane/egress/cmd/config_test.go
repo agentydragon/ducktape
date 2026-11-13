@@ -11,82 +11,134 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
-const databaseURLEnv = settingPrefix + "DATABASE_URL=postgresql://user:never-print-this@db/egress"
+const databaseURL = "postgresql://user:never-print-this@db/egress"
 
-// required is the environment of a deployment that sets every setting without a default.
-func required(t *testing.T, extra ...string) []string {
-	t.Helper()
-	return append([]string{
-		settingPrefix + "RULES_NAMESPACE=rules", settingPrefix + "CREDENTIALS_NAMESPACE=secrets",
-		settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key",
-		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 0.0.0.0:8888
-  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+const forwardSettings = `forward:
+  listen_address: 127.0.0.1:5555
+  tls:
+    cert_file: /svid/tls.crt
+    key_file: /svid/tls.key
   auth:
     - mode: spiffe
       ca_file: /svid/ca.crt
-`), databaseURLEnv,
+`
+
+const validSettings = `rules_namespace: file-rules
+credentials_namespace: file-credentials
+allowed_service_account_namespaces: [file-namespace]
+` + forwardSettings + `admin_listen_address: 127.0.0.1:1111
+ca_cert: /ca.crt
+ca_key: /ca.key
+log_levels:
+  root: INFO
+exempt_networks: [127.0.0.0/8]
+`
+
+func environment(t *testing.T, contents string, extra ...string) []string {
+	t.Helper()
+	return append([]string{
+		configFileEnv + "=" + configtest.WriteSettings(t, contents),
+		databaseURLEnv + "=" + databaseURL,
 	}, extra...)
 }
 
-func TestCollectionsLoadFromTheFileAndScalarsFromTheEnvironment(t *testing.T) {
-	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [file-namespace]
-exempt_networks: [127.0.0.0/8]
-forward:
-  listen_address: 127.0.0.1:5555
-  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-admin_listen_address: 127.0.0.1:1111
-`)
-	c, err := configtest.Load(t, settingPrefix, loadConfig, []string{
-		settingPrefix + "CONFIG_FILE=" + path, settingPrefix + "RULES_NAMESPACE=rules",
-		settingPrefix + "CREDENTIALS_NAMESPACE=secrets", settingPrefix + "CA_CERT=/ca.crt",
-		settingPrefix + "CA_KEY=/ca.key", databaseURLEnv,
-	})
+func required(t *testing.T, extra ...string) []string {
+	t.Helper()
+	return environment(t, validSettings, extra...)
+}
+
+func withForward(contents, forward string) string {
+	return strings.Replace(contents, forwardSettings, forward, 1)
+}
+
+func TestStaticSettingsComeOnlyFromFileAndDatabaseURLIsExplicit(t *testing.T) {
+	environ := required(
+		t,
+		"AGENTPLANE_EGRESS_RULES_NAMESPACE=environment-rules",
+		"AGENTPLANE_EGRESS_ADMIN_LISTEN_ADDRESS=127.0.0.1:9999",
+		"AGENTPLANE_EGRESS_DECISION_BATCH_SIZE=0",
+	)
+	c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environ)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Forward.ListenAddress != "127.0.0.1:5555" || !c.Forward.Has(listener.SPIFFE) ||
-		c.AdminListenAddress != "127.0.0.1:1111" ||
+	if c.RulesNamespace != "file-rules" || c.AdminListenAddress != "127.0.0.1:1111" ||
+		c.DecisionBatchSize != 100 || c.DatabaseURL != databaseURL ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
 		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {
-		t.Fatalf("unexpected merged config: %+v", c)
+		t.Fatalf("unexpected config: %+v", c)
 	}
 }
 
-func TestLoadConfigAcceptsTheRetiredProjectedTokenSettingDuringRollout(t *testing.T) {
-	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [file-namespace]
-projected_token_audiences: [kubernetes]
-forward:
-  listen_address: 127.0.0.1:5555
-  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-`)
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+func TestConfigFileIsRequiredReadableAndSingleDocument(t *testing.T) {
+	for name, environ := range map[string][]string{
+		"missing": {databaseURLEnv + "=" + databaseURL},
+		"blank":   {configFileEnv + "= ", databaseURLEnv + "=" + databaseURL},
+		"unreadable": {
+			configFileEnv + "=/missing/egress-settings.yaml",
+			databaseURLEnv + "=" + databaseURL,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environ); err == nil {
+				t.Fatal("loaded without a readable settings file")
+			}
+		})
+	}
+	if _, err := configtest.Load(
+		t,
+		"AGENTPLANE_EGRESS_",
+		loadConfig,
+		environment(t, validSettings+"---\nrules_namespace: second\n"),
+	); err == nil {
+		t.Fatal("accepted multiple YAML documents")
+	}
+}
+
+func TestUnknownFileKeysAreRefusedAtEverySettingsLevel(t *testing.T) {
+	unknown := []string{
+		validSettings + "ignored: value\n",
+		withForward(validSettings, strings.Replace(forwardSettings, "forward:\n", "forward:\n  ignored: value\n", 1)),
+		withForward(validSettings, strings.Replace(forwardSettings, "    key_file: /svid/tls.key\n", "    key_file: /svid/tls.key\n    ignored: value\n", 1)),
+		withForward(validSettings, strings.Replace(forwardSettings, "      ca_file: /svid/ca.crt\n", "      ca_file: /svid/ca.crt\n      ignored: value\n", 1)),
+	}
+	for i, contents := range unknown {
+		t.Run(string(rune('a'+i)), func(t *testing.T) {
+			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents)); err == nil {
+				t.Fatal("accepted unknown setting")
+			}
+		})
+	}
+}
+
+func TestDatabaseURLComesOnlyFromTheExplicitSecretEnvironment(t *testing.T) {
+	c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c.ProjectedTokenAudiences, []string{"kubernetes"}) {
-		t.Fatalf("projected_token_audiences = %v, want the deployed value to parse during rollout", c.ProjectedTokenAudiences)
+	if c.DatabaseURL != databaseURL {
+		t.Fatalf("database URL = %q, want the explicit runtime Secret input", c.DatabaseURL)
+	}
+	contents := strings.Replace(validSettings, "log_levels:\n", "database_url: "+databaseURL+"\nlog_levels:\n", 1)
+	if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents)); err == nil {
+		t.Fatal("accepted database_url from the settings file")
+	}
+	if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings, databaseURLEnv+"=")); err == nil {
+		t.Fatal("started without the explicit database Secret input")
 	}
 }
 
 func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
-	for _, bad := range [][]string{
-		{settingPrefix + "DECISION_BATCH_SIZE=0"},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\nlisten_port: 8888\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\ntoken_audience: old\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\nlog_levels: {agentplane.other: INFO}\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\nexempt_networks: [not-a-prefix]\n")},
-	} {
-		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, bad...))
+	invalid := []string{
+		strings.Replace(validSettings, "log_levels:\n", "decision_batch_size: 0\nlog_levels:\n", 1),
+		validSettings + "listen_port: 8888\n",
+		strings.Replace(validSettings, "root: INFO", "agentplane.other: INFO", 1),
+		strings.Replace(validSettings, "127.0.0.0/8", "not-a-prefix", 1),
+	}
+	for i, contents := range invalid {
+		_, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents))
 		if err == nil {
-			t.Fatalf("%v accepted", bad)
+			t.Fatalf("invalid configuration %d was accepted", i)
 		}
 		if strings.Contains(err.Error(), "never-print-this") {
 			t.Fatalf("error carries the database URL: %v", err)
@@ -94,33 +146,31 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 	}
 }
 
-func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t)); err != nil {
-		t.Fatal(err)
+func TestRequiredStaticSettingsMustBePresent(t *testing.T) {
+	missing := map[string]string{
+		"rules_namespace":                    strings.Replace(validSettings, "rules_namespace: file-rules\n", "", 1),
+		"credentials_namespace":              strings.Replace(validSettings, "credentials_namespace: file-credentials\n", "", 1),
+		"allowed_service_account_namespaces": strings.Replace(validSettings, "allowed_service_account_namespaces: [file-namespace]\n", "", 1),
+		"forward":                            withForward(validSettings, ""),
+		"ca_cert":                            strings.Replace(validSettings, "ca_cert: /ca.crt\n", "", 1),
+		"ca_key":                             strings.Replace(validSettings, "ca_key: /ca.key\n", "", 1),
 	}
-	for _, missing := range []string{
-		"RULES_NAMESPACE", "CREDENTIALS_NAMESPACE", "CA_CERT", "CA_KEY", "DATABASE_URL",
-	} {
-		rest := slices.DeleteFunc(required(t), func(item string) bool {
-			return strings.HasPrefix(item, settingPrefix+missing+"=")
+	for name, contents := range missing {
+		t.Run(name, func(t *testing.T) {
+			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents)); err == nil {
+				t.Fatal("started without a required static setting")
+			}
 		})
-		if _, err := configtest.Load(t, settingPrefix, loadConfig, rest); err == nil {
-			t.Fatalf("ran without %s", missing)
-		}
 	}
 }
 
-func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
+func TestAllowedServiceAccountNamespacesMustBeUsable(t *testing.T) {
 	for name, namespaces := range map[string]string{
-		"absent": "", "empty list": `[]`, "empty entry": `["ns", ""]`,
+		"empty list": `[]`, "empty entry": `[file-namespace, ""]`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			contents := ""
-			if namespaces != "" {
-				contents = "allowed_service_account_namespaces: " + namespaces + "\n"
-			}
-			environ := required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, environ); err == nil {
+			contents := strings.Replace(validSettings, "[file-namespace]", namespaces, 1)
+			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents)); err == nil {
 				t.Fatal("ran with no usable workload namespace")
 			}
 		})
@@ -128,7 +178,7 @@ func TestADeploymentNamingNoWorkloadNamespaceIsRefused(t *testing.T) {
 }
 
 func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
+	c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,81 +187,14 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 	}
 }
 
-func TestForwardListenerUsesOneExplicitAuthAllowlist(t *testing.T) {
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Forward.ListenAddress != "0.0.0.0:8888" || c.Forward.TLS == nil || c.Forward.Has(listener.KubernetesBearer) ||
-		!c.Forward.Has(listener.SPIFFE) {
-		t.Fatalf("unexpected SPIFFE-only forward listener: %+v", c.Forward)
-	}
-	for name, contents := range map[string]string{
-		"missing forward listener": "allowed_service_account_namespaces: [ns]\n",
-		"empty auth allowlist":     "allowed_service_account_namespaces: [ns]\nforward: {listen_address: 127.0.0.1:8888}\n",
-		"spiffe without tls": `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 127.0.0.1:8888
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-`,
-		"bearer beside spiffe": `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 127.0.0.1:8888
-  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-    - mode: kubernetes_bearer
-      audiences: [test-non-sandbox]
-`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			environ := required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, environ); err == nil {
-				t.Fatal("accepted incomplete or invalid forward listener configuration")
-			}
-		})
-	}
-	configured, err := configtest.Load(t, settingPrefix, loadConfig, required(
+func TestAdminGRPCSettingsComeFromTheFileAndAreAllOrNothing(t *testing.T) {
+	contents := validSettings + "admin_grpc_audience: file-audience\nadmin_grpc_callers: [test-ns/test-app, test-ns/test-other]\n"
+	c, err := configtest.Load(
 		t,
-		settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 127.0.0.1:8888
-  tls:
-    cert_file: /svid/tls.crt
-    key_file: /svid/tls.key
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-`),
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configured.Forward.ListenAddress != "127.0.0.1:8888" || configured.Forward.TLS == nil ||
-		configured.Forward.TLS.CertFile != "/svid/tls.crt" || configured.Forward.TLS.KeyFile != "/svid/tls.key" ||
-		!configured.Forward.Has(listener.SPIFFE) {
-		t.Fatalf("unexpected forward listener settings: %+v", configured.Forward)
-	}
-}
-
-func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
-	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 0.0.0.0:8888
-  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-admin_grpc_audience: file-audience
-admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
-`)
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(
-		t,
-		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"ADMIN_GRPC_AUDIENCE=env-audience",
-	))
+		"AGENTPLANE_EGRESS_",
+		loadConfig,
+		environment(t, contents, "AGENTPLANE_EGRESS_ADMIN_GRPC_AUDIENCE=environment-audience"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,88 +202,75 @@ admin_grpc_callers: [test-ns/test-app, test-ns/test-other]
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "env-audience" ||
+	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "file-audience" ||
 		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) {
-		t.Fatalf("unexpected merged config: %+v", c)
+		t.Fatalf("unexpected file settings: %+v", c)
 	}
-}
-
-func TestAdminGRPCIsAllOrNothing(t *testing.T) {
-	const audience, callers = "admin_grpc_audience: test-audience\n", "admin_grpc_callers: [test-ns/test-app]\n"
-	for name, contents := range map[string]string{
+	const audience = "admin_grpc_audience: test-audience\n"
+	const callersList = "admin_grpc_callers: [test-ns/test-app]\n"
+	for name, extra := range map[string]string{
 		"audience without callers": audience,
-		"callers without audience": callers,
+		"callers without audience": callersList,
 		"caller without a slash":   audience + "admin_grpc_callers: [test-ns]\n",
 		"caller without namespace": audience + "admin_grpc_callers: [/test-app]\n",
 		"caller without a name":    audience + "admin_grpc_callers: [test-ns/]\n",
 		"caller with a deep path":  audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [ns]\n"+contents)
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
-				t.Fatal("accepted")
+			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+extra)); err == nil {
+				t.Fatal("accepted partial or malformed admin caller configuration")
 			}
 		})
 	}
 }
 
-func TestForwardListenerAuthenticationRequiresOnlyItsVariantFields(t *testing.T) {
-	for name, testCase := range map[string]struct {
-		authentication string
-		tls            bool
-	}{
-		"missing mode":   {authentication: `- audience: hop`},
-		"null variant":   {authentication: `- null`},
-		"scalar variant": {authentication: `- spiffe`},
-		"unknown mode": {authentication: `- mode: unknown
-  audience: hop`},
-		"missing SPIFFE roots": {authentication: `- mode: spiffe`, tls: true},
-		"SPIFFE with bearer audience": {authentication: `- mode: spiffe
-  ca_file: /svid/ca.crt
-  audience: hop`, tls: true},
-		"missing bearer audience": {authentication: `- mode: kubernetes_bearer`},
-		"bearer with SPIFFE roots": {authentication: `- mode: kubernetes_bearer
-  audience: hop
-  ca_file: /svid/ca.crt`},
-		"unknown variant field": {authentication: `- mode: kubernetes_bearer
-  audience: hop
-  ignored: value`},
-	} {
+func TestForwardListenerUsesOneExplicitSPIFFEAllowlist(t *testing.T) {
+	c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, required(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Forward.ListenAddress != "127.0.0.1:5555" || c.Forward.TLS == nil || c.Forward.Has(listener.KubernetesBearer) ||
+		!c.Forward.Has(listener.SPIFFE) {
+		t.Fatalf("unexpected SPIFFE-only forward listener: %+v", c.Forward)
+	}
+	invalid := map[string]string{
+		"missing listener": "",
+		"empty auth allowlist": withForward(validSettings, `forward:
+  listen_address: 127.0.0.1:5555
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth: []
+`),
+		"spiffe without tls": withForward(validSettings, `forward:
+  listen_address: 127.0.0.1:5555
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+`),
+		"bearer beside spiffe": withForward(validSettings, `forward:
+  listen_address: 127.0.0.1:5555
+  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
+  auth:
+    - mode: spiffe
+      ca_file: /svid/ca.crt
+    - mode: kubernetes_bearer
+      audiences: [test-non-sandbox]
+`),
+		"missing auth mode":  withForward(validSettings, strings.Replace(forwardSettings, "- mode: spiffe\n", "-\n", 1)),
+		"unknown auth mode":  withForward(validSettings, strings.Replace(forwardSettings, "mode: spiffe", "mode: unknown", 1)),
+		"unknown auth field": withForward(validSettings, strings.Replace(forwardSettings, "ca_file: /svid/ca.crt", "ca_file: /svid/ca.crt\n      ignored: value", 1)),
+	}
+	for name, contents := range invalid {
 		t.Run(name, func(t *testing.T) {
-			contents := "allowed_service_account_namespaces: [ns]\nforward:\n  listen_address: 127.0.0.1:8888\n  auth:\n"
-			for _, line := range strings.Split(testCase.authentication, "\n") {
-				contents += "    " + line + "\n"
-			}
-			if testCase.tls {
-				contents += "  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}\n"
-			}
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(
-				t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents),
-			)); err == nil {
-				t.Fatal("accepted an invalid authentication variant")
+			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents)); err == nil {
+				t.Fatal("accepted incomplete or invalid authentication configuration")
 			}
 		})
 	}
 }
 
 func TestLocalAPIServerLoadsWholeOrNotAtAll(t *testing.T) {
-	settings := func(server string) []string {
-		return []string{
-			settingPrefix + "RULES_NAMESPACE=rules", settingPrefix + "CREDENTIALS_NAMESPACE=secrets",
-			settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key", databaseURLEnv,
-			settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, `allowed_service_account_namespaces: [ns]
-forward:
-  listen_address: 0.0.0.0:8888
-  tls: {cert_file: /svid/tls.crt, key_file: /svid/tls.key}
-  auth:
-    - mode: spiffe
-      ca_file: /svid/ca.crt
-`+server),
-		}
-	}
-	c, err := configtest.Load(t, settingPrefix, loadConfig, settings(
-		"local_api_server: {host: kubernetes.default.svc.test, port: 443, token_file: /token}\n",
-	))
+	server := "local_api_server: {host: kubernetes.default.svc.test, port: 443, token_file: /token}\n"
+	c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+server))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +282,7 @@ forward:
 		"local_api_server: {port: 443, token_file: /token}\n",
 		"local_api_server: {host: kubernetes.default.svc.test, token_file: /token}\n",
 	} {
-		if _, err := configtest.Load(t, settingPrefix, loadConfig, settings(partial)); err == nil {
+		if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+partial)); err == nil {
 			t.Errorf("%q accepted", partial)
 		}
 	}

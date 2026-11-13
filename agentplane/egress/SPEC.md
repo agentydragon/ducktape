@@ -6,6 +6,12 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Configuration
 
+The non-secret deployment contract is the required YAML file named by
+`AGENTPLANE_EGRESS_CONFIG_FILE`. It contains the complete static settings, including `log_levels`;
+unknown keys and additional YAML documents fail startup. Static settings cannot be overridden by
+per-setting environment variables or CLI flags. The history database URL is supplied separately by
+the Secret-backed `AGENTPLANE_EGRESS_DATABASE_URL` input and is excluded from the YAML decoder.
+
 The forward listener is configured by `forward.listen_address`, serving `forward.tls`, and a
 `forward.auth` list naming `spiffe` alone, with its trust roots. These structured settings are
 file-only. The sidecar names its central proxy as `proxy.address` (`host:port`) and its

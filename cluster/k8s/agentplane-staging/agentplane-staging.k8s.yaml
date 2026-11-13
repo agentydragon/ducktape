@@ -1567,18 +1567,13 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
+    rules_namespace: agentplane-staging
+    credentials_namespace: agentplane-staging-egress-credentials
     allowed_service_account_namespaces:
       - agentplane-staging
-      - public-coder-agent
-      - haku-sandbox
       - haku-ci
-    admin_grpc_audience: agentplane-egress-admin
-    admin_grpc_callers:
-      - agentplane-staging/app
-    local_api_server:
-      host: kubernetes.default.svc.cluster.local
-      port: 443
-      token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+      - haku-sandbox
+      - public-coder-agent
     tls_passthrough_targets:
       - egress-admin.agentplane-staging.svc.cluster.local:8081
       - history-service.agentplane-staging.svc.cluster.local:8080
@@ -1594,6 +1589,23 @@ data:
       auth:
         - mode: spiffe
           ca_file: /etc/agentplane-egress/svid-ca/ca-certificates.crt
+    admin_listen_address: 0.0.0.0:8081
+    admin_grpc_audience: agentplane-egress-admin
+    admin_grpc_callers:
+      - agentplane-staging/app
+    ca_cert: /etc/agentplane-egress/ca/tls.crt
+    ca_key: /etc/agentplane-egress/ca/tls.key
+    upstream_ca_file: /etc/agentplane-egress/upstream-ca/ca-certificates.crt
+    log_levels: {}
+    decision_history_size: 200
+    decision_retention_days: 7
+    decision_queue_size: 2000
+    decision_batch_size: 100
+    local_api_server:
+      host: kubernetes.default.svc.cluster.local
+      port: 443
+      token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    exempt_networks: []
 immutable: false
 ---
 apiVersion: v1
@@ -1645,18 +1657,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_EGRESS_RULES_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE
-              value: agentplane-staging-egress-credentials
-            - name: AGENTPLANE_EGRESS_ADMIN_LISTEN_ADDRESS
-              value: 0.0.0.0:8081
-            - name: AGENTPLANE_EGRESS_CA_CERT
-              value: /etc/agentplane-egress/ca/tls.crt
-            - name: AGENTPLANE_EGRESS_CA_KEY
-              value: /etc/agentplane-egress/ca/tls.key
-            - name: AGENTPLANE_EGRESS_UPSTREAM_CA_FILE
-              value: /etc/agentplane-egress/upstream-ca/ca-certificates.crt
             - name: AGENTPLANE_EGRESS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
