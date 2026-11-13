@@ -273,12 +273,6 @@ spec:
   target:
     configMap:
       key: ca-certificates.crt
-    namespaceSelector:
-      matchExpressions:
-        - key: kubernetes.io/metadata.name
-          operator: In
-          values:
-            - airlock
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
