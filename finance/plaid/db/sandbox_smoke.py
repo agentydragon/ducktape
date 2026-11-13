@@ -5,8 +5,10 @@ and a page of transactions straight off the SDK client. Verifies the creds and t
 SDK call path run cleanly.
 
 Run:
-    set -a; source finance/plaid/db/.creds.env; set +a
-    bb run //finance/plaid/db:sandbox_smoke_bin
+    PLAID_ENV=sandbox bb run //finance/plaid/db:sandbox_smoke_bin
+
+Run from the repository root with sandbox credentials available to `dev_creds.load()`; see
+`finance/plaid/db/README.md` for the SOPS file and environment-variable options.
 """
 
 import logging
