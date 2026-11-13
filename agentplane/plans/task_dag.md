@@ -3962,7 +3962,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   scripts; `caller()` in `app/go/auth/auth.go` and the `token_subjects` renderings go with the decision.
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
   `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
-  (`history_service/api/service.go`), EnvironmentService management and the lifecycle manager
+  (`history_service/internal/rpc/service.go`), EnvironmentService management and the lifecycle manager
   (`environments/management.go`, `lifecycle/manager.go`), and the resolver's `RequirePod` is step 7
   of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
   route decides whether a Pod proof still adds anything; the checks that do not are deleted then.

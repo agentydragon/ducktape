@@ -5,7 +5,7 @@
 // (agentplane/docs/grpc_services.md), or a workload SVID naming an Identity, which reads the Sessions
 // retained as executing as that Identity incarnation: a public Session UUID is not itself authority to read
 // a transcript.
-package api
+package rpc
 
 import (
 	"context"
