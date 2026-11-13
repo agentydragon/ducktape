@@ -2,7 +2,9 @@
 
 Tracker: [#16099](https://github.com/agentydragon/ducktape/issues/16099).
 Experiment branch: `agent/test-architecture-pivot`.
-All implementation milestones stay on [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
+Architecture milestones stay on [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
+Independent bugfixes and clear improvements that already apply to devel may be
+backported through separate PRs after validation.
 
 Reduce the physical work and dependency graph needed to establish each guarantee.
 Keep the current required gate while the replacement graph is proved. Desired routine
@@ -79,12 +81,17 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   A separate manual VM boot candidate exercises the real guest, issued SVID and
   authenticated app/Gateway/Runtime status. It does not replace the existing VM
   harness, systemd, cgroup, egress, notification or post-operation credential checks.
+  The full existing VM fixture also omits its unused MCP edge image/deployment;
+  every retained rendered resource and scenario assertion is unchanged. Its full
+  real VM scenario passes; this proves retained behavior and graph selectivity,
+  not a matched timing improvement.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
   configured graph queries prove the image edge is absent. Unused app Connection
   routes remain unavailable in this profile, so external connections retain their
-  separate MCP/app witnesses. Dispatcher/probe and other profiles are unchanged.
+  separate MCP/app witnesses. Dispatcher/probe, default/MCP and Firecracker profiles
+  retain their previous image ownership.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
   acceptance and existing controller fake-clock matrix. Trace producer/watch timing
@@ -112,6 +119,11 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   architecture trees and merge provenance, counterbalance order, preserve all
   failures/cancellations/retries, source/CAS identities, CPU and cleanup. Replay
   measures graph behavior; live PR shadows establish GitHub feedback clocks.
+  Actual CI now archives the existing selected-label query with merge/base/head
+  and invocation provenance, before runtime tag filtering, through its existing
+  best-effort diagnostics. The real archive round trip is verified. Four selected
+  graph launches preserve an automatic infrastructure re-execution and a VM
+  fixture teardown error; this is neither 30 PR pairs nor a qualified speedup.
 - **P6, adoption:** make reviewable milestone commits on the existing branch/PR.
   Change a gate boundary only after the evidence below supports that boundary.
   Revert that selection change on an escaped contract or reliability regression.
