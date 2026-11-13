@@ -158,8 +158,11 @@ py_library(
         "//agentplane/history_service:client",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/system_tests/vm:guest_setup_probe",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//tenacity",
