@@ -139,7 +139,8 @@ when `through_cursor` does not advance. Raw cursors survive a projection epoch r
 neither resets nor follows the fold's epoch.
 
 Each entries frame holds at most 128 entries or 1 MiB of encoded response, with an oversized entry
-sent alone. Filtering and byte bounds are applied in the database before payloads are transferred.
+sent alone. Indexed cursor/kind/size metadata selects entries and applies byte bounds before their
+payloads are loaded; packed blocks are decompressed only for selected entries.
 The server reads a bounded entries/settlements page, waits for its frames to finish sending, then
 reads the next; it holds no database transaction while sending. It reads all intersecting removal
 ranges once per catch-up. Backend reads and waiting for each stream `Send` to clear transport
