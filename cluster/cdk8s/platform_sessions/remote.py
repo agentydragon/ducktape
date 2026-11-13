@@ -428,7 +428,9 @@ def _provider_workload(chart: Chart, instance: str, *, record_upstream_traffic: 
                 "/var/run/provider-tls/tls.key",
             ]
             + (
-                [] if instance == "blueshield" else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
+                []
+                if instance in {"blueshield", "myquest"}
+                else ["--route-grants", f"/etc/platform-sessions/{instance}-routes.json"]
             ),
             env=[k8s.EnvVar(name="HOME", value="/tmp"), *recorder_env],
             ports=[

@@ -52,6 +52,8 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         provider_pod = provider["template"]["spec"]
         expected_image = remote._provider_image(instance)
         assert provider_pod["containers"][0]["image"] == f"{remote.REGISTRY}/{expected_image}:unset"
+        args = provider_pod["containers"][0]["args"]
+        assert ("--route-grants" in args) == (instance not in {"blueshield", "myquest"})
         assert provider_pod["nodeSelector"]["topology.kubernetes.io/zone"] == "hil-ovh"
         claims = [
             v["persistentVolumeClaim"]["claimName"] for v in provider_pod["volumes"] if "persistentVolumeClaim" in v

@@ -2309,8 +2309,6 @@ spec:
             - /var/run/provider-tls/tls.crt
             - --tls-key
             - /var/run/provider-tls/tls.key
-            - --route-grants
-            - /etc/platform-sessions/myquest-routes.json
           env:
             - name: HOME
               value: /tmp
