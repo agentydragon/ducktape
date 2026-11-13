@@ -6753,18 +6753,11 @@ spec:
               value: otlp
             - name: OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE
               value: cumulative
-            - name: AGENTPLANE_ACTIONS_READER_ACCOUNTS
-              value: '[{"namespace": "agentplane-staging", "name": "notifications"}]'
             - name: AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM
               valueFrom:
                 secretKeyRef:
                   key: private-key-pem
                   name: agentplane-staging-web-push-vapid
-            - name: AGENTPLANE_ACTIONS_MCP_SERVERS__GITHUB__CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  key: client_id
-                  name: haku-console-github-mcp-client-credentials
             - name: OTEL_SERVICE_NAME
               value: actions
             - name: OTEL_RESOURCE_ATTRIBUTES
@@ -6898,6 +6891,8 @@ spec:
           secret:
             defaultMode: 288
             items:
+              - key: client_id
+                path: client_id
               - key: client_secret
                 path: client_secret
             secretName: haku-console-github-mcp-client-credentials
@@ -7005,79 +7000,34 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    operator_oidc:
-      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
-      audience: agentplane-staging-actions
-      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
-      token_profile: authentik
+    rpc:
+      listen_address: 0.0.0.0:8080
+      tls:
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+      auth:
+        - mode: kubernetes_bearer
+          audiences:
+            - agentplane-egress
+        - mode: spiffe
+          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    reader_accounts:
+      - namespace: agentplane-staging
+        name: notifications
+    connection_delegation_actor:
+      namespace: agentplane-staging
+      name: mcp-edge
     policy_namespace: agentplane-staging
     caller_service_account_namespaces:
       - agentplane-staging
       - haku-sandbox
       - public-coder-agent
     direct_wait_seconds: 30
-    connection_delegation_actor:
-      namespace: agentplane-staging
-      name: mcp-edge
-    web_push:
-      subject: mailto:agentydragon@gmail.com
-      public_base_url: https://agentplane-staging.allegedly.works
-      allowed_push_hosts:
-        - fcm.googleapis.com
-        - updates.push.services.mozilla.com
-    mcp_client_metadata:
-      url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata.json
-      client_name: Agentplane staging
-    mcp_servers:
-      github:
-        server_id: github
-        server_url: https://api.githubcopilot.com/mcp/
-        client_id: configured-by-secret
-        use_shared_cimd: false
-        client_secret_file: /etc/agentplane-github/client_secret
-        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
-        scopes: []
-      kubernetes_admin:
-        server_id: kubernetes_admin
-        server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
-        client_id: kubectl-passthrough-mcp
-        use_shared_cimd: false
-        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
-        scopes: []
-      grocy_sf:
-        server_id: grocy_sf
-        server_url: https://grocy-mcp-sf.allegedly.works/mcp
-        use_shared_cimd: true
-        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
-        scopes: []
-    session_dispatcher:
-      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/dispatcher
-      request_timeout_s: 15
-      tls:
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/session-dispatcher
-    history_service:
-      target: history-service.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/history
-      request_timeout_s: 15
-      tls:
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/history-ingress
-    session_delegation_dispatcher:
-      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/dispatcher
-      request_timeout_s: 40
-      tls:
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/session-dispatcher
-    session_delegation_history:
-      target: history-service.agentplane-staging.svc.cluster.local:8080
-      token_file: /var/run/secrets/actions/history
-      request_timeout_s: 40
-      tls:
-        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        server_uri: spiffe://agentplane/history-ingress
+    operator_oidc:
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+      audience: agentplane-staging-actions
+      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+      token_profile: authentik
     action_groups:
       github:
         title: GitHub MCP
@@ -7609,17 +7559,65 @@ data:
           - observe_input
           - read_turns
           - submit_input
-    rpc:
-      listen_address: 0.0.0.0:8080
+    mcp_servers:
+      github:
+        server_id: github
+        server_url: https://api.githubcopilot.com/mcp/
+        client_id_file: /etc/agentplane-github/client_id
+        use_shared_cimd: false
+        client_secret_file: /etc/agentplane-github/client_secret
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+        scopes: []
+      kubernetes_admin:
+        server_id: kubernetes_admin
+        server_url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+        client_id: kubectl-passthrough-mcp
+        use_shared_cimd: false
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+        scopes: []
+      grocy_sf:
+        server_id: grocy_sf
+        server_url: https://grocy-mcp-sf.allegedly.works/mcp
+        use_shared_cimd: true
+        redirect_uri: https://agentplane-staging.allegedly.works/mcp-linkage/callback
+        scopes: []
+    mcp_client_metadata:
+      url: https://agentplane-actions-staging.allegedly.works/oauth/client-metadata.json
+      client_name: Agentplane staging
+    web_push:
+      subject: mailto:agentydragon@gmail.com
+      public_base_url: https://agentplane-staging.allegedly.works
+      allowed_push_hosts:
+        - fcm.googleapis.com
+        - updates.push.services.mozilla.com
+    session_dispatcher:
+      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/dispatcher
+      request_timeout_s: 15
       tls:
-        cert_file: /run/agentplane/workload-tls/tls.crt
-        key_file: /run/agentplane/workload-tls/tls.key
-      auth:
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-egress
-        - mode: spiffe
-          ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/session-dispatcher
+    history_service:
+      target: history-service.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/history
+      request_timeout_s: 15
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/history-ingress
+    session_delegation_dispatcher:
+      target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/dispatcher
+      request_timeout_s: 40
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/session-dispatcher
+    session_delegation_history:
+      target: history-service.agentplane-staging.svc.cluster.local:8080
+      token_file: /var/run/secrets/actions/history
+      request_timeout_s: 40
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/history-ingress
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1

@@ -544,10 +544,7 @@ transport exceptions or endpoint values.
 
 `operator_oidc` selects pinned RS256 JWT verification for the Action audience. Authentik's target
 provider policy governs who can obtain that audience; the service does not maintain a second subject
-allowlist. The destination records the actual token issuer and subject, not a shared BFF identity. Both deployed
-environments set `AGENTPLANE_ACTIONS_OPERATOR_OIDC` from the `operator-oidc` key of their
-`agentplane-action-federation` ConfigMap (built from the `action_federation`/`operator_oidc`
-dicts in `cluster/cdk8s/generate_manifests.py`); staging
+allowlist. The destination records the actual token issuer and subject, not a shared BFF identity. The deployment writes `operator_oidc` in the required Action Service YAML settings file; staging
 targets the Authentik `agentplane-staging-actions` provider. See
 [`../docs/operator_federation.md`](../docs/operator_federation.md) for settings and test evidence.
 

@@ -68,7 +68,6 @@ import (
 )
 
 const (
-	migrationOnlyDatabaseURLEnv = "AGENTPLANE_ACTIONS_DATABASE_URL"
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop, as the Python
 	// service's graceful shutdown does.
 	shutdownGrace = 5 * time.Second
@@ -635,7 +634,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	handled, err := migrate.RunOnly(ctx, os.Args[1:], migrationOnlyDatabaseURLEnv, migrations.Up)
+	handled, err := migrate.RunOnly(ctx, os.Args[1:], databaseURLSecretEnv, migrations.Up)
 	if err != nil {
 		slog.Error("Action Service migration failed", "error", err)
 		os.Exit(1)

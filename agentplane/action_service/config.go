@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,17 +22,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const settingPrefix = "AGENTPLANE_ACTIONS_"
+const (
+	settingPrefix        = "AGENTPLANE_ACTIONS_"
+	databaseURLSecretEnv = settingPrefix + "DATABASE_URL"
+	webPushPrivateKeyEnv = settingPrefix + "WEB_PUSH__PRIVATE_KEY_PEM"
+)
 
-// config is the Go Action Service's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_ACTIONS_CONFIG_FILE, and each key but `action_groups`, a nested one with its dots written as `__`, also
-// names an AGENTPLANE_ACTIONS_* environment variable that overrides it (`operator_oidc.issuer` is
-// AGENTPLANE_ACTIONS_OPERATOR_OIDC__ISSUER). Unknown keys in the file are refused. A key has the name and meaning it
-// has in the Python service's settings (settings.py), which serve the same deployment.
-//
-// The database URL is a Secret, so a deployment supplies it as an environment variable.
+// config holds the required YAML settings plus the explicitly named runtime Secret inputs.
+// DatabaseURL and the Web Push private key are never read from the settings file.
 type config struct {
-	DatabaseURL string          `mapstructure:"database_url"`
+	DatabaseURL string          `mapstructure:"-"`
 	RPC         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
 	// them is refused.
@@ -84,55 +82,20 @@ func defaultConfig() config {
 
 func loadConfig() (config, error) {
 	c := defaultConfig()
-	// Without ExperimentalBindStruct, Unmarshal reads an environment variable only for a bound key.
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
-	settings.SetEnvPrefix("AGENTPLANE_ACTIONS")
-	settings.AutomaticEnv()
-	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
-		file, err := readSettingsFile(path)
-		if err != nil {
-			return config{}, err
-		}
-		if c.ActionGroups, err = catalog.New(file.ActionGroups); err != nil {
-			return config{}, fmt.Errorf("action_groups: %w", err)
-		}
-		if err := settings.MergeConfigMap(file.Others); err != nil {
-			return config{}, errors.New("could not read Action Service settings file")
-		}
+	path := os.Getenv(settingPrefix + "CONFIG_FILE")
+	if path == "" {
+		return config{}, errors.New("AGENTPLANE_ACTIONS_CONFIG_FILE is required")
 	}
-	for _, entry := range os.Environ() {
-		name, value, _ := strings.Cut(entry, "=")
-		if value != "" && (name == settingPrefix+"ACTION_GROUPS" || strings.HasPrefix(name, settingPrefix+"ACTION_GROUPS__")) {
-			return config{}, errors.New("action_groups is read from the settings file only")
-		}
+	file, err := readSettingsFile(path)
+	if err != nil {
+		return config{}, err
 	}
-	// Unmarshal reads a map setting as one key, whose value from the file would replace the environment's overrides of
-	// the keys under it (viper v1.21.0, ExperimentalBindStruct). Setting each of those keys to its value keeps them: a
-	// set value comes first.
-	for _, key := range settings.AllKeys() {
-		if strings.HasPrefix(key, "mcp_servers.") {
-			settings.Set(key, settings.Get(key))
-		}
+	if c.ActionGroups, err = catalog.New(file.ActionGroups); err != nil {
+		return config{}, fmt.Errorf("action_groups: %w", err)
 	}
-	// The deployed reader allowlist is a JSON environment value, as Pydantic reads it.
-	if raw := os.Getenv(settingPrefix + "READER_ACCOUNTS"); raw != "" {
-		var accounts []struct {
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		}
-		decoder := json.NewDecoder(strings.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&accounts); err != nil || accounts == nil {
-			return config{}, errors.New("reader_accounts must be a JSON array of ServiceAccounts")
-		}
-		if err := decoder.Decode(new(any)); err != io.EOF {
-			return config{}, errors.New("reader_accounts must contain one JSON array")
-		}
-		readers := make([]auth.Account, len(accounts))
-		for i, account := range accounts {
-			readers[i] = auth.Account{Namespace: account.Namespace, Name: account.Name}
-		}
-		settings.Set("reader_accounts", readers)
+	settings := viper.New()
+	if err := settings.MergeConfigMap(file.Others); err != nil {
+		return config{}, errors.New("could not read Action Service settings file")
 	}
 	// The errors name no value: a setting can be a Secret.
 	decodeHook := mapstructure.ComposeDecodeHookFunc(
@@ -141,6 +104,23 @@ func loadConfig() (config, error) {
 	)
 	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
+	}
+	c.DatabaseURL = os.Getenv(databaseURLSecretEnv)
+	c.WebPush.PrivateKeyPEM = os.Getenv(webPushPrivateKeyEnv)
+	for key, server := range c.MCPServers {
+		if server.ClientIDFile == nil {
+			continue
+		}
+		if server.ClientID != nil || server.UseSharedCIMD {
+			return config{}, fmt.Errorf("mcp_servers.%s: client_id_file is exclusive with client_id and use_shared_cimd", key)
+		}
+		contents, err := os.ReadFile(*server.ClientIDFile)
+		if err != nil {
+			return config{}, fmt.Errorf("mcp_servers.%s: could not read client_id_file", key)
+		}
+		server.ClientID = new(strings.TrimSpace(string(contents)))
+		server.ClientIDFile = nil
+		c.MCPServers[key] = server
 	}
 	if err := c.validate(); err != nil {
 		return config{}, err
@@ -307,9 +287,12 @@ func readSettingsFile(path string) (settingsFile, error) {
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(document))
 	decoder.KnownFields(true)
-	// An empty file is io.EOF: no settings.
-	if err := decoder.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
+	if err := decoder.Decode(&file); err != nil {
 		return file, fmt.Errorf("settings file: %w", withoutValues(err))
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return file, errors.New("Action Service settings file must contain exactly one YAML document")
 	}
 	return file, nil
 }

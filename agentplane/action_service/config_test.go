@@ -67,13 +67,13 @@ func TestConnectionDelegationActorSettingIsOptionalAndAccepted(t *testing.T) {
 	}
 }
 
-func TestAnEnvironmentVariableOverridesTheFile(t *testing.T) {
+func TestGenericEnvironmentVariablesDoNotOverrideTheFile(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile, settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.RPC.ListenAddress != "127.0.0.1:9001" {
-		t.Errorf("file and environment overrides: %+v", c)
+	if c.RPC.ListenAddress != "0.0.0.0:8080" {
+		t.Errorf("environment overrode static file settings: %+v", c)
 	}
 }
 
@@ -134,7 +134,8 @@ func TestReaderAccountsAndTheOperatorIssuerAreRead(t *testing.T) {
 operator_oidc:
   issuer: https://issuer.test.example/
   jwks_uri: https://issuer.test.example/jwks/
-`, settingPrefix+"OPERATOR_OIDC__AUDIENCE=test-actions-audience")
+  audience: test-actions-audience
+`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +205,7 @@ mcp_servers:
   test_registered:
     server_id: test_registered
     server_url: https://test-mcp.example/mcp
-    client_id: test-placeholder
+    client_id: test-client
     client_secret_file: /test/client-secret
     redirect_uri: https://test-app.example/mcp-linkage/callback
     scopes: [test-read]
@@ -215,7 +216,7 @@ mcp_servers:
     use_shared_cimd: true
     redirect_uri: https://test-app.example/mcp-linkage/callback
     scopes: [test-write]
-`, settingPrefix+"MCP_SERVERS__TEST_REGISTERED__CLIENT_ID=test-client")
+`, settingPrefix+"MCP_SERVERS__TEST_REGISTERED__CLIENT_ID=ignored-environment-client")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,13 +241,14 @@ mcp_servers:
 
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
-		"unknown key":          requiredFile + "test_unknown_setting: never-print-this\n",
-		"unknown listener key": strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
-		"missing listener":     strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
-		"no audience":          strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
-		"no caller namespaces": strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
-		"no policy namespace":  strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
-		"reader of a word":     requiredFile + "reader_accounts: [never-print-this]\n",
+		"unknown key":                    requiredFile + "test_unknown_setting: never-print-this\n",
+		"unknown listener key":           strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
+		"missing listener":               strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
+		"no audience":                    strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
+		"no caller namespaces":           strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
+		"no policy namespace":            strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
+		"database Secret in static file": requiredFile + "database_url: never-print-this\n",
+		"reader of a word":               requiredFile + "reader_accounts: [never-print-this]\n",
 		"operator issuer without its audience": requiredFile + `operator_oidc:
   issuer: https://never-print-this.test.example/
   jwks_uri: https://issuer.test.example/jwks/
@@ -268,7 +270,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"executor kind":                      requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: never-print-this", 1),
 		"executor field of another kind":     requiredFile + strings.Replace(testActionGroups, "kind: mcp", "kind: mcp\n      namespace: never-print-this", 1),
 		"web push without its key":           requiredFile + testWebPush,
-		"web push key not PEM":               requiredFile + testWebPush + "  private_key_pem: never-print-this\n",
+		"web push key in static file":        requiredFile + testWebPush + "  private_key_pem: never-print-this\n",
 		"unknown web push key":               requiredFile + testWebPush + "  vapid_claims: never-print-this\n",
 		"MCP server without a client": requiredFile + `mcp_servers:
   test_server:
@@ -300,8 +302,8 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		t.Error("accepted without a database URL")
 	}
 	for _, variable := range []string{"ACTION_GROUPS={}", "ACTION_GROUPS__TEST_GROUP__AVAILABLE=false"} {
-		if _, err := loadTestConfig(t, requiredFile+testActionGroups, settingPrefix+variable); err == nil {
-			t.Errorf("accepted %s, which only the file sets", variable)
+		if _, err := loadTestConfig(t, requiredFile+testActionGroups, settingPrefix+variable); err != nil {
+			t.Errorf("unused environment override affected the file: %v", err)
 		}
 	}
 }
@@ -318,19 +320,14 @@ func TestInvalidDirectWaitsAreRefused(t *testing.T) {
 	}
 }
 
-func TestTheDeployedReaderAccountsJSONEnvironmentIsRead(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile, settingPrefix+`READER_ACCOUNTS=[{"namespace":"test-agentplane","name":"test-notifications"}]`)
+func TestReaderAccountsAreFileOnly(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile+"reader_accounts: [test-agentplane/test-notifications]\n",
+		settingPrefix+"READER_ACCOUNTS=invalid-unused-override")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(c.ReaderAccounts, []auth.Account{{Namespace: "test-agentplane", Name: "test-notifications"}}) {
 		t.Fatalf("readers: %v", c.ReaderAccounts)
-	}
-	for _, raw := range []string{`[{"namespace":"test"}]`, `[{"namespace":"test","name":"reader","unexpected":"never-print-this"}]`, `[] []`, `null`} {
-		_, err := loadTestConfig(t, requiredFile, settingPrefix+"READER_ACCOUNTS="+raw)
-		if err == nil || strings.Contains(err.Error(), "never-print-this") {
-			t.Fatalf("invalid readers: %v", err)
-		}
 	}
 }
 
@@ -423,6 +420,37 @@ func TestListenerRequiresExplicitAddressAndAuthentication(t *testing.T) {
 	} {
 		if _, err := loadTestConfig(t, strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", fragment, 1)); err == nil {
 			t.Fatalf("accepted invalid RPC listener: %s", fragment)
+		}
+	}
+}
+
+func TestSettingsFileIsRequiredAndContainsOneDocument(t *testing.T) {
+	for _, path := range []string{"", "/not-a-settings-file"} {
+		_, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv, settingPrefix + "CONFIG_FILE=" + path})
+		if err == nil {
+			t.Fatalf("accepted config file %q", path)
+		}
+	}
+	if _, err := loadTestConfig(t, requiredFile+"---\npolicy_namespace: replacement\n"); err == nil {
+		t.Fatal("accepted multiple YAML documents")
+	}
+}
+
+func TestMCPClientIDCanComeFromItsProjectedSecretFile(t *testing.T) {
+	clientID := configtest.WriteSettings(t, "registered-client\n")
+	file := requiredFile + "mcp_servers:\n  github:\n    server_id: github\n    server_url: https://mcp.example/mcp\n    redirect_uri: https://app.example/callback\n    client_id_file: " + clientID + "\n"
+	c, err := loadTestConfig(t, file)
+	if err != nil || c.MCPServers["github"].ClientID == nil || *c.MCPServers["github"].ClientID != "registered-client" {
+		t.Fatalf("projected client ID was not resolved: %v", err)
+	}
+	for _, invalid := range []string{
+		strings.Replace(file, clientID, "/missing-client-id", 1),
+		file + "    client_id: conflicting-client\n",
+		file + "    use_shared_cimd: true\n",
+		strings.Replace(file, clientID, configtest.WriteSettings(t, ""), 1),
+	} {
+		if _, err := loadTestConfig(t, invalid); err == nil {
+			t.Fatal("accepted invalid projected client ID configuration")
 		}
 	}
 }

@@ -165,7 +165,7 @@ class ActionsProps:
     web_push: WebPushProps | None = None
     # Keys for upstream MCP OAuth clients mounted for Action Service linkage; none mounts nothing.
     oauth_secret_items: Sequence[str] = ()
-    # None omits the corresponding env var, volume, and mount.
+    # None omits the corresponding GitHub credential volume and mount.
     github_mcp_client_secret_name: str | None = None
     bearer_mcp_mounts: Sequence[BearerMcpMount] = ()
     # CiliumNetworkPolicy egress rules appended after the shared DNS/kube-apiserver/

@@ -14,6 +14,18 @@ The public `LinkageService` gRPC API completes MCP OAuth callbacks and returns t
 Document. It requires no bearer: callback state is a single-use, expiring capability and the metadata is public.
 The app and MCP edge present these operations over HTTP at the public protocol boundary.
 
+## Configuration
+
+`AGENTPLANE_ACTIONS_CONFIG_FILE` names the required YAML file. Unknown keys and multiple documents
+are refused; scalar and nested environment variables do not override static settings. The Python
+`Settings` model describes the complete non-secret file rendered by the deployment.
+
+The database URL comes only from `AGENTPLANE_ACTIONS_DATABASE_URL`; the VAPID key comes only from
+`AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM`. MCP OAuth client IDs may use `client_id_file` to
+read an existing projected Secret instead of a literal `client_id`. A server selects exactly one
+of those sources or shared CIMD. Startup reads these inputs and validates the effective configuration
+before serving. Projected bearer tokens and OAuth client-secret files retain their existing lifetimes.
+
 ## Metrics
 
 The Action Service exports an OAuth token-request histogram over OTLP with seconds, operation and

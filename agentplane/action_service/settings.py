@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections.abc import Set
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from agentplane.action_service.catalog import ActionGroup, Key
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
@@ -16,9 +15,7 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.identity.auth.listener import Listener
-from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
-from util.yaml_file_settings import YamlFileSettings
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
@@ -38,25 +35,14 @@ class ServicePeer(BaseModel):
     )
 
 
-class Settings(YamlFileSettings):
-    """The service's configuration.
-
-    Each field is a `--flag`, an `AGENTPLANE_ACTIONS_*` environment variable, and a key of the YAML
-    file `AGENTPLANE_ACTIONS_CONFIG_FILE` names, in that order of precedence; the staging Deployment
-    keeps the ActionGroup catalog in that file so backend/account changes need only a restart.
-    """
+class Settings(BaseModel):
+    """Complete non-secret deployment settings, read from a required YAML file."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_ACTIONS_CONFIG_FILE"
-    model_config = SettingsConfigDict(
-        env_prefix="AGENTPLANE_ACTIONS_",
-        env_nested_delimiter="__",
-        cli_parse_args=True,
-        cli_kebab_case=True,
-        hide_input_in_errors=True,
-    )
+    database_url_env: ClassVar[str] = "AGENTPLANE_ACTIONS_DATABASE_URL"
+    web_push_private_key_env: ClassVar[str] = "AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM"
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
-    database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
-    log_levels: LogLevels
     rpc: Listener = Field(description="The single gRPC listener and its explicitly enabled authentication methods.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     connection_delegation_actor: ServiceAccountRef | None = Field(
@@ -97,6 +83,14 @@ class Settings(YamlFileSettings):
     session_delegation_history: ServicePeer | None = Field(
         default=None, description="Delegated History endpoint/audience for session_delegation groups."
     )
+
+    @field_serializer("caller_service_account_namespaces")
+    def serialize_namespaces(self, namespaces: Set[str]) -> list[str]:
+        return sorted(namespaces)
+
+    @field_serializer("reader_accounts")
+    def serialize_reader_accounts(self, accounts: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
+        return sorted(accounts, key=lambda account: (account.namespace, account.name))
 
     @model_validator(mode="after")
     def shared_mcp_client_metadata(self) -> Settings:
