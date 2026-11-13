@@ -104,11 +104,12 @@ build --workspace_status_command=devinfra/stamp.sh
 # Use shell-based bootstrap instead of system_python.  The default
 # (system_python) starts with `#!/usr/bin/env python3` which picks up whatever
 # system Python is on PATH.  This causes _sre.MAGIC mismatches when system
-# Python differs from the hermetic 3.13 toolchain, and stdlib shadowing when
+# Python differs from the hermetic toolchain, and stdlib shadowing when
 # files like `types.py` exist in the package directory.  The script bootstrap
 # invokes the hermetic interpreter directly, avoiding both issues.
 #
-# Subprocess-spawning code uses bazel_subprocess.py to propagate PYTHONPATH.
+# `devinfra.bazel.subprocess.python_env()` propagates Nix site packages outside
+# Bazel and omits the bootstrap `PYTHONPATH` for child Bazel venvs.
 common --@rules_python//python/config_settings:bootstrap_impl=script
 
 # Don't generate empty __init__.py stubs in runfiles. Fixes protobuf namespace
