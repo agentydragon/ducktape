@@ -148,7 +148,7 @@ func TestHistoricalSettlementReadsAndPrunesPackedHistory(t *testing.T) {
 	db := testpostgres.Open(t, database.URL)
 	history := storage.NewStore(db, storage.Options{CompactDeltas: true})
 	id := uuid.New()
-	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "test-namespace", Name: "test-runner", UID: "test-uid"}, "", nil); err != nil {
+	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "test-namespace", Name: "test-runner", UID: "test-uid"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	chunks := make([]string, 80)
