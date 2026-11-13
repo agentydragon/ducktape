@@ -21,7 +21,7 @@ the gateway's web server stalls under a burst. `/metrics` serves the last parsed
 so scrapes never reach the gateway. It has to run on the gateway's LAN.
 
 ```bash
-ATT_GATEWAY_URL=http://192.168.1.254 bazel run //att_gateway:exporter_image_bin
+ATT_GATEWAY_URL=http://192.168.1.254 bb run //att_gateway:exporter_image_bin
 curl -s localhost:9173/metrics | grep '^att_gateway_'
 ```
 
