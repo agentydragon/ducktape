@@ -44,6 +44,10 @@ cannot land on its own. Plan any reorder before changing membership, preserving
 incremental diffs and verifying branch bases and checks afterward. The REST
 `unstack` operation removes all removable unmerged layers, not a chosen suffix;
 queued layers can remain. The add endpoint only appends at the top.
+Before pushing reordered heads, retarget PR bases so a PR's head does not become
+an ancestor of its old base: GitHub can otherwise mark the PR merged into that
+feature branch even though its changes have not reached trunk. If that happens,
+verify the trunk and recover the unlanded changes in a replacement PR.
 
 Every layer inherits the trunk's protections and required checks; GitHub Actions
 branch filters also use the stack trunk. Review each layer's incremental diff.
