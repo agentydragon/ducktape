@@ -46,6 +46,7 @@ py_library(
         "//agentplane/history_service/fold:__pkg__",
         "//agentplane/runner_gateway:__pkg__",
         "//agentplane/testing:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],
     deps = [
