@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request IntentRequest, prepare requestPreparation, policy *ProviderAttemptPolicy) (string, []byte, error) {
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentPayload, prepare requestPreparation, policy *ProviderAttemptPolicy) (string, []byte, error) {
 	kind := request.Kind
 	if !kind.valid() || kind == PendingIntentCompaction {
 		return "", nil, protocol.ErrInvalid
@@ -240,7 +240,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentRequest, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy) (string, []byte, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentPayload, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy) (string, []byte, error) {
 	if request.Kind != PendingIntentCompaction || policy.validate() != nil {
 		return "", nil, protocol.ErrInvalid
 	}
@@ -531,7 +531,7 @@ func intentFor(ctx context.Context, tx *sql.Tx, id string) (*Intent, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := decodeIntentRequest(request)
+	decoded, err := decodeIntentPayload(request)
 	if err != nil {
 		return nil, err
 	}
@@ -539,25 +539,25 @@ func intentFor(ctx context.Context, tx *sql.Tx, id string) (*Intent, error) {
 	return &intent, nil
 }
 
-// storedIntentRequest is the part of a stored intent request the store reads, whatever its kind.
-type storedIntentRequest struct {
+// storedIntentPayload is the subset of an intent's stored input the store reads, whatever its kind.
+type storedIntentPayload struct {
 	Kind IntentKind `json:"kind"`
 	Call *struct {
 		CallID string `json:"call_id"`
 	} `json:"call"`
 }
 
-func (request storedIntentRequest) callID() string {
+func (request storedIntentPayload) callID() string {
 	if request.Call == nil {
 		return ""
 	}
 	return request.Call.CallID
 }
 
-func decodeIntentRequest(raw []byte) (storedIntentRequest, error) {
-	var request storedIntentRequest
+func decodeIntentPayload(raw []byte) (storedIntentPayload, error) {
+	var request storedIntentPayload
 	if err := json.Unmarshal(raw, &request); err != nil {
-		return request, fmt.Errorf("decode stored intent request: %w", err)
+		return request, fmt.Errorf("decode stored intent payload: %w", err)
 	}
 	return request, nil
 }

@@ -141,7 +141,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			}
 			content := []protocol.ContentPart{{Type: "input_text", Text: unsupportedToolCallMessage(*call)}}
 			notDispatched := false
-			intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil, nil)
+			intentID, _, err := r.store.Begin(ctx, owner, IntentPayload{Kind: PendingIntentCell, Call: call, Dispatched: &notDispatched}, nil, nil)
 			if err != nil {
 				return "", err
 			}
@@ -157,7 +157,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 		if live == nil {
 			return "", &protocol.KnownFailureError{Evidence: map[string]any{"reason": "pending code cell has no live host", "call": call}}
 		}
-		intentID, _, err := r.store.Begin(ctx, owner, IntentRequest{Kind: PendingIntentCell, Call: call}, nil, nil)
+		intentID, _, err := r.store.Begin(ctx, owner, IntentPayload{Kind: PendingIntentCell, Call: call}, nil, nil)
 		if err != nil {
 			return "", err
 		}

@@ -191,9 +191,9 @@ type Session struct {
 	BlockedReason     *string
 }
 
-// IntentRequest is the stored request of a pending intent. Nested effects (RecordNested) keep
+// IntentPayload is the stored input of a pending intent. Nested effects (RecordNested) keep
 // opaque protocol payloads and are not described by it.
-type IntentRequest struct {
+type IntentPayload struct {
 	Kind PendingIntentKind `json:"kind"`
 	// Call is set for cell intents.
 	Call *protocol.ToolInvocation `json:"call,omitempty"`
@@ -444,7 +444,7 @@ var (
 )
 
 // Dispatch evidence exposes the authorized execution handle, not private content IDs.
-func (request IntentRequest) dispatchEvidence(id string) any {
+func (request IntentPayload) dispatchEvidence(id string) any {
 	if request.ProviderRequest == nil {
 		return request
 	}
