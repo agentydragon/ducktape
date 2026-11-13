@@ -586,6 +586,8 @@ This report works with `--ownership-subset` without `--graphs`; it is a planning
 aid, not proof that extracting a group or batch passes the gate. Select chunks
 with `--full-report-chunk` or Bazel `full_report_chunks`, and request it through
 Bazel with `full_reports = ["residual-atomic-groups"]`.
+Entry import and export declaration units may appear in this inventory as
+scaffolding; their presence does not suggest moving them out of the entry.
 
 `debundle run --full-report export-reentry` writes the original complete
 export-reentry schema as compact `export_reentry.full.json`. The default
