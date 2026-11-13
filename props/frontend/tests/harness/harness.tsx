@@ -25,7 +25,7 @@ import { definitionData } from "./fixtures/definition";
 import { critiqueIssues, fileContent, fps, gradingEdges, tps } from "./fixtures/files";
 import { llmAnthropicRequests, llmChatRequests, llmRequests } from "./fixtures/llm_requests";
 import { criticRunDetail, runs } from "./fixtures/runs";
-import { fileTree, snapshotDetail } from "./fixtures/snapshot";
+import { fileTree, snapshotClusters, snapshotDetail } from "./fixtures/snapshot";
 import { RunModalContext } from "../../src/lib/runModalContext";
 import { createPropsQueryClient } from "../../src/lib/queryClient";
 import {
@@ -181,6 +181,17 @@ const pages: Record<string, ScenarioPage> = {
       slug: "vuln-app-v1",
       initialSnapshot: snapshotDetail,
       initialTree: fileTree,
+    },
+  },
+
+  // Snapshot clusters, with a member run link for the shared ID presentation.
+  SnapshotDetailClusterRunLink: {
+    component: SnapshotDetailPage,
+    props: {
+      slug: "vuln-app-v1",
+      initialSnapshot: snapshotDetail,
+      initialTree: fileTree,
+      initialClusters: snapshotClusters,
     },
   },
 };

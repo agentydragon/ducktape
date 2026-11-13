@@ -47,6 +47,23 @@ export const snapshotDetail = {
   ],
 };
 
+export const snapshotClusters = {
+  clusters: [
+    {
+      cluster_id: "hashing-issues",
+      rationale: "This issue concerns unsafe password hashing.",
+      members: [
+        {
+          critique_run_id: "12345678-90ab-cdef-1234-567890abcdef",
+          critique_issue_id: "weak-hash-algorithm",
+          rationale: "The report identifies the use of MD5.",
+          issue_rationale: "MD5 is not suitable for password hashing.",
+        },
+      ],
+    },
+  ],
+};
+
 export const fileTree = {
   tree: [
     {
