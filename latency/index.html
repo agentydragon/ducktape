@@ -65,6 +65,7 @@
         Title,
       } from "@mantine/core";
       import { BarChart, LineChart } from "@mantine/charts";
+      import { CiLanes } from "../ci-lanes.js";
       import { html, mount, ManifestStamp } from "../report.js";
       import { ResourceFollowup } from "./resource-followup.js";
       const response = await fetch("./evidence.json");
@@ -129,7 +130,7 @@
           id="reliability-dispatch"
           gap="md"
         >
-          <${Title} order=${2}>Priority 1: VM and browser reliability<//>
+          <${Title} order=${2}>Earlier Nov 10–12 backend rerun audit<//>
           <${Text}
             >22 of 102 green production-backend heads needed multiple Bazel
             attempts. Those heads account for 47.5% of summed feedback time:
@@ -259,9 +260,10 @@
                 delivery are outside this clock.<//
               >
             </header>
+            <${CiLanes} data=${evidence.dispatch10} />
             <${Paper} component="section" id="latest-graph" withBorder p="lg">
               <${Stack} gap="sm">
-                <${Title} order=${2}>Latest selected graph experiments<//>
+                <${Title} order=${2}>Earlier selected graph experiments<//>
                 <${Text} size="sm" c="dimmed"
                   >${`Supplement reviewed ${recent.reviewed_at_utc}; selected physical runs on 13 November UTC. The cohort distributions above retain their original windows and source revisions.`}<//
                 >
@@ -935,7 +937,7 @@
               >
             </section>
             <section id="options">
-              <${Title} order=${2}>Interventions and architectural options<//
+              <${Title} order=${2}>Earlier options and current dispositions<//
               ><${Text} my="sm"
                 >The prior four-minute mean system-feedback objective remains
                 unmet. The current action graph needs several paths shortened;
@@ -952,8 +954,8 @@
                 [
                   [
                     "1 · test infrastructure",
-                    "Finish the per-suite environment-tools image split in PR #15214. Codex-only suites do not need Claude, git or kubectl layers; keep each suite’s real tools and integration assertions.",
-                    "Open implementation, not a new duplicate proposal. Published layer reductions are byte savings, not latency. Measure same-source physical cold/warm imports and the last required gate; benefit can be zero on a warm cache. No idle infrastructure cost.",
+                    "Keep per-suite environment-tools image split PR #15214 held pending measured savings. Codex-only suites do not need Claude, git or kubectl layers; keep each suite’s real tools and integration assertions.",
+                    "Open and explicitly held; the ten-lane program above supersedes this earlier priority order. Published layer reductions are byte savings, not latency. Measure same-source physical cold/warm imports and the last required gate; benefit can be zero on a warm cache. No idle infrastructure cost.",
                   ],
                   [
                     "2 · K3s fixture lifecycle",

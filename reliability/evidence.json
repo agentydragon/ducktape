@@ -1506,7 +1506,7 @@
         "diagnosis": "The first failure was correctly retained despite guest service restart; the brittle bound was already replaced in #15878."
       }
     ],
-    "deferred": "The user selected only VM/browser reliability work. Executor/result recovery, image split #15214, KVM and larger graph changes remain outside this dispatch. Their earlier evidence and limitations remain below.",
+    "deferred": "This earlier selected dispatch has been superseded by the ten authorized lanes above. Its original cohort and failed-attempt evidence retain their original window; new experiments and future measurements are tracked in the ten-lane issues.",
     "pod_split_disposition": {
       "status": "Do not enable the tested TLS-only split in required CI",
       "source_url": "https://github.com/agentydragon/ducktape/blob/93f2ba8eeff36265d6e7887836b615c39b4ad985/devinfra/ci/debug/pod_split_controlled_experiment.md",
@@ -1570,5 +1570,2752 @@
       "source_pr_url": "https://github.com/agentydragon/ducktape/pull/15976",
       "limits": "Selected graph, one control/candidate pair; no failure-rate inference."
     }
+  },
+  "dispatch10": {
+    "observed_at_utc": "2026-11-13T03:47:21.763839+00:00",
+    "source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+    "summary": "All ten authorized lanes have bounded experiment results, narrow PRs or an explicit evidence boundary, and an open issue for the next measurement. The warm import trial reduced setup by 14.776s; no experiment establishes an end-to-end required-CI saving yet. Merged diagnostics and the browser test repair need post-change physical exposure before a reliability improvement can be claimed.",
+    "guardrails": "Image split #15214 remains held pending its own measured saving. The two-way Pod partition remains manual: its measured pair duplicated setup and VM remained last. Do not add gains from independent experiments. Required feedback, selected-graph wall time, process time, requested capacity, input bytes and observed CPU remain separate measures. No timeout increases, blanket retries or reduced required coverage were used. Follow-up windows are tracked work, not a configured monitoring schedule.",
+    "lanes": [
+      {
+        "id": 1,
+        "title": "Recover completed RBE results after execution-stream loss",
+        "issue_number": 16025,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16025",
+        "status": "Recovery control complete; diagnostic PR open",
+        "observed": "Native Bazel recovered one injected gRPC INTERNAL after its first Operation using one Execute and one same-ID WaitExecution. Two interruptions exhausted remote_retries=1: one physical test passed, but Bazel exited 34 with no TestResult. This is a sufficient false-red mechanism, not proof of the natural RST_STREAM cause.",
+        "measurement": "Next natural false-red: private narrowly enabled native remote_grpc_log; summarize first Operation, Execute/WaitExecution statuses and retry consumption, correlate exact provider operation. Separate Wait-only retry budget is an upstream candidate requiring cancellation/Execute replay controls.",
+        "acceptance": "Capture the native Execute/WaitExecution sequence and inject a transport reset after the first accepted Operation. Verify recovery of the original result, one physical execution, a native TestResult, and cancellation behavior. Correlate provider/proxy traces where available. Keep remote_retries=1 until cancellation safety is demonstrated; keep raw RPC metadata private.",
+        "prs": [
+          {
+            "label": "PR #16041: open; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16041",
+            "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+            "state": "OPEN",
+            "draft": false,
+            "merged_at_utc": null,
+            "merge_commit": null,
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131662517482,
+                "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357373985/job/131662517482",
+                "completed_at": "2026-11-13T03:14:24Z"
+              },
+              "Pre-commit checks": {
+                "id": 131662517233,
+                "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357373996/job/131662517233",
+                "completed_at": "2026-11-13T03:13:41Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131662517368,
+                "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357374000/job/131662517368",
+                "completed_at": "2026-11-13T03:13:50Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "devinfra/buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/23ebb5c947b3ec426366ecd3833b660325e664da/devinfra/buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Validate KVM placement for required Agentplane VM CI",
+        "issue_number": 16026,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16026",
+        "status": "Capacity evidence merged; routing unchanged",
+        "observed": "Seven physical actions / 31 JUnit cases passed. Four KVM actions shared three registered slots; the fourth queued 215.314s and finished 66.668s after the managed VM. Pod finished last, giving zero VM-only fixed-clock headroom. The newer-source repeat is not a matched graph.",
+        "measurement": "Run at least three bounded bursts, each equivalent to four concurrent PRs, on literal source pins. Include one after natural scale-down to one registered worker; observe all required GitHub gates and isolation.",
+        "acceptance": "Repeat matched cold/warm selected graphs and bounded concurrent admission on the existing pool, recording routing, compatible healthy/busy capacity, queue clocks, source/CAS identity, cleanup and all ordinary VM cases. Obtain actual required-check feedback on the experiment PR. Propose required routing only when complete feedback and capacity evidence support it.",
+        "prs": [
+          {
+            "label": "PR #16056: merged; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16056",
+            "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+            "state": "MERGED",
+            "draft": false,
+            "merged_at_utc": "2026-11-13T03:30:45Z",
+            "merge_commit": "136394685fe566f27d377be340736de250b01eb1",
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131668042360,
+                "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359086128/job/131668042360",
+                "completed_at": "2026-11-13T03:29:26Z"
+              },
+              "Pre-commit checks": {
+                "id": 131668040277,
+                "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359085717/job/131668040277",
+                "completed_at": "2026-11-13T03:28:29Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131668040645,
+                "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359085753/job/131668040645",
+                "completed_at": "2026-11-13T03:28:49Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/system_tests/debug/vm_kvm_capacity_burst_2026_11_12.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/e65c0789deb78c183a047d94da2c3d84e0df0ac6/agentplane/system_tests/debug/vm_kvm_capacity_burst_2026_11_12.md"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Eliminate avoidable cold Agentplane system-test baseline rebuilds",
+        "issue_number": 16027,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16027",
+        "status": "Reason diagnostic merged; cache repair unproven",
+        "observed": "The 12-head census found 36 target opportunities: 18 absent, three unavailable, three cached and 12 fresh suite outcomes, with 15 unique physical IDs. Six of 12 fresh baselines were cold; all cleaned up. Old artifacts did not record why. The merged span records reuse/rebuild reasons without retaining extra mutable state.",
+        "measurement": "Collect seven complete UTC days or the first 50 fresh retained-suite outcomes, whichever is later. Keep cached, failed and missing outcomes separate; group by backend, worker, compatibility key, fingerprint and rebuild reason.",
+        "acceptance": "Measure natural cold/warm exposure, baseline fingerprints and explicit rebuild reasons. Repair avoidable compatibility-key or retention misses supported by evidence. Preserve fresh namespace, database, root/credentials and workspace identities with certified cleanup. Evaluate probe cadence only with full-case and CPU evidence.",
+        "prs": [
+          {
+            "label": "PR #16042: merged; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16042",
+            "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+            "state": "MERGED",
+            "draft": false,
+            "merged_at_utc": "2026-11-13T03:27:02Z",
+            "merge_commit": "7e826d2ddc797c043d15ed4d340240b9ba2fde9c",
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131664552540,
+                "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358007190/job/131664552540",
+                "completed_at": "2026-11-13T03:26:50Z"
+              },
+              "Pre-commit checks": {
+                "id": 131664551690,
+                "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358007163/job/131664551690",
+                "completed_at": "2026-11-13T03:19:02Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131664552404,
+                "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358007279/job/131664552404",
+                "completed_at": "2026-11-13T03:19:02Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/system_tests/debug/baseline_reuse_census_2026_11_12.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af/agentplane/system_tests/debug/baseline_reuse_census_2026_11_12.md"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Skip unchanged OCI imports only when the image is usable",
+        "issue_number": 16028,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16028",
+        "status": "Usability guard and warm trial pass; draft PR",
+        "observed": "Nine real native usability guard cases passed. Same-worker warm ABBA setup averaged 46.992s control versus 32.216s candidate, 14.776s shorter. Both selected graphs passed the identical 27 cases. Their 458.570s / 472.642s Bazel times are not causal evidence: VM root-image inputs differed and order/cache exposure were unmatched.",
+        "measurement": "Keep issue #16028 open. Within seven days after merge or on the next naturally selected backend head, compare matched warm/cold complete graphs and exact-head required gates. Record source/CAS and cache identities, native phases, CPU, peak memory and capacity. Resolve the VM generated-root input mismatch before comparing VM results.",
+        "acceptance": "Implement or experimentally reject an import fast path guarded by exact manifest target, correct-platform unpacked filesystem and CRI pin. Exercise same tag/new digest, missing unpack/pin, GC, restart and later Sandbox use. Measure counterbalanced warm/cold lifecycle and selected-graph behavior; source blobs alone are insufficient.",
+        "prs": [
+          {
+            "label": "PR #16040: open draft; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16040",
+            "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+            "state": "OPEN",
+            "draft": true,
+            "merged_at_utc": null,
+            "merge_commit": null,
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131670976073,
+                "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43360004931/job/131670976073",
+                "completed_at": null
+              },
+              "Pre-commit checks": {
+                "id": 131670975033,
+                "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43360004745/job/131670975033",
+                "completed_at": "2026-11-13T03:36:51Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131670975129,
+                "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43360004744/job/131670975129",
+                "completed_at": "2026-11-13T03:37:05Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:47:21.763839+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/system_tests/debug/usable_import_transactions_2026_11_12.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/200b42f1b9ea8719502e62d0fa00a48b4e774ad7/agentplane/system_tests/debug/usable_import_transactions_2026_11_12.md"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Shorten MCP Actions execution with isolated case resources",
+        "issue_number": 16029,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16029",
+        "status": "Case overlap measured; no action saving",
+        "observed": "All five real MCP cases passed in each source-matched ABBA arm. Mean case envelope fell from 112.336s to 96.833s, but whole action grew from 254.348s to 265.866s and CPU also rose. Baselines were warm/warm/warm/cold across different workers. Five peak Sandboxes exactly fit the existing cap; no action, compute or CI win is established.",
+        "measurement": "After adoption, collect seven complete UTC days or the first 50 fresh MCP executions, whichever is later. Compare case execution, setup, CPU, scheduling and the last required gate, with cache, retry, baseline-state and tested-source groups kept separate.",
+        "acceptance": "Use existing spans to identify the binding phase. Test case-owned OAuth linkage/resources to overlap independent variants, preserving actual login/linkage/tool behavior, the Sandbox cap, cleanup and unique identities. Compare full selected graphs and required CI rather than raising concurrency blindly.",
+        "prs": [
+          {
+            "label": "PR #16038: open; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16038",
+            "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+            "state": "OPEN",
+            "draft": false,
+            "merged_at_utc": null,
+            "merge_commit": null,
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131669984631,
+                "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359689299/job/131669984631",
+                "completed_at": null
+              },
+              "Pre-commit checks": {
+                "id": 131669984812,
+                "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359689340/job/131669984812",
+                "completed_at": "2026-11-13T03:33:58Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131669984365,
+                "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359689297/job/131669984365",
+                "completed_at": "2026-11-13T03:34:17Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:47:21.763839+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/system_tests/debug/mcp_case_overlap_2026_11_12.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/d2d5fb4759a6e8f95304c7d79f502428082f8e4b/agentplane/system_tests/debug/mcp_case_overlap_2026_11_12.md"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Test read-only harness artifact mounts to avoid OCI unpacking",
+        "issue_number": 16030,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16030",
+        "status": "Real mount feasibility passed; manual draft PR",
+        "observed": "Claude and Codex each completed instructed and plain turns in fresh Sandboxes with 44 read-only native artifact mounts and fresh writable homes; cleanup passed. Declared inputs total 914,451,230 bytes versus 914,498,274 packaged, only 47,044 bytes less. One unmatched pair observed less unpack/setup work, but no meaningful input-byte saving or causal CI gain.",
+        "measurement": "Keep issue #16030 open. On the next relevant backend head or within seven days of the feasibility pass, compare counterbalanced complete Pod/MCP/VM graphs while retaining real packaged-image boot coverage. Match source/CAS and cache exposure; measure required gates, per-Sandbox mounts, lazy artifact reads and resource cost.",
+        "acceptance": "Build a manual real-runtime experiment using pinned declared artifacts, exact paths and executable permissions, fresh writable homes/state and existing isolation. Retain a required real image packaging/boot path. Include RBE input transfer and complete setup/case/cleanup costs; reject the design if those costs or boundary constraints defeat it.",
+        "prs": [
+          {
+            "label": "PR #16047: open draft; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16047",
+            "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+            "state": "OPEN",
+            "draft": true,
+            "merged_at_utc": null,
+            "merge_commit": null,
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131669954427,
+                "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359679809/job/131669954427",
+                "completed_at": null
+              },
+              "Pre-commit checks": {
+                "id": 131669952131,
+                "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359679601/job/131669952131",
+                "completed_at": "2026-11-13T03:34:04Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131669952437,
+                "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359679658/job/131669952437",
+                "completed_at": "2026-11-13T03:34:04Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:47:21.763839+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/system_tests/debug/harness_artifact_mounts_2026_11_12.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/940e9abc3c7ef1f5e4d69d47a5666113d588c7a4/agentplane/system_tests/debug/harness_artifact_mounts_2026_11_12.md"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Diagnose and repair silent progress loss in VM CI guests",
+        "issue_number": 16031,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16031",
+        "status": "New QEMU crash classified; original stall unresolved",
+        "observed": "A fresh natural failure aborted QEMU at guest uptime 1.773s with an iotlb_to_section assertion; replacement scenario passed but original shutdown receipt was missing. Separate issue #16057 tracks the crash. Two fresh VM passes used three physical actions because one provider pause failed. The original 300s admitted-turn stall did not recur; late live triggers remain unexercised.",
+        "measurement": "On the next admitted-turn stall, correlate live samples at 210 and 240 seconds for the same Sandbox UID with Runtime history and independent serial output before cleanup. Review seven days of non-cached physical exposure; the original stall remains open.",
+        "acceptance": "Inspect new physical failure artifacts and a comparable pass; attempt a bounded faithful reproduction. Trace the first blocked native operation and repair an established mechanism with a regression. If lifecycle ownership is implicated, map shutdown/reconciliation and simplify one race-tested path. Do not raise timeouts for a wedge.",
+        "prs": [
+          {
+            "label": "PR #16055: merged; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16055",
+            "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+            "state": "MERGED",
+            "draft": false,
+            "merged_at_utc": "2026-11-13T03:29:55Z",
+            "merge_commit": "30bb39d37c0df29156f6c0be1d14f525ae87482d",
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131667812908,
+                "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359012438/job/131667812908",
+                "completed_at": "2026-11-13T03:28:49Z"
+              },
+              "Pre-commit checks": {
+                "id": 131667812378,
+                "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359012394/job/131667812378",
+                "completed_at": "2026-11-13T03:28:13Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131667812637,
+                "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359012535/job/131667812637",
+                "completed_at": "2026-11-13T03:28:20Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/system_tests/debug/vm_guest_progress_and_host_crashes_2026_11_12.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/f71380106f49a413545238029ad63f228ad488c4/agentplane/system_tests/debug/vm_guest_progress_and_host_crashes_2026_11_12.md"
+          },
+          {
+            "label": "Separate inner-QEMU crash: issue #16057",
+            "url": "https://github.com/agentydragon/ducktape/issues/16057"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Diagnose and repair browser login fixture stalls",
+        "issue_number": 16032,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16032",
+        "status": "Controlled auth timeout localized; natural cause open",
+        "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+        "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
+        "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+        "prs": [
+          {
+            "label": "PR #16053: merged; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16053",
+            "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+            "state": "MERGED",
+            "draft": false,
+            "merged_at_utc": "2026-11-13T03:29:38Z",
+            "merge_commit": "74240dc86f74717db31af280609dc48deb68dc0e",
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131666999075,
+                "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358762792/job/131666999075",
+                "completed_at": "2026-11-13T03:26:38Z"
+              },
+              "Pre-commit checks": {
+                "id": 131666997694,
+                "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358762540/job/131666997694",
+                "completed_at": "2026-11-13T03:25:48Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131666998383,
+                "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358762612/job/131666998383",
+                "completed_at": "2026-11-13T03:26:05Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/b401f68823861116ce1e54f512e079c23ade5307/agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Locate and repair browser history projection lag",
+        "issue_number": 16033,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16033",
+        "status": "Route-lifetime repair and evidence retention merged",
+        "observed": "New natural failure had committed/direct/fresh Electric cursor 334 versus DOM 264; its final live GET began 2.298ms after last-route removal. The repair retains the released route until page cleanup and fixes binary-telemetry request classification. Final candidate passed ten fresh physical stream cases, preserving cursor/anchor/draft assertions. Natural recurrence reduction remains unmeasured.",
+        "measurement": "Seven days of post-change physical exposure and next natural failure: final request compared with port-specific ingress and Chromium timing; upstream admission determines next owner.",
+        "acceptance": "Correlate committed/direct view, fresh Electric snapshot, browser stream/CDP and DOM cursor on fresh failures. Use the first divergent boundary for a deterministic regression and repair while retaining real streaming integration. Preserve immutable per-attempt artifacts so later diagnostics cannot overwrite the causal evidence.",
+        "prs": [
+          {
+            "label": "PR #16045: merged; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16045",
+            "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+            "state": "MERGED",
+            "draft": false,
+            "merged_at_utc": "2026-11-13T03:19:39Z",
+            "merge_commit": "917d58fa555b35f355992ed9798182b9758c6a18",
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131663500634,
+                "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357678789/job/131663500634",
+                "completed_at": "2026-11-13T03:19:19Z"
+              },
+              "Pre-commit checks": {
+                "id": 131663499849,
+                "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357678686/job/131663499849",
+                "completed_at": "2026-11-13T03:16:09Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131663499915,
+                "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357678773/job/131663499915",
+                "completed_at": "2026-11-13T03:16:31Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          },
+          {
+            "label": "PR #16051: merged; all three required checks green",
+            "url": "https://github.com/agentydragon/ducktape/pull/16051",
+            "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+            "state": "MERGED",
+            "draft": false,
+            "merged_at_utc": "2026-11-13T03:34:11Z",
+            "merge_commit": "e22a7434e4cc88de822f5ba696f2f66025dfd199",
+            "required_checks": {
+              "bazel-ci / Test & Build": {
+                "id": 131668961493,
+                "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+                "name": "bazel-ci / Test & Build",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359363781/job/131668961493",
+                "completed_at": "2026-11-13T03:34:03Z"
+              },
+              "Pre-commit checks": {
+                "id": 131668961584,
+                "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+                "name": "Pre-commit checks",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359363878/job/131668961584",
+                "completed_at": "2026-11-13T03:31:08Z"
+              },
+              "Build artifacts + imports check": {
+                "id": 131668961178,
+                "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+                "name": "Build artifacts + imports check",
+                "status": "completed",
+                "conclusion": "success",
+                "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359363650/job/131668961178",
+                "completed_at": "2026-11-13T03:31:29Z"
+              }
+            },
+            "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+          }
+        ],
+        "evidence_links": [
+          {
+            "label": "agentplane/app/debug/2026_11_12_thread_window_projection_gap.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/db110c1d13814e6d8852ec930e7bf940de599357/agentplane/app/debug/2026_11_12_thread_window_projection_gap.md"
+          },
+          {
+            "label": "agentplane/app/debug/2026_11_12_thread_window_projection_gap.md",
+            "url": "https://github.com/agentydragon/ducktape/blob/57a401ef6ae8b092c943324895c288dee997656f/agentplane/app/debug/2026_11_12_thread_window_projection_gap.md"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Refresh backend CI cohort and publish ten-lane follow-up measurements",
+        "issue_number": 16034,
+        "issue_url": "https://github.com/agentydragon/ducktape/issues/16034",
+        "status": "Fresh cohort and both reports prepared",
+        "observed": "159 latest devel-base backend heads include 129 production heads: 124 green, four failed, one cancelled. Green feedback mean is 13m36s, median 11m27s, p90 23m38s. All 24 repeated green heads had earlier failed Bazel checks and account for 43.1% of summed head feedback. This pre-dispatch baseline is not an attributed improvement.",
+        "measurement": "After the dispatched changes land, collect seven complete UTC days (extend sparse lane samples to their stated thresholds), keeping cached, missing, cancelled and failed outcomes separate. Recompute exact-head required feedback and fresh physical failure exposure against this pre-dispatch baseline; link the report PR and each result in issue #16034.",
+        "acceptance": "Refresh paginated backend PR-head required-check feedback and reliability exposure; verify current rules, tested merge provenance, native outcomes and repeat attempts. Publish reviewed latency/reliability reports through a gh-pages PR with rendered desktop/mobile/light/dark validation and links to all lane tracking issues.",
+        "prs": [],
+        "evidence_links": [
+          {
+            "label": "Complete fresh cohort and selected provenance",
+            "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
+          },
+          {
+            "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
+            "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
+          }
+        ]
+      }
+    ],
+    "experiments": {
+      "reliability": {
+        "scope": "Selected reliability lanes 1,7,8,9; controlled experiments and exact natural failures, not a recollected repository flake-rate cohort. All remote logs retained privately; no accepted action resubmitted for result recovery.",
+        "reviewed_at_utc": "2026-11-13T03:35:19.337095+00:00",
+        "lanes": {
+          "1": {
+            "issue": "https://github.com/agentydragon/ducktape/issues/16025",
+            "prs": [16041],
+            "status": "Controlled sufficient mechanism established; natural incident RPC sequence remains unknown.",
+            "finding": "Native Bazel9.2.0 already changes Execute to same-ID WaitExecution after first Operation. One post-Operation INTERNAL reset recovers at remote_retries=1. Two reset controls exhaust the budget with Exit34/no TestResult while physical action passes.",
+            "controls": [
+              {
+                "invocation": "fef8a50b-86bc-4c73-82a4-212fbf9c9bb9",
+                "interruptions": 1,
+                "execute_calls": 1,
+                "wait_execution_calls": 1,
+                "physical_test_actions": 1,
+                "junit_cases": 1,
+                "junit_failures": 0,
+                "native_gate": "PASSED"
+              },
+              {
+                "invocation": "1a459975-abdb-4670-bed6-378beeb40d40",
+                "interruptions": 2,
+                "execute_calls": 1,
+                "wait_execution_calls": 1,
+                "physical_test_actions": 1,
+                "junit_cases": 1,
+                "junit_failures": 0,
+                "native_gate": "Exit34/no TestResult",
+                "read_only_recovery": "same exact execution ID; result present, default status0/exit0"
+              }
+            ],
+            "validation": "bbr build final72d7d8d0 succeeded; download collision with running executable recovered read-only. Pre-commit passed.",
+            "limits": [
+              "gRPC INTERNAL status injection, not a literal HTTP/2 RST_STREAM.",
+              "No original native RPC log; two resets not established for PR15995.",
+              "Raw native gRPC logs are private mode0600; only reviewed operation/status/counts published.",
+              "No global retry increase or wrapper-produced green gate."
+            ],
+            "next_trigger": "Next natural false-red: private narrowly enabled native remote_grpc_log; summarize first Operation, Execute/WaitExecution statuses and retry consumption, correlate exact provider operation. Separate Wait-only retry budget is an upstream candidate requiring cancellation/Execute replay controls.",
+            "note": "devinfra/buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md"
+          },
+          "7": {
+            "issue": "https://github.com/agentydragon/ducktape/issues/16031",
+            "prs": [16055],
+            "status": "Historical admitted-turn stall remains unexplained; fresh natural failure classified as QEMU crash.",
+            "natural_failure": {
+              "invocation": "fe172529-66fa-5a0f-bbe1-bab5f5372d6a",
+              "source": "2faec465369c1033303dac05740c840229248c45",
+              "cause_observed": "QEMU system/physmem.c:758 iotlb_to_section assertion section_index<d->map.sections_nb; native reason=crashed.",
+              "guest_last_uptime_s": 1.772752,
+              "serial_last_utc": "2026-11-13T02:11:53.071289117Z",
+              "qemu_shutdown_utc": "2026-11-13T02:11:53.222Z",
+              "scenario": "passed on replacement",
+              "teardown": "failed missing shutdown receipt from crashed original incarnation",
+              "host_report": "02:14:22 UTC scan after Pod disappeared; cannot establish live guest state",
+              "known_inputs": {
+                "qemu": "10.1.0-10.el9",
+                "libvirt": "11.9.0-1.el9",
+                "machine": "pc-q35-rhel9.8.0",
+                "acceleration": "tcg",
+                "vcpus": 2,
+                "memory_kib": 1572864
+              },
+              "missing_discriminator": "Native QEMU crash backtrace/core and immutable image identities tied to exact crashed incarnation; invocation/version/CPU/machine already retained."
+            },
+            "exposure": {
+              "invocation": "ceafbc7e-36fa-4539-b686-5bcb2b9a9600",
+              "requested_runs": 2,
+              "completed_passed_runs": 2,
+              "cached": 0,
+              "physical_test_runner_ids": 3,
+              "provider_failure_ids": 1,
+              "provider_failure": "UNAVAILABLE pausing outer Firecracker: fc.sock connection refused after138.841s of worker execution; no completed VM testcase proof.",
+              "guest_shutdown_complete_receipts": 4,
+              "turn_wait_spans": 12,
+              "turn_wait_range_s": [2.633763, 33.212003]
+            },
+            "limits": [
+              "No recurrence of 300-second admitted-turn stall.",
+              "210/240-second live sample trigger not exercised by passes.",
+              "Do not conflate original stall, early QEMU abort, historical kernel GPF/TSC restore failure or outer provider pause failure.",
+              "Ownership mapped; no actual shutdown ownership race established, no speculative simplification or timeout bump."
+            ],
+            "next_trigger": "Next admitted-turn recurrence: correlate same SandboxUID210/240s live samples with Runtime/native history and independent serial before cleanup. Review seven days of non-cached physical exposure; no monitoring schedule claimed.",
+            "note": "agentplane/system_tests/debug/vm_guest_progress_and_host_crashes_2026_11_12.md",
+            "separate_inner_qemu_issue": "https://github.com/agentydragon/ducktape/issues/16057"
+          },
+          "8": {
+            "issue": "https://github.com/agentydragon/ducktape/issues/16032",
+            "prs": [16053],
+            "status": "Existing phases localize faithful controlled discovery timeout; natural historical cause unknown.",
+            "fresh_exposure": {
+              "invocation": "937eaae6-3988-4d8a-bede-7730610d1a9a",
+              "passed_cases": 3,
+              "remote_runs": 3,
+              "cached": 0,
+              "physical_test_runner_ids": 3,
+              "successful_auth_exchanges": 6,
+              "client_exchange_range_ms": [40.142, 131.082],
+              "go_discovery_range_ms": [9.473, 99.5]
+            },
+            "controlled_fault": {
+              "invocation": "b87aacfa-6152-4481-bd99-308ccd3316c4",
+              "physical_test_runner_ids": 1,
+              "provider_discovery_hold_s": 5.25,
+              "expected_outcome": "httpx.ReadTimeout in actual AppProcess.authenticate before page interaction",
+              "client_request_to_failure_s": 5.002376139,
+              "client_phase": "/auth/login request then failed; no response headers",
+              "go_phases": "admitted,session_loaded,discovery_started; discovery_finished on client cancellation means returned, not successful.",
+              "provider_admitted_utc": "2026-11-13T03:18:23.654219392Z",
+              "provider_headers_utc": "2026-11-13T03:18:28.906263931Z",
+              "patch": "agentplane/app/debug/2026_11_12_auth_discovery_stall.patch",
+              "patch_in_normal_serving_code": false
+            },
+            "limits": [
+              "Not a natural discovery-stall reproduction or recurrence reduction.",
+              "Three selected cases are not 100-job full-CI exposure.",
+              "No retries, timeout increases or new generic tracing."
+            ],
+            "next_trigger": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
+            "note": "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md"
+          },
+          "9": {
+            "issue": "https://github.com/agentydragon/ducktape/issues/16033",
+            "prs": [16045, 16051],
+            "status": "Candidate merged; exact final head57a401ef6ae8b092c943324895c288dee997656f has all three required checks successful. Ten focused fresh physical stream attempts passed; natural elimination unmeasured.",
+            "natural_failure": {
+              "invocation": "c210960a-e5ab-5a68-9ab2-cf847b5b0052",
+              "source": "0a13d8cabfa551075af470e6660200708643a7bf",
+              "expected_cursor": 334,
+              "committed": 334,
+              "folded": 334,
+              "direct_view": 334,
+              "fresh_electric": 334,
+              "dom": 264,
+              "final_live_get": "no headers; send/wait/receive -1",
+              "last_route_removal_ms": 22934.97,
+              "final_live_get_ms": 22937.268,
+              "gap_ms": 2.298,
+              "cdp_zero_byte_artifact": "older SSE response7258.94, not the final attempted request",
+              "ingress_log": "overwritten by different fixture/port45213; failing page34817"
+            },
+            "candidate": "Keep released route until page cleanup, matching existing route_once/PR10094 historical Fetch.disable race. Scope pagination request classification to entity endpoint before UTF8 body access.",
+            "controls": [
+              {
+                "invocation": "007cd06a-44d3-4f33-814a-07f44a3796c8",
+                "kind": "unchanged baseline",
+                "passed_runs": 5,
+                "physical_test_runner_ids": 5,
+                "cached": 0
+              },
+              {
+                "invocation": "72b0f431-9644-4130-93da-3e7e2b422be6",
+                "kind": "per-instance ingress retention validation",
+                "passed_runs": 1,
+                "physical_test_runner_ids": 1,
+                "cached": 0,
+                "duration_s": 50.415
+              },
+              {
+                "invocation": "bda85d87-6eda-4425-aa29-f1251167693e",
+                "kind": "first route candidate",
+                "cursor_anchor_draft_passes": 10,
+                "whole_case_passes": 9,
+                "other_failures": 1,
+                "other_failure": "binary OTLP POST UTF8 decode in _older_page after all streaming assertions passed"
+              },
+              {
+                "invocation": "812209ce-3a6d-467b-a3d7-70c17adab038",
+                "kind": "exact binary telemetry exclusion and JSON entity matching regression",
+                "passed": true
+              },
+              {
+                "invocation": "a853f6ab-0978-426d-bdd2-7a35a97abe56",
+                "kind": "final route plus request-classification candidate",
+                "passed_runs": 10,
+                "physical_test_runner_ids": 10,
+                "cached": 0
+              }
+            ],
+            "limits": [
+              "Historical PR10094 mechanism plus timing make candidate concrete, not proof natural failure eliminated.",
+              "Real Electric/cursor/anchor/draft/one-shape coverage preserved.",
+              "No product/runtime, timeout or retry change.",
+              "Pending/SSE HAR HTTP1.1 entries lack negotiated protocol metadata, so they do not prove six-socket admission. Completed requests negotiated HTTP2."
+            ],
+            "next_trigger": "Seven days of post-change physical exposure and next natural failure: final request compared with port-specific ingress and Chromium timing; upstream admission determines next owner.",
+            "note": "agentplane/app/debug/2026_11_12_thread_window_projection_gap.md"
+          }
+        }
+      },
+      "vm_baseline_mcp": {
+        "reviewed_at_utc": "2026-11-13T03:35:00Z",
+        "lanes": [
+          {
+            "lane": 2,
+            "issue": 16026,
+            "pr": 16056,
+            "head": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+            "state": "MERGED",
+            "required_checks": "all three success at last read",
+            "source": "4415ac2544aef190cce5596d5ee2e73ba627b56f plus temporary matched-resource patch",
+            "burst_invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+            "burst_physical_test_actions": 7,
+            "burst_junit_cases": 31,
+            "kvm_physical_actions": 4,
+            "kvm_valid_fourth_queue_seconds": 215.314252,
+            "kvm_initial_queue_unknown": 3,
+            "kvm_fourth_process_seconds": 219.337985,
+            "managed_process_seconds": 365.654836,
+            "fourth_finishes_after_managed_seconds": 66.667658,
+            "selected_graph_vm_only_fixed_clock_saving_seconds": 0,
+            "repeat_source": "42e142053c685c792366bd47620d45fbe43513e8",
+            "repeat_is_matched_full_graph": false,
+            "recommendation": "Do not promote required routing; bounded burst exposes queue risk and Pod remains last",
+            "next_trigger": "At least three bounded four-PR-equivalent bursts on literal pins, including one after natural scale-down to one registered worker; all required GitHub gates and isolation observed",
+            "evidence": [
+              "burst-physical-summary.json",
+              "burst-kvm-metrics.json",
+              "vm-common-inputs.json",
+              "burst-acceleration.json"
+            ],
+            "merged_at": "2026-11-13T03:30:45Z",
+            "merge_commit": "136394685fe566f27d377be340736de250b01eb1",
+            "checks": [
+              {
+                "name": "bazel-ci / Test & Build",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:27:29Z",
+                "completedAt": "2026-11-13T03:29:26Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43359086128/job/131668042360"
+              },
+              {
+                "name": "Build artifacts + imports check",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:27:29Z",
+                "completedAt": "2026-11-13T03:28:49Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43359085753/job/131668040645"
+              },
+              {
+                "name": "Pre-commit checks",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:27:29Z",
+                "completedAt": "2026-11-13T03:28:29Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43359085717/job/131668040277"
+              }
+            ]
+          },
+          {
+            "lane": 3,
+            "issue": 16027,
+            "pr": 16042,
+            "head": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+            "state": "MERGED",
+            "merged_at": "2026-11-13T03:27:02Z",
+            "merge_commit": "7e826d2ddc797c043d15ed4d340240b9ba2fde9c",
+            "required_checks": "all three success",
+            "sample_heads": 12,
+            "sample_window_utc": [
+              "2026-11-12T22:27:48Z",
+              "2026-11-12T23:54:04Z"
+            ],
+            "counts": {
+              "absent_target": 18,
+              "fresh_suite_outcome": 12,
+              "cached_target": 3,
+              "unavailable_invocation_target_opportunities": 3
+            },
+            "fresh_suite_outcomes": 12,
+            "returned_unique_physical_ids": 15,
+            "cold_warm": {
+              "vm": [2, 1],
+              "pod": [1, 2],
+              "mcp_actions": [3, 3]
+            },
+            "recommendation": "Merged diagnostic only; identify cold reasons before retaining more mutable state",
+            "next_trigger": "Seven complete UTC days or first fifty fresh retained-suite outcomes if later; cache/failure/missing exposure separate; group backend/worker/key/fingerprint/reason",
+            "evidence": [
+              "baseline-census.json",
+              "baseline-provenance.json",
+              "baseline-exact-check-runs.json"
+            ],
+            "checks": [
+              {
+                "name": "bazel-ci / Test & Build",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:17:54Z",
+                "completedAt": "2026-11-13T03:26:50Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43358007190/job/131664552540"
+              },
+              {
+                "name": "Build artifacts + imports check",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:17:54Z",
+                "completedAt": "2026-11-13T03:19:02Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43358007279/job/131664552404"
+              },
+              {
+                "name": "Pre-commit checks",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:17:54Z",
+                "completedAt": "2026-11-13T03:19:02Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43358007163/job/131664551690"
+              }
+            ]
+          },
+          {
+            "lane": 5,
+            "issue": 16029,
+            "pr": 16038,
+            "head": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+            "state": "OPEN",
+            "draft": true,
+            "required_checks": "Bazel CI pending; pre-commit and artifact/import checks success on current head. Prior source head d3a16a55 all three success.",
+            "source_head_with_green_ci": "d3a16a55ce03945ccb8bd3099ce023d48009d118",
+            "required_test_invocation": "8fc46831-49f2-5de7-b099-3d12bd3493bd",
+            "required_test_fresh": true,
+            "abba_baselines": ["warm", "warm", "warm", "cold"],
+            "case_count_per_arm": 5,
+            "case_envelope_means_seconds": {
+              "control": 112.3362215,
+              "candidate": 96.8334975
+            },
+            "process_means_seconds": {
+              "control": 254.3482805,
+              "candidate": 265.8658125
+            },
+            "candidate_process_regression_seconds": 11.517532,
+            "cpu_means_seconds": {
+              "control": 723.7724835,
+              "candidate": 755.877059
+            },
+            "setup_means_seconds": {
+              "control": 85.467427,
+              "candidate": 111.119183
+            },
+            "excluded_newer_source_invocation": "3b6a56ab-9e98-4428-964c-4e9ef30b2ed3",
+            "recommendation": "Case-DAG improvement only; no action, compute or CI saving established",
+            "next_trigger": "After adoption seven complete UTC days or first fifty fresh MCP executions if later; compare case/setup/CPU/scheduling and exact-head last gate with cache/retry/state/source strata",
+            "evidence": [
+              "mcp-abba-summary.json",
+              "mcp-common-inputs.json",
+              "mcp-exact-check-runs.json"
+            ],
+            "merged_at": null,
+            "merge_commit": null,
+            "checks": [
+              {
+                "name": "bazel-ci / Test & Build",
+                "status": "IN_PROGRESS",
+                "conclusion": "",
+                "startedAt": "2026-11-13T03:32:55Z",
+                "completedAt": "0001-01-01T00:00:00Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43359689299/job/131669984631"
+              },
+              {
+                "name": "Build artifacts + imports check",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:32:55Z",
+                "completedAt": "2026-11-13T03:34:17Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43359689297/job/131669984365"
+              },
+              {
+                "name": "Pre-commit checks",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "startedAt": "2026-11-13T03:32:56Z",
+                "completedAt": "2026-11-13T03:33:58Z",
+                "detailsUrl": "https://github.com/agentydragon/ducktape/actions/runs/43359689340/job/131669984812"
+              }
+            ]
+          }
+        ],
+        "mcp_abba": {
+          "source": "4415ac2544aef190cce5596d5ee2e73ba627b56f plus candidate changes only",
+          "same_junit_case_sets": true,
+          "case_count": 5,
+          "arms": [
+            {
+              "arm": "control",
+              "invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+              "action_digest": {
+                "hash": "f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c",
+                "sizeBytes": "1218"
+              },
+              "physical_id": "/uploads/b7c2e324-a821-4a8a-abe3-81ee7fb4413d/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+              "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+              "process_seconds": 254.179348,
+              "setup_seconds": 81.836416,
+              "case_envelope_seconds": 112.542236,
+              "cpu_seconds": 717.397033,
+              "baseline": "warm",
+              "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+              "cleanup": "complete",
+              "namespace_uid": "348556a0-e9b2-421e-a223-65938d2d58fb",
+              "postgres_pod_uid": "a89e29ca-43b3-4cc5-994d-a012bfbe1f78",
+              "root_secret_uid": "732b7f8d-68a8-4413-9baa-404fa7bb2201",
+              "cases": [
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+                  "seconds": 30.15888
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+                  "seconds": 30.705471
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+                  "seconds": 57.090836
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+                  "seconds": 13.137827
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+                  "seconds": 12.13428
+                }
+              ]
+            },
+            {
+              "arm": "candidate",
+              "invocation": "e49415a4-192f-467f-93f8-bb5aa5d52248",
+              "action_digest": {
+                "hash": "abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179",
+                "sizeBytes": "1218"
+              },
+              "physical_id": "/uploads/0b930296-cbff-4787-bec1-ede928eeb88f/blobs/abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179/1218",
+              "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+              "process_seconds": 233.667821,
+              "setup_seconds": 88.424464,
+              "case_envelope_seconds": 90.74402,
+              "cpu_seconds": 692.380163,
+              "baseline": "warm",
+              "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+              "cleanup": "complete",
+              "namespace_uid": "38802823-d5df-4a36-bac4-fb6cfc183b14",
+              "postgres_pod_uid": "17b69be8-2541-4c5d-aa77-11e3af7f16cf",
+              "root_secret_uid": "d458eac0-211b-4e70-8d13-427302fe1b29",
+              "cases": [
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+                  "seconds": 31.240532
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+                  "seconds": 31.730274
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+                  "seconds": 16.620598
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+                  "seconds": 14.171006
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+                  "seconds": 59.497634
+                }
+              ]
+            },
+            {
+              "arm": "candidate",
+              "invocation": "dbc71c1c-dbbb-40d4-b499-15a4071bcd76",
+              "action_digest": {
+                "hash": "abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179",
+                "sizeBytes": "1218"
+              },
+              "physical_id": "/uploads/f086b4be-690e-45af-b583-8fad34f2fe5c/blobs/abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179/1218",
+              "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+              "process_seconds": 298.063804,
+              "setup_seconds": 133.813902,
+              "case_envelope_seconds": 102.922975,
+              "cpu_seconds": 819.373955,
+              "baseline": "warm",
+              "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+              "cleanup": "complete",
+              "namespace_uid": "875ed429-accc-49dc-bf44-a866edc89aab",
+              "postgres_pod_uid": "112c7314-3968-4706-8246-7c7d7378cfcd",
+              "root_secret_uid": "2dbfe99a-8e89-429c-b93c-ff928de3081a",
+              "cases": [
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+                  "seconds": 38.989638
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+                  "seconds": 41.367371
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+                  "seconds": 17.031208
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+                  "seconds": 13.393173
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+                  "seconds": 63.933081
+                }
+              ]
+            },
+            {
+              "arm": "control",
+              "invocation": "c9eecce1-a550-458f-bed6-51ed96fc39fc",
+              "action_digest": {
+                "hash": "f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c",
+                "sizeBytes": "1218"
+              },
+              "physical_id": "/uploads/a88dfb82-dc36-429c-a04e-8a714b3c0373/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+              "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+              "process_seconds": 254.517213,
+              "setup_seconds": 89.098438,
+              "case_envelope_seconds": 112.130207,
+              "cpu_seconds": 730.147934,
+              "baseline": "cold",
+              "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+              "cleanup": "complete",
+              "namespace_uid": "631b4f0c-6178-41fd-8d80-993c4e06a7b3",
+              "postgres_pod_uid": "fecb9f17-fe47-45f8-9252-c4d45d7813ea",
+              "root_secret_uid": "7c10520d-56e9-44ae-91f8-ca0462ae8cc4",
+              "cases": [
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+                  "seconds": 31.17942
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+                  "seconds": 32.735584
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+                  "seconds": 55.804928
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+                  "seconds": 13.047778
+                },
+                {
+                  "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+                  "seconds": 12.086693
+                }
+              ]
+            }
+          ],
+          "excluded_newer_source_invocation": "3b6a56ab-9e98-4428-964c-4e9ef30b2ed3"
+        },
+        "limits": [
+          "Selected graphs are not complete required CI.",
+          "No reported physical counts should be summed across lanes because MCP A1 overlaps the KVM burst.",
+          "Distinct tested merge commits are preserved separately from PR heads.",
+          "No causal action/CI win claimed; no further experiments planned."
+        ],
+        "selected_trials": [
+          {
+            "name": "burst",
+            "invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+            "recorded_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+            "complete": true,
+            "success": true,
+            "bazel_seconds": 493.894,
+            "actions": [
+              {
+                "name": "test_actions-run1-attempt1",
+                "label": "//agentplane/system_tests/suites/mcp:test_actions",
+                "setup_seconds": 81.836416,
+                "baseline": "warm",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "348556a0-e9b2-421e-a223-65938d2d58fb",
+                "postgres_pod_uid": "a89e29ca-43b3-4cc5-994d-a012bfbe1f78",
+                "root_secret_uid": "732b7f8d-68a8-4413-9baa-404fa7bb2201",
+                "case_envelope_seconds": 112.542236,
+                "physical_id": "/uploads/b7c2e324-a821-4a8a-abe3-81ee7fb4413d/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+                "process_seconds": 254.179348,
+                "cpu_seconds": 717.397033,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "5"
+                }
+              },
+              {
+                "name": "test_pod-run1-attempt1",
+                "label": "//agentplane/system_tests/suites:test_pod",
+                "setup_seconds": 66.910387,
+                "baseline": "warm",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "890f13cb-f222-4055-bfc0-27b149d1415c",
+                "postgres_pod_uid": "024d64a8-0d73-4d60-bbae-7325cd3cef95",
+                "root_secret_uid": "bf9335de-fe22-49f2-9d2d-acbb5ed09ab4",
+                "case_envelope_seconds": 322.816339,
+                "physical_id": "/uploads/066cb59b-6eb6-44c5-a0df-b9bf47b1ae1f/blobs/6e5888952288c5bd5337346d0035766f09a6e761ab8b162585eb83c59a49a12c/1218",
+                "process_seconds": 451.423192,
+                "cpu_seconds": 1206.921874,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "21"
+                }
+              },
+              {
+                "name": "test_vm-run1-attempt1",
+                "label": "//agentplane/system_tests/suites:test_vm",
+                "setup_seconds": 184.534143,
+                "baseline": "cold",
+                "fingerprint": "383d22083e7b31b8f87ccd00e012784fd199134370ac229e297482d975fac680",
+                "cleanup": "complete",
+                "namespace_uid": "b4043ca5-b669-4c47-8d39-6f8626d5aa35",
+                "postgres_pod_uid": "81c3f025-da1a-45e7-8caf-926235791fd5",
+                "root_secret_uid": "6a5c3cdb-4b1a-49ce-a677-da3ca506d120",
+                "case_envelope_seconds": 128.270397,
+                "physical_id": "/uploads/51021fdd-a9ae-4ced-8559-7d102331e4dc/blobs/0d3648d9b0a8d073d6461d1f4e7a78c374c3a051357b94ec18984e89a8f7d0b1/1896",
+                "process_seconds": 365.654836,
+                "cpu_seconds": 1198.318241,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              },
+              {
+                "name": "test_vm_kvm-run1-attempt1",
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "setup_seconds": 136.291214,
+                "baseline": "nonretained",
+                "fingerprint": null,
+                "cleanup": null,
+                "namespace_uid": null,
+                "postgres_pod_uid": null,
+                "root_secret_uid": null,
+                "case_envelope_seconds": 89.484361,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              },
+              {
+                "name": "test_vm_kvm-run2-attempt1",
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "setup_seconds": 113.311648,
+                "baseline": "nonretained",
+                "fingerprint": null,
+                "cleanup": null,
+                "namespace_uid": null,
+                "postgres_pod_uid": null,
+                "root_secret_uid": null,
+                "case_envelope_seconds": 84.801131,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              },
+              {
+                "name": "test_vm_kvm-run3-attempt1",
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "setup_seconds": 111.030814,
+                "baseline": "nonretained",
+                "fingerprint": null,
+                "cleanup": null,
+                "namespace_uid": null,
+                "postgres_pod_uid": null,
+                "root_secret_uid": null,
+                "case_envelope_seconds": 81.269647,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              },
+              {
+                "name": "test_vm_kvm-run4-attempt1",
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "setup_seconds": 128.656727,
+                "baseline": "nonretained",
+                "fingerprint": null,
+                "cleanup": null,
+                "namespace_uid": null,
+                "postgres_pod_uid": null,
+                "root_secret_uid": null,
+                "case_envelope_seconds": 87.864175,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              }
+            ]
+          },
+          {
+            "name": "mcp-candidate",
+            "invocation": "e49415a4-192f-467f-93f8-bb5aa5d52248",
+            "recorded_commit": "c1b7639098e261cb37a1c4ae822a87bfbf64a85c",
+            "complete": true,
+            "success": true,
+            "bazel_seconds": 275.006,
+            "actions": [
+              {
+                "name": "test_actions-run1-attempt1",
+                "label": "//agentplane/system_tests/suites/mcp:test_actions",
+                "setup_seconds": 88.424464,
+                "baseline": "warm",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "38802823-d5df-4a36-bac4-fb6cfc183b14",
+                "postgres_pod_uid": "17b69be8-2541-4c5d-aa77-11e3af7f16cf",
+                "root_secret_uid": "d458eac0-211b-4e70-8d13-427302fe1b29",
+                "case_envelope_seconds": 90.74402,
+                "physical_id": "/uploads/0b930296-cbff-4787-bec1-ede928eeb88f/blobs/abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179/1218",
+                "process_seconds": 233.667821,
+                "cpu_seconds": 692.380163,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "5"
+                }
+              }
+            ]
+          },
+          {
+            "name": "mcp-repeat",
+            "invocation": "dbc71c1c-dbbb-40d4-b499-15a4071bcd76",
+            "recorded_commit": "334ba7916c4c6f791d4afbeb4b744e84832992b6",
+            "complete": true,
+            "success": true,
+            "bazel_seconds": 329.998,
+            "actions": [
+              {
+                "name": "test_actions-run1-attempt1",
+                "label": "//agentplane/system_tests/suites/mcp:test_actions",
+                "setup_seconds": 133.813902,
+                "baseline": "warm",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "875ed429-accc-49dc-bf44-a866edc89aab",
+                "postgres_pod_uid": "112c7314-3968-4706-8246-7c7d7378cfcd",
+                "root_secret_uid": "2dbfe99a-8e89-429c-b93c-ff928de3081a",
+                "case_envelope_seconds": 102.922975,
+                "physical_id": "/uploads/f086b4be-690e-45af-b583-8fad34f2fe5c/blobs/abc91791891a961d436ccb3b33b0d4c80e1792bad0d6e829b4b5222de5876179/1218",
+                "process_seconds": 298.063804,
+                "cpu_seconds": 819.373955,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "5"
+                }
+              }
+            ]
+          },
+          {
+            "name": "graph-repeat",
+            "invocation": "3b6a56ab-9e98-4428-964c-4e9ef30b2ed3",
+            "recorded_commit": "42e142053c685c792366bd47620d45fbe43513e8",
+            "complete": true,
+            "success": true,
+            "bazel_seconds": 439.182,
+            "actions": [
+              {
+                "name": "test_actions-run1-attempt1",
+                "label": "//agentplane/system_tests/suites/mcp:test_actions",
+                "setup_seconds": 111.292513,
+                "baseline": "warm",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "52367765-ffab-4039-8d1c-4993501f8d9a",
+                "postgres_pod_uid": "a2a11d27-5e96-4f87-aa7a-d4746288328b",
+                "root_secret_uid": "71606c37-5a9f-468f-877e-751ce0367a59",
+                "case_envelope_seconds": 124.32398,
+                "physical_id": "/uploads/90068504-05f2-48b0-a513-442e2a2da2a8/blobs/bb4a9c848671d642428f479bee7e47dc457d1a66b5eefadfe66d43adbc7a9751/1218",
+                "process_seconds": 293.543081,
+                "cpu_seconds": 842.527504,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "5"
+                }
+              },
+              {
+                "name": "test_pod-run1-attempt1",
+                "label": "//agentplane/system_tests/suites:test_pod",
+                "setup_seconds": 90.473436,
+                "baseline": "warm",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "10f56651-5002-4fbf-b602-bb9ce88e2859",
+                "postgres_pod_uid": "7d7856e5-510f-4bc8-8d19-1d11f3eca130",
+                "root_secret_uid": "7f50c75c-9682-4a50-b71f-80c219ef6d83",
+                "case_envelope_seconds": 246.654614,
+                "physical_id": "/uploads/1ec3605a-edd2-4eba-a363-6ff938fea654/blobs/6e5888952288c5bd5337346d0035766f09a6e761ab8b162585eb83c59a49a12c/1218",
+                "process_seconds": 407.993555,
+                "cpu_seconds": 1248.156635,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "21"
+                }
+              },
+              {
+                "name": "test_vm-run1-attempt1",
+                "label": "//agentplane/system_tests/suites:test_vm",
+                "setup_seconds": 66.493407,
+                "baseline": "warm",
+                "fingerprint": "383d22083e7b31b8f87ccd00e012784fd199134370ac229e297482d975fac680",
+                "cleanup": "complete",
+                "namespace_uid": "3b958af0-4224-46ad-afc0-d3590189d814",
+                "postgres_pod_uid": "1ae3837f-bfa6-4c6b-9c25-3e76f45e0c0d",
+                "root_secret_uid": "42ad5d65-45e2-4a05-a2fb-6888c58ad321",
+                "case_envelope_seconds": 169.533327,
+                "physical_id": "/uploads/9df8f2f3-643b-4022-9ebc-932cb7c9e436/blobs/0d3648d9b0a8d073d6461d1f4e7a78c374c3a051357b94ec18984e89a8f7d0b1/1896",
+                "process_seconds": 289.581548,
+                "cpu_seconds": 927.106416,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              },
+              {
+                "name": "test_vm_kvm-run1-attempt1",
+                "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+                "setup_seconds": 111.054144,
+                "baseline": "nonretained",
+                "fingerprint": null,
+                "cleanup": null,
+                "namespace_uid": null,
+                "postgres_pod_uid": null,
+                "root_secret_uid": null,
+                "case_envelope_seconds": 79.714595,
+                "physical_id": "/uploads/ac97e097-f5b0-4fd0-9a5f-3e23901e5f23/blobs/e9fcc832598d7273ec39db76ff43aa9e5ae2f3b8a7600a28bf7a51f04b012251/596",
+                "process_seconds": 211.644233,
+                "cpu_seconds": null,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "1"
+                }
+              }
+            ]
+          },
+          {
+            "name": "mcp-pinned-control",
+            "invocation": "c9eecce1-a550-458f-bed6-51ed96fc39fc",
+            "recorded_commit": "07d3ea2acf8893f430cabbe27167acb189b23090",
+            "complete": true,
+            "success": true,
+            "bazel_seconds": 283.338,
+            "actions": [
+              {
+                "name": "test_actions-run1-attempt1",
+                "label": "//agentplane/system_tests/suites/mcp:test_actions",
+                "setup_seconds": 89.098438,
+                "baseline": "cold",
+                "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+                "cleanup": "complete",
+                "namespace_uid": "631b4f0c-6178-41fd-8d80-993c4e06a7b3",
+                "postgres_pod_uid": "fecb9f17-fe47-45f8-9252-c4d45d7813ea",
+                "root_secret_uid": "7c10520d-56e9-44ae-91f8-ca0462ae8cc4",
+                "case_envelope_seconds": 112.130207,
+                "physical_id": "/uploads/a88dfb82-dc36-429c-a04e-8a714b3c0373/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+                "process_seconds": 254.517213,
+                "cpu_seconds": 730.147934,
+                "junit": {
+                  "errors": "0",
+                  "failures": "0",
+                  "skipped": "0",
+                  "tests": "5"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "import_and_mounts": {
+        "import_transactions": {
+          "issue": 16028,
+          "pr": 16040,
+          "url": "https://github.com/agentydragon/ducktape/pull/16040",
+          "branch": "ci/usable-import-fastpath",
+          "published_code_head": "d943d9700b8bf3e92c2e861c3f731612f28ac021",
+          "required_checks_on_published_code_head": "Bazel CI, Pre-commit checks and Build artifacts + imports check all SUCCESS; draft, not merged",
+          "implementation": "Exact native tag+manifest digest+pin-label filter; native platform content + overlayfs IsUnpacked; intersect CRI pinned tag with expected config ID. Indexes take ordinary import path. No in-memory usability memoization.",
+          "native_acceptance": {
+            "invocation": "ce2d8aa8-d977-4521-8485-d10ae4765764",
+            "result": "PASSED",
+            "cases": [
+              "cold import",
+              "live clean baseline attach",
+              "no transaction for usable image",
+              "same tag new manifest",
+              "full control-plane restart with retained store",
+              "missing pin",
+              "missing committed root snapshot",
+              "CRI RemoveImage and reimport",
+              "stale CRI config-ID rejected"
+            ],
+            "gc_limit": "CRI RemoveImage is kubelet GC deletion boundary; no induced disk-pressure GC cycle"
+          },
+          "abba": {
+            "invocation": "5015ac95-5e20-403c-b7f7-ef0c0278bd8f",
+            "result": "5/5 passed",
+            "exposure": "one managed Firecracker worker, 4CU; cold warmup then four warm lifecycles; ordinary probes; identical fixture CAS; fresh namespace/PG/rootSecret UIDs; all cleanup complete",
+            "setup_seconds": [96.096, 43.585, 31.438, 32.994, 50.398],
+            "cleanup_seconds": [27.426, 27.005, 27.86, 27.782, 26.467],
+            "lifecycle_seconds": [126.735, 73.484, 62.329, 64.171, 80.346],
+            "order": [
+              "warmup-excluded",
+              "control-a",
+              "candidate-a",
+              "candidate-b",
+              "control-b"
+            ],
+            "mean_control_setup_seconds": 46.9915,
+            "mean_candidate_setup_seconds": 32.216,
+            "difference_seconds": 14.7755,
+            "native_check_seconds": [0.525414, 0.541462],
+            "candidate_skips": [14, 14],
+            "control_import_span_sums_seconds": [29.502767, 29.601197],
+            "action_input_root": "79f899c08190f6e3fce2cc34e0f1c8a3b2911e967e0fa7bcf664f9448742e56c/165",
+            "baseline_source_sha256": "8da7a528e8171bd9043baceaf1e2375f34ec0fe123061e216a5c7354c048c91c",
+            "experiment_source_sha256": "0dd9e068203c26c32678b0105656461c444ad05a5efc02aa21bbc537ffe71538",
+            "source_identity": "Both source digests match d943d9700b; remote runner c1b76390 plus reverse/local patch",
+            "limit": "One warm setup experiment; overlapping spans not additive; no cold/fleet/full-CI effect established; per-arm CPU unmeasured"
+          },
+          "graph": {
+            "candidate_invocation": "972fdd73-b418-43ca-85a0-0b0756cb8966",
+            "control_invocation": "1a2d1791-4334-441f-8af6-a79d253aafb9",
+            "result": "Both 27/27 passed:21Pod,5MCP Actions,1VM",
+            "candidate_bazel_seconds": 458.57,
+            "control_bazel_seconds": 472.642,
+            "observed_difference_seconds": 14.072,
+            "exposure": "Each suite used same worker in candidate then control order; all six infrastructure baselines cold+cleanup complete; retained image content differed/unknown, host load differed",
+            "physical": {
+              "candidate": {
+                "//agentplane/system_tests/suites:test_vm": {
+                  "execution_id": "/uploads/f21ba53e-1076-4a26-bcd6-b79cc930d265/blobs/f8aa107ec389a42f8904d5c50e583ed7175ae3291f1e073e2c6f96bd8b794c7d/1852",
+                  "action_digest": {
+                    "hash": "f8aa107ec389a42f8904d5c50e583ed7175ae3291f1e073e2c6f96bd8b794c7d",
+                    "sizeBytes": "1852"
+                  },
+                  "queue_seconds": 0.059171,
+                  "input_fetch_seconds": 0.143376,
+                  "process_seconds": 329.223414,
+                  "cpu_seconds": 1061.237184,
+                  "peak_memory_bytes": 5878689792,
+                  "download_bytes": 49737,
+                  "start_utc": "2026-11-13T03:09:23.738070Z",
+                  "end_utc": "2026-11-13T03:14:52.961484Z",
+                  "setup_seconds": 102.122022,
+                  "cleanup_seconds": 30.436094,
+                  "case_envelope_seconds": 166.666765,
+                  "baseline": "cold",
+                  "cleanup": "complete"
+                },
+                "//agentplane/system_tests/suites/mcp:test_actions": {
+                  "execution_id": "/uploads/458ae24a-3a3c-4cfe-82dd-fbe30f646f23/blobs/563d68d5986409223219dfc47b3107056d6ef7fbb523c41a0d4ad95b390622d5/1218",
+                  "action_digest": {
+                    "hash": "563d68d5986409223219dfc47b3107056d6ef7fbb523c41a0d4ad95b390622d5",
+                    "sizeBytes": "1218"
+                  },
+                  "queue_seconds": 0.06059,
+                  "input_fetch_seconds": 0.164152,
+                  "process_seconds": 265.177279,
+                  "cpu_seconds": 664.208982,
+                  "peak_memory_bytes": 5784641536,
+                  "download_bytes": 49737,
+                  "start_utc": "2026-11-13T03:09:23.807724Z",
+                  "end_utc": "2026-11-13T03:13:48.985003Z",
+                  "setup_seconds": 92.330898,
+                  "cleanup_seconds": 33.781387,
+                  "case_envelope_seconds": 115.504461,
+                  "baseline": "cold",
+                  "cleanup": "complete"
+                },
+                "//agentplane/system_tests/suites:test_pod": {
+                  "execution_id": "/uploads/0abfe715-81c5-4be8-ae86-501dd0f4223b/blobs/726647d3df65c70cb1be05b6b0b3f4c8eb6b0fd8a07cfa5cb26c37608740a88b/1218",
+                  "action_digest": {
+                    "hash": "726647d3df65c70cb1be05b6b0b3f4c8eb6b0fd8a07cfa5cb26c37608740a88b",
+                    "sizeBytes": "1218"
+                  },
+                  "queue_seconds": 0.060758,
+                  "input_fetch_seconds": 0.161187,
+                  "process_seconds": 419.276234,
+                  "cpu_seconds": 1083.117039,
+                  "peak_memory_bytes": 5315170304,
+                  "download_bytes": 49737,
+                  "start_utc": "2026-11-13T03:09:23.828076Z",
+                  "end_utc": "2026-11-13T03:16:23.104310Z",
+                  "setup_seconds": 67.332177,
+                  "cleanup_seconds": 37.20973,
+                  "case_envelope_seconds": 283.187069,
+                  "baseline": "cold",
+                  "cleanup": "complete"
+                }
+              },
+              "control": {
+                "//agentplane/system_tests/suites/mcp:test_actions": {
+                  "execution_id": "/uploads/1811bc17-9682-4e8b-9a56-1768e9fdf824/blobs/c6adb6b870ef0894b04fa7c7c0e446aa2bf06e0361d3d95f1e241af674ce8d81/1218",
+                  "action_digest": {
+                    "hash": "c6adb6b870ef0894b04fa7c7c0e446aa2bf06e0361d3d95f1e241af674ce8d81",
+                    "sizeBytes": "1218"
+                  },
+                  "queue_seconds": 0.05924,
+                  "input_fetch_seconds": 0.211702,
+                  "process_seconds": 318.639988,
+                  "cpu_seconds": 871.629361,
+                  "peak_memory_bytes": 5804130304,
+                  "download_bytes": 49725,
+                  "start_utc": "2026-11-13T03:19:04.328949Z",
+                  "end_utc": "2026-11-13T03:24:22.968937Z",
+                  "setup_seconds": 137.603416,
+                  "cleanup_seconds": 31.266989,
+                  "case_envelope_seconds": 120.009414,
+                  "baseline": "cold",
+                  "cleanup": "complete"
+                },
+                "//agentplane/system_tests/suites:test_vm": {
+                  "execution_id": "/uploads/5c4e5f20-1a9a-48e3-81f3-b7cef65f919a/blobs/aaf7bb1d42666523017df42cdbecb8da9882a4f8ddfdb0749ecc7cf1da87ed7b/1852",
+                  "action_digest": {
+                    "hash": "aaf7bb1d42666523017df42cdbecb8da9882a4f8ddfdb0749ecc7cf1da87ed7b",
+                    "sizeBytes": "1852"
+                  },
+                  "queue_seconds": 0.057789,
+                  "input_fetch_seconds": 0.565691,
+                  "process_seconds": 355.326941,
+                  "cpu_seconds": 1316.00841,
+                  "peak_memory_bytes": 6027202560,
+                  "download_bytes": 553942755,
+                  "start_utc": "2026-11-13T03:19:04.650418Z",
+                  "end_utc": "2026-11-13T03:24:59.977359Z",
+                  "setup_seconds": 143.389809,
+                  "cleanup_seconds": 29.438559,
+                  "case_envelope_seconds": 155.433546,
+                  "baseline": "cold",
+                  "cleanup": "complete"
+                },
+                "//agentplane/system_tests/suites:test_pod": {
+                  "execution_id": "/uploads/cb794f88-6b5b-4e88-b770-faaf3876bc23/blobs/639bc752dc38282b3489602ee339e9166888a3ce54690107e51d505f197811b8/1218",
+                  "action_digest": {
+                    "hash": "639bc752dc38282b3489602ee339e9166888a3ce54690107e51d505f197811b8",
+                    "sizeBytes": "1218"
+                  },
+                  "queue_seconds": 0.058798,
+                  "input_fetch_seconds": 0.195917,
+                  "process_seconds": 433.720521,
+                  "cpu_seconds": 1202.335098,
+                  "peak_memory_bytes": 5200875520,
+                  "download_bytes": 49725,
+                  "start_utc": "2026-11-13T03:19:04.288402Z",
+                  "end_utc": "2026-11-13T03:26:18.008923Z",
+                  "setup_seconds": 128.240766,
+                  "cleanup_seconds": 32.049738,
+                  "case_envelope_seconds": 241.362272,
+                  "baseline": "cold",
+                  "cleanup": "complete"
+                }
+              }
+            },
+            "cas_comparison": {
+              "//agentplane/system_tests/suites/mcp:test_actions": {
+                "identical_subtrees": 127,
+                "different_common_files": [
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/mcp/test_actions.runfiles/_main/agentplane/system_tests/k3s/baseline.py"
+                ],
+                "unique_paths": [],
+                "command_equal": true,
+                "platform_equal": true,
+                "timeout_equal": true,
+                "candidate_root": {
+                  "hash": "175e4e9f97eb96a3a8b7bf38d5ba27e51b131c91f8b17f0b39fc944c3b6b92c6",
+                  "sizeBytes": "165"
+                },
+                "control_root": {
+                  "hash": "b429280d2f7e73be83e379d4eae104dbe86b38345e34030455b3f9f9ccf54c35",
+                  "sizeBytes": "165"
+                }
+              },
+              "//agentplane/system_tests/suites:test_vm": {
+                "identical_subtrees": 104,
+                "different_common_files": [
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/k3s/baseline.py",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_disk.tar",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/index.json"
+                ],
+                "unique_paths": [
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/blobs/sha256/c61a1c272582d3149d7aef4ba2ec22ea9428ba803a8b7e8894286663801175cc",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/blobs/sha256/dc057da1d8505ba6142ba6eb14ac8d48298910801e493000b08217512393ed6a",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/blobs/sha256/532d7b5cdd25cf2b16629ee71d2dd338314c836ccfa62e7f2f5983185b971ac9",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/blobs/sha256/842bfc951e6e47340237c194bce60a75b862203d800635224e2db385a7f050b3",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/blobs/sha256/64915c234a89e680b7d46464f56e8c501f39c302afcd1864a5156e91eedb31fa",
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_vm.runfiles/_main/agentplane/system_tests/vm/guest/root_image/blobs/sha256/5a298188d4545cef0f7fc575b3751d01fa1dcfd2ec8c1d84b2b36fe6c00d3016"
+                ],
+                "command_equal": true,
+                "platform_equal": true,
+                "timeout_equal": true,
+                "candidate_root": {
+                  "hash": "12088745555fda61e2397678872e3e8271e46a901c4b0146dd7399462f028b68",
+                  "sizeBytes": "165"
+                },
+                "control_root": {
+                  "hash": "233b06be1e6aec8632d5e74da47f634adf11e42288a42d22426a166716796410",
+                  "sizeBytes": "165"
+                }
+              },
+              "//agentplane/system_tests/suites:test_pod": {
+                "identical_subtrees": 126,
+                "different_common_files": [
+                  "bazel-out/k8-fastbuild/bin/agentplane/system_tests/suites/test_pod.runfiles/_main/agentplane/system_tests/k3s/baseline.py"
+                ],
+                "unique_paths": [],
+                "command_equal": true,
+                "platform_equal": true,
+                "timeout_equal": true,
+                "candidate_root": {
+                  "hash": "eb39ef957f35e2361a91d1e56367463685a7ebea9fc03e00d9a1904d337746ba",
+                  "sizeBytes": "165"
+                },
+                "control_root": {
+                  "hash": "e6fdd599c401ff6c3265c02f9a3db0a30793fa7fb4edc1cac68af62da2d354d9",
+                  "sizeBytes": "165"
+                }
+              }
+            },
+            "source_limit": "Pod/MCP action command/platform/timeout and entire input trees identical except baseline.py. VM additionally differs generated root_disk.tar and root_image/index+six blob paths; VM actual inputs not matched, mechanism unproven. No whole-graph causal saving claim.",
+            "resource_limit": "CPU sums candidate2808.563s/control3389.973s; requestedCU-min89.527/97.534 capacity proxies, not billing or causal cost savings. Selected graph excludes other required suites and GitHub gate clocks.",
+            "junit_case_multisets_verified": true,
+            "junit_failures_errors_skips": 0
+          },
+          "next_trigger": "Keep16028 open. Within7days after merge or next naturally selected backend head: matched warm/cold full graphs and exact-head required gates, source/CAS+cache identities, native phases, CPU/peak memory/capacity. Resolve VM generated-root identity mismatch before comparing VM.",
+          "head": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+          "head_checks": "Pre-commit and artifacts SUCCESS; Bazel IN_PROGRESS. No first failure indexed at final observation.",
+          "explicit_library_build": {
+            "invocation": "176bc022-7828-4df6-96a9-1553b8624c00",
+            "target": "//agentplane/system_tests/k3s:baseline",
+            "result": "PASSED with lint aspects"
+          },
+          "exact_head_required_checks": {
+            "bazel-ci / Test & Build": {
+              "status": "IN_PROGRESS",
+              "conclusion": ""
+            },
+            "Build artifacts + imports check": {
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS"
+            },
+            "Pre-commit checks": {
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS"
+            }
+          },
+          "pr_state": "OPEN DRAFT"
+        },
+        "harness_artifact_mounts": {
+          "issue": 16030,
+          "pr": 16047,
+          "url": "https://github.com/agentydragon/ducktape/pull/16047",
+          "branch": "ci/harness-artifact-mount-probe",
+          "head": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+          "head_checks": "Pre-commit and artifacts SUCCESS; Bazel IN_PROGRESS. No first failure indexed at final observation.",
+          "required_coverage": "UNCHANGED; ordinary OCI packaging remains in required suites. Manual packaged control boots real image and executes same real turns.",
+          "passing_invocation": "845e3e0f-c4ee-4082-8858-b01e2e5037dc",
+          "packaged_control_invocation": "fb705349-840e-4a05-925c-59bb66304ad6",
+          "actual_behavior": "Claude2.1.252 and Codex0.166.0; two fresh Sandboxes, each44native ro file mounts at ordinary harness paths + fresh writable home; each harness instructed/plain real Session turns against scripted model; cleanup complete; cold infrastructure baseline.",
+          "input_root": "97d4e28e31a6c251ca155d24777272e5e267dfa1e41416b7b00effff81193035/165",
+          "tested_source_sha256": "c4d58607cb4a297a8c733283e9cf8a67f42b15c0536629d247fa0791641d660c",
+          "tested_source_matches_final_head": true,
+          "declared_input_bytes": {
+            "packaged": {
+              "image_unique_cas_bytes": 914498274,
+              "image_unique_cas_files": 13,
+              "input_root": {
+                "hash": "93d90e6fa8b1ad75bed198465c539ca59af75d5213d5556386fb01399225db4d",
+                "sizeBytes": "165"
+              }
+            },
+            "mounted": {
+              "image_unique_cas_bytes": 243931041,
+              "image_unique_cas_files": 11,
+              "input_root": {
+                "hash": "97d4e28e31a6c251ca155d24777272e5e267dfa1e41416b7b00effff81193035",
+                "sizeBytes": "165"
+              },
+              "raw_harness_unique_cas_bytes": 670520189,
+              "raw_harness_unique_cas_files": 44
+            }
+          },
+          "combined_mounted_input_bytes": 914451230,
+          "packaged_input_bytes": 914498274,
+          "input_conclusion": "Effectively unchanged input volume: only47044B less metadata. Avoids unpack/duplicate containerd storage, no meaningful declared-byte or transfer saving.",
+          "packaged_observed": {
+            "process_seconds": 152.835469,
+            "setup_seconds": 79.54,
+            "envtools_import_seconds": 22.004807,
+            "sandbox_ready_seconds": [7.272, 6.351],
+            "cleanup_seconds": 26.553,
+            "input_fetch_wall_seconds": 1.356486,
+            "actual_download_bytes": 1941164914,
+            "cpu_seconds": 386.375292,
+            "peak_memory_bytes": 4878757888
+          },
+          "mounted_observed": {
+            "process_seconds": 128.471558,
+            "setup_seconds": 59.097,
+            "envtools_import_seconds": 7.996676,
+            "sandbox_ready_seconds": [5.645, 6.539],
+            "cleanup_seconds": 26.605,
+            "input_fetch_wall_seconds": 0.51535,
+            "actual_download_bytes": 768203437,
+            "cpu_seconds": 291.065475,
+            "peak_memory_bytes": 4772241408
+          },
+          "limits": [
+            "Different workers/time/cache exposure; one passing observation each, not causal speedup or fleet effect.",
+            "Native summed download duration spans execution; initial input-fetch wall does not bound lazy artifact reads.",
+            "44hostPath volumes mounted in both Runtime and isolated executor create per-Sandbox work; full graph unmeasured.",
+            "VM guest packaging unchanged; no direct guest artifact transport established."
+          ],
+          "negative_probe_evidence": [
+            "Initialfb705349 mounted peer wedged300s: malformed Codex mount destinations from Runfiles.Path.relative_to; native Runtime /bin/codex absent; source files existed0755.",
+            "First localized correction1e6a76cb stopped before tests at mypy inferred Runfiles.Path vs pathlib.Path tuples.",
+            "Final both-inputs-to-Path correction passed845e3e0f; no timeout increase."
+          ],
+          "next_trigger": "Keep16030open. Next relevant backend head or within7days of feasibility pass: counterbalanced complete Pod/MCP/VM graphs retaining required real packaged-image boot, match source/CAS+cache exposure, measure required gates and per-Sandbox mount/lazy-fetch/resource cost. No more trials this session.",
+          "exact_head_required_checks": {
+            "bazel-ci / Test & Build": {
+              "status": "IN_PROGRESS",
+              "conclusion": ""
+            },
+            "Build artifacts + imports check": {
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS"
+            },
+            "Pre-commit checks": {
+              "status": "COMPLETED",
+              "conclusion": "SUCCESS"
+            }
+          },
+          "pr_state": "OPEN DRAFT"
+        },
+        "canonical_notes": [
+          "agentplane/system_tests/debug/usable_import_transactions_2026_11_12.md",
+          "agentplane/system_tests/debug/harness_artifact_mounts_2026_11_12.md"
+        ],
+        "summary_written_at_utc": "2026-11-13T03:38:42Z"
+      }
+    },
+    "pr_states": {
+      "observed_at_utc": "2026-11-13T03:47:21.763839+00:00",
+      "prs": {
+        "16041": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16041",
+          "state": "OPEN",
+          "draft": false,
+          "head": "23ebb5c947b3ec426366ecd3833b660325e664da",
+          "merged_at": null,
+          "merge_commit": null,
+          "files": [
+            "devinfra/buildbuddy/debug/2026_11_12_exact_execution_result_recovery.md",
+            "devinfra/buildbuddy/diagnostics/execution_stream_fault/BUILD.bazel",
+            "devinfra/buildbuddy/diagnostics/execution_stream_fault/README.md",
+            "devinfra/buildbuddy/diagnostics/execution_stream_fault/main.go"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131662517482,
+              "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357373985/job/131662517482",
+              "completed_at": "2026-11-13T03:14:24Z"
+            },
+            "Pre-commit checks": {
+              "id": 131662517233,
+              "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357373996/job/131662517233",
+              "completed_at": "2026-11-13T03:13:41Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131662517368,
+              "head_sha": "23ebb5c947b3ec426366ecd3833b660325e664da",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357374000/job/131662517368",
+              "completed_at": "2026-11-13T03:13:50Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "16056": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16056",
+          "state": "MERGED",
+          "draft": false,
+          "head": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+          "merged_at": "2026-11-13T03:30:45Z",
+          "merge_commit": "136394685fe566f27d377be340736de250b01eb1",
+          "files": [
+            "agentplane/system_tests/debug/vm_kvm_capacity_burst_2026_11_12.json",
+            "agentplane/system_tests/debug/vm_kvm_capacity_burst_2026_11_12.md",
+            "agentplane/system_tests/debug/vm_kvm_capacity_burst_2026_11_12.patch"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131668042360,
+              "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359086128/job/131668042360",
+              "completed_at": "2026-11-13T03:29:26Z"
+            },
+            "Pre-commit checks": {
+              "id": 131668040277,
+              "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359085717/job/131668040277",
+              "completed_at": "2026-11-13T03:28:29Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131668040645,
+              "head_sha": "e65c0789deb78c183a047d94da2c3d84e0df0ac6",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359085753/job/131668040645",
+              "completed_at": "2026-11-13T03:28:49Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "16042": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16042",
+          "state": "MERGED",
+          "draft": false,
+          "head": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+          "merged_at": "2026-11-13T03:27:02Z",
+          "merge_commit": "7e826d2ddc797c043d15ed4d340240b9ba2fde9c",
+          "files": [
+            "agentplane/system_tests/debug/baseline_reuse_census_2026_11_12.json",
+            "agentplane/system_tests/debug/baseline_reuse_census_2026_11_12.md",
+            "agentplane/system_tests/k3s/baseline.py",
+            "agentplane/system_tests/k3s/test_baseline.py"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131664552540,
+              "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358007190/job/131664552540",
+              "completed_at": "2026-11-13T03:26:50Z"
+            },
+            "Pre-commit checks": {
+              "id": 131664551690,
+              "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358007163/job/131664551690",
+              "completed_at": "2026-11-13T03:19:02Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131664552404,
+              "head_sha": "6564f2abd7c6cf08fa4ab5c58ee4893a4c5051af",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358007279/job/131664552404",
+              "completed_at": "2026-11-13T03:19:02Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "16040": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16040",
+          "state": "OPEN",
+          "draft": true,
+          "head": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+          "merged_at": null,
+          "merge_commit": null,
+          "files": [
+            "agentplane/system_tests/debug/usable_import_transactions_2026_11_12.md",
+            "agentplane/system_tests/deployment/README.md",
+            "agentplane/system_tests/k3s/BUILD.bazel",
+            "agentplane/system_tests/k3s/baseline.py",
+            "agentplane/system_tests/k3s/test_pinned_images.py",
+            "agentplane/system_tests/suites/BUILD.bazel",
+            "agentplane/system_tests/suites/test_import_transactions.py"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131670976073,
+              "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43360004931/job/131670976073",
+              "completed_at": null
+            },
+            "Pre-commit checks": {
+              "id": 131670975033,
+              "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43360004745/job/131670975033",
+              "completed_at": "2026-11-13T03:36:51Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131670975129,
+              "head_sha": "200b42f1b9ea8719502e62d0fa00a48b4e774ad7",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43360004744/job/131670975129",
+              "completed_at": "2026-11-13T03:37:05Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:47:21.763839+00:00"
+        },
+        "16038": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16038",
+          "state": "OPEN",
+          "draft": false,
+          "head": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+          "merged_at": null,
+          "merge_commit": null,
+          "files": [
+            "agentplane/system_tests/debug/mcp_case_overlap_2026_11_12.json",
+            "agentplane/system_tests/debug/mcp_case_overlap_2026_11_12.md",
+            "agentplane/system_tests/deployment/mcp_fixture_chart.py",
+            "agentplane/system_tests/deployment/mcp_servers.py",
+            "agentplane/system_tests/scenarios/mcp.py",
+            "agentplane/system_tests/suites/mcp/BUILD.bazel",
+            "agentplane/system_tests/suites/mcp/test_actions.py"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131669984631,
+              "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359689299/job/131669984631",
+              "completed_at": null
+            },
+            "Pre-commit checks": {
+              "id": 131669984812,
+              "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359689340/job/131669984812",
+              "completed_at": "2026-11-13T03:33:58Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131669984365,
+              "head_sha": "d2d5fb4759a6e8f95304c7d79f502428082f8e4b",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359689297/job/131669984365",
+              "completed_at": "2026-11-13T03:34:17Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:47:21.763839+00:00"
+        },
+        "16047": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16047",
+          "state": "OPEN",
+          "draft": true,
+          "head": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+          "merged_at": null,
+          "merge_commit": null,
+          "files": [
+            "agentplane/system_tests/debug/harness_artifact_mounts_2026_11_12.md",
+            "agentplane/system_tests/deployment/BUILD.bazel",
+            "agentplane/system_tests/k3s/defs.bzl",
+            "agentplane/system_tests/suites/BUILD.bazel",
+            "agentplane/system_tests/suites/test_harness_artifact_mount.py"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131669954427,
+              "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359679809/job/131669954427",
+              "completed_at": null
+            },
+            "Pre-commit checks": {
+              "id": 131669952131,
+              "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359679601/job/131669952131",
+              "completed_at": "2026-11-13T03:34:04Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131669952437,
+              "head_sha": "940e9abc3c7ef1f5e4d69d47a5666113d588c7a4",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359679658/job/131669952437",
+              "completed_at": "2026-11-13T03:34:04Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:47:21.763839+00:00"
+        },
+        "16055": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16055",
+          "state": "MERGED",
+          "draft": false,
+          "head": "f71380106f49a413545238029ad63f228ad488c4",
+          "merged_at": "2026-11-13T03:29:55Z",
+          "merge_commit": "30bb39d37c0df29156f6c0be1d14f525ae87482d",
+          "files": [
+            "agentplane/system_tests/debug/vm_guest_progress_and_host_crashes_2026_11_12.md"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131667812908,
+              "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359012438/job/131667812908",
+              "completed_at": "2026-11-13T03:28:49Z"
+            },
+            "Pre-commit checks": {
+              "id": 131667812378,
+              "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359012394/job/131667812378",
+              "completed_at": "2026-11-13T03:28:13Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131667812637,
+              "head_sha": "f71380106f49a413545238029ad63f228ad488c4",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359012535/job/131667812637",
+              "completed_at": "2026-11-13T03:28:20Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "16053": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16053",
+          "state": "MERGED",
+          "draft": false,
+          "head": "b401f68823861116ce1e54f512e079c23ade5307",
+          "merged_at": "2026-11-13T03:29:38Z",
+          "merge_commit": "74240dc86f74717db31af280609dc48deb68dc0e",
+          "files": [
+            "agentplane/app/debug/2026_11_12_auth_discovery_stall.patch",
+            "agentplane/app/debug/2026_11_12_thread_browser_auth_setup_timeout.md"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131666999075,
+              "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358762792/job/131666999075",
+              "completed_at": "2026-11-13T03:26:38Z"
+            },
+            "Pre-commit checks": {
+              "id": 131666997694,
+              "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358762540/job/131666997694",
+              "completed_at": "2026-11-13T03:25:48Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131666998383,
+              "head_sha": "b401f68823861116ce1e54f512e079c23ade5307",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43358762612/job/131666998383",
+              "completed_at": "2026-11-13T03:26:05Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "16045": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16045",
+          "state": "MERGED",
+          "draft": false,
+          "head": "db110c1d13814e6d8852ec930e7bf940de599357",
+          "merged_at": "2026-11-13T03:19:39Z",
+          "merge_commit": "917d58fa555b35f355992ed9798182b9758c6a18",
+          "files": [
+            "agentplane/app/debug/2026_11_12_thread_window_projection_gap.md",
+            "agentplane/app/testing/http2_proxy.py"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131663500634,
+              "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357678789/job/131663500634",
+              "completed_at": "2026-11-13T03:19:19Z"
+            },
+            "Pre-commit checks": {
+              "id": 131663499849,
+              "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357678686/job/131663499849",
+              "completed_at": "2026-11-13T03:16:09Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131663499915,
+              "head_sha": "db110c1d13814e6d8852ec930e7bf940de599357",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43357678773/job/131663499915",
+              "completed_at": "2026-11-13T03:16:31Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "16051": {
+          "url": "https://github.com/agentydragon/ducktape/pull/16051",
+          "state": "MERGED",
+          "draft": false,
+          "head": "57a401ef6ae8b092c943324895c288dee997656f",
+          "merged_at": "2026-11-13T03:34:11Z",
+          "merge_commit": "e22a7434e4cc88de822f5ba696f2f66025dfd199",
+          "files": [
+            "agentplane/app/debug/2026_11_12_thread_window_projection_gap.md",
+            "agentplane/app/test_thread_window_browser.py"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131668961493,
+              "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359363781/job/131668961493",
+              "completed_at": "2026-11-13T03:34:03Z"
+            },
+            "Pre-commit checks": {
+              "id": 131668961584,
+              "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359363878/job/131668961584",
+              "completed_at": "2026-11-13T03:31:08Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131668961178,
+              "head_sha": "57a401ef6ae8b092c943324895c288dee997656f",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43359363650/job/131668961178",
+              "completed_at": "2026-11-13T03:31:29Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        },
+        "15214": {
+          "url": "https://github.com/agentydragon/ducktape/pull/15214",
+          "state": "OPEN",
+          "draft": false,
+          "head": "dead6b620a26eb5a3ff4a5bfb7a071885e6bd70b",
+          "merged_at": null,
+          "merge_commit": null,
+          "files": [
+            "agentplane/system_tests/deployment/BUILD.bazel",
+            "agentplane/system_tests/deployment/README.md",
+            "agentplane/system_tests/deployment/fixture_chart.py",
+            "agentplane/system_tests/k3s/defs.bzl",
+            "agentplane/system_tests/suites/BUILD.bazel",
+            "agentplane/system_tests/suites/mcp/BUILD.bazel",
+            "devinfra/bazel/oci.MODULE.bazel"
+          ],
+          "checks": {
+            "bazel-ci / Test & Build": {
+              "id": 131607558086,
+              "head_sha": "dead6b620a26eb5a3ff4a5bfb7a071885e6bd70b",
+              "name": "bazel-ci / Test & Build",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43340571021/job/131607558086",
+              "completed_at": "2026-11-13T01:06:39Z"
+            },
+            "Pre-commit checks": {
+              "id": 131607556126,
+              "head_sha": "dead6b620a26eb5a3ff4a5bfb7a071885e6bd70b",
+              "name": "Pre-commit checks",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43340570911/job/131607556126",
+              "completed_at": "2026-11-13T00:54:06Z"
+            },
+            "Build artifacts + imports check": {
+              "id": 131607556783,
+              "head_sha": "dead6b620a26eb5a3ff4a5bfb7a071885e6bd70b",
+              "name": "Build artifacts + imports check",
+              "status": "completed",
+              "conclusion": "success",
+              "details_url": "https://github.com/agentydragon/ducktape/actions/runs/43340570908/job/131607556783",
+              "completed_at": "2026-11-13T00:54:30Z"
+            }
+          },
+          "observed_at_utc": "2026-11-13T03:41:57.478981+00:00"
+        }
+      },
+      "observation_note": "Non-atomic snapshot: individual PR observation times are retained; newly completed source checks refreshed at the aggregate observation time."
+    }
+  },
+  "prior_backend_refresh": {
+    "window": ["2026-11-10T00:00:00Z", "2026-11-12T23:59:19Z"],
+    "source_devel_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
+    "summary": {
+      "name": "All production backend",
+      "n": 110,
+      "outcomes": {
+        "green": 102,
+        "failed": 4,
+        "cancelled": 0,
+        "pending": 4,
+        "missing": 0
+      },
+      "green_seconds": {
+        "n": 102,
+        "mean": 851.0980392156863,
+        "p50": 713.0,
+        "p90": 1438.0,
+        "max": 6940.0
+      }
+    },
+    "groups": [
+      {
+        "name": "All production backend",
+        "n": 110,
+        "outcomes": {
+          "green": 102,
+          "failed": 4,
+          "cancelled": 0,
+          "pending": 4,
+          "missing": 0
+        },
+        "green_seconds": {
+          "n": 102,
+          "mean": 851.0980392156863,
+          "p50": 713.0,
+          "p90": 1438.0,
+          "max": 6940.0
+        }
+      },
+      {
+        "name": "Production backend only",
+        "n": 87,
+        "outcomes": {
+          "green": 82,
+          "failed": 2,
+          "cancelled": 0,
+          "pending": 3,
+          "missing": 0
+        },
+        "green_seconds": {
+          "n": 82,
+          "mean": 810.780487804878,
+          "p50": 690.0,
+          "p90": 1438.0,
+          "max": 4499.0
+        }
+      },
+      {
+        "name": "Mixed production backend",
+        "n": 23,
+        "outcomes": {
+          "green": 20,
+          "failed": 2,
+          "cancelled": 0,
+          "pending": 1,
+          "missing": 0
+        },
+        "green_seconds": {
+          "n": 20,
+          "mean": 1016.4,
+          "p50": 713.0,
+          "p90": 1269.0,
+          "max": 6940.0
+        }
+      },
+      {
+        "name": "Backend tests/helpers",
+        "n": 22,
+        "outcomes": {
+          "green": 22,
+          "failed": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "missing": 0
+        },
+        "green_seconds": {
+          "n": 22,
+          "mean": 405.72727272727275,
+          "p50": 242.0,
+          "p90": 669.0,
+          "max": 1779.0
+        }
+      },
+      {
+        "name": "Backend BUILD files only",
+        "n": 5,
+        "outcomes": {
+          "green": 5,
+          "failed": 0,
+          "cancelled": 0,
+          "pending": 0,
+          "missing": 0
+        },
+        "green_seconds": {
+          "n": 5,
+          "mean": 294.8,
+          "p50": 225.0,
+          "p90": 675.0,
+          "max": 675.0
+        }
+      }
+    ],
+    "timing_groups": [
+      {
+        "name": "All green production heads",
+        "short_name": "All green",
+        "green_seconds": {
+          "n": 102,
+          "mean": 851.0980392156863,
+          "p50": 713.0,
+          "p90": 1438.0,
+          "max": 6940.0
+        }
+      },
+      {
+        "name": "One Bazel attempt",
+        "short_name": "One attempt",
+        "green_seconds": {
+          "n": 80,
+          "mean": 569.8625,
+          "p50": 619.0,
+          "p90": 912.0,
+          "max": 1418.0
+        }
+      },
+      {
+        "name": "Multiple Bazel attempts",
+        "short_name": "Repeated",
+        "green_seconds": {
+          "n": 22,
+          "mean": 1873.7727272727273,
+          "p50": 1437.0,
+          "p90": 2495.0,
+          "max": 6940.0
+        }
+      }
+    ],
+    "report_commit": "8032ec1140281be66ee934b69bb71b25f892be82"
+  },
+  "backend_refresh": {
+    "window": ["2026-11-10T00:00:00Z", "2026-11-13T03:03:35Z"],
+    "source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+    "observed_at_utc": "2026-11-13T03:04:30.559122+00:00",
+    "summary": {
+      "name": "All production backend",
+      "n": 129,
+      "outcomes": {
+        "green": 124,
+        "failed": 4,
+        "cancelled": 1,
+        "pending": 0,
+        "missing": 0
+      },
+      "green_seconds": {
+        "n": 124,
+        "mean": 815.9112903225806,
+        "p50": 687.0,
+        "p90": 1418.0,
+        "max": 6940.0
+      }
+    },
+    "timing_groups": [
+      {
+        "name": "All green production heads",
+        "short_name": "All green",
+        "green_seconds": {
+          "n": 124,
+          "mean": 815.9112903225806,
+          "p50": 687.0,
+          "p90": 1418.0,
+          "max": 6940.0
+        }
+      },
+      {
+        "name": "One Bazel attempt",
+        "short_name": "One attempt",
+        "green_seconds": {
+          "n": 100,
+          "mean": 575.78,
+          "p50": 643.0,
+          "p90": 882.0,
+          "max": 1418.0
+        }
+      },
+      {
+        "name": "Multiple Bazel attempts",
+        "short_name": "Repeated",
+        "green_seconds": {
+          "n": 24,
+          "mean": 1816.4583333333333,
+          "p50": 1410.0,
+          "p90": 2495.0,
+          "max": 6940.0
+        }
+      }
+    ],
+    "repeat_audit": {
+      "green_production_heads": 124,
+      "repeat_heads": 24,
+      "preceding_failed_bazel_checks": 27,
+      "failed_checks": [
+        {
+          "pr": 15266,
+          "head_sha": "10e4afb6b2dfc14d01be7534a459976c168a7b5f",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42737881539/job/129571463264",
+          "completed_at_utc": "2026-11-10T01:59:12Z"
+        },
+        {
+          "pr": 15382,
+          "head_sha": "ed5f1f4e2b89bbfe727df8a55caa771d147277da",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42771715093/job/129680811638",
+          "completed_at_utc": "2026-11-10T07:05:55Z"
+        },
+        {
+          "pr": 15403,
+          "head_sha": "32fe5211c9ee63a68288efded9034c90f151e30b",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42783006275/job/129717326432",
+          "completed_at_utc": "2026-11-10T08:38:28Z"
+        },
+        {
+          "pr": 15309,
+          "head_sha": "efb4b0b08c766ed47168ce06f8ab60932a389f9b",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42789441963/job/129738802469",
+          "completed_at_utc": "2026-11-10T09:28:40Z"
+        },
+        {
+          "pr": 15438,
+          "head_sha": "2a2032444f7a0e1de0b4c7ec5686474499d9490e",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42801741554/job/129780728965",
+          "completed_at_utc": "2026-11-10T10:58:20Z"
+        },
+        {
+          "pr": 15443,
+          "head_sha": "cdb40285f80da1cdf3241bbebc3b8f8bc94646da",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42810459543/job/129810268333",
+          "completed_at_utc": "2026-11-10T12:00:42Z"
+        },
+        {
+          "pr": 15442,
+          "head_sha": "e47a0c1c08ae10761c85e59f771e643d508a88f1",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42860800230/job/129986068123",
+          "completed_at_utc": "2026-11-10T17:20:03Z"
+        },
+        {
+          "pr": 15481,
+          "head_sha": "e94e30b72846bd7467fd36b5464b8ddd9da63997",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42890885287/job/130091411106",
+          "completed_at_utc": "2026-11-10T20:16:56Z"
+        },
+        {
+          "pr": 15534,
+          "head_sha": "aed9175b73ac811ce788935d83070479b4541db1",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42908507891/job/130152685620",
+          "completed_at_utc": "2026-11-10T22:01:11Z"
+        },
+        {
+          "pr": 15493,
+          "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130188140965",
+          "completed_at_utc": "2026-11-10T23:12:56Z"
+        },
+        {
+          "pr": 15493,
+          "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130177391971",
+          "completed_at_utc": "2026-11-10T22:44:02Z"
+        },
+        {
+          "pr": 15493,
+          "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130174248746",
+          "completed_at_utc": "2026-11-10T22:32:46Z"
+        },
+        {
+          "pr": 15493,
+          "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130164314372",
+          "completed_at_utc": "2026-11-10T22:25:53Z"
+        },
+        {
+          "pr": 15570,
+          "head_sha": "6fa67275f62743e7dd78b8b587ead8f72e5cba2a",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42919828687/job/130191561872",
+          "completed_at_utc": "2026-11-10T23:21:05Z"
+        },
+        {
+          "pr": 15653,
+          "head_sha": "0e81aa74996f3e294ca1a87b85cebe47aebc086e",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42968464866/job/130351101246",
+          "completed_at_utc": "2026-11-11T06:02:02Z"
+        },
+        {
+          "pr": 15694,
+          "head_sha": "991f2203d026bb3562264fef4bfed8fe33350459",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42987376476/job/130411669793",
+          "completed_at_utc": "2026-11-11T08:40:24Z"
+        },
+        {
+          "pr": 15695,
+          "head_sha": "8f9bf22b68436d5746b0d43b191e312169911951",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42988093982/job/130414017595",
+          "completed_at_utc": "2026-11-11T08:46:37Z"
+        },
+        {
+          "pr": 15728,
+          "head_sha": "13d3ed09bb271b3138ed63aaf0db580bef949dfc",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43143642851/job/130936285344",
+          "completed_at_utc": "2026-11-12T02:59:40Z"
+        },
+        {
+          "pr": 15731,
+          "head_sha": "33ee756df59963cc793857edfc32b7032977982b",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43144386465/job/130938665408",
+          "completed_at_utc": "2026-11-12T03:03:36Z"
+        },
+        {
+          "pr": 15741,
+          "head_sha": "899756b77b86f52b4f3fd055bb27dec67fe4c814",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43170062662/job/131020959753",
+          "completed_at_utc": "2026-11-12T06:52:57Z"
+        },
+        {
+          "pr": 15718,
+          "head_sha": "4515aece02eb23130018f799a360b944609e57d7",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43185888492/job/131072809574",
+          "completed_at_utc": "2026-11-12T08:57:56Z"
+        },
+        {
+          "pr": 15838,
+          "head_sha": "fb9695a5faf6f58f30c9540a50236758e06e4e8b",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43202409169/job/131128920478",
+          "completed_at_utc": "2026-11-12T10:51:27Z"
+        },
+        {
+          "pr": 15858,
+          "head_sha": "b28fd61ca4b6084cc77382a82d66e147d5a07bfd",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43204893730/job/131137457445",
+          "completed_at_utc": "2026-11-12T11:09:14Z"
+        },
+        {
+          "pr": 15873,
+          "head_sha": "105266c4f62b4d9ddb6b4c5a031a6ba184f346c9",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43207425772/job/131146024814",
+          "completed_at_utc": "2026-11-12T11:23:48Z"
+        },
+        {
+          "pr": 15895,
+          "head_sha": "a2608c19dbf58aa8fe0500c468f74033dd0dd6a3",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43312805528/job/131512978207",
+          "completed_at_utc": "2026-11-12T21:58:24Z"
+        },
+        {
+          "pr": 15919,
+          "head_sha": "a572935417d701cb02d8b2bfb058ea37a35851ea",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43331086235/job/131575673856",
+          "completed_at_utc": "2026-11-12T23:44:07Z"
+        },
+        {
+          "pr": 15990,
+          "head_sha": "7e2b87ffd67b0fd2a9537440c4aa97fe312a3cc7",
+          "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43347618028/job/131630669408",
+          "completed_at_utc": "2026-11-13T01:58:47Z"
+        }
+      ],
+      "repeat_share_of_summed_head_feedback": 0.4308955946744685,
+      "green_within_240_seconds": 25,
+      "interpretation": "All 24 repeated green production heads had a preceding failed Bazel check on that same PR head. This is not a fresh same-tested-merge recovery rate or an attribution of avoidable delay. Summed head feedback is neither CPU nor one elapsed cohort wall clock."
+    },
+    "required_gates": [
+      "bazel-ci / Test & Build",
+      "Pre-commit checks",
+      "Build artifacts + imports check"
+    ],
+    "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records.",
+    "limits": [
+      "All 766 search records were paginated below the 1000-result cap, and files/head metadata were fetched in 39 batches; all six >100-file PRs were paginated completely. Filtering baseRefName=devel leaves a 719-PR frame. Five eligible backend candidates lacked an in-window first workflow clock; see exclusions.",
+      "One latest observed head per PR: superseded earlier heads are absent. This cannot estimate all-push success, cancellation or flake rates. Later mutations can change current GitHub state.",
+      "Production backend combines pure and mixed changes. Backend paths exclude frontend, system_tests, documentation/plans/debug and prose/image suffixes; test/helper and BUILD-only paths remain separate. This is a reviewed selection heuristic, not Bazel invalidation attribution.",
+      "Freshly verified ruleset15894562 requires bazel-ci / Test & Build, Pre-commit checks, Build artifacts + imports check, zero approvals and non-strict up-to-date checks. Trusted-fork checks are attached to exact PR heads; run head_sha is not substituted for that association.",
+      "Native BuildBuddy commit provenance is recorded for selected examples. Most population rows have unobserved tested merge SHA. Same PR head is insufficient for a same-tested-tree causal comparison.",
+      "Workflow creation is a proxy for unavailable push timestamps. Review, draft/conflict state, mergeability, auto-merge eligibility, notifications and first log access were not reconstructed. Green distributions exclude four failed and one cancelled production heads.",
+      "This refreshed pre-dispatch baseline is not a matched post-fix effect estimate. The larger window and latest-head selection changed the population. Old all-PR/native/pool measurements retain original windows; simultaneous experiments report their overlap separately."
+    ],
+    "complete_cohort_evidence": "https://agentydragon.github.io/ducktape/latency/evidence.json"
   }
 }
