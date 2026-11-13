@@ -21,7 +21,6 @@ import (
 	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
-	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
