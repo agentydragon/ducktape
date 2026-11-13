@@ -1018,7 +1018,8 @@ mod tests {
 #[cfg(test)]
 mod output_failure_tests {
     use super::*;
-    use analysis::diagnostics::InvocationDiagnostic;
+    use analysis::diagnostics::{ChunkDiagnostic, InvocationDiagnostic};
+    use analysis::reports::schema::PurityCompletionDisagreement;
     use anyhow::Error;
     use command_diagnostics::{DiagnosticOutputError, finish};
     use std::error::Error as _;
@@ -1039,6 +1040,36 @@ mod output_failure_tests {
             Err(io::Error::from(io::ErrorKind::PermissionDenied))
         }
     }
+
+    fn purity_disagreement_diagnostic() -> ChunkDiagnostic {
+        ChunkDiagnostic::PurityCompletionDisagreement {
+            ordinal: source_identity::SourceUnitOrdinal(3),
+            source_location: Some(analysis::SourceLocation {
+                source_path: "src/main.js".to_owned(),
+                start_line: 4,
+                end_line: 4,
+                start_column: Some(7),
+            }),
+            evidence: Box::new(PurityCompletionDisagreement {
+                prepared: analysis::Purity::pure(),
+                completed: analysis::Purity::NotPure {
+                    reasons: vec![analysis::PurityReason {
+                        rule: analysis::PurityRule::UnknownCall,
+                        source_location: None,
+                        detail: Some("injected monitoring evidence".to_owned()),
+                        author_guidance: None,
+                        cause_ref: None,
+                        cause: None,
+                        span: Default::default(),
+                    }],
+                },
+            }),
+        }
+    }
+
+    const PURITY_DISAGREEMENT_DIAGNOSTIC: &str = "warning: chunk main: synchronous purity completion disagreed at statement #3 \
+         (src/main.js:4:7): prepared pure, completed not pure \
+         (unknown_call: injected monitoring evidence)\n";
 
     #[test]
     fn diagnostic_write_and_flush_failures_retain_the_operation_and_native_io_causes() {
@@ -1076,6 +1107,36 @@ mod output_failure_tests {
                 assert!(!report_output_broken_pipe(&error));
             }
         }
+    }
+
+    #[test]
+    fn purity_completion_disagreement_renders_one_source_and_ordinal_diagnostic() {
+        let mut stderr = Vec::new();
+        let result = command_diagnostics::run(&mut stderr, |diagnostics| {
+            diagnostics.record_chunk("main", purity_disagreement_diagnostic());
+            Ok(())
+        });
+
+        result.expect("diagnostic write succeeds");
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            PURITY_DISAGREEMENT_DIAGNOSTIC
+        );
+    }
+
+    #[test]
+    fn purity_completion_disagreement_is_rendered_when_analysis_fails() {
+        let mut stderr = Vec::new();
+        let result: Result<()> = command_diagnostics::run(&mut stderr, |diagnostics| {
+            diagnostics.record_chunk("main", purity_disagreement_diagnostic());
+            Err(Error::msg("analysis failed"))
+        });
+
+        assert_eq!(result.unwrap_err().to_string(), "analysis failed");
+        assert_eq!(
+            String::from_utf8(stderr).unwrap(),
+            PURITY_DISAGREEMENT_DIAGNOSTIC
+        );
     }
 
     #[test]
