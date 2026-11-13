@@ -3492,6 +3492,8 @@ spec:
   dependsOn:
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
@@ -4370,6 +4372,8 @@ metadata:
 spec:
   dependsOn:
     - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: cert-manager-environment
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/forgejo-token-rotation
