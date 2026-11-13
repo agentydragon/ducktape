@@ -8869,5 +8869,91 @@
         }
       ]
     }
+  },
+  "report_validation": {
+    "observed_at_utc": "2026-11-13T12:20:38+00:00",
+    "test": {
+      "command": "bbr test //x/agentplane_plan_preview:visual_test --noremote_accept_cached",
+      "invocation_id": "ee9ef0da-4808-44d5-895f-741d470e25d3",
+      "url": "https://app.buildbuddy.io/invocation/ee9ef0da-4808-44d5-895f-741d470e25d3",
+      "target_status": "PASSED",
+      "parametrized_case_count": 8,
+      "passed_cases": [
+        "test_pages[home-desktop-light]",
+        "test_pages[home-desktop-dark]",
+        "test_pages[home-mobile-light]",
+        "test_pages[home-mobile-dark]",
+        "test_pages[report-desktop-light]",
+        "test_pages[report-desktop-dark]",
+        "test_pages[report-mobile-light]",
+        "test_pages[report-mobile-dark]"
+      ],
+      "failed_cases": [],
+      "test_duration_seconds": 30.69
+    },
+    "served_assets_sha256": {
+      "index.html": "0c1d20b7523d3f1e3044b9dc1b622b4719fbd3f4441572b8effca29bc1422165",
+      "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
+      "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf",
+      "agentplane-organization/index.html": "262dfc39d13bd1b1eb8cb0677b965db09dc13834be117c662bed933dbcaa8402",
+      "agentplane-organization/go-plan.json": "debcb246d89a62655925020bf6dc984892643f7f9cfc69e1b213ebe20ab4007b",
+      "agentplane-organization/go-files.json": "556c855c49c79d041431bae21d1a9ba4524afbaa910b34694202104240efdd6d"
+    },
+    "validated_evidence_payload_sha256": "bbff1ee30b6ca6e37b5d84db3f0527c0f423f3f025b4c088a9c54d710ab707f4",
+    "evidence_hash_scope": "Canonical evidence before adding report_validation and go_batch_verification; rendering inputs unchanged.",
+    "screenshots_reviewed": {
+      "themes": ["light", "dark"],
+      "viewports": ["1280x900", "390x844"],
+      "checkpoints": [
+        "whole Go-tree plan",
+        "sampler ownership sequence",
+        "home organization card"
+      ]
+    },
+    "controls_checked": [
+      "Real pinned esm.sh and jsDelivr assets",
+      "Live system color-scheme changes",
+      "Navigation anchors",
+      "Why other areas stay together disclosure",
+      "Browse all 205 Go directories disclosure and table rows",
+      "1,227 unique ledger entries downloaded over HTTP",
+      "Page and table horizontal overflow",
+      "Completed historical batch controls"
+    ]
+  },
+  "go_batch_verification": {
+    "planned_paths": {
+      "proposed_head": "daa539e6ca2d6dbe340c7906e17612f3b9ee2308",
+      "source_sha": "d9b2064b76c69ebd9332342e5e95e11dc192717a",
+      "total_files": 1227,
+      "planned_paths_exist": true,
+      "all_moved_files_have_groups": true,
+      "moved_go_files": 87,
+      "later_conditional_files": 50
+    },
+    "sampler_focused_retry": {
+      "head": "922da60b9bb2e2c6b4a0ca2be507ead2137bbd52",
+      "target": "//agentplane/central_sampler:central_sampler_test",
+      "invocation": "cdbf620e-b57c-4c02-a490-b2cf6f114b0f",
+      "result": "PASSED",
+      "whole_target_retry": 1,
+      "test_assertions_or_timeouts_changed": false
+    },
+    "ci_incidents": [
+      {
+        "pr": 16210,
+        "failed_head": "2b02d73500acaf309438a35e7f88dab41c3ae6e8",
+        "invocation": "fb394e77-1fa0-5424-aba9-c4f94e3fa7a0",
+        "failure": "Analysis failure: concurrently landed startup test referenced the removed environment_runtime_transport package.",
+        "resolution": "Existing devel PR #16218 repairs the importer; all open layers rebased onto d9b2064b76. Current exact-head CI passes."
+      },
+      {
+        "pr": 16214,
+        "failed_head": "b6383b2e7a2b6cc4323f199b56010f83e70e6046",
+        "invocation": "14210264-6c40-56fa-8094-f162ac369b07",
+        "failure": "Pod suite: 20 passed, 1 idle-resume scenario timed out while Sandbox stayed Suspended/Idle with no Pod. ALREADY_EXISTS warning observed; causal relation unproven.",
+        "resolution": "Current rebased head passes full CI. No timeout/assertion/runtime change or targeted retry was made to clear this failure. Lifecycle investigation is separate from the package move."
+      }
+    ]
   }
 }
