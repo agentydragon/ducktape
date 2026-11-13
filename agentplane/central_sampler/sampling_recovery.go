@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/eventcodec"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
@@ -85,7 +86,7 @@ func recoveryEventsBefore(ctx context.Context, tx *sql.Tx, sessionID string, bef
 			return nil, err
 		}
 		entry := &eventlogpb.EventEntry{}
-		if err := decodeStoredEvent(wire, entry); err != nil {
+		if err := eventcodec.Decode(wire, entry); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)

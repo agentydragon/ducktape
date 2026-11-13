@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/eventcodec"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -35,7 +36,7 @@ func TestAuditMigrationAtomicallyRewritesIntentAndJournal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		wire, err := encodeStoredEvent(raw)
+		wire, err := eventcodec.Encode(raw)
 		if err != nil {
 			t.Fatal(err)
 		}

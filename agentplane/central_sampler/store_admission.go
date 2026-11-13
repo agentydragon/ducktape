@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -44,7 +45,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			admission = &eventlogpb.EventEntry{}
-			if err := decodeStoredEvent(entryBytes, admission); err != nil {
+			if err := eventcodec.Decode(entryBytes, admission); err != nil {
 				return err
 			}
 			return notifyWork(ctx, tx)
@@ -130,7 +131,7 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		return nil, err
 	}
 	entry := &eventlogpb.EventEntry{}
-	if err := decodeStoredEvent(wire, entry); err != nil {
+	if err := eventcodec.Decode(wire, entry); err != nil {
 		return nil, err
 	}
 	response := &samplerpb.GetCommandResponse{Admission: entry, Outcome: samplerpb.CommandOutcome(outcome)}
@@ -156,7 +157,7 @@ func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) 
 			return nil, err
 		}
 		entry := &eventlogpb.EventEntry{}
-		if err := decodeStoredEvent(wire, entry); err != nil {
+		if err := eventcodec.Decode(wire, entry); err != nil {
 			return nil, err
 		}
 		entries = append(entries, entry)
