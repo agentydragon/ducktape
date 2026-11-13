@@ -10,7 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
