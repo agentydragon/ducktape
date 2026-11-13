@@ -45,8 +45,7 @@ button is not necessary. File loss, configuration corruption, or firmware
 behavior are hypotheses, not established causes; WiFi APIs cannot diagnose NAND
 health or the underlying filesystem.
 
-The current root listing reports `ezshare.cfg` at zero bytes with timestamp
-1231858834. The previous committed manifest already records `EZSHARE.CFG` with
+The current root listing reports `ezshare.cfg` at zero bytes with timestamp 1231858834. The previous committed manifest already records `EZSHARE.CFG` with
 exactly those values, so this metadata alone is not evidence of new corruption.
 No files were deleted or formatted. The later API recovery changed only the
 card's WiFi/admin settings and applied them through its WiFi restart endpoint.
