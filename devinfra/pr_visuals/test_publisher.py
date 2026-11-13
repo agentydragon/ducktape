@@ -5,10 +5,11 @@ import json
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock, Thread
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
 
 import pytest
 import pytest_bazel
@@ -651,7 +652,10 @@ def test_fallback_target_title_is_not_repeated_in_gallery_or_comment(tmp_path: P
     assert detail_header.count(label) == 1
     assert target_summary.count(label) == 1
     assert target_summary.count("<a ") == 2
-    assert ">link</a>" in target_summary
+    assert (
+        f'<a href="https://visuals/commits/head/tests/{source.slug}/index.html"><code>{label}</code></a>'
+        in target_summary
+    )
     assert ">request rerun</a>" in target_summary
 
 
@@ -2272,6 +2276,37 @@ def _comment_asset(*, path: str, label: str, **kwargs: Any) -> ReviewAsset:
     return ReviewAsset(path=path, label=label, case_id=f"ui/test_visual.py::{path}", **kwargs)
 
 
+class _CommentHtmlChecker(HTMLParser):
+    void_elements: ClassVar[set[str]] = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.open_elements: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag not in self.void_elements:
+            self.open_elements.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        assert self.open_elements
+        assert self.open_elements.pop() == tag
+
+
 def test_success_comment_body_reports_counts_and_previews() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
@@ -2335,19 +2370,215 @@ def test_comment_template_escapes_html_and_preserves_table_structure() -> None:
     assert "\n\n</details>" in body
 
 
-def test_comment_budget_omits_oversized_target_section() -> None:
+def test_comment_budget_skips_an_oversized_screenshot_and_keeps_target_summary() -> None:
     test = ReviewTest(
         target_label="//ex:visual",
         slug="s",
         title="Ex",
-        summary=ClassificationCounts(new=1),
-        assets=[_comment_asset(path="a.png", label="x" * COMMENT_BUDGET, classification="new")],
+        summary=ClassificationCounts(modified=1),
+        assets=[
+            _comment_asset(
+                path=f"{'x' * COMMENT_BUDGET}.png",
+                label="oversized image",
+                classification="modified",
+                changed_fraction=0.5,
+            )
+        ],
     )
     body = success_comment_body(
         repository="r", commit_sha="a" * 40, url="https://v/", review_tests=[test], base_sha="b" * 40
     )
-    assert "1 changed test section omitted for length" in body
-    assert len(body) <= COMMENT_BUDGET
+    assert '<a href="https://v/tests/s/index.html"><code>//ex:visual</code></a>' in body
+    assert "1 screenshot comparison omitted for length" in body
+    assert "0 changed target summaries" not in body
+    assert '<a href="https://v/index.html">Full gallery</a>' in body
+    assert "<table>" not in body
+    rendered = CommentUpdate(body=body, state=CommentState("a" * 40, "published", "startup_failure")).render()
+    assert len(rendered.encode("utf-16-le")) // 2 <= COMMENT_BUDGET
+
+
+def test_comment_budget_lets_smaller_comparisons_follow_an_oversized_screenshot() -> None:
+    review_tests = [
+        ReviewTest(
+            target_label="//a:large",
+            slug="large",
+            title="Large target",
+            summary=ClassificationCounts(modified=1),
+            assets=[
+                _comment_asset(
+                    path=f"{'x' * COMMENT_BUDGET}.png",
+                    label="too large",
+                    classification="modified",
+                    changed_fraction=0.95,
+                )
+            ],
+        ),
+        ReviewTest(
+            target_label="//b:small",
+            slug="small",
+            title="Small target",
+            summary=ClassificationCounts(modified=1),
+            assets=[
+                _comment_asset(path="small.png", label="small view", classification="modified", changed_fraction=0.4)
+            ],
+        ),
+    ]
+    body = success_comment_body(
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=review_tests, base_sha="b" * 40
+    )
+
+    assert '<a href="https://v/tests/large/index.html"><code>//a:large</code></a>' in body
+    assert '<a href="https://v/tests/small/index.html"><code>//b:small</code></a>' in body
+    assert "tests/small/small.png" in body
+    assert body.count("<table>") == 1
+    assert "1 screenshot comparison omitted for length" in body
+
+
+def test_comment_budget_keeps_prioritized_previews_for_a_large_visual_target() -> None:
+    commit_sha = "35aeb419e0e61b07841c6d925fea932c34185a85"
+    assets = [
+        _comment_asset(
+            path=f"screenshots/screen-{index:02d}.png",
+            label=f"banked reset screen {index:02d}",
+            classification="modified",
+            changed_fraction=0.99 - index / 100,
+            changed_pixels=123_456,
+            candidate_dimensions=[2160, 1210],
+            baseline_dimensions=[2160, 1210],
+            dimension_changed=False,
+            baseline_stale=True,
+        )
+        for index in range(79)
+    ]
+    test = ReviewTest(
+        target_label="//aiquota/frontend:screenshots",
+        slug="aiquota-frontend-screenshots-3e9d0f23d39af287",
+        title="aiquota dashboard",
+        base_sha="0a13d8cabfa551075af7d01481624d1c",
+        merge_base_sha="bd410610477e1a714a7fa2ef5eb41d89",
+        baseline_fallback=True,
+        summary=ClassificationCounts(modified=79),
+        assets=assets,
+    )
+    body = success_comment_body(
+        repository="agentydragon/ducktape",
+        commit_sha=commit_sha,
+        url=f"https://s3.allegedly.works/pr-visuals/reviews-test-outputs/{commit_sha}/",
+        review_tests=[test],
+        base_sha="f" * 40,
+        ci_details_url="https://github.com/agentydragon/ducktape/actions/runs/43351224120",
+    )
+    shown = body.count("<table>")
+    omitted = len(assets) - shown
+    rendered = CommentUpdate(body=body, state=CommentState(commit_sha, "published", "startup_failure")).render()
+    parser = _CommentHtmlChecker()
+    parser.feed(body)
+    parser.close()
+
+    assert shown > 0
+    assert f"{omitted} screenshot comparison{'s' if omitted != 1 else ''}" in body
+    assert "0 changed target summaries" not in body
+    assert '<a href="https://s3.allegedly.works/pr-visuals/reviews-test-outputs/' in body
+    assert "not merge base <code>bd410610</code>" in body
+    assert "stale baseline" in body
+    assert "<th>Before</th><th>After</th><th>Diff</th>" in body
+    assert "screen-00.png" in body
+    assert "screen-01.png" in body
+    assert body.index("screen-00.png") < body.index("screen-01.png")
+    assert len(rendered.encode("utf-16-le")) // 2 <= COMMENT_BUDGET
+    assert not parser.open_elements
+
+
+def test_comment_budget_bounds_pathological_labels_and_keeps_html_well_formed() -> None:
+    target_label = "//" + "target" * 1_000
+    asset_label = "state " + "label" * 1_000
+    test = ReviewTest(
+        target_label=target_label,
+        slug="bounded-labels",
+        title="Title " + "text" * 1_000,
+        summary=ClassificationCounts(modified=1),
+        base_sha="b" * 40,
+        merge_base_sha="c" * 40,
+        issues=[
+            ReviewIssue(
+                message=f"problem {index}",
+                source=ReviewIssueSource(invocation=f"inv-{index}", configuration=None, run=1, shards=[1], attempt=1),
+            )
+            for index in range(5)
+        ],
+        assets=[
+            _comment_asset(
+                path="state.png",
+                label=asset_label,
+                classification="modified",
+                changed_fraction=0.6,
+                baseline_stale=True,
+            )
+        ],
+    )
+    body = success_comment_body(
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=[test], base_sha="b" * 40
+    )
+    parser = _CommentHtmlChecker()
+    parser.feed(body)
+    parser.close()
+
+    assert target_label not in body
+    assert asset_label not in body
+    summary_start = body.index('<summary><a href="https://v/tests/bounded-labels/index.html">')
+    target_name = body[summary_start:].split("<code>", 1)[1].split("</code>", 1)[0]
+    assert len(target_name) <= 240
+    assert target_name.endswith("…")
+    assert "… candidate" in body
+    assert "1 additional issue details omitted from the comment" in body
+    assert "problem 0" in body
+    assert "problem 3" in body
+    assert "problem 4" not in body
+    assert "stale baseline" in body
+    assert body.count("<table>") == 1
+    assert not parser.open_elements
+    assert (
+        len(body.encode("utf-16-le")) // 2 + len(CommentState("0" * 40, "published", "startup_failure").metadata()) + 1
+        <= COMMENT_BUDGET
+    )
+
+
+def test_comment_budget_distributes_comparisons_round_robin_across_targets() -> None:
+    target_count = 12
+    assets_per_target = 20
+    review_tests = [
+        ReviewTest(
+            target_label=f"//target-{target_index:02d}:screenshots",
+            slug=f"target-{target_index:02d}",
+            title=f"Target {target_index:02d}",
+            summary=ClassificationCounts(modified=assets_per_target),
+            assets=[
+                _comment_asset(
+                    path=f"target-{target_index:02d}/shot-{asset_index:02d}.png",
+                    label=f"target-{target_index:02d}-shot-{asset_index:02d}",
+                    classification="modified",
+                    changed_fraction=0.8 - asset_index / 100,
+                )
+                for asset_index in range(assets_per_target)
+            ],
+        )
+        for target_index in range(target_count)
+    ]
+    body = success_comment_body(
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=review_tests, base_sha="b" * 40
+    )
+
+    positions = [
+        body.index(f'<summary><a href="https://v/tests/target-{index:02d}/index.html">')
+        for index in range(target_count)
+    ]
+    table_counts = [
+        body[positions[index] : positions[index + 1] if index + 1 < target_count else len(body)].count("<table>")
+        for index in range(target_count)
+    ]
+    assert min(table_counts) >= 2
+    assert max(table_counts) - min(table_counts) <= 1
+    assert len(body.encode("utf-16-le")) // 2 <= COMMENT_BUDGET
 
 
 def test_comment_template_escapes_html_code_and_link_destinations() -> None:
@@ -2460,8 +2691,8 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
     # The target disclosure omits zero-count buckets from its summary.
     lines = body.splitlines()
     assert (
-        "<summary><code>//a:x</code> — 4 modified, 12 new · A · "
-        '<a href="https://v/commits/sha/tests/a/index.html">link</a></summary>'
+        '<summary><a href="https://v/commits/sha/tests/a/index.html"><code>//a:x</code></a> — '
+        "4 modified, 12 new · A</summary>"
     ) in lines
     assert "<summary>1 unchanged target</summary>" in lines
     assert '<a href="https://v/commits/sha/tests/b/index.html"><code>//b:y</code></a>' in body
@@ -2548,8 +2779,8 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
     lines = body.splitlines()
     assert "tests/ex-visuals-abcdef/fresh.png" in body
     summary = (
-        "<summary><code>//ex:visuals</code> — 1 new · Ex · "
-        '<a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html">link</a> · '
+        '<summary><a href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html"><code>//ex:visuals</code></a> — '
+        "1 new · Ex · "
         '<a href="https://github/actions/runs/123">request rerun</a></summary>'
     )
     assert summary in lines
