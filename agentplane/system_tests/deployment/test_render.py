@@ -2,6 +2,7 @@
 
 import json
 import os
+from dataclasses import asdict
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -65,16 +66,16 @@ def _host_port(address: str) -> tuple[str, int]:
     return parsed.hostname, parsed.port
 
 
-def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIXTURE_RLOCATION"])
+def _filled_fixture(runfiles: Runfiles, location: str = "K3S_FIXTURE_RLOCATION") -> rendered_fixture.RenderedFixture:
+    cached = rendered_fixture.read(runfiles.root() / os.environ[location])
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
             ca_cert="fixture-ca\n", ca_key="fixture-key\n", system_roots="system-roots\n", cluster_ca="cluster-ca\n"
         ),
         _TEST_LOCAL_MODEL,
-        _MCP,
-        None,
+        _MCP if cached.mcp_fixtures is not None else None,
+        "test-operator-public-key" if cached.operator_tokens is not None else None,
     )
 
 
@@ -86,6 +87,68 @@ def _vm_fixture_template(runfiles: Runfiles) -> rendered_fixture.RenderedFixture
 @pytest.fixture
 def vm_fixture(_vm_fixture_template: rendered_fixture.RenderedFixture) -> rendered_fixture.RenderedFixture:
     return _vm_fixture_template.model_copy(deep=True)
+
+
+def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles: Runfiles) -> None:
+    ordinary = _filled_fixture(runfiles, "K3S_DEFAULT_FIXTURE_RLOCATION")
+    pod = _filled_fixture(runfiles, "K3S_POD_FIXTURE_RLOCATION")
+    assert pod.model_dump(exclude={"objects"}) == ordinary.model_dump(exclude={"objects"})
+    ordinary_objects = {(doc["kind"], doc["metadata"]["name"]): doc for doc in ordinary.objects}
+    pod_objects = {(doc["kind"], doc["metadata"]["name"]): doc for doc in pod.objects}
+    removed = ordinary_objects.keys() - pod_objects.keys()
+    assert ("Deployment", "mcp-edge") in removed
+    assert ("ConfigMap", "mcp-edge-settings") in removed
+    assert ("ServiceAccount", "mcp-edge") in removed
+    assert ("Role", "mcp-edge") in removed
+    assert ("RoleBinding", "mcp-edge") in removed
+    assert all(name.startswith("mcp-edge") for _, name in removed)
+    # Retained resources are identical, including the app, Actions' command-box executor,
+    # notifications, policy, certificates and storage.
+    assert pod_objects == {key: value for key, value in ordinary_objects.items() if key not in removed}
+    assert not any(
+        "agentplane-mcp-edge:" in container["image"]
+        for doc in pod.objects
+        if doc["kind"] == "Deployment"
+        for container in doc["spec"]["template"]["spec"]["containers"]
+    )
+    _resource(pod.objects, "Deployment", "actions")
+    _resource(pod.objects, "Deployment", "notifications")
+    # The app keeps its unused Connection routes; external Connections are out of scope here.
+    app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
+
+
+@pytest.mark.parametrize("location", ["K3S_DEFAULT_FIXTURE_RLOCATION", "K3S_FIXTURE_RLOCATION"])
+def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfiles, location: str) -> None:
+    fixture = _filled_fixture(runfiles, location)
+    edge = _resource(fixture.objects, "Deployment", "mcp-edge")
+    assert any(
+        "agentplane-mcp-edge:" in container["image"] for container in edge["spec"]["template"]["spec"]["containers"]
+    )
+    _resource(fixture.objects, "ConfigMap", "mcp-edge-settings")
+    _resource(fixture.objects, "Role", "mcp-edge")
+    _resource(fixture.objects, "RoleBinding", "mcp-edge")
+
+
+@pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
+def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(runfiles: Runfiles, location: str) -> None:
+    fixture = rendered_fixture.read(runfiles.root() / os.environ[location])
+    full = fixture_chart.objects(
+        **asdict(rendered_fixture.PLACEHOLDERS),
+        operator_token_key=rendered_fixture.OPERATOR_TOKEN_KEY_PLACEHOLDER,
+        models=rendered_fixture.MODEL_PLACEHOLDERS[rendered_fixture.Backend.LOCAL_MODEL],
+        vm_sandboxes=fixture.vm_sandboxes,
+        firecracker_sandboxes=fixture.firecracker_sandboxes,
+    )
+    control = {(doc["kind"], doc["metadata"]["name"]): doc for doc in full}
+    candidate = {(doc["kind"], doc["metadata"]["name"]): doc for doc in fixture.objects}
+    removed = control.keys() - candidate.keys()
+    assert ("Deployment", "mcp-edge") in removed
+    assert all(name.startswith("mcp-edge") for _, name in removed)
+    assert candidate == {key: value for key, value in control.items() if key not in removed}
+    _resource(fixture.objects, "Deployment", "actions")
+    template = environment_firecracker.NAME if fixture.firecracker_sandboxes else SUPERVISION_TEMPLATE
+    _resource(fixture.objects, "SandboxTemplate", template)
 
 
 def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles) -> None:

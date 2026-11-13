@@ -13,6 +13,7 @@ _EXPECTED_OUTPUTS = {
     "local-model.json",
     "local-model-firecracker.json",
     "local-model-mcp-fixtures.json",
+    "local-model-pod.json",
     "local-model-vm.json",
     "public-litellm.json",
 }
