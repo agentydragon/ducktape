@@ -179,6 +179,7 @@ pub(crate) fn run_captured_pass(
                 effect_conflicts_chunks: Default::default(),
                 full_reports: Default::default(),
                 full_report_chunks: Default::default(),
+                residual_extraction_atoms: Default::default(),
             },
             diagnostics,
         )

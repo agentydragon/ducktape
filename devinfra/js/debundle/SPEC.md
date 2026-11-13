@@ -547,6 +547,18 @@ accepted-dry-run, typed gate rejection and final-program checks remain intact.
 Bazel `full_reports` and `full_report_chunks` attrs forward the same selection
 only to the final Pipeline action; analysis artifacts/projections are unchanged.
 
+`run --full-report residual_extractions` writes a separate per-chunk
+`residual_extractions.json`. It records the current assignment's gate result,
+then independently moves each wholly residual body atomic group to a
+deterministic fresh module for a complete shared-gate check. The report
+retains cycle cuts and witnesses, structural conflicts, cross-rebinds, and
+blocking source locations. Split atoms and import/export scaffolding are
+explicitly unprobed. `--residual-extraction-atom atomic:N` selects probes by
+chunk-local atomic ID; `--full-report-chunk` scopes those IDs to configured
+chunks. This is an authoring gate diagnostic, not an emission or translation
+validation claim. The selection is independent of the residual inventory and
+full graph export. Bazel `residual_extraction_atoms` forwards the same filter.
+
 Every final candidate is assessed against its exact emitted order and structural
 placement, including runs that suppress reports. Report selection controls the
 serialization and full-detail sinks, not which assessment is computed. The

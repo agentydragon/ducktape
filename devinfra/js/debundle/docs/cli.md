@@ -636,6 +636,31 @@ that adding or removing claims will pass, because that changes the destinations
 and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
 for structural atoms, conservative effects, and the accepted lazy-cycle case.
 
+### Residual extraction candidate report
+
+For an actual gate check of independent residual moves, request `debundle run
+--full-report residual_extractions`. The per-chunk `residual_extractions.json`
+records the current assignment's `baseline` gate result and one candidate for
+each wholly residual body atom. A candidate moves exactly that atom to its
+reported fresh destination; every other source unit keeps its current
+destination. Each probe starts from the same baseline. `candidate.gate_accepts`
+uses the complete shared gate, including Pass 2 and pre-existing structural
+conflicts. Rejected candidates retain typed `cycles` (cut, closed Pass-1 walk,
+and lazy closure), `atomic_group_conflicts`, cross-rebinds and source locations
+for blocking edge endpoints. Import/export scaffolding and already split atoms
+have `unprobed_reason` instead of a verdict. A fresh-destination gate pass is
+only an authoring hint: it does not establish acceptance in an existing owner,
+emission, translation validation or runtime behavior.
+
+Repeat `--residual-extraction-atom atomic:N` to probe only selected atoms;
+other residual body atoms remain listed with `unprobed_reason: not_selected`.
+IDs are chunk-local, so pair this flag with `--full-report-chunk <chunk-id>`
+when the spec materializes multiple chunks. An ID absent from a selected
+chunk's residual groups is an error. The report needs no `--graphs` and is
+independent of the cheaper `residual_atomic_groups` inventory. Bazel forwards
+`full_reports = ["residual_extractions"]`, `full_report_chunks`, and
+`residual_extraction_atoms` to the final Pipeline action.
+
 ### Other full reports
 
 `debundle run --full-report export_reentry` writes the original complete

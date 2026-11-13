@@ -1567,6 +1567,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "residual_extractions_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "diagnostic_boundaries_test",
     saved_analysis_tools = True,
     deps = ["@crates//:serde_json"],

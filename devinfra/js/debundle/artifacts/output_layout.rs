@@ -29,6 +29,7 @@ pub const PROGRAM_GRAPH_REPORT: &str = "program_graph.json.gz";
 pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_GROUP_CONFLICTS_REPORT: &str = "atomic_group_conflicts.json";
 pub const RESIDUAL_ATOMIC_GROUPS_REPORT: &str = "residual_atomic_groups.json";
+pub const RESIDUAL_EXTRACTIONS_REPORT: &str = "residual_extractions.json";
 pub const SELECTOR_DIAGNOSTICS_REPORT: &str = "selector_diagnostics.json";
 /// Written beside `selector_diagnostics.json` when the graph build diagnoses
 /// `commuting_statements` entries: the contradiction that failed the chunk,
