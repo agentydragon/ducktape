@@ -30,7 +30,7 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
-use crate::diagnostics::{Diagnostic, Diagnostics, ExportContract};
+use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use analysis_model::PrimKinds;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -723,9 +723,9 @@ pub fn resolve_imported_purities(
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export_name));
             if !known_export {
-                diagnostics.record(
+                diagnostics.record_chunk(
                     module,
-                    Diagnostic::DanglingExportContract {
+                    ChunkDiagnostic::DanglingExportContract {
                         contract: ExportContract::PureExports,
                         export: export_name.clone(),
                     },
@@ -1271,9 +1271,9 @@ pub fn resolve_imported_callable_summaries(
                         ProofDependencies::default(),
                     );
             } else {
-                diagnostics.record(
+                diagnostics.record_chunk(
                     module,
-                    Diagnostic::DanglingExportContract {
+                    ChunkDiagnostic::DanglingExportContract {
                         contract: ExportContract::CallbackFactoryExports,
                         export: export.clone(),
                     },

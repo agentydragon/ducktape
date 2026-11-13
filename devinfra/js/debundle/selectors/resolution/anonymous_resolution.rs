@@ -172,9 +172,9 @@ struct ResolvedClaimSet {
 impl ResolvedClaimSet {
     fn record(self, diagnostics: &analysis::diagnostics::Diagnostics) -> ResolvedSourceClaims {
         for warning in self.warnings {
-            diagnostics.record(
+            diagnostics.record_chunk(
                 &warning.chunk.clone(),
-                analysis::diagnostics::Diagnostic::Selector(Box::new(warning)),
+                analysis::diagnostics::ChunkDiagnostic::Selector(Box::new(warning)),
             );
         }
         self.claims

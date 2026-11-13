@@ -37,7 +37,7 @@
 //! error). The rejection is pinned by
 //! `e2e/chunk_admission_test.rs::with_block_is_rejected_at_parse`.
 
-use analysis::diagnostics::{AdmissionShape, Diagnostic, Diagnostics};
+use analysis::diagnostics::{AdmissionShape, ChunkDiagnostic, Diagnostics};
 use anyhow::{Result, bail};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Class, ClassMember, Expr, Function, GetterProp, Key, Lit,
@@ -106,9 +106,9 @@ pub(super) fn enforce_chunk_admission(
         }
     }
     for (shape, statements) in notices {
-        diagnostics.record(
+        diagnostics.record_chunk(
             chunk_id,
-            Diagnostic::AdmissionOverride { shape, statements },
+            ChunkDiagnostic::AdmissionOverride { shape, statements },
         );
     }
     let redundant = overrides
@@ -120,7 +120,10 @@ pub(super) fn enforce_chunk_admission(
         })
         .collect::<Vec<_>>();
     for check in &redundant {
-        diagnostics.record(chunk_id, Diagnostic::RedundantAdmissionOverride(*check));
+        diagnostics.record_chunk(
+            chunk_id,
+            ChunkDiagnostic::RedundantAdmissionOverride(*check),
+        );
     }
     refuse(chunk_id, &fatal)?;
     Ok(redundant)

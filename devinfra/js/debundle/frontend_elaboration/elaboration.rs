@@ -1304,9 +1304,9 @@ fn record_frontend_outcome(
         Severity::Error if fail_fast => bail!(selector_outcome::SelectorFailure::Single(Box::new(
             outcome.clone()
         ))),
-        Severity::Warning => diagnostics.record(
+        Severity::Warning => diagnostics.record_chunk(
             &outcome.chunk,
-            analysis::diagnostics::Diagnostic::Selector(Box::new(outcome.clone())),
+            analysis::diagnostics::ChunkDiagnostic::Selector(Box::new(outcome.clone())),
         ),
         Severity::Error => {}
         Severity::Ok => {}

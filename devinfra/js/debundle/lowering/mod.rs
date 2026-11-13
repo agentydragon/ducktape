@@ -324,7 +324,7 @@ pub fn materialize_logical_modules(
             "full graph export for ownership subsets is unsupported"
         );
         subset.validate(logical_modules, &selected_chunk_ids)?;
-        diagnostics.record("", analysis::diagnostics::Diagnostic::OwnershipSubset);
+        diagnostics.record_invocation(analysis::diagnostics::InvocationDiagnostic::OwnershipSubset);
     }
     let seen: BTreeSet<&str> = selected_chunk_ids.iter().map(String::as_str).collect();
 

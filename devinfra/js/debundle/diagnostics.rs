@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 #[derive(Debug)]
-pub enum Diagnostic {
+pub enum ChunkDiagnostic {
     RedundantPurityHint(RedundantPurityHint),
     RedundantPureMemberHint(RedundantPureMemberHint),
     AdmissionOverride {
@@ -16,7 +16,6 @@ pub enum Diagnostic {
     RedundantAdmissionOverride(AdmissionCheck),
     Selector(Box<selector_outcome::SelectorOutcome>),
     UnusedCommutingStatements(Box<crate::CommutingStatementsUnused>),
-    OwnershipSubset,
     DanglingExportContract {
         contract: ExportContract,
         export: String,
@@ -30,33 +29,54 @@ pub enum Diagnostic {
 /// Draining orders chunks and their typed diagnostic identities deterministically.
 #[derive(Debug, Default)]
 pub struct Diagnostics {
-    chunks: Mutex<BTreeMap<String, Vec<Diagnostic>>>,
+    collected: Mutex<CollectedDiagnostics>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InvocationDiagnostic {
+    OwnershipSubset,
+}
+
+/// Drained evidence preserves whether it describes the invocation or one chunk.
+#[derive(Debug, Default)]
+pub struct CollectedDiagnostics {
+    pub invocation: Vec<InvocationDiagnostic>,
+    pub chunks: BTreeMap<String, Vec<ChunkDiagnostic>>,
 }
 
 impl Diagnostics {
-    pub fn record(&self, chunk: &str, diagnostic: Diagnostic) {
-        self.chunks
+    pub fn record_chunk(&self, chunk: &str, diagnostic: ChunkDiagnostic) {
+        self.collected
             .lock()
             .expect("diagnostics lock poisoned")
+            .chunks
             .entry(chunk.to_owned())
             .or_default()
             .push(diagnostic);
     }
 
-    pub fn drain(&self) -> BTreeMap<String, Vec<Diagnostic>> {
-        let mut chunks =
-            std::mem::take(&mut *self.chunks.lock().expect("diagnostics lock poisoned"));
-        for records in chunks.values_mut() {
+    pub fn record_invocation(&self, diagnostic: InvocationDiagnostic) {
+        self.collected
+            .lock()
+            .expect("diagnostics lock poisoned")
+            .invocation
+            .push(diagnostic);
+    }
+
+    pub fn drain(&self) -> CollectedDiagnostics {
+        let mut collected =
+            std::mem::take(&mut *self.collected.lock().expect("diagnostics lock poisoned"));
+        collected.invocation.sort();
+        for records in collected.chunks.values_mut() {
             records.sort_by(|left, right| left.ordering_key().cmp(&right.ordering_key()));
         }
-        chunks
+        collected
     }
 }
 
 // Ordering reads structured identities, never human explanations.
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum DiagnosticOrder<'a> {
-    OwnershipSubset,
     OpaqueEntry,
     DanglingExportContract(ExportContract, &'a str),
     Selector(&'a selector_outcome::SelectorOutcome),
@@ -67,10 +87,9 @@ enum DiagnosticOrder<'a> {
     UnusedCommutingStatements(&'a str),
 }
 
-impl Diagnostic {
+impl ChunkDiagnostic {
     fn ordering_key(&self) -> DiagnosticOrder<'_> {
         match self {
-            Self::OwnershipSubset => DiagnosticOrder::OwnershipSubset,
             Self::OpaqueEntry { .. } => DiagnosticOrder::OpaqueEntry,
             Self::DanglingExportContract { contract, export } => {
                 DiagnosticOrder::DanglingExportContract(*contract, export)

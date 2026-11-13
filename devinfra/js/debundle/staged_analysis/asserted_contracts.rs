@@ -4,7 +4,7 @@
 //! imports that export receives the contract under its local binding name.
 //! This is axiom projection, not inference: no fixpoint, no source facts.
 
-use analysis::diagnostics::{Diagnostic, Diagnostics, ExportContract};
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::cross_module_purity::ModulePurityFacts;
@@ -44,9 +44,9 @@ pub(crate) fn project_onto_importers<T: Clone>(
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
-                diagnostics.record(
+                diagnostics.record_chunk(
                     module,
-                    Diagnostic::DanglingExportContract {
+                    ChunkDiagnostic::DanglingExportContract {
                         contract,
                         export: export.clone(),
                     },

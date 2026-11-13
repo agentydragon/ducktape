@@ -476,7 +476,7 @@ pub(super) fn finish_logical_chunk(
                         report_out_dir,
                         chunk_id,
                         COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-                        &[CommutingStatementsDiagnostic::Contradicted(
+                        &[CommutingStatementsChunkDiagnostic::Contradicted(
                             contradiction.clone(),
                         )],
                     )?;
@@ -486,9 +486,11 @@ pub(super) fn finish_logical_chunk(
         };
     // An unused entry is a warning: the graph is exactly the graph without it.
     for unused in &precomputed.unused_commuting_statements {
-        context.diagnostics.record(
+        context.diagnostics.record_chunk(
             chunk_id,
-            analysis::diagnostics::Diagnostic::UnusedCommutingStatements(Box::new(unused.clone())),
+            analysis::diagnostics::ChunkDiagnostic::UnusedCommutingStatements(Box::new(
+                unused.clone(),
+            )),
         );
     }
     if !precomputed.unused_commuting_statements.is_empty()
@@ -501,7 +503,7 @@ pub(super) fn finish_logical_chunk(
             &precomputed
                 .unused_commuting_statements
                 .iter()
-                .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
+                .map(|unused| CommutingStatementsChunkDiagnostic::Unused(Box::new(unused.clone())))
                 .collect::<Vec<_>>(),
         )?;
     }

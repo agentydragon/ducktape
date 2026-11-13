@@ -31,7 +31,7 @@ use analysis::analysis_inputs::ResolvedCommutingStatements;
 use analysis::atomic_groups::{
     DependencyGraphAndAtomicGroups, compute_dependency_graph_and_atomic_groups_with,
 };
-use analysis::diagnostics::{Diagnostic, Diagnostics};
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics};
 use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{
     ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkAnalysis, analyze_chunk_with_policy,
@@ -88,10 +88,13 @@ pub fn check_chunk_facts(
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<Vec<AdmissionCheck>> {
     for hint in &fact_analysis.redundant_purity_hints {
-        diagnostics.record(chunk_id, Diagnostic::RedundantPurityHint(hint.clone()));
+        diagnostics.record_chunk(chunk_id, ChunkDiagnostic::RedundantPurityHint(hint.clone()));
     }
     for hint in &fact_analysis.redundant_pure_member_hints {
-        diagnostics.record(chunk_id, Diagnostic::RedundantPureMemberHint(hint.clone()));
+        diagnostics.record_chunk(
+            chunk_id,
+            ChunkDiagnostic::RedundantPureMemberHint(hint.clone()),
+        );
     }
     if let Some(ord) = fact_analysis.top_level_await {
         bail!(
@@ -194,10 +197,10 @@ mod tests {
             assert_eq!(redundant, vec![AdmissionCheck::A1Eval]);
             let records = diagnostics.drain();
             assert!(matches!(
-                records["main"].as_slice(),
+                records.chunks["main"].as_slice(),
                 [
-                    Diagnostic::RedundantPurityHint(_),
-                    Diagnostic::RedundantAdmissionOverride(AdmissionCheck::A1Eval)
+                    ChunkDiagnostic::RedundantPurityHint(_),
+                    ChunkDiagnostic::RedundantAdmissionOverride(AdmissionCheck::A1Eval)
                 ]
             ));
         });

@@ -5,7 +5,7 @@
 //! (`analysis::cross_module_purity`). Its results feed each chunk's
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
-use analysis::diagnostics::{Diagnostic, Diagnostics, ExportContract};
+use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
 use analysis_model::{PrimKinds, StableExportValue};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -370,7 +370,7 @@ pub fn reparse_unretained_entries(
                 );
             }
             Err(error) => {
-                diagnostics.record(chunk_name, Diagnostic::OpaqueEntry { error });
+                diagnostics.record_chunk(chunk_name, ChunkDiagnostic::OpaqueEntry { error });
             }
         }
     }
