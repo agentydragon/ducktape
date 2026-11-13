@@ -53,6 +53,11 @@ def _retry_list_sessions_poll_error(error: BaseException) -> bool:
     )
 
 
+async def _gateway_audience(cluster: Cluster) -> str:
+    settings = json.loads(await cluster.kubectl("get", "configmap", "runner-gateway-settings", "-o", "json"))
+    return yaml.safe_load(settings["data"]["settings.yaml"])["gateway_audience"]
+
+
 @asynccontextmanager
 async def _sandbox(cluster: Cluster, name: str, policies: list[str]) -> AsyncIterator[str]:
     # A replacement Sandbox of the same name gets its own Identity.
@@ -254,11 +259,7 @@ async def deployed_session_command_cannot_cross_deletion(
     artifact = undeclared_outputs_dir() / "session-deletion"
     artifact.mkdir()
     app, _, _ = await bound_caller(cluster, "app")
-    deployment = json.loads(await cluster.kubectl("get", "deployment", "runner-gateway", "-o", "json"))
-    environment = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
-    audience = next(
-        item["value"] for item in environment if item["name"] == "AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE"
-    )
+    audience = await _gateway_audience(cluster)
     gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=audience)
     name = f"systest-deletion-{uuid4().hex[:8]}"
     session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
@@ -664,11 +665,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
     persist()
     async with scripted.case_scope():
         app, _, _ = await bound_caller(cluster, "app")
-        gateway_deployment = json.loads(await cluster.kubectl("get", "deployment", "runner-gateway", "-o", "json"))
-        gateway_env = gateway_deployment["spec"]["template"]["spec"]["containers"][0]["env"]
-        gateway_audience = next(
-            item["value"] for item in gateway_env if item["name"] == "AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE"
-        )
+        gateway_audience = await _gateway_audience(cluster)
         gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=gateway_audience)
         history_settings = json.loads(await cluster.kubectl("get", "configmap", "history-service-config", "-o", "json"))
         history_config = yaml.safe_load(history_settings["data"]["config.yaml"])
