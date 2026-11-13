@@ -6,7 +6,17 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, EnvValue, MemoryResources, PathMapping, Secret, Volume
+from cdk8s_plus_34 import (
+    ConfigMap,
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    EnvValue,
+    MemoryResources,
+    PathMapping,
+    Secret,
+    Volume,
+)
 from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
@@ -114,7 +124,11 @@ class CentralSampler(Construct):
             serves=[self.service],
             container=central_sampler.NAME,
             image=_IMAGE,
-            env_variables={config_env: EnvValue.from_value(_CONFIG_PATH), database_env: database_url},
+            env_variables={
+                config_env: EnvValue.from_value(_CONFIG_PATH),
+                database_env: database_url,
+                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+            },
             readiness=grpc_probe(port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
             startup=grpc_probe(
@@ -134,6 +148,12 @@ class CentralSampler(Construct):
         workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
         workload_tls.mount_trust_bundle(self, workload.container)
+        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
+        workload.container.mount(
+            "/var/run/public-web-pki",
+            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
+            read_only=True,
+        )
         for connection_name, secret_key in props.connection_credentials.items():
             connection = props.connections.get(connection_name)
             if connection is None:

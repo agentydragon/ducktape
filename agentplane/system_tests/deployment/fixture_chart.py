@@ -757,6 +757,12 @@ def build_chart(
     )
     ConfigMap(
         chart,
+        "fixture-public-web-pki",
+        metadata=ApiObjectMetadata(name="public-web-pki", namespace=NAMESPACE),
+        data={"ca-certificates.crt": system_roots},
+    )
+    ConfigMap(
+        chart,
         "fixture-egress-upstream-ca",
         metadata=ApiObjectMetadata(name="systest-egress-upstream-ca", namespace=NAMESPACE),
         data={"ca-certificates.crt": system_roots + cluster_ca},

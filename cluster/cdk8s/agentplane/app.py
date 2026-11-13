@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
+    ConfigMap,
     ContainerResources,
     Cpu,
     CpuResources,
@@ -20,6 +21,7 @@ from cdk8s_plus_34 import (
     RoleBinding,
     RolePolicyRule,
     ServiceAccount,
+    Volume,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
@@ -194,6 +196,7 @@ class App(Construct):
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
         return {
+            "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
             "AGENTPLANE_DATABASE_URL": self.database_url,
             "AGENTPLANE_OIDC_CLIENT_ID": self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
             "AGENTPLANE_OIDC_CLIENT_SECRET": self.oidc.key("client-secret").env_value(self, "oidc-client-secret-ref"),
@@ -237,11 +240,17 @@ class App(Construct):
                 # A re-minted client secret otherwise leaves the pod on the old
                 # one, and every login 401s.
                 "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                "configmap.reloader.stakater.com/reload": config.config_map.name,
+                "configmap.reloader.stakater.com/reload": f"{config.config_map.name},public-web-pki",
             },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.mount_trust_bundle(self, workload.container)
+        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
+        workload.container.mount(
+            "/var/run/public-web-pki",
+            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
+            read_only=True,
+        )
         for volume, audience, mount_path in [
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
             ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
