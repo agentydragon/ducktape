@@ -204,7 +204,9 @@ class Client:
         request = environment_service_pb2.EnvironmentMutationRequest(target=target)
         await self._json("POST", f"{self._environment_path(target)}:suspend", json=MessageToDict(request))
 
-    async def resume_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
+    async def resume_sandbox(
+        self, target: identity_pb2.EnvironmentTarget
+    ) -> environment_service_pb2.ResumeEnvironmentResponse:
         request = environment_service_pb2.ResumeEnvironmentRequest(target=target)
         data = await self._json("POST", f"{self._environment_path(target)}:resume", json=MessageToDict(request))
         response = ParseDict(data, environment_service_pb2.ResumeEnvironmentResponse())
@@ -213,6 +215,7 @@ class Client:
             environment_service_pb2.RESUME_OUTCOME_ALREADY_RUNNING,
         ):
             raise RuntimeError(f"Environment resume was not accepted: {response}")
+        return response
 
     async def delete_sandbox(self, target: identity_pb2.EnvironmentTarget) -> None:
         await self._json("DELETE", self._environment_path(target), params={"target.uid": target.uid})

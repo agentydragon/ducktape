@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:resolve py agentplane.central_sampler.api.sampler_pb2 //agentplane/central_sampler/api:sampler_pb2
 
@@ -289,6 +289,22 @@ py_library(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_suspend_resume",
+    srcs = ["test_suspend_resume.py"],
+    deps = [
+        ":suspend_resume",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

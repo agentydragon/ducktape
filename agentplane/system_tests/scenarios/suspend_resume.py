@@ -141,6 +141,9 @@ async def _wait_until_idle_suspended_without_pod(
             assert view.observed_state.suspended_by == "Idle", (
                 f"{target.name} stopped for {view.observed_state.suspended_by}, not idleness"
             )
+            assert view.observed_state.stop_stage == "Stopped", (
+                f"{target.name} is still stopping at {view.observed_state.stop_stage!r}"
+            )
             assert not view.kubernetes_diagnostics.HasField("pod"), (
                 f"{target.name} still has its old Pod: {view.kubernetes_diagnostics.pod}"
             )
@@ -226,7 +229,10 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
         suspended = await _wait_until_idle_suspended_without_pod(client, target)
     assert suspended.target.uid == target.uid
 
-    await client.resume_sandbox(target)
+    resume = await client.resume_sandbox(target)
+    assert resume.outcome == environment_service_pb2.RESUME_OUTCOME_REQUESTED, resume
+    assert resume.HasField("wake_generation"), resume
+    assert resume.wake_generation == suspended.actions.wake_generation + 1, (suspended, resume)
 
     resumed = await wait_until_running(client, target)
     assert resumed.kubernetes_diagnostics.HasField("pod")

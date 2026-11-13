@@ -723,13 +723,22 @@ async def test_sandbox_mutations_carry_the_expected_uid() -> None:
         await _respond(writer, "200 OK", b"{}", "application/json")
 
     async def resumed(_after: int, writer: asyncio.StreamWriter) -> None:
-        body = {"target": {"namespace": "test-ns", "name": "box", "uid": uid}, "outcome": "RESUME_OUTCOME_REQUESTED"}
+        body = {
+            "target": {"namespace": "test-ns", "name": "box", "uid": uid},
+            "outcome": "RESUME_OUTCOME_REQUESTED",
+            "wakeGeneration": "8",
+        }
         await _respond(writer, "200 OK", json.dumps(body).encode(), "application/json")
 
     async with _app(accepted, resumed, accepted, requests=observed) as (client, _):
         await client.suspend_sandbox(target)
-        await client.resume_sandbox(target)
+        response = await client.resume_sandbox(target)
         await client.delete_sandbox(target)
+
+    assert response.target == target
+    assert response.outcome == environment_service_pb2.RESUME_OUTCOME_REQUESTED
+    assert response.HasField("wake_generation")
+    assert response.wake_generation == 8
 
     paths_and_methods = [request.split("\r\n", 1)[0] for request in observed]
     assert paths_and_methods == [
