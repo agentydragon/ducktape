@@ -148,6 +148,9 @@ subtitle includes only parameters that are not being varied on any axis.
 A border rectangle drawn around the entire grid using a separate cut setting,
 padded a configurable amount outside the grid cells.
 
+For `.rd` output, the whole grid is shifted so the border starts at `(0, 0)`;
+the configured padding between the border and cells is preserved.
+
 ### LightBurn Layer Structure
 
 | Layer index      | Content                                        |
