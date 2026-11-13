@@ -162,6 +162,23 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   are lower, but first-arm input warming confounds transfer/command comparisons.
   Inputs and deployment coverage are unchanged. Details and limits are in
   `system_tests/debug/2026_11_13_guest_mounts.md`.
+  The separate manual Codex guest contract now completes two real commands through
+  the packaged VM executor, checking its actual memory/CPU limits and executor
+  slice. Removing the executor fails the unchanged slice assertion. Gateway,
+  Claude and Codex passed together in three fresh actions at the `2196229`
+  milestone; actual OOM enforcement remains a deployed acceptance boundary.
+  Session setup is a further obligation: fresh nested workspace and HOME ownership,
+  process/aggregate/service budgets, privilege restrictions and detached-descendant
+  fencing. Both direct guests and the full deployed VM passed with the same probe
+  and assertions. A wrong-process-limit control fails the shared assertion after
+  both original Shell turns. The deployed probe and the wrong-History control's
+  original failure boundary remain intact. This proves assertion transfer, not a
+  required-CI saving.
+  Egress already has a real subprocess seam with caller-owned settings/API/CA;
+  its own-SVID and credential-revocation case passes. The Notification subprocess
+  driver must share the caller's API/CA/database, return a seeded owned subscription
+  and reject a revoked credential before the packaged CLI composition can replace
+  those assertions. An empty subscription list is insufficient.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
@@ -235,6 +252,17 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
 - **P6, adoption:** make reviewable milestone commits on the existing branch/PR.
   Change a gate boundary only after the evidence below supports that boundary.
   Revert that selection change on an escaped contract or reliability regression.
+
+The next complete-graph screen combines both critical tails: the existing two
+manual balanced Pod slices retain all 21 cases; a smaller deployed VM witness must
+retain issued identity, real launcher/mount/relay configuration and post-operation
+identity checks, while the packaged guest contracts own setup/tool/supervision
+assertions. The current full VM stays required until that ownership and its
+controls are proved. Run the candidate graph with all other selected required
+tests, counterbalanced against the unchanged graph, before expanding to the full
+30-pair cohort. Measure the last gate and added setup/CPU, not a sum of isolated
+contract gains. At the `bedb9a5` checkpoint Pod ended only 9.412 seconds after VM;
+improving only one cannot establish a large full-feedback saving.
 
 P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
 graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.

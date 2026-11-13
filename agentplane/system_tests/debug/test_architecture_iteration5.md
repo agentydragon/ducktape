@@ -92,6 +92,28 @@ Notification list alone does not prove the Sandbox resolved. A future focused
 composition should seed an owned subscription and verify revocation against real
 services, preserving deployed issuer, launcher relay, mount and identity checks.
 
+The direct guests now also run the existing deployed VM setup probe and its
+assertions. The shared module preserves the original shell script and assertion
+AST: HOME and nested workspace ownership, UID/GID, PID 1, privilege restrictions,
+process/aggregate/service kernel limits, and detached-descendant fencing. Each
+guest runs a second fresh Session to observe the first setup's empty execution
+domain. Both original Shell turns remain before these additional setup Sessions.
+The deployed scenario retains both setup operations and every assertion.
+
+The [fresh setup validation](https://app.buildbuddy.io/invocation/e75b5d2d-0710-45fc-949b-1ad456bf3f08)
+passed both direct guests and the full deployed VM suite: three NEW physical
+actions, three JUnit cases, no retries, errors, failures, skips or merged actions.
+The tested source is `2196229` plus selected-source patch SHA-256
+`464e9e76950e3e745cc0f9f29e431ef76e4da93c84f809fcf625e0b736df7e8b`.
+The [wrong-process-limit control](https://app.buildbuddy.io/invocation/ad13dcbd-b4f3-4942-90c1-9591507657a9)
+changes the actual process limit to 96 while leaving the expected 512 unchanged.
+Both Shell turns finish; the shared setup assertion rejects `TasksMax=96`, also
+visible as kernel `pids.max=96`. Its one NEW failing action is deliberate control
+exposure. Serial and Docker stop artifacts were retained for both guests and the
+control. [Curated execution evidence](test_architecture_guest_setup_contract.json)
+keeps physical wall/CPU observations separate; this is assertion-transfer
+validation, not a latency comparison. No required gate or timeout changed.
+
 A published internal-service image baseline currently lacks a test-side read-auth
 path to private Forgejo images. Do not pass publishing credentials into PR actions.
 A shadow baseline needs immutable image/source proof and API compatibility keys;

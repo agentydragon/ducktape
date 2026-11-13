@@ -57,7 +57,11 @@ from agentplane.x.direct_vm_boot.runtime_guest import (
     sandbox_with_runtime_gateway,
     write_guest_inputs,
 )
-from agentplane.x.direct_vm_boot.session_helpers import history_turn_completed, wait_for_session_ready
+from agentplane.x.direct_vm_boot.session_helpers import (
+    assert_guest_setup_is_supervised,
+    history_turn_completed,
+    wait_for_session_ready,
+)
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep //agentplane/testing:native_gateway_fixtures
@@ -395,6 +399,7 @@ async def test_packaged_codex_session_runs_isolated_shell_and_accepts_next_input
             )
             assert write_entries
             assert read_entries
+            await assert_guest_setup_is_supervised(dispatcher, history_service.reader, spec)
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
             assert final_status.environment_runtime_boot_id == initial_status.environment_runtime_boot_id
