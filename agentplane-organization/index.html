@@ -801,6 +801,8 @@
             ><${Text} component="p" my="sm"
               ><strong>${"Why next:"}</strong
               >${" it demonstrates the agreed component-owned API layout without deciding Session storage topology. This is wider than PRs 1–2: a preliminary textual scan found roughly 135 files referencing either History read or ingress contracts, so enumerate the exact read-contract subset before starting. Generated file paths and descriptors may change even when protobuf wire names do not; check their consumers and compatibility explicitly. "}<strong>${"Checks:"}</strong>${" regenerate/build all Go, Python and TS consumers; History API and app/browser integration checks; compare full RPC names and descriptor-dependent uses. "}<strong>${"Rollback:"}</strong>${" revert the atomic source/build migration; no data rewrite."}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Later · protobuf package alignment:"}</strong>${" Inventory Agentplane-owned proto package declarations against their directories, including History and the sampler, then decide a consistent convention and any exceptions. Renaming a protobuf package changes gRPC method names and Any type URLs; inventory clients, stored messages, reflection and authorization, and design mixed-version compatibility and rollback before separate migrations. The current source moves preserve their wire namespaces."}<//
             >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
               >${"Now · PR 5: extract sampler image preparation"}<//
             ><${Text} component="p" my="sm"
