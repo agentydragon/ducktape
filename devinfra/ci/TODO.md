@@ -1,5 +1,18 @@
 # CI TODOs
 
+## Promote previously published content after a rollback
+
+An A → B → A source rollback reuses A's existing content-addressed release, so
+both the release planner and action skip it. `sync_pins.py` still selects the
+newest `created_at` among reachable releases and can repin B. Source rollback
+therefore does not reliably roll back installed artifacts.
+
+Track the desired artifact content for devel publication even when its release
+already exists, and have pin sync follow that selection with ordering checks.
+Add regressions for A → B → A, out-of-order publication, and feature-branch
+releases. This general promotion flaw remains unresolved by the immediate bbr
+help update that creates a distinct corrected wheel.
+
 ## Fetch publication artifacts explicitly from BuildBuddy
 
 Image publication and the release-artifact action still rely on `bb remote build`'s
