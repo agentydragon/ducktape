@@ -61,10 +61,12 @@ conversation and from Runner admission.
 
 ## Source and tests
 
-- `main.go`, `config.go`: process and listener wiring, and the settings (a YAML file named by
-  `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` plus `AGENTPLANE_RUNNER_GATEWAY_*` environment variables;
-  [`settings.py`](settings.py) is the authoring schema). The independent `delegation` policy names
-  an Actions actor, caller namespace scope, and exact full RPC methods; it can include the
+- `main.go`, `config.go`: process and listener wiring, and the settings (the required
+  `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` path, with all non-secret settings in that file;
+  [`settings.py`](settings.py) is the authoring schema). Only the Dispatcher database URL Secret,
+  Pod IP from the Downward API and optional Pod name are runtime environment inputs. Generic
+  `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `delegation`
+  policy names an Actions actor and exact full RPC methods; it can include the
   `EnvironmentService` list/get/watch methods and, when separately configured, `ResumeEnvironment`, without
   delegating other Gateway methods. `operator_callers` is optional and defaults empty; it is
   restricted to direct, Pod-bound callers and gives only its configured operator broker the

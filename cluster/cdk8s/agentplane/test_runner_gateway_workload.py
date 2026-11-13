@@ -29,7 +29,6 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
-from util.settings_contract import env_name
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -37,15 +36,22 @@ def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str
 
 
 def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]) -> dict[str, Any]:
-    """Each setting as the Gateway reads it: the container's literal env var, else the mounted file's key."""
-    file = yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"])
-    env = {entry["name"]: entry["value"] for entry in container["env"] if "value" in entry}
-    return {
-        **file,
-        **{
-            field: env[env_name(Settings, field)] for field in Settings.model_fields if env_name(Settings, field) in env
-        },
+    """The Gateway's static settings come from its mounted file, without scalar environment overrides."""
+    file = cast(
+        dict[str, Any],
+        yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]),
+    )
+    allowed_runtime_envs = {
+        Settings.config_file_env,
+        Settings.dispatcher_database_url_env,
+        Settings.pod_name_env,
+        Settings.pod_ip_env,
     }
+    gateway_envs = {
+        entry["name"] for entry in container["env"] if entry["name"].startswith("AGENTPLANE_RUNNER_GATEWAY_")
+    }
+    assert gateway_envs <= allowed_runtime_envs
+    return file
 
 
 def _gateway_objects(app: App) -> list[dict[str, Any]]:

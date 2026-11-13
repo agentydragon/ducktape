@@ -32,9 +32,15 @@ import (
 
 const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:never-print-this@queue/dispatcher"
 
-const requiredFile = `policy_namespace: agentplane
+const requiredFile = `sandbox_namespace: agentplane
+policy_namespace: agentplane
+runner_token_file: /var/run/token
+dispatcher_audience: session-dispatcher
+gateway_audience: runner-gateway
 dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
+sandbox_controller_account: agentplane/sandbox-controller
+runner_control_target_template: '{sandbox}-control.{namespace}.svc:8080'
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
 rpc:
@@ -68,12 +74,10 @@ func (configTestTokenReviews) Create(
 	}}, nil
 }
 
-// required is the environment of a deployment that sets every setting without a default.
+// required includes the explicit database Secret and Pod IP runtime inputs plus the static settings file.
 func required(t *testing.T, extra ...string) []string {
 	t.Helper()
 	return append([]string{
-		settingPrefix + "SANDBOX_NAMESPACE=agentplane", settingPrefix + "RUNNER_TOKEN_FILE=/var/run/token",
-		settingPrefix + "DISPATCHER_AUDIENCE=session-dispatcher", settingPrefix + "GATEWAY_AUDIENCE=runner-gateway",
 		settingPrefix + "POD_IP=10.0.0.5",
 		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile), databaseURLEnv,
 	}, extra...)
@@ -94,9 +98,8 @@ func TestPolicyNamespaceIsRequired(t *testing.T) {
 }
 
 func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  identity_callers: true\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t,
-		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
+	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  identity_callers: true\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +110,6 @@ func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t 
 		c.DispatcherAudience == c.GatewayAudience || c.ControllerAccount.Name != "sandbox-controller" || c.Delegation == nil ||
 		c.Delegation.Actor != (auth.Account{Namespace: "agentplane", Name: "actions"}) ||
 		!c.Delegation.IdentityCallers ||
-		!slices.Equal(c.Delegation.CallerNamespaces, []string{"agentplane"}) ||
 		!slices.Equal(c.Delegation.Methods, []string{
 			"/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
 			"/agentplane.environments.v1.EnvironmentService/ListEnvironments",
@@ -264,15 +266,19 @@ func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
 }
 
 func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T) {
-	host := []string{
-		settingPrefix + "RPC_LISTEN_ADDRESS=127.0.0.1:41001", settingPrefix + "PROXY_PORT=42000",
-		settingPrefix + "RUNNER_CONTROL_TARGET_TEMPLATE=127.0.0.1:41001", settingPrefix + "KUBECONFIG=/tmp/fake-kubeconfig",
-	}
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, host...)); err != nil {
+	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:41001", 1)
+	settings = strings.Replace(settings, "runner_control_target_template: '{sandbox}-control.{namespace}.svc:8080'",
+		"runner_control_target_template: 127.0.0.1:41001", 1) + `
+proxy_port: 42000
+kubeconfig: /tmp/fake-kubeconfig
+`
+	path := configtest.WriteSettings(t, settings)
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err != nil {
 		t.Fatal(err)
 	}
 	for _, port := range []string{"0", "65536"} {
-		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"PROXY_PORT="+port)); err == nil {
+		invalid := configtest.WriteSettings(t, requiredFile+"proxy_port: "+port+"\n")
+		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+invalid)); err == nil {
 			t.Fatalf("invalid advertised proxy port %s was accepted", port)
 		}
 	}
@@ -301,11 +307,12 @@ users:
 		{name: "positive limit", setting: "25.5", want: 25.5},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			environ := required(t, settingPrefix+"KUBECONFIG="+kubeconfig)
+			settings := requiredFile + "kubeconfig: " + kubeconfig + "\n"
 			if test.setting != "" {
-				environ = append(environ, settingPrefix+"KUBERNETES_CLIENT_QPS="+test.setting)
+				settings += "kubernetes_client_qps: " + test.setting + "\n"
 			}
-			c, err := configtest.Load(t, settingPrefix, loadConfig, environ)
+			path := configtest.WriteSettings(t, settings)
+			c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -330,22 +337,47 @@ users:
 	}
 }
 
-func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
-	for _, bad := range [][]string{
-		{settingPrefix + "PROXY_PORT=not-a-number"},
-		{settingPrefix + "MAX_QUEUED_PER_SESSION=0"},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"unknown_setting: 1\n")},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n")},
-		{settingPrefix + "SANDBOX_CONTROLLER_ACCOUNT=not-an-account"},
-		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"delegation: {actor: agentplane/actions}\n")},
+func TestSettingsFileValuesIgnoreGenericEnvironmentOverrides(t *testing.T) {
+	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:9000", 1) + "proxy_port: 42000\n"
+	path := configtest.WriteSettings(t, settings)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(
+		t,
+		settingPrefix+"CONFIG_FILE="+path,
+		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9999",
+		settingPrefix+"PROXY_PORT=43000",
+		settingPrefix+"DISPATCHER_CALLERS=agentplane/attacker",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.ProxyPort != 42000 ||
+		!slices.Equal(c.DispatcherCallers, []auth.Account{{Namespace: "agentplane", Name: "app"}, {Namespace: "agentplane", Name: "notifications"}}) {
+		t.Fatalf("settings file values changed under environment overrides: %+v", c)
+	}
+}
+
+func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
+	for _, file := range []string{
+		requiredFile + "proxy_port: not-a-number\n",
+		requiredFile + "max_queued_per_session: 0\n",
+		requiredFile + "unknown_setting: 1\n",
+		requiredFile + "dispatcher_database_url: postgres://file.invalid/dispatcher\n",
+		requiredFile + "delegation: {actor: agentplane/actions, identity_callers: true, caller_namespaces: [agentplane], methods: [x]}\n",
+		"dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n",
+		requiredFile + "delegation: {actor: agentplane/actions}\n",
 	} {
-		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, bad...))
+		path := configtest.WriteSettings(t, file)
+		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 		if err == nil {
-			t.Fatalf("%v accepted", bad)
+			t.Fatalf("settings file was accepted: %s", file)
 		}
 		if strings.Contains(err.Error(), "never-print-this") {
 			t.Fatalf("error carries the database URL: %v", err)
 		}
+	}
+	if _, err := configtest.Load(t, settingPrefix, loadConfig,
+		required(t, settingPrefix+"DISPATCHER_DATABASE_URL=not-a-postgres-url")); err == nil {
+		t.Fatal("invalid runtime database URL was accepted")
 	}
 }
 
@@ -379,10 +411,7 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t)); err != nil {
 		t.Fatal(err)
 	}
-	for _, missing := range []string{
-		"SANDBOX_NAMESPACE", "RUNNER_TOKEN_FILE", "DISPATCHER_AUDIENCE", "GATEWAY_AUDIENCE",
-		"POD_IP", "DISPATCHER_DATABASE_URL",
-	} {
+	for _, missing := range []string{"POD_IP", "DISPATCHER_DATABASE_URL"} {
 		rest := slices.DeleteFunc(required(t), func(item string) bool {
 			return strings.HasPrefix(item, settingPrefix+missing+"=")
 		})
@@ -390,13 +419,40 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 			t.Fatalf("ran without %s", missing)
 		}
 	}
+	for name, key := range map[string]string{
+		"sandbox_namespace":   "sandbox_namespace: agentplane\n",
+		"runner_token_file":   "runner_token_file: /var/run/token\n",
+		"dispatcher_audience": "dispatcher_audience: session-dispatcher\n",
+		"gateway_audience":    "gateway_audience: runner-gateway\n",
+	} {
+		contents := strings.Replace(requiredFile, key, "", 1)
+		path := configtest.WriteSettings(t, contents)
+		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+			t.Fatalf("ran without settings file field %s", name)
+		}
+	}
 	for name, contents := range map[string]string{
-		"no Dispatcher callers": "gateway_callers: [agentplane/a]\n",
-		"no Gateway callers":    "dispatcher_callers: [agentplane/a]\n",
+		"no Dispatcher callers": strings.Replace(requiredFile, "dispatcher_callers: [agentplane/app, agentplane/notifications]\n", "", 1),
+		"no Gateway callers":    strings.Replace(requiredFile, "gateway_callers: [agentplane/runner-gateway]\n", "", 1),
 	} {
 		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))); err == nil {
 			t.Fatalf("ran with %s", name)
 		}
+	}
+}
+
+func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv, settingPrefix + "POD_IP=10.0.0.5"}); err == nil {
+		t.Fatal("started without a settings file path")
+	}
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{
+		settingPrefix + "CONFIG_FILE=/settings/file/does/not/exist", databaseURLEnv, settingPrefix + "POD_IP=10.0.0.5",
+	}); err == nil {
+		t.Fatal("started without the required settings file")
+	}
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t,
+		settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, requiredFile+"---\n"))); err == nil {
+		t.Fatal("accepted more than one YAML document")
 	}
 }
 

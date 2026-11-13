@@ -28,7 +28,6 @@ from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, ma
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
-from util.settings_contract import env_name
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -207,9 +206,6 @@ async def run_gateway(
             effective_settings = Settings(
                 sandbox_namespace=namespace,
                 policy_namespace=namespace,
-                dispatcher_database_url=database_url,
-                pod_name=workload.name,
-                pod_ip="192.0.2.10",
                 runner_token_file=runner_proxy_token_file,
                 kubeconfig=kubeconfig,
                 rpc=rpc_settings,
@@ -228,32 +224,18 @@ async def run_gateway(
                 environment_managers={f"{account.namespace}/{account.name}" for account in environment_managers},
                 operator_callers={f"{account.namespace}/{account.name}" for account in operator_callers},
                 wake_callers=set(),
-                _cli_parse_args=[],
             )
-            # These runtime-source settings stay out of the YAML, especially the database Secret.
-            settings = effective_settings.model_dump(
-                mode="json", exclude_none=True, exclude={"dispatcher_database_url", "pod_name", "pod_ip"}
-            )
-            for caller_list in (
-                "dispatcher_callers",
-                "gateway_callers",
-                "executor_callers",
-                "environment_readers",
-                "environment_managers",
-                "operator_callers",
-                "wake_callers",
-            ):
-                settings[caller_list] = sorted(settings[caller_list])
+            settings = effective_settings.model_dump(mode="json", exclude_none=True)
             settings_path = settings_directory / "settings.yaml"
-            settings_path.write_text(yaml.safe_dump(settings))
+            settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
             environment = {
                 **os.environ,
                 Settings.config_file_env: str(settings_path),
-                env_name(Settings, "dispatcher_database_url"): _wire_database_url(database_url),
-                env_name(Settings, "pod_name"): workload.name,
+                Settings.dispatcher_database_url_env: _wire_database_url(database_url),
+                Settings.pod_name_env: workload.name,
                 # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
-                env_name(Settings, "pod_ip"): "192.0.2.10",
+                Settings.pod_ip_env: "192.0.2.10",
             }
             credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
             async with go_process(

@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"net/url"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
@@ -14,15 +18,19 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
-const settingPrefix = "AGENTPLANE_RUNNER_GATEWAY_"
+const (
+	settingPrefix            = "AGENTPLANE_RUNNER_GATEWAY_"
+	dispatcherDatabaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL"
+	runnerGatewayPodNameEnv  = settingPrefix + "POD_NAME"
+	runnerGatewayPodIPEnv    = settingPrefix + "POD_IP"
+)
 
-// config is the Gateway's deployment contract: each setting is a YAML key of the file named by
-// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE, and each field's key also names an AGENTPLANE_RUNNER_GATEWAY_*
-// environment variable that overrides it. A list takes one element that way, so lists belong in the
-// file. Callers and the controller account are written `namespace/name`.
+// config is the Gateway's deployment contract: static settings come from the YAML file named by
+// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL, Pod name and Pod IP are explicit runtime inputs.
+// Callers and the controller account are written `namespace/name`.
 //
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
@@ -31,9 +39,9 @@ type config struct {
 	Namespace      string                                 `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
 	PolicyNamespace             string                                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL       string                                   `mapstructure:"dispatcher_database_url"`
-	PodName                     string                                   `mapstructure:"pod_name"`
-	PodIP                       string                                   `mapstructure:"pod_ip"`
+	DispatcherDatabaseURL       string                                   `mapstructure:"-"`
+	PodName                     string                                   `mapstructure:"-"`
+	PodIP                       string                                   `mapstructure:"-"`
 	RunnerTokenFile             string                                   `mapstructure:"runner_token_file"`
 	Kubeconfig                  string                                   `mapstructure:"kubeconfig"`
 	KubernetesClientQPS         float32                                  `mapstructure:"kubernetes_client_qps"`
@@ -65,8 +73,6 @@ type config struct {
 // allowlists, and its method list contains exact full gRPC method names served by this process.
 type delegationConfig struct {
 	Actor auth.Account `mapstructure:"actor"`
-	// CallerNamespaces remains accepted during config rollout but no longer grants effective callers.
-	CallerNamespaces []string `mapstructure:"caller_namespaces"`
 	// IdentityCallers lets the actor assert Identities in policy_namespace.
 	IdentityCallers bool     `mapstructure:"identity_callers"`
 	Methods         []string `mapstructure:"methods"`
@@ -81,27 +87,46 @@ func defaultConfig() config {
 }
 
 func loadConfig() (config, error) {
-	c := defaultConfig()
-	// Without ExperimentalBindStruct, Unmarshal reads an environment variable only for a bound key.
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct())
-	settings.SetEnvPrefix("AGENTPLANE_RUNNER_GATEWAY")
-	settings.AutomaticEnv()
-	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
-		settings.SetConfigFile(path)
-		settings.SetConfigType("yaml")
-		if err := settings.ReadInConfig(); err != nil {
-			return config{}, errors.New("could not read Runner Gateway settings file")
-		}
+	path := strings.TrimSpace(os.Getenv(settingPrefix + "CONFIG_FILE"))
+	if path == "" {
+		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return config{}, errors.New("could not read Runner Gateway settings file")
+	}
+	var settings map[string]any
+	decoder := yaml.NewDecoder(bytes.NewReader(contents))
+	if err := decoder.Decode(&settings); err != nil {
+		return config{}, errors.New("could not decode Runner Gateway settings file")
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return config{}, errors.New("could not decode Runner Gateway settings file")
+		}
+		return config{}, errors.New("Runner Gateway settings file must contain one YAML document")
+	}
+
+	c := defaultConfig()
 	decodeHook := mapstructure.ComposeDecodeHookFunc(
 		mapstructure.TextUnmarshallerHookFunc(),
 		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
 	)
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
+	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &c, TagName: "mapstructure", ErrorUnused: true, DecodeHook: decodeHook,
+	})
+	if err != nil {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
+	if err := mapDecoder.Decode(settings); err != nil {
+		return config{}, errors.New("invalid Runner Gateway settings")
+	}
+	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
+	c.PodName = os.Getenv(runnerGatewayPodNameEnv)
+	c.PodIP = os.Getenv(runnerGatewayPodIPEnv)
 	c.RuntimeCatalog.Models.NormalizeHarnessNames()
-	if c.PodName == "" {
+	if strings.TrimSpace(c.PodName) == "" {
 		var err error
 		if c.PodName, err = os.Hostname(); err != nil {
 			return config{}, err
@@ -127,6 +152,10 @@ func (c *config) validate() error {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
 		}
+	}
+	databaseURL, err := url.Parse(c.DispatcherDatabaseURL)
+	if err != nil || (databaseURL.Scheme != "postgres" && databaseURL.Scheme != "postgresql") {
+		return errors.New("dispatcher_database_url must be a PostgreSQL URL")
 	}
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)

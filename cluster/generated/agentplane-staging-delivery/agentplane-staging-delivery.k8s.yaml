@@ -36,22 +36,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - env:
-            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_RUNNER_GATEWAY_POLICY_NAMESPACE
-              value: agentplane-staging
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_TOKEN_FILE
-              value: /var/run/secrets/agentplane-runner-gateway/token
-            - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE
-              value: session-dispatcher
-            - name: AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE
-              value: agentplane-runner-gateway
-            - name: AGENTPLANE_RUNNER_GATEWAY_RUNNER_CONTROL_TARGET_TEMPLATE
-              value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_RUNNER_GATEWAY_KUBERNETES_CLIENT_QPS
-              value: "-1"
-            - name: AGENTPLANE_RUNNER_GATEWAY_SANDBOX_CONTROLLER_ACCOUNT
-              value: agentplane-staging/sandbox-controller
             - name: AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -251,29 +235,10 @@ metadata:
   namespace: agentplane-staging
 data:
   settings.yaml: |
-    dispatcher_callers:
-      - agentplane-staging/actions
-      - agentplane-staging/app
-      - agentplane-staging/notifications
-    environment_readers:
-      - agentplane-staging/app
-    environment_managers:
-      - agentplane-staging/app
-    environment_launchers:
-      - agentplane-staging/actions
-    gateway_callers:
-      - agentplane-staging/app
-      - agentplane-staging/notifications
-      - agentplane-staging/runner-gateway
-    runner_security:
-      mode: mtls
-      tls:
-        cert_file: /run/agentplane/runner-tls/tls.crt
-        key_file: /run/agentplane/runner-tls/tls.key
-        ca_file: /run/agentplane/runner-tls/ca.crt
-    gateway_tls:
-      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      server_uri: spiffe://agentplane/session-dispatcher
+    sandbox_namespace: agentplane-staging
+    policy_namespace: agentplane-staging
+    runner_token_file: /var/run/secrets/agentplane-runner-gateway/token
+    kubernetes_client_qps: -1
     rpc:
       listen_address: 0.0.0.0:8080
       tls:
@@ -286,6 +251,61 @@ data:
             - session-dispatcher
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    gateway_tls:
+      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+      server_uri: spiffe://agentplane/session-dispatcher
+    proxy_port: 8080
+    runner_control_target_template: "{sandbox}-control.{namespace}.svc:8080"
+    dispatcher_audience: session-dispatcher
+    gateway_audience: agentplane-runner-gateway
+    runner_security:
+      mode: mtls
+      tls:
+        cert_file: /run/agentplane/runner-tls/tls.crt
+        key_file: /run/agentplane/runner-tls/tls.key
+        ca_file: /run/agentplane/runner-tls/ca.crt
+    dispatcher_callers:
+      - agentplane-staging/actions
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+    environment_readers:
+      - agentplane-staging/app
+    environment_managers:
+      - agentplane-staging/app
+    environment_launchers:
+      - agentplane-staging/actions
+    delegation:
+      actor: agentplane-staging/actions
+      identity_callers: true
+      methods:
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
+        - /agentplane.environments.v1.EnvironmentService/ListEnvironments
+        - /agentplane.environments.v1.EnvironmentService/GetEnvironment
+        - /agentplane.environments.v1.EnvironmentService/WatchEnvironment
+        - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
+    gateway_callers:
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+      - agentplane-staging/runner-gateway
+    wake_callers:
+      - agentplane-staging/actions
+      - agentplane-staging/app
+      - agentplane-staging/notifications
+    operator_callers:
+      - agentplane-staging/app
+    sandbox_controller_account: agentplane-staging/sandbox-controller
+    max_queued_per_session: 1000
+    dispatcher_watch_lease_seconds: 300
+    runner_request_timeout_seconds: 10
     central_sampler:
       target: central-sampler.agentplane-staging.svc.cluster.local:8080
       token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
@@ -443,30 +463,6 @@ data:
           workspace_provenance: DEPLOYMENT_CONFIG
           workspace_root_enforced: true
           creates_missing_cwd: true
-    wake_callers:
-      - agentplane-staging/actions
-      - agentplane-staging/app
-      - agentplane-staging/notifications
-    operator_callers:
-      - agentplane-staging/app
-    delegation:
-      actor: agentplane-staging/actions
-      identity_callers: true
-      methods:
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
-        - /agentplane.environments.v1.EnvironmentService/ListEnvironments
-        - /agentplane.environments.v1.EnvironmentService/GetEnvironment
-        - /agentplane.environments.v1.EnvironmentService/WatchEnvironment
-        - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1

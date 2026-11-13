@@ -6,9 +6,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.runner_gateway.settings import Settings
 from cluster.cdk8s.agentplane import actions, app, notifications, runner_gateway, session_dispatcher, staging
-from util.settings_contract import env_name
 
 
 def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[dict[str, Any]]) -> None:
@@ -24,9 +22,7 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
     senders = (app.NAME, notifications.NAME, actions.NAME)
     assert callers == {f"{staging.ENV.namespace}/{sender}" for sender in senders}
     assert wakers <= callers
-    assert {item["name"]: item.get("value") for item in container["env"]}[
-        env_name(Settings, "dispatcher_audience")
-    ] == session_dispatcher.TOKEN_AUDIENCE
+    assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     service = resource("Service", session_dispatcher.NAME)["spec"]
     labels = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["metadata"]["labels"]
     assert service["selector"].items() <= labels.items()

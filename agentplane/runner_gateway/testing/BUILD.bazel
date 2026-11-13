@@ -22,7 +22,6 @@ py_library(
         "//devinfra/testing:undeclared_outputs",
         "//util:db_url",
         "//util:net",
-        "//util:settings_contract",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pyyaml",

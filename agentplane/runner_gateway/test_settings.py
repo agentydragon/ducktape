@@ -16,8 +16,6 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
             {
                 "sandbox_namespace": "test-sandboxes",
                 "policy_namespace": "test-policies",
-                "dispatcher_database_url": "postgresql://test:test@db.invalid/dispatcher",
-                "pod_ip": "192.0.2.10",
                 "runner_token_file": "/run/test/token",
                 "dispatcher_audience": "test-dispatcher",
                 "gateway_audience": "test-gateway",
@@ -99,6 +97,61 @@ def test_control_service_tls_pins_session_dispatcher_identity() -> None:
     source["gateway_tls"]["server_uri"] = "spiffe://agentplane/runner-gateway"
     with pytest.raises(ValidationError, match=r"gateway_tls\.server_uri must identify the Session Dispatcher service"):
         Settings.model_validate(source)
+
+
+def test_static_settings_reject_runtime_inputs_and_legacy_namespace_authority() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["dispatcher_database_url"] = "postgresql://secret.invalid/dispatcher"
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
+
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["pod_ip"] = "192.0.2.10"
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
+
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["delegation"] = {
+        "actor": "test-app/actions",
+        "identity_callers": False,
+        "methods": ["/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput"],
+    }
+    with pytest.raises(ValidationError):
+        Settings.model_validate(source)
+
+    source["delegation"]["identity_callers"] = True
+    source["delegation"]["caller_namespaces"] = ["test-app"]
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(source)
+
+
+def test_runtime_inputs_are_not_settings_fields() -> None:
+    assert "dispatcher_database_url" not in Settings.model_fields
+    assert "pod_name" not in Settings.model_fields
+    assert "pod_ip" not in Settings.model_fields
+    assert Settings.config_file_env == "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
+    assert Settings.dispatcher_database_url_env == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+    assert Settings.pod_name_env == "AGENTPLANE_RUNNER_GATEWAY_POD_NAME"
+    assert Settings.pod_ip_env == "AGENTPLANE_RUNNER_GATEWAY_POD_IP"
+
+
+def test_account_sets_serialize_in_sorted_order() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="python")
+    source["dispatcher_callers"] = {"test-a-z/app", "test-a/worker"}
+    source["operator_callers"] = {"test-a/worker"}
+    source["environment_readers"] = {"test-a-z/app", "test-a/worker"}
+    settings = Settings.model_validate(source)
+    rendered = settings.model_dump(mode="json")
+    assert rendered["dispatcher_callers"] == ["test-a/worker", "test-a-z/app"]
+    assert rendered["environment_readers"] == ["test-a/worker", "test-a-z/app"]
+
+
+def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE", "environment-value")
+    monkeypatch.setenv("AGENTPLANE_RUNNER_GATEWAY_RPC__LISTEN_ADDRESS", "127.0.0.1:9999")
+    settings = _settings({"mode": "insecure"})
+    assert settings.dispatcher_audience == "test-dispatcher"
+    assert settings.rpc.listen_address == ":8080"
 
 
 if __name__ == "__main__":

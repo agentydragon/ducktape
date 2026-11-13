@@ -7,15 +7,13 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, field_validator, model_validator
 
 from agentplane.environment_runtime_transport.config import ClientTLS, Security
 from agentplane.identity.auth.listener import Listener
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-from util.yaml_file_settings import YamlFileSettings
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
 
@@ -29,10 +27,7 @@ class CentralSamplerTarget(BaseModel):
 class DelegationSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actor: ServiceAccountName = Field(description="Actions ServiceAccount trusted to delegate, as namespace/name.")
-    caller_namespaces: tuple[str, ...] = Field(
-        default=(), description="Deprecated and ignored; retained only to load older deployment settings."
-    )
-    identity_callers: bool = Field(
+    identity_callers: Literal[True] = Field(
         description="Must be true: Actions may assert a live Identity in policy_namespace as the effective caller."
     )
     methods: tuple[str, ...] = Field(
@@ -40,24 +35,19 @@ class DelegationSettings(BaseModel):
     )
 
 
-class Settings(YamlFileSettings):
-    """Fields are YAML keys; each also accepts an `AGENTPLANE_RUNNER_GATEWAY_*` environment override.
-    Deployments write the caller lists to the file."""
+class Settings(BaseModel):
+    """Complete non-secret static settings authored in the mounted YAML file."""
 
     config_file_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_")
+    dispatcher_database_url_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
+    pod_name_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_POD_NAME"
+    pod_ip_env: ClassVar[str] = "AGENTPLANE_RUNNER_GATEWAY_POD_IP"
+    model_config = ConfigDict(extra="forbid")
 
     sandbox_namespace: str = Field(min_length=1, description="Namespace of Agentplane Sandboxes.")
     policy_namespace: str = Field(
         min_length=1, description="Namespace holding the Identities a workload SVID may name."
     )
-    dispatcher_database_url: SecretStr = Field(description="The Dispatcher queue's PostgreSQL URL.")
-    pod_name: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Name this replica holds Sandbox connection leases under; the hostname when unset.",
-    )
-    pod_ip: str = Field(min_length=1, description="Address advertised in each Sandbox control EndpointSlice.")
     runner_token_file: Path = Field(description="Projected Gateway-audience token for cross-replica Runner calls.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     kubernetes_client_qps: float = Field(
@@ -159,3 +149,18 @@ class Settings(YamlFileSettings):
         if value < 0 and value != -1:
             raise ValueError("kubernetes_client_qps must be -1 or nonnegative")
         return value
+
+    @field_serializer(
+        "dispatcher_callers",
+        "environment_readers",
+        "environment_managers",
+        "environment_launchers",
+        "gateway_callers",
+        "executor_callers",
+    )
+    def sorted_accounts(self, value: Set[str]) -> list[str]:
+        return sorted(value, key=lambda account: tuple(account.split("/", maxsplit=1)))
+
+    @field_serializer("wake_callers", "operator_callers")
+    def sorted_optional_accounts(self, value: Set[str] | None) -> list[str] | None:
+        return None if value is None else sorted(value, key=lambda account: tuple(account.split("/", maxsplit=1)))
