@@ -9,10 +9,8 @@
 
 set -euo pipefail
 
-# The argument is JSON from rust-analyzer (DiscoverArgument), we don't need it
-# since gen_rust_project generates the whole workspace at once.
-# But we accept it for API compatibility.
-ARG="${1:-}"
+# rust-analyzer passes a JSON DiscoverArgument; gen_rust_project emits the whole
+# workspace, so this wrapper does not need to inspect it.
 
 # rust-analyzer sets cwd to workspace root
 PROJECT_FILE="$PWD/rust-project.json"
