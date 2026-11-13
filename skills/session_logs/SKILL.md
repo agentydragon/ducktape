@@ -17,12 +17,12 @@ original problem.
 
 ## Paved commands
 
-The packaged skill contains three executable helpers:
+The packaged skill contains three Python helpers. Invoke them with `python3`:
 
 ```bash
-find_current_session.py [claude|codex]
-analyze_session.py [claude|codex|TRANSCRIPT.jsonl]
-conversation.py [--max-display-text-length N] [--no-strip-agents-md]
+python3 find_current_session.py [claude|codex]
+python3 analyze_session.py [claude|codex|TRANSCRIPT.jsonl]
+python3 conversation.py [--max-display-text-length N] [--no-strip-agents-md]
                [--no-strip-environment-context] [--no-strip-skill-instructions]
                [claude|codex] [TRANSCRIPT.jsonl]
 ```
@@ -66,9 +66,9 @@ When running from a checkout rather than an installed package, use
 Validated on this machine with Claude Code `2.1.260`:
 
 ```bash
-CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.py claude)
-~/.claude/skills/session_logs/analyze_session.py "$CLAUDE_SESSION"
-~/.claude/skills/session_logs/conversation.py claude "$CLAUDE_SESSION"
+CLAUDE_SESSION=$(python3 ~/.claude/skills/session_logs/find_current_session.py claude)
+python3 ~/.claude/skills/session_logs/analyze_session.py "$CLAUDE_SESSION"
+python3 ~/.claude/skills/session_logs/conversation.py claude "$CLAUDE_SESSION"
 ```
 
 Claude stores project transcripts as JSONL under
@@ -85,9 +85,9 @@ traffic rather than user turns. Compaction is recorded as
 To inspect a Codex CLI transcript on this machine:
 
 ```bash
-CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
-~/.codex/skills/session_logs/analyze_session.py "$CODEX_SESSION"
-~/.codex/skills/session_logs/conversation.py codex "$CODEX_SESSION"
+CODEX_SESSION=$(python3 ~/.codex/skills/session_logs/find_current_session.py codex)
+python3 ~/.codex/skills/session_logs/analyze_session.py "$CODEX_SESSION"
+python3 ~/.codex/skills/session_logs/conversation.py codex "$CODEX_SESSION"
 ```
 
 Codex stores transcripts as
@@ -127,8 +127,8 @@ After running `conversation.py`:
 For a compact inventory rather than the full conversation:
 
 ```bash
-~/.codex/skills/session_logs/analyze_session.py codex
-~/.claude/skills/session_logs/analyze_session.py claude
+python3 ~/.codex/skills/session_logs/analyze_session.py codex
+python3 ~/.claude/skills/session_logs/analyze_session.py claude
 ```
 
 Pass an explicit transcript path to either helper when reviewing an older

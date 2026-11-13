@@ -75,12 +75,12 @@ Run the analyzer first:
 
 ```bash
 # Claude Code 2.1.260
-CLAUDE_SESSION=$(~/.claude/skills/session_logs/find_current_session.py claude)
-~/.claude/skills/session_logs/analyze_session.py claude "$CLAUDE_SESSION"
+CLAUDE_SESSION=$(python3 ~/.claude/skills/session_logs/find_current_session.py claude)
+python3 ~/.claude/skills/session_logs/analyze_session.py claude "$CLAUDE_SESSION"
 
 # Codex CLI 0.154.0
-CODEX_SESSION=$(~/.codex/skills/session_logs/find_current_session.py codex)
-~/.codex/skills/session_logs/analyze_session.py codex "$CODEX_SESSION"
+CODEX_SESSION=$(python3 ~/.codex/skills/session_logs/find_current_session.py codex)
+python3 ~/.codex/skills/session_logs/analyze_session.py codex "$CODEX_SESSION"
 ```
 
 If the analyzer reports zero compactions and zero malformed records, do not
