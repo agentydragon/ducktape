@@ -7,7 +7,7 @@ use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
-use crate::outcome::emit_gate_rejection_json;
+use crate::outcome::{MutationVerb, emit_gate_rejection_json};
 use crate::source_unit_refine::{
     SourceUnitAssignment, SourceUnitRefineOptions, run_source_unit_refine,
 };
@@ -697,7 +697,12 @@ fn run_modules_refine(
     ) {
         Ok(outcome) => outcome,
         Err(err) => {
-            return Err(emit_gate_rejection_json(output, "refine", args.format, err));
+            return Err(emit_gate_rejection_json(
+                output,
+                MutationVerb::Refine,
+                args.format,
+                err,
+            ));
         }
     };
     outcome.outcome.warn_if_unassessed_write(stderr)?;

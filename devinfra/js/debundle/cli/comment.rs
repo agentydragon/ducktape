@@ -120,10 +120,22 @@ pub struct CommentOutcome {
     /// `Some("")` is an explicit empty comment — the two are distinct
     /// (CLI_DOGFOOD #7), and serialize as `null` vs `""`.
     pub comment: Option<String>,
-    /// One of "read", "set", "cleared", "unchanged", "dry-run".
-    pub action: &'static str,
+    /// The comment operation that produced the outcome.
+    pub action: CommentAction,
     /// Absolute path of the YAML touched (or that would be touched).
     pub path: PathBuf,
+}
+
+/// The distinct operations available in the binding and module comment flows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommentAction {
+    Read,
+    Set,
+    Cleared,
+    Unchanged,
+    #[serde(rename = "dry-run")]
+    DryRun,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -142,7 +154,7 @@ struct CommentOutcomeJson<'a> {
     locator: Locator<'a>,
     /// `null` when the comment field is unset, distinct from `""`.
     comment: Option<&'a str>,
-    action: &'a str,
+    action: CommentAction,
 }
 
 #[derive(Debug, Serialize)]
@@ -264,27 +276,27 @@ pub fn apply_module_comment(
 fn edit_comment(
     current: Option<String>,
     mode: CommentMode,
-) -> Result<(&'static str, Option<String>, bool)> {
+) -> Result<(CommentAction, Option<String>, bool)> {
     let replacement = match mode {
-        CommentMode::Read => return Ok(("read", current, false)),
+        CommentMode::Read => return Ok((CommentAction::Read, current, false)),
         CommentMode::Set(text) => Some(text),
         CommentMode::Clear => None,
         CommentMode::Edit => {
             let text = current.as_deref().unwrap_or("");
             let edited = run_editor(text)?;
             if edited == text {
-                return Ok(("unchanged", current, false));
+                return Ok((CommentAction::Unchanged, current, false));
             }
             (!edited.is_empty()).then_some(edited)
         }
     };
     if replacement == current {
-        return Ok(("unchanged", current, false));
+        return Ok((CommentAction::Unchanged, current, false));
     }
     let action = if replacement.is_some() {
-        "set"
+        CommentAction::Set
     } else {
-        "cleared"
+        CommentAction::Cleared
     };
     Ok((action, replacement, true))
 }
@@ -292,15 +304,19 @@ fn edit_comment(
 fn persist_comment(
     file: &Path,
     doc: &LogicalModule,
-    action: &'static str,
+    action: CommentAction,
     dirty: bool,
     dry_run: bool,
-) -> Result<&'static str> {
+) -> Result<CommentAction> {
     // edit_comment already compared the original and replacement metadata.
     if dirty && !dry_run {
         write_yaml_atomic(file, &serde_yaml::to_value(doc)?)?;
     }
-    Ok(if dirty && dry_run { "dry-run" } else { action })
+    Ok(if dirty && dry_run {
+        CommentAction::DryRun
+    } else {
+        action
+    })
 }
 
 /// Resolve a module-path argument to its on-disk YAML through the

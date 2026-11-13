@@ -35,7 +35,7 @@ use spec_modules::{collect_module_files, module_path_from_file, read_module_file
 use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{Gate, post_edit_spec_from_docs};
-use crate::outcome::{GateOutcome, MutationOutcome};
+use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 /// The source of a binding's current spec identity.
 ///
@@ -414,15 +414,15 @@ pub fn rename_binding(
     insert_annotation(doc, new, annotation)?;
     let changed = apply_module_edit(&hit.file, Some(&original_doc), doc, dry_run)?;
     let action = if !changed {
-        "unchanged"
+        MutationAction::Unchanged
     } else if dry_run {
-        "dry-run"
+        MutationAction::DryRun
     } else {
-        "applied"
+        MutationAction::Applied
     };
     Ok(RenameOutcome {
         outcome: MutationOutcome {
-            verb: "rename",
+            verb: MutationVerb::Rename,
             action,
             gate: if no_verify {
                 GateOutcome::Skipped
@@ -594,15 +594,15 @@ pub fn rename_bindings(
         apply_doc_changes(&original_docs, &docs, &BTreeSet::new(), dry_run)?;
     Ok(RenameBatchOutcome {
         outcome: MutationOutcome {
-            verb: "rename",
+            verb: MutationVerb::Rename,
             action: if resolved.is_empty() {
-                "noop"
+                MutationAction::Noop
             } else if files_written.is_empty() {
-                "unchanged"
+                MutationAction::Unchanged
             } else if dry_run {
-                "dry-run"
+                MutationAction::DryRun
             } else {
-                "applied"
+                MutationAction::Applied
             },
             gate: if resolved.is_empty() {
                 GateOutcome::NotRequired
@@ -851,8 +851,8 @@ pub fn run_bindings_assign(
     if no_moves && effect_assessment_context.is_none() {
         return Ok(AssignOutcome {
             outcome: MutationOutcome {
-                verb: "assign",
-                action: "noop",
+                verb: MutationVerb::Assign,
+                action: MutationAction::Noop,
                 gate: GateOutcome::NotRequired,
                 needs_full_assessment: false,
                 files_written: Vec::new(),
@@ -1111,13 +1111,13 @@ pub fn run_bindings_assign(
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
         outcome: MutationOutcome::ownership_edit(
-            "assign",
+            MutationVerb::Assign,
             if no_moves {
-                "noop"
+                MutationAction::Noop
             } else if dry_run {
-                "dry-run"
+                MutationAction::DryRun
             } else {
-                "applied"
+                MutationAction::Applied
             },
             if no_moves {
                 GateOutcome::NotRequired
@@ -1411,8 +1411,8 @@ pub fn run_bindings_unassign(
     if no_symbols && effect_assessment_context.is_none() {
         return Ok(UnassignOutcome {
             outcome: MutationOutcome {
-                verb: "unassign",
-                action: "noop",
+                verb: MutationVerb::Unassign,
+                action: MutationAction::Noop,
                 gate: GateOutcome::NotRequired,
                 needs_full_assessment: false,
                 files_written: Vec::new(),
@@ -1500,13 +1500,13 @@ pub fn run_bindings_unassign(
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
         outcome: MutationOutcome::ownership_edit(
-            "unassign",
+            MutationVerb::Unassign,
             if no_symbols {
-                "noop"
+                MutationAction::Noop
             } else if dry_run {
-                "dry-run"
+                MutationAction::DryRun
             } else {
-                "applied"
+                MutationAction::Applied
             },
             if no_symbols {
                 GateOutcome::NotRequired

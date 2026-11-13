@@ -83,6 +83,15 @@ pub enum SelectorCodemodAction {
     Skipped,
 }
 
+/// Whether the selector-codemod report describes a preview or applied edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum SelectorCodemodReportAction {
+    Applied,
+    DryRun,
+}
+
 /// One alternative candidate selector for an item, beyond the minimizer's primary
 /// pick — the `synthesize-selectors --candidates N` menu. Each proves uniquely (it
 /// is a read-off candidate the matcher accepted), pinning a different anchor than
@@ -140,7 +149,7 @@ pub struct SelectorCodemodSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SelectorCodemodReport {
-    pub action: String,
+    pub action: SelectorCodemodReportAction,
     pub candidates: Vec<SelectorCodemodCandidate>,
     pub summary: SelectorCodemodSummary,
 }
@@ -524,9 +533,9 @@ fn run_selector_codemod_impl(
 
     Ok(SelectorCodemodReport {
         action: if config.apply {
-            "applied".to_string()
+            SelectorCodemodReportAction::Applied
         } else {
-            "dry_run".to_string()
+            SelectorCodemodReportAction::DryRun
         },
         candidates,
         summary,

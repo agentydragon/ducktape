@@ -19,7 +19,7 @@ use crate::candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
 use crate::edit_gate::{ExpectedResolvedMember, Gate, GraphEditArgs, post_edit_spec_from_docs};
-use crate::outcome::{MutationOutcome, emit_gate_rejection_json};
+use crate::outcome::{MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json};
 
 #[derive(Debug, Args)]
 pub struct ModulesApplyArgs {
@@ -426,7 +426,12 @@ pub fn run_modules_apply(
         || post_edit_spec_from_docs(&docs, &deleted),
         &expected,
     ) {
-        return Err(emit_gate_rejection_json(output, "apply", args.format, err));
+        return Err(emit_gate_rejection_json(
+            output,
+            MutationVerb::Apply,
+            args.format,
+            err,
+        ));
     }
     let effect_relocation_assessment = effect_context
         .as_ref()
@@ -450,8 +455,12 @@ pub fn run_modules_apply(
         apply_doc_changes(&original_docs, &docs, &deleted, args.dry_run)?;
     let out = ApplyOutcome {
         outcome: MutationOutcome::ownership_edit(
-            "apply",
-            if args.dry_run { "dry-run" } else { "applied" },
+            MutationVerb::Apply,
+            if args.dry_run {
+                MutationAction::DryRun
+            } else {
+                MutationAction::Applied
+            },
             gate.outcome(),
             effect_relocation_assessment.as_ref(),
             files_written,

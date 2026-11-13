@@ -296,14 +296,15 @@ Description proposal fields and residual dependency names are defined in
 <../SPEC.md#authoring-reports>; truncation metadata uses the same section names.
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
-`bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
+`bindings rename`, `modules apply`, `modules refine`, `modules merge`,
+`modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
 | Field                   | Values                                                                                                                                                                                         |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                                                                                           |
+| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `refine` \| `merge` \| `delete`                                                                                                               |
 | `action`                | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                                                                                  |
 | `gate`                  | `passed` \| `claims_checked` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only; see "Ownership-edit assessment states" |
 | `needs_full_assessment` | `true` when an ownership edit passed only the graph-backed checks (no `--analysis`); omitted otherwise                                                                                         |
@@ -2081,7 +2082,8 @@ workflow are in <spec_editing.md> § Comments and notes. The CLI surface is
 `bindings comment` / `modules comment` — binding edits address
 `annotations.<name>.comment` for
 both member and source-match bindings; module edits address the top-level
-`comment:`. Non-emitting `note:` fields are YAML-authored metadata.
+`comment:`. JSON outcomes use `action` values `read`, `set`, `cleared`,
+`unchanged`, or `dry-run`. Non-emitting `note:` fields are YAML-authored metadata.
 
 ## Out of scope
 

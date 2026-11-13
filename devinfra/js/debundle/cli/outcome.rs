@@ -1,5 +1,4 @@
-//! Shared outcome schema for the five spec-mutating CLI verbs
-//! (`bindings {assign,unassign,rename}`, `modules {merge,delete}`).
+//! Shared outcome schema for spec-mutating CLI verbs.
 //!
 //! Every mutating verb prints one [`MutationOutcome`]-carrying object
 //! on stdout when a JSON format is selected (explicit `--format
@@ -19,6 +18,34 @@ use peel::OutputFormat;
 use serde::Serialize;
 
 use crate::edit_gate::{GateRejection, GateRejectionReport};
+
+/// A spec-mutating CLI operation represented in mutation and rejection outcomes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum MutationVerb {
+    Assign,
+    Unassign,
+    Rename,
+    Apply,
+    Refine,
+    Merge,
+    Delete,
+}
+
+/// The externally reported result of a mutation command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+pub enum MutationAction {
+    Applied,
+    #[serde(rename = "dry-run")]
+    #[strum(serialize = "dry-run")]
+    DryRun,
+    Noop,
+    Unchanged,
+    Rejected,
+}
 
 /// How a mutating verb's edit was validated, reported in the outcome
 /// so machine readers can tell a gate-checked apply from a
@@ -64,15 +91,14 @@ impl GateOutcome {
 }
 
 /// The shared outcome core. Verb-specific outcome structs embed this
-/// via `#[serde(flatten)]` so all five mutating verbs share one JSON
+/// via `#[serde(flatten)]` so mutating verbs share one JSON
 /// schema family.
 #[derive(Debug, Clone, Serialize)]
 pub struct MutationOutcome {
-    /// Which mutating verb produced the outcome:
-    /// `assign` | `unassign` | `rename` | `merge` | `delete` | `apply`.
-    pub verb: &'static str,
-    /// `applied` | `dry-run` | `noop` | `unchanged`.
-    pub action: &'static str,
+    /// Which mutating verb produced the outcome.
+    pub verb: MutationVerb,
+    /// The command result, including `rejected` for gate rejection outcomes.
+    pub action: MutationAction,
     pub gate: GateOutcome,
     /// The edit passed only graph-backed claim checks; no full candidate
     /// assessment (`--analysis`) ran. Such writes are still permitted while
@@ -91,8 +117,8 @@ impl MutationOutcome {
     /// checks produced; `assessment` is the full candidate assessment, when
     /// `--analysis` supplied one.
     pub fn ownership_edit(
-        verb: &'static str,
-        action: &'static str,
+        verb: MutationVerb,
+        action: MutationAction,
         checks: GateOutcome,
         assessment: Option<&gate::CandidateRelocationAssessmentReport>,
         files_written: Vec<String>,
@@ -111,7 +137,7 @@ impl MutationOutcome {
     /// Warn on stderr when this outcome wrote ownership changes that only
     /// graph-backed claim checks covered.
     pub fn warn_if_unassessed_write(&self, stderr: &mut dyn std::io::Write) -> Result<()> {
-        if self.needs_full_assessment && self.action == "applied" {
+        if self.needs_full_assessment && self.action == MutationAction::Applied {
             command_diagnostics::write_diagnostic(
                 stderr,
                 format_args!(
@@ -130,15 +156,15 @@ impl MutationOutcome {
 /// projections.
 #[derive(Debug, Serialize)]
 pub struct GateRejectionOutcome<'a> {
-    pub verb: &'static str,
-    pub action: &'static str,
+    pub verb: MutationVerb,
+    pub action: MutationAction,
     pub rejection: &'a GateRejectionReport,
 }
 
 /// Attach any rejection-report failure to the original typed gate rejection.
 pub fn emit_gate_rejection_json(
     output: &mut dyn std::io::Write,
-    verb: &'static str,
+    verb: MutationVerb,
     format: Option<OutputFormat>,
     err: anyhow::Error,
 ) -> anyhow::Error {
@@ -151,7 +177,7 @@ pub fn emit_gate_rejection_json(
     }
     let outcome = GateRejectionOutcome {
         verb,
-        action: "rejected",
+        action: MutationAction::Rejected,
         rejection: &rejection.report,
     };
     let emission = command_output::write_report(&outcome, format, output, |_, _| Ok(()))
