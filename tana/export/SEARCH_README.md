@@ -15,13 +15,13 @@ Tana exports contain search nodes with their results frozen at export time. This
 
 ```bash
 # List all search nodes in an export
-python materialize_searches.py export.json --list
+bb run //tana/export:materialize_searches_bin -- export.json --list
 
 # Materialize a specific search
-python materialize_searches.py export.json --search-id SEARCH_ID
+bb run //tana/export:materialize_searches_bin -- export.json --search-id SEARCH_ID
 
 # Process all searches
-python materialize_searches.py export.json --all
+bb run //tana/export:materialize_searches_bin -- export.json --all
 ```
 
 ## Features
@@ -43,7 +43,7 @@ python materialize_searches.py export.json --all
 ## Example
 
 ```bash
-$ python materialize_searches.py tana_export.json --search-id QJYSvmW5NdlY
+$ bb run //tana/export:materialize_searches_bin -- tana_export.json --search-id QJYSvmW5NdlY
 
 Search: Do next & Open
 ID: QJYSvmW5NdlY
@@ -62,18 +62,18 @@ Materialized results: 28
 
 The implementation consists of:
 
-1. **Search Parser** (`tana/query/search_parser.py`)
+1. **Search Parser** (`tana/query/search/parser.py`)
    - Extracts search expressions from metadata
    - Parses boolean logic and search criteria
    - Handles nested view definitions
 
-2. **Search Evaluator** (`tana/query/search_evaluator.py`)
+2. **Search Evaluator** (`tana/query/search/evaluator.py`)
    - Executes parsed expressions
    - Resolves PARENT references
    - Applies boolean operators
    - Filters by tags, fields, and types
 
-3. **Search Materializer** (`tana/query/search_materializer.py`)
+3. **Search Materializer** (`tana/query/search/materializer.py`)
    - Combines parser and evaluator
    - Compares stored vs re-executed results
    - Provides analysis of differences
