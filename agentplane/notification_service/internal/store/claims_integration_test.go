@@ -678,13 +678,13 @@ func TestDeliveryFailureBackoffDoesNotDelaySourceWorkAndSourceReleasePreservesIt
 	f.addEvents(t, subscription, 1, 1)
 	deliveryClaim := f.claim(t)
 	failure := "ServiceError"
+	beforeRelease := time.Now()
 	if err := f.Release(t.Context(), deliveryClaim, &failure, ptr(time.Now().Add(-time.Second))); err != nil {
 		t.Fatal(err)
 	}
+	afterRelease := time.Now()
 	backoff := f.nextWorkAt(t)
-	if backoff == nil || backoff.Before(time.Now().Add(releaseBackoff-timeTolerance)) {
-		t.Fatalf("delivery backoff = %v, want at least %s from now", backoff, releaseBackoff)
-	}
+	requireBetween(t, "delivery backoff", backoff, beforeRelease.Add(releaseBackoff), afterRelease.Add(releaseBackoff))
 
 	// The delivery retry is in the future, but a due source subscription can claim the shared inbox lease.
 	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.ID)
