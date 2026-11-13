@@ -3,8 +3,8 @@
  * board, and nothing the board itself needs. It reads the palette `board.css` defines, which
  * `index.html` scopes by putting `aiquota-scope` on the body.
  *
- * Kept apart from board.css because the Haku Console embeds the board inside its own page and
- * must not inherit a second page's title, background or margins.
+ * Kept apart from board.css so an embedder can use the board without inheriting this page's title,
+ * background or margins.
  */
 body {
   margin: 0;

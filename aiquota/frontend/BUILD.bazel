@@ -67,8 +67,7 @@ ts_library(
     deps = [":schema"],
 )
 
-# The board is the shareable half: the Haku Console renders it from its own shell, so it must
-# stay free of page chrome and of anything that fetches.
+# Pure quota rendering; app owns the live feed and dashboard owns page chrome.
 ts_library(
     name = "board",
     srcs = ["board.tsx"],
@@ -130,8 +129,8 @@ ts_library(
     ],
 )
 
-# Split so an embedder takes the board's styles without the standalone page's body, margins
-# and title chrome. //haku/console/frontend imports board.css into its own stylesheet.
+# Split so a board embedder can take its styles without the standalone page's body, margins and
+# title chrome.
 js_library(
     name = "board_css",
     srcs = ["board.css"],
