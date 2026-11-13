@@ -12,6 +12,12 @@ Files
     model saw (prompt1, reasoning1, assistant1[, function_call]) and then send
     a new prompt so the model can continue statelessly.
 
+Run both demos from the repository root with `OPENAI_API_KEY` set:
+
+```sh
+python openai_utils/openai_api_examples/stateless_two_step_demo.py
+```
+
 Design notes (brief)
 
 - Stateless mode: the examples intentionally do NOT rely on previous_response_id or

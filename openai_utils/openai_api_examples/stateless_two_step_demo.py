@@ -6,8 +6,7 @@ This single example contains two short demos showing how to:
   so the model can continue statelessly (no previous_response_id)
 
 Usage:
-  export OPENAI_API_KEY=...
-  python examples/stateless_two_step_demo.py [text|tools|both]
+  OPENAI_API_KEY=... python openai_utils/openai_api_examples/stateless_two_step_demo.py
 
 Notes:
 - Uses model=gpt-5 with reasoning={'effort':'high'} by default.
