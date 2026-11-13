@@ -7,7 +7,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import grpc
@@ -55,7 +55,7 @@ def _retry_list_sessions_poll_error(error: BaseException) -> bool:
 
 async def _gateway_audience(cluster: Cluster) -> str:
     settings = json.loads(await cluster.kubectl("get", "configmap", "runner-gateway-settings", "-o", "json"))
-    return yaml.safe_load(settings["data"]["settings.yaml"])["gateway_audience"]
+    return cast(str, yaml.safe_load(settings["data"]["settings.yaml"])["gateway_audience"])
 
 
 @asynccontextmanager
