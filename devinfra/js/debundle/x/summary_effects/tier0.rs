@@ -87,8 +87,11 @@ pub enum Kind {
 }
 
 /// Why a swapped pair is not proven to commute.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum Conflict {
     BothImpure,
     /// The definition's binding is reachable from the impure statement's own
