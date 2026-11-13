@@ -11,7 +11,7 @@ pub struct SourceMatchNearMiss {
     pub body_idx: usize,
     pub declared_bindings: Vec<String>,
     pub score: usize,
-    pub reason: String,
+    pub reason: source_mismatch::MismatchReason,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

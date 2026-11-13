@@ -788,7 +788,7 @@ fn add_differentiators(chunk: &Chunk<'_>, resolution: &mut Resolution) {
                     differentiators.push(Differentiator {
                         candidate_body_index,
                         anchor_body_index,
-                        anchor: feature.to_string(),
+                        anchor: feature,
                     });
                 }
             }
