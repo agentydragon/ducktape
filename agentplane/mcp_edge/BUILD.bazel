@@ -45,9 +45,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
+        "//agentplane/action_service/api",
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
-        "//agentplane/action_service/api",
         "//agentplane/action_service/callers",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/facade",
