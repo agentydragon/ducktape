@@ -229,6 +229,13 @@ func TestBackfillKeepsAnIneligibleSpan(t *testing.T) {
 	wrong := "different completed content"
 	span := spans.ClaudeText([]string{"Hel", "lo"}, spans.TextOptions{Completed: &wrong})
 	f := retained(t, span)
+	// An item that cannot settle must not contend with its live projector's write lease.
+	if err := postgres.Transaction(t.Context(), f.db, sql.TxOptions{}, func(tx *sql.Tx) error {
+		_, err := projection.AcquireLease(t.Context(), tx, f.id, time.Minute)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if result, err := RunSession(t.Context(), f.db, f.id, true); err != nil || result != (Result{}) || f.count(t, "session_event") != 8 {
 		t.Fatalf("ineligible completion: %+v %v", result, err)
 	}

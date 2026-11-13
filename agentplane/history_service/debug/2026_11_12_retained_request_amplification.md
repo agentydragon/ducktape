@@ -109,6 +109,11 @@ The full read-only preview covered 163 Sessions and identified 115 eligible item
 Sessions: **243,088 rows and 49,604,130 stored payload bytes**. These payload counts exclude
 row/index overhead and do not imply shrinking PostgreSQL relation files.
 
+The first implementation took a projection write lease before checking whether a completion was
+eligible, including already settled items. A regression with an ineligible item and a live projector
+failed with `ErrProjectionBusy`. Checking eligibility read-only first avoids those unnecessary writes
+and lease conflicts; eligible items are still rechecked under both write fences before deletion.
+
 ## Turn-diff cleanup
 
 At 11:13 UTC on 2026-11-12, the operator authorized deleting existing turn diffs without a
