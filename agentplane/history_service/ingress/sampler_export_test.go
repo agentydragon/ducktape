@@ -244,6 +244,11 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 // openSessionExecutingAs opens a Session the Dispatcher recorded as executing as identity.
 func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *identitypb.Identity) *centralsampler.Session {
 	t.Helper()
+	return f.openSessionWithAPI(t, identity, protocol.APIStyleResponses)
+}
+
+func (f samplerExportFixture) openSessionWithAPI(t *testing.T, identity *identitypb.Identity, api protocol.APIStyle) *centralsampler.Session {
+	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
 	executorUID := uuid.NewString()
 	session, err := f.sampler.CreateSession(t.Context(), &samplerpb.CreateSessionRequest{
@@ -260,7 +265,7 @@ func (f samplerExportFixture) openSessionExecutingAs(t *testing.T, identity *ide
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
 		ExecutionIdentity:      identity,
-	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)
+	}, samplerOwnerUID, api, &platformInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,6 +350,50 @@ func samplerExportResult(t *testing.T, done <-chan error) error {
 		t.Fatal("sampler export did not finish before its deadline")
 		return nil
 	}
+}
+
+func exportSamplerHistoryThrough(t *testing.T, f samplerExportFixture, sessionID string, sourceCursor uint64) {
+	t.Helper()
+	id, err := uuid.Parse(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ExportSession intentionally sends at most 16 pages of 16 events per call.
+	// Bound retries from the expected source cursor and require each call to move
+	// History forward so a broken exporter cannot leave this test looping.
+	const eventsPerExportQuantum = 16 * 16
+	maxQuanta := int((sourceCursor+eventsPerExportQuantum-1)/eventsPerExportQuantum) + 1
+	var retainedCursor uint64
+	for quantum := 0; quantum < maxQuanta; quantum++ {
+		if retainedCursor == sourceCursor {
+			return
+		}
+		if retainedCursor > sourceCursor {
+			t.Fatalf("History retained cursor %d beyond sampler source cursor %d", retainedCursor, sourceCursor)
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+		t.Cleanup(cancel)
+		err = samplerExportResult(t, startSamplerExport(ctx, f, sessionID))
+		cancel()
+		if err != nil {
+			t.Fatalf("export sampler history through cursor %d (quantum %d): %v", sourceCursor, quantum+1, err)
+		}
+		after, err := f.history.ReadPage(t.Context(), id, 0, 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if after.GetLastCursor() <= retainedCursor {
+			t.Fatalf("sampler export quantum %d made no History progress: cursor %d", quantum+1, retainedCursor)
+		}
+		retainedCursor = after.GetLastCursor()
+	}
+	page, err := f.history.ReadPage(t.Context(), id, 0, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Fatalf("History retained cursor %d after %d export quanta, want sampler source cursor %d", page.GetLastCursor(), maxQuanta, sourceCursor)
 }
 
 func samplerExportContext(t *testing.T) (context.Context, context.CancelFunc) {

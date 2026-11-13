@@ -31,7 +31,7 @@ from laser.lightburn.lbrn2_writer import (
     VAlign,
     XForm,
 )
-from laser.ruida.rd_format import RdJob, RdLayer, RdRect
+from laser.ruida.rd_format import MAX_LAYERS as MAX_RD_LAYERS, RdJob, RdLayer, RdRect
 
 # ── Cut parameter enum ─────────────────────────────────────────────────────────
 
@@ -923,6 +923,9 @@ def generate_rd(config: GridConfig) -> RdJob:
 
     n_outer_cols = len(config.cols.values) if config.cols is not None else 1
     n_outer_rows = len(config.rows.values) if config.rows is not None else 1
+    layer_count = len(config.x.values) * len(config.y.values) * n_outer_cols * n_outer_rows + int(config.border.enabled)
+    if layer_count > MAX_RD_LAYERS:
+        raise ValueError(f"Ruida supports at most {MAX_RD_LAYERS} layers, got {layer_count}")
     inner_stride = config.geometry.cell_size_mm + config.geometry.gap_mm
     cell_grid_w = len(config.x.values) * inner_stride - config.geometry.gap_mm
     cell_grid_h = len(config.y.values) * inner_stride - config.geometry.gap_mm

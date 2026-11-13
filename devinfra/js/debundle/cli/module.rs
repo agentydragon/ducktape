@@ -218,7 +218,7 @@ impl DeleteSummary {
 /// * `--no-verify`: skip the gate for a single merge; rejected with `--batch`.
 pub fn run_merge(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     merge: MergeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -713,7 +713,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 /// partial removal if the filesystem fails midway.
 pub fn run_delete(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: DeleteArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,

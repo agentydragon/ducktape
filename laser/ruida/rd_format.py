@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+MAX_LAYERS = 128
+
 # ── Byte-level encoding primitives ────────────────────────────────────────────
 
 
@@ -149,6 +151,12 @@ class RdJob:
         Ruida serialization currently supports one pass and no layer Z motion.
         Reject other values rather than silently writing a physically different job.
         """
+        indices = [layer.index for layer in self.layers]
+        if any(index < 0 or index >= MAX_LAYERS for index in indices):
+            raise ValueError(f"Ruida layer indices must be between 0 and {MAX_LAYERS - 1}")
+        if len(set(indices)) != len(indices):
+            raise ValueError("Ruida layer indices must be unique")
+
         for layer in self.layers:
             unsupported = (
                 ("num_passes", layer.num_passes, 1),

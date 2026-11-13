@@ -523,7 +523,7 @@ fn emit_selector_debt_ndjson(
 }
 
 pub(super) fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: SpecNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,

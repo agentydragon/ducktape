@@ -389,7 +389,7 @@ fn resolve_id_as_module_path(id: &str, module_paths: &[String]) -> Option<String
 }
 
 pub(super) fn run_describe(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: DescribeArgs,
     source_context: Option<VerifiedGraphSourceContext>,
     validated: ValidatedDescribeQuery,
@@ -473,7 +473,7 @@ pub(super) fn run_describe(
 }
 
 pub(super) fn run_inspect_source(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: InspectSourceArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
@@ -1056,7 +1056,7 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs, output: &mut dyn std::io::Write)
 }
 
 pub(super) fn run_coverage(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: PatchPlanArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,

@@ -588,7 +588,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
 }
 
 fn run_module_decompose(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModuleDecomposeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
@@ -646,7 +646,7 @@ fn run_module_decompose(
 
 fn run_modules_refine(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModulesRefineArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -759,7 +759,7 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
 }
 
 pub(super) fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModulesNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,

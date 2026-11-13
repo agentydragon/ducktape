@@ -26,7 +26,6 @@ mod asserted_contracts;
 pub mod chunk_facts;
 pub mod loader_surface;
 pub mod program_summary;
-pub mod progress;
 mod request;
 mod saved_program_summary;
 pub use loader_surface::{
@@ -210,7 +209,7 @@ pub fn load_analysis(
 
 /// Inputs to [`analyze_program`] besides the parsed program.
 pub struct AnalyzeProgramInputs<'a> {
-    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
     pub spec: &'a AnalysisSpec,
     /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
     pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,

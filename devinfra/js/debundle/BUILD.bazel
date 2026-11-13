@@ -670,6 +670,7 @@ rust_library(
         "atomic_groups.rs",
         "cross_module_purity.rs",
         "diagnostics.rs",
+        "diagnostics/progress.rs",
         "execution_evidence.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/builtins.rs",
@@ -1408,6 +1409,12 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:thiserror",
     ],
+)
+
+rust_test(
+    name = "command_diagnostics_test",
+    crate = ":command_diagnostics",
+    edition = "2024",
 )
 
 rust_library(

@@ -133,7 +133,7 @@ pub struct FrontendSpecInputs<'a> {
     pub host_behavior: &'a HostBehavior,
     pub intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
     pub fail_fast: bool,
-    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
 }
 
 /// Build the canonical project-analysis artifact directly from source-level
@@ -1131,7 +1131,7 @@ struct MemberClaimInput<'a> {
     top_level_mark: swc_common::Mark,
     body: &'a [ModuleItem],
     fail_fast: bool,
-    diagnostics: &'a analysis::diagnostics::Diagnostics,
+    diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
 }
 
 fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProjection> {
