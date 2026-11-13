@@ -174,6 +174,10 @@ py_test(
     size = "medium",
     srcs = ["test_runtime_session.py"],
     data = [
+        "//agentplane/egress/cmd:egress-proxy",
+        "//agentplane/egress/sidecar:egress-sidecar",
+        "//agentplane/notification_service:notification-service",
+        "//agentplane/notification_service/testing/process_fixture:process_contract_test",
         "//agentplane/system_tests/vm:test_runner_disk_erofs",
         "//agentplane/system_tests/vm/guest:initramfs.cpio",
         "//agentplane/system_tests/vm/guest:root_erofs",
@@ -193,6 +197,7 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":platform_services",
         ":runtime_guest",
         ":session_helpers",
         "//:conftest",
@@ -235,6 +240,10 @@ py_test(
     size = "medium",
     srcs = ["test_runtime_codex_session.py"],
     data = [
+        "//agentplane/egress/cmd:egress-proxy",
+        "//agentplane/egress/sidecar:egress-sidecar",
+        "//agentplane/notification_service:notification-service",
+        "//agentplane/notification_service/testing/process_fixture:process_contract_test",
         "//agentplane/system_tests/vm:test_runner_disk_erofs",
         "//agentplane/system_tests/vm/guest:initramfs.cpio",
         "//agentplane/system_tests/vm/guest:root_erofs",
@@ -254,6 +263,7 @@ py_test(
         "@platforms//os:linux",
     ],
     deps = [
+        ":platform_services",
         ":runtime_guest",
         ":session_helpers",
         "//:conftest",
@@ -292,5 +302,34 @@ py_test(
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "platform_services",
+    testonly = True,
+    srcs = ["platform_services.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane/egress:platform_routes",
+        "//agentplane/egress:settings",
+        "//agentplane/egress:sidecar_config",
+        "//agentplane/egress/api/rules:egress_rules_pb2",
+        "//agentplane/egress/api/rules:egress_rules_pb2_grpc",
+        "//agentplane/egress/testing:go_replica",
+        "//agentplane/egress/testing:sidecar_process",
+        "//agentplane/identity/auth:listener",
+        "//agentplane/net/peertls:config",
+        "//agentplane/notification_service/api/notifications:notifications_pb2",
+        "//agentplane/notification_service/api/notifications:notifications_pb2_grpc",
+        "//agentplane/notification_service/testing/process_fixture:process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:tls",
+        "//devinfra/testing:undeclared_outputs",
+        "//util/testing:postgres",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )

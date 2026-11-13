@@ -1,8 +1,9 @@
-"""Two deployed VM boot paths with issued credentials and one workspace round trip each."""
+"""Deployed VM boots, issued credentials, workspace access and platform CLI routes."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 
 import pytest
@@ -100,11 +101,22 @@ async def test_vm_boot_contract(
                     f"cat {shlex.quote(workspace_file)}",
                     f"rm -- {shlex.quote(workspace_file)}",
                     f"test ! -e {shlex.quote(workspace_file)}",
+                    "printf '\\nVM_EGRESS_RULES_JSON\\n'",
+                    "agentplane --json egress rules",
+                    "printf '\\nVM_EGRESS_RULES_END\\n'",
+                    "agentplane notifications subscriptions --limit 1 >/dev/null",
+                    "echo NOTIFICATIONS_GRPC_OK",
                 ]
             )
             with tracer.start_as_current_span("system_test.turn"):
                 turn = await agent.run_shell(model, command)
             assert marker in turn.tool_outputs[-1], turn.transcript
+            rules_output = (
+                turn.tool_outputs[-1].split("VM_EGRESS_RULES_JSON\n", 1)[1].split("VM_EGRESS_RULES_END\n", 1)[0]
+            )
+            rules = json.loads(rules_output)
+            assert rules["identity"] == {"name": view.identity_name}, turn.transcript
+            assert "NOTIFICATIONS_GRPC_OK" in turn.tool_outputs[-1], turn.transcript
 
             await runner_credentials.assert_vm_runner_identity_unchanged(
                 cluster, view.kubernetes_diagnostics.pod.name, identity

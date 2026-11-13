@@ -265,6 +265,20 @@ tests, counterbalanced against the unchanged graph, before expanding to the full
 contract gains. At the `bedb9a5` checkpoint Pod ended only 9.412 seconds after VM;
 improving only one cannot establish a large full-feedback saving.
 
+The later 542e615 checkpoint has 13 K3s target summaries, with Pod finishing
+51.265 seconds after VM. This is still a two-tail problem; these summary clocks
+do not cover the complete gate or qualify physical execution. The next guest
+composition adds actual CLI routes through Egress/sidecar/Notification and
+same-credential revocation, while the deployed candidate retains both real
+guest boots, issued identity, private supervision, workspace work and unchanged
+trace assertions. Both packaged guest compositions pass after repairing the
+fixture's nested Go test-wrapper lifetime. The deployed candidate also passes
+Egress Identity and Notification CLI checks inside its existing tool turn. The
+wrong Notification peer-URI control fails the owned-data contract. These are
+focused positive/negative proofs, without a matched complete-CI saving. Their
+implementation failures and remaining controls are in
+[`test_architecture_iteration6.md`](../system_tests/debug/test_architecture_iteration6.md).
+
 P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
 graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.
 Iteration evidence and the remaining coverage boundaries are recorded in

@@ -32,7 +32,7 @@ from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
 from agentplane.native.claude.testing.messages import AnthropicMessages
-from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, MTLS
+from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, MTLS, NOTIFICATIONS_URI
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
@@ -44,6 +44,12 @@ from agentplane.testing.claude_model import ClaudeModel
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.scripted_model import ShellCall, Text
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf
+from agentplane.x.direct_vm_boot.platform_services import (
+    CLI_PLATFORM_PROBE,
+    assert_credential_rotation_refuses_old_svid,
+    assert_platform_cli_output,
+    platform_services,
+)
 from agentplane.x.direct_vm_boot.runtime_guest import (
     authenticated_readiness,
     gateway_address,
@@ -294,6 +300,7 @@ async def _run_shell_turn(
 
 async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
     tmp_path: Path,
+    postgres_admin_url: str,
     api_server: KubernetesApiServer,
     sandbox: SandboxCluster,
     control: EnvironmentRuntimeControl,
@@ -325,7 +332,20 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
     resources = RESOURCES.model_copy(update={"executor": None})
     if os.environ.get("DIRECT_VM_SETUP_WRONG_PROCESS_LIMIT_CONTROL") == "1":
         resources = resources.model_copy(update={"process": RESOURCES.process.model_copy(update={"pids_max": 96})})
-    async with model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target:
+    async with (
+        platform_services(
+            postgres_admin_url=postgres_admin_url,
+            sandbox=sandbox,
+            ca=gateway_service.environment_runtime_ca,
+            directory=tmp_path / "platform",
+            notifications_server_uri=(
+                EGRESS_PROXY_URI
+                if os.environ.get("DIRECT_VM_NOTIFICATION_WRONG_SERVER_IDENTITY_CONTROL") == "1"
+                else NOTIFICATIONS_URI
+            ),
+        ) as platform,
+        model_config(listen_host="0.0.0.0", advertised_host="10.0.2.1") as model_config_target,
+    ):
         config = Configuration(
             version=2,
             state_dir="/state",
@@ -338,6 +358,10 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             harness_environment=EnvironmentVariables(
                 values={
                     "ANTHROPIC_AUTH_TOKEN": launches.TOKEN,
+                    "AGENTPLANE_EGRESS_GRPC_URL": platform.guest_url,
+                    "AGENTPLANE_NOTIFICATIONS_GRPC_URL": platform.guest_url,
+                    "AGENTPLANE_EGRESS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
+                    "AGENTPLANE_NOTIFICATIONS_GRPC_CREDENTIAL": "deliberately-forged-caller-token",
                     "HOME": "/state/home",
                     "NO_PROXY": "10.0.2.1,127.0.0.1,localhost",
                     "PATH": "/run/current-system/sw/bin:/run/agentplane/environment/bin",
@@ -401,7 +425,7 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                 final_text="MARKER_WRITTEN",
             )
             assert_vm_supervision_probe(first_output, slice_name="agentplane-workloads.slice")
-            second_entries, _ = await _run_shell_turn(
+            second_entries, platform_output = await _run_shell_turn(
                 dispatcher=dispatcher,
                 history=history_service.reader,
                 model=model,
@@ -410,16 +434,18 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
                 input_text="Read the existing marker file and report its contents.",
                 command_id=requested_command_ids[1],
                 call_id=f"read-{session_id.hex}",
-                shell_command=f"cat '{marker_path}'",
+                shell_command=f"set -eu\ncat '{marker_path}'\n{CLI_PLATFORM_PROBE}",
                 expected_output=marker,
                 final_text="MARKER_READ",
             )
             assert first_entries
             assert second_entries
+            assert_platform_cli_output(platform_output, platform, sandbox)
             await assert_guest_setup_is_supervised(dispatcher, history_service.reader, spec)
             assert not docker_done.done(), "QEMU guest exited before both Session turns completed"
             final_status = await wait_for_session_ready(gateway_service, client_token, sandbox, str(session_id))
             assert final_status.environment_runtime_boot_id == initial_status.environment_runtime_boot_id
+        await assert_credential_rotation_refuses_old_svid(platform, sandbox)
 
     serial = (outputs / "runtime.serial.log").read_text(errors="replace")
     runtime_records = [line for line in serial.splitlines() if '"logger":"environment-runtime-lifecycle"' in line]
