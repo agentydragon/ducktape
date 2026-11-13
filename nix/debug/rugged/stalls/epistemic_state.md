@@ -13,17 +13,7 @@ FnSetRetval fix. This resolves the separate Cilium startup failure, not the Xe/T
 stall investigation here. The kernel upgrade is active, but the Xe investigation's
 post-upgrade acceptance capture has not been run; do not treat that issue as resolved.
 The Linux 7.1.2 observations below describe the original investigation, not the
-current kernel. See the [Cilium incident record](../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md).
-
-## Available action space
-
-1. Capture another naturally occurring episode with page-type and Xe debugfs
-   state.
-2. Establish whether the booted `7.1.2` kernel contains the upstream Xe/TTM
-   fragmentation-loop repair.
-3. Upgrade/test a kernel carrying that repair, then compare the same counters.
-4. If the repair is present or insufficient, file an upstream Xe report with
-   the existing call graphs and the next triggered capture.
+current kernel. See the [Cilium incident record](../../../../cluster/docs/lessons_learned/2026_07_16_cilium_set_retval_probe_kernel_7_2.md).
 
 ## Uncertainty register
 
@@ -32,7 +22,6 @@ current kernel. See the [Cilium incident record](../../../cluster/docs/lessons_l
 | Is the known upstream loop the complete local mechanism?       | A triggered capture showing `xe_shrinker` activity/BO eviction alongside rebinds, or an A/B kernel result. |
 | What prevents a 2 MiB block from forming?                      | Before/after `/proc/pagetypeinfo` from a triggered capture.                                                |
 | Is a particular application uniquely responsible for BO churn? | Per-client Xe DRM debugfs data during an episode.                                                          |
-| Does the booted Nix kernel contain a backport?                 | Exact Nix kernel source/patch provenance, not just `uname -r`.                                             |
 
 ## Hypothesis space
 
@@ -70,6 +59,9 @@ current kernel. See the [Cilium incident record](../../../cluster/docs/lessons_l
 - At that investigation point, pinned `nixpkgs` and `nixpkgs-unstable` provided Linux
   7.1.2. The repo's pinned Nixpkgs master exposed `linux_testing` 7.2-rc2, which
   contains the exact Xe beneficial-order change.
+- The [later report](report.md#2026-08-26-xettm-fix-confirmed-backported-to-stable-rc-kernel-dropped)
+  records the repair in stable 7.1.8 and the subsequent move to 7.2.7. The
+  post-upgrade acceptance capture remains outstanding.
 
 ## Current posterior
 
@@ -84,14 +76,14 @@ compaction, remain open measurements.
 
 1. Run the triggered `capture_memory_fragmentation.sh` watcher from the report.
 2. Inspect its `before/after-pagetypeinfo`, `gpu-debugfs`, and call graph.
-3. Determine the kernel backport status and make an upgrade/test proposal.
+3. Compare with the pre-upgrade evidence and decide whether an upstream report
+   or a different hypothesis needs investigation.
 
 ## Decision tree
 
 ```text
 triggered capture
-  ├─ Xe shrink/rebind evidence + no 2 MiB blocks → test kernel with upstream fix
-  ├─ fix present but loop persists              → upstream Xe report with capture
+  ├─ Xe shrink/rebind evidence + no 2 MiB blocks → upstream Xe report with capture
   └─ no Xe loop                                 → use page types/client data to test
                                                   a pinning/leak or app-trigger theory
 ```
@@ -106,6 +98,6 @@ capture proves a distinct cause. A merely plausible stack trace is not enough.
 
 - **Strong:** source and local call graph describe the same Xe/TTM high-order
   allocation/reclaim mechanism.
-- **Strong:** current kernel predates the upstream repair and this NixOS config
-  does not declare a backport.
+- **Historical:** the original 7.1.2 kernel predated the upstream repair and
+  the NixOS config did not declare a backport.
 - **Rejected:** free RAM means compaction cannot be the reason for swapping.
