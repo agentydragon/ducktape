@@ -77,7 +77,7 @@ exact Sandbox UID disappeared. It keeps Kubernetes/controllers alive until
 finalization completes. The [Sandbox controller](../../sandbox_controller/controller.go)
 owns finalization; [VM reconciliation](../../sandbox_controller/vm.go) halts the
 KubeVirt VM by setting `RunStrategyHalted`. KubeVirt/libvirt/QEMU deliver guest
-shutdown. [Runtime Close](../../env/runtime/runtime.go) owns stopping Runtime work,
+shutdown. [Runtime Close](../../env/runtime/internal/coordinator/runtime.go) owns stopping Runtime work,
 fences and joins; cancellation stops a caller's wait while owned cleanup continues.
 The [guest receipt collector](../vm/guest_logs.py) observes completion for every
 launcher incarnation; it does not own shutdown or repair crashes.

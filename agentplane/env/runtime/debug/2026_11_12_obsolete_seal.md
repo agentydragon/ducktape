@@ -32,7 +32,7 @@ The regression also admits a successor command and verifies a later, current
 shutdown still seals that successor. No retry or assertion delay is added.
 
 Both full PID1 suites, `//agentplane/env/runtime/session:session_test` and
-`//agentplane/env/runtime:runtime_test`, passed with the candidate and the race
+`//agentplane/env/runtime:runtime_test` (now `//agentplane/env/runtime/internal/coordinator:coordinator_test`), passed with the candidate and the race
 detector enabled:
 [validation `a2aa6aa3`](https://app.buildbuddy.io/invocation/a2aa6aa3-b905-4ca0-aba4-7dc508193696).
 This includes the existing lifecycle interleavings and the deterministic obsolete
