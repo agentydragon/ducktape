@@ -7,36 +7,36 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 )
 
 type memoryContentStore struct {
-	contents map[storage.ContentID]storage.StoredContent
+	contents map[content.ContentID]content.StoredContent
 }
 
 func newMemoryContentStore() *memoryContentStore {
-	return &memoryContentStore{contents: make(map[storage.ContentID]storage.StoredContent)}
+	return &memoryContentStore{contents: make(map[content.ContentID]content.StoredContent)}
 }
 
-func (store *memoryContentStore) PutContent(kind storage.ContentKind, payload json.RawMessage) (storage.ContentID, error) {
-	content, err := storage.CanonicalContent(kind, payload)
+func (store *memoryContentStore) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
+	stored, err := content.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
-	if previous, ok := store.contents[content.ID]; ok && !bytes.Equal(previous.Payload, content.Payload) {
-		return "", fmt.Errorf("hash collision for %s", content.ID)
+	if previous, ok := store.contents[stored.ID]; ok && !bytes.Equal(previous.Payload, stored.Payload) {
+		return "", fmt.Errorf("hash collision for %s", stored.ID)
 	}
-	store.contents[content.ID] = content
-	return content.ID, nil
+	store.contents[stored.ID] = stored
+	return stored.ID, nil
 }
 
-func (store *memoryContentStore) GetContent(id storage.ContentID) (storage.StoredContent, error) {
-	content, ok := store.contents[id]
+func (store *memoryContentStore) GetContent(id content.ContentID) (content.StoredContent, error) {
+	stored, ok := store.contents[id]
 	if !ok {
-		return storage.StoredContent{}, fmt.Errorf("missing content %s", id)
+		return content.StoredContent{}, fmt.Errorf("missing content %s", id)
 	}
-	content.Payload = append(json.RawMessage(nil), content.Payload...)
-	return content, nil
+	stored.Payload = append(json.RawMessage(nil), stored.Payload...)
+	return stored, nil
 }
 
 func TestStoreRecordSharesCompleteAnthropicBlocksAndPreservesProviderFields(t *testing.T) {

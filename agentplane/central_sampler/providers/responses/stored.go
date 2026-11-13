@@ -6,14 +6,14 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 const (
-	ContentOpenAIItem    storage.ContentKind = "openai_item"
-	ContentOpenAIRequest storage.ContentKind = "openai_request"
-	ContentOpenAITool    storage.ContentKind = "openai_tool"
+	ContentOpenAIItem    content.ContentKind = "openai_item"
+	ContentOpenAIRequest content.ContentKind = "openai_request"
+	ContentOpenAITool    content.ContentKind = "openai_tool"
 )
 
 type storedRequestProfile struct {
@@ -25,13 +25,13 @@ type storedRequestProfile struct {
 	ClientMetadata   *ClientMetadata     `json:"client_metadata,omitempty"`
 	Reasoning        *ReasoningConfig    `json:"reasoning,omitempty"`
 	ParallelToolCall bool                `json:"parallel_tool_calls"`
-	Instructions     storage.ContentID   `json:"instructions_ref"`
-	Tools            []storage.ContentID `json:"tool_refs,omitempty"`
+	Instructions     content.ContentID   `json:"instructions_ref"`
+	Tools            []content.ContentID `json:"tool_refs,omitempty"`
 }
 
 // StoreRecord stores one complete native Responses item as the deduplication unit.
 // Its message parts, tool arguments and opaque continuation remain inline.
-func StoreRecord(writer storage.ContentWriter, record json.RawMessage) (storage.ContentID, error) {
+func StoreRecord(writer content.ContentWriter, record json.RawMessage) (content.ContentID, error) {
 	if writer == nil {
 		return "", errors.New("nil content writer")
 	}
@@ -42,7 +42,7 @@ func StoreRecord(writer storage.ContentWriter, record json.RawMessage) (storage.
 }
 
 // RestoreRecord loads a complete native item without rebuilding its internal fields.
-func RestoreRecord(reader storage.ContentReader, id storage.ContentID) (json.RawMessage, error) {
+func RestoreRecord(reader content.ContentReader, id content.ContentID) (json.RawMessage, error) {
 	payload, err := getPayload(reader, id, ContentOpenAIItem)
 	if err != nil {
 		return nil, err
@@ -69,11 +69,11 @@ func validateStoredItem(record json.RawMessage) error {
 // StoreRequest splits a native request into an immutable profile and ordered
 // item references. Instructions and tools are shared independently of per-call
 // attribution and other profile fields.
-func StoreRequest(writer storage.ContentWriter, request Request) (profile storage.ContentID, records []storage.ContentID, err error) {
+func StoreRequest(writer content.ContentWriter, request Request) (profile content.ContentID, records []content.ContentID, err error) {
 	if writer == nil {
 		return "", nil, errors.New("nil content writer")
 	}
-	records = make([]storage.ContentID, 0, len(request.Input))
+	records = make([]content.ContentID, 0, len(request.Input))
 	for index, input := range request.Input {
 		raw, marshalErr := json.Marshal(input)
 		if marshalErr != nil {
@@ -102,9 +102,9 @@ func StoreRequest(writer storage.ContentWriter, request Request) (profile storag
 
 // ContentReferences returns a request profile's shared instructions and tools.
 // Native items and tool definitions are leaves; their provider fields are not references.
-func ContentReferences(kind storage.ContentKind, payload json.RawMessage) ([]storage.ContentID, error) {
-	var refs []storage.ContentID
-	add := func(id storage.ContentID) error {
+func ContentReferences(kind content.ContentKind, payload json.RawMessage) ([]content.ContentID, error) {
+	var refs []content.ContentID
+	add := func(id content.ContentID) error {
 		if id == "" {
 			return fmt.Errorf("stored Responses %s has an empty content reference: %w", kind, protocol.ErrInvalid)
 		}
@@ -131,15 +131,15 @@ func ContentReferences(kind storage.ContentKind, payload json.RawMessage) ([]sto
 }
 
 func storeRequestProfile(
-	writer storage.ContentWriter,
+	writer content.ContentWriter,
 	request Request,
 	toolRecords []json.RawMessage,
-) (storage.ContentID, error) {
-	instructionID, err := putString(writer, storage.ContentText, request.Instructions)
+) (content.ContentID, error) {
+	instructionID, err := putString(writer, content.ContentText, request.Instructions)
 	if err != nil {
 		return "", fmt.Errorf("store request instructions: %w", err)
 	}
-	toolIDs := make([]storage.ContentID, 0, len(toolRecords))
+	toolIDs := make([]content.ContentID, 0, len(toolRecords))
 	for index, tool := range toolRecords {
 		if _, err := rawObject(tool); err != nil {
 			return "", fmt.Errorf("request tool %d: %w", index, err)
@@ -165,7 +165,7 @@ func storeRequestProfile(
 
 // RestoreRequest restores a request profile and inserts the already-restored
 // native item JSON records in their original order.
-func RestoreRequest(reader storage.ContentReader, profile storage.ContentID, records []json.RawMessage) ([]byte, error) {
+func RestoreRequest(reader content.ContentReader, profile content.ContentID, records []json.RawMessage) ([]byte, error) {
 	payload, err := getPayload(reader, profile, ContentOpenAIRequest)
 	if err != nil {
 		return nil, err
@@ -174,7 +174,7 @@ func RestoreRequest(reader storage.ContentReader, profile storage.ContentID, rec
 	if err := json.Unmarshal(payload, &stored); err != nil {
 		return nil, fmt.Errorf("decode stored Responses request profile: %w", err)
 	}
-	instructions, err := restoreString(reader, stored.Instructions, storage.ContentText)
+	instructions, err := restoreString(reader, stored.Instructions, content.ContentText)
 	if err != nil {
 		return nil, fmt.Errorf("restore request instructions: %w", err)
 	}
@@ -210,7 +210,7 @@ type requestWithTools struct {
 	Tools []json.RawMessage `json:"tools,omitempty"`
 }
 
-func putString(writer storage.ContentWriter, kind storage.ContentKind, value string) (storage.ContentID, error) {
+func putString(writer content.ContentWriter, kind content.ContentKind, value string) (content.ContentID, error) {
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return "", err
@@ -218,7 +218,7 @@ func putString(writer storage.ContentWriter, kind storage.ContentKind, value str
 	return writer.PutContent(kind, payload)
 }
 
-func restoreString(reader storage.ContentReader, id storage.ContentID, kind storage.ContentKind) (string, error) {
+func restoreString(reader content.ContentReader, id content.ContentID, kind content.ContentKind) (string, error) {
 	payload, err := getPayload(reader, id, kind)
 	if err != nil {
 		return "", err
@@ -230,7 +230,7 @@ func restoreString(reader storage.ContentReader, id storage.ContentID, kind stor
 	return value, nil
 }
 
-func getPayload(reader storage.ContentReader, id storage.ContentID, kind storage.ContentKind) (json.RawMessage, error) {
+func getPayload(reader content.ContentReader, id content.ContentID, kind content.ContentKind) (json.RawMessage, error) {
 	if reader == nil {
 		return nil, errors.New("nil content reader")
 	}
@@ -287,7 +287,7 @@ func (state *Context) ProjectRecords(start int, config Config, encoding protocol
 }
 
 // FreezeRequest retains the authored definitions associated with native continuation.
-func FreezeRequest(reader storage.ContentReader, profile storage.ContentID, body Request) (Request, error) {
+func FreezeRequest(reader content.ContentReader, profile content.ContentID, body Request) (Request, error) {
 	raw, err := RestoreRequest(reader, profile, nil)
 	if err != nil {
 		return Request{}, err
@@ -302,7 +302,7 @@ func FreezeRequest(reader storage.ContentReader, profile storage.ContentID, body
 }
 
 // FreezeToolDeclaration preserves Lite's authored tool catalog as an input prefix.
-func FreezeToolDeclaration(reader storage.ContentReader, first storage.ContentID, body Request) (Request, error) {
+func FreezeToolDeclaration(reader content.ContentReader, first content.ContentID, body Request) (Request, error) {
 	if len(body.Input) == 0 {
 		return body, nil
 	}

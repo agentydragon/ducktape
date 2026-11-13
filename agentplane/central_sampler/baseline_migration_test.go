@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"sync"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 )
 
 func migrationExec(t *testing.T, db *sql.DB, query string, args ...any) {
@@ -60,7 +62,7 @@ func TestSamplerBaselineAdoptsCompletedRewriteWithoutTouchingData(t *testing.T) 
 		t.Fatal(err)
 	}
 	for range 2 {
-		if err := Migrate(t.Context(), store.DB()); err != nil {
+		if err := migrations.Up(t.Context(), store.DB()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -97,7 +99,7 @@ func TestSamplerBaselineRejectsIncompletePredecessors(t *testing.T) {
 			if mode == "partial_schema" {
 				migrationExec(t, store.DB(), `ALTER TABLE sampler_model_request DROP COLUMN source_context_id`)
 			}
-			if err := Migrate(t.Context(), store.DB()); err == nil {
+			if err := migrations.Up(t.Context(), store.DB()); err == nil {
 				t.Fatal("accepted incomplete predecessor")
 			}
 		})
@@ -111,7 +113,7 @@ func TestSamplerBaselineConcurrentFreshCreation(t *testing.T) {
 	failures := make(chan error, 2)
 	for range 2 {
 		workers.Add(1)
-		go func() { defer workers.Done(); failures <- Migrate(t.Context(), store.DB()) }()
+		go func() { defer workers.Done(); failures <- migrations.Up(t.Context(), store.DB()) }()
 	}
 	workers.Wait()
 	close(failures)

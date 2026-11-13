@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -62,7 +62,7 @@ func (s *contentStore) projectHistory(conversation *Conversation, key requestPro
 	if start+len(records) != source.Count {
 		return "", "", fmt.Errorf("request projection changed native record cardinality")
 	}
-	ids := make([]storage.ContentID, 0, len(records))
+	ids := make([]content.ContentID, 0, len(records))
 	for _, record := range records {
 		id, err := s.storeRecord(native.API(), record)
 		if err != nil {
@@ -99,7 +99,7 @@ func (s *contentStore) previousRequest(conversationID string) (ProviderRequest, 
 		return ProviderRequest{}, nil
 	}
 	for _, id := range prefix {
-		request.PrefixIDs = append(request.PrefixIDs, storage.ContentID(id))
+		request.PrefixIDs = append(request.PrefixIDs, content.ContentID(id))
 	}
 	request.ContextID = context.String
 	return request, err
@@ -141,7 +141,7 @@ func prepareResponsesRequest(s *contentStore, conversation *Conversation, metada
 		if err != nil {
 			return ProviderRequest{}, nil, err
 		}
-		metadata.SuffixIDs = []storage.ContentID{id}
+		metadata.SuffixIDs = []content.ContentID{id}
 		body.Input = body.Input[:len(body.Input)-1]
 	}
 	for _, input := range body.Input {

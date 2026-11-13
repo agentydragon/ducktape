@@ -17,6 +17,7 @@ import (
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/historyexport"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
@@ -188,7 +189,7 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 	if _, err := samplerDB.ExecContext(ctx, "CREATE SCHEMA public"); err != nil {
 		t.Fatal(err)
 	}
-	if err := centralsampler.Migrate(ctx, samplerDB); err != nil {
+	if err := migrations.Up(ctx, samplerDB); err != nil {
 		t.Fatal(err)
 	}
 	samplerStore := centralsampler.New(samplerDB, 30*time.Second)

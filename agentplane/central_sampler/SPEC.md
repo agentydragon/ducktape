@@ -750,10 +750,10 @@ general JSON node format or serializer.
 
 Native `anthropic`/`responses` packages own their private stored types, packing/reconstruction
 codecs, API types, request construction, streaming and continuation semantics. They use the
-sampler-private `internal/storage` content reader/writer: typed IDs/kinds, standard JSON encoding,
-content hashing and integrity checks. Shared storage imports neither provider nor semantic protocol
-packages and does not interpret provider payloads. The shared `protocol` package defines semantic
-contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
+sampler-private `internal/content` content reader/writer: typed IDs/kinds, standard JSON encoding,
+content hashing and integrity checks. The content package imports neither provider nor semantic
+protocol packages and does not interpret provider payloads. The shared `protocol` package defines
+semantic contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
 authorization and request history. The shared table holds native item/block JSON and small
 provider-specific message/profile reference records, not a universal message schema.
 

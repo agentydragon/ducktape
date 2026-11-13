@@ -11,8 +11,8 @@ import (
 	"time"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -99,7 +99,7 @@ func fixtureResponsesTool(name, description string, parameters string) []respons
 	}}
 }
 
-func contentRowCount(t *testing.T, store *Store, kind storage.ContentKind) int {
+func contentRowCount(t *testing.T, store *Store, kind content.ContentKind) int {
 	t.Helper()
 	var count int
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sampler_content WHERE kind=$1`, string(kind)).Scan(&count); err != nil {
@@ -241,7 +241,7 @@ func TestProviderRequestStorageHasLinearContextGrowthAndFrozenProfile(t *testing
 	if got := contentRowCount(t, store, responses.ContentOpenAIItem); got != turns {
 		t.Fatalf("item content rows=%d, want %d complete unique prompt items", got, turns)
 	}
-	if got := contentRowCount(t, store, storage.ContentText); got != 1 {
+	if got := contentRowCount(t, store, content.ContentText); got != 1 {
 		t.Fatalf("instruction content rows=%d, want one shared instruction", got)
 	}
 	if got := contentRowCount(t, store, responses.ContentOpenAITool); got != 1 {

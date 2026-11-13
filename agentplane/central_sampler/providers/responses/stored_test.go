@@ -7,36 +7,36 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 type memoryContent struct {
-	byID map[storage.ContentID]storage.StoredContent
+	byID map[content.ContentID]content.StoredContent
 }
 
 func newMemoryContent() *memoryContent {
-	return &memoryContent{byID: make(map[storage.ContentID]storage.StoredContent)}
+	return &memoryContent{byID: make(map[content.ContentID]content.StoredContent)}
 }
 
-func (memory *memoryContent) PutContent(kind storage.ContentKind, payload json.RawMessage) (storage.ContentID, error) {
-	content, err := storage.CanonicalContent(kind, payload)
+func (memory *memoryContent) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
+	stored, err := content.CanonicalContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
-	if existing, ok := memory.byID[content.ID]; ok && !bytes.Equal(existing.Payload, content.Payload) {
-		return "", fmt.Errorf("content ID collision: %s", content.ID)
+	if existing, ok := memory.byID[stored.ID]; ok && !bytes.Equal(existing.Payload, stored.Payload) {
+		return "", fmt.Errorf("content ID collision: %s", stored.ID)
 	}
-	memory.byID[content.ID] = content
-	return content.ID, nil
+	memory.byID[stored.ID] = stored
+	return stored.ID, nil
 }
 
-func (memory *memoryContent) GetContent(id storage.ContentID) (storage.StoredContent, error) {
-	content, ok := memory.byID[id]
+func (memory *memoryContent) GetContent(id content.ContentID) (content.StoredContent, error) {
+	stored, ok := memory.byID[id]
 	if !ok {
-		return storage.StoredContent{}, fmt.Errorf("content %s not found", id)
+		return content.StoredContent{}, fmt.Errorf("content %s not found", id)
 	}
-	return content, nil
+	return stored, nil
 }
 
 func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testing.T) {
@@ -123,7 +123,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 
 	var firstProfile storedRequestProfile
 	mustUnmarshal(t, memory.byID[profileID].Payload, &firstProfile)
-	if firstProfile.Instructions != findStringContent(t, memory, storage.ContentText, "shared payload") {
+	if firstProfile.Instructions != findStringContent(t, memory, content.ContentText, "shared payload") {
 		t.Fatalf("request instructions did not share the existing text content ID: %+v", firstProfile)
 	}
 	if len(firstProfile.Tools) != 1 {
@@ -158,7 +158,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 
 func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
 	memory := newMemoryContent()
-	id, err := memory.PutContent(storage.ContentText, json.RawMessage(`"not an item"`))
+	id, err := memory.PutContent(content.ContentText, json.RawMessage(`"not an item"`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,9 +170,9 @@ func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
 func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 	tests := []struct {
 		name    string
-		kind    storage.ContentKind
+		kind    content.ContentKind
 		payload string
-		want    []storage.ContentID
+		want    []content.ContentID
 	}{
 		{
 			name:    "native item fields are not storage references",
@@ -184,7 +184,7 @@ func TestContentReferencesTraversesOnlyTypedResponsesReferences(t *testing.T) {
 			name:    "request profile",
 			kind:    ContentOpenAIRequest,
 			payload: `{"model":"fixture","instructions_ref":"instructions-1","tool_refs":["tool-1","tool-2"]}`,
-			want:    []storage.ContentID{"instructions-1", "tool-1", "tool-2"},
+			want:    []content.ContentID{"instructions-1", "tool-1", "tool-2"},
 		},
 		{
 			name:    "tool definitions have no traversed refs",
@@ -233,7 +233,7 @@ func decodeJSON(t *testing.T, raw []byte) any {
 	return value
 }
 
-func findStringContent(t *testing.T, memory *memoryContent, kind storage.ContentKind, expected string) storage.ContentID {
+func findStringContent(t *testing.T, memory *memoryContent, kind content.ContentKind, expected string) content.ContentID {
 	t.Helper()
 	for id, content := range memory.byID {
 		if content.Kind != kind {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -213,7 +213,7 @@ type ProviderRequest struct {
 	URL             string            `json:"url"`
 	Headers         map[string]string `json:"headers"`
 	ContextID       string            `json:"context_id,omitempty"`
-	ProfileID       storage.ContentID `json:"profile_id"`
+	ProfileID       content.ContentID `json:"profile_id"`
 	SourceContextID string            `json:"source_context_id,omitempty"`
 	// SourceNativeContextID pins the native conversation head independently of the provider's
 	// projected content prefix in SourceContextID.
@@ -222,8 +222,8 @@ type ProviderRequest struct {
 	// pending effort) alongside the native record head for a durable provider retry.
 	SourceControl json.RawMessage      `json:"source_control,omitempty"`
 	ProjectionKey requestProjectionKey `json:"projection_key,omitempty"`
-	PrefixIDs     []storage.ContentID  `json:"prefix_ids,omitempty"`
-	SuffixIDs     []storage.ContentID  `json:"suffix_ids,omitempty"`
+	PrefixIDs     []content.ContentID  `json:"prefix_ids,omitempty"`
+	SuffixIDs     []content.ContentID  `json:"suffix_ids,omitempty"`
 	// CompactionControl pins the local policy used to apply a frozen Anthropic summary.
 	CompactionControl *CompactionControl `json:"compaction_control,omitempty"`
 }
