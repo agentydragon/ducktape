@@ -91,6 +91,7 @@ def test_scheduler_rename_keeps_one_owner_of_existing_state(scratch_app: App) ->
         )
     ]
     assert [item["metadata"]["name"] for item in owners] == ["quest"]
+    assert remote.CONFIG.data is not None
     integration = json.loads(remote.CONFIG.data["quest-scheduler-integration.json"])["integrations"][0]
     assert integration["state_dir"] == "/data/session/quest-platform"
 
