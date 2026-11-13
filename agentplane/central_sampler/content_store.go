@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/lib/pq"
 )
 

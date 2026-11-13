@@ -19,7 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 

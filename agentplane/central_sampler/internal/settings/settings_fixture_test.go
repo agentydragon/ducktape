@@ -2,7 +2,7 @@ package settings
 
 import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 )
 
 func fixtureSettings() Settings {

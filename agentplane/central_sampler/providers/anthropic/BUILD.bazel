@@ -6,17 +6,17 @@ package(default_visibility = [
 ])
 
 go_library(
-    name = "responses",
+    name = "anthropic",
     srcs = [
+        "anthropic.go",
         "compaction.go",
         "config.go",
         "context.go",
         "observations.go",
-        "provider.go",
-        "responses.go",
         "stored.go",
+        "wire.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/responses",
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic",
     visibility = [
         "//agentplane/central_sampler:__pkg__",
         "//agentplane/central_sampler/internal/settings:__pkg__",
@@ -30,16 +30,17 @@ go_library(
 )
 
 go_test(
-    name = "responses_test",
+    name = "anthropic_test",
     size = "small",
     srcs = [
-        "responses_test.go",
+        "anthropic_test.go",
         "stored_test.go",
     ],
-    embed = [":responses"],
+    embed = [":anthropic"],
     race = "on",
     deps = [
         "//agentplane/central_sampler/internal/storage",
         "//agentplane/central_sampler/protocol",
+        "//agentplane/proto:event_go_proto",
     ],
 )

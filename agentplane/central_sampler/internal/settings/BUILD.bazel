@@ -15,9 +15,9 @@ go_library(
         "//agentplane/central_sampler/cmd:__pkg__",
     ],
     deps = [
-        "//agentplane/central_sampler/anthropic",
         "//agentplane/central_sampler/protocol",
-        "//agentplane/central_sampler/responses",
+        "//agentplane/central_sampler/providers/anthropic",
+        "//agentplane/central_sampler/providers/responses",
         "//agentplane/environment_runtime_transport",
     ],
 )
@@ -30,8 +30,8 @@ go_test(
     ],
     embed = [":settings"],
     deps = [
-        "//agentplane/central_sampler/anthropic",
         "//agentplane/central_sampler/protocol",
-        "//agentplane/central_sampler/responses",
+        "//agentplane/central_sampler/providers/anthropic",
+        "//agentplane/central_sampler/providers/responses",
     ],
 )
