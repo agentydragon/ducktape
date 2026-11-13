@@ -326,6 +326,8 @@ spec:
       automountServiceAccountToken: false
       containers:
         - env:
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
             - name: MCP_FACADE_AUTH__OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -383,11 +385,19 @@ spec:
               port: 8765
             initialDelaySeconds: 5
             periodSeconds: 5
+          volumeMounts:
+            - mountPath: /var/run/public-web-pki
+              name: public-web-pki
+              readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: public-web-pki
+          name: public-web-pki
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

@@ -291,6 +291,9 @@ def _facade(chart: Chart) -> None:
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
+                    volumes=[
+                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki"))
+                    ],
                     containers=[
                         k8s.Container(
                             name="server",
@@ -305,12 +308,18 @@ def _facade(chart: Chart) -> None:
                                 k8s.EnvFromSource(config_map_ref=k8s.ConfigMapEnvSource(name=_FACADE_CONFIG_MAP))
                             ],
                             env=[
+                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
                                 _FACADE_OIDC.key("client_id").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_ID"),
                                 _FACADE_OIDC.key("client_secret").env_var("MCP_FACADE_AUTH__OIDC_CLIENT_SECRET"),
                                 _PAT.env_var("MCP_FACADE_UPSTREAM__BEARER_TOKEN"),
                                 SecretRef(namespace=_NAMESPACE, name=CONSUMER_SECRET)
                                 .key("uri")
                                 .env_var("MCP_FACADE_PERSISTENCE__URL"),
+                            ],
+                            volume_mounts=[
+                                k8s.VolumeMount(
+                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                )
                             ],
                             resources=k8s.ResourceRequirements(
                                 requests={
