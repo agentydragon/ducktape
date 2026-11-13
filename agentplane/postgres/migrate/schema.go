@@ -13,15 +13,14 @@ import (
 // changing either makes the next startup see an empty history or race another migrator.
 type Schema struct {
 	// Files holds the SQL migrations under Dir.
-	Files        fs.FS
-	Dir          string
-	Table        string
-	LockID       int64
-	GoMigrations []*goose.Migration
+	Files  fs.FS
+	Dir    string
+	Table  string
+	LockID int64
 }
 
 // Provider is the Goose provider for the schema on db: a PostgreSQL session lock serializes migrators, and the
-// global registry is disabled so only explicitly supplied migrations apply.
+// global registry is disabled so only Files apply.
 func (s Schema) Provider(db *sql.DB) (*goose.Provider, error) {
 	locker, err := lock.NewPostgresSessionLocker(lock.WithLockID(s.LockID))
 	if err != nil {
@@ -32,8 +31,7 @@ func (s Schema) Provider(db *sql.DB) (*goose.Provider, error) {
 		return nil, err
 	}
 	return goose.NewProvider(goose.DialectPostgres, db, files,
-		goose.WithTableName(s.Table), goose.WithSessionLocker(locker), goose.WithDisableGlobalRegistry(true),
-		goose.WithGoMigrations(s.GoMigrations...))
+		goose.WithTableName(s.Table), goose.WithSessionLocker(locker), goose.WithDisableGlobalRegistry(true))
 }
 
 // Up applies the schema's pending migrations. It is the up function Run takes.

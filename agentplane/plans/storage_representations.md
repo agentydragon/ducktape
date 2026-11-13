@@ -77,16 +77,16 @@ serving consumer was found that deserializes those successful audit arrays for c
 recovery. Compaction validates native output records; its audit is diagnostic, with Anthropic also
 recording the replacement context. Recovery checks unresolved intents and rejection metadata.
 
-The compact successful audit omits `events`, retaining the terminal response, usage and provider
-HTTP metadata. Transient event collections remain for failure diagnostics, with per-event evidence
-and atomic evidence/observation commits unchanged. Migrations 14 (sampler) and 17 (History) rewrite
-existing successful results only after matching every duplicate event against its correlated
-provider boundary. Fragment cursors, IDs/counts and source links are preserved. Stop sampler and
-History writers/exporters for the coordinated rewrite, then vacuum the three affected tables.
-After live verification, squash both migration chains and delete the rewrite implementation and
-superseded compatibility paths. Raw wire capture remains a separate policy decision because the
-SPEC promises received bytes, including incomplete SSE tails. The 33 MB result-payload group is
-the measured target, not a guaranteed saving; the other response representations remain.
+Successful sampling and compaction audits now omit `events`, retaining terminal content, usage and
+HTTP metadata. Per-event evidence and transient failure diagnostics remain. The staging rewrite
+verified and removed 1,623 History audit arrays and 38 sampler audit arrays without changing cursors
+or source links; full vacuum reclaimed about 26.5 MB across both databases. Fresh provider/tool use,
+compaction and continuation passed for OpenAI and Anthropic. Sampler baseline 15 and History baseline
+18 adopt the completed rewrite predecessors; the converter and older compatibility paths are
+retired. See the [cutover results](../debug/2026_11_12_sampler_audit_dedup.md).
+
+Raw wire capture remains a separate policy decision because the SPEC promises received bytes,
+including incomplete SSE tails. The other response representations remain to be addressed.
 
 `FollowEvents` and History export expose the result boundary records unchanged, so the new summary
 shape is an externally visible evidence-contract change even without a serving decoder for its
