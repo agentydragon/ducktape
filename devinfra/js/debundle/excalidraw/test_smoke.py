@@ -946,6 +946,7 @@ async def test_library_and_icon_picker(playwright_driver: Playwright, origin: st
         picker = page.get_by_role("button", name="arrowhead_end", exact=True)
         await picker.click()
         options = page.get_by_role("dialog", name="arrowhead_end", exact=True)
+        await options.get_by_text("More options", exact=True).click()
         bar = options.get_by_role("button", name="Bar", exact=True)
         await bar.click()
         await expect(bar).to_have_class("picker-option active")
