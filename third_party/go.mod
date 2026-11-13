@@ -98,7 +98,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.4
 )
 
-// Direct dependencies for agentplane/action_service/mcpexec (bearer tokens sent to MCP servers)
+// Direct dependencies for agentplane/action_service/internal/mcpexec (bearer tokens sent to MCP servers)
 require golang.org/x/oauth2 v0.37.0
 
 // Direct dependencies for agentplane/action_service/push (VAPID and RFC 8291 payload encryption)

@@ -10,7 +10,7 @@ go_library(
         "linkage.go",
         "tools.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/mcpexec",
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/mcpexec",
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
