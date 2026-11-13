@@ -7,6 +7,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import currencyPolicyVectors from "../../util/presentation_vectors/currency_policy_vectors.json";
 
 import {
   formatDuration,
@@ -21,6 +22,32 @@ import {
   formatSummaryUsd,
   roundHalfToEven,
 } from "../shared/presentation.js";
+
+type CurrencyVector = {
+  currency: string;
+  currency_exponent: number;
+  major_amount: string;
+  minor_units: string;
+  expected_magnitude: string;
+  below_threshold: boolean;
+};
+
+const currencyVectors = currencyPolicyVectors as { cases: CurrencyVector[] };
+
+function currencyPresentation(actual: string): {
+  magnitude: number;
+  negative: boolean;
+  belowThreshold: boolean;
+} {
+  const match = actual.match(/(?<!\d)(\d[\d,]*(?:\.\d+)?)/);
+  if (!match) throw new Error(`Currency output has no amount: ${actual}`);
+  const prefix = actual.slice(0, match.index);
+  return {
+    magnitude: Number(match[1].replaceAll(",", "")),
+    negative: prefix.includes("-"),
+    belowThreshold: prefix.includes("<"),
+  };
+}
 
 beforeAll(() => vi.stubEnv("TZ", "UTC"));
 afterAll(() => vi.unstubAllEnvs());
@@ -137,6 +164,18 @@ describe("summary currency", () => {
   ])("formats %s as %s", (amount, expected) => {
     expect(formatSummaryUsd(amount)).toBe(expected);
   });
+
+  it.each(currencyVectors.cases.filter(({ currency }) => currency === "USD"))(
+    "matches shared numeric policy vector $currency $major_amount",
+    (vector) => {
+      const actual = currencyPresentation(formatSummaryUsd(Number(vector.major_amount)));
+      expect(actual).toEqual({
+        magnitude: Number(vector.expected_magnitude),
+        negative: Number(vector.major_amount) < 0,
+        belowThreshold: vector.below_threshold,
+      });
+    }
+  );
 
   it("shows exact values when rounding would hide a difference from the limit", () => {
     expect(formatExtraSpend(10.4, 10.49)).toBe("Extra spend this month: $10.40 of $10.49 limit");

@@ -1,6 +1,34 @@
 import { describe, expect, it, vi } from "vitest";
+import Decimal from "decimal.js";
+import currencyPolicyVectors from "../../../../util/presentation_vectors/currency_policy_vectors.json";
 
 import { money, signalText, time } from "./spend_display";
+
+type CurrencyVector = {
+  currency: string;
+  currency_exponent: number;
+  major_amount: string;
+  minor_units: string;
+  expected_magnitude: string;
+  below_threshold: boolean;
+};
+
+const currencyVectors = currencyPolicyVectors as { cases: CurrencyVector[] };
+
+function currencyPresentation(actual: string): {
+  magnitude: number;
+  negative: boolean;
+  belowThreshold: boolean;
+} {
+  const match = actual.match(/(?<!\d)(\d[\d,]*(?:\.\d+)?)/);
+  if (!match) throw new Error(`Currency output has no amount: ${actual}`);
+  const prefix = actual.slice(0, match.index);
+  return {
+    magnitude: Number(match[1].replaceAll(",", "")),
+    negative: prefix.includes("-"),
+    belowThreshold: prefix.includes("<"),
+  };
+}
 
 describe("summary money", () => {
   it.each([
@@ -15,6 +43,15 @@ describe("summary money", () => {
     [1, "KWD", "KWD 0.001"],
   ])("formats %s minor units of %s", (amount, currency, expected) => {
     expect(money(amount, currency)).toBe(expected);
+  });
+
+  it.each(currencyVectors.cases)("matches shared numeric policy vector $currency $major_amount", (vector) => {
+    const actual = currencyPresentation(money(new Decimal(vector.minor_units), vector.currency));
+    expect(actual).toEqual({
+      magnitude: Number(vector.expected_magnitude),
+      negative: Number(vector.major_amount) < 0,
+      belowThreshold: vector.below_threshold,
+    });
   });
 
   it("keeps exact amounts available in details", () => {
