@@ -928,17 +928,16 @@ def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> 
             raise RuntimeError("retaining k3s requires BuildBuddy's executor persistence permission")
         span.set_attribute("persistence.fingerprint", fingerprint)
         span.set_attribute("persistence.layers_in_memory", layers_in_memory)
-        span.set_attribute("persistence.outcome", "cold")
         span.set_attribute("persistence.reason", "missing_marker")
         _BASELINE_ROOT.mkdir(exist_ok=True)
         binary = _BASELINE_ROOT / "k3s"
         k3s = K3s(_BASELINE_ROOT, binary)
         previous = json.loads(_BASELINE_MARKER.read_text()) if _BASELINE_MARKER.exists() else None
         if previous is not None:
-            span.set_attribute("persistence.previous_fingerprint", previous["fingerprint"])
-            span.set_attribute("persistence.previous_state", previous["state"])
             if previous.get("state") not in {"clean", "dirty"}:
                 raise RuntimeError("invalid persistence state marker")
+            span.set_attribute("persistence.previous_fingerprint", previous["fingerprint"])
+            span.set_attribute("persistence.previous_state", previous["state"])
             if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
                 try:
                     current = _baseline_identity(k3s, int(previous["identity"]["pid"]))
@@ -982,4 +981,5 @@ def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> 
             marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _baseline_identity(k3s, process.pid)}
             write_marker(marker)
             starting.pop_all()
+        span.set_attribute("persistence.outcome", "cold")
         return k3s, marker, False

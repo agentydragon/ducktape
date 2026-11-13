@@ -5,10 +5,11 @@ published latency cohort were selected in first-workflow order. Their workflow
 window is 2026-11-12 22:27:48–23:54:04 UTC. This is a bounded selected sample,
 not a fleet hit rate or the failure population. The original report cohort and
 its denominators are unchanged. See the adjacent JSON for exact heads, native
-invocations, physical attempts, fingerprints and fresh identities.
+invocations, actual tested commits, physical attempts, fingerprints and fresh identities.
 
-Of 36 target opportunities, 21 were explicitly absent from the invocation,
-three were cached and excluded, and twelve had fresh outcomes with returned
+Of 36 target opportunities, 18 were explicitly absent from available invocations,
+three belonged to one unavailable invocation, three were cached and excluded,
+and twelve had fresh outcomes with returned
 physical TestRunner records and their own persistence artifacts:
 
 | Suite       | Cold | Warm | Fresh outcomes |
@@ -32,7 +33,9 @@ separated retrospectively. No cache policy or retained-state fix is justified
 by this sample alone.
 
 `system_test.k3s.baseline.open` now records bounded outcome/reason attributes
-and current/previous fingerprint plus previous marker state. Reasons distinguish
+and current/previous fingerprint plus previous marker state. Outcome is emitted
+only after successful open; a failed open has a reason and span error, but no
+completed cold/warm outcome. Reasons distinguish
 missing marker, dirty state, fingerprint mismatch, unhealthy daemon, changed
 identity and successful reuse. These are existing OTel spans, without ad hoc
 timing, credentials, manifest contents or changes to attach/reset decisions.

@@ -4,9 +4,10 @@
   "head_count": 12,
   "head_window": ["2026-11-12T22:27:48Z", "2026-11-12T23:54:04Z"],
   "counts": {
-    "absent_target": 21,
+    "absent_target": 18,
     "fresh_suite_outcome": 12,
-    "cached_target": 3
+    "cached_target": 3,
+    "unavailable_invocation_target_opportunities": 3
   },
   "records": [
     {
@@ -40,7 +41,8 @@
           "start": "2026-11-12T23:07:36.157265Z",
           "finish": "2026-11-12T23:17:09.638809Z"
         }
-      ]
+      ],
+      "tested_commit": "ca86b135aaca57673edda175797b45e1f9ed97ed"
     },
     {
       "pr": 15898,
@@ -63,7 +65,8 @@
           "start": "2026-11-12T23:01:03.392305Z",
           "finish": "2026-11-12T23:08:24.801803Z"
         }
-      ]
+      ],
+      "tested_commit": "ca86b135aaca57673edda175797b45e1f9ed97ed"
     },
     {
       "pr": 15898,
@@ -93,7 +96,8 @@
           "start": "2026-11-12T23:01:03.592340Z",
           "finish": "2026-11-12T23:06:21.674739Z"
         }
-      ]
+      ],
+      "tested_commit": "ca86b135aaca57673edda175797b45e1f9ed97ed"
     },
     {
       "pr": 15906,
@@ -116,7 +120,8 @@
           "start": "2026-11-12T23:07:38.070615Z",
           "finish": "2026-11-12T23:13:42.200471Z"
         }
-      ]
+      ],
+      "tested_commit": "448e4bf92675263a46a59ac895f303915dba54fc"
     },
     {
       "pr": 15906,
@@ -139,7 +144,8 @@
           "start": "2026-11-12T23:07:35.469269Z",
           "finish": "2026-11-12T23:14:54.534314Z"
         }
-      ]
+      ],
+      "tested_commit": "448e4bf92675263a46a59ac895f303915dba54fc"
     },
     {
       "pr": 15906,
@@ -169,7 +175,8 @@
           "start": "2026-11-12T23:07:35.476837Z",
           "finish": "2026-11-12T23:12:56.177541Z"
         }
-      ]
+      ],
+      "tested_commit": "448e4bf92675263a46a59ac895f303915dba54fc"
     },
     {
       "pr": 15908,
@@ -192,7 +199,8 @@
           "start": "2026-11-12T23:20:15.480037Z",
           "finish": "2026-11-12T23:29:18.512066Z"
         }
-      ]
+      ],
+      "tested_commit": "8771a6ef03390653203ac4ed992078a7ec6d5b0f"
     },
     {
       "pr": 15908,
@@ -215,7 +223,8 @@
           "start": "2026-11-12T23:20:14.283284Z",
           "finish": "2026-11-12T23:28:12.273080Z"
         }
-      ]
+      ],
+      "tested_commit": "8771a6ef03390653203ac4ed992078a7ec6d5b0f"
     },
     {
       "pr": 15908,
@@ -238,7 +247,8 @@
           "start": "2026-11-12T23:20:16.827141Z",
           "finish": "2026-11-12T23:26:11.521521Z"
         }
-      ]
+      ],
+      "tested_commit": "8771a6ef03390653203ac4ed992078a7ec6d5b0f"
     },
     {
       "pr": 15920,
@@ -261,7 +271,8 @@
           "start": "2026-11-12T23:47:22.490061Z",
           "finish": "2026-11-12T23:52:52.340121Z"
         }
-      ]
+      ],
+      "tested_commit": "122493d233f3331da9002e20e86ba412b4d173bf"
     },
     {
       "pr": 15921,
@@ -284,7 +295,8 @@
           "start": "2026-11-12T23:47:56.686622Z",
           "finish": "2026-11-12T23:53:08.036998Z"
         }
-      ]
+      ],
+      "tested_commit": "0c31215b9de426beae55352625e4b955977f1788"
     },
     {
       "pr": 15922,
@@ -307,13 +319,154 @@
           "start": "2026-11-12T23:50:43.348223Z",
           "finish": "2026-11-12T23:55:50.842096Z"
         }
-      ]
+      ],
+      "tested_commit": "1cf2141383254ce65fa437fbede04bbb7e04a8e6"
     }
   ],
   "limits": [
-    "Absent targets were explicitly NotFound, not failed suites.",
+    "Eighteen targets were explicitly NotFound in available invocations. Three further opportunities belong to one unavailable invocation; their selection is unknown.",
     "Cache hits excluded from physical exposure. Multiple returned physical attempts retained; outcome count is not attempt count.",
     "Final persistence records omit cold rebuild reason. Cannot infer absent snapshot, dirty state, input mismatch, health failure or identity change.",
     "No source-equivalent timing claim; different workers, fingerprints and overlap."
+  ],
+  "invocation_provenance": [
+    {
+      "pr": 15896,
+      "head": "37c227f26fb799b008cb7f961bf5d2a47ff2d06b",
+      "invocation": "7d17072f-9331-5119-87b3-cc6d8f36e216",
+      "commitSha": "e6a9e95ca774c466ce1d040f43eb307be491e5aa",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "agent/authored-conversation-cli",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/x/authored_conversation:agent and 11 more"]
+    },
+    {
+      "pr": 15898,
+      "head": "9ada9fee36ce1d6bf324f1a2812ccc45e4c7d4e0",
+      "invocation": "a1e5e6ec-c808-5a82-9fb1-617d0ada895c",
+      "commitSha": "ca86b135aaca57673edda175797b45e1f9ed97ed",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "codex/ap-commandbox-identity-contract",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/action_service:actions and 383 more"]
+    },
+    {
+      "pr": 15905,
+      "head": "79f01c95e696778f2f742209b62815709a1f9e71",
+      "invocation": "76595ddf-bd4a-5d3f-a663-bddc36728edb",
+      "commitSha": "df9687fb061b83fffc8d296d347ef84ee51d9e40",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "agent/authored-conversation-yield",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/x/authored_conversation:agent and 9 more"]
+    },
+    {
+      "pr": 15906,
+      "head": "e22c30a4925871e3e08ad63ef08ad6d3d9db9333",
+      "invocation": "44c70953-e371-5d4f-bdd8-66b9a8f1eb09",
+      "commitSha": "448e4bf92675263a46a59ac895f303915dba54fc",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "codex/ap-mcp-settings-acceptance",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/action_service:actions and 170 more"]
+    },
+    {
+      "pr": 15908,
+      "head": "a9c35370d43c6a96d041d76c80f52984ba995e24",
+      "invocation": "def4261b-d997-5765-a247-cc424a10ebc1",
+      "commitSha": "8771a6ef03390653203ac4ed992078a7ec6d5b0f",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "codex/history-settlement-backfill",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/app:integration_fixtures and 110 more"]
+    },
+    {
+      "pr": 15910,
+      "head": "7f4a8528ec6d3629f8860476645d8aa18a734931",
+      "invocation": "4fb74d8a-0035-5ad3-abd6-99a0e2e20e30",
+      "commitSha": "7670affa96d40c1daa2f2c03f9a997871c3b377d",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "agent/authored-conversation-terminal",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/x/authored_conversation:main and 2 more"]
+    },
+    {
+      "pr": 15916,
+      "head": "5d56582a3d93e1073fe75821e01c8448e1f9ce17",
+      "invocation": "449412ba-d1b8-59b4-9077-20007e2774a1",
+      "commitSha": "1231daabd1c410d252948a1527143e7a32c45392",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "codex/agentplane-native-capture",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/native/capture:codex_hook and 6 more"]
+    },
+    {
+      "pr": 15920,
+      "head": "5d1e9a9588462b315ae2c169d66b80cb2d89032c",
+      "invocation": "eb005ff3-63c8-51a6-8d55-ca1fff5726a4",
+      "commitSha": "122493d233f3331da9002e20e86ba412b4d173bf",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "agent/codemode-package",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/central_sampler:central_sampler and 45 more"]
+    },
+    {
+      "pr": 15921,
+      "head": "161d5ca05f2f6b40057b78c46b4d4a1d99ee0b0e",
+      "invocation": "a5669e7c-a746-5733-bf9d-3df51d9dbdd9",
+      "commitSha": "0c31215b9de426beae55352625e4b955977f1788",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "codex/central-sampler-store-organization",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/central_sampler:central_sampler and 38 more"]
+    },
+    {
+      "pr": 15922,
+      "head": "d1e4bf05022435b259e8d95f74a6854fc95a959e",
+      "invocation": "ef315d79-3db6-5727-9772-cbede22b53cd",
+      "commitSha": "1cf2141383254ce65fa437fbede04bbb7e04a8e6",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "codex/central-sampler-runtime-organization",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//agentplane/central_sampler:central_sampler and 38 more"]
+    },
+    {
+      "pr": 15923,
+      "head": "198869bff3f43d6126efed733afdcc00241800a9",
+      "invocation": "6e087d75-c1ea-52fa-b5b5-575f4d03c41c",
+      "commitSha": "6ef4064ea94a84268981a81cd75e2471fbefd198",
+      "repoUrl": "https://github.com/agentydragon/ducktape",
+      "branchName": "agent/authored-conversation-edits",
+      "role": null,
+      "success": true,
+      "invocationStatus": "COMPLETE_INVOCATION_STATUS",
+      "pattern": ["//..."]
+    },
+    {
+      "pr": 15927,
+      "head": "10f39369feb46bce54db5d9bd6a39d5e2c3c54fa",
+      "invocation": "184d0022-337a-5a83-8179-f4c4f9021e4e",
+      "error": "Error: rpc error: code = NotFound desc = invocation not found\nUsage:\n  bbapi invocation <invocation-id> [flags]\n  bbapi invocation [command]\n\nAvailable Commands:\n  cancel        Cancel only the suppli"
+    }
   ]
 }

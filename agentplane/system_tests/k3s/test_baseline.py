@@ -82,6 +82,15 @@ def test_fingerprint_is_stable_across_input_order(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("marker", [{}, {"state": "unknown"}])
+def test_invalid_marker_is_rejected_before_ownership_fields_are_read(
+    retained_root: Path, marker: dict[str, str]
+) -> None:
+    baseline.write_marker(marker)
+    with pytest.raises(RuntimeError, match="invalid persistence state marker"):
+        baseline.open_baseline(retained_root / "unused-binary", "compatible", layers_in_memory=True)
+
+
 def test_matching_clean_baseline_is_marked_dirty_before_reuse(
     retained_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
