@@ -4,7 +4,7 @@ Transforms Tana JSON exports into Markdown or TanaPaste and materialises saved s
 helpers plus a library under `tana.export`.
 
 ```bash
-bazel run //tana/export:convert_bin -- --help
+bb run //tana/export:convert_bin -- --help
 ```
 
 - `domain/` — data models, constants, types.
