@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -77,9 +79,9 @@ func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	runtime := NewRuntime(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
-	claimCommitted := make(chan Owner, 1)
+	claimCommitted := make(chan sessionstore.Owner, 1)
 	allowClaimReturn := make(chan struct{})
-	runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (Owner, error) {
+	runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (sessionstore.Owner, error) {
 		owner, err := store.Claim(ctx, conversationID, lease)
 		if err == nil {
 			claimCommitted <- owner
@@ -92,7 +94,7 @@ func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	defer cancel()
 	runtime.Wake(session.ID)
 
-	var owner Owner
+	var owner sessionstore.Owner
 	select {
 	case owner = <-claimCommitted:
 	case <-time.After(5 * time.Second):
@@ -120,9 +122,9 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
 	runtime := NewRuntime(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
-	releaseCommitted := make(chan Owner, 1)
+	releaseCommitted := make(chan sessionstore.Owner, 1)
 	allowReleaseReturn := make(chan struct{})
-	runtime.releaseLease = func(ctx context.Context, owner Owner) error {
+	runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
 		if err := store.Release(ctx, owner); err != nil {
 			return err
 		}
@@ -156,7 +158,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	}
 	cancel()
 
-	var owner Owner
+	var owner sessionstore.Owner
 	select {
 	case owner = <-releaseCommitted:
 	case <-time.After(5 * time.Second):
@@ -240,15 +242,15 @@ func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
 // exec_command on startGate, and the fake provider answers its one sampling request with a wait
 // on the live cell once providerRespond closes.
 type drainFixture struct {
-	store           *Store
-	session         *Session
+	store           *sessionstore.Store
+	session         *sessionstore.Session
 	runtime         *Runtime
 	peers           func() []*fakeCodeModePeer
 	startGate       chan struct{}
 	providerCalled  chan struct{}
 	providerRespond chan struct{}
 	// released carries the live work the lease release observed under the owner fence.
-	released chan LiveWork
+	released chan sessionstore.LiveWork
 }
 
 func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
@@ -276,7 +278,7 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 
 	f := &drainFixture{
 		store: store, session: session, startGate: make(chan struct{}),
-		providerCalled: make(chan struct{}, 1), providerRespond: make(chan struct{}), released: make(chan LiveWork, 1),
+		providerCalled: make(chan struct{}, 1), providerRespond: make(chan struct{}), released: make(chan sessionstore.LiveWork, 1),
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -334,12 +336,12 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	manager.store = store
 	f.runtime = NewRuntime(store, settings, manager)
 	f.peers = peers
-	f.runtime.newExecutor = func(_ context.Context, store *Store, owner Owner, _ *Session, _ samplersettings.Settings) (*Executor, func() error, error) {
+	f.runtime.newExecutor = func(_ context.Context, store *sessionstore.Store, owner sessionstore.Owner, _ *sessionstore.Session, _ samplersettings.Settings) (*Executor, func() error, error) {
 		executor := newFakeExecutor(t, store, owner, client)
 		executor.environment = map[string]string{}
 		return executor, func() error { return nil }, nil
 	}
-	f.runtime.releaseLease = func(ctx context.Context, owner Owner) error {
+	f.runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
 		work, err := store.LiveWork(ctx, owner)
 		if err != nil {
 			return err
@@ -463,7 +465,7 @@ func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	waitRuntimeDone(t, done)
 
 	released := <-f.released
-	if released != (LiveWork{}) {
+	if released != (sessionstore.LiveWork{}) {
 		t.Fatalf("drain released the Session with live work: %+v", released)
 	}
 	continued := logged("central sampler drain keeps serving Session with live work")
@@ -505,7 +507,7 @@ func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.
 	}
 	assertNoUnresolvedNestedIntents(t, f.store, successor)
 	work, err := f.store.LiveWork(t.Context(), successor)
-	if err != nil || work != (LiveWork{}) {
+	if err != nil || work != (sessionstore.LiveWork{}) {
 		t.Fatalf("live work after settlement=%+v err=%v", work, err)
 	}
 	conversation, err := f.store.Read(t.Context(), successor)

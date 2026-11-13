@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 )
@@ -37,8 +39,8 @@ type executionFailureRecord struct {
 	processID             string
 	executionSessionID    string
 	afterSequence         *uint64
-	remoteOutcome         NestedOutcome
-	requestOutcome        *NestedOutcome
+	remoteOutcome         sessionstore.NestedOutcome
+	requestOutcome        *sessionstore.NestedOutcome
 	automaticReplay       bool
 	environmentState      fmt.Stringer
 	currentIncarnationUID string
@@ -53,25 +55,25 @@ type executionFailureSource interface {
 // executionFailureEvidence is a JSON boundary DTO. Its pointers retain the distinction
 // between an omitted observation and an explicitly observed zero cursor or empty buffer.
 type executionFailureEvidence struct {
-	Status                IntentResultStatus     `json:"status"`
-	Message               string                 `json:"message,omitempty"`
-	Method                executionMethod        `json:"method"`
-	Phase                 string                 `json:"phase,omitempty"`
-	IntentID              string                 `json:"intent_id,omitempty"`
-	ProcessID             string                 `json:"process_id,omitempty"`
-	ExecutionSessionID    string                 `json:"execution_session_id,omitempty"`
-	AfterSeq              *uint64                `json:"after_seq,omitempty"`
-	RemoteOutcome         NestedOutcome          `json:"remote_outcome"`
-	RequestOutcome        *NestedOutcome         `json:"request_outcome,omitempty"`
-	AutomaticReplay       bool                   `json:"automatic_replay"`
-	EnvironmentState      string                 `json:"environment_state,omitempty"`
-	CurrentIncarnationUID string                 `json:"current_incarnation_uid,omitempty"`
-	TransportError        string                 `json:"transport_error,omitempty"`
-	BufferedOutput        *string                `json:"buffered_output,omitempty"`
-	BufferedOutputBase64  *[]byte                `json:"buffered_output_base64,omitempty"`
-	BufferedBytes         *int                   `json:"buffered_bytes,omitempty"`
-	OmittedBytes          *int                   `json:"omitted_bytes,omitempty"`
-	ObservedOutput        *observedProcessOutput `json:"observed_output,omitempty"`
+	Status                sessionstore.IntentResultStatus `json:"status"`
+	Message               string                          `json:"message,omitempty"`
+	Method                executionMethod                 `json:"method"`
+	Phase                 string                          `json:"phase,omitempty"`
+	IntentID              string                          `json:"intent_id,omitempty"`
+	ProcessID             string                          `json:"process_id,omitempty"`
+	ExecutionSessionID    string                          `json:"execution_session_id,omitempty"`
+	AfterSeq              *uint64                         `json:"after_seq,omitempty"`
+	RemoteOutcome         sessionstore.NestedOutcome      `json:"remote_outcome"`
+	RequestOutcome        *sessionstore.NestedOutcome     `json:"request_outcome,omitempty"`
+	AutomaticReplay       bool                            `json:"automatic_replay"`
+	EnvironmentState      string                          `json:"environment_state,omitempty"`
+	CurrentIncarnationUID string                          `json:"current_incarnation_uid,omitempty"`
+	TransportError        string                          `json:"transport_error,omitempty"`
+	BufferedOutput        *string                         `json:"buffered_output,omitempty"`
+	BufferedOutputBase64  *[]byte                         `json:"buffered_output_base64,omitempty"`
+	BufferedBytes         *int                            `json:"buffered_bytes,omitempty"`
+	OmittedBytes          *int                            `json:"omitted_bytes,omitempty"`
+	ObservedOutput        *observedProcessOutput          `json:"observed_output,omitempty"`
 }
 
 func (f executionFailureRecord) intentEvidence() executionFailureEvidence {
@@ -84,7 +86,7 @@ func (f executionFailureRecord) toolEvidence() executionFailureEvidence {
 
 func (f executionFailureRecord) evidence(includeMessage bool) executionFailureEvidence {
 	evidence := executionFailureEvidence{
-		Status: IntentResultAbandoned, Method: f.method, Phase: f.phase,
+		Status: sessionstore.IntentResultAbandoned, Method: f.method, Phase: f.phase,
 		IntentID: f.intentID, ProcessID: f.processID, ExecutionSessionID: f.executionSessionID,
 		AfterSeq: f.afterSequence, RemoteOutcome: f.remoteOutcome, RequestOutcome: f.requestOutcome,
 		AutomaticReplay: f.automaticReplay, CurrentIncarnationUID: f.currentIncarnationUID,
@@ -128,19 +130,19 @@ type observedProcessOutput struct {
 }
 
 type observedProcessFailure struct {
-	Message               string                 `json:"message"`
-	Method                executionMethod        `json:"method"`
-	Phase                 string                 `json:"phase,omitempty"`
-	IntentID              string                 `json:"intent_id,omitempty"`
-	ProcessID             string                 `json:"process_id,omitempty"`
-	ExecutionSessionID    string                 `json:"execution_session_id,omitempty"`
-	AfterSeq              *uint64                `json:"after_seq,omitempty"`
-	RemoteOutcome         NestedOutcome          `json:"remote_outcome"`
-	RequestOutcome        *NestedOutcome         `json:"request_outcome,omitempty"`
-	AutomaticReplay       bool                   `json:"automatic_replay"`
-	EnvironmentState      string                 `json:"environment_state,omitempty"`
-	CurrentIncarnationUID string                 `json:"current_incarnation_uid,omitempty"`
-	ObservedOutput        *observedProcessOutput `json:"observed_output,omitempty"`
+	Message               string                      `json:"message"`
+	Method                executionMethod             `json:"method"`
+	Phase                 string                      `json:"phase,omitempty"`
+	IntentID              string                      `json:"intent_id,omitempty"`
+	ProcessID             string                      `json:"process_id,omitempty"`
+	ExecutionSessionID    string                      `json:"execution_session_id,omitempty"`
+	AfterSeq              *uint64                     `json:"after_seq,omitempty"`
+	RemoteOutcome         sessionstore.NestedOutcome  `json:"remote_outcome"`
+	RequestOutcome        *sessionstore.NestedOutcome `json:"request_outcome,omitempty"`
+	AutomaticReplay       bool                        `json:"automatic_replay"`
+	EnvironmentState      string                      `json:"environment_state,omitempty"`
+	CurrentIncarnationUID string                      `json:"current_incarnation_uid,omitempty"`
+	ObservedOutput        *observedProcessOutput      `json:"observed_output,omitempty"`
 }
 
 func executionFailureMessage(f executionFailureRecord) (string, error) {
@@ -172,12 +174,12 @@ func observedProcessFailureMessage(transport *executorTransportError) (string, e
 		message: transport.Error(), method: transport.method, phase: transport.phase,
 		intentID: transport.intentID, processID: transport.processID,
 		executionSessionID: transport.retainedSession, afterSequence: transport.afterSequence,
-		remoteOutcome: NestedUnknown, automaticReplay: false, output: transport.output,
+		remoteOutcome: sessionstore.NestedUnknown, automaticReplay: false, output: transport.output,
 	})
 }
 
-func (e *executorNotDispatchedError) executionFailureRecord(remoteOutcome NestedOutcome) executionFailureRecord {
-	requestOutcome := NestedNotDispatched
+func (e *executorNotDispatchedError) executionFailureRecord(remoteOutcome sessionstore.NestedOutcome) executionFailureRecord {
+	requestOutcome := sessionstore.NestedNotDispatched
 	return executionFailureRecord{
 		message: e.Error(), method: e.method, phase: "connection", processID: e.processID,
 		executionSessionID: e.retainedSession, afterSequence: e.afterSequence,

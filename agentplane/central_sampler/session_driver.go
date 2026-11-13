@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -32,7 +34,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 	owner, err := r.claimLease(claimCtx, session.ConversationID, time.Duration(r.settings.LeaseSeconds)*time.Second)
 	claimCancel()
 	if err != nil {
-		var lost *LostOwnershipError
+		var lost *sessionstore.LostOwnershipError
 		if !errors.As(err, &lost) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			slog.Error("central sampler lease claim failed", "session_id", sessionID, "error", err)
 		}
@@ -93,7 +95,7 @@ func (r *Runtime) drive(runtimeCtx context.Context, sessionID string, task *resi
 
 // logDrainExit records the Session state a driver leaves behind during shutdown drain, so a
 // successor that blocks on a lost host can be traced to the owner that released it.
-func (r *Runtime) logDrainExit(sessionID string, owner Owner, activeCommand *string) {
+func (r *Runtime) logDrainExit(sessionID string, owner sessionstore.Owner, activeCommand *string) {
 	timeout := r.cleanupTimeout()
 	if timeout <= 0 {
 		return
@@ -115,7 +117,7 @@ func (r *Runtime) logDrainExit(sessionID string, owner Owner, activeCommand *str
 		"unresolved_intents", work.UnresolvedIntents, "pending", work.Pending, "pod_name", os.Getenv("HOSTNAME"))
 }
 
-func (r *Runtime) heartbeat(ctx context.Context, owner Owner) error {
+func (r *Runtime) heartbeat(ctx context.Context, owner sessionstore.Owner) error {
 	period := time.Duration(r.settings.LeaseSeconds) * time.Second / 3
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
@@ -169,7 +171,7 @@ func (r *Runtime) cleanupTimeout() time.Duration {
 	return timeout
 }
 
-func (r *Runtime) release(owner Owner, sessionID string, reason releaseReason) {
+func (r *Runtime) release(owner sessionstore.Owner, sessionID string, reason releaseReason) {
 	timeout := r.cleanupTimeout()
 	if timeout <= 0 {
 		slog.Warn("central sampler cleanup budget expired before lease release", "session_id", sessionID, "conversation_id", owner.ConversationID,
@@ -179,7 +181,7 @@ func (r *Runtime) release(owner Owner, sessionID string, reason releaseReason) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	if err := r.releaseLease(ctx, owner); err != nil {
-		var lost *LostOwnershipError
+		var lost *sessionstore.LostOwnershipError
 		if !errors.As(err, &lost) {
 			slog.Error("central sampler lease release failed", "session_id", sessionID, "conversation_id", owner.ConversationID,
 				"generation", owner.Generation, "reason", string(reason), "error", err)
@@ -212,7 +214,7 @@ func (r *Runtime) isDraining() bool {
 // background cell releases immediately, as the successor sees the same live handle either way.
 // Serving continues until that work settles or the drain deadline cancels it. The continuation
 // is logged once per driver.
-func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner Owner, activeCommand *string, continued *bool) (bool, error) {
+func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner sessionstore.Owner, activeCommand *string, continued *bool) (bool, error) {
 	if !r.isDraining() {
 		return false, nil
 	}
@@ -232,7 +234,7 @@ func (r *Runtime) drainReleases(ctx context.Context, sessionID string, owner Own
 	return false, nil
 }
 
-func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, task *residentSession) (*string, error) {
+func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionstore.Owner, task *residentSession) (*string, error) {
 	if !r.acquireExecution(ctx, task) {
 		return nil, nil
 	}
@@ -432,16 +434,16 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 		} else {
 			turnCtx, cancel = context.WithCancel(ctx)
 		}
-		var result TurnResult
+		var result sessionstore.TurnResult
 		if payload.GetCompact() != nil {
 			conversation, readErr := r.store.Read(turnCtx, owner)
 			if readErr != nil {
 				err = readErr
 			} else if conversation.Stopped && conversation.Pending == nil {
-				result = TurnInterrupted
+				result = sessionstore.TurnInterrupted
 			} else {
 				err = r.compact(turnCtx, owner, session.Model)
-				result = TurnCompact
+				result = sessionstore.TurnCompact
 			}
 		} else {
 			for {
@@ -498,7 +500,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 					}
 				}
 				result, err = r.controlledAdvance(turnCtx, sessionID, owner, live, client, session)
-				if err != nil || result.endsTurn() {
+				if err != nil || result.EndsTurn() {
 					break
 				}
 			}
@@ -540,16 +542,16 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 			return activeCommand, err
 		}
 		if result == "" {
-			result = TurnDone
+			result = sessionstore.TurnDone
 		}
 		if err := r.store.FinishCommand(ctx, owner, sessionID, command.ID, result); err != nil {
 			return activeCommand, err
 		}
 		activeCommand = nil
-		if result == TurnEffectsUnknown {
+		if result == sessionstore.TurnEffectsUnknown {
 			return nil, nil
 		}
-		if result == TurnInterrupted && live != nil {
+		if result == sessionstore.TurnInterrupted && live != nil {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = live.Close(closeCtx)
 			closeCancel()
@@ -560,7 +562,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner Owner, ta
 
 // A configured turn limit stops provider work after the call has joined. Settle that safe
 // provider-only failure; native work still follows FailExecution's uncertainty checks.
-func (r *Runtime) failExpiredProviderCommand(ctx context.Context, owner Owner, sessionID, commandID string) (bool, error) {
+func (r *Runtime) failExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	defer cancel()
 	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, sessionID)
@@ -572,8 +574,8 @@ func (r *Runtime) failExpiredProviderCommand(ctx context.Context, owner Owner, s
 		if attempt.CommandID != commandID {
 			return false, protocol.ErrPrecondition
 		}
-		if err := r.store.AbandonProviderAttempt(ctx, owner, attempt.IntentID, ProviderAttemptFailure{
-			Class: ProviderAttemptPermanent, Reason: reason,
+		if err := r.store.AbandonProviderAttempt(ctx, owner, attempt.IntentID, sessionstore.ProviderAttemptFailure{
+			Class: sessionstore.ProviderAttemptPermanent, Reason: reason,
 		}); err != nil {
 			return false, err
 		}

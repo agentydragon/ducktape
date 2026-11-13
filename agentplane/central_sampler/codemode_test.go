@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -405,7 +407,7 @@ func TestCodeModeHostStampsOpenedHostWhenItFailsBeforeStamp(t *testing.T) {
 
 func openFakeSession(t *testing.T, manager *CodeModeHost, conversation string) *CodeMode {
 	t.Helper()
-	code, err := manager.OpenSession(context.Background(), conversation, Owner{ConversationID: conversation}, &Executor{})
+	code, err := manager.OpenSession(context.Background(), conversation, sessionstore.Owner{ConversationID: conversation}, &Executor{})
 	if err != nil {
 		t.Fatalf("open logical session %q: %v", conversation, err)
 	}
@@ -808,17 +810,17 @@ func TestHostWaitAndTerminateErrorsAreToolOutputsWithoutLifecycleClaims(t *testi
 func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		respond func(*testing.T, *fakeCodeModePeer, int64, Owner, *Store)
+		respond func(*testing.T, *fakeCodeModePeer, int64, sessionstore.Owner, *sessionstore.Store)
 	}{
 		{
 			name: "transport loss",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, _ int64, _ Owner, _ *Store) {
+			respond: func(t *testing.T, peer *fakeCodeModePeer, _ int64, _ sessionstore.Owner, _ *sessionstore.Store) {
 				peer.crash()
 			},
 		},
 		{
 			name: "unknown response status",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
 				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "unexpected"}}); err != nil {
 					t.Fatal(err)
 				}
@@ -826,7 +828,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		},
 		{
 			name: "empty host error message",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
 				if err := peer.send(codemode.Frame{Type: codemode.Response, ID: int64Pointer(id), Result: &codemode.WireResult{Status: "error"}}); err != nil {
 					t.Fatal(err)
 				}
@@ -834,7 +836,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		},
 		{
 			name: "initial response host error after execution started",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ Owner, _ *Store) {
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, _ sessionstore.Owner, _ *sessionstore.Store) {
 				started, err := json.Marshal(codemode.HostResponse{Type: "execution/started", CellID: "started-cell"})
 				if err != nil {
 					t.Fatal(err)
@@ -849,7 +851,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 		},
 		{
 			name: "store journal failure",
-			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, owner Owner, store *Store) {
+			respond: func(t *testing.T, peer *fakeCodeModePeer, id int64, owner sessionstore.Owner, store *sessionstore.Store) {
 				if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_conversation SET owner=$2 WHERE id=$1`, owner.ConversationID, "00000000-0000-4000-8000-000000000001"); err != nil {
 					t.Fatal(err)
 				}
@@ -892,7 +894,7 @@ func TestCodeModeOperationalFailuresDoNotBecomeToolOutputs(t *testing.T) {
 	}
 }
 
-func assertToolResultSucceeded(t *testing.T, store *Store, owner Owner, callID string, want bool) {
+func assertToolResultSucceeded(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, callID string, want bool) {
 	t.Helper()
 	var sessionID string
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT id FROM sampler_session WHERE conversation_id=$1`, owner.ConversationID).Scan(&sessionID); err != nil {
@@ -916,7 +918,7 @@ func assertToolResultSucceeded(t *testing.T, store *Store, owner Owner, callID s
 	t.Fatalf("no completed tool result for %q", callID)
 }
 
-func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Store, Owner, *Runtime, *liveHost, *CodeMode, *fakeCodeModePeer) {
+func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*sessionstore.Store, sessionstore.Owner, *Runtime, *liveHost, *CodeMode, *fakeCodeModePeer) {
 	t.Helper()
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
@@ -966,9 +968,9 @@ func newCodeModeAdvanceFixture(t *testing.T, call protocol.ToolInvocation) (*Sto
 	return store, owner, runtime, &liveHost{code: code, executor: &Executor{}}, code, peers()[0]
 }
 
-func appendModelToolCall(t *testing.T, store *Store, owner Owner, call protocol.ToolInvocation) {
+func appendModelToolCall(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, call protocol.ToolInvocation) {
 	t.Helper()
-	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
+	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -995,10 +997,10 @@ func advanceWithFakeOperation(
 	peer *fakeCodeModePeer,
 	wantMethod string,
 	respond func(int64),
-) (TurnResult, error) {
+) (sessionstore.TurnResult, error) {
 	t.Helper()
 	done := make(chan struct {
-		result TurnResult
+		result sessionstore.TurnResult
 		err    error
 	}, 1)
 	session, err := runtime.store.GetSessionForConversation(t.Context(), code.owner)
@@ -1008,7 +1010,7 @@ func advanceWithFakeOperation(
 	go func() {
 		result, err := runtime.advance(t.Context(), code.owner, live, nil, session)
 		done <- struct {
-			result TurnResult
+			result sessionstore.TurnResult
 			err    error
 		}{result: result, err: err}
 	}()

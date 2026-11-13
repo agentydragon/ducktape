@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
@@ -21,8 +23,8 @@ const defaultCodeModeMaxOutputTokens = 10_000
 
 type CodeMode struct {
 	*codemode.Session
-	store    *Store
-	owner    Owner
+	store    *sessionstore.Store
+	owner    sessionstore.Owner
 	executor *Executor
 }
 
@@ -95,7 +97,7 @@ func (r *CodeMode) prepareCall(ctx context.Context, call protocol.ToolInvocation
 }
 
 func (r *CodeMode) prepareExecute(callID string, source toolcontract.ExecSource) (preparedCall, error) {
-	hostDefinitions, err := toolcontract.HostToolDefinitions(toolDefinitions())
+	hostDefinitions, err := toolcontract.HostToolDefinitions(toolcontract.Definitions())
 	if err != nil {
 		return preparedCall{}, err
 	}

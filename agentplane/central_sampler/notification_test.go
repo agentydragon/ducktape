@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -20,7 +22,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func startTurnForStore(t *testing.T, store *Store, session *Session, owner Owner, commandID string) {
+func startTurnForStore(t *testing.T, store *sessionstore.Store, session *sessionstore.Session, owner sessionstore.Owner, commandID string) {
 	t.Helper()
 	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 		CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
@@ -32,7 +34,7 @@ func startTurnForStore(t *testing.T, store *Store, session *Session, owner Owner
 	}
 }
 
-func queuedNotifications(t *testing.T, store *Store, conversationID string) int {
+func queuedNotifications(t *testing.T, store *sessionstore.Store, conversationID string) int {
 	t.Helper()
 	var count int
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_notification WHERE conversation_id=$1`, conversationID).Scan(&count); err != nil {
@@ -62,7 +64,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 		t.Fatalf("notification without an active turn: %v", err)
 	}
 	startTurnForStore(t, store, session, owner, "turn")
-	sampling, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
+	sampling, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +72,7 @@ func TestNotificationFollowsStepOutputsAndTurnEnd(t *testing.T) {
 	if err := store.Finish(t.Context(), owner, sampling, map[string]any{}, nativeResponsesRecords(t, call), nil); err != nil {
 		t.Fatal(err)
 	}
-	cell, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentCell}, nil, nil)
+	cell, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentCell}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +148,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 					t.Fatal(err)
 				}
 				startTurnForStore(t, store, session, owner, "turn")
-				sampling, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
+				sampling, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -184,7 +186,7 @@ func TestLostExecutorNoticeFollowsPendingToolResultForEachProvider(t *testing.T)
 				if err != nil || len(beforeResult) == 0 {
 					t.Fatalf("notice was appended before pending tool result: records=%d err=%v", len(beforeResult), err)
 				}
-				cell, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentCell}, nil, nil)
+				cell, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentCell}, nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -269,7 +271,7 @@ func TestNotificationIsDiscardedWhenTurnDoesNotComplete(t *testing.T) {
 				commandID := "turn"
 				err = store.FailExecution(t.Context(), owner, session.ID, &commandID, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "fixture failure"}})
 			} else {
-				err = store.FinishCommand(t.Context(), owner, session.ID, "turn", TurnResult(ending))
+				err = store.FinishCommand(t.Context(), owner, session.ID, "turn", sessionstore.TurnResult(ending))
 			}
 			if err != nil {
 				t.Fatal(err)

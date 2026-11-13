@@ -5,15 +5,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 )
 
 type Runtime struct {
-	store        *Store
+	store        *sessionstore.Store
 	settings     samplersettings.Settings
-	claimLease   func(context.Context, string, time.Duration) (Owner, error)
-	releaseLease func(context.Context, Owner) error
-	newExecutor  func(context.Context, *Store, Owner, *Session, samplersettings.Settings) (*Executor, func() error, error)
+	claimLease   func(context.Context, string, time.Duration) (sessionstore.Owner, error)
+	releaseLease func(context.Context, sessionstore.Owner) error
+	newExecutor  func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*Executor, func() error, error)
 
 	mu               sync.Mutex
 	runCtx           context.Context
@@ -32,7 +34,7 @@ type Runtime struct {
 type residentSession struct {
 	// These fields are guarded by Runtime.mu; wake carries no authoritative work.
 	wake            chan struct{}
-	owner           *Owner
+	owner           *sessionstore.Owner
 	busy            bool
 	waitingProvider bool
 }
@@ -45,7 +47,7 @@ func (s *residentSession) signal() {
 }
 
 // NewRuntime takes the shared Code Mode host it attaches logical sessions to and shuts down.
-func NewRuntime(store *Store, settings samplersettings.Settings, codeHost *CodeModeHost) *Runtime {
+func NewRuntime(store *sessionstore.Store, settings samplersettings.Settings, codeHost *CodeModeHost) *Runtime {
 	return &Runtime{
 		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: NewExecutor,
 		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),

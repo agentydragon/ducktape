@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//visibility:private"])
+
+go_library(
+    name = "exportfixture",
+    testonly = True,
+    srcs = ["source.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/testing/exportfixture",
+    visibility = ["//agentplane/history_service/internal/ingress:__pkg__"],
+    deps = [
+        "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/historyexport",
+        "//agentplane/central_sampler/internal/sessionstore",
+        "//agentplane/central_sampler/protocol",
+        "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

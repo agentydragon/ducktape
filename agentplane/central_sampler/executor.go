@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
@@ -23,8 +25,8 @@ import (
 )
 
 type Executor struct {
-	store                *Store
-	owner                Owner
+	store                *sessionstore.Store
+	owner                sessionstore.Owner
 	client               executorClient
 	connection           *grpc.ClientConn
 	scopeMu              sync.RWMutex
@@ -59,7 +61,7 @@ type Executor struct {
 }
 
 // NewExecutor restores local executor state without contacting the execution environment.
-func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings samplersettings.Settings) (*Executor, func() error, error) {
+func NewExecutor(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owner, session *sessionstore.Session, settings samplersettings.Settings) (*Executor, func() error, error) {
 	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
@@ -193,22 +195,22 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		// ensureSessionLocked rejected this operation before recording or sending its
 		// request. Without an associated process there is no prior process effect to
 		// reconcile; an existing process keeps its prior unknown/running status.
-		outcome := NestedNotDispatched
+		outcome := sessionstore.NestedNotDispatched
 		var afterSequence *uint64
 		if notDispatched.processID != "" {
 			process, processErr := e.store.Process(ctx, e.owner, notDispatched.processID)
 			if processErr != nil {
 				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
 			}
-			outcome = NestedUnknown
+			outcome = sessionstore.NestedUnknown
 			if process.Status == protocol.ProcessStarting {
-				outcome = NestedNotDispatched
+				outcome = sessionstore.NestedNotDispatched
 			}
 			afterSequence = notDispatched.afterSequence
 			if afterSequence == nil {
 				afterSequence = process.AfterSequence
 			}
-			if outcome == NestedNotDispatched {
+			if outcome == sessionstore.NestedNotDispatched {
 				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.processID, afterSequence, protocol.ProcessExited, nil, true); settleErr != nil {
 					return fmt.Errorf("settle not-dispatched process %s after failed executor reconnect: %w", notDispatched.processID, settleErr)
 				}
@@ -244,7 +246,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 	var transport *executorTransportError
 	if errors.As(err, &transport) {
 		if transport.processID != "" {
-			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transport.processID, transport.afterSequence, transport.output, NestedUnknown, transport.retainedSession); abandonErr != nil {
+			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transport.processID, transport.afterSequence, transport.output, sessionstore.NestedUnknown, transport.retainedSession); abandonErr != nil {
 				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transport.processID, transport.method, abandonErr)
 			}
 		}
@@ -272,7 +274,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				if afterSequence == nil {
 					afterSequence = process.AfterSequence
 				}
-				if abandonErr := e.store.AbandonProcess(ctx, e.owner, rejected.processID, afterSequence, rejected.output, NestedUnknown, rejected.executionSessionID); abandonErr != nil {
+				if abandonErr := e.store.AbandonProcess(ctx, e.owner, rejected.processID, afterSequence, rejected.output, sessionstore.NestedUnknown, rejected.executionSessionID); abandonErr != nil {
 					return fmt.Errorf("record unknown process %s outcome after rejected process/read: %w", rejected.processID, abandonErr)
 				}
 			}
@@ -282,7 +284,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				evidence: rejectedProcessReadEvidence{
 					Error: message, ExecutorIntentID: rejected.intentID,
 					ProcessID: rejected.processID, ExecutionSessionID: rejected.executionSessionID,
-					RemoteOutcome: NestedUnknown, AutomaticReplay: false,
+					RemoteOutcome: sessionstore.NestedUnknown, AutomaticReplay: false,
 				},
 			}
 		}
@@ -299,16 +301,16 @@ func (e *Executor) settleExecutionFailure(ctx context.Context, failure execution
 	if err != nil {
 		return fmt.Errorf("inspect process %s after structured execution failure: %w", failure.processID, err)
 	}
-	if failure.method == executorMethodProcessStart && failure.remoteOutcome == NestedNotDispatched && process.Status == protocol.ProcessStarting {
+	if failure.method == executorMethodProcessStart && failure.remoteOutcome == sessionstore.NestedNotDispatched && process.Status == protocol.ProcessStarting {
 		if err := e.store.ProcessResult(ctx, e.owner, failure.processID, failure.afterSequence, protocol.ProcessExited, nil, true); err != nil {
 			return fmt.Errorf("settle process %s after known not-dispatched start: %w", failure.processID, err)
 		}
 		return nil
 	}
-	if failure.remoteOutcome != NestedUnknown || process.Status == protocol.ProcessAbandoned || process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
+	if failure.remoteOutcome != sessionstore.NestedUnknown || process.Status == protocol.ProcessAbandoned || process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
 		return nil
 	}
-	if err := e.store.AbandonProcess(ctx, e.owner, failure.processID, failure.afterSequence, failure.output, NestedUnknown, failure.executionSessionID); err != nil {
+	if err := e.store.AbandonProcess(ctx, e.owner, failure.processID, failure.afterSequence, failure.output, sessionstore.NestedUnknown, failure.executionSessionID); err != nil {
 		return fmt.Errorf("record unknown process %s outcome after structured execution failure: %w", failure.processID, err)
 	}
 	return nil

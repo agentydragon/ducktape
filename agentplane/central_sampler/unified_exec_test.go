@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 )
 
@@ -48,7 +49,7 @@ func TestExecCommandExpectedIncarnationArgument(t *testing.T) {
 	if err != nil || args.ExpectedIncarnationUID == nil || *args.ExpectedIncarnationUID != "incarnation-uid" {
 		t.Fatalf("parsed expected incarnation UID=%v error=%v", args.ExpectedIncarnationUID, err)
 	}
-	property, ok := execCommandToolDefinition().InputSchema.Properties["expected_incarnation_uid"]
+	property, ok := toolcontract.ExecCommandDefinition().InputSchema.Properties["expected_incarnation_uid"]
 	if !ok || property.Type != "string" || property.Description == "" {
 		t.Fatalf("expected incarnation tool schema property=%+v, found=%v", property, ok)
 	}

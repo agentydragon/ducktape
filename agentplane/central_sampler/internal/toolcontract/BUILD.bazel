@@ -4,6 +4,7 @@ go_library(
     name = "toolcontract",
     srcs = [
         "description.go",
+        "sampler_tools.go",
         "tool_protocol.go",
     ],
     embedsrcs = [
@@ -12,7 +13,10 @@ go_library(
         "codex/wait_description.txt",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract",
-    visibility = ["//agentplane/central_sampler:__pkg__"],
+    visibility = [
+        "//agentplane/central_sampler:__pkg__",
+        "//agentplane/central_sampler:__subpackages__",
+    ],
     deps = [
         "//agentplane/central_sampler/protocol",
         "@com_github_invopop_jsonschema//:jsonschema",

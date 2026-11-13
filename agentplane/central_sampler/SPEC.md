@@ -735,7 +735,11 @@ process of the sampler. Production requires no Python interpreter. The existing 
 sampler-owned `sampler_*` table layout remain the boundary for clients and durable state. The Go
 service applies its Goose migrations before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
-Acceptance tests start the actual Go binary and inspect its database separately.
+Acceptance tests start the actual Go binary and inspect its database separately. Durable sampler
+state, owner fencing, content projections and evidence commits are implemented in
+`internal/sessionstore`; runtime scheduling, executor effects and provider transport stay in the
+`central_sampler` package. Pure provider tool schemas shared by those layers live in
+`internal/toolcontract`. The History exporter depends on the narrow `historyexport.Outbox` contract.
 
 `sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
 complete OpenAI items and Anthropic messages/content blocks. An OpenAI item retains its message

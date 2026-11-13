@@ -7,11 +7,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -33,28 +37,36 @@ func (s *requestReadStream) Send(response *samplerpb.ReadProviderRequestResponse
 
 func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossAccountRequests(t *testing.T) {
 	store := newTestStore(t)
-	session := openSessionForStore(t, store, "")
+	bodyText := strings.Repeat("provider request body ", maxProviderRequestBodyChunkSize/20+100)
+	launch := &samplerpb.CreateSessionRequest{
+		SessionId: uuid.NewString(),
+		Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", Instructions: bodyText},
+	}
+	session, err := openStoreSession(t, store, launch, "fixture-account", protocol.APIStyleResponses)
+	if err != nil {
+		t.Fatal(err)
+	}
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = store.Release(context.Background(), owner) }()
 
-	bodyText := strings.Repeat("provider request body ", maxProviderRequestBodyChunkSize/20+100)
 	config := samplersettings.ModelConfig{
 		Connection: "fixture", ProviderModel: "fixture-model", API: protocol.APIStyleResponses,
-		Responses: responses.Config{Dialect: responses.DialectLite},
+		ExecEncoding: protocol.ExecEncodingJSON, Responses: responses.Config{Dialect: responses.DialectLite},
 	}
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
-	body := responses.Request{
-		Model: "fixture-model", Instructions: bodyText, Input: []responses.RequestInput{}, Stream: true,
+	intent := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
+	preparation := &sessionstore.ProviderRequestPreparation{
+		ModelConfig: config, SessionEffort: session.Effort,
+		SessionConfiguration: append([]byte(nil), session.Configuration...),
 	}
-	intent := providerRequestIntent(PendingIntentSampling, connection, config)
 	// The retained provider headers are normally unauthenticated. Exercise filtering against old
 	// or malformed retained records that still contain credential headers.
 	intent.ProviderRequest.Headers["Authorization"] = "Bearer do-not-return"
 	intent.ProviderRequest.Headers["X-API-Key"] = "do-not-return"
-	requestID, wire, err := store.Begin(t.Context(), owner, intent, fixtureResponsesPreparation(body), providerAttemptTestPolicyPointer())
+	requestID, wire, err := store.Begin(t.Context(), owner, intent, preparation, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
 	}

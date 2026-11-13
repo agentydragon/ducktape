@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -17,14 +19,14 @@ import (
 // CodeModeHost binds sampler ownership and tool execution to the shared host.
 type CodeModeHost struct {
 	*codemode.Manager
-	store *Store
+	store *sessionstore.Store
 }
 
-func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *Store) *CodeModeHost {
+func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *sessionstore.Store) *CodeModeHost {
 	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store: store}
 }
 
-func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner Owner, executor *Executor) (*CodeMode, error) {
+func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner sessionstore.Owner, executor *Executor) (*CodeMode, error) {
 	if executor == nil {
 		return nil, errors.New("code-mode executor is required")
 	}
@@ -43,8 +45,8 @@ func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, o
 
 // The lease owner is captured once for this binding. Every journal write retains Store's fencing.
 type codeJournal struct {
-	store *Store
-	owner Owner
+	store *sessionstore.Store
+	owner sessionstore.Owner
 }
 
 func (j codeJournal) Epoch(ctx context.Context) (int, error) {
@@ -92,7 +94,7 @@ func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, requ
 	if invocation.CellID != "" {
 		requestJournal["cell_id"] = session.CellHandle(invocation.CellID)
 	}
-	intent, err := r.store.RecordNested(ctx, r.owner, IntentTool, requestJournal)
+	intent, err := r.store.RecordNested(ctx, r.owner, sessionstore.IntentTool, requestJournal)
 	if err != nil {
 		return empty, empty, err
 	}

@@ -9,16 +9,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/testing/exportfixture"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
@@ -43,27 +41,15 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				session := fixture.openSessionWithAPI(t, &identitypb.Identity{
 					Name: fixture.identity.Identity.Name, Uid: string(fixture.identity.Identity.UID),
 				}, api)
-				store := fixture.sampler
-				owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-				if err != nil {
-					t.Fatal(err)
-				}
 				const turnID = "fixture-turn"
-				if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-					CommandId: turnID,
-					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "Start"}},
-				}, samplerOwnerUID, nil); err != nil {
-					t.Fatal(err)
-				}
-				if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
-					t.Fatal(err)
-				}
-				priorIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{Kind: centralsampler.PendingIntentSampling}, nil,
-					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
+				scenario, err := fixture.source.StartRecoveryScenario(t.Context(), session, turnID)
 				if err != nil {
 					t.Fatal(err)
 				}
-				priorEvidence := &centralsampler.ResponseEvidence{Store: store, Owner: owner, IntentID: priorIntent}
+				priorIntent, priorEvidence, err := scenario.BeginSampling(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
 				prior, err := sampleRecoveryFixture(t, api, "prior", "complete", priorEvidence)
 				if err != nil {
 					t.Fatal(err)
@@ -74,43 +60,26 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 					}}}); err != nil {
 					t.Fatal(err)
 				}
-				if err := store.Finish(t.Context(), owner, priorIntent, prior.Audit, prior.Records, prior.ContextTokens); err != nil {
+				if err := scenario.FinishSampling(t.Context(), priorIntent, prior.Audit, prior.Records, prior.ContextTokens); err != nil {
 					t.Fatal(err)
 				}
-				conversation, err := store.Read(t.Context(), owner)
-				if err != nil {
-					t.Fatal(err)
-				}
-				calls, err := conversation.Transcript.PendingCalls()
+				calls, err := scenario.PendingToolCalls(t.Context())
 				if err != nil || len(calls) != 1 {
 					t.Fatalf("prior calls=%v err=%v", calls, err)
 				}
 				call := calls[0]
-				cellIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{
-					Kind: centralsampler.PendingIntentCell, Call: &call,
-				}, nil, nil)
-				if err != nil {
-					t.Fatal(err)
-				}
 				output := []protocol.ContentPart{{Type: "input_text", Text: "Earlier command completed"}}
-				if err := store.FinishTool(t.Context(), owner, cellIntent,
-					map[string]any{"call_id": call.CallID, "output": output, "success": true}, call, output); err != nil {
+				if err := scenario.FinishToolCall(t.Context(), call, output); err != nil {
 					t.Fatal(err)
 				}
-				conversation, err = store.Read(t.Context(), owner)
+				beforeRecords, err := scenario.TranscriptRecords(t.Context())
 				if err != nil {
 					t.Fatal(err)
 				}
-				beforeRecords, err := conversation.Transcript.Records()
+				_, evidence, err := scenario.BeginSampling(t.Context())
 				if err != nil {
 					t.Fatal(err)
 				}
-				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{Kind: centralsampler.PendingIntentSampling}, nil,
-					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
-				if err != nil {
-					t.Fatal(err)
-				}
-				evidence := &centralsampler.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}
 				if _, err := sampleRecoveryFixture(t, api, "pending", cut, evidence); err == nil {
 					t.Fatal("truncated stream completed")
 				}
@@ -122,31 +91,12 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 						}
 					}
 				}
-				active := turnID
-				if err := store.FailExecution(t.Context(), owner, session.ID, &active, errors.New("provider stream interrupted")); err != nil {
-					t.Fatal(err)
-				}
-				blocked, err := store.GetSession(t.Context(), session.ID, samplerOwnerUID)
+				recovery, err := scenario.RecoverInterruptedTurn(t.Context(), errors.New("provider stream interrupted"), "reviewed stream")
 				if err != nil {
 					t.Fatal(err)
 				}
-				beforeEvents, err := store.Events(t.Context(), session.ID, 0, int(blocked.Cursor))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := store.Release(t.Context(), owner); err != nil {
-					t.Fatal(err)
-				}
-				recovered, err := store.RecoverSession(t.Context(), session.ID, samplerOwnerUID, blocked.Cursor, "reviewed stream", "")
-				if err != nil {
-					t.Fatal(err)
-				}
-				entries, err := store.Events(t.Context(), session.ID, 0, int(recovered.Cursor))
-				if err != nil {
-					t.Fatal(err)
-				}
-				for index, entry := range beforeEvents {
-					if !proto.Equal(entry, entries[index]) {
+				for index, entry := range recovery.BeforeEvents {
+					if !proto.Equal(entry, recovery.Events[index]) {
 						t.Fatalf("recovery changed retained event %d", entry.GetCursor())
 					}
 				}
@@ -162,7 +112,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 					}
 				}
 				reports := 0
-				for _, entry := range entries {
+				for _, entry := range recovery.Events {
 					if report := entry.GetEvent().GetConversationReconciled(); report != nil {
 						reports++
 						if report.GetTurnId() != turnID || len(report.GetItems()) != len(wantAbsent) {
@@ -179,8 +129,8 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 					t.Fatalf("reconciliation count=%d", reports)
 				}
 
-				exportSamplerHistoryThrough(t, fixture, session.ID, recovered.Cursor)
-				projected := projectSamplerHistory(t, fixture, session.ID, recovered.Cursor)
+				exportSamplerHistoryThrough(t, fixture, session, recovery.Cursor)
+				projected := projectSamplerHistory(t, fixture, session, recovery.Cursor)
 				for id := range wantAbsent {
 					item := projected.items[id]
 					if item == nil || item.GetRecovery() != eventpb.RecoveryDisposition_RECOVERY_DISPOSITION_ABSENT {
@@ -195,22 +145,17 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if item := projected.items["prior-call"]; item == nil || item.GetTool() == nil ||
 					!item.GetTool().GetSucceeded() || item.GetOutputRef() == nil {
 					t.Fatalf("History lost the earlier successful tool result: %v", item)
-				} else if body := samplerHistoryPayload(t, fixture, session.ID, item.GetOutputRef()); !strings.Contains(body, "Earlier command completed") {
+				} else if body := samplerHistoryPayload(t, fixture, session, item.GetOutputRef()); !strings.Contains(body, "Earlier command completed") {
 					t.Fatalf("History prior tool output=%q", body)
 				}
 				if item := projected.items["pending-call"]; item != nil && (item.GetOutputRef() != nil || item.GetTool() != nil || item.GetText() != nil) {
 					t.Fatalf("unexecuted tool acquired a History result: %v", item)
 				}
 
-				newOwner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-				if err != nil {
+				if err := scenario.ReclaimAfterRecovery(t.Context()); err != nil {
 					t.Fatal(err)
 				}
-				conversation, err = store.Read(t.Context(), newOwner)
-				if err != nil {
-					t.Fatal(err)
-				}
-				afterRecords, err := conversation.Transcript.Records()
+				afterRecords, err := scenario.TranscriptRecords(t.Context())
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -222,10 +167,10 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 						t.Fatalf("recovery changed earlier context record %d", index)
 					}
 				}
-				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}); !errors.As(err, new(*centralsampler.LostOwnershipError)) {
+				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}); !exportfixture.LostOwnership(err) {
 					t.Fatalf("late provider evidence was not fenced: %v", err)
 				}
-				if err := store.Release(t.Context(), newOwner); err != nil {
+				if err := scenario.Release(t.Context()); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -239,7 +184,7 @@ type samplerRecoveryResult struct {
 	ContextTokens *int
 }
 
-func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, evidence *centralsampler.ResponseEvidence) (*samplerRecoveryResult, error) {
+func sampleRecoveryFixture(t *testing.T, api protocol.APIStyle, id, cut string, evidence protocol.EvidenceSink) (*samplerRecoveryResult, error) {
 	t.Helper()
 	var events []any
 	if api == protocol.APIStyleResponses {
@@ -495,78 +440,58 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			session := fixture.openSession(t)
-			store := fixture.sampler
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+			scenario, err := fixture.source.StartFailedInputScenario(t.Context(), session)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, commandID := range []string{"active-input", "queued-input"} {
-				if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-					CommandId: commandID,
-					Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: commandID}},
-				}, samplerOwnerUID, nil); err != nil {
-					t.Fatal(err)
-				}
-			}
-			active, err := store.NextCommand(t.Context(), owner, session.ID)
-			if err != nil || active == nil || active.ID != "active-input" {
-				t.Fatalf("active command=%v err=%v", active, err)
+			activeID := scenario.ActiveCommandID()
+			if activeID != "active-input" {
+				t.Fatalf("active command=%q, want active-input", activeID)
 			}
 			var localCommandID *string
 			if !test.failWithNilCommandID {
-				localCommandID = &active.ID
+				localCommandID = &activeID
 			}
 			if test.providerFailure {
-				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{Kind: centralsampler.PendingIntentSampling}, nil,
-					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
-				if err != nil {
+				if err := scenario.FailWithProviderRejection(t.Context(), "provider rejected request"); err != nil {
 					t.Fatal(err)
 				}
-				if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, centralsampler.ProviderAttemptFailure{
-					Class: centralsampler.ProviderAttemptPermanent, Reason: "provider rejected request",
-				}); err != nil {
-					t.Fatal(err)
-				}
-				if err := store.FailProviderCommand(t.Context(), owner, session.ID, active.ID, intentID, "provider rejected request"); err != nil {
-					t.Fatal(err)
-				}
-			} else if err := store.FailExecution(t.Context(), owner, session.ID, localCommandID, test.failure); err != nil {
+			} else if err := scenario.FailExecution(t.Context(), localCommandID, test.failure); err != nil {
 				t.Fatal(err)
 			}
 			for commandID, want := range map[string]samplerpb.CommandOutcome{
 				"active-input": test.wantActive, "queued-input": test.wantQueued,
 			} {
-				response, err := store.GetCommand(t.Context(), session.ID, commandID)
+				response, err := scenario.CommandResult(t.Context(), commandID)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if response.GetOutcome() != want {
-					t.Fatalf("GetCommand(%q) outcome=%v, want %v", commandID, response.GetOutcome(), want)
+				if response.Outcome != want {
+					t.Fatalf("GetCommand(%q) outcome=%v, want %v", commandID, response.Outcome, want)
 				}
-				if commandID == "active-input" && test.wantReasonContains != "" && !strings.Contains(response.GetFailureReason(), test.wantReasonContains) {
-					t.Fatalf("GetCommand(%q) failure_reason=%q, want it to contain %q", commandID, response.GetFailureReason(), test.wantReasonContains)
+				if commandID == "active-input" && test.wantReasonContains != "" && !strings.Contains(response.FailureReason, test.wantReasonContains) {
+					t.Fatalf("GetCommand(%q) failure_reason=%q, want it to contain %q", commandID, response.FailureReason, test.wantReasonContains)
 				}
 			}
 			if test.wantReasonContains != "" {
-				persisted, err := store.GetSession(t.Context(), session.ID, "")
+				blockedReason, err := scenario.BlockedReason(t.Context())
 				if err != nil {
 					t.Fatal(err)
 				}
-				if persisted.BlockedReason == nil || !strings.Contains(*persisted.BlockedReason, test.wantReasonContains) {
-					t.Fatalf("GetSession blocked_reason=%v, want it to contain %q", persisted.BlockedReason, test.wantReasonContains)
+				if blockedReason == nil || !strings.Contains(*blockedReason, test.wantReasonContains) {
+					t.Fatalf("GetSession blocked_reason=%v, want it to contain %q", blockedReason, test.wantReasonContains)
 				}
 			}
-			persisted, err := store.GetSession(t.Context(), session.ID, "")
+			sourceCursor, err := scenario.Cursor(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
-			sourceCursor := persisted.Cursor
-			if err := store.Release(t.Context(), owner); err != nil {
+			if err := scenario.Release(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 
-			exportSamplerHistoryThrough(t, fixture, session.ID, sourceCursor)
-			projected := projectSamplerHistory(t, fixture, session.ID, sourceCursor)
+			exportSamplerHistoryThrough(t, fixture, session, sourceCursor)
+			projected := projectSamplerHistory(t, fixture, session, sourceCursor)
 			activeCommand := projected.commands["active-input"]
 			if activeCommand == nil {
 				t.Fatal("History did not project the admitted active input")

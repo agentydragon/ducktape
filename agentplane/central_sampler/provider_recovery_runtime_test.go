@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -37,7 +39,14 @@ func providerSamplingSettings(baseURL string, maxLiveSessions int) samplersettin
 	}
 }
 
-func startProviderSamplingRuntime(t *testing.T, store *Store, settings samplersettings.Settings) (*Runtime, func()) {
+func setProviderRetryDueNow(t *testing.T, store *sessionstore.Store, intentID string) {
+	t.Helper()
+	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()-interval '1 millisecond' WHERE id=$1`, intentID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func startProviderSamplingRuntime(t *testing.T, store *sessionstore.Store, settings samplersettings.Settings) (*Runtime, func()) {
 	t.Helper()
 	manager, _ := newFakeCodeModeManager(t)
 	runtime := NewRuntime(store, settings, manager)
@@ -53,7 +62,7 @@ func startProviderSamplingRuntime(t *testing.T, store *Store, settings samplerse
 	return runtime, stop
 }
 
-func admitProviderSamplingCommand(t *testing.T, store *Store, sessionID, commandID, text string) {
+func admitProviderSamplingCommand(t *testing.T, store *sessionstore.Store, sessionID, commandID, text string) {
 	t.Helper()
 	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{
 		CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}},
@@ -62,7 +71,7 @@ func admitProviderSamplingCommand(t *testing.T, store *Store, sessionID, command
 	}
 }
 
-func waitProviderAttemptStatus(t *testing.T, store *Store, commandID string, attemptNo int, want string) string {
+func waitProviderAttemptStatus(t *testing.T, store *sessionstore.Store, commandID string, attemptNo int, want string) string {
 	t.Helper()
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -86,7 +95,7 @@ func waitProviderAttemptStatus(t *testing.T, store *Store, commandID string, att
 	}
 }
 
-func waitProviderCommandOutcome(t *testing.T, store *Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
+func waitProviderCommandOutcome(t *testing.T, store *sessionstore.Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
 	t.Helper()
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -222,7 +231,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 	runtime.Wake(session.ID)
 
 	firstBody := receiveProviderRequest(t, requests)
-	firstID := waitProviderAttemptStatus(t, store, commandID, 1, string(IntentResultAbandoned))
+	firstID := waitProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	setProviderRetryDueNow(t, store, firstID)
 	runtime.Wake(session.ID)
 	secondBody := receiveProviderRequest(t, requests)
@@ -230,7 +239,7 @@ func TestRuntimeSamplingRetriesFrozenBodyAfter429AndPartialStream(t *testing.T) 
 		t.Fatalf("retry after 429 changed frozen sampling request\nfirst:  %s\nsecond: %s", firstBody, secondBody)
 	}
 
-	secondID := waitProviderAttemptStatus(t, store, commandID, 2, string(IntentResultAbandoned))
+	secondID := waitProviderAttemptStatus(t, store, commandID, 2, string(sessionstore.IntentResultAbandoned))
 	setProviderRetryDueNow(t, store, secondID)
 	runtime.Wake(session.ID)
 	thirdBody := receiveProviderRequest(t, requests)
@@ -312,7 +321,7 @@ func TestRuntimeTerminalSamplingFailureLeavesNextInputUsable(t *testing.T) {
 			runtime.Wake(session.ID)
 			for attempt := 1; attempt <= tc.attempts; attempt++ {
 				_ = receiveProviderRequest(t, requests)
-				intentID := waitProviderAttemptStatus(t, store, failedCommandID, attempt, string(IntentResultAbandoned))
+				intentID := waitProviderAttemptStatus(t, store, failedCommandID, attempt, string(sessionstore.IntentResultAbandoned))
 				if attempt < tc.attempts {
 					setProviderRetryDueNow(t, store, intentID)
 					runtime.Wake(session.ID)
@@ -402,7 +411,7 @@ func TestRuntimeProviderBackoffReleasesPermitAndIgnoresRepeatedWake(t *testing.T
 	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
 	runtime.Wake(waitingSession.ID)
 	_ = receiveProviderRequest(t, firstRequest)
-	intentID := waitProviderAttemptStatus(t, store, waitingCommandID, 1, string(IntentResultAbandoned))
+	intentID := waitProviderAttemptStatus(t, store, waitingCommandID, 1, string(sessionstore.IntentResultAbandoned))
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()+interval '1 hour' WHERE id=$1`, intentID); err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +487,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	runtime, stop := startProviderSamplingRuntime(t, store, providerSamplingSettings(server.URL, 1))
 	runtime.Wake(session.ID)
 	// The durable attempt state is the synchronization point; the response is already settled.
-	intentID := waitProviderAttemptStatus(t, store, commandID, 1, string(IntentResultAbandoned))
+	intentID := waitProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()+interval '1 hour' WHERE id=$1`, intentID); err != nil {
 		t.Fatal(err)
 	}
@@ -500,7 +509,7 @@ func TestRuntimeInterruptDuringProviderBackoffPreventsRetry(t *testing.T) {
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_retry_not_before,result->>'provider_retry_suppressed' FROM sampler_intent WHERE id=$1`, intentID).Scan(&retryDue, &suppressed); err != nil {
 		t.Fatal(err)
 	}
-	if retryDue.Valid || suppressed != string(ProviderRetrySuppressionInterrupted) {
+	if retryDue.Valid || suppressed != string(sessionstore.ProviderRetrySuppressionInterrupted) {
 		t.Fatalf("interrupted attempt retry due=%v suppression=%q", retryDue, suppressed)
 	}
 	state, err := store.Read(t.Context(), runtimeOwner(t, runtime, session.ID))
@@ -568,8 +577,8 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	intentID, frozenWire, err := store.Begin(t.Context(), oldOwner, providerRequestIntent(PendingIntentSampling, connection, config),
-		adapter.Prepare(session, metadata), func() *ProviderAttemptPolicy {
+	intentID, frozenWire, err := store.Begin(t.Context(), oldOwner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config),
+		adapter.Prepare(session, metadata), func() *sessionstore.ProviderAttemptPolicy {
 			policy := runtimeProviderAttemptPolicy(settings)
 			return &policy
 		}())
@@ -598,7 +607,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	if !strings.Contains(string(freshWire), "The JavaScript host that held this Session's store()/load() values has been lost") {
 		t.Fatalf("fresh provider request omitted the host-loss notice: %s", freshWire)
 	}
-	waitProviderAttemptStatus(t, store, commandID, 1, string(IntentResultAbandoned))
+	waitProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)
 	if got := requestCount.Load(); got != 1 {
 		t.Fatalf("fresh owner provider requests=%d, want one new-context request", got)
@@ -615,7 +624,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 		FROM sampler_intent WHERE provider_command_id=$1 AND request->>'kind'='sampling'`, commandID).Scan(&attempts, &secondID, &previousID, &stepID, &number, &budget, &firstSuppression); err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 2 || previousID != intentID || stepID != intentID || number != 2 || budget != 3 || firstSuppression != string(ProviderRetrySuppressionHostLoss) || secondID == "" {
+	if attempts != 2 || previousID != intentID || stepID != intentID || number != 2 || budget != 3 || firstSuppression != string(sessionstore.ProviderRetrySuppressionHostLoss) || secondID == "" {
 		t.Fatalf("host-loss attempt lineage: attempts=%d second=%q previous=%q step=%q number=%d budget=%d suppression=%q", attempts, secondID, previousID, stepID, number, budget, firstSuppression)
 	}
 	owner := runtimeOwner(t, runtime, session.ID)

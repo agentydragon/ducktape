@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -28,7 +30,7 @@ import (
 
 type Sampler struct {
 	samplerpb.UnimplementedSamplerServer
-	Store    *Store
+	Store    *sessionstore.Store
 	Runtime  *Runtime
 	Resolver *auth.Resolver
 	Settings samplersettings.Settings
@@ -58,9 +60,9 @@ func samplerError(ctx context.Context, err error) error {
 		return nil
 	}
 	switch {
-	case errors.Is(err, ErrForbidden):
+	case errors.Is(err, sessionstore.ErrForbidden):
 		return status.Error(codes.PermissionDenied, "session access refused")
-	case errors.Is(err, ErrConflict):
+	case errors.Is(err, sessionstore.ErrConflict):
 		return status.Error(codes.AlreadyExists, "identifier already has another payload")
 	case errors.Is(err, protocol.ErrMissing):
 		return status.Error(codes.NotFound, "session or command not found")
@@ -119,7 +121,7 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 	if session.SetupState == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		s.Runtime.Wake(session.ID)
 	}
-	description, err := Describe(session)
+	description, err := sessionstore.Describe(session)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -138,7 +140,7 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 	if input := command.GetSubmitInput(); input != nil && (input.GetText() == "" || len(input.GetText()) > 1024*1024) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
-	validate := func(session *Session) error {
+	validate := func(session *sessionstore.Session) error {
 		currentConfig, ok := s.Settings.Models[session.Model]
 		if !ok {
 			return protocol.ErrPrecondition
@@ -206,7 +208,7 @@ func (s *Sampler) RecoverSession(ctx context.Context, r *samplerpb.RecoverSessio
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
-	description, err := Describe(session)
+	description, err := sessionstore.Describe(session)
 	return description, samplerError(ctx, err)
 }
 
@@ -220,7 +222,7 @@ func (s *Sampler) GetSession(ctx context.Context, r *samplerpb.GetSessionRequest
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
-	description, err := Describe(session)
+	description, err := sessionstore.Describe(session)
 	return description, samplerError(ctx, err)
 }
 
@@ -238,7 +240,7 @@ func (s *Sampler) ReadProviderRequest(r *samplerpb.ReadProviderRequestRequest, s
 	}
 	metadata := &samplerpb.ReadProviderRequestMetadata{
 		RequestId: request.RequestID,
-		Method:    request.Method, Url: request.URL, Headers: nonAuthProviderRequestHeaders(request.Headers),
+		Method:    request.Method, Url: request.URL, Headers: sessionstore.ProviderRequestHeadersWithoutAuthentication(request.Headers),
 	}
 	if err := stream.Send(&samplerpb.ReadProviderRequestResponse{Item: &samplerpb.ReadProviderRequestResponse_Metadata{Metadata: metadata}}); err != nil {
 		return err
@@ -268,7 +270,7 @@ func (s *Sampler) ListSessions(ctx context.Context, r *samplerpb.ListSessionsReq
 	}
 	result := &samplerpb.ListSessionsResponse{}
 	for _, session := range sessions {
-		description, err := Describe(session)
+		description, err := sessionstore.Describe(session)
 		if err != nil {
 			return nil, samplerError(ctx, err)
 		}
@@ -291,7 +293,7 @@ func (s *Sampler) GetCommand(ctx context.Context, r *samplerpb.GetCommandRequest
 }
 
 func (s *Sampler) FollowEvents(r *samplerpb.FollowEventsRequest, stream grpc.ServerStreamingServer[samplerpb.FollowEventsResponse]) error {
-	changed, unsubscribe, err := s.Wakeups.Subscribe(OutboxChannel)
+	changed, unsubscribe, err := s.Wakeups.Subscribe(sessionstore.OutboxChannel)
 	if err != nil {
 		return samplerError(stream.Context(), err)
 	}

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -20,7 +22,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 )
 
-func seedProviderCompactionCommand(t *testing.T, store *Store, session *Session, commandID string) {
+func seedProviderCompactionCommand(t *testing.T, store *sessionstore.Store, session *sessionstore.Session, commandID string) {
 	t.Helper()
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
@@ -39,7 +41,7 @@ func seedProviderCompactionCommand(t *testing.T, store *Store, session *Session,
 	}
 }
 
-func providerCompactionRuntime(t *testing.T, store *Store, server *httptest.Server) *Runtime {
+func providerCompactionRuntime(t *testing.T, store *sessionstore.Store, server *httptest.Server) *Runtime {
 	t.Helper()
 	manager, _ := newFakeCodeModeManager(t)
 	settings := samplersettings.Settings{
@@ -68,7 +70,7 @@ func receiveCompactionProviderRequest(t *testing.T, requests <-chan []byte) []by
 	}
 }
 
-func waitCompactionProviderAttemptStatus(t *testing.T, store *Store, commandID string, attemptNo int, want string) string {
+func waitCompactionProviderAttemptStatus(t *testing.T, store *sessionstore.Store, commandID string, attemptNo int, want string) string {
 	t.Helper()
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -92,7 +94,7 @@ func waitCompactionProviderAttemptStatus(t *testing.T, store *Store, commandID s
 	}
 }
 
-func waitCompactionCommandOutcome(t *testing.T, store *Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
+func waitCompactionCommandOutcome(t *testing.T, store *sessionstore.Store, sessionID, commandID string, want samplerpb.CommandOutcome) *samplerpb.GetCommandResponse {
 	t.Helper()
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -150,7 +152,7 @@ type compactionAttempt struct {
 	resultPresent                             bool
 }
 
-func compactionAttempts(t *testing.T, store *Store, commandID string) []compactionAttempt {
+func compactionAttempts(t *testing.T, store *sessionstore.Store, commandID string) []compactionAttempt {
 	t.Helper()
 	rows, err := store.DB().QueryContext(t.Context(), `SELECT id,provider_step_id::text,COALESCE(previous_provider_intent_id::text,''),
 		COALESCE(provider_command_id,''),provider_attempt_no,provider_attempt_budget,COALESCE(result->>'status',''),result IS NOT NULL
@@ -203,7 +205,7 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 	runtime.Wake(session.ID)
 
 	firstBody := receiveCompactionProviderRequest(t, requests)
-	firstIntentID := waitCompactionProviderAttemptStatus(t, store, commandID, 1, string(IntentResultAbandoned))
+	firstIntentID := waitCompactionProviderAttemptStatus(t, store, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()-interval '1 millisecond' WHERE id=$1`, firstIntentID); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +223,7 @@ func TestRuntimeCompactionRetriesFrozenProviderRequestAndPersistsOnce(t *testing
 	first, second := attempts[0], attempts[1]
 	if first.number != 1 || second.number != 2 || first.budget != 3 || second.budget != 3 ||
 		first.commandID != commandID || second.commandID != commandID || first.stepID != first.id || second.stepID != first.stepID ||
-		first.previousID != "" || second.previousID != first.id || first.status != string(IntentResultAbandoned) ||
+		first.previousID != "" || second.previousID != first.id || first.status != string(sessionstore.IntentResultAbandoned) ||
 		!first.resultPresent || second.status != "" || !second.resultPresent {
 		t.Fatalf("compaction attempt lineage/results=%+v", attempts)
 	}
@@ -280,7 +282,7 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	defer cancel()
 	runtime.Wake(session.ID)
 	_ = receiveCompactionProviderRequest(t, requests)
-	waitCompactionProviderAttemptStatus(t, store, compactCommandID, 1, string(IntentResultAbandoned))
+	waitCompactionProviderAttemptStatus(t, store, compactCommandID, 1, string(sessionstore.IntentResultAbandoned))
 	failed := waitCompactionCommandOutcome(t, store, session.ID, compactCommandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
 	if failed.GetFailureReason() == "" {
 		t.Fatal("failed compaction did not retain a failure reason")
@@ -320,7 +322,7 @@ func TestRuntimePermanentCompactionFailureLeavesNextInputUsable(t *testing.T) {
 	waitRuntimeDone(t, done)
 }
 
-func runtimeOwner(t *testing.T, runtime *Runtime, sessionID string) Owner {
+func runtimeOwner(t *testing.T, runtime *Runtime, sessionID string) sessionstore.Owner {
 	t.Helper()
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()

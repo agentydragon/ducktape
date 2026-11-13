@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -263,7 +265,7 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 		t.Fatalf("write_stdin error=%v, want catchable environment refusal", err)
 	}
 	outerEvidence, ok := outcome.evidence.(executionFailureEvidence)
-	if !ok || outerEvidence.RemoteOutcome != NestedUnknown || outerEvidence.RequestOutcome == nil || *outerEvidence.RequestOutcome != NestedNotDispatched ||
+	if !ok || outerEvidence.RemoteOutcome != sessionstore.NestedUnknown || outerEvidence.RequestOutcome == nil || *outerEvidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		outerEvidence.AfterSeq == nil || *outerEvidence.AfterSeq != 8 || outerEvidence.BufferedOutputBase64 == nil ||
 		!bytes.Equal(*outerEvidence.BufferedOutputBase64, []byte("output before suspension\n")) {
 		t.Fatalf("outer tool failure lost typed unknown-process evidence: %+v", outcome.evidence)
@@ -333,7 +335,7 @@ func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
 		t.Fatalf("not-dispatched start error=%v, want a catchable tool outcome", err)
 	}
 	evidence, ok := outcome.evidence.(executionFailureEvidence)
-	if !ok || evidence.RemoteOutcome != NestedNotDispatched || evidence.RequestOutcome == nil || *evidence.RequestOutcome != NestedNotDispatched ||
+	if !ok || evidence.RemoteOutcome != sessionstore.NestedNotDispatched || evidence.RequestOutcome == nil || *evidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		evidence.AfterSeq == nil || *evidence.AfterSeq != 0 || evidence.BufferedOutput == nil || *evidence.BufferedOutput != "" ||
 		evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil || len(*evidence.BufferedOutputBase64) != 0 ||
 		evidence.TransportError != "executor session unavailable" {
@@ -355,7 +357,7 @@ func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) 
 	output := outputbuffer.New(16)
 	output.Append(outputBytes)
 	evidence := executionFailureRecord{
-		method: executorMethodProcessRead, remoteOutcome: NestedUnknown,
+		method: executorMethodProcessRead, remoteOutcome: sessionstore.NestedUnknown,
 		afterSequence: &largeCursor, output: output,
 	}.toolEvidence()
 	encoded, err := json.Marshal(evidence)
@@ -508,7 +510,7 @@ func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
 		t.Fatalf("missing process rejection evidence: %v", err)
 	}
 	evidence, ok := outcome.evidence.(rejectedProcessReadEvidence)
-	if !ok || evidence.RemoteOutcome != NestedUnknown || evidence.AutomaticReplay {
+	if !ok || evidence.RemoteOutcome != sessionstore.NestedUnknown || evidence.AutomaticReplay {
 		t.Fatalf("missing process rejection evidence=%+v", outcome)
 	}
 	stale, err := store.Process(t.Context(), owner, "expired-native-process")
@@ -650,7 +652,7 @@ func executionEnvironmentStatusError(t *testing.T, state executorpb.ExecutionEnv
 	return response.Err()
 }
 
-func registerRunningModelProcess(t *testing.T, store *Store, owner Owner, id string, sessionID int, after uint64, output string) {
+func registerRunningModelProcess(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, id string, sessionID int, after uint64, output string) {
 	t.Helper()
 	if err := store.RegisterModelProcess(t.Context(), owner, id, sessionID, false); err != nil {
 		t.Fatal(err)
@@ -809,8 +811,8 @@ func TestNotDispatchedJournalEvidenceKeepsLegacyProjection(t *testing.T) {
 	if !ok {
 		t.Fatalf("not-dispatched evidence has type %T, want executionFailureEvidence", outcome.evidence)
 	}
-	if evidence.Method != executorMethodInitialize || evidence.RemoteOutcome != NestedNotDispatched ||
-		evidence.RequestOutcome == nil || *evidence.RequestOutcome != NestedNotDispatched ||
+	if evidence.Method != executorMethodInitialize || evidence.RemoteOutcome != sessionstore.NestedNotDispatched ||
+		evidence.RequestOutcome == nil || *evidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		evidence.AutomaticReplay || evidence.TransportError != "connection refused" {
 		t.Fatalf("not-dispatched evidence lost legacy fields: %+v", evidence)
 	}
@@ -858,7 +860,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	if err := json.Unmarshal([]byte(rejected.Error()), &message); err != nil {
 		t.Fatalf("rejected promise is not parseable JSON: %v: %s", err, rejected.Error())
 	}
-	if message.RemoteOutcome != NestedUnknown || message.AutomaticReplay || message.Method != executorMethodProcessRead ||
+	if message.RemoteOutcome != sessionstore.NestedUnknown || message.AutomaticReplay || message.Method != executorMethodProcessRead ||
 		message.IntentID != "read-intent" || message.ProcessID != "observed-process" || message.AfterSeq == nil || *message.AfterSeq != cursor ||
 		message.ObservedOutput == nil || message.ObservedOutput.Text != "stdout before failure\n" || message.ObservedOutput.Truncated ||
 		!strings.Contains(message.Message, "read reply lost") || !strings.Contains(message.Message, "mutation was not replayed") {
@@ -881,11 +883,11 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 
 func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *testing.T) {
 	cursor := uint64(0)
-	requestOutcome := NestedNotDispatched
+	requestOutcome := sessionstore.NestedNotDispatched
 	record := executionFailureRecord{
 		message: "stale read", method: executorMethodProcessRead, intentID: "read-intent",
 		processID: "process-1", executionSessionID: "session-1", afterSequence: &cursor,
-		remoteOutcome: NestedUnknown, requestOutcome: &requestOutcome, automaticReplay: false,
+		remoteOutcome: sessionstore.NestedUnknown, requestOutcome: &requestOutcome, automaticReplay: false,
 		currentIncarnationUID: "current-incarnation", output: outputbuffer.New(64),
 	}
 	evidence := record.toolEvidence()
@@ -930,7 +932,7 @@ func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *tes
 		t.Fatalf("decode JS-facing failure record %q: %v", message, err)
 	}
 	if modelFailure.AfterSeq == nil || *modelFailure.AfterSeq != 0 || modelFailure.CurrentIncarnationUID != "current-incarnation" ||
-		modelFailure.RequestOutcome == nil || *modelFailure.RequestOutcome != NestedNotDispatched || modelFailure.ObservedOutput != nil {
+		modelFailure.RequestOutcome == nil || *modelFailure.RequestOutcome != sessionstore.NestedNotDispatched || modelFailure.ObservedOutput != nil {
 		t.Fatalf("JS-facing typed failure lost cursor/outcome or fabricated output: %+v", modelFailure)
 	}
 }
@@ -938,7 +940,7 @@ func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *tes
 func TestExecutionFailureEvidencePreservesFullWidthCursorAtJSONBoundary(t *testing.T) {
 	cursor := ^uint64(0)
 	record := executionFailureRecord{
-		method: executorMethodProcessRead, afterSequence: &cursor, remoteOutcome: NestedUnknown,
+		method: executorMethodProcessRead, afterSequence: &cursor, remoteOutcome: sessionstore.NestedUnknown,
 		automaticReplay: false,
 	}
 	wire, err := json.Marshal(record.intentEvidence())
@@ -962,7 +964,7 @@ func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner
 		t.Fatal(err)
 	}
 	frame := &executorpb.ExecutionNativeFrame{Direction: "notification", Payload: []byte("native notification")}
-	journal := func(owner Owner, operationID string) error {
+	journal := func(owner sessionstore.Owner, operationID string) error {
 		t.Helper()
 		streamCtx := &cancelDuringJournalContext{Context: context.Background(), done: make(chan struct{})}
 		close(streamCtx.done)
@@ -983,7 +985,7 @@ func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner
 	if _, err := store.Claim(t.Context(), session.ConversationID, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	var lost *LostOwnershipError
+	var lost *sessionstore.LostOwnershipError
 	if err := journal(owner, "stale-notification"); !errors.As(err, &lost) {
 		t.Fatalf("stale watcher journal error=%v, want owner fence", err)
 	}
@@ -1418,7 +1420,7 @@ func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
 
 func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
-	intent, err := store.RecordNested(t.Context(), owner, IntentExecutor, map[string]any{"method": "initialize"})
+	intent, err := store.RecordNested(t.Context(), owner, sessionstore.IntentExecutor, map[string]any{"method": "initialize"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2104,7 +2106,7 @@ func (s *fakeExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) {
 	return nil, io.EOF
 }
 
-func claimedExecutorStore(t *testing.T) (*Store, Owner) {
+func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
 	t.Helper()
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
@@ -2118,7 +2120,7 @@ func claimedExecutorStore(t *testing.T) (*Store, Owner) {
 	return store, owner
 }
 
-func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorClient) *Executor {
+func newFakeExecutor(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, client executorClient) *Executor {
 	t.Helper()
 	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute, reconnectTimeout: 2 * time.Minute, workspacePrepared: true}
 }
@@ -2126,7 +2128,22 @@ func newFakeExecutor(t *testing.T, store *Store, owner Owner, client executorCli
 func completedExecutionStatus() *executorpb.ExecutionStatus {
 	return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}
 }
+
+func intentResultForDB(t *testing.T, store *sessionstore.Store, id string) (map[string]any, error) {
+	t.Helper()
+	var raw []byte
+	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE id=$1`, id).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func ptrInt32(value int32) *int32 { return &value }
+func ptrInt(value int) *int       { return &value }
 func boolInt(value bool) int {
 	if value {
 		return 1
@@ -2134,7 +2151,7 @@ func boolInt(value bool) int {
 	return 0
 }
 
-func assertNoUnresolvedNestedIntents(t *testing.T, store *Store, owner Owner) {
+func assertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()
 	var count int
 	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID).Scan(&count); err != nil {
@@ -2142,5 +2159,40 @@ func assertNoUnresolvedNestedIntents(t *testing.T, store *Store, owner Owner) {
 	}
 	if count != 0 {
 		t.Fatalf("unresolved nested intents=%d", count)
+	}
+}
+
+func TestRetainedTerminalOutputCanBeConsumedAfterTakeover(t *testing.T) {
+	store := newTestStore(t)
+	session := openSessionForStore(t, store, "")
+	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RegisterModelProcess(t.Context(), owner, "retained", 4242, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RetainProcessOutput(t.Context(), owner, "retained", 7, []byte("retained-output"), true, ptrInt(0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Release(t.Context(), owner); err != nil {
+		t.Fatal(err)
+	}
+	successor, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ProcessResult(t.Context(), successor, "retained", nil, "running", nil, false); !errors.As(err, new(*sessionstore.LostOwnershipError)) {
+		t.Fatalf("successor changed old remote process state: %v", err)
+	}
+	executor := &Executor{store: store, owner: successor, processLocks: map[string]*sync.Mutex{}}
+	invoked, err := executor.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":4242}`))
+	result, _ := invoked.(*unifiedExecResult)
+	if err != nil || result == nil || result.Output != "retained-output" || result.ExitCode == nil || *result.ExitCode != 0 || result.SessionID != nil {
+		t.Fatalf("retained process result=%v err=%v", result, err)
+	}
+	process, err := store.Process(t.Context(), successor, "retained")
+	if err != nil || process.Status != "exited" || len(process.BufferedOutput) != 0 {
+		t.Fatalf("consumed process=%+v err=%v", process, err)
 	}
 }

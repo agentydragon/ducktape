@@ -1,19 +1,27 @@
 package centralsampler
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
 
@@ -30,7 +38,7 @@ func TestMain(m *testing.M) {
 	}))
 }
 
-func newTestStoreWithDSN(t testing.TB) (*Store, string) {
+func newTestStoreWithDSN(t testing.TB) (*sessionstore.Store, string) {
 	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db, err := sql.Open("postgres", dsn)
@@ -38,10 +46,10 @@ func newTestStoreWithDSN(t testing.TB) (*Store, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return New(db, 30*time.Second), dsn
+	return sessionstore.New(db, 30*time.Second), dsn
 }
 
-func newTestStore(t testing.TB) *Store {
+func newTestStore(t testing.TB) *sessionstore.Store {
 	t.Helper()
 	store, _ := newTestStoreWithDSN(t)
 	return store
@@ -125,4 +133,97 @@ func responsesItems(t testing.TB, state protocol.Context) []responses.Item {
 		items = append(items, item)
 	}
 	return items
+}
+
+const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
+
+func fixtureExecutionIdentity() *identitypb.Identity {
+	return &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
+}
+
+func openStoreSession(t *testing.T, store *sessionstore.Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {
+	t.Helper()
+	if request.GetExecutionIdentity() == nil {
+		request.ExecutionIdentity = fixtureExecutionIdentity()
+	}
+	if request.GetExecutor() == nil {
+		request.Executor = &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
+		}
+	}
+	if request.GetSpec() != nil && request.GetSpec().GetPlacement() == nil {
+		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: request.GetExecutor().GetTarget().GetName(), Uid: request.GetExecutor().GetTarget().GetUid()},
+		}}}
+	}
+	platformInstructions := fixturePlatformInstructions
+	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
+}
+
+func openSessionForStore(t *testing.T, store *sessionstore.Store, setup string) *sessionstore.Session {
+	t.Helper()
+	request := &samplerpb.CreateSessionRequest{
+		SessionId:   uuid.NewString(),
+		Spec:        &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
+		SetupScript: &setup,
+	}
+	session, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return session
+}
+
+func admitInput(t *testing.T, store *sessionstore.Store, sessionID, commandID, text string) {
+	t.Helper()
+	if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}}, "fixture-account", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func admitProviderCommand(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, sessionID, commandID string, compact bool) {
+	t.Helper()
+	if compact {
+		if _, err := store.Admit(t.Context(), sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_Compact{Compact: &commandpb.Compact{}}}, "fixture-account", nil); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		admitInput(t, store, sessionID, commandID, "provider retry fixture")
+	}
+	command, err := store.NextCommand(t.Context(), owner, sessionID)
+	if err != nil || command == nil || command.ID != commandID {
+		t.Fatalf("next provider command=%v err=%v", command, err)
+	}
+	if _, err := store.PrepareSamplingContext(t.Context(), owner, &sessionstore.ExecutionState{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func providerAttemptTestPolicy() sessionstore.ProviderAttemptPolicy {
+	return sessionstore.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute}
+}
+
+func providerAttemptTestPolicyPointer() *sessionstore.ProviderAttemptPolicy {
+	policy := providerAttemptTestPolicy()
+	return &policy
+}
+
+func equivalentJSON(t *testing.T, got, want []byte) {
+	t.Helper()
+	decode := func(raw []byte) any {
+		t.Helper()
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			t.Fatalf("decode JSON %q: %v", raw, err)
+		}
+		return value
+	}
+	if left, right := decode(got), decode(want); !reflect.DeepEqual(left, right) {
+		gotJSON, _ := json.Marshal(left)
+		wantJSON, _ := json.Marshal(right)
+		t.Fatalf("JSON differs:\n got: %s\nwant: %s", gotJSON, wantJSON)
+	}
 }
