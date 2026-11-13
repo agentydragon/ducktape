@@ -13,7 +13,6 @@
 - [ ] Launch optimization/improvement runs with live events display
 - [ ] Live events streaming on run detail view
 - [ ] Full status string display with elliptization
-- [ ] Consistent run ID helpers with clickable styling
 
 ## Code Quality
 
