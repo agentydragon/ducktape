@@ -1,11 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# History storage is a History Service internal. App tests must use the History
-# Service client/protobuf boundary, not widen this visibility.
-package(default_visibility = [
-    "//agentplane/history_service:__subpackages__",
-    "//agentplane/runner_gateway:__subpackages__",
-])
+# Storage is private to History Service. Cross-service clients use its RPC/protobuf boundary.
+package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 
 go_library(
     name = "storage",
@@ -17,7 +13,7 @@ go_library(
         "settlement.go",
         "store.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/storage",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/storage",
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/postgres",

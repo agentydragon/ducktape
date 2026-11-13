@@ -5,7 +5,8 @@
 //! produces per-statement facts: declared bindings, eager/lazy reads,
 //! side-effect summaries, purity, top-level-await detection. It also owns the
 //! checks that derive from those facts alone: structured diagnostics for
-//! redundant purity hints, the top-level `await` bail (the realizability
+//! purity-completion disagreements and redundant purity hints, the top-level
+//! `await` bail (the realizability
 //! theorem does not cover it), and the input-chunk admission scan
 //! (docs/design.md A1/A3/A5; see `chunk_admission`).
 //!
@@ -74,8 +75,9 @@ pub fn compute_chunk_facts(
     Ok((fact_analysis, redundant_admission_overrides))
 }
 
-/// What [`compute_chunk_facts`] does once the facts exist: the redundant-hint
-/// diagnostics, the top-level `await` bail and the admission scan. A run that
+/// What [`compute_chunk_facts`] does once the facts exist: purity-completion
+/// disagreement and redundant-hint diagnostics, the top-level `await` bail
+/// and the admission scan. A run that
 /// takes its facts from an analysis artifact calls it directly, so its
 /// diagnostics and verdict match a run that computes them. Returns the
 /// configured admission overrides that suppressed no violation.
@@ -87,6 +89,7 @@ pub fn check_chunk_facts(
     admission_overrides: AdmissionOverrides,
     resolve_dynamic_import: &dyn Fn(&str) -> DynamicImportTarget,
 ) -> Result<Vec<AdmissionCheck>> {
+    diagnostics.record_purity_completion_disagreements(chunk_id, fact_analysis);
     for hint in &fact_analysis.redundant_purity_hints {
         diagnostics.record_chunk(chunk_id, ChunkDiagnostic::RedundantPurityHint(hint.clone()));
     }

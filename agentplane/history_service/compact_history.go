@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/google/uuid"
 )
 

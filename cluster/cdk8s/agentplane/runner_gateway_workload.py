@@ -33,7 +33,7 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import MTLS, SESSION_DISPATCHER_URI, TLS
 from agentplane.identity.auth import listener as workload_listener
-from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
+from agentplane.runner_gateway.settings import CentralSamplerTarget, DelegationSettings, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -61,7 +61,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import checked_value, env_name, validate_settings_fragment
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
@@ -161,34 +160,18 @@ class RunnerGateway(Construct):
         # the per-Sandbox control Service with this projected Gateway-audience token.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
         self.proxy_callers = proxy_callers
-        scalars = {
-            field: checked_value(Settings, field, value)
-            for field, value in {
-                "sandbox_namespace": namespace,
-                "policy_namespace": namespace,
-                "runner_token_file": _RUNNER_TOKEN_FILE,
-                "dispatcher_audience": session_dispatcher.TOKEN_AUDIENCE,
-                "gateway_audience": runner_gateway.TOKEN_AUDIENCE,
-                "runner_control_target_template": runner_gateway.control_target(namespace),
-                "kubernetes_client_qps": -1,
-                "sandbox_controller_account": _account(sandbox_controller[0]),
-            }.items()
-        }
-        dispatcher_accounts = sorted(map(_account, dispatcher_callers))
-        operator_accounts = sorted(map(_account, operator_callers or {}))
-        gateway_accounts = sorted(map(_account, proxy_callers))
-        wake_accounts = sorted(map(_account, wake_callers))
+        dispatcher_accounts = frozenset(map(_account, dispatcher_callers))
+        operator_accounts = frozenset(map(_account, operator_callers or {}))
+        gateway_accounts = frozenset(map(_account, proxy_callers))
+        wake_accounts = frozenset(map(_account, wake_callers))
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
-        central_sampler_settings = (
-            {
-                "central_sampler": CentralSamplerTarget(
-                    target=central_sampler.target(namespace),
-                    token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
-                ),
-                "executor_callers": [_account(central_sampler_account)],
-            }
+        central_sampler_target = (
+            CentralSamplerTarget(
+                target=central_sampler.target(namespace),
+                token_file=Path("/var/run/secrets/agentplane-runner-gateway/central-sampler"),
+            )
             if env.central_sampler is not None
-            else {}
+            else None
         )
         workload = add_service_workload(
             self,
@@ -197,9 +180,8 @@ class RunnerGateway(Construct):
             container="runner-gateway",
             image=image,
             env_variables={
-                **{env_name(Settings, field): EnvValue.from_value(str(value)) for field, value in scalars.items()},
-                env_name(Settings, "dispatcher_database_url"): database_url,
-                env_name(Settings, "pod_ip"): EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
+                Settings.dispatcher_database_url_env: database_url,
+                Settings.pod_ip_env: EnvValue.from_field_ref(EnvFieldPaths.POD_IP),
                 **(container_env or {}),
             },
             readiness=tls_grpc_probe(
@@ -242,48 +224,19 @@ class RunnerGateway(Construct):
             registry_secret_name=registry_secret_name,
             placement=placement,
         )
-        # Lists are file-only settings.
         serving_tls = workload_tls.serving_certificate(
             self, env, container=workload.container, name=runner_gateway.NAME, uri=SESSION_DISPATCHER_URI
         )
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        content = {
-            "dispatcher_callers": dispatcher_accounts,
-            "environment_readers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
-            "environment_managers": [_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))],
-            "environment_launchers": sorted(map(_account, environment_launchers)),
-            "gateway_callers": gateway_accounts,
-            "runner_security": MTLS(
-                tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)
-            ).model_dump(mode="json"),
-            "gateway_tls": workload_tls.client_tls(SESSION_DISPATCHER_URI),
-            "rpc": workload_listener.Listener(
-                listen_address=f"0.0.0.0:{proxy.pod_port}",
-                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[
-                    workload_listener.KubernetesBearerAuth(
-                        audiences=frozenset({session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE})
-                    ),
-                    workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                ],
-            ).model_dump(mode="json"),
-            **central_sampler_settings,
-            **(
-                {"runtime_catalog": env.runtime_catalog.model_dump(mode="json", exclude_none=True)}
-                if env.runtime_catalog is not None
-                else {}
-            ),
-            **({"wake_callers": wake_accounts} if wake_accounts else {}),
-            **({"operator_callers": operator_accounts} if operator_accounts else {}),
-        }
+        delegation = None
         if delegation_actor is not None:
-            content["delegation"] = {
-                "actor": _account(delegation_actor),
+            delegation = DelegationSettings(
+                actor=_account(delegation_actor),
                 # Session delegation names an Identity in policy_namespace as the effective caller.
-                "identity_callers": True,
-                "methods": [
+                identity_callers=True,
+                methods=(
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel",
                     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort",
@@ -298,16 +251,52 @@ class RunnerGateway(Construct):
                     "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
                     "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
                     *extra_delegated_methods,
+                ),
+            )
+        static_settings = Settings(
+            sandbox_namespace=namespace,
+            policy_namespace=namespace,
+            runner_token_file=Path(_RUNNER_TOKEN_FILE),
+            kubernetes_client_qps=-1,
+            rpc=workload_listener.Listener(
+                listen_address=f"0.0.0.0:{proxy.pod_port}",
+                tls=workload_listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[
+                    workload_listener.KubernetesBearerAuth(
+                        audiences=frozenset({session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE})
+                    ),
+                    workload_listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
                 ],
-            }
-        settings = SettingsFile(
+            ),
+            gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            proxy_port=proxy.pod_port,
+            runner_control_target_template=runner_gateway.control_target(namespace),
+            dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+            gateway_audience=runner_gateway.TOKEN_AUDIENCE,
+            runner_security=MTLS(tls=TLS(cert_file=_RUNNER_TLS_CERT, key_file=_RUNNER_TLS_KEY, ca_file=_RUNNER_TLS_CA)),
+            dispatcher_callers=dispatcher_accounts,
+            environment_readers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
+            environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
+            environment_launchers=frozenset(map(_account, environment_launchers)),
+            delegation=delegation,
+            gateway_callers=gateway_accounts,
+            wake_callers=wake_accounts or None,
+            operator_callers=operator_accounts or None,
+            sandbox_controller_account=_account(sandbox_controller[0]),
+            central_sampler=central_sampler_target,
+            executor_callers=(
+                frozenset({_account(central_sampler_account)}) if central_sampler_target is not None else frozenset()
+            ),
+            runtime_catalog=env.runtime_catalog,
+        )
+        settings_file = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{runner_gateway.NAME}-settings", namespace=namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(static_settings),
             path="/etc/agentplane-runner-gateway/settings/settings.yaml",
         )
-        settings.mount_into(workload.container, env=Settings.config_file_env)
+        settings_file.mount_into(workload.container, env=Settings.config_file_env)
         trust_projection = k8s.ProjectedVolumeSource(
             default_mode=0o440,
             sources=[

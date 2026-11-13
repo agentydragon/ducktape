@@ -27,6 +27,7 @@ py_test(
         ":grid_generator",
         "//:conftest",
         "//laser/lightburn:lbrn2_writer",
+        "//laser/ruida:rd_format",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",

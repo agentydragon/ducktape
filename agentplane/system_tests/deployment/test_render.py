@@ -22,7 +22,6 @@ from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI,
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.runner_gateway.settings import Settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
@@ -219,12 +218,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     token = next(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")["projected"][
         "sources"
     ][0]["serviceAccountToken"]
-    gateway_env = {entry["name"]: entry.get("value") for entry in container["env"]}
-    assert gateway_env[env_name(Settings, "runner_token_file")] == f"{token_mount['mountPath']}/{token['path']}"
-    assert gateway_env[env_name(Settings, "gateway_audience")] == token["audience"]
+    gateway_env = {entry["name"]: entry for entry in container["env"]}
+    assert "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE" in gateway_env
+    assert gateway_env["AGENTPLANE_RUNNER_GATEWAY_POD_IP"]["valueFrom"]["fieldRef"]["fieldPath"] == "status.podIP"
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )
+    assert gateway_config["runner_token_file"] == f"{token_mount['mountPath']}/{token['path']}"
+    assert gateway_config["gateway_audience"] == token["audience"]
     assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app"]
     assert gateway_config["environment_launchers"] == [f"{NAMESPACE}/actions"]
     assert gateway_config["rpc"]["listen_address"] == "0.0.0.0:8080"
