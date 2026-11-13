@@ -357,7 +357,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler",
     visibility = [
         "//agentplane/central_sampler/cmd:__pkg__",
-        "//agentplane/history_service/ingress:__pkg__",  # real ingress exporter integration test
+        "//agentplane/history_service/internal/ingress:__pkg__",  # real ingress exporter integration test
     ],
     deps = [
         "//agentplane/central_sampler/anthropic",
