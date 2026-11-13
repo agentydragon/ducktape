@@ -9,7 +9,8 @@ The disposable stack used by the [CI system test suites](../README.md): the Agen
 bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
 [`system_test_target.py`](system_test_target.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
-Pod suites include the deployment package's `environment_tools_harnesses_image`, which carries both pinned harnesses.
+Pod suites include one of the deployment package's `environment_tools_*_image` variants, chosen by the
+`k3s_suite`'s `environment_tools` for the harnesses and in-Sandbox tools its scenarios use.
 
 containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
 with VM Sandboxes ([measurements](../k3s/debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
@@ -181,7 +182,8 @@ fixture application. Each workload waits for its own images before being applied
 pulls. Imports remain serial, and the importer joins before k3s teardown even when startup fails.
 
 The Pod runner uses the production `//agentplane/env/images:disk_image` volume at `/run/agentplane/environment`, with the
-`environment_tools_harnesses_image` for the rest. It contains the pinned Claude Code and full Codex distributions.
+suite's environment-tools variant for the rest: the pinned full Codex distribution, plus Claude Code,
+`curl`, `kubectl` and `git` only where the suite's scenarios use them.
 VM-only targets omit the Pod runner image:
 their Sandboxes use the runner disk and test guest images. Image volumes need containerd 2.1 or later and the
 `ImageVolume` feature gate, which `stack.py` turns on in the API server and kubelet.

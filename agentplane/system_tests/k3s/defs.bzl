@@ -97,8 +97,16 @@ _SERVICE_IMAGES = {
     "//agentplane/sandbox_controller:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
 }
-_HARNESSES_IMAGES = {
-    "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
+
+# The environment-tools variant a Pod-template suite's Sandboxes run, by the tools its scenarios use
+# (agentplane/system_tests/deployment/BUILD.bazel). Every variant imports under the one reference the
+# fixture's Pod template names.
+_ENVIRONMENT_TOOLS_REFERENCE = "git.allegedly.works/ducktape-ci/environment-tools:unset"
+_ENVIRONMENT_TOOLS_IMAGES = {
+    "codex": "//agentplane/system_tests/deployment:environment_tools_codex_image",
+    "harnesses": "//agentplane/system_tests/deployment:environment_tools_harnesses_image",
+    "egress": "//agentplane/system_tests/deployment:environment_tools_egress_image",
+    "real_model": "//agentplane/system_tests/deployment:environment_tools_real_model_image",
 }
 _MCP_IMAGES = {
     "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
@@ -157,12 +165,12 @@ def _merge_image_maps(*groups):
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "deletion": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
+    "pod": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = {}),
+    "deletion": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = {}),
+    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _MCP_IMAGES),
     "vm": struct(fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
-    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
+    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = {}),
 }
 
 def _image_manifest_impl(ctx):
@@ -190,9 +198,11 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
+def k3s_suite(name, srcs, deps, stack, environment_tools = None, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
+    `environment_tools` names the `_ENVIRONMENT_TOOLS_IMAGES` variant a Pod-template stack's
+    Sandboxes run; VM and Firecracker stacks take none.
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
     `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
     """
@@ -214,7 +224,15 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     if config.firecracker and not require_kvm:
         fail("the Firecracker stack requires require_kvm = True")
     runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
-    fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, runner_disk_image)
+    if config.vm or config.firecracker:
+        if environment_tools != None:
+            fail("environment_tools is only for Pod-template stacks")
+        environment_tools_image = {}
+    elif environment_tools not in _ENVIRONMENT_TOOLS_IMAGES:
+        fail("the %s stack requires environment_tools, one of %s" % (stack, sorted(_ENVIRONMENT_TOOLS_IMAGES)))
+    else:
+        environment_tools_image = {_ENVIRONMENT_TOOLS_IMAGES[environment_tools]: _ENVIRONMENT_TOOLS_REFERENCE}
+    fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, environment_tools_image, runner_disk_image)
     images = {"fixture": fixture_images, "pki": _PKI_IMAGES, "vm": {}, "guest": {}}
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL, "//agentplane/crds"]
     env = {

@@ -219,6 +219,17 @@ apt.install(
     ],
 )
 
+# curl alone, for the k3s fixture's egress-probing environment-tools image, which needs no git.
+apt.install(
+    dependency_set = "trixie_curl",
+    packages = ["curl"],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # Firecracker VM pod: nftables on debian:trixie-slim.
 apt.install(
     dependency_set = "trixie_fc_vm_pod",
@@ -427,7 +438,7 @@ apt.install(
         "trixie-updates",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_curl", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
 
 # CDviz collector, migration runner, and TimescaleDB test fixtures.
 oci.pull(
