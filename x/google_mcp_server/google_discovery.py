@@ -1,4 +1,4 @@
-"""Discovery-generated Google MCP tools for haku-console.
+"""Build Google MCP tools from the pinned Discovery documents.
 
 Google API Discovery Documents — bundled in the pinned ``google-api-python-client`` wheel
 (`googleapiclient/discovery_cache/documents/*.json`) — carry every method's parameters,
@@ -6,8 +6,8 @@ request/response schemas, and scopes. This module turns a `GenTool` spec (a meth
 curation overlay: which params to `expose`, which constants to `pin`) into a FastMCP `Tool` whose
 input schema is generated from the discovery doc and whose handler is one generic
 ``googleapiclient`` executor. Tools match Google's native parameter names and result shapes verbatim
-— no bespoke aliasing — and the acting Operator's per-call service (`build_google_api_service`) is
-bound by the in-process server builder.
+— no bespoke aliasing — and dispatch them through the Google API service supplied by the server
+builder. The same builder supplies a service with no access token during schema reflection.
 
 The Discovery dialect is an old JSON-Schema draft plus Google extensions; the converter maps the
 handful of divergences we hit (bare-name ``$ref``, ``repeated`` params, ``int64`` string-encoding,
@@ -163,7 +163,7 @@ class GeneratedGoogleTool(Tool):
 
 
 def build_generated_tools(specs: list[GenTool], service: Any) -> list[GeneratedGoogleTool]:
-    """Build a FastMCP tool per spec, sharing one per-call ``googleapiclient`` service."""
+    """Build FastMCP tools that share the supplied ``googleapiclient`` service."""
     docs: dict[str, dict[str, Any]] = {}
     tools: list[GeneratedGoogleTool] = []
     for spec in specs:
