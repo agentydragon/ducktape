@@ -100,6 +100,7 @@ py_library(
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         "//agentplane/system_tests/driver:cluster",
+        "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
         "@pypi//tenacity",
     ],
@@ -198,6 +199,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
