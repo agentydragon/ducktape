@@ -1312,7 +1312,7 @@ py_binary(
     deps = [":render_managed_account_admission"],
 )
 
-# The names are the Policy Controller envtest's (agentplane/policy_controller/controller_test.go).
+# The names are the Policy Controller envtest's (agentplane/policy_controller/internal/controller/controller_test.go).
 genrule(
     name = "managed_account_admission_envtest",
     testonly = True,
@@ -1323,7 +1323,7 @@ genrule(
         ":render_managed_account_admission_bin",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    visibility = ["//agentplane/policy_controller:__pkg__"],
+    visibility = ["//agentplane/policy_controller/internal/controller:__pkg__"],
 )
 
 py_test(

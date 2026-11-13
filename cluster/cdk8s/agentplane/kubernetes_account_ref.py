@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
-# Must equal accountCredentialPrefix in agentplane/policy_controller/account_use.go, which names a
+# Must equal accountCredentialPrefix in agentplane/policy_controller/internal/controller/account_use.go, which names a
 # ManagedServiceAccount's use objects the same way.
 CREDENTIAL_PREFIX = "k8s-account-"
 

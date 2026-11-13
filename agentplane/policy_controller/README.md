@@ -13,15 +13,15 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   controller-gen deep-copy methods when building the API; build `//agentplane/policy/api/v1alpha1:deepcopy` to check the generated
   file directly. The pinned upstream `controller-gen` binary and Go SDK run with declared Bazel
   inputs, so no generated Go file is committed.
-- [`controller.go`](controller.go): one reconcile per `PolicyBinding`, and the native-binding
+- [`controller.go`](internal/controller/controller.go): one reconcile per `PolicyBinding`, and the native-binding
   machinery and watches all three controllers share. Sets, subject accounts and the labeled native
   bindings map back to the objects they affect, through field indexes and the native bindings'
   owner annotation; `RequeueAfter` runs an object again at its `expiresAt`, when it is deleted.
-- [`grants.go`](grants.go): one reconcile per `ServiceAccountGrant`, the same as a binding's with
+- [`grants.go`](internal/controller/grants.go): one reconcile per `ServiceAccountGrant`, the same as a binding's with
   role sets in place of `PolicySet`s.
-- [`accounts.go`](accounts.go): one reconcile per `ManagedServiceAccount`, creating its
+- [`accounts.go`](internal/controller/accounts.go): one reconcile per `ManagedServiceAccount`, creating its
   ServiceAccount and pruning those whose account is gone.
-- [`account_use.go`](account_use.go): the account's `EgressCredential` and use `PolicySet`, owned
+- [`account_use.go`](internal/controller/account_use.go): the account's `EgressCredential` and use `PolicySet`, owned
   by it.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to what the controller reads.
 
