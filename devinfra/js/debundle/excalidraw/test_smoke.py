@@ -926,8 +926,10 @@ async def test_command_palette_library_and_icon_picker(playwright_driver: Playwr
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
     ) as context:
         page = await context.new_page()
+        page.set_default_timeout(5_000)
         await page.goto(origin)
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar")).to_be_visible()
 
         # The extracted palette filters commands and dispatches through the editor's action manager.
         await page.keyboard.press("Control+Shift+p")
@@ -942,10 +944,12 @@ async def test_command_palette_library_and_icon_picker(playwright_driver: Playwr
         await page.get_by_role("button", name="Exit zen mode", exact=True).click()
 
         # Opening the library exercises the extracted menu's empty-library branch.
-        library = page.get_by_role("button", name="Library", exact=True)
-        await library.click()
+        library = page.get_by_role("checkbox", name="Library", exact=True)
+        await page.locator("label", has=library).click()
+        await expect(library).to_be_checked()
         await expect(page.locator(".library-menu-items__no-items")).to_be_visible()
-        await library.click()
+        await page.locator("label", has=library).click()
+        await expect(library).not_to_be_checked()
         await expect(page.locator(".library-menu-items__no-items")).to_be_hidden()
 
         # Arrow properties use both IconPicker and its private Picker implementation.

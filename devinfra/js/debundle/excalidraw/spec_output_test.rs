@@ -246,7 +246,11 @@ console.log(JSON.stringify(events));
 #[test]
 fn clsx_consumers_import_the_package() {
     let app = out_root().join("app");
-    for entry in ["main/entry.js", "editor/entry.js"] {
+    for entry in [
+        "main/entry.js",
+        "editor/entry.js",
+        "main/packages/excalidraw/components/IconPicker.js",
+    ] {
         assert_module_source(
             &app,
             entry,
@@ -276,6 +280,6 @@ fn vendor_swap_report_lists_every_mark() {
     assert_eq!(keys("partial"), ["vendor/clsx_lib.js"]);
     assert_eq!(
         report["partial"]["vendor/clsx_lib.js"]["symbols"]["a"]["references_rewritten"],
-        2
+        3
     );
 }
