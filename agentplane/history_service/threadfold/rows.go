@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/google/uuid"
 )
 

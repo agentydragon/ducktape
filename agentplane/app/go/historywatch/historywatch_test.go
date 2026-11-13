@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

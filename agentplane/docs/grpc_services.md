@@ -6,7 +6,7 @@ follows it; code that differs converges on it.
 ## Schema and generated code
 
 - One `<name>.proto` per API, in the directory of the service that serves it
-  (`agentplane/history_service/history_service.proto`). A messages-only proto that two or more
+  (`agentplane/history_service/api/history/history_service.proto`). A messages-only proto that two or more
   services import stays in `agentplane/proto/`.
 - `package` is the file's directory with dots for slashes (`agentplane/history_service/x.proto` is
   `agentplane.history_service`, `agentplane/proto/x.proto` is `agentplane.proto`). Files in one directory

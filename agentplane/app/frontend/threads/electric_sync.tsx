@@ -48,7 +48,7 @@ import {
   type ReadThreadEntitiesResponse,
   type ThreadPayloadReference,
   type ThreadEntity,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 import { type Payload, type ThreadState, type ThreadSync } from "./thread_sync";
 import { threadEntityPayloadReferences } from "./thread_entity";
 

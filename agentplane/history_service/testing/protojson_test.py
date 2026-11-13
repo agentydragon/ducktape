@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.testing.protojson import (
     thread_entity_from_record,
     thread_entity_state_json,

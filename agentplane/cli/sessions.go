@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"

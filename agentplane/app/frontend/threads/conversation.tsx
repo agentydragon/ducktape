@@ -16,7 +16,7 @@ import { listModels } from "../app_config_client";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
 import { useThreadSync, type ThreadWindow } from "./thread_sync";
-import { ThreadFeedStatus, type ThreadEntity } from "../../../history_service/history_service_pb";
+import { ThreadFeedStatus, type ThreadEntity } from "../../../history_service/api/history/history_service_pb";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";

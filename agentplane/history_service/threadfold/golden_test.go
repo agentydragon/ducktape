@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"

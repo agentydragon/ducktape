@@ -3,7 +3,7 @@ import { type JSX, type ReactNode, useCallback, useEffect, useState } from "reac
 
 import { Markdown } from "../../../../util/frontend/markdown";
 import { useThreadSync } from "./thread_sync";
-import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/history_service_pb";
+import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/api/history/history_service_pb";
 import { threadEntityKind } from "./thread_entity";
 import {
   summarizeLifecycleGroup,

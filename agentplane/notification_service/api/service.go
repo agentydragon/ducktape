@@ -11,7 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/inboxaccess"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"

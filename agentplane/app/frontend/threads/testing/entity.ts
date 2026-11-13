@@ -6,7 +6,7 @@ import {
   ThreadItemTextCompletionSchema,
   type ThreadItem,
   type ThreadEntity,
-} from "../../../../history_service/history_service_pb";
+} from "../../../../history_service/api/history/history_service_pb";
 import type { ItemKind } from "../../../../proto/event_pb";
 
 export function testEntity(

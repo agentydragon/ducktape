@@ -12,7 +12,7 @@ import {
   type SessionDefaultsSchema,
   type TraceSearchSettings,
 } from "../../app_service_pb";
-import { FeedStatus, SessionSummarySchema } from "../../../history_service/history_service_pb";
+import { FeedStatus, SessionSummarySchema } from "../../../history_service/api/history/history_service_pb";
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";

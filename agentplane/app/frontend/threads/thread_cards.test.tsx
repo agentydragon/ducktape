@@ -4,7 +4,7 @@ import {
   ThreadCommandOutcome,
   type ThreadItemSchema,
   type ThreadEntity,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";

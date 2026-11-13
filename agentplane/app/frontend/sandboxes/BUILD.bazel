@@ -372,7 +372,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads:client",
         "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/environments/v1:environment_service_pb",
-        "//agentplane/history_service:history_service_pb",
+        "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:session_pb",
     ],
 )

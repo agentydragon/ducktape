@@ -67,7 +67,7 @@ py_library(
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/history_service:channels",
-        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",
@@ -83,7 +83,7 @@ py_library(
     name = "protojson",
     srcs = ["protojson.py"],
     deps = [
-        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -94,7 +94,7 @@ py_test(
     deps = [
         ":protojson",
         "//:conftest",
-        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/proto:command_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -106,7 +106,7 @@ py_library(
     name = "unstored_ranges",
     srcs = ["unstored_ranges.py"],
     deps = [
-        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "@pypi//protobuf",
     ],
 )
@@ -119,9 +119,9 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
-        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service:session_ingress_pb2",
         "//agentplane/history_service:session_ingress_pb2_grpc",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",

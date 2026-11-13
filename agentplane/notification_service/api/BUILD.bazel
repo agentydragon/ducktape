@@ -22,7 +22,7 @@ go_library(
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/streaming",
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/identity/auth/auth",
         "//agentplane/notification_service:notifications_go_proto",
         "//agentplane/notification_service/github/client",
@@ -104,7 +104,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/action_service:action_service_go_proto",
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/identity/auth/auth",
         "//agentplane/notification_service:notifications_go_proto",
         "//agentplane/notification_service/github/client",

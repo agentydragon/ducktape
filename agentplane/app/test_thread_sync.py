@@ -14,7 +14,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History

@@ -17,7 +17,7 @@ from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, wait_for_history_session
 from agentplane.history_service.testing.unstored_ranges import unstored_ranges

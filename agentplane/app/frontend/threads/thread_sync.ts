@@ -6,7 +6,7 @@
 import { createContext, useContext, type Context, type JSX, type ReactNode } from "react";
 
 import type { StreamConnection } from "../stream_reader";
-import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/history_service_pb";
+import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/api/history/history_service_pb";
 
 /** The rows a reader holds of a thread: its tail, and as far back as it has loaded. */
 export interface ThreadWindow {

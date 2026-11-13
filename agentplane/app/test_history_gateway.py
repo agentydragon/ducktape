@@ -12,7 +12,7 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2

@@ -16,7 +16,7 @@ go_library(
         "//agentplane/history_service:__subpackages__",
     ],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/settledcursors",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
@@ -38,7 +38,7 @@ go_test(
     embed = [":threadfold"],
     embedsrcs = ["golden.json"],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",

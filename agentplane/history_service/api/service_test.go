@@ -15,7 +15,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"

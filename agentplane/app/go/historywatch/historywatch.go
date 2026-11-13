@@ -9,7 +9,7 @@ import (
 	"log/slog"
 	"time"
 
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"

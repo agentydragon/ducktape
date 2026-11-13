@@ -7,7 +7,7 @@ go_library(
     srcs = ["historywatch.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/app/go/historywatch",
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/observability",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//attribute",
@@ -19,7 +19,7 @@ go_test(
     srcs = ["historywatch_test.go"],
     embed = [":historywatch"],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

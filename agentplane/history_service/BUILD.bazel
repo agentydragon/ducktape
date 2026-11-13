@@ -1,4 +1,3 @@
-load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
@@ -30,8 +29,8 @@ py_library(
     ],
     deps = [
         "//agentplane/grpc:calls",
-        "//agentplane/history_service:history_service_pb2",
-        "//agentplane/history_service:history_service_pb2_grpc",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/history_service/api/history:history_service_pb2_grpc",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -76,11 +75,11 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service",
     deps = [
-        ":history_service_go_proto",
         ":session_ingress_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/graceful",
         "//agentplane/history_service/api",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/backfill",
         "//agentplane/history_service/ingress",
         "//agentplane/history_service/internal/reads",
@@ -167,10 +166,10 @@ go_test(
     embed = [":main_lib"],
     tags = ["requires_docker"],
     deps = [
-        ":history_service_go_proto",
         ":session_ingress_go_proto",
         "//agentplane/environment_runtime_transport",
         "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
@@ -223,34 +222,6 @@ py_grpc_service_library(
     visibility = ["//agentplane:__subpackages__"],
 )
 
-proto_library(
-    name = "history_service_proto",
-    srcs = ["history_service.proto"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_proto",
-        "//agentplane/proto:event_log_proto",
-        "//agentplane/proto:event_proto",
-        "//agentplane/proto:session_proto",
-        "@googleapis//google/api:annotations_proto",
-        "@protobuf//:empty_proto",
-        "@protobuf//:timestamp_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "history_service_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [":history_service_proto"],
-)
-
-py_grpc_service_library(
-    name = "history_service_pb2_grpc",
-    proto = ":history_service_proto",
-    py_proto = ":history_service_pb2",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
 go_proto_library(
     name = "session_ingress_go_proto",
     compilers = [
@@ -264,39 +235,5 @@ go_proto_library(
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
-    ],
-)
-
-go_proto_library(
-    name = "history_service_go_proto",
-    compilers = [
-        "@io_bazel_rules_go//proto:go_proto",
-        "@io_bazel_rules_go//proto:go_grpc_v2",
-        "//devinfra/go:grpc_gateway",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb",
-    proto = ":history_service_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_go_proto",
-        "//agentplane/proto:event_go_proto",
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:session_go_proto",
-        "@org_golang_google_genproto_googleapis_api//annotations",
-    ],
-)
-
-ts_proto_library(
-    name = "history_service_pb",
-    copy_files = False,
-    node_modules = "//:node_modules",
-    proto = ":history_service_proto",
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane/proto:command_pb",
-        "//agentplane/proto:event_log_pb",
-        "//agentplane/proto:event_pb",
-        "//agentplane/proto:session_pb",
-        "//google/api:annotations_pb",
     ],
 )

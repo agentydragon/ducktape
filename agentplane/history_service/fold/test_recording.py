@@ -10,7 +10,7 @@ import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
 
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.fold.models import (
     FOLD_EPOCH,
     ThreadCheckpoint,

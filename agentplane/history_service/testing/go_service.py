@@ -20,7 +20,8 @@ import grpc
 from python.runfiles import Runfiles
 
 from agentplane.grpc.calls import ServiceError
-from agentplane.history_service import history_service_pb2, session_ingress_pb2, session_ingress_pb2_grpc
+from agentplane.history_service import session_ingress_pb2, session_ingress_pb2_grpc
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef

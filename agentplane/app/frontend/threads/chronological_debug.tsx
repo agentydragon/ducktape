@@ -15,7 +15,7 @@ import {
   type ReadSessionEventsResponse,
   type ReadSessionObservationsRequest,
   type ReadSessionObservationsResponse,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 
 const OpenDebug = createContext<((cursor?: string) => void) | null>(null);
 

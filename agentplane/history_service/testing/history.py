@@ -17,7 +17,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from agentplane import sandbox_resource
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service

@@ -50,7 +50,7 @@ from agentplane.app.testing.thread_browser import (
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.grpc.serving import serving
-from agentplane.history_service import history_service_pb2
+from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (

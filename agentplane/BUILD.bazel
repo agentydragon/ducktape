@@ -10,8 +10,8 @@ load("//devinfra/python:defs.bzl", "py_library")
 # gazelle:resolve py agentplane.env.runtime.execution.executor_pb2_grpc //agentplane/env/runtime/execution:executor_pb2_grpc
 # gazelle:resolve py agentplane.env.runtime.execution.companion.control.control_pb2 //agentplane/env/runtime/execution/companion/control:control_pb2
 # gazelle:resolve py agentplane.env.runtime.execution.companion.control.control_pb2_grpc //agentplane/env/runtime/execution/companion/control:control_pb2_grpc
-# gazelle:resolve py agentplane.history_service.history_service_pb2 //agentplane/history_service:history_service_pb2
-# gazelle:resolve py agentplane.history_service.history_service_pb2_grpc //agentplane/history_service:history_service_pb2_grpc
+# gazelle:resolve py agentplane.history_service.api.history.history_service_pb2 //agentplane/history_service/api/history:history_service_pb2
+# gazelle:resolve py agentplane.history_service.api.history.history_service_pb2_grpc //agentplane/history_service/api/history:history_service_pb2_grpc
 # gazelle:resolve py agentplane.proto.command_pb2 //agentplane/proto:command_pb2
 # gazelle:resolve py agentplane.proto.event_log_pb2 //agentplane/proto:event_log_pb2
 # gazelle:resolve py agentplane.proto.event_pb2 //agentplane/proto:event_pb2

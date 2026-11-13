@@ -14,7 +14,7 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc.calls import bearer, dial, raise_status
-from agentplane.history_service import history_service_pb2, history_service_pb2_grpc
+from agentplane.history_service.api.history import history_service_pb2, history_service_pb2_grpc
 
 
 @dataclass(frozen=True)

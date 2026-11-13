@@ -15,7 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/action_service/store"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"

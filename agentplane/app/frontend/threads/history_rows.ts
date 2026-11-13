@@ -7,7 +7,7 @@
  * its own line) stands alone and ends whichever it interrupts.
  */
 import { ItemKind, TurnStatus, type Event } from "../../../proto/event_pb";
-import type { ThreadEntity } from "../../../history_service/history_service_pb";
+import type { ThreadEntity } from "../../../history_service/api/history/history_service_pb";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps
  * stream into a run or group. */

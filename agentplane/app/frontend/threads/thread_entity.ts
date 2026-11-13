@@ -5,7 +5,7 @@ import {
   ThreadEntityKind,
   type ThreadEntity,
   type ThreadPayloadReference,
-} from "../../../history_service/history_service_pb";
+} from "../../../history_service/api/history/history_service_pb";
 
 export function threadEntityKind(entity: ThreadEntity): ThreadEntityKind {
   switch (entity.entity.case) {
