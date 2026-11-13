@@ -138,11 +138,7 @@ pub(super) fn render(report: &ExplanationReport, out: &mut String) {
 }
 
 fn render_result(result: &RangeExplanation, out: &mut String) {
-    let _ = writeln!(
-        out,
-        "Result: {}",
-        strum::EnumMessage::get_message(&result.status).unwrap_or_default()
-    );
+    let _ = writeln!(out, "Result: {}", result.status.explanation());
     if let Some(binding) = &result.matched_binding {
         let _ = writeln!(out, "Source binding: {binding}");
     }

@@ -103,6 +103,7 @@ rust_test(
     name = "analysis_model_test",
     crate = ":analysis_model",
     edition = "2024",
+    deps = ["@crates//:serde_json"],
 )
 
 rust_library(
@@ -370,6 +371,7 @@ rust_library(
         "@crates//:relative-path",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:url",
     ],

@@ -215,30 +215,28 @@ impl EffectProvenance {
 }
 
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    strum::Display,
-    strum::EnumMessage,
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum BindingTimelineOrder {
     /// `to` and `from` both write the binding; later writer last.
-    #[strum(message = "writes after target wrote")]
     WriterAfterWriter,
     /// `from` observes the binding after `to`, its nearest preceding writer.
-    #[strum(message = "observes after target wrote")]
     ReaderAfterWriter,
     /// `from` writes the binding after `to`, a preceding observer, read it.
-    #[strum(message = "writes after target observed")]
     WriterAfterReader,
+}
+
+impl BindingTimelineOrder {
+    /// Human description of the source effect's order relative to the target.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::WriterAfterWriter => "writes after target wrote",
+            Self::ReaderAfterWriter => "observes after target wrote",
+            Self::WriterAfterReader => "writes after target observed",
+        }
+    }
 }
 
 /// How the cell timeline classified one source unit's effects.
@@ -267,17 +265,7 @@ pub enum CellEffectClass {
 /// One disjunct of the heap-content opacity test in
 /// `emit_heap_content_order` (docs/design.md "Emission modes").
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Serialize,
-    Deserialize,
-    strum::Display,
-    strum::EnumMessage,
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
 )]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
@@ -285,20 +273,28 @@ pub enum HeapBarrierCause {
     /// The array-content collector recorded an opaque at-init effect:
     /// member write, mutating method call, escaped array, key
     /// enumeration, optional call or tagged template.
-    #[strum(message = "array content effects")]
     ArrayContentEffects,
     /// Impure and not dataflow-summarizable (unproven call/`new`,
     /// member write through a binding, dynamic-dispatch shape).
-    #[strum(message = "impure and not summarizable")]
     NonSummarizableImpure,
     /// Synchronous execution analysis reported incomplete effects
     /// (`synchronous_execution.complete = false`).
-    #[strum(message = "incomplete synchronous execution")]
     IncompleteSynchronousExecution,
     /// The body of a callable synchronous execution invoked is itself
     /// heap-opaque.
-    #[strum(message = "heap-opaque callee body")]
     CalleeHeapEffects,
+}
+
+impl HeapBarrierCause {
+    /// Human description used in heap-barrier diagnostics.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::ArrayContentEffects => "array content effects",
+            Self::NonSummarizableImpure => "impure and not summarizable",
+            Self::IncompleteSynchronousExecution => "incomplete synchronous execution",
+            Self::CalleeHeapEffects => "heap-opaque callee body",
+        }
+    }
 }
 
 /// One dependence the cell timeline found between `from` (later) and
@@ -408,7 +404,7 @@ impl fmt::Display for CellEffectClass {
                     if i > 0 {
                         f.write_str(", ")?;
                     }
-                    f.write_str(strum::EnumMessage::get_message(cause).unwrap_or_default())?;
+                    f.write_str(cause.explanation())?;
                 }
                 f.write_str(")")
             }
@@ -419,7 +415,7 @@ impl fmt::Display for CellEffectClass {
                     if i > 0 {
                         f.write_str(", ")?;
                     }
-                    f.write_str(strum::EnumMessage::get_message(cause).unwrap_or_default())?;
+                    f.write_str(cause.explanation())?;
                 }
                 f.write_str(")")
             }
@@ -506,7 +502,7 @@ impl fmt::Display for SequencedCause {
                 write!(
                     f,
                     "at-init timeline of `{binding}`: source {}",
-                    strum::EnumMessage::get_message(order).unwrap_or_default()
+                    order.explanation()
                 )?;
                 write_assumed(f, source, target)
             }

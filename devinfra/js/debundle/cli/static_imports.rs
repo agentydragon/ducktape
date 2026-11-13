@@ -308,14 +308,13 @@ pub(super) fn run(args: StaticImportsArgs) -> Result<()> {
                     ));
                 }
                 for site in &census.sites {
-                    let kind =
-                        serde_json::to_string(&site.kind).expect("typed census kind serializes");
+                    let kind = site.kind.machine_code();
                     out.push_str(&format!(
                         "  {} item {} line {:?}: {}{}{}\n",
                         site.chunk,
                         site.item,
                         site.line,
-                        kind.trim_matches('"'),
+                        kind,
                         site.specifier
                             .as_deref()
                             .map_or(String::new(), |specifier| format!(" {specifier:?}")),

@@ -149,63 +149,82 @@ pub enum InferenceVerdict {
     Inconclusive { reason: InconclusiveReason },
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumMessage,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 pub enum InferableReason {
     /// No `sequenced` edge joins the entry's endpoints.
-    #[strum(message = "no sequenced edge joins the endpoints")]
     NoSequencedEdge,
     /// Every `sequenced` edge between the endpoints orders two summarized
     /// effects on disjoint cells.
-    #[strum(message = "the endpoints' summarized effects touch disjoint cells")]
     SummarizedEndpoints,
     /// The chunk has no violation of the overridden check.
-    #[strum(message = "the chunk has no violation to override")]
     NoAdmissionViolation,
     /// `spec lint --probe-analysis` reran the program with this one
     /// annotation withheld: it was accepted with identical reports (dependency
     /// graphs, atomic groups, precision losses, module contents).
-    #[strum(message = "withholding it alone leaves every report unchanged")]
     WithheldRunUnchanged,
     /// No analysis consumed the annotation: every read of it records the use,
     /// and none was recorded (docs/premise_provenance.md).
-    #[strum(message = "no analysis consumed it")]
     NeverConsumed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display)]
+impl InferableReason {
+    /// Human explanation shown by `debundle spec lint`.
+    pub fn explanation(self) -> &'static str {
+        match self {
+            Self::NoSequencedEdge => "no sequenced edge joins the endpoints",
+            Self::SummarizedEndpoints => "the endpoints' summarized effects touch disjoint cells",
+            Self::NoAdmissionViolation => "the chunk has no violation to override",
+            Self::WithheldRunUnchanged => "withholding it alone leaves every report unchanged",
+            Self::NeverConsumed => "no analysis consumed it",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "probe", rename_all = "snake_case")]
 pub enum InconclusiveReason {
     /// The binding classifies without the hint, but other analysis consumers
     /// of the hint were not rerun.
-    #[strum(
-        to_string = "the binding classifies without the hint; other consumers of the hint were not probed"
-    )]
     PurityClassification {
         classification: RedundantPurityReason,
         proof_basis: RedundantPurityProofBasis,
     },
     /// The baseline run of `--probe-analysis` was not accepted, so no
     /// withheld run can be compared with it.
-    #[strum(to_string = "the probe baseline was not accepted: {error}")]
     BaselineNotAccepted { error: String },
     /// The withheld run could not run (an invalid edited spec, an I/O error).
-    #[strum(to_string = "the withheld run failed to run: {error}")]
     ProbeFailed { error: String },
     /// `--max-probes` was reached before this annotation was probed.
-    #[strum(to_string = "not probed: --max-probes reached")]
     NotProbed,
     /// Some analysis recorded a use. The fact it supported may have another
     /// derivation; `--probe-analysis` decides.
-    #[strum(to_string = "consumed by the analysis; --probe-analysis decides whether it is needed")]
     Consumed,
     /// A program-wide annotation, but some chunk was not linted, so its uses
     /// are unknown.
-    #[strum(to_string = "some chunk was not linted, so its uses are unknown")]
     UnlintedChunks,
+}
+
+impl InconclusiveReason {
+    /// Human explanation shown by `debundle spec lint`.
+    pub fn explanation(&self) -> String {
+        match self {
+            Self::PurityClassification { .. } => {
+                "the binding classifies without the hint; other consumers of the hint were not probed"
+                    .to_owned()
+            }
+            Self::BaselineNotAccepted { error } => {
+                format!("the probe baseline was not accepted: {error}")
+            }
+            Self::ProbeFailed { error } => format!("the withheld run failed to run: {error}"),
+            Self::NotProbed => "not probed: --max-probes reached".to_owned(),
+            Self::Consumed => {
+                "consumed by the analysis; --probe-analysis decides whether it is needed".to_owned()
+            }
+            Self::UnlintedChunks => "some chunk was not linted, so its uses are unknown".to_owned(),
+        }
+    }
 }
 
 impl LintFinding {
