@@ -58,20 +58,19 @@ no ServiceAccount fallback.
 
 ## Deployment contract
 
-`AGENTPLANE_MCP_EDGE_CONFIG_FILE` names the YAML settings file; `AGENTPLANE_MCP_EDGE_*`
-environment variables override scalar keys, with `__` for nested keys. `database_url` is required
-and can be supplied through `AGENTPLANE_MCP_EDGE_DATABASE_URL`. `actions_target` is the internal
-Action Service gRPC endpoint. OAuth deployments set `policy_namespace` to the namespace whose live
-Identities may be selected, and `actions_token_file` to the mounted projected Action audience token.
-The edge refuses use when required Identity state or the Action token is unavailable.
-`operator_oidc` requires the issuer, audience, JWKS URI and token profile used by the app's operator
-tokens. The old `caller_service_account_namespaces`, `mintable_accounts`, and
-`connection_identities` settings are accepted only as inert rollout fields; they do not select,
-authorize or mint identities and are removed from rendered settings. Remove their parser fields only
-after the rollout no longer uses old manifests.
-`oauth` is an optional JSON object in the environment, using the current OAuth Secret's keys; when
-absent, the Connection API remains available and the external protocol routes are absent. The
-secret's `upstream_client_secret_file` must be mounted at the path it names. The gRPC listener
+`AGENTPLANE_MCP_EDGE_CONFIG_FILE` names the complete YAML settings file. It is the only environment
+input for static settings; `AGENTPLANE_MCP_EDGE_DATABASE_URL` is read explicitly from the PostgreSQL
+Secret and is not part of the file model. `actions_target` is the internal Action Service gRPC
+endpoint. OAuth deployments set `policy_namespace` to the namespace whose live Identities may be
+selected, and `actions_token_file` to the mounted projected Action audience token. The edge refuses
+use when required Identity state or the Action token is unavailable. `operator_oidc` requires the
+issuer, audience, JWKS URI and token profile used by the app's operator tokens. `oauth` is an
+optional typed inline object for synthetic deployments. Staging instead sets `oauth_file` to the
+provider-owned settings file projected from the existing Authentik Secret, keeping its user and
+provider bindings in Terraform. Inline and file-based OAuth settings cannot be combined. When both
+are absent, the Connection API remains available and external protocol routes are absent. The
+provider settings' `upstream_client_secret_file` names the separately mounted OAuth client Secret
+file. The gRPC listener
 (`port`) defaults to `0.0.0.0:8080`; the HTTP listener (`http_port`: the facade, `/mcp`, OAuth and metrics) to
 `0.0.0.0:8081`. gRPC health uses the empty service for readiness and `livez` for liveness. Readiness
 requires PostgreSQL, its notification listener and a synchronized live Identity view.

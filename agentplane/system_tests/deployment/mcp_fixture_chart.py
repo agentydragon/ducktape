@@ -56,6 +56,8 @@ def objects(
         vm_sandboxes=False, models=models, operator_token_key=None, app_origin=mcp.app_origin, central_sampler=True
     )
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
+    mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
+    edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, mcp.app_origin, mcp_edge_login.id)
     actions_config = replace(
         env.actions,
         connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
@@ -87,12 +89,10 @@ def objects(
     fixture = fixture_chart.build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
-    mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
-    edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, mcp.app_origin, mcp_edge_login.id)
     fixture_chart.add_secret(
         fixture.chart,
         _MCP_EDGE_OAUTH_SECRET,
-        {"client-secret": "test-k3s-mcp-edge-client-secret", "oauth": edge_oauth.model_dump_json()},
+        {"oauth": edge_oauth.model_dump_json(), "client-secret": "test-k3s-mcp-edge-client-secret"},
     )
     caller = Identity(
         fixture.chart,

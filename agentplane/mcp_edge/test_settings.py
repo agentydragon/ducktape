@@ -1,4 +1,4 @@
-"""The Python deployment contract accepts optional MCP Identity cutover settings."""
+"""The Python deployment contract holds MCP Identity policy and listener settings."""
 
 import pytest_bazel
 
@@ -7,10 +7,8 @@ from agentplane.mcp_edge.settings import Settings
 
 def _settings_source() -> dict[str, object]:
     return {
-        "database_url": "postgresql://edge:edge@postgres.invalid/edge",
         "actions_target": "actions:8080",
         "policy_namespace": "test-policy",
-        "caller_service_account_namespaces": ["test-callers"],
         "operator_oidc": {
             "issuer": "https://operator.example",
             "audience": "test-edge",
@@ -19,7 +17,7 @@ def _settings_source() -> dict[str, object]:
     }
 
 
-def test_identity_cutover_settings_are_accepted() -> None:
+def test_identity_settings_are_typed() -> None:
     source = _settings_source()
     settings = Settings.model_validate(source)
     assert settings.policy_namespace == "test-policy"

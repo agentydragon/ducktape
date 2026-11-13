@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,50 +12,46 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api"
-	sharedconfig "github.com/agentydragon/ducktape/agentplane/settings"
-	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
-const settingPrefix = "AGENTPLANE_MCP_EDGE_"
+const (
+	settingPrefix  = "AGENTPLANE_MCP_EDGE_"
+	databaseURLEnv = settingPrefix + "DATABASE_URL"
+)
 
-// config is the standalone edge's deployment contract. Secret values come from environment variables.
+// config is the standalone edge's non-secret deployment contract. DatabaseURL is supplied separately from a Secret.
 type config struct {
-	ActionsTLS    *environment_runtime_transport.ClientTLS `mapstructure:"actions_tls" json:"actions_tls,omitempty"`
-	DatabaseURL   string                                   `mapstructure:"database_url" yaml:"database_url"`
-	ActionsTarget string                                   `mapstructure:"actions_target" yaml:"actions_target"`
+	ActionsTLS    *environment_runtime_transport.ClientTLS `yaml:"actions_tls,omitempty"`
+	DatabaseURL   string                                   `mapstructure:"-" yaml:"-"`
+	ActionsTarget string                                   `yaml:"actions_target"`
 	// PolicyNamespace holds live Identities; ActionsTokenFile is the rotating Action-audience token.
-	PolicyNamespace  string `mapstructure:"policy_namespace" yaml:"policy_namespace"`
-	ActionsTokenFile string `mapstructure:"actions_token_file" yaml:"actions_token_file"`
-	Host             string `mapstructure:"host" yaml:"host"`
+	PolicyNamespace  string `yaml:"policy_namespace"`
+	ActionsTokenFile string `yaml:"actions_token_file"`
+	Host             string `yaml:"host"`
 	// Port is the gRPC listener's: ConnectionService and health. HTTPPort is the HTTP listener's: the facade, /mcp,
 	// OAuth and the metrics.
-	Port     int `mapstructure:"port" yaml:"port"`
-	HTTPPort int `mapstructure:"http_port" yaml:"http_port"`
-	// Legacy settings remain accepted for one rollout after their manifest values are removed. They do not authorize,
-	// resolve, or mint workload credentials and can be deleted after the Identity cutover is deployed.
-	LegacyCallerServiceAccountNamespaces []string                 `mapstructure:"caller_service_account_namespaces" yaml:"caller_service_account_namespaces"`
-	LegacyMintableAccounts               []string                 `mapstructure:"mintable_accounts" yaml:"mintable_accounts"`
-	LegacyConnectionIdentities           map[string]any           `mapstructure:"connection_identities" yaml:"connection_identities"`
-	OperatorOIDC                         api.OperatorOIDCSettings `mapstructure:"operator_oidc" yaml:"operator_oidc"`
-	OAuth                                *oauthSettings           `mapstructure:"oauth" yaml:"oauth"`
-	MaxWaitSeconds                       float64                  `mapstructure:"max_wait_seconds" yaml:"max_wait_seconds"`
-	DirectWaitSeconds                    float64                  `mapstructure:"direct_wait_seconds" yaml:"direct_wait_seconds"`
+	Port              int                      `yaml:"port"`
+	HTTPPort          int                      `yaml:"http_port"`
+	OperatorOIDC      api.OperatorOIDCSettings `yaml:"operator_oidc"`
+	OAuthFile         string                   `yaml:"oauth_file,omitempty"`
+	OAuth             *oauthSettings           `yaml:"oauth,omitempty"`
+	MaxWaitSeconds    float64                  `yaml:"max_wait_seconds"`
+	DirectWaitSeconds float64                  `yaml:"direct_wait_seconds"`
 }
 
 type oauthSettings struct {
-	UpstreamClientID         string `mapstructure:"upstream_client_id" yaml:"upstream_client_id"`
-	UpstreamClientSecretFile string `mapstructure:"upstream_client_secret_file" yaml:"upstream_client_secret_file"`
-	BaseURL                  string `mapstructure:"base_url" yaml:"base_url"`
-	IntegrationAppURL        string `mapstructure:"integration_app_url" yaml:"integration_app_url"`
-	UpstreamIssuer           string `mapstructure:"upstream_issuer" yaml:"upstream_issuer"`
-	UpstreamSubject          string `mapstructure:"upstream_subject" yaml:"upstream_subject"`
+	UpstreamClientID         string `yaml:"upstream_client_id"`
+	UpstreamClientSecretFile string `yaml:"upstream_client_secret_file"`
+	BaseURL                  string `yaml:"base_url"`
+	IntegrationAppURL        string `yaml:"integration_app_url"`
+	UpstreamIssuer           string `yaml:"upstream_issuer"`
+	UpstreamSubject          string `yaml:"upstream_subject"`
 	ApprovingOperator        struct {
-		Issuer  string `mapstructure:"issuer" yaml:"issuer"`
-		Subject string `mapstructure:"subject" yaml:"subject"`
-	} `mapstructure:"approving_operator" yaml:"approving_operator"`
+		Issuer  string `yaml:"issuer"`
+		Subject string `yaml:"subject"`
+	} `yaml:"approving_operator"`
 }
 
 func loadConfig() (config, error) {
@@ -64,38 +59,55 @@ func loadConfig() (config, error) {
 		Host: "0.0.0.0", Port: 8080, HTTPPort: 8081, MaxWaitSeconds: 30, DirectWaitSeconds: 30,
 		OperatorOIDC: api.DefaultOperatorOIDCSettings(),
 	}
-	settings := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
-	settings.SetEnvPrefix("AGENTPLANE_MCP_EDGE")
-	settings.AutomaticEnv()
-	if path := os.Getenv(settingPrefix + "CONFIG_FILE"); path != "" {
-		file, err := os.Open(path)
+	path := os.Getenv(settingPrefix + "CONFIG_FILE")
+	if path == "" {
+		return config{}, errors.New("MCP edge settings file path is required")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return config{}, errors.New("could not read MCP edge settings file")
+	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&c); err != nil {
+		return config{}, errors.New("invalid MCP edge settings file")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return config{}, errors.New("invalid MCP edge settings file")
+	}
+	if c.OAuthFile != "" {
+		if c.OAuth != nil {
+			return config{}, errors.New("oauth_file and inline oauth settings are mutually exclusive")
+		}
+		c.OAuth, err = loadOAuthSettings(c.OAuthFile)
 		if err != nil {
-			return config{}, errors.New("could not read MCP edge settings file")
-		}
-		defer file.Close()
-		var values map[string]any
-		decoder := yaml.NewDecoder(file)
-		if err := decoder.Decode(&values); err != nil {
-			return config{}, errors.New("invalid MCP edge settings file")
-		}
-		if err := decoder.Decode(new(any)); err != io.EOF {
-			return config{}, errors.New("invalid MCP edge settings file")
-		}
-		if err := settings.MergeConfigMap(values); err != nil {
-			return config{}, errors.New("invalid MCP edge settings file")
+			return config{}, errors.New("invalid MCP edge OAuth settings file")
 		}
 	}
-	if raw := os.Getenv(settingPrefix + "OAUTH"); raw != "" {
-		var values map[string]any
-		if err := json.Unmarshal([]byte(raw), &values); err != nil || values == nil {
-			return config{}, errors.New("oauth must be a JSON object")
-		}
-		sharedconfig.SetJSONLeaves(settings, "oauth", values, settingPrefix)
-	}
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	c.DatabaseURL = os.Getenv(databaseURLEnv)
+	if err := c.validate(); err != nil {
 		return config{}, errors.New("invalid MCP edge settings")
 	}
-	return c, c.validate()
+	return c, nil
+}
+
+func loadOAuthSettings(path string) (*oauthSettings, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("could not read MCP edge OAuth settings file")
+	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	decoder.KnownFields(true)
+	var settings oauthSettings
+	if err := decoder.Decode(&settings); err != nil {
+		return nil, errors.New("invalid MCP edge OAuth settings file")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, errors.New("invalid MCP edge OAuth settings file")
+	}
+	return &settings, nil
 }
 
 func (c config) validate() error {

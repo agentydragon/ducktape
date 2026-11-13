@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -37,12 +39,11 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "mcp-edge"
+DATABASE_URL_ENV = "AGENTPLANE_MCP_EDGE_DATABASE_URL"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset"
 _SECRET_DIR = "/etc/agentplane-mcp"
@@ -80,31 +81,27 @@ class McpEdge(Construct):
         self.http = http_service(env.namespace)
         props = env.mcp_edge
 
-        content = {
-            "host": "0.0.0.0",
-            "port": self.endpoint.pod_port,
-            "http_port": self.http.pod_port,
-            "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
-            "actions_tls": workload_tls.client_tls(ACTIONS_URI),
-            "operator_oidc": props.operator_oidc,
-            "policy_namespace": env.namespace,
-        }
-        if props.oauth_secret_name is not None:
-            content["actions_token_file"] = "/var/run/secrets/agentplane-mcp/actions"
+        settings_contract = Settings(
+            actions_tls=workload_tls.client_tls(ACTIONS_URI),
+            actions_target=f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            policy_namespace=env.namespace,
+            actions_token_file=(
+                "/var/run/secrets/agentplane-mcp/actions" if props.oauth_secret_name is not None else None
+            ),
+            oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
+            host="0.0.0.0",
+            port=self.endpoint.pod_port,
+            http_port=self.http.pod_port,
+            operator_oidc=props.operator_oidc,
+        )
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(settings_contract),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )
-        variables = {env_name(Settings, "database_url"): database_url}
-        if props.oauth_secret_name is not None:
-            variables[env_name(Settings, "oauth")] = (
-                SecretRef(namespace=env.namespace, name=props.oauth_secret_name)
-                .key("oauth")
-                .env_value(self, "oauth-secret-env")
-            )
+        variables = {DATABASE_URL_ENV: database_url}
         workload = add_service_workload(
             self,
             env,
@@ -148,7 +145,7 @@ class McpEdge(Construct):
                 "oauth-volume",
                 oauth_secret,
                 default_mode=0o440,
-                items={"client-secret": PathMapping(path="client-secret")},
+                items={"client-secret": PathMapping(path="client-secret"), "oauth": PathMapping(path="oauth")},
             )
             workload.container.mount(_SECRET_DIR, oauth_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)

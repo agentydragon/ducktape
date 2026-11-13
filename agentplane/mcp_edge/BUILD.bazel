@@ -23,9 +23,7 @@ py_library(
         ":oauth_settings",
         "//agentplane/action_service:operator_oidc_settings",
         "//agentplane/environment_runtime_transport:config",
-        "//util:yaml_file_settings",
         "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )
 
@@ -122,13 +120,10 @@ go_library(
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:identity_go_proto",
-        "//agentplane/settings:config",
         "//agentplane/watchhealth",
-        "@com_github_go_viper_mapstructure_v2//:mapstructure",
         "@com_github_lib_pq//:pq",
         "@com_github_modelcontextprotocol_go_sdk//auth",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
-        "@com_github_spf13_viper//:viper",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_api//core/v1:core",

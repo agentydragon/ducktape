@@ -2,38 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from pathlib import Path
+from typing import ClassVar
 
-from pydantic import Field, model_validator
-from pydantic_settings import SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from util.yaml_file_settings import YamlFileSettings
 
 
-class Settings(YamlFileSettings):
-    """YAML settings with AGENTPLANE_MCP_EDGE_ environment overrides."""
+class Settings(BaseModel):
+    """Complete non-secret settings authored in the mounted YAML file."""
 
-    actions_tls: ClientTLS | None = None
+    model_config = ConfigDict(extra="forbid")
 
     config_file_env: ClassVar[str] = "AGENTPLANE_MCP_EDGE_CONFIG_FILE"
-    model_config = SettingsConfigDict(
-        env_prefix="AGENTPLANE_MCP_EDGE_", env_nested_delimiter="__", extra="forbid", hide_input_in_errors=True
-    )
+    actions_tls: ClientTLS | None = None
 
-    database_url: str = Field(min_length=1)
     actions_target: str = Field(min_length=1)
     policy_namespace: str = Field(min_length=1, description="Namespace holding the live Identity objects.")
     actions_token_file: str | None = Field(
         default=None, description="The MCP edge's rotating projected token for the Action Service audience."
     )
-    # Accepted only while the first Identity cutover rollout replaces rendered settings. These values have no active
-    # authorization or token-minting effect and are removed after the rollout.
-    caller_service_account_namespaces: list[str] | None = None
-    mintable_accounts: list[str] | None = None
-    connection_identities: dict[str, Any] | None = None
+    oauth_file: Path | None = Field(
+        default=None, description="Provider-owned OAuth settings projected from its Secret."
+    )
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535, description="The gRPC listener's port.")
     http_port: int = Field(
@@ -48,4 +42,6 @@ class Settings(YamlFileSettings):
     def validate_ports(self) -> Settings:
         if self.port == self.http_port:
             raise ValueError("port and http_port must differ")
+        if self.oauth_file is not None and self.oauth is not None:
+            raise ValueError("oauth_file and inline oauth settings are mutually exclusive")
         return self

@@ -20,7 +20,6 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.environment_runtime_transport.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
@@ -35,6 +34,7 @@ from cluster.cdk8s.agentplane import (
     environment_vm,
     history_service,
     llm_ingress,
+    mcp_edge,
     runner_gateway,
     session_dispatcher,
 )
@@ -160,9 +160,13 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
     assert "AGENTPLANE_CONNECTION_SERVICE_URL" not in app_env
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
-    edge_database_env_name = env_name(McpEdgeSettings, "database_url")
+    edge_database_env_name = mcp_edge.DATABASE_URL_ENV
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
     assert edge_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-mcp-edge"
+    edge_settings_env = {
+        entry["name"] for entry in edge_container["env"] if entry["name"].startswith("AGENTPLANE_MCP_EDGE_")
+    }
+    assert edge_settings_env == {mcp_edge.Settings.config_file_env, mcp_edge.DATABASE_URL_ENV}
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
@@ -408,34 +412,40 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         bundle = _resource(docs, "ConfigMap", volume["configMap"]["name"])["data"][cert_file.name]
         assert bundle.endswith(_MCP.dex_ca_cert), workload
 
-    # The standalone edge names itself by the forwarded origin and reads its upstream client secret
-    # from its own Dex client Secret. Actions retains only its distinct upstream MCP linkage client.
-    edge_oauth_env = next(
-        entry for entry in edge_container["env"] if entry["name"] == env_name(McpEdgeSettings, "oauth")
-    )
-    edge_oauth_secret_ref = edge_oauth_env["valueFrom"]["secretKeyRef"]
-    assert edge_oauth_secret_ref["key"] == "oauth"
-    edge_secret = _resource(docs, "Secret", edge_oauth_secret_ref["name"])["stringData"]
-    edge_oauth = OAuthSettings.model_validate_json(edge_secret["oauth"])
-    assert edge_oauth.base_url == _MCP.mcp_edge_origin
-    assert edge_secret["client-secret"]
+    # Terraform/provider-owned OAuth settings and the upstream secret are projected from one Secret.
+    assert edge_config.get("oauth") is None
+    assert edge_config["oauth_file"] == "/etc/agentplane-mcp/oauth"
+    assert edge_config["actions_token_file"] == "/var/run/secrets/agentplane-mcp/actions"
+    edge_settings_env_names = {entry["name"] for entry in edge_container["env"]}
+    assert "AGENTPLANE_MCP_EDGE_OAUTH" not in edge_settings_env_names
     edge_secret_mount = next(
         mount for mount in edge_container["volumeMounts"] if mount["mountPath"] == "/etc/agentplane-mcp"
     )
     edge_secret_volume = next(volume for volume in edge_pod["volumes"] if volume["name"] == edge_secret_mount["name"])[
         "secret"
     ]
-    assert edge_secret_volume["secretName"] == edge_oauth_secret_ref["name"]
+    assert edge_secret_volume["secretName"] == "agentplane-mcp-edge-oauth"
     assert {"key": "client-secret", "path": "client-secret"} in edge_secret_volume["items"]
-    assert _resource(docs, "Secret", edge_secret_volume["secretName"])["stringData"]["client-secret"]
+    assert {"key": "oauth", "path": "oauth"} in edge_secret_volume["items"]
+    edge_secret = _resource(docs, "Secret", edge_secret_volume["secretName"])["stringData"]
+    assert set(edge_secret) == {"oauth", "client-secret"}
+    edge_oauth = OAuthSettings.model_validate_json(edge_secret["oauth"])
+    assert edge_oauth.base_url == _MCP.mcp_edge_origin
+    assert str(edge_oauth.upstream_client_secret_file) == "/etc/agentplane-mcp/client-secret"
+    assert edge_secret["client-secret"]
+    token_mount = next(
+        mount for mount in edge_container["volumeMounts"] if mount["mountPath"] == "/var/run/secrets/agentplane-mcp"
+    )
+    token_volume = next(volume for volume in edge_pod["volumes"] if volume["name"] == token_mount["name"])
+    token = token_volume["projected"]["sources"][0]["serviceAccountToken"]
+    assert token["audience"] == WORKLOAD_TOKEN_AUDIENCE
+    assert edge_config["actions_token_file"] == f"{token_mount['mountPath']}/{token['path']}"
     operator_config = yaml.safe_load(operator["config.yaml"])
     clients = {client["id"]: client for client in operator_config["staticClients"]}
     assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
     assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
     assert edge_config["policy_namespace"] == fixture.namespace
     assert edge_config["actions_token_file"] == "/var/run/secrets/agentplane-mcp/actions"
-    assert "mintable_accounts" not in edge_config
-    assert "connection_identities" not in edge_config
     caller = _resource(docs, "Identity", "mcp-edge-test-caller")
     assert caller["metadata"]["namespace"] == fixture.namespace
     binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
