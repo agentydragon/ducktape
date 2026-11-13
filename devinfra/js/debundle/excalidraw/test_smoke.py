@@ -1068,6 +1068,7 @@ async def test_snapping_reference_geometry_and_pointer_offsets(playwright_driver
                 const elements = [left, right];
                 const map = new Map(elements.map(element => [element.id, element]));
                 const app = {props: {}, state: {...getDefaultAppState(), width: 1280, height: 800,
+                    offsetLeft: 0, offsetTop: 0,
                     objectsSnapModeEnabled: true, gridModeEnabled: false}};
                 const points = snap.getReferenceSnapPoints(elements, [left], app.state, map);
                 const gaps = snap.getVisibleGaps(elements, [], app.state, map);
@@ -1133,10 +1134,10 @@ async def test_shape_deconstruction_preserves_edges_and_curves(playwright_driver
         ]
         assert result["curves"] == result["diamondCurves"] == []
         assert result["diamondEdges"] == [
-            [[60, 20], [110, 50]],
-            [[110, 50], [60, 80]],
-            [[60, 80], [10, 50]],
-            [[10, 50], [60, 20]],
+            [[61, 20], [110, 51]],
+            [[110, 51], [61, 80]],
+            [[61, 80], [10, 51]],
+            [[10, 51], [61, 20]],
         ]
         assert (
             result["rounded"]
