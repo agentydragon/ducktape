@@ -350,9 +350,7 @@ go_library(
         "view_image.go",
     ],
     embedsrcs = [
-        "schema/0011_baseline.sql",
-        "schema/0012_drop_redundant_event_index.sql",
-        "schema/0013_native_content.sql",
+        "schema/0015_baseline.sql",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler",
     visibility = [
@@ -377,7 +375,6 @@ go_library(
         "//agentplane/environment_runtime_transport",
         "//agentplane/grpc/bearer",
         "//agentplane/identity/auth/auth",
-        "//agentplane/internal/samplerauditmigration",
         "//agentplane/postgres",
         "//agentplane/postgres/lease",
         "//agentplane/postgres/migrate",
@@ -391,7 +388,6 @@ go_library(
         "//agentplane/session_instructions",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",
-        "@com_github_pressly_goose_v3//:goose",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
@@ -408,10 +404,8 @@ go_test(
     size = "medium",
     srcs = [
         "anthropic_test.go",
-        "audit_migration_test.go",
         "baseline_migration_test.go",
         "codemode_test.go",
-        "content_migration_test.go",
         "content_store_integration_test.go",
         "environment_context_test.go",
         "executor_resume_test.go",
