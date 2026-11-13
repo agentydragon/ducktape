@@ -234,27 +234,20 @@ class IndoorAQISensor(SensorEntity):
             overall = min(subindices)  # 0..100 (lowest=worst, highest=best)
             self._state = overall
 
-            bottlenecks = []
             bottleneck_details = []
 
             # Sort components by IAQI value (ascending) and process those within 5 points of minimum
             # This ensures bottlenecks are ordered from worst to least bad
             for pollutant, value in sorted(iaqi_components.items(), key=lambda x: x[1]):
-                if value <= overall + 5:  # Components within 5 points of minimum
-                    bottlenecks.append(pollutant)
-
-                    # Create human-readable detail with pollutant name, value and unit
-                    if pollutant_info := POLLUTANTS.get(pollutant):
-                        bottleneck_details.append(
-                            f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}"
-                        )
+                # Components within 5 points of minimum; include their readable details.
+                if value <= overall + 5 and (pollutant_info := POLLUTANTS.get(pollutant)):
+                    bottleneck_details.append(f"{pollutant_info.name}: {raw_values[pollutant]} {pollutant_info.unit}")
 
             # Create a human-readable bottleneck string
             bottleneck_string = ", ".join(bottleneck_details)
         else:
             overall = None
             self._state = None
-            bottlenecks = []
             bottleneck_string = ""
 
         if overall is None:
