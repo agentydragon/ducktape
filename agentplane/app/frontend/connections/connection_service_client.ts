@@ -7,7 +7,7 @@ import {
   DecideConnectionEnrollmentResponseSchema,
   EnrollmentAllowSchema,
   GrantStatus,
-  ListCallerServiceAccountsResponseSchema,
+  ListConnectionIdentitiesResponseSchema,
   ListConnectionsResponseSchema,
   NewConnectionSchema,
   PreviewConnectionEnrollmentRequestSchema,
@@ -25,14 +25,14 @@ import {
   type PreviewConnectionEnrollmentResponse,
 } from "../../../mcp_edge/connection_service_pb";
 import { Verdict } from "../../../action_service/action_service_pb";
-import type { ServiceAccount } from "../../../proto/identity_pb";
+import type { Identity } from "../../../proto/identity_pb";
 
 const OPERATOR = "/upstream/connections/v1/operator";
 const MAX_INT64 = 9_223_372_036_854_775_807n;
 
 export type ConsentPreview = {
   enrollment: PreviewConnectionEnrollmentResponse;
-  serviceAccounts: ServiceAccount[];
+  identities: Identity[];
   connections: Connection[];
 };
 
@@ -45,7 +45,7 @@ export type ConsentDecision =
   | {
       verdict: "allow";
       expectedVersion: bigint;
-      serviceAccount: ServiceAccount;
+      identity: Identity;
       connection: ConsentConnectionChoice;
     };
 
@@ -95,7 +95,6 @@ function validateConnection(connection: Connection): Connection {
   required(connection.createdAt, "Connection creation time");
   required(connection.updatedAt, "Connection update time");
   for (const grant of connection.grants) {
-    required(grant.caller, "grant ServiceAccount");
     required(grant.createdAt, "grant creation time");
     switch (grant.status) {
       case GrantStatus.PENDING:
@@ -139,12 +138,12 @@ export async function listConnections(): Promise<Connection[]> {
   return validateConnections(response.connections);
 }
 
-export async function connectionServiceAccounts(): Promise<ServiceAccount[]> {
+export async function connectionIdentities(): Promise<Identity[]> {
   const response = fromJsonString(
-    ListCallerServiceAccountsResponseSchema,
-    await callFacade("GET", `${OPERATOR}/caller-service-accounts`)
+    ListConnectionIdentitiesResponseSchema,
+    await callFacade("GET", `${OPERATOR}/connection-identities`)
   );
-  return response.serviceAccounts;
+  return response.identities;
 }
 
 export async function renameConnection(connection: Connection, displayName: string): Promise<Connection> {
@@ -164,11 +163,11 @@ export async function renameConnection(connection: Connection, displayName: stri
   return responseConnection(response.connection);
 }
 
-export async function rebindConnection(connection: Connection, caller: ServiceAccount): Promise<Connection> {
+export async function rebindConnection(connection: Connection, identity: Identity): Promise<Connection> {
   const request = create(RebindConnectionRequestSchema, {
     connectionId: connection.id,
     expectedVersion: expectedVersion(connection.version),
-    serviceAccount: caller,
+    identity,
   });
   const body = withoutPathField(
     readJsonObject(toJson(RebindConnectionRequestSchema, request), "rebind request"),
@@ -203,18 +202,18 @@ export async function previewConsent(handle: string): Promise<ConsentPreview> {
     readJsonObject(toJson(PreviewConnectionEnrollmentRequestSchema, request), "preview request"),
     "handle"
   );
-  const [previewValue, callersValue, connectionsValue] = await Promise.all([
+  const [previewValue, identitiesValue, connectionsValue] = await Promise.all([
     callFacade("POST", `${OPERATOR}/connection-enrollments/${encodeURIComponent(handle)}/preview`, body),
-    callFacade("GET", `${OPERATOR}/caller-service-accounts`),
+    callFacade("GET", `${OPERATOR}/connection-identities`),
     callFacade("GET", `${OPERATOR}/connections`),
   ]);
   const enrollment = fromJsonString(PreviewConnectionEnrollmentResponseSchema, previewValue);
   required(enrollment.expiresAt, "enrollment expiry");
-  const callers = fromJsonString(ListCallerServiceAccountsResponseSchema, callersValue);
+  const identities = fromJsonString(ListConnectionIdentitiesResponseSchema, identitiesValue);
   const connections = fromJsonString(ListConnectionsResponseSchema, connectionsValue);
   return {
     enrollment,
-    serviceAccounts: callers.serviceAccounts,
+    identities: identities.identities,
     connections: validateConnections(connections.connections),
   };
 }
@@ -236,7 +235,7 @@ export async function decideConsent(
           decision: {
             case: "allow",
             value: create(EnrollmentAllowSchema, {
-              serviceAccount: decision.serviceAccount,
+              identity: decision.identity,
               connection:
                 decision.connection.kind === "new"
                   ? {

@@ -131,6 +131,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     app_container = app_pod["containers"][0]
     assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
+    actions_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    assert actions_settings["connection_delegation_actor"] == {"namespace": NAMESPACE, "name": "mcp-edge"}
     for workload in ("actions", "notifications", "history-service", "runner-gateway", "llm-ingress"):
         pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         container = pod["containers"][0]
@@ -430,22 +432,15 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     clients = {client["id"]: client for client in operator_config["staticClients"]}
     assert clients[edge_oauth.upstream_client_id]["redirectURIs"] == [f"{_MCP.mcp_edge_origin}/auth/callback"]
     assert clients["test-mcp-linkage"]["redirectURIs"] == [f"{_MCP.app_origin}/mcp-linkage/callback"]
-    mintable_accounts = edge_config["mintable_accounts"]
-    assert mintable_accounts
-    chart_service_accounts = {
-        f"{doc['metadata']['namespace']}/{doc['metadata']['name']}": doc
-        for doc in docs
-        if doc["kind"] == "ServiceAccount"
-    }
-    static_account = f"{fixture.namespace}/mcp-edge-test-caller"
-    assert set(mintable_accounts) == {static_account}
-    # The standing OAuth fixture caller is chart-owned and remains labeled for Actions.
-    caller = chart_service_accounts[static_account]
-    assert caller["metadata"]["labels"]["agentplane.allegedly.works/use-action-service"] == "true"
-
+    assert edge_config["policy_namespace"] == fixture.namespace
+    assert edge_config["actions_token_file"] == "/var/run/secrets/agentplane-mcp/actions"
+    assert "mintable_accounts" not in edge_config
+    assert "connection_identities" not in edge_config
+    caller = _resource(docs, "Identity", "mcp-edge-test-caller")
+    assert caller["metadata"]["namespace"] == fixture.namespace
     binding = _resource(docs, "PolicyBinding", "mcp-edge-test-caller")
     assert binding["spec"] == {
-        "subject": {"namespace": fixture.namespace, "name": "mcp-edge-test-caller"},
+        "subject": {"identity": {"name": "mcp-edge-test-caller"}},
         "policySets": ["mcp-edge-test-caller-session-delegation"],
     }
     policy = _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")
@@ -456,12 +451,9 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         }
     ]
 
-    token_rules = [
-        rule for rule in _resource(docs, "Role", "mcp-edge")["rules"] if "serviceaccounts/token" in rule["resources"]
+    assert _resource(docs, "Role", "mcp-edge")["rules"] == [
+        {"apiGroups": ["agentplane.allegedly.works"], "resources": ["identities"], "verbs": ["get", "list", "watch"]}
     ]
-    assert {name for rule in token_rules for name in rule["resourceNames"]} == {
-        account.split("/")[1] for account in mintable_accounts
-    }
 
 
 def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling(

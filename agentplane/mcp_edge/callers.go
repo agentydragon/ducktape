@@ -8,96 +8,100 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	policyclient "github.com/agentydragon/ducktape/agentplane/policy/client/clientset/versioned"
+	policyinformers "github.com/agentydragon/ducktape/agentplane/policy/client/informers/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
-	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
-	coreinformers "k8s.io/client-go/informers/core/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
-type callerIndex struct {
-	health   *watchhealth.Health
-	mintable sets.Set[auth.Account]
-	mu       sync.RWMutex
-	accounts map[auth.Account]string // labeled, mintable ServiceAccount -> current UID
+// identityIndex supplies a fresh picker view and a direct API-server UID check. The informer is only for listing;
+// consent, grant resolution, and rebind compare the exact incarnation through GetIdentityUID.
+type identityIndex struct {
+	health     *watchhealth.Health
+	namespace  string
+	objects    policyclient.Interface
+	mu         sync.RWMutex
+	identities map[string]auth.Identity
 }
 
-func (i *callerIndex) CallerServiceAccounts() ([]auth.Account, bool) {
+func (i *identityIndex) ConnectionIdentities() ([]auth.Identity, bool) {
 	if !i.health.Available() {
 		return nil, false
 	}
 	i.mu.RLock()
 	defer i.mu.RUnlock()
-	return slices.SortedFunc(maps.Keys(i.accounts), func(a, b auth.Account) int {
-		return cmp.Or(cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
+	return slices.SortedFunc(maps.Values(i.identities), func(a, b auth.Identity) int {
+		return cmp.Compare(a.Name, b.Name)
 	}), true
 }
 
-// CurrentUID returns the UID of an account that carries the caller label now, per the informer. It reports false
-// whenever the account is absent or the view is unhealthy, so callers fail closed.
-func (i *callerIndex) CurrentUID(account auth.Account) (string, bool) {
-	if !i.health.Available() {
-		return "", false
-	}
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-	uid, ok := i.accounts[account]
-	return uid, ok && uid != ""
-}
-
-func (i *callerIndex) put(account *corev1.ServiceAccount) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	caller := auth.Account{Namespace: account.Namespace, Name: account.Name}
-	if i.mintable.Has(caller) {
-		i.accounts[caller] = string(account.UID)
+// GetIdentityUID reads the policy namespace directly so stale informer state cannot authorize a deleted or replaced
+// Identity incarnation.
+func (i *identityIndex) GetIdentityUID(ctx context.Context, name string) (string, bool, error) {
+	identity, err := i.objects.AgentplaneV1alpha1().Identities(i.namespace).Get(ctx, name, metav1.GetOptions{})
+	switch {
+	case apierrors.IsNotFound(err):
+		return "", false, nil
+	case err != nil:
+		return "", false, err
+	case identity.UID == "", !identity.DeletionTimestamp.IsZero():
+		return "", false, nil
+	default:
+		return string(identity.UID), true, nil
 	}
 }
 
-func (i *callerIndex) remove(namespace, name string) {
+func (i *identityIndex) put(identity *policyapi.Identity) {
+	if identity.UID == "" || !identity.DeletionTimestamp.IsZero() {
+		i.remove(identity.Name)
+		return
+	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	delete(i.accounts, auth.Account{Namespace: namespace, Name: name})
+	i.identities[identity.Name] = auth.Identity{Name: identity.Name, UID: string(identity.UID)}
 }
 
-func callerWatches(base *rest.Config, namespaces []string, mintable []auth.Account) (*callerIndex, *reader.Watches, error) {
-	index := &callerIndex{health: watchhealth.New(), mintable: sets.New(mintable...), accounts: map[auth.Account]string{}}
-	watches := reader.NewWatches(base, index.health)
-	for _, namespace := range sets.List(sets.New(namespaces...)) {
-		kind := watchhealth.Kind(namespace + "/serviceaccounts")
-		core, err := kubernetes.NewForConfig(watches.ConfigRecordingAs(kind))
-		if err != nil {
-			return nil, nil, err
-		}
-		selected := func(options *metav1.ListOptions) {
-			options.LabelSelector = callers.ServiceAccountLabelKey + "=" + callers.ServiceAccountLabelValue
-		}
-		if err := reader.Watch(
-			watches,
-			kind,
-			coreinformers.NewTypedFilteredServiceAccountInformer(core, namespace, 0, nil, selected),
-			index.put, func(name string) { index.remove(namespace, name) },
-		); err != nil {
-			return nil, nil, err
-		}
+func (i *identityIndex) remove(name string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	delete(i.identities, name)
+}
+
+func identityWatches(base *rest.Config, namespace string) (*identityIndex, *reader.Watches, error) {
+	health := watchhealth.New()
+	index := &identityIndex{health: health, namespace: namespace, identities: map[string]auth.Identity{}}
+	objects, err := policyclient.NewForConfig(base)
+	if err != nil {
+		return nil, nil, err
+	}
+	index.objects = objects
+	watches := reader.NewWatches(base, health)
+	kind := watchhealth.Kind(namespace + "/identities")
+	watcher, err := policyclient.NewForConfig(watches.ConfigRecordingAs(kind))
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := reader.Watch(watches, kind,
+		policyinformers.NewTypedFilteredIdentityInformer(watcher, namespace, 0, nil, nil), index.put, index.remove); err != nil {
+		return nil, nil, err
 	}
 	return index, watches, nil
 }
 
-func (i *callerIndex) ready() bool {
+func (i *identityIndex) ready() bool {
 	status := i.health.Status()
 	if !status.Available {
-		slog.Warn("MCP edge caller view unavailable", "synced", status.Synced, "failing", status.Failing)
+		slog.Warn("MCP edge Identity view unavailable", "synced", status.Synced, "failing", status.Failing)
 	}
 	return status.Available
 }
 
-func runCallers(ctx context.Context, watches *reader.Watches) <-chan struct{} {
+func runIdentities(ctx context.Context, watches *reader.Watches) <-chan struct{} {
 	done := make(chan struct{})
 	go func() { defer close(done); watches.Run(ctx) }()
 	return done

@@ -4,9 +4,8 @@ import { type StreamConnection } from "../stream_reader";
 import { Fragment, type JSX, useCallback, useEffect, useState } from "react";
 
 import { displayableError, HttpError } from "../client";
-import { isEligibleCaller, serviceAccountKey } from "./service_accounts";
 import {
-  connectionServiceAccounts,
+  connectionIdentities,
   listConnections,
   readConnectionWatchFrame,
   rebindConnection,
@@ -19,11 +18,15 @@ import { followWatch } from "../watch_stream";
 import { CallerGrants } from "./caller_grants";
 import { InlineName } from "../inline_name";
 import { GrantStatus, type Connection } from "../../../mcp_edge/connection_service_pb";
-import type { ServiceAccount } from "../../../proto/identity_pb";
+import type { Identity } from "../../../proto/identity_pb";
 
 type Grant = Connection["grants"][number];
 
-/** The grant a row's Client/Service account columns describe: the connection's latest revision. */
+function identityKey(identity: Identity): string {
+  return `${identity.name}/${identity.uid}`;
+}
+
+/** The grant described by a row: the connection's latest revision. */
 function currentGrant(connection: Connection): Grant | undefined {
   return connection.grants.reduce<Grant | undefined>(
     (latest, grant) => (latest === undefined || grant.revision > latest.revision ? grant : latest),
@@ -32,15 +35,15 @@ function currentGrant(connection: Connection): Grant | undefined {
 }
 
 export function Connections(): JSX.Element {
-  const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [snapshot, setRows] = useState<Connection[] | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   const rows = snapshot ?? [];
   const loaded = snapshot !== null;
-  const [accounts, setAccounts] = useState<ServiceAccount[]>([]);
+  const [identities, setIdentities] = useState<Identity[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unlinking, setUnlinking] = useState<Connection | null>(null);
+  const [expandedGrants, setExpandedGrants] = useState<string | null>(null);
   const [rebinding, setRebinding] = useState<{ row: Connection; target: string; confirm: boolean } | null>(null);
 
   useEffect(() => {
@@ -83,9 +86,9 @@ export function Connections(): JSX.Element {
   }, [setRows]);
 
   const load = useCallback(async (): Promise<void> => {
-    const [connections, callers] = await Promise.all([listConnections(), connectionServiceAccounts()]);
+    const [connections, liveIdentities] = await Promise.all([listConnections(), connectionIdentities()]);
     setRows(connections);
-    setAccounts(callers);
+    setIdentities(liveIdentities);
   }, [setRows]);
 
   const refresh = useCallback(async (): Promise<void> => {
@@ -143,9 +146,9 @@ export function Connections(): JSX.Element {
 
   async function confirmRebind(): Promise<void> {
     if (rebinding === null) return;
-    const target = accounts.find((account) => serviceAccountKey(account) === rebinding.target);
+    const target = identities.find((identity) => identityKey(identity) === rebinding.target);
     if (!target) {
-      setError("Selected ServiceAccount is no longer eligible. Refresh before retrying.");
+      setError("Selected Identity is no longer live. Refresh before retrying.");
       return;
     }
     setBusy(true);
@@ -187,9 +190,10 @@ export function Connections(): JSX.Element {
   return (
     <Stack>
       <Text c="dimmed" size="sm">
-        Named external clients and the ServiceAccount they currently act as. Changing an account keeps existing client
-        tokens usable for future requests; already-submitted Actions retain their original authority. Unlink revokes
-        access without stopping already claimed work.
+        Named external clients and the Identity they currently act as. A legacy ServiceAccount binding is paused until
+        you explicitly choose a live Identity. Rebinding changes future requests made with existing client tokens;
+        already-submitted Actions retain their original authority. Unlink revokes access without stopping already
+        claimed work.
       </Text>
       {connection.phase === "reconnecting" && (
         <Text role="status">Connection lost; showing last OAuth clients. Reconnecting…</Text>
@@ -206,15 +210,20 @@ export function Connections(): JSX.Element {
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Client</Table.Th>
-              <Table.Th>Service account</Table.Th>
+              <Table.Th>Identity</Table.Th>
               <Table.Th />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {rows.map((row) => {
               const grant = currentGrant(row);
-              const currentKey = row.boundCaller ? serviceAccountKey(row.boundCaller) : null;
+              const currentKey = row.boundIdentity ? identityKey(row.boundIdentity) : null;
               const selected = rebinding?.row.id === row.id ? rebinding.target : currentKey;
+              const currentIdentityIsLive =
+                row.boundIdentity !== undefined &&
+                identities.some(
+                  (identity) => identity.name === row.boundIdentity?.name && identity.uid === row.boundIdentity?.uid
+                );
               return (
                 <Fragment key={row.id}>
                   <Table.Tr data-connection-id={row.id}>
@@ -235,64 +244,86 @@ export function Connections(): JSX.Element {
                       </Text>
                     </Table.Td>
                     <Table.Td>
-                      {row.boundCaller ? (
+                      {row.identityBindingRequired && (
+                        <Alert color="orange" title="Identity binding required">
+                          <Text size="sm">
+                            This legacy Connection is paused. Its ServiceAccount binding is retained only as historical
+                            attribution
+                            {row.legacyBoundCaller
+                              ? ` (${row.legacyBoundCaller.namespace}/${row.legacyBoundCaller.name})`
+                              : ""}
+                            . Choose a live Identity and confirm the rebind to resume its existing grants.
+                          </Text>
+                        </Alert>
+                      )}
+                      {row.boundIdentity || row.identityBindingRequired ? (
                         <Stack gap={2}>
                           <Text className="agentplane-connection-mobile-label" size="xs" fw={600}>
-                            Service account
+                            Identity
                           </Text>
                           <Select
-                            aria-label={`Service account for ${row.displayName}`}
+                            aria-label={`Identity for ${row.displayName}`}
                             value={selected}
                             onChange={(value) => {
                               if (value) setRebinding({ row, target: value, confirm: false });
                             }}
                             data={[
-                              ...accounts.map((account) => ({
-                                value: serviceAccountKey(account),
-                                label: serviceAccountKey(account),
+                              ...identities.map((identity) => ({
+                                value: identityKey(identity),
+                                label: `${identity.name} · UID ${identity.uid}`,
                               })),
-                              ...(!isEligibleCaller(row.boundCaller, accounts)
-                                ? [{ value: currentKey!, label: currentKey!, disabled: true }]
+                              ...(row.boundIdentity && !currentIdentityIsLive
+                                ? [
+                                    {
+                                      value: currentKey!,
+                                      label: `${row.boundIdentity.name} · UID ${row.boundIdentity.uid} (not live)`,
+                                      disabled: true,
+                                    },
+                                  ]
                                 : []),
                             ]}
                             disabled={busy}
                             size="xs"
-                            className="agentplane-connection-account-select"
+                            className="agentplane-connection-identity-select"
                           />
-                          <Button
-                            size="compact-xs"
-                            variant="subtle"
-                            aria-expanded={expandedGrants === row.id}
-                            aria-controls={`caller-grants-${row.id}`}
-                            onClick={() => setExpandedGrants(expandedGrants === row.id ? null : row.id)}
-                          >
-                            {expandedGrants === row.id ? "Hide grants" : "View grants"}
-                          </Button>
-                          {!isEligibleCaller(row.boundCaller, accounts) && (
+                          {row.boundIdentity && !currentIdentityIsLive && (
                             <Text size="xs" c="orange">
-                              ServiceAccount not labeled as an Action caller
+                              Bound Identity is missing, deleting, or has been replaced
                             </Text>
                           )}
-                          {rebinding?.row.id === row.id && rebinding.target !== currentKey && !rebinding.confirm && (
-                            <Group gap="xs">
-                              <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
-                                Cancel
-                              </Button>
-                              <Button
-                                size="xs"
-                                disabled={busy}
-                                onClick={() => setRebinding({ ...rebinding, confirm: true })}
-                              >
-                                Apply
-                              </Button>
-                            </Group>
+                          {currentIdentityIsLive && (
+                            <Button
+                              size="xs"
+                              variant="subtle"
+                              aria-expanded={expandedGrants === row.id}
+                              aria-controls={`caller-grants-${row.id}`}
+                              onClick={() => setExpandedGrants(expandedGrants === row.id ? null : row.id)}
+                            >
+                              {expandedGrants === row.id ? "Hide grants" : "View grants"}
+                            </Button>
                           )}
+                          {rebinding?.row.id === row.id &&
+                            (rebinding.target !== currentKey || row.identityBindingRequired) &&
+                            !rebinding.confirm && (
+                              <Group gap="xs">
+                                <Button size="xs" variant="subtle" onClick={() => setRebinding(null)}>
+                                  Cancel
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  disabled={busy}
+                                  onClick={() => setRebinding({ ...rebinding, confirm: true })}
+                                >
+                                  Apply
+                                </Button>
+                              </Group>
+                            )}
                           {rebinding?.confirm && rebinding.row.id === row.id && (
-                            <Alert color="orange" title={`Change ${row.displayName}'s ServiceAccount?`}>
+                            <Alert color="orange" title={`Change ${row.displayName}'s Identity?`}>
                               <Text size="sm">
-                                Existing client tokens will act as {rebinding.target} on future requests. Pending
-                                Actions admitted under the previous account will not be silently upgraded; already
-                                claimed executions continue.
+                                Existing client tokens will act as Identity {rebinding.target} on future requests.
+                                Historical grant and consent records stay unchanged. Pending Actions are not rewritten;
+                                already claimed executions continue.
                               </Text>
                               <Group mt="xs">
                                 <Button size="xs" variant="subtle" disabled={busy} onClick={() => setRebinding(null)}>
@@ -306,7 +337,7 @@ export function Connections(): JSX.Element {
                           )}
                         </Stack>
                       ) : (
-                        "—"
+                        <Text c="dimmed">Unbound</Text>
                       )}
                     </Table.Td>
                     <Table.Td>
@@ -341,11 +372,14 @@ export function Connections(): JSX.Element {
                       )}
                     </Table.Td>
                   </Table.Tr>
-                  {expandedGrants === row.id && row.boundCaller && (
+                  {expandedGrants === row.id && row.boundIdentity && currentIdentityIsLive && (
                     <Table.Tr>
                       <Table.Td colSpan={3}>
                         <div id={`caller-grants-${row.id}`}>
-                          <CallerGrants key={currentKey} account={row.boundCaller} />
+                          <CallerGrants
+                            key={`${row.boundIdentity.name}/${row.boundIdentity.uid}`}
+                            identity={row.boundIdentity}
+                          />
                         </div>
                       </Table.Td>
                     </Table.Tr>

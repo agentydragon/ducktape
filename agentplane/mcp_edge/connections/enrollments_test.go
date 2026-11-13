@@ -58,7 +58,7 @@ func allowNew(handle string) *pb.DecideConnectionEnrollmentRequest {
 	return &pb.DecideConnectionEnrollmentRequest{
 		Handle: handle, ExpectedVersion: 1,
 		Decision: &pb.DecideConnectionEnrollmentRequest_Allow{Allow: &pb.EnrollmentAllow{
-			ServiceAccount: message(callerAccount),
+			Identity: identityMessage(callerIdentity),
 			Connection: &pb.EnrollmentAllow_NewConnection{
 				NewConnection: &pb.NewConnection{DisplayName: " test-new-connection "},
 			},
@@ -84,10 +84,10 @@ func reconnect(handle, id string, version int64) *pb.DecideConnectionEnrollmentR
 // storedDecision is the decision an enrollment row records.
 type storedDecision struct {
 	verdict, displayName, connectionID sql.NullString
-	// callerNamespace and callerName are those of the caller document; NULL when there is none.
-	callerNamespace, callerName sql.NullString
-	version                     int64
-	connectionVersion           sql.NullInt64
+	// identityName and identityUID are the exact Identity the operator consented to; NULL when there is none.
+	identityName, identityUID sql.NullString
+	version                   int64
+	connectionVersion         sql.NullInt64
 }
 
 func (s *served) storedDecision(t *testing.T, handle string) storedDecision {
@@ -95,11 +95,11 @@ func (s *served) storedDecision(t *testing.T, handle string) storedDecision {
 	var d storedDecision
 	if err := s.db.QueryRowContext(
 		t.Context(), `
-		SELECT verdict, caller->>'namespace', caller->>'name', display_name, connection_id::text, version,
+		SELECT verdict, caller_identity->>'name', caller_identity->>'uid', display_name, connection_id::text, version,
 			connection_version
 		FROM connection_enrollment WHERE handle_hash = $1`, sha256Hex(handle),
 	).Scan(
-		&d.verdict, &d.callerNamespace, &d.callerName, &d.displayName, &d.connectionID, &d.version, &d.connectionVersion,
+		&d.verdict, &d.identityName, &d.identityUID, &d.displayName, &d.connectionID, &d.version, &d.connectionVersion,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +178,8 @@ func TestAnAllowIsRecordedOnceAndEveryDecisionAfterItIsRefused(t *testing.T) {
 		t.Errorf("%d decisions recorded", recorded)
 	}
 	got := s.storedDecision(t, handle)
-	if got.verdict.String != "allow" || got.callerNamespace.String != callerAccount.Namespace ||
-		got.callerName.String != callerAccount.Name ||
+	if got.verdict.String != "allow" || got.identityName.String != callerIdentity.Name ||
+		got.identityUID.String != callerIdentity.UID ||
 		got.displayName.String != "test-new-connection" || got.connectionID.Valid || got.version != 2 {
 		t.Errorf("recorded %+v", got)
 	}
@@ -196,7 +196,7 @@ func TestAnAllowIsRecordedOnceAndEveryDecisionAfterItIsRefused(t *testing.T) {
 	wantCode(t, "a deny after the allow", err, codes.FailedPrecondition)
 }
 
-func TestADenyRecordsNoAccountAndSendsTheBrowserNowhere(t *testing.T) {
+func TestADenyRecordsNoIdentityAndSendsTheBrowserNowhere(t *testing.T) {
 	s := serve(t)
 	handle := s.previewed(t)
 	answer, err := s.client.DecideConnectionEnrollment(as(t, testOperator), deny(handle))
@@ -206,12 +206,12 @@ func TestADenyRecordsNoAccountAndSendsTheBrowserNowhere(t *testing.T) {
 	if answer.GetVerdict() != action_servicepb.Verdict_VERDICT_DENY || answer.RedirectUrl != nil {
 		t.Errorf("answer %v", answer)
 	}
-	if got := s.storedDecision(t, handle); got.verdict.String != "deny" || got.callerName.Valid || got.version != 2 {
+	if got := s.storedDecision(t, handle); got.verdict.String != "deny" || got.identityName.Valid || got.version != 2 {
 		t.Errorf("recorded %+v", got)
 	}
 }
 
-func TestADecisionNeedsTheReviewedVersionAndALabeledAccount(t *testing.T) {
+func TestADecisionNeedsTheReviewedVersionAndALiveIdentity(t *testing.T) {
 	s := serve(t)
 	handle := s.previewed(t)
 	stale := deny(handle)
@@ -219,12 +219,12 @@ func TestADecisionNeedsTheReviewedVersionAndALabeledAccount(t *testing.T) {
 	_, err := s.client.DecideConnectionEnrollment(as(t, testOperator), stale)
 	wantCode(t, "a decision at a stale version", err, codes.Aborted)
 	unlabeled := allowNew(handle)
-	unlabeled.GetAllow().ServiceAccount = message(unlabeledAccount)
+	unlabeled.GetAllow().Identity = identityMessage(unavailableIdentity)
 	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), unlabeled)
-	wantCode(t, "an allow of an unlabeled account", err, codes.PermissionDenied)
-	s.callers.goStale()
+	wantCode(t, "an allow of a non-live Identity", err, codes.FailedPrecondition)
+	s.identities.goStale()
 	_, err = s.client.DecideConnectionEnrollment(as(t, testOperator), allowNew(handle))
-	wantCode(t, "an allow while the view of the callers is stale", err, codes.PermissionDenied)
+	wantCode(t, "an allow while the view of Identities is stale", err, codes.FailedPrecondition)
 	// None of them was recorded.
 	if got := s.storedDecision(t, handle); got.verdict.Valid || got.version != 1 {
 		t.Errorf("recorded %+v", got)
@@ -237,7 +237,7 @@ func TestAMalformedDecisionIsAnInvalidArgument(t *testing.T) {
 	for name, change := range map[string]func(*pb.DecideConnectionEnrollmentRequest){
 		"no decision":               func(r *pb.DecideConnectionEnrollmentRequest) { r.Decision = nil },
 		"version 0":                 func(r *pb.DecideConnectionEnrollmentRequest) { r.ExpectedVersion = 0 },
-		"an allow of no account":    func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().ServiceAccount = nil },
+		"an allow of no Identity":   func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().Identity = nil },
 		"an allow of no Connection": func(r *pb.DecideConnectionEnrollmentRequest) { r.GetAllow().Connection = nil },
 		"a blank Connection name": func(r *pb.DecideConnectionEnrollmentRequest) {
 			r.GetAllow().GetNewConnection().DisplayName = " "
@@ -262,7 +262,7 @@ func TestAMalformedDecisionIsAnInvalidArgument(t *testing.T) {
 
 func TestAReconnectRecordsTheConnectionAtTheVersionReviewed(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-reconnected", callerAccount)
+	c := s.active(t, "test-reconnected", callerIdentity)
 	handle := s.previewed(t)
 	answer, err := s.client.DecideConnectionEnrollment(as(t, testOperator), reconnect(handle, c.GetId(), 1))
 	if err != nil || answer.GetVerdict() != action_servicepb.Verdict_VERDICT_ALLOW {

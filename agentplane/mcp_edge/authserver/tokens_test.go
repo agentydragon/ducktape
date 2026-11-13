@@ -25,7 +25,7 @@ func TestACodeExchangeActivatesTheGrantItIssuesTokensFor(t *testing.T) {
 		tokens.ExpiresIn < int64((accessTokenLifetime-time.Minute)/time.Second) {
 		t.Errorf("issued %+v", tokens)
 	}
-	h.wantAdmitted(t, "the access token", tokens.AccessToken, callerAccount)
+	h.wantAdmitted(t, "the access token", tokens.AccessToken, callerIdentity)
 	grants := h.only(t).GetGrants()
 	if len(grants) != 1 || grants[0].GetClientId() != r.clientID || grants[0].GetIssuer() != h.url ||
 		grants[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_ACTIVE {
@@ -99,7 +99,7 @@ func TestAReplayedCodeRevokesTheGrantItsFirstExchangeActivated(t *testing.T) {
 	h.wantInvalid(t, "the first exchange's access token", first.AccessToken)
 	wantRefused(t, "a refresh of the first exchange's refresh token", h.refresh(t, r.clientID, first.RefreshToken),
 		http.StatusBadRequest, "invalid_grant", "")
-	if c := h.only(t); c.GetGrants()[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED || c.GetBoundCaller() == nil {
+	if c := h.only(t); c.GetGrants()[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED || c.GetBoundIdentity() == nil {
 		t.Errorf("after the replay %v", c)
 	}
 }
@@ -157,18 +157,18 @@ func TestTheExchangeRefusesAConsentThatAllowsNoGrant(t *testing.T) {
 			return h.answer(t, r, must(h.signIn(h.upstreamURLOf(t, r)))(t)).Get("code")
 		}},
 		{"a consent of an operator other than the approver", func(r request) string {
-			allowed := must(h.consent(t.Context(), h.authorizeURL(r, nil), testOtherOperator, newConnection(callerAccount)))(t)
+			allowed := must(h.consent(t.Context(), h.authorizeURL(r, nil), testOtherOperator, newConnection(callerIdentity)))(t)
 			return h.answer(t, r, must(h.signIn(allowed.GetRedirectUrl()))(t)).Get("code")
 		}},
 		{"a consent for an account no longer labeled", func(r request) string {
 			code := h.code(t, r)
-			h.callers.label(otherAccount)
+			h.identities.label(otherIdentity)
 			return code
 		}},
 	} {
 		r := newRequest(clientID)
 		wantRefused(t, refused.what, h.exchange(t, r, refused.authorize(r), nil), http.StatusBadRequest, "invalid_grant", "")
-		h.callers.label(callerAccount, otherAccount)
+		h.identities.label(callerIdentity, otherIdentity)
 	}
 	if listed := h.listConnections(t); len(listed) != 0 {
 		t.Errorf("the refused exchanges created %v", listed)
@@ -181,10 +181,10 @@ func TestAReconnectRevokesTheOldClientsTokensAndKeepsTheConnection(t *testing.T)
 	old := h.tokens(t, oldClient)
 	c := h.only(t)
 	r := newRequest(h.client(t))
-	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), reconnection(otherAccount, c)))(t))
-	h.wantAdmitted(t, "the old access token before the exchange", old.AccessToken, callerAccount)
+	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), reconnection(otherIdentity, c)))(t))
+	h.wantAdmitted(t, "the old access token before the exchange", old.AccessToken, callerIdentity)
 	fresh := issued(t, "the reconnect", h.exchange(t, r, answer.Get("code"), nil))
-	h.wantAdmitted(t, "the new access token", fresh.AccessToken, otherAccount)
+	h.wantAdmitted(t, "the new access token", fresh.AccessToken, otherIdentity)
 	h.wantInvalid(t, "the old access token", old.AccessToken)
 	wantRefused(t, "a refresh of the old refresh token", h.refresh(t, oldClient, old.RefreshToken),
 		http.StatusBadRequest, "invalid_grant", "")
@@ -203,14 +203,14 @@ func TestAReconnectOfAConnectionChangedSinceConsentIsRefusedAndRevokesNothing(t 
 	current := h.tokens(t, clientID)
 	c := h.only(t)
 	r := newRequest(clientID)
-	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), reconnection(callerAccount, c)))(t))
+	answer := h.answer(t, r, must(h.authorize(t.Context(), h.authorizeURL(r, nil), reconnection(callerIdentity, c)))(t))
 	if _, err := h.connections.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
 		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(), DisplayName: "test-renamed",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	wantRefused(t, "the stale reconnect", h.exchange(t, r, answer.Get("code"), nil), http.StatusBadRequest, "invalid_grant", "")
-	h.wantAdmitted(t, "the current access token", current.AccessToken, callerAccount)
+	h.wantAdmitted(t, "the current access token", current.AccessToken, callerIdentity)
 }
 
 func TestARefreshRotatesTheRefreshTokenAndASpentOneRevokesTheGrant(t *testing.T) {
@@ -221,7 +221,7 @@ func TestARefreshRotatesTheRefreshTokenAndASpentOneRevokesTheGrant(t *testing.T)
 	if second.RefreshToken == "" || second.RefreshToken == first.RefreshToken {
 		t.Errorf("refreshed %+v", second)
 	}
-	h.wantAdmitted(t, "the refreshed access token", second.AccessToken, callerAccount)
+	h.wantAdmitted(t, "the refreshed access token", second.AccessToken, callerIdentity)
 	wantRefused(t, "the spent refresh token", h.refresh(t, clientID, first.RefreshToken), http.StatusBadRequest,
 		"invalid_grant", refreshReused)
 	h.wantInvalid(t, "the refreshed access token after the reuse", second.AccessToken)
@@ -290,7 +290,7 @@ func TestARefreshTokenIsRedeemedOnlyByItsClientWhileItLasts(t *testing.T) {
 	} {
 		tokens := h.tokens(t, clientID)
 		wantRefused(t, refused.what, refused.refresh(tokens), http.StatusBadRequest, refused.code, refused.description)
-		h.wantAdmitted(t, refused.what+", then the access token", tokens.AccessToken, callerAccount)
+		h.wantAdmitted(t, refused.what+", then the access token", tokens.AccessToken, callerIdentity)
 	}
 }
 
@@ -319,7 +319,7 @@ func TestARevocationEndsTheGrantOfATokenOnlyItsClientHolds(t *testing.T) {
 		tokens := h.tokens(t, clientID)
 		token := map[string]string{"access": tokens.AccessToken, "refresh": tokens.RefreshToken}[kind]
 		revoked("another client revoking the "+kind+" token", h.revoke(t, other, token))
-		h.wantAdmitted(t, "after another client revoked the "+kind+" token", tokens.AccessToken, callerAccount)
+		h.wantAdmitted(t, "after another client revoked the "+kind+" token", tokens.AccessToken, callerIdentity)
 		revoked("revoking the "+kind+" token", h.revoke(t, clientID, token))
 		h.wantInvalid(t, "after revoking the "+kind+" token", tokens.AccessToken)
 		wantRefused(t, "a refresh after revoking the "+kind+" token", h.refresh(t, clientID, tokens.RefreshToken),
@@ -328,7 +328,7 @@ func TestARevocationEndsTheGrantOfATokenOnlyItsClientHolds(t *testing.T) {
 	}
 	revoked("revoking an unknown token", h.revoke(t, clientID, "test-unknown-token"))
 	for _, c := range h.listConnections(t) {
-		if c.GetGrants()[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED || c.GetBoundCaller() == nil {
+		if c.GetGrants()[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED || c.GetBoundIdentity() == nil {
 			t.Errorf("after the revocations %v", c)
 		}
 	}
@@ -338,12 +338,12 @@ func TestABearerIsAdmittedAsTheAccountItsLiveGrantIsBoundTo(t *testing.T) {
 	h := start(t)
 	clientID := h.client(t)
 	tokens := h.tokens(t, clientID)
-	h.wantAdmitted(t, "the access token", tokens.AccessToken, callerAccount)
+	h.wantAdmitted(t, "the access token", tokens.AccessToken, callerIdentity)
 	h.wantInvalid(t, "an unknown token", "test-unknown-token")
 	h.wantInvalid(t, "the refresh token", tokens.RefreshToken)
-	h.callers.label(otherAccount)
+	h.identities.label(otherIdentity)
 	h.wantInvalid(t, "the access token of an account no longer labeled", tokens.AccessToken)
-	h.callers.label(callerAccount, otherAccount)
+	h.identities.label(callerIdentity, otherIdentity)
 	c := h.only(t)
 	if _, err := h.connections.UnbindConnection(as(t, testOperator), &pb.UnbindConnectionRequest{
 		ConnectionId: c.GetId(), ExpectedVersion: c.GetVersion(),

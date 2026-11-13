@@ -279,6 +279,7 @@ async def test_actions_hidden_codepoints(view: VisualPage, app: AgentplaneFixtur
 @DESKTOP_AND_MOBILE
 async def test_consent(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/connection-enrollments/test-only-opaque-handle")
+    await expect(view.page.locator('select[name="identity"]')).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 

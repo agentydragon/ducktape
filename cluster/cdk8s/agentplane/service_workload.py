@@ -93,6 +93,7 @@ def add_service_workload(
     replica_profile: ReplicaProfile | None = None,
     args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
+    service_account_labels: dict[str, str] | None = None,
     annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
@@ -118,7 +119,7 @@ def add_service_workload(
     account = ServiceAccount(
         scope,
         "account",
-        metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=service_account_labels),
         automount_token=automount_service_account_token,
     )
     deployment = Deployment(

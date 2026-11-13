@@ -1,21 +1,19 @@
 import { Alert, Group, Stack, Text, Title } from "@mantine/core";
 import type { JSX } from "react";
 
-import { ActionPolicyWatch } from "../actions/policy";
 import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
 import { usePolicyResources } from "../policy/watch";
-import { serviceAccountKey } from "./service_accounts";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
-import type { ServiceAccount } from "../../../proto/identity_pb";
+import type { Identity } from "../../../proto/identity_pb";
 
-/** Observe the policy resources naming this ServiceAccount. */
-export function CallerGrants({ account }: { account: ServiceAccount }): JSX.Element {
-  const policy = usePolicyResources({ case: "subject", value: account }, undefined);
+/** Observe the policy resources naming the currently live, bound Identity. */
+export function CallerGrants({ identity }: { identity: Identity }): JSX.Element {
+  const policy = usePolicyResources({ case: "identity", value: identity.name }, identity.uid);
   return (
-    <Stack component="section" aria-label={`Grants for ${serviceAccountKey(account)}`} gap="sm" py="sm">
-      <Title order={5}>Grants for {serviceAccountKey(account)}</Title>
+    <Stack component="section" aria-label={`Grants for ${identity.name}`} gap="sm" py="sm">
+      <Title order={5}>Grants for {identity.name}</Title>
       <Text size="sm" c="dimmed">
-        Policy bindings shared by all clients and workloads using this ServiceAccount. Kubernetes RBAC is not included.
+        Policy bindings shared by clients and workloads using this Identity. Kubernetes RBAC is not included.
       </Text>
       {policy.error && (
         <Alert color="red" role="alert">
@@ -33,11 +31,10 @@ export function CallerGrants({ account }: { account: ServiceAccount }): JSX.Elem
             bindings={policy.resources.bindings}
             policySets={policy.resources.sets}
             onRevoke={null}
-            subjectKind="ServiceAccount"
+            subjectKind="identity"
           />
         </>
       )}
-      <ActionPolicyWatch subject={account} />
     </Stack>
   );
 }

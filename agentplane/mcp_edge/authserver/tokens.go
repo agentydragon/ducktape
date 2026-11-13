@@ -259,10 +259,15 @@ func tokenError(err error) error {
 	}
 }
 
-// VerifyBearer is /mcp's auth.TokenVerifier. It admits an unexpired access token this server issued as the account
-// its grant's Connection is bound to now, which TokenInfo.UserID holds as `namespace/name`. A fault of the database
-// is wrapped in mcpserver.ErrAuthorityUnavailable.
-func (s *Server) VerifyBearer(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+// ConnectionTokenInfo is the live Connection authority behind an external MCP bearer.
+type ConnectionTokenInfo struct {
+	Grant     connections.ResolvedGrant
+	ExpiresAt time.Time
+}
+
+// VerifyConnectionBearer resolves an unexpired access token to its current Connection, grant, and exact live Identity.
+// A fault of the database or Identity API is wrapped in mcpserver.ErrAuthorityUnavailable.
+func (s *Server) VerifyConnectionBearer(ctx context.Context, token string) (*ConnectionTokenInfo, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", mcpserver.ErrAuthorityUnavailable, err)
@@ -284,7 +289,7 @@ func (s *Server) VerifyBearer(ctx context.Context, token string, _ *http.Request
 	case !expiresAt.After(time.Now()):
 		return nil, auth.ErrInvalidToken
 	}
-	account, err := s.connections.ResolveGrant(ctx, tx, id, s.issuer, clientID)
+	grant, err := s.connections.ResolveGrant(ctx, tx, id, s.issuer, clientID)
 	var refused connections.Refusal
 	switch {
 	case errors.As(err, &refused):
@@ -292,7 +297,17 @@ func (s *Server) VerifyBearer(ctx context.Context, token string, _ *http.Request
 	case err != nil:
 		return nil, fmt.Errorf("%w: %w", mcpserver.ErrAuthorityUnavailable, err)
 	}
+	return &ConnectionTokenInfo{Grant: grant, ExpiresAt: expiresAt}, nil
+}
+
+// VerifyBearer is /mcp's auth.TokenVerifier. Its user identifier is the bound Identity name, while the delegated
+// Action calls use the typed ConnectionTokenInfo above rather than parsing an untyped string.
+func (s *Server) VerifyBearer(ctx context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
+	info, err := s.VerifyConnectionBearer(ctx, token)
+	if err != nil {
+		return nil, err
+	}
 	return &auth.TokenInfo{
-		UserID: account.Namespace + "/" + account.Name, Expiration: expiresAt, Scopes: []string{scopeActions},
+		UserID: info.Grant.Identity.Name, Expiration: info.ExpiresAt, Scopes: []string{scopeActions},
 	}, nil
 }

@@ -1,4 +1,4 @@
-// External Connections: MCP clients outside the cluster that act on Actions as a ServiceAccount, and the operator
+// External Connections: MCP clients outside the cluster that act on Actions as a workload Identity, and the operator
 // consent that creates them.
 syntax = "proto3";
 
@@ -12,14 +12,14 @@ import "agentplane/proto/identity.proto";
 
 // The caller is the integration app acting for an operator, with the operator's OIDC bearer as for
 // `agentplane.action_service.OperatorActionService`. A Connection's active grant lets its OAuth client call the MCP
-// server as the Connection's bound ServiceAccount; what that account may do is the Action Service's policy, not the
+// server as the Connection's bound Identity; what that Identity may do is the Action Service's policy, not the
 // Connection's.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
 // expired. `INVALID_ARGUMENT` is a malformed request. `NOT_FOUND` is a Connection or enrollment that does not exist.
 // `ABORTED` is an `expected_version` that is no longer current, or a Connection that changed after the operator
 // reviewed it. `FAILED_PRECONDITION` is a state that refuses the call: a Connection without an active grant or bound
-// caller, a ServiceAccount no longer labeled as an Action caller, or an enrollment that expired or is already decided.
+// caller, an Identity that is missing or has been replaced, or an enrollment that expired or is already decided.
 // `PERMISSION_DENIED` is an enrollment pinned to another operator. `UNAVAILABLE` is a draining service or a lost change
 // notification.
 //
@@ -34,10 +34,9 @@ import "agentplane/proto/identity.proto";
 // fresh token. A stream that ends `UNAUTHENTICATED` before its first frame was refused at the door, and retrying it
 // with the same token cannot succeed.
 service ConnectionService {
-  // The ServiceAccounts a new Connection may act as: those currently labeled as Action callers, as the service's
-  // watch sees them.
-  rpc ListCallerServiceAccounts(ListCallerServiceAccountsRequest) returns (ListCallerServiceAccountsResponse) {
-    option (google.api.http) = {get: "/v1/operator/caller-service-accounts"};
+  // The live Identities in the policy namespace that an operator may choose for a Connection.
+  rpc ListConnectionIdentities(ListConnectionIdentitiesRequest) returns (ListConnectionIdentitiesResponse) {
+    option (google.api.http) = {get: "/v1/operator/connection-identities"};
   }
 
   // Every external Connection, oldest first, with all its grants.
@@ -55,10 +54,10 @@ service ConnectionService {
     option (google.api.http) = {patch: "/v1/operator/connections/{connection_id}" body: "*"};
   }
 
-  // Retargets future uses of the Connection's issued tokens to another labeled ServiceAccount. Past grants stay as
+  // Retargets future uses of the Connection's issued tokens to another live Identity. Past grants stay as
   // they were, and requests already made keep the caller they were made as. Needs an active grant and a bound
-  // caller, else `FAILED_PRECONDITION`, as does a `service_account` not labeled as an Action caller. Rebinding to the
-  // account already bound changes nothing.
+  // caller, else `FAILED_PRECONDITION`, as does an Identity that is missing or has been replaced. A legacy
+  // ServiceAccount-bound Connection requires this explicit Identity rebind before its grants resolve again.
   rpc RebindConnection(RebindConnectionRequest) returns (RebindConnectionResponse) {
     option (google.api.http) = {post: "/v1/operator/connections/{connection_id}/rebind" body: "*"};
   }
@@ -85,17 +84,17 @@ service ConnectionService {
   // Records the operator's consent or refusal, once: any decision after it, even a repeat after a lost answer, fails
   // `FAILED_PRECONDITION`, and the authorization restarts from the MCP client. `expected_version` must be the
   // preview's `version`, else `ABORTED`, as does a reconnect target whose Connection changed since it was reviewed. An
-  // allow names a labeled ServiceAccount (else `PERMISSION_DENIED`) and either a new Connection or an existing one the
-  // operator confirmed. Consent alone grants nothing: the OAuth token exchange that follows does.
+  // allow names a live Identity and either a new Connection or an existing one the operator confirmed. Consent alone
+  // grants nothing: the OAuth token exchange that follows does.
   rpc DecideConnectionEnrollment(DecideConnectionEnrollmentRequest) returns (DecideConnectionEnrollmentResponse) {
     option (google.api.http) = {post: "/v1/operator/connection-enrollments/{handle}/decision" body: "*"};
   }
 }
 
-message ListCallerServiceAccountsRequest {}
+message ListConnectionIdentitiesRequest {}
 
-message ListCallerServiceAccountsResponse {
-  repeated agentplane.proto.ServiceAccount service_accounts = 1;
+message ListConnectionIdentitiesResponse {
+  repeated agentplane.proto.Identity identities = 1;
 }
 
 message ListConnectionsRequest {}
@@ -131,8 +130,10 @@ message RebindConnectionRequest {
   string connection_id = 1;
   // The Connection's current `version`.
   int64 expected_version = 2;
-  // The labeled ServiceAccount future uses act as.
-  agentplane.proto.ServiceAccount service_account = 3;
+  reserved 3;
+  reserved "service_account";
+  // The live Identity future uses act as. Its UID must match at consent and every use.
+  agentplane.proto.Identity identity = 4;
 }
 
 message RebindConnectionResponse {
@@ -169,7 +170,7 @@ message ConnectionChunk {
   repeated Connection connections = 1;
 }
 
-// An external client's access to Actions, acting as one ServiceAccount. Nothing is deleted: unbinding revokes.
+// An external client's access to Actions, acting as one Identity. Nothing is deleted: unbinding revokes.
 message Connection {
   // UUID.
   string id = 1;
@@ -180,8 +181,14 @@ message Connection {
   google.protobuf.Timestamp updated_at = 5;
   // Every grant the Connection has had, oldest revision first.
   repeated Grant grants = 6;
-  // The ServiceAccount its unrevoked grant acts as; absent exactly when the Connection is unbound.
-  agentplane.proto.ServiceAccount bound_caller = 7;
+  // Historical ServiceAccount binding copied by the Identity cutover migration. It is audit data only and is never
+  // an active authentication fallback.
+  agentplane.proto.ServiceAccount legacy_bound_caller = 7;
+  // The exact live Identity incarnation the Connection's active grants act as.
+  agentplane.proto.Identity bound_identity = 8;
+  // A migrated legacy binding is paused until an operator explicitly selects a live Identity. Its grant IDs, status,
+  // consent facts, and historical ServiceAccount attribution remain intact.
+  bool identity_binding_required = 9;
 }
 
 // One consented OAuth authorization of a Connection. Immutable apart from its status.
@@ -194,7 +201,7 @@ message Grant {
   string connection_id = 2;
   // From 1; a reconnect revokes the previous grant and adds the next revision.
   int32 revision = 3;
-  // The ServiceAccount consent chose. A rebind changes `Connection.bound_caller`, not this.
+  // Historical ServiceAccount attribution from grants consented before the Identity cutover. Never an active subject.
   agentplane.proto.ServiceAccount caller = 4;
   // The verified downstream OAuth issuer and client of the pair.
   string issuer = 5;
@@ -203,6 +210,9 @@ message Grant {
   google.protobuf.Timestamp created_at = 9;
   google.protobuf.Timestamp activated_at = 10;
   google.protobuf.Timestamp revoked_at = 11;
+  // The exact Identity incarnation selected at consent for grants created after the cutover. A later operator rebind
+  // changes Connection.bound_identity; it does not rewrite this audit fact.
+  agentplane.proto.Identity identity = 12;
 }
 
 enum GrantStatus {
@@ -246,13 +256,15 @@ message DecideConnectionEnrollmentRequest {
 }
 
 message EnrollmentAllow {
-  // A ServiceAccount labeled as an Action caller.
-  agentplane.proto.ServiceAccount service_account = 1;
+  reserved 1;
+  reserved "service_account";
   // Exactly one field is set.
   oneof connection {
     NewConnection new_connection = 2;
     ReconnectConnection reconnect = 3;
   }
+  // The live Identity incarnation the operator reviewed and authorized.
+  agentplane.proto.Identity identity = 4;
 }
 
 message NewConnection {

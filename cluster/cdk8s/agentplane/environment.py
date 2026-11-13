@@ -157,6 +157,8 @@ class ActionsProps:
     caller_service_account_namespaces: frozenset[str]
     mcp_servers: Mapping[Key, McpOAuthServer]
     action_groups: Mapping[Key, ActionGroup]
+    # Optional MCP edge actor trusted to delegate live Connection Identities on Action RPCs.
+    connection_delegation_actor: ServiceAccountRef | None = None
     # Public origin for upstream client metadata; None omits public exposure.
     hostname: str | None = None
     mcp_client_metadata: McpClientMetadataSettings | None = None
@@ -180,8 +182,6 @@ class McpEdgeProps:
     """The independently staged MCP/Connection authority; no Actions settings imply its scope."""
 
     operator_oidc: OperatorOidcSettings
-    caller_service_account_namespaces: frozenset[str]
-    mintable_accounts: frozenset[ServiceAccountRef]
     oauth_secret_name: str | None
     hostname: str | None
     replicas: ReplicaProfile | None = None

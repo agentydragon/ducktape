@@ -54,12 +54,12 @@ func (s *served) decide(t *testing.T, request *pb.DecideConnectionEnrollmentRequ
 	}
 }
 
-// allowed is an authorization testOperator allowed to create a Connection bound to the account.
-func (s *served) allowed(t *testing.T, account auth.Account) uuid.UUID {
+// allowed is an authorization testOperator allowed to create a Connection bound to the Identity.
+func (s *served) allowed(t *testing.T, identity auth.Identity) uuid.UUID {
 	t.Helper()
 	id, handle := s.authorize(t)
 	request := allowNew(handle)
-	request.GetAllow().ServiceAccount = message(account)
+	request.GetAllow().Identity = identityMessage(identity)
 	s.decide(t, request)
 	return id
 }
@@ -69,15 +69,15 @@ func (s *served) activate(t *testing.T, id uuid.UUID, by Operator) error {
 	return s.store.transaction(t.Context(), func(tx *sql.Tx) error { return s.store.Activate(t.Context(), tx, id, by) })
 }
 
-func (s *served) resolve(t *testing.T, id uuid.UUID, issuer, clientID string) (auth.Account, error) {
+func (s *served) resolve(t *testing.T, id uuid.UUID, issuer, clientID string) (ResolvedGrant, error) {
 	t.Helper()
-	var account auth.Account
+	var grant ResolvedGrant
 	err := s.store.transaction(t.Context(), func(tx *sql.Tx) error {
 		var err error
-		account, err = s.store.ResolveGrant(t.Context(), tx, id, issuer, clientID)
+		grant, err = s.store.ResolveGrant(t.Context(), tx, id, issuer, clientID)
 		return err
 	})
-	return account, err
+	return grant, err
 }
 
 func (s *served) revoke(t *testing.T, id uuid.UUID) error {
@@ -124,16 +124,17 @@ func TestAnEnrollmentOfAnEarlierOnesClientRedirectAndChallengeIsRefused(t *testi
 
 func TestActivatingAnAllowCreatesTheConnectionItNamedOnce(t *testing.T) {
 	s := serve(t)
-	id := s.allowed(t, callerAccount)
+	id := s.allowed(t, callerIdentity)
 	if err := s.activate(t, id, approver); err != nil {
 		t.Fatal(err)
 	}
 	c := s.connectionOf(t, id)
-	wantBound(t, "the created Connection", c, &callerAccount)
+	wantBound(t, "the created Connection", c, &callerIdentity)
 	grants := c.GetGrants()
 	if c.GetDisplayName() != "test-new-connection" || c.GetVersion() != 1 || len(grants) != 1 ||
 		grants[0].GetId() != id.String() || grants[0].GetRevision() != 1 ||
-		grants[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_ACTIVE || *accountOf(grants[0].GetCaller()) != callerAccount ||
+		grants[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_ACTIVE || grants[0].GetIdentity().GetName() != callerIdentity.Name ||
+		grants[0].GetIdentity().GetUid() != callerIdentity.UID || grants[0].GetCaller() != nil ||
 		grants[0].GetIssuer() != testServerIssuer || grants[0].GetClientId() != testClient ||
 		grants[0].GetActivatedAt() == nil {
 		t.Errorf("created %v", c)
@@ -143,14 +144,14 @@ func TestActivatingAnAllowCreatesTheConnectionItNamedOnce(t *testing.T) {
 
 func TestActivatingAReconnectReplacesTheConnectionsAuthorityInOneChange(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-reconnected", otherAccount)
+	c := s.active(t, "test-reconnected", otherIdentity)
 	id, handle := s.authorize(t)
 	s.decide(t, reconnect(handle, c.GetId(), 1))
 	if err := s.activate(t, id, approver); err != nil {
 		t.Fatal(err)
 	}
 	got := s.get(t, uuid.MustParse(c.GetId()))
-	wantBound(t, "the reconnected Connection", got, &callerAccount)
+	wantBound(t, "the reconnected Connection", got, &callerIdentity)
 	grants := got.GetGrants()
 	if got.GetVersion() != 2 || len(grants) != 2 ||
 		grants[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED || grants[0].GetRevokedAt() == nil ||
@@ -165,18 +166,18 @@ func TestActivationRefusesAConsentThatAllowsNoGrantNow(t *testing.T) {
 	undecided, _ := s.authorize(t)
 	denied, handle := s.authorize(t)
 	s.decide(t, deny(handle))
-	expired := s.allowed(t, callerAccount)
+	expired := s.allowed(t, callerIdentity)
 	if _, err := s.db.ExecContext(t.Context(),
 		`UPDATE connection_enrollment SET expires_at = now() - interval '1 second' WHERE id = $1`, expired); err != nil {
 		t.Fatal(err)
 	}
-	unlabeled := s.allowed(t, otherAccount)
-	s.callers.label(callerAccount)
-	reconnected := s.active(t, "test-reconnected", callerAccount)
+	unlabeled := s.allowed(t, otherIdentity)
+	s.identities.live(callerIdentity)
+	reconnected := s.active(t, "test-reconnected", callerIdentity)
 	changed, handle := s.authorize(t)
 	s.decide(t, reconnect(handle, reconnected.GetId(), 1))
 	s.rename(t, reconnected, "test-renamed")
-	allowed := s.allowed(t, callerAccount)
+	allowed := s.allowed(t, callerIdentity)
 
 	for _, refused := range []struct {
 		what string
@@ -190,7 +191,7 @@ func TestActivationRefusesAConsentThatAllowsNoGrantNow(t *testing.T) {
 		{"a denied consent", denied, approver, refusedNotApproved},
 		{"a consent another operator gave", allowed, Operator{Issuer: testIssuer, Subject: testOtherOperator}, refusedOperator},
 		{"a consent another issuer's operator gave", allowed, Operator{Issuer: "https://test-other-issuer.example", Subject: testOperator}, refusedOperator},
-		{"a consent for an account no longer labeled", unlabeled, approver, refusedCaller},
+		{"a consent for an Identity no longer current", unlabeled, approver, refusedCaller},
 		{"a reconnect of a Connection changed since consent", changed, approver, refusedChanged},
 	} {
 		wantRefusal(t, refused.what, s.activate(t, refused.id, refused.by), refused.want)
@@ -214,33 +215,33 @@ func TestActivationRefusesAConsentThatAllowsNoGrantNow(t *testing.T) {
 	}
 }
 
-func TestAGrantResolvesToTheAccountItsConnectionIsBoundToNow(t *testing.T) {
+func TestAGrantResolvesToTheIdentityItsConnectionIsBoundToNow(t *testing.T) {
 	s := serve(t)
-	id := s.allowed(t, callerAccount)
+	id := s.allowed(t, callerIdentity)
 	if err := s.activate(t, id, approver); err != nil {
 		t.Fatal(err)
 	}
-	if account, err := s.resolve(t, id, testServerIssuer, testClient); err != nil || account != callerAccount {
-		t.Errorf("resolved %v, %v; want %v", account, err, callerAccount)
+	if grant, err := s.resolve(t, id, testServerIssuer, testClient); err != nil || grant.Identity != callerIdentity {
+		t.Errorf("resolved %v, %v; want %v", grant, err, callerIdentity)
 	}
 	if _, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
-		ConnectionId: s.connectionOf(t, id).GetId(), ExpectedVersion: 1, ServiceAccount: message(otherAccount),
+		ConnectionId: s.connectionOf(t, id).GetId(), ExpectedVersion: 1, Identity: identityMessage(otherIdentity),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if account, err := s.resolve(t, id, testServerIssuer, testClient); err != nil || account != otherAccount {
-		t.Errorf("resolved %v, %v after the rebind; want %v", account, err, otherAccount)
+	if grant, err := s.resolve(t, id, testServerIssuer, testClient); err != nil || grant.Identity != otherIdentity {
+		t.Errorf("resolved %v, %v after the rebind; want %v", grant, err, otherIdentity)
 	}
 }
 
 func TestAGrantResolvesOnlyWhileActiveForItsIssuerAndClientOnABoundLabeledConnection(t *testing.T) {
 	s := serve(t)
-	id := s.allowed(t, callerAccount)
+	id := s.allowed(t, callerIdentity)
 	if err := s.activate(t, id, approver); err != nil {
 		t.Fatal(err)
 	}
 	// Python could leave a Connection unbound with an active grant; an unbind revokes its grants.
-	unbound := s.connect(t, "test-unbound", now(), nil, storedGrant{caller: callerAccount, status: grantActive})
+	unbound := s.connect(t, "test-unbound", now(), nil, storedGrant{identity: &callerIdentity, status: grantActive})
 	var unboundGrant uuid.UUID
 	if err := s.db.QueryRowContext(t.Context(), `SELECT id FROM external_connection_grant WHERE connection_id = $1`,
 		unbound).Scan(&unboundGrant); err != nil {
@@ -261,10 +262,10 @@ func TestAGrantResolvesOnlyWhileActiveForItsIssuerAndClientOnABoundLabeledConnec
 		wantRefusal(t, refused.what, err, refused.want)
 	}
 
-	s.callers.label(otherAccount)
+	s.identities.live(otherIdentity)
 	_, err := s.resolve(t, id, testServerIssuer, testClient)
-	wantRefusal(t, "a grant whose account is no longer labeled", err, refusedCaller)
-	s.callers.label(callerAccount)
+	wantRefusal(t, "a grant whose Identity UID is no longer current", err, refusedCaller)
+	s.identities.live(callerIdentity, otherIdentity)
 	if err := s.revoke(t, id); err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +275,7 @@ func TestAGrantResolvesOnlyWhileActiveForItsIssuerAndClientOnABoundLabeledConnec
 
 func TestRevokingAGrantChangesItsConnectionOnceAndKeepsItBound(t *testing.T) {
 	s := serve(t)
-	id := s.allowed(t, callerAccount)
+	id := s.allowed(t, callerIdentity)
 	if err := s.activate(t, id, approver); err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +285,7 @@ func TestRevokingAGrantChangesItsConnectionOnceAndKeepsItBound(t *testing.T) {
 		}
 	}
 	got := s.connectionOf(t, id)
-	wantBound(t, "the Connection of the revoked grant", got, &callerAccount)
+	wantBound(t, "the Connection of the revoked grant", got, &callerIdentity)
 	if got.GetVersion() != 2 || got.GetGrants()[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED ||
 		got.GetGrants()[0].GetRevokedAt() == nil {
 		t.Errorf("revoked %v", got)

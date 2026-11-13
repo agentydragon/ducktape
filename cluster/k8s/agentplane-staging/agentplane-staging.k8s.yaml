@@ -7017,6 +7017,9 @@ data:
       - haku-sandbox
       - public-coder-agent
     direct_wait_seconds: 30
+    connection_delegation_actor:
+      namespace: agentplane-staging
+      name: mcp-edge
     web_push:
       subject: mailto:agentydragon@gmail.com
       public_base_url: https://agentplane-staging.allegedly.works
@@ -8151,15 +8154,15 @@ data:
       audience: agentplane-staging-actions
       jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
       token_profile: authentik
-    caller_service_account_namespaces:
-      - agentplane-staging
-    mintable_accounts:
-      - agentplane-staging/claude-ai
+    policy_namespace: agentplane-staging
+    actions_token_file: /var/run/secrets/agentplane-mcp/actions
 immutable: false
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  labels:
+    agentplane.allegedly.works/use-action-service: "true"
   name: mcp-edge
   namespace: agentplane-staging
 automountServiceAccountToken: true
@@ -8276,6 +8279,9 @@ spec:
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
+            - mountPath: /var/run/secrets/agentplane-mcp
+              name: actions-token
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -8309,6 +8315,13 @@ spec:
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
+        - name: actions-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-egress
+                  expirationSeconds: 3600
+                  path: actions
 ---
 apiVersion: v1
 kind: Service
@@ -8350,28 +8363,13 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - ""
+      - agentplane.allegedly.works
     resources:
-      - serviceaccounts
-    verbs:
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resourceNames:
-      - claude-ai
-    resources:
-      - serviceaccounts
+      - identities
     verbs:
       - get
-  - apiGroups:
-      - ""
-    resourceNames:
-      - claude-ai
-    resources:
-      - serviceaccounts/token
-    verbs:
-      - create
+      - list
+      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

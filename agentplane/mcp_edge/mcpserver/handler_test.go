@@ -180,14 +180,22 @@ func TestAnAuthorityOutageIsNotAnInvalidToken(t *testing.T) {
 
 func TestToolsCallTheCoreAsTheVerifiedCaller(t *testing.T) {
 	recorder := &recordingCore{}
+	identity := &identitypb.Identity{Name: "test-identity", Uid: "identity-uid-1"}
 	h := newHarness(t, recorder.core(map[string]proto.Message{
-		"GetActionPolicy": &pb.GetActionPolicyResponse{ActionPolicy: &pb.CallerActionPolicy{Synced: true}},
+		"GetActionPolicy": &pb.GetActionPolicyResponse{ActionPolicy: &pb.CallerActionPolicy{Identity: identity, Synced: true}},
 	}, func(_ *pb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[pb.WatchActionRequestResponse]) error {
 		return stream.Send(&pb.WatchActionRequestResponse{ActionRequest: testRequest(pb.ActionState_ACTION_STATE_DENIED)})
 	}), Options{MaxWaitSeconds: 30})
 	for _, token := range []string{callerToken, otherCallerToken} {
 		session := h.connect(t, token)
-		callTool(t, session, "get_action_policy", `{}`)
+		policy := callTool(t, session, "get_action_policy", `{}`)
+		structured, ok := policy.StructuredContent.(map[string]any)
+		if !ok {
+			t.Errorf("structured policy = %T, want object", policy.StructuredContent)
+		} else if subject, ok := structured["subject"].(map[string]any); !ok ||
+			subject["name"] != identity.GetName() || subject["uid"] != identity.GetUid() {
+			t.Errorf("Identity policy subject = %v, want %s with UID %s", structured["subject"], identity.GetName(), identity.GetUid())
+		}
 		callTool(t, session, "get_action_request", `{"request_id": "`+testRequestID+`", "wait": {"wait_seconds": 10}}`)
 	}
 	rpcs, callers := recorder.recorded()

@@ -21,14 +21,17 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.action_service.policies.resources import CALLER_LABEL
+from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import ACTIONS_URI
+from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.mcp_routes import add_public_route
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
-from cluster.cdk8s.api_resource import custom_resource, named_resource
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import grpc_probe
@@ -76,10 +79,6 @@ class McpEdge(Construct):
         self.endpoint = service(env.namespace)
         self.http = http_service(env.namespace)
         props = env.mcp_edge
-        if not props.caller_service_account_namespaces:
-            raise ValueError("MCP edge needs an explicit caller namespace")
-        if any(account.namespace not in props.caller_service_account_namespaces for account in props.mintable_accounts):
-            raise ValueError("MCP edge mintable accounts must be in its caller namespaces")
 
         content = {
             "host": "0.0.0.0",
@@ -88,9 +87,10 @@ class McpEdge(Construct):
             "actions_target": f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
             "actions_tls": workload_tls.client_tls(ACTIONS_URI),
             "operator_oidc": props.operator_oidc,
-            "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
-            "mintable_accounts": sorted(f"{account.namespace}/{account.name}" for account in props.mintable_accounts),
+            "policy_namespace": env.namespace,
         }
+        if props.oauth_secret_name is not None:
+            content["actions_token_file"] = "/var/run/secrets/agentplane-mcp/actions"
         settings = SettingsFile(
             self,
             "settings",
@@ -114,6 +114,7 @@ class McpEdge(Construct):
             image_pull_policy=image_pull_policy,
             replica_profile=props.replicas,
             env_variables=variables,
+            service_account_labels={CALLER_LABEL: "true"} if props.oauth_secret_name is not None else None,
             readiness=grpc_probe(port=self.endpoint.pod_port, initial_delay_seconds=3),
             liveness=grpc_probe(port=self.endpoint.pod_port, service="livez", initial_delay_seconds=20),
             startup=grpc_probe(
@@ -152,34 +153,27 @@ class McpEdge(Construct):
             workload.container.mount(_SECRET_DIR, oauth_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.mount_trust_bundle(self, workload.container)
+        if props.oauth_secret_name is not None:
+            workload.project_tokens(
+                "actions-token", "/var/run/secrets/agentplane-mcp", {"actions": WORKLOAD_TOKEN_AUDIENCE}
+            )
         self._add_rbac(workload.account)
 
     def _add_rbac(self, account: ServiceAccount) -> None:
-        props = self.env.mcp_edge
-        for namespace in sorted(props.caller_service_account_namespaces):
-            mintable = sorted(item.name for item in props.mintable_accounts if item.namespace == namespace)
-            rules = [RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["list", "watch"])]
-            rules.extend(
-                RolePolicyRule(resources=[named_resource("", "serviceaccounts", name)], verbs=["get"])
-                for name in mintable
-            )
-            rules.extend(
-                RolePolicyRule(resources=[named_resource("", "serviceaccounts/token", name)], verbs=["create"])
-                for name in mintable
-            )
-            role = Role(
-                self, f"role-{namespace}", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), rules=rules
-            )
-            binding = RoleBinding(
-                self, f"rolebinding-{namespace}", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
-            )
-            binding.add_subjects(
-                account
-                if namespace == self.env.namespace
-                else ServiceAccount.from_service_account_name(
-                    self, f"account-ref-{namespace}", NAME, namespace_name=self.env.namespace
-                )
-            )
+        # ConnectionService is registered even without OAuth, and its Identity informer is a
+        # readiness dependency in every deployment. Keep this read-only role unconditional;
+        # OAuth-specific secrets and projected tokens remain conditional above.
+        namespace = self.env.namespace
+        role = Role(
+            self,
+            "identity-reader-role",
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
+            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get", "list", "watch"])],
+        )
+        binding = RoleBinding(
+            self, "identity-reader-rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
+        )
+        binding.add_subjects(account)
 
     def add_platform_resources(self) -> None:
         namespace = self.env.namespace

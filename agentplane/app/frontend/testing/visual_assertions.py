@@ -92,7 +92,7 @@ async def _open_settings(page: Page) -> None:
 async def _select_reconnect(page: Page) -> None:
     connection = page.locator('select[name="connection"]')
     await connection.select_option(index=1)
-    await page.locator('select[name="service_account"]').select_option(label="agentplane-visual/operator-assistant")
+    await page.locator('select[name="identity"]').select_option(value="operator-assistant")
     await expect(page.locator("[data-reconnect-review]")).to_be_visible()
 
 

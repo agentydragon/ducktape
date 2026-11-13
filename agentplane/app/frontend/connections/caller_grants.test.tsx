@@ -6,17 +6,16 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ServiceAccountSchema } from "../../../proto/identity_pb";
+import { IdentitySchema } from "../../../proto/identity_pb";
 import { PolicyBindingSchema } from "../../../policy/v1/policy_service_pb";
 import { CallerGrants } from "./caller_grants";
 
 const watch = vi.hoisted(() => vi.fn());
-vi.mock("../actions/policy", () => ({ ActionPolicyWatch: () => null }));
 vi.mock("../policy/watch", () => ({ usePolicyResources: watch }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
-const account = create(ServiceAccountSchema, { namespace: "external", name: "caller" });
+const identity = create(IdentitySchema, { name: "caller", uid: "caller-uid" });
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -27,9 +26,9 @@ async function render(): Promise<void> {
   root = createRoot(container);
   await act(async () =>
     root.render(
-      <MantineProvider env="test">
+      <MantineProvider env="test" defaultColorScheme="auto">
         <MemoryRouter>
-          <CallerGrants account={account} />
+          <CallerGrants identity={identity} />
         </MemoryRouter>
       </MantineProvider>
     )
@@ -38,14 +37,14 @@ async function render(): Promise<void> {
 it("watches the selected subject and displays empty grants without mutation controls", async () => {
   watch.mockReturnValue({ resources: { bindings: [], sets: [] }, error: null });
   await render();
-  expect(watch).toHaveBeenCalledWith({ case: "subject", value: account }, undefined);
-  expect(container.textContent).toContain("No binding names this ServiceAccount");
+  expect(watch).toHaveBeenCalledWith({ case: "identity", value: identity.name }, identity.uid);
+  expect(container.textContent).toContain("No binding names this identity");
   expect(container.textContent).not.toContain("Revoke");
 });
 it("shows missing referenced sets", async () => {
   const binding = create(PolicyBindingSchema, {
     identity: { namespace: "policies", name: "grant", uid: "1" },
-    spec: { subject: { namespace: "external", name: "caller" }, policySets: ["removed"] },
+    spec: { subject: { identity: { name: "caller" } }, policySets: ["removed"] },
   });
   watch.mockReturnValue({ resources: { bindings: [binding], sets: [] }, error: null });
   await render();

@@ -351,6 +351,10 @@ class Actions(Construct):
             "caller_service_account_namespaces": sorted(props.caller_service_account_namespaces),
             "direct_wait_seconds": 30,
         }
+        if props.connection_delegation_actor is not None:
+            if props.connection_delegation_actor.namespace not in props.caller_service_account_namespaces:
+                raise ValueError("connection_delegation_actor namespace must be an Action caller namespace")
+            content["connection_delegation_actor"] = props.connection_delegation_actor
         if props.web_push is not None:
             content["web_push"] = {
                 "subject": props.web_push.subject,

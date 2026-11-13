@@ -5,23 +5,19 @@ import { expect, it, vi } from "vitest";
 import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
 
 import { ConnectionSchema, GrantSchema, GrantStatus, type Connection } from "../../../mcp_edge/connection_service_pb";
-import { ServiceAccountSchema } from "../../../proto/identity_pb";
+import { IdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";
 import { sampleConnection } from "./testing/fixture";
 
 vi.mock("./caller_grants", () => ({
-  CallerGrants: ({ account }: { account: { namespace: string; name: string } }) => (
-    <div>
-      Grants for {account.namespace}/{account.name}
-    </div>
-  ),
+  CallerGrants: ({ identity }: { identity: { name: string; uid: string } }) => <div>Grants for {identity.name}</div>,
 }));
 
-const OTHER = create(ServiceAccountSchema, { namespace: "agentplane-test", name: "other" });
+const OTHER = create(IdentitySchema, { name: "other", uid: "30000000-0000-4000-8000-000000000002" });
 const ROOT = "/upstream/connections/v1/operator";
 const CONNECTIONS = `${ROOT}/connections`;
-const CALLERS = `${ROOT}/caller-service-accounts`;
+const CALLERS = `${ROOT}/connection-identities`;
 const WATCH = `${ROOT}/connections:watch`;
 
 function connectionJson(row: Connection): JsonObject {
@@ -62,9 +58,11 @@ function serve(
       return current instanceof Response ? current : watch(current, request.signal);
     }
     if (method === "GET" && path === CALLERS) {
-      return { serviceAccounts: [toJson(ServiceAccountSchema, OTHER)] };
+      return { identities: [toJson(IdentitySchema, OTHER)] };
     }
-    if (method === "POST" && path.endsWith("/rebind")) return { connection: connectionJson(sampleConnection()) };
+    if (method === "POST" && path.endsWith("/rebind")) {
+      return { connection: connectionJson(create(ConnectionSchema, { ...sampleConnection(), boundIdentity: OTHER })) };
+    }
     if (method === "POST" && path.endsWith("/unbind")) {
       const answer = unbound?.();
       return answer instanceof Response || answer === undefined ? answer : { connection: connectionJson(answer) };
@@ -112,7 +110,20 @@ async function pressEnter(input: HTMLInputElement): Promise<void> {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
 }
-it("renders the Client/Service account table with the immutable client ID and an unlabeled caller flagged", async () => {
+
+async function chooseIdentity(container: HTMLElement): Promise<void> {
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Identity for Claude desktop"]');
+  if (!input) throw new Error("Missing Identity picker");
+  await act(async () => input.click());
+  const listId = input.getAttribute("aria-controls");
+  const list = listId ? document.getElementById(listId) : null;
+  const option = [...(list?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])].find(
+    (candidate) => candidate.textContent === `${OTHER.name} · UID ${OTHER.uid}`
+  );
+  if (!option) throw new Error("Missing live Identity option");
+  await act(async () => option.click());
+}
+it("renders the Client/Identity table with the immutable client ID and a missing Identity flagged", async () => {
   const sent = serve();
   const container = await render();
   expect(sent).toEqual(
@@ -123,11 +134,11 @@ it("renders the Client/Service account table with the immutable client ID and an
     ])
   );
   expect(container.textContent).toContain("Client");
-  expect(container.textContent).toContain("Service account");
+  expect(container.textContent).toContain("Identity");
   expect(nameField(container).value).toBe("Claude desktop");
-  for (const value of ["registered-client-123", sampleConnection().id, "agentplane-test/personal"])
+  for (const value of ["registered-client-123", sampleConnection().id, "personal"])
     expect(container.textContent).toContain(value);
-  expect(container.textContent).toContain("ServiceAccount not labeled as an Action caller");
+  expect(container.textContent).toContain("Bound Identity is missing, deleting, or has been replaced");
 });
 it("shows the most recent grant when a connection has more than one", async () => {
   const row = sampleConnection();
@@ -142,17 +153,17 @@ it("shows the most recent grant when a connection has more than one", async () =
         id: "20000000-0000-4000-8000-000000000002",
         revision: superseded.revision + 1,
         clientId: "registered-client-456",
-        caller: OTHER,
+        identity: OTHER,
       }),
     ],
-    boundCaller: OTHER,
+    boundIdentity: OTHER,
   });
   serve([multiple]);
   const container = await render();
   expect(container.textContent).toContain("registered-client-456");
   expect(container.textContent).not.toContain("registered-client-123");
-  expect(container.textContent).toContain("agentplane-test/other");
-  expect(container.textContent).not.toContain("ServiceAccount not labeled as an Action caller");
+  expect(container.textContent).toContain("other");
+  expect(container.textContent).not.toContain("Bound Identity is missing, deleting, or has been replaced");
 });
 it("requires confirmation, permits cancelling, and preserves the row after unlink", async () => {
   const row = create(ConnectionSchema, { ...sampleConnection(), version: 9007199254740993n });
@@ -162,7 +173,7 @@ it("requires confirmation, permits cancelling, and preserves the row after unlin
         ...row,
         version: 3n,
         grants: row.grants.map((grant) => create(GrantSchema, { ...grant, status: GrantStatus.REVOKED })),
-        boundCaller: undefined,
+        boundIdentity: undefined,
       }),
   });
   const container = await render();
@@ -260,11 +271,48 @@ it("distinguishes loading failures from an empty inventory", async () => {
   expect(container.textContent).not.toContain("No OAuth clients yet");
 });
 
-it("expands grants for the current caller even when its admission label is missing", async () => {
-  serve();
+it("expands grants for the exact live bound Identity", async () => {
+  serve([create(ConnectionSchema, { ...sampleConnection(), boundIdentity: OTHER })]);
   const container = await render();
   await act(async () => button(container, "View grants").click());
-  expect(container.textContent).toContain("Grants for agentplane-test/personal");
+  expect(container.textContent).toContain("Grants for other");
   await act(async () => button(container, "Hide grants").click());
-  expect(container.textContent).not.toContain("Grants for agentplane-test/personal");
+  expect(container.textContent).not.toContain("Grants for other");
+});
+
+it.each([
+  {
+    label: "a paused legacy Connection",
+    row: create(ConnectionSchema, {
+      ...sampleConnection(),
+      boundIdentity: undefined,
+      identityBindingRequired: true,
+      legacyBoundCaller: create(ServiceAccountSchema, { namespace: "legacy", name: "other" }),
+    }),
+  },
+  {
+    label: "a same-name replacement with a different UID",
+    row: create(ConnectionSchema, {
+      ...sampleConnection(),
+      boundIdentity: create(IdentitySchema, { name: OTHER.name, uid: "retained-identity-uid" }),
+    }),
+  },
+])("requires explicit confirmation before rebinding $label", async ({ row }) => {
+  const sent = serve([row]);
+  const container = await render();
+  expect(container.textContent).not.toContain("View grants");
+  const rebinds = (): Sent[] => sent.filter(({ path }) => path.endsWith("/rebind"));
+  await chooseIdentity(container);
+  expect(rebinds()).toEqual([]);
+  await act(async () => button(container, "Apply").click());
+  expect(rebinds()).toEqual([]);
+  await act(async () => button(container, "Confirm change").click());
+  await vi.waitFor(() => expect(rebinds()).toHaveLength(1));
+  expect(rebinds()).toMatchObject([
+    {
+      path: `${CONNECTIONS}/${row.id}/rebind`,
+      body: { expectedVersion: row.version.toString(), identity: { name: OTHER.name, uid: OTHER.uid } },
+    },
+  ]);
+  await vi.waitFor(() => expect(container.textContent).toContain("View grants"));
 });

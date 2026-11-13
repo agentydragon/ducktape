@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
@@ -44,11 +43,11 @@ const shutdownGrace = 5 * time.Second
 
 type readiness struct {
 	*probes.Probes
-	callers *callerIndex
+	identities *identityIndex
 }
 
 func (r readiness) Check(ctx context.Context, request *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
-	if request.GetService() == "" && !r.callers.ready() {
+	if request.GetService() == "" && !r.identities.ready() {
 		return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_NOT_SERVING}, nil
 	}
 	return r.Probes.Check(ctx, request)
@@ -71,10 +70,6 @@ func run(ctx context.Context, c config) error {
 		return err
 	}
 	kubeConfig.QPS = -1
-	kube, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return err
-	}
 	grpcListener, err := net.Listen("tcp", c.grpcAddress())
 	if err != nil {
 		return fmt.Errorf("gRPC listener: %w", err)
@@ -85,12 +80,12 @@ func run(ctx context.Context, c config) error {
 		return fmt.Errorf("HTTP listener: %w", err)
 	}
 	defer httpListener.Close()
-	return serve(ctx, c, kubeConfig, kube, grpcListener, httpListener)
+	return serve(ctx, c, kubeConfig, grpcListener, httpListener)
 }
 
 // serve answers gRPC on grpcListener and HTTP (the facade, /mcp, OAuth and metrics) on httpListener until ctx ends or a
 // listener fails.
-func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernetes.Interface, grpcListener, httpListener net.Listener) error {
+func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener, httpListener net.Listener) error {
 	db, err := openDatabase(ctx, c.DatabaseURL)
 	if err != nil {
 		return err
@@ -101,12 +96,12 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 		return fmt.Errorf("MCP edge PostgreSQL listener unavailable: %w", err)
 	}
 	defer hub.Close()
-	callers, watches, err := callerWatches(kubeConfig, c.CallerServiceAccountNamespaces, c.MintableAccounts)
+	identities, watches, err := identityWatches(kubeConfig, c.PolicyNamespace)
 	if err != nil {
 		return err
 	}
 	watchContext, stopWatching := context.WithCancel(ctx)
-	watching := runCallers(watchContext, watches)
+	watching := runIdentities(watchContext, watches)
 	defer func() { stopWatching(); <-watching }()
 	operators, err := api.NewOperatorVerifier(c.OperatorOIDC)
 	if err != nil {
@@ -115,7 +110,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	gate := api.NewGate(api.GateOptions{
 		Operators: operators,
 		AdditionalOperatorMethods: []string{
-			connection_servicepb.ConnectionService_ListCallerServiceAccounts_FullMethodName,
+			connection_servicepb.ConnectionService_ListConnectionIdentities_FullMethodName,
 			connection_servicepb.ConnectionService_ListConnections_FullMethodName,
 			connection_servicepb.ConnectionService_GetConnection_FullMethodName,
 			connection_servicepb.ConnectionService_UpdateConnection_FullMethodName,
@@ -126,11 +121,11 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 			connection_servicepb.ConnectionService_DecideConnectionEnrollment_FullMethodName,
 		},
 	})
-	connectionStore := connections.NewStore(db, callers)
+	connectionStore := connections.NewStore(db, identities, identities)
 	grpcServer := grpc.NewServer(observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))
 	health := probes.New(db, hub)
-	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, callers: callers})
+	healthpb.RegisterHealthServer(grpcServer, readiness{Probes: health, identities: identities})
 	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connections.NewService(connectionStore, gate, hub))
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
@@ -153,7 +148,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	defer metadataConnection.Close()
 	routes.Handle("GET "+actionClientMetadataPath, actionClientMetadata(linkage_servicepb.NewLinkageServiceClient(metadataConnection)))
 	if c.OAuth != nil {
-		connection, err := mountOAuth(ctx, routes, c, db, connectionStore, callers, kube)
+		connection, err := mountOAuth(ctx, routes, c, db, connectionStore, identities)
 		if err != nil {
 			return err
 		}
@@ -181,7 +176,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, kube kubernet
 	return result
 }
 
-func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB, connectionStore *connections.Store, callers *callerIndex, kube kubernetes.Interface) (*grpc.ClientConn, error) {
+func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB, connectionStore *connections.Store, identities *identityIndex) (*grpc.ClientConn, error) {
 	o := c.OAuth
 	secret, err := os.ReadFile(o.UpstreamClientSecretFile)
 	if err != nil {
@@ -200,8 +195,17 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 	if err != nil {
 		return nil, fmt.Errorf("starting external MCP authorization: %w", err)
 	}
-	caller := &coreCaller{authority: authority.VerifyBearer, callers: callers, kube: kube, recheckPeriod: 5 * time.Second, tokens: map[auth.Account]cachedToken{}}
-	connection, err := dialActions(c.ActionsTarget, caller, c.ActionsTLS)
+	caller := &coreCaller{
+		authority: func(ctx context.Context, bearer string) (*connections.ResolvedGrant, error) {
+			info, err := authority.VerifyConnectionBearer(ctx, bearer)
+			if err != nil {
+				return nil, err
+			}
+			return &info.Grant, nil
+		},
+		recheckPeriod: 5 * time.Second, logger: slog.Default(),
+	}
+	connection, err := dialActions(c.ActionsTarget, c.ActionsTokenFile, 30*time.Second, c.ActionsTLS, caller)
 	if err != nil {
 		return nil, err
 	}

@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// accountOf is the account a ServiceAccount message names; nil names none.
+// accountOf is the historical ServiceAccount attribution in a grant.
 func accountOf(account *identitypb.ServiceAccount) *auth.Account {
 	if account == nil {
 		return nil
@@ -23,24 +23,28 @@ func accountOf(account *identitypb.ServiceAccount) *auth.Account {
 	return &auth.Account{Namespace: account.GetNamespace(), Name: account.GetName()}
 }
 
-func wantBound(t *testing.T, what string, c *pb.Connection, want *auth.Account) {
+func wantBound(t *testing.T, what string, c *pb.Connection, want *auth.Identity) {
 	t.Helper()
-	got := accountOf(c.GetBoundCaller())
+	var got *auth.Identity
+	if identity := c.GetBoundIdentity(); identity != nil {
+		got = &auth.Identity{Name: identity.GetName(), UID: identity.GetUid()}
+	}
 	if (got == nil) != (want == nil) || got != nil && *got != *want {
 		t.Errorf("%s: bound to %v, want %v", what, got, want)
 	}
 }
 
-func message(account auth.Account) *identitypb.ServiceAccount {
-	return &identitypb.ServiceAccount{Namespace: account.Namespace, Name: account.Name}
+func identityMessage(identity auth.Identity) *identitypb.Identity {
+	return &identitypb.Identity{Name: identity.Name, Uid: identity.UID}
 }
 
 func TestConnectionsAreListedOldestFirstWithEveryGrantInRevisionOrder(t *testing.T) {
 	s := serve(t)
 	start := now().Add(-time.Hour)
-	newer := s.connect(t, "test-newer", start.Add(time.Minute), &callerAccount,
-		storedGrant{caller: otherAccount, status: grantRevoked}, storedGrant{caller: callerAccount, status: grantActive})
-	older := s.connect(t, "test-older", start, nil, storedGrant{caller: otherAccount, status: grantRevoked})
+	newer := s.connect(t, "test-newer", start.Add(time.Minute), &callerIdentity,
+		storedGrant{caller: auth.Account{Namespace: "legacy", Name: "old"}, status: grantRevoked},
+		storedGrant{identity: &callerIdentity, status: grantActive})
+	older := s.connect(t, "test-older", start, nil, storedGrant{caller: auth.Account{Namespace: "legacy", Name: "old"}, status: grantRevoked})
 	listed, err := s.client.ListConnections(as(t, testOperator), &pb.ListConnectionsRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -50,13 +54,14 @@ func TestConnectionsAreListedOldestFirstWithEveryGrantInRevisionOrder(t *testing
 		t.Fatalf("listed %v, want %s then %s", got, older, newer)
 	}
 	wantBound(t, "the unbound Connection", got[0], nil)
-	wantBound(t, "the bound Connection", got[1], &callerAccount)
+	wantBound(t, "the bound Connection", got[1], &callerIdentity)
 	grants := got[1].GetGrants()
 	if len(grants) != 2 ||
 		grants[0].GetRevision() != 1 || grants[0].GetStatus() != pb.GrantStatus_GRANT_STATUS_REVOKED ||
-		*accountOf(grants[0].GetCaller()) != otherAccount || grants[0].GetRevokedAt() == nil ||
+		*accountOf(grants[0].GetCaller()) != (auth.Account{Namespace: "legacy", Name: "old"}) || grants[0].GetRevokedAt() == nil ||
 		grants[1].GetRevision() != 2 || grants[1].GetStatus() != pb.GrantStatus_GRANT_STATUS_ACTIVE ||
-		grants[1].GetActivatedAt() == nil || grants[1].GetRevokedAt() != nil {
+		grants[1].GetIdentity().GetName() != callerIdentity.Name || grants[1].GetIdentity().GetUid() != callerIdentity.UID ||
+		grants[1].GetCaller() != nil || grants[1].GetActivatedAt() == nil || grants[1].GetRevokedAt() != nil {
 		t.Errorf("grants %v", grants)
 	}
 
@@ -68,7 +73,7 @@ func TestConnectionsAreListedOldestFirstWithEveryGrantInRevisionOrder(t *testing
 
 func TestARenameTrimsTheNameAndNeedsTheCurrentVersion(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-named", callerAccount)
+	c := s.active(t, "test-named", callerIdentity)
 	rename := func(version int64, name string) (*pb.UpdateConnectionResponse, error) {
 		return s.client.UpdateConnection(as(t, testOperator), &pb.UpdateConnectionRequest{
 			ConnectionId: c.GetId(), ExpectedVersion: version, DisplayName: name,
@@ -105,7 +110,7 @@ func TestARenameTrimsTheNameAndNeedsTheCurrentVersion(t *testing.T) {
 
 func TestOfConcurrentRenamesAtOneVersionOnlyOneIsApplied(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-contested", callerAccount)
+	c := s.active(t, "test-contested", callerIdentity)
 	const renames = 8
 	codesSeen := make([]codes.Code, renames)
 	var wg sync.WaitGroup
@@ -132,53 +137,114 @@ func TestOfConcurrentRenamesAtOneVersionOnlyOneIsApplied(t *testing.T) {
 
 func TestARebindRetargetsAnActiveConnectionToALabeledAccount(t *testing.T) {
 	s := serve(t)
-	c := s.active(t, "test-rebound", callerAccount)
-	rebind := func(id string, version int64, account auth.Account) (*pb.RebindConnectionResponse, error) {
+	c := s.active(t, "test-rebound", callerIdentity)
+	rebind := func(id string, version int64, identity auth.Identity) (*pb.RebindConnectionResponse, error) {
 		return s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
-			ConnectionId: id, ExpectedVersion: version, ServiceAccount: message(account),
+			ConnectionId: id, ExpectedVersion: version, Identity: identityMessage(identity),
 		})
 	}
-	rebound, err := rebind(c.GetId(), 1, otherAccount)
+	rebound, err := rebind(c.GetId(), 1, otherIdentity)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := rebound.GetConnection()
-	wantBound(t, "the rebound Connection", got, &otherAccount)
-	// The grant keeps the account consent chose.
-	if got.GetVersion() != 2 || *accountOf(got.GetGrants()[0].GetCaller()) != callerAccount {
+	wantBound(t, "the rebound Connection", got, &otherIdentity)
+	// The grant keeps the Identity consent chose.
+	if got.GetVersion() != 2 || got.GetGrants()[0].GetIdentity().GetName() != callerIdentity.Name {
 		t.Errorf("rebound %v", got)
 	}
-	same, err := rebind(c.GetId(), 2, otherAccount)
+	same, err := rebind(c.GetId(), 2, otherIdentity)
 	if err != nil || same.GetConnection().GetVersion() != 2 {
 		t.Errorf("a rebind to the bound account: %v, %v; want it unchanged", same, err)
 	}
-	_, err = rebind(c.GetId(), 1, callerAccount)
+	_, err = rebind(c.GetId(), 1, callerIdentity)
 	wantCode(t, "a rebind at a stale version", err, codes.Aborted)
-	_, err = rebind(c.GetId(), 2, unlabeledAccount)
-	wantCode(t, "a rebind to an unlabeled account", err, codes.FailedPrecondition)
+	_, err = rebind(c.GetId(), 2, unavailableIdentity)
+	wantCode(t, "a rebind to a non-live Identity", err, codes.FailedPrecondition)
 	_, err = s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
-		ConnectionId: c.GetId(), ExpectedVersion: 2, ServiceAccount: &identitypb.ServiceAccount{Namespace: "test-agentplane"},
+		ConnectionId: c.GetId(), ExpectedVersion: 2, Identity: &identitypb.Identity{Name: callerIdentity.Name},
 	})
-	wantCode(t, "a rebind to an unnamed account", err, codes.InvalidArgument)
+	wantCode(t, "a rebind without a UID", err, codes.InvalidArgument)
 
-	pending := s.connect(t, "test-pending", now(), &callerAccount, storedGrant{caller: callerAccount, status: grantPending})
-	_, err = rebind(pending.String(), 1, otherAccount)
+	pending := s.connect(t, "test-pending", now(), &callerIdentity, storedGrant{identity: &callerIdentity, status: grantPending})
+	_, err = rebind(pending.String(), 1, otherIdentity)
 	wantCode(t, "a rebind of a Connection with only a pending grant", err, codes.FailedPrecondition)
-	unbound := s.connect(t, "test-unbound", now(), nil, storedGrant{caller: callerAccount, status: grantRevoked})
-	_, err = rebind(unbound.String(), 1, otherAccount)
+	unbound := s.connect(t, "test-unbound", now(), nil, storedGrant{identity: &callerIdentity, status: grantRevoked})
+	_, err = rebind(unbound.String(), 1, otherIdentity)
 	wantCode(t, "a rebind of an unbound Connection", err, codes.FailedPrecondition)
 
 	// A view of the callers that is not current vouches for no account.
-	s.callers.goStale()
-	_, err = rebind(c.GetId(), 2, callerAccount)
-	wantCode(t, "a rebind while the view of the callers is stale", err, codes.FailedPrecondition)
+	s.identities.goStale()
+	_, err = rebind(c.GetId(), 2, callerIdentity)
+	wantCode(t, "a rebind while the view of Identities is stale", err, codes.FailedPrecondition)
+}
+
+func TestLegacyConnectionFailsClosedUntilExplicitIdentityRebind(t *testing.T) {
+	s := serve(t)
+	id := uuid.New()
+	created := now().Add(-time.Hour)
+	legacy := auth.Account{Namespace: "legacy", Name: "caller"}
+	if _, err := s.db.ExecContext(t.Context(), `
+		INSERT INTO external_connection (id, display_name, legacy_bound_caller, identity_binding_required, version, created_at, updated_at)
+		VALUES ($1, 'test-legacy', $2::jsonb, true, 1, $3, $3)`, id, accountJSON(legacy), created); err != nil {
+		t.Fatal(err)
+	}
+	grantID := uuid.New()
+	activated := created.Add(time.Minute)
+	if _, err := s.db.ExecContext(t.Context(), `
+		INSERT INTO external_connection_grant (id, connection_id, revision, original_caller, issuer, client_id, status,
+			created_at, activated_at)
+		VALUES ($1, $2, 1, $3::jsonb, 'https://test-actions.example', 'legacy-client', 'active', $4, $5)`,
+		grantID, id, accountJSON(legacy), created, activated); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.store.ResolveGrant(t.Context(), tx, grantID, "https://test-actions.example", "legacy-client")
+	if err != refusedLegacy {
+		t.Fatalf("legacy grant resolved as %v, %v; want fail-closed legacy refusal", err, status.Code(err))
+	}
+	_ = tx.Rollback()
+
+	before := s.get(t, id)
+	if !before.GetIdentityBindingRequired() || before.GetLegacyBoundCaller().GetNamespace() != legacy.Namespace ||
+		before.GetGrants()[0].GetId() != grantID.String() || before.GetGrants()[0].GetCaller().GetName() != legacy.Name ||
+		before.GetGrants()[0].GetIdentity() != nil {
+		t.Fatalf("legacy audit/binding data was not preserved: %+v", before)
+	}
+	if _, err := s.db.ExecContext(t.Context(), `UPDATE external_connection SET bound_caller = $2::jsonb WHERE id = $1`,
+		id, accountJSON(legacy)); err == nil {
+		t.Fatal("an old binary restored active ServiceAccount authority after the cutover")
+	}
+	rebound, err := s.client.RebindConnection(as(t, testOperator), &pb.RebindConnectionRequest{
+		ConnectionId: id.String(), ExpectedVersion: 1, Identity: identityMessage(callerIdentity),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rebound.GetConnection()
+	if got.GetIdentityBindingRequired() || got.GetVersion() != 2 || got.GetLegacyBoundCaller().GetName() != legacy.Name ||
+		got.GetGrants()[0].GetId() != grantID.String() || got.GetGrants()[0].GetCaller().GetName() != legacy.Name {
+		t.Fatalf("rebind did not preserve history and clear pause: %+v", got)
+	}
+	tx, err = s.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := s.store.ResolveGrant(t.Context(), tx, grantID, "https://test-actions.example", "legacy-client")
+	if err != nil || resolved.Identity != callerIdentity {
+		t.Errorf("explicit rebind resolved %v, %v; want %v", resolved, err, callerIdentity)
+	}
+	_ = tx.Rollback()
 }
 
 func TestAnUnbindRevokesEveryGrantOnce(t *testing.T) {
 	s := serve(t)
 	created := now().Add(-time.Hour)
-	id := s.connect(t, "test-unbound", created, &callerAccount,
-		storedGrant{caller: otherAccount, status: grantRevoked}, storedGrant{caller: callerAccount, status: grantActive})
+	id := s.connect(t, "test-unbound", created, &callerIdentity,
+		storedGrant{identity: &otherIdentity, status: grantRevoked}, storedGrant{identity: &callerIdentity, status: grantActive})
 	unbind := func(version int64) (*pb.UnbindConnectionResponse, error) {
 		return s.client.UnbindConnection(as(t, testOperator), &pb.UnbindConnectionRequest{
 			ConnectionId: id.String(), ExpectedVersion: version,
@@ -203,27 +269,25 @@ func TestAnUnbindRevokesEveryGrantOnce(t *testing.T) {
 		t.Errorf("a repeated unbind: %v, %v", again, err)
 	}
 
-	live := s.active(t, "test-live", callerAccount)
+	live := s.active(t, "test-live", callerIdentity)
 	_, err = s.client.UnbindConnection(as(t, testOperator), &pb.UnbindConnectionRequest{
 		ConnectionId: live.GetId(), ExpectedVersion: 2,
 	})
 	wantCode(t, "an unbind at a stale version", err, codes.Aborted)
 }
 
-func TestTheCallerAccountsAreListedOnlyFromACurrentView(t *testing.T) {
+func TestConnectionIdentitiesAreListedOnlyFromACurrentView(t *testing.T) {
 	s := serve(t)
-	listed, err := s.client.ListCallerServiceAccounts(as(t, testOperator), &pb.ListCallerServiceAccountsRequest{})
+	listed, err := s.client.ListConnectionIdentities(as(t, testOperator), &pb.ListConnectionIdentitiesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	var got []auth.Account
-	for _, account := range listed.GetServiceAccounts() {
-		got = append(got, *accountOf(account))
-	}
-	if len(got) != 2 || got[0] != callerAccount || got[1] != otherAccount {
+	got := listed.GetIdentities()
+	if len(got) != 2 || got[0].GetName() != callerIdentity.Name || got[0].GetUid() != callerIdentity.UID ||
+		got[1].GetName() != otherIdentity.Name || got[1].GetUid() != otherIdentity.UID {
 		t.Errorf("listed %v", got)
 	}
-	s.callers.goStale()
-	_, err = s.client.ListCallerServiceAccounts(as(t, testOperator), &pb.ListCallerServiceAccountsRequest{})
+	s.identities.goStale()
+	_, err = s.client.ListConnectionIdentities(as(t, testOperator), &pb.ListConnectionIdentitiesRequest{})
 	wantCode(t, "a listing from a stale view", err, codes.Unavailable)
 }

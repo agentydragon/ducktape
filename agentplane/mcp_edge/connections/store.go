@@ -1,10 +1,10 @@
 // Package connections is the authority over external Connections: MCP clients outside the cluster that act on
-// Actions as a ServiceAccount, each through a consented OAuth grant, and the operator consent (an enrollment) that
+// Actions as an Identity, each through a consented OAuth grant, and the operator consent (an enrollment) that
 // precedes a grant. It owns the tables `external_connection`, `external_connection_grant` and
 // `connection_enrollment`, and serves `agentplane.mcp_edge.ConnectionService` to operators.
 //
-// The Action Service's core neither imports it nor rechecks a grant: a request a Connection makes is its
-// ServiceAccount's, so unbinding or rebinding a Connection changes only what its tokens do next.
+// The Action Service's core neither imports it nor rechecks a grant: the MCP edge resolves each grant and delegates
+// the Connection's exact Identity incarnation, so unbinding or rebinding changes what its tokens do next.
 package connections
 
 import (
@@ -28,27 +28,40 @@ import (
 // rows stay the authority: a woken reader reads them again.
 const UpdatesChannel = "agentplane_connection_updates"
 
-// Callers is the view of the ServiceAccounts labeled as Action callers: the accounts the Action Service admits, and so
-// the only ones a Connection or a consent may act as.
-type Callers interface {
-	// CallerServiceAccounts are the labeled accounts in namespace and name order, and whether the view is current:
-	// none when it is not.
-	CallerServiceAccounts() ([]auth.Account, bool)
+// IdentityCatalog is the current live view of Identities the operator may bind to Connections.
+type IdentityCatalog interface {
+	// ConnectionIdentities returns the live Identities in name order, and whether the view is current: none when it is not.
+	ConnectionIdentities() ([]auth.Identity, bool)
 }
 
 // Store reads and writes the Connections, their grants and the enrollments in PostgreSQL. Every write is one
 // transaction; one that changes a Connection or a grant notifies UpdatesChannel in it.
 type Store struct {
-	db      *sql.DB
-	callers Callers
+	db           *sql.DB
+	identities   IdentityCatalog
+	identityUIDs auth.IdentityUIDReader
 }
 
-func NewStore(db *sql.DB, callers Callers) *Store { return &Store{db: db, callers: callers} }
+func NewStore(db *sql.DB, identities IdentityCatalog, identityUIDs auth.IdentityUIDReader) *Store {
+	return &Store{db: db, identities: identities, identityUIDs: identityUIDs}
+}
 
-// labeled is whether the account is a caller in a current view of the callers.
-func (s *Store) labeled(account auth.Account) bool {
-	accounts, current := s.callers.CallerServiceAccounts()
-	return current && slices.Contains(accounts, account)
+func (s *Store) liveIdentity(ctx context.Context, identity auth.Identity) (bool, error) {
+	uid, found, err := s.identityUIDs.GetIdentityUID(ctx, identity.Name)
+	if err != nil {
+		return false, err
+	}
+	return found && uid != "" && uid == identity.UID, nil
+}
+
+// selectableIdentity requires the operator-facing Identity view to be current and contain the exact incarnation,
+// then checks that UID directly against Kubernetes before storing consent or a rebind.
+func (s *Store) selectableIdentity(ctx context.Context, identity auth.Identity) (bool, error) {
+	identities, current := s.identities.ConnectionIdentities()
+	if !current || !slices.Contains(identities, identity) {
+		return false, nil
+	}
+	return s.liveIdentity(ctx, identity)
 }
 
 type grantStatus string
@@ -63,8 +76,9 @@ const (
 type grant struct {
 	id, connectionID uuid.UUID
 	revision         int32
-	// caller is the ServiceAccount consent chose; a rebind changes the Connection's boundCaller, not this.
-	caller                 auth.Account
+	// caller preserves legacy ServiceAccount consent facts. New grants record their exact Identity instead.
+	caller                 *auth.Account
+	identity               *auth.Identity
 	issuer, clientID       string
 	status                 grantStatus
 	createdAt              time.Time
@@ -78,8 +92,10 @@ type connection struct {
 	version              int64
 	createdAt, updatedAt time.Time
 	grants               []grant
-	// boundCaller is the account its unrevoked grant acts as; nil exactly when the Connection is unbound.
-	boundCaller *auth.Account
+	// legacyBoundCaller is historical attribution only and is never an active authentication fallback.
+	legacyBoundCaller       *auth.Account
+	boundIdentity           *auth.Identity
+	identityBindingRequired bool
 }
 
 // position is a Connection's place in the oldest-first order.
@@ -97,9 +113,6 @@ var (
 	errConnectionNotFound = status.Error(codes.NotFound, "Connection not found")
 	errVersionChanged     = status.Error(codes.Aborted, "Connection version changed")
 )
-
-// notLabeled refuses an account a Connection or a consent may not act as.
-const notLabeled = "the ServiceAccount is missing or not labeled as an Action caller"
 
 // now is the time a write records: PostgreSQL keeps microseconds, so a value read back equals the one written.
 func now() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
@@ -119,6 +132,11 @@ type accountDocument struct {
 	Name      string `json:"name"`
 }
 
+type identityDocument struct {
+	Name string `json:"name"`
+	UID  string `json:"uid"`
+}
+
 func encodeAccount(account auth.Account) ([]byte, error) {
 	return json.Marshal(accountDocument(account))
 }
@@ -131,7 +149,20 @@ func decodeAccount(document []byte) (auth.Account, error) {
 	return auth.Account(account), nil
 }
 
-const connectionColumns = `id, display_name, version, created_at, updated_at, bound_caller`
+func encodeIdentity(identity auth.Identity) ([]byte, error) {
+	return json.Marshal(identityDocument(identity))
+}
+
+func decodeIdentity(document []byte) (auth.Identity, error) {
+	var identity identityDocument
+	if err := json.Unmarshal(document, &identity); err != nil || identity.Name == "" || identity.UID == "" {
+		return auth.Identity{}, fmt.Errorf("%w: Identity %s", errStored, document)
+	}
+	return auth.Identity{Name: identity.Name, UID: identity.UID}, nil
+}
+
+const connectionColumns = `id, display_name, version, created_at, updated_at, legacy_bound_caller, bound_identity,
+	identity_binding_required`
 
 func scanConnections(ctx context.Context, tx *sql.Tx, query string, args ...any) ([]connection, error) {
 	rows, err := tx.QueryContext(ctx, query, args...)
@@ -142,16 +173,24 @@ func scanConnections(ctx context.Context, tx *sql.Tx, query string, args ...any)
 	var connections []connection
 	for rows.Next() {
 		var c connection
-		var bound []byte
-		if err := rows.Scan(&c.id, &c.displayName, &c.version, &c.createdAt, &c.updatedAt, &bound); err != nil {
+		var legacyCaller, boundIdentity []byte
+		if err := rows.Scan(&c.id, &c.displayName, &c.version, &c.createdAt, &c.updatedAt, &legacyCaller, &boundIdentity,
+			&c.identityBindingRequired); err != nil {
 			return nil, err
 		}
-		if bound != nil {
-			account, err := decodeAccount(bound)
+		if legacyCaller != nil {
+			account, err := decodeAccount(legacyCaller)
 			if err != nil {
 				return nil, err
 			}
-			c.boundCaller = &account
+			c.legacyBoundCaller = &account
+		}
+		if boundIdentity != nil {
+			identity, err := decodeIdentity(boundIdentity)
+			if err != nil {
+				return nil, err
+			}
+			c.boundIdentity = &identity
 		}
 		connections = append(connections, c)
 	}
@@ -173,7 +212,7 @@ func attachGrants(ctx context.Context, tx *sql.Tx, connections []connection) err
 		index[c.id] = i
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, connection_id, revision, original_caller, issuer, client_id, status, created_at,
+		SELECT id, connection_id, revision, original_caller, original_identity, issuer, client_id, status, created_at,
 			activated_at, revoked_at
 		FROM external_connection_grant WHERE connection_id = ANY($1::uuid[]) ORDER BY revision`, ids)
 	if err != nil {
@@ -182,15 +221,26 @@ func attachGrants(ctx context.Context, tx *sql.Tx, connections []connection) err
 	defer rows.Close()
 	for rows.Next() {
 		var g grant
-		var caller []byte
+		var caller, identity []byte
 		if err := rows.Scan(
-			&g.id, &g.connectionID, &g.revision, &caller, &g.issuer, &g.clientID, &g.status, &g.createdAt,
+			&g.id, &g.connectionID, &g.revision, &caller, &identity, &g.issuer, &g.clientID, &g.status, &g.createdAt,
 			&g.activatedAt, &g.revokedAt,
 		); err != nil {
 			return err
 		}
-		if g.caller, err = decodeAccount(caller); err != nil {
-			return err
+		if caller != nil {
+			decoded, err := decodeAccount(caller)
+			if err != nil {
+				return err
+			}
+			g.caller = &decoded
+		}
+		if identity != nil {
+			decoded, err := decodeIdentity(identity)
+			if err != nil {
+				return err
+			}
+			g.identity = &decoded
 		}
 		owner := &connections[index[g.connectionID]]
 		owner.grants = append(owner.grants, g)
@@ -300,18 +350,20 @@ func changeConnection(
 	}
 	changed.version++
 	changed.updatedAt = now()
-	// NULL while the Connection is unbound.
+	// NULL while the Connection is unbound. Historical ServiceAccount attribution is never overwritten.
 	var bound any
-	if changed.boundCaller != nil {
-		document, err := encodeAccount(*changed.boundCaller)
+	if changed.boundIdentity != nil {
+		document, err := encodeIdentity(*changed.boundIdentity)
 		if err != nil {
 			return changed, err
 		}
 		bound = document
 	}
 	if _, err := tx.ExecContext(ctx, `
-		UPDATE external_connection SET display_name = $2, bound_caller = $3::jsonb, version = $4, updated_at = $5
-		WHERE id = $1`, changed.id, changed.displayName, bound, changed.version, changed.updatedAt); err != nil {
+		UPDATE external_connection SET display_name = $2, bound_identity = $3::jsonb,
+			identity_binding_required = $4, version = $5, updated_at = $6
+		WHERE id = $1`, changed.id, changed.displayName, bound, changed.identityBindingRequired,
+		changed.version, changed.updatedAt); err != nil {
 		return changed, err
 	}
 	return changed, notify(ctx, tx)
@@ -339,9 +391,8 @@ func (s *Store) rename(ctx context.Context, id uuid.UUID, expectedVersion int64,
 	})
 }
 
-// rebind retargets the Connection's active grant to another labeled account. The grants keep the account consent
-// chose.
-func (s *Store) rebind(ctx context.Context, id uuid.UUID, expectedVersion int64, account auth.Account) (connection, error) {
+// rebind retargets the Connection's active grant to an exact live Identity. The grants keep the original consent facts.
+func (s *Store) rebind(ctx context.Context, id uuid.UUID, expectedVersion int64, identity auth.Identity) (connection, error) {
 	return s.change(ctx, id, func(_ *sql.Tx, c *connection) (bool, error) {
 		if err := requireVersion(c, expectedVersion); err != nil {
 			return false, err
@@ -350,14 +401,19 @@ func (s *Store) rebind(ctx context.Context, id uuid.UUID, expectedVersion int64,
 		switch {
 		case !active:
 			return false, status.Error(codes.FailedPrecondition, "the Connection has no active grant")
-		case c.boundCaller == nil:
-			return false, status.Error(codes.FailedPrecondition, "the Connection is unbound")
-		case !s.labeled(account):
-			return false, status.Error(codes.FailedPrecondition, notLabeled)
-		case *c.boundCaller == account:
+		}
+		live, err := s.selectableIdentity(ctx, identity)
+		if err != nil {
+			return false, err
+		}
+		if !live {
+			return false, status.Error(codes.FailedPrecondition, refusedCaller.Error())
+		}
+		if c.boundIdentity != nil && *c.boundIdentity == identity && !c.identityBindingRequired {
 			return false, nil
 		}
-		c.boundCaller = &account
+		c.boundIdentity = &identity
+		c.identityBindingRequired = false
 		return true, nil
 	})
 }
@@ -378,7 +434,8 @@ func (s *Store) unbind(ctx context.Context, id uuid.UUID, expectedVersion int64)
 				c.grants[i].status, c.grants[i].revokedAt = grantRevoked, &revokedAt
 			}
 		}
-		c.boundCaller = nil
+		c.boundIdentity = nil
+		c.identityBindingRequired = false
 		_, err := tx.ExecContext(ctx, `
 			UPDATE external_connection_grant SET status = $2, revoked_at = $3 WHERE connection_id = $1 AND status <> $2`,
 			c.id, grantRevoked, revokedAt)

@@ -7,20 +7,19 @@ from pathlib import Path
 from typing import Any
 
 import bcrypt
-from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from cdk8s import ApiObjectMetadata, Chart
-from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, ServiceAccount, Volume
+from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, Volume
 from constructs import Construct
 from more_itertools import one
 
-from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_servers, mcp_servers
 from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs, Models
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
-from cluster.cdk8s.agentplane import actions
+from cluster.cdk8s.agentplane import actions, mcp_edge
 from cluster.cdk8s.agentplane.environment import SessionDelegationProps
+from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, PolicySet
 
@@ -59,6 +58,7 @@ def objects(
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
     actions_config = replace(
         env.actions,
+        connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
         mcp_servers={
             mcp_servers.OAUTH: mcp_fixture_servers.oauth_fixture_server(
                 mcp_servers.OAUTH, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
@@ -79,13 +79,7 @@ def objects(
             }
         ),
     )
-    mcp_edge_config = replace(
-        env.mcp_edge,
-        # OAuth consent binds to this standing caller, whose exact Session-delegation actions are
-        # separately granted below. It is not a Sandbox credential or an Identity alias.
-        mintable_accounts=frozenset({ServiceAccountRef(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER)}),
-        oauth_secret_name=_MCP_EDGE_OAUTH_SECRET,
-    )
+    mcp_edge_config = replace(env.mcp_edge, oauth_secret_name=_MCP_EDGE_OAUTH_SECRET)
     env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
     fixture = fixture_chart.build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
@@ -97,13 +91,13 @@ def objects(
         _MCP_EDGE_OAUTH_SECRET,
         {"client-secret": "test-k3s-mcp-edge-client-secret", "oauth": edge_oauth.model_dump_json()},
     )
-    ServiceAccount(
+    caller = Identity(
         fixture.chart,
         "mcp-edge-test-caller",
-        metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE, labels={CALLER_LABEL: "true"}),
-        automount_token=False,
+        metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
+        description="The external MCP acceptance-test caller Identity.",
     )
-    # Keep external MCP's test-only caller within the exact old same-principal action surface. The
+    # Keep external MCP's test-only Identity within the same-principal action surface. The
     # identity-owned Sandbox in test_delegation is a different principal, so these grants let the
     # test exercise backend isolation instead of failing before delegation at Action admission.
     PolicySet(
@@ -116,7 +110,7 @@ def objects(
         fixture.chart,
         "mcp-edge-test-caller-session-delegation-binding",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
-        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=_MCP_EDGE_TEST_CALLER),
+        subject=caller.binding_subject(),
         policy_sets=[_MCP_EDGE_TEST_POLICY],
     )
     _add_mcp_fixtures(

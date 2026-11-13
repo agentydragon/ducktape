@@ -349,7 +349,6 @@ func serveWithPolicy(
 		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount, labeledReaderAccount},
 		Operators: operators,
 		AdditionalOperatorMethods: []string{
-			connection_servicepb.ConnectionService_ListCallerServiceAccounts_FullMethodName,
 			connection_servicepb.ConnectionService_ListConnections_FullMethodName,
 			connection_servicepb.ConnectionService_GetConnection_FullMethodName,
 			connection_servicepb.ConnectionService_UpdateConnection_FullMethodName,

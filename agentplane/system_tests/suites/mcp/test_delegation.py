@@ -111,7 +111,7 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
     base_url: str,
     tmp_path: Path,
 ) -> None:
-    """An external ServiceAccount Connection cannot discover or create Sessions for another Identity."""
+    """An external Identity Connection cannot discover or create Sessions for another Identity."""
     if pytestconfig.option.showlocals:
         pytest.fail("Disable pytest local-variable dumps before external OAuth", pytrace=False)
     assert deployment.mcp_fixtures is not None
@@ -139,23 +139,19 @@ async def test_external_connection_cannot_control_an_identity_sandbox(
         assert view.kubernetes_diagnostics.HasField("pod")
         assert view.identity_name == identity["name"]
 
-        response = await operator_bff.get("/upstream/connections/v1/operator/caller-service-accounts")
+        response = await operator_bff.get("/upstream/connections/v1/operator/connection-identities")
         assert response.status_code == 200
-        inventory = ParseDict(response.json(), connection_service_pb2.ListCallerServiceAccountsResponse())
-        account = one(
-            service_account
-            for service_account in inventory.service_accounts
-            if service_account.namespace == cluster.namespace and service_account.name == "mcp-edge-test-caller"
-        )
+        inventory = ParseDict(response.json(), connection_service_pb2.ListConnectionIdentitiesResponse())
+        caller = one(candidate for candidate in inventory.identities if candidate.name == "mcp-edge-test-caller")
         async with connected_session(
             server=deployment.mcp_fixtures.mcp_edge_url,
             operator=operator_bff,
             credentials=operator_credentials,
-            account=account,
+            identity=caller,
             ca_bundle=deployment.mcp_fixtures.ca_bundle,
         ) as session:
             # OAuth setup and operator consent are complete. Calls below use only the standing
-            # ServiceAccount Connection while the integration app is scaled to zero.
+            # Identity Connection while the integration app is scaled to zero.
             app_needs_restore = True
             await cluster.kubectl("scale", "deployment/app", "--replicas=0")
             await _wait_app(cluster, replicas=0)

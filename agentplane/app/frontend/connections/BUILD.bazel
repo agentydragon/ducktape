@@ -46,7 +46,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":connection_service_client",
-        ":service_accounts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -82,11 +81,9 @@ ts_library(
     srcs = ["caller_grants.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":service_accounts",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend/actions:policy",
         "//agentplane/app/frontend/bindings:table",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/proto:identity_pb",
@@ -126,7 +123,6 @@ ts_library(
         ":caller_grants",
         ":connection_service_client",
         ":management_css",
-        ":service_accounts",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",

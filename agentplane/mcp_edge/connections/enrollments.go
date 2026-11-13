@@ -55,9 +55,9 @@ type decision struct {
 	allow *allowance
 }
 
-// allowance is a consent: the labeled account the Connection acts as, and the Connection.
+// allowance is a consent: the exact Identity the Connection acts as, and the Connection.
 type allowance struct {
-	account    auth.Account
+	identity   *auth.Identity
 	connection connectionChoice
 }
 
@@ -110,17 +110,19 @@ func lockEnrollment(ctx context.Context, tx *sql.Tx, handle string) (enrollment,
 func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value any) (enrollment, error) {
 	var e enrollment
 	var issuer, subject, displayName *string
-	var caller []byte
+	var caller, identity []byte
 	var connectionID *uuid.UUID
 	var connectionVersion *int64
 	err := tx.QueryRowContext(
 		ctx, `
 		SELECT id, issuer, client_id, client_name, redirect_uri, upstream_url, expires_at, version, operator_issuer,
-			operator_subject, verdict, caller, display_name, connection_id, connection_version, exchange_claimed_at
+			operator_subject, verdict, caller, caller_identity, display_name, connection_id, connection_version,
+			exchange_claimed_at
 		FROM connection_enrollment WHERE `+column+` = $1 FOR UPDATE`, value,
 	).Scan(
 		&e.id, &e.issuer, &e.clientID, &e.clientName, &e.redirectURI, &e.upstreamURL, &e.expiresAt, &e.version,
-		&issuer, &subject, &e.verdict, &caller, &displayName, &connectionID, &connectionVersion, &e.claimedAt,
+		&issuer, &subject, &e.verdict, &caller, &identity, &displayName, &connectionID, &connectionVersion,
+		&e.claimedAt,
 	)
 	if err != nil {
 		return e, err
@@ -128,12 +130,16 @@ func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value a
 	if issuer != nil && subject != nil {
 		e.operator = &Operator{Issuer: *issuer, Subject: *subject}
 	}
-	if caller != nil {
-		account, err := decodeAccount(caller)
-		if err != nil {
-			return e, err
+	if caller != nil || identity != nil {
+		var allowedIdentity *auth.Identity
+		if identity != nil {
+			decoded, err := decodeIdentity(identity)
+			if err != nil {
+				return e, err
+			}
+			allowedIdentity = &decoded
 		}
-		e.allowed = &allowance{account: account}
+		e.allowed = &allowance{identity: allowedIdentity}
 		switch {
 		case connectionID != nil && connectionVersion != nil:
 			e.allowed.connection = reconnection{id: *connectionID, expectedVersion: *connectionVersion}
@@ -141,6 +147,13 @@ func lockEnrollmentWhere(ctx context.Context, tx *sql.Tx, column string, value a
 			e.allowed.connection = newConnection{displayName: *displayName}
 		default:
 			return e, fmt.Errorf("%w: enrollment %s allows no Connection", errStored, e.id)
+		}
+	}
+	if identity == nil && caller != nil && e.allowed == nil {
+		// Retain this legacy authorization as historical state, but it cannot be activated as an Identity grant.
+		_, err := decodeAccount(caller)
+		if err != nil {
+			return e, err
 		}
 	}
 	return e, nil
@@ -177,7 +190,7 @@ func (s *Store) previewEnrollment(ctx context.Context, handle string, by Operato
 }
 
 // decideEnrollment records the operator's decision once: any decision after it, even a repeat after a lost answer, is
-// refused, and the operator restarts the authorization from the MCP client. An allow records the account and the
+// refused, and the operator restarts the authorization from the MCP client. An allow records the Identity and the
 // Connection: it grants nothing until the authorization server turns it into a grant.
 func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision, by Operator) (decisionResult, error) {
 	var result decisionResult
@@ -196,16 +209,23 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 			return status.Error(codes.Aborted, "enrollment version changed")
 		}
 		decided := verdictDeny
-		var caller any
+		var identity any
 		var displayName *string
 		var connectionID *uuid.UUID
 		var connectionVersion *int64
 		if d.allow != nil {
-			if !s.labeled(d.allow.account) {
-				return status.Error(codes.PermissionDenied, notLabeled)
+			if d.allow.identity == nil {
+				return refusedCaller
+			}
+			live, err := s.selectableIdentity(ctx, *d.allow.identity)
+			if err != nil {
+				return err
+			}
+			if !live {
+				return status.Error(codes.FailedPrecondition, refusedCaller.Error())
 			}
 			decided = verdictAllow
-			if caller, err = encodeAccount(d.allow.account); err != nil {
+			if identity, err = encodeIdentity(*d.allow.identity); err != nil {
 				return err
 			}
 			switch choice := d.allow.connection.(type) {
@@ -226,9 +246,9 @@ func (s *Store) decideEnrollment(ctx context.Context, handle string, d decision,
 			}
 		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE connection_enrollment SET verdict = $2, version = version + 1, caller = $3::jsonb, display_name = $4,
-				connection_id = $5, connection_version = $6
-			WHERE id = $1`, e.id, decided, caller, displayName, connectionID, connectionVersion); err != nil {
+			UPDATE connection_enrollment SET verdict = $2, version = version + 1, caller_identity = $3::jsonb,
+				display_name = $4, connection_id = $5, connection_version = $6
+			WHERE id = $1`, e.id, decided, identity, displayName, connectionID, connectionVersion); err != nil {
 			return err
 		}
 		result = decisionResult{verdict: decided}

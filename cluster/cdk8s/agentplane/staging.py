@@ -587,6 +587,7 @@ ENV = Environment(
         caller_service_account_namespaces=frozenset(
             {STAGING_NAMESPACE, public_coder_egress.NAMESPACE, haku_ui_egress.NAMESPACE}
         ),
+        connection_delegation_actor=ServiceAccountRef(namespace=STAGING_NAMESPACE, name="mcp-edge"),
         mcp_servers=_MCP_SERVERS,
         action_groups=_ACTION_GROUPS,
         mcp_client_metadata=McpClientMetadataSettings(
@@ -665,8 +666,6 @@ ENV = Environment(
     ),
     mcp_edge=McpEdgeProps(
         operator_oidc=_FEDERATION_TARGET,
-        caller_service_account_namespaces=frozenset({STAGING_NAMESPACE}),
-        mintable_accounts=frozenset({ServiceAccountRef(namespace=STAGING_NAMESPACE, name="claude-ai")}),
         oauth_secret_name="agentplane-mcp-oauth",
         hostname=_ACTIONS_HOSTNAME,
         extra_egress=(cilium.egress_via_gateway("auth.allegedly.works"), EgressRule.to_fqdns("claude.ai")),

@@ -838,9 +838,8 @@ async def test_external_caller_grants(view: VisualPage, app: AgentplaneFixture) 
     page = view.page
     await _open_settings(page)
     await page.get_by_role("button", name="View grants", exact=True).first.click()
-    grants = page.get_by_role("region", name="Grants for agentplane-test/personal")
+    grants = page.get_by_role("region", name="Grants for personal")
     await expect(grants.get_by_role("heading", name="Bindings", exact=True)).to_be_visible()
-    await expect(grants.get_by_role("heading", name="Auto-approve if", exact=True)).to_be_visible()
     await expect(grants.get_by_role("button", name="Revoke", exact=True)).to_have_count(0)
     await expect(grants.get_by_role("button", name="Rules", exact=True).first).to_be_visible()
     await grants.get_by_role("button", name="Rules", exact=True).first.click()
@@ -863,14 +862,14 @@ async def test_connections_settings_modal_connections(view: VisualPage, app: Age
 
 
 @DESKTOP_AND_MOBILE
-async def test_connection_sa_rebind_confirmation(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_connection_identity_rebind_confirmation(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
     await _open_settings(page)
-    picker = page.get_by_role("combobox", name="Service account for Claude desktop")
+    picker = page.get_by_role("combobox", name="Identity for Claude desktop")
     await picker.click()
-    await page.get_by_role("option", name="agentplane-visual/operator-assistant").click()
+    await page.get_by_role("option", name="operator-assistant · UID", exact=False).click()
     await page.get_by_role("button", name="Apply").click()
     confirm = page.get_by_role("button", name="Confirm change")
     await expect(confirm).to_be_visible()
