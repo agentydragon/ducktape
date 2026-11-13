@@ -116,6 +116,19 @@ fn claimed_modules_export_their_entry_points() {
             "editor/packages/excalidraw/element/transformHandles.js",
             &["canResizeFromSides", "getOmitSidesForDevice"],
         ),
+        (
+            "editor/packages/excalidraw/element/resizeElements.js",
+            &[
+                "resizeMultipleElements",
+                "resizeSingleElement",
+                "resizeSingleTextElement",
+                "getNextMultipleWidthAndHeightFromPointer",
+            ],
+        ),
+        (
+            "editor/packages/excalidraw/element/cropElement.js",
+            &["cropElement", "getUncroppedWidthAndHeight"],
+        ),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
             "main/packages/excalidraw/components/CommandPalette/CommandPalette.js",

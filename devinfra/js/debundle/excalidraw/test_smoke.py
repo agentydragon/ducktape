@@ -179,6 +179,10 @@ async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: s
                 const elements = new Map([[original.id, latest]]);
                 const originals = new Map([[original.id, original]]);
                 resize.resizeSingleElement(150, 75, latest, original, elements, originals, 'se');
+                const resized = [latest.x, latest.y, latest.width, latest.height];
+                Object.assign(latest, original);
+                resize.resizeSingleElement(150, 75, latest, original, elements, originals, 'se', {
+                    shouldResizeFromCenter: true});
 
                 const image = {
                     id: 'crop-smoke', type: 'image', x: 0, y: 0,
@@ -186,13 +190,20 @@ async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: s
                 };
                 const cropped = crop.cropElement(image, 'e', 200, 100, 75, 25);
                 return {
-                    resized: [latest.x, latest.y, latest.width, latest.height],
+                    resized,
+                    centered: [latest.x, latest.y, latest.width, latest.height],
                     cropped: [cropped.x, cropped.y, cropped.width, cropped.height,
                         cropped.crop.x, cropped.crop.y, cropped.crop.width, cropped.crop.height],
+                    uncropped: crop.getUncroppedWidthAndHeight(cropped),
                 };
             }"""
         )
-        assert geometry == {"resized": [10, 20, 150, 75], "cropped": [0, 0, 75, 50, 0, 0, 150, 100]}
+        assert geometry == {
+            "resized": [10, 20, 150, 75],
+            "centered": [-15, 7.5, 150, 75],
+            "cropped": [0, 0, 75, 50, 0, 0, 150, 100],
+            "uncropped": {"width": 100, "height": 50},
+        }
 
 
 async def test_element_type_checks(playwright_driver: Playwright, origin: str) -> None:
