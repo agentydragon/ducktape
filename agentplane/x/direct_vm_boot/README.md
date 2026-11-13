@@ -1,4 +1,4 @@
-# Direct guest boot contract
+# Direct guest contracts
 
 This manual experiment boots the current VM fixture's kernel, initramfs, root
 filesystem and Runtime disk with the pinned KubeVirt launcher image's QEMU and
@@ -34,3 +34,38 @@ bbr test //agentplane/x/direct_vm_boot:test_guest_boot --nocache_test_results \
 
 The control has its own shorter bound. A failed control is expected evidence;
 ordinary runs execute only the healthy guest.
+
+## Authenticated packaged Runtime
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_results
+```
+
+This separate manual target boots the unmodified fixture guest root and Runtime disk,
+with configuration, launch identity and fixture-issued TLS credentials. The real
+Gateway reaches the Runtime through QEMU's loopback port forward. The assertion
+requires authenticated status, a fresh boot ID, running lifecycle and a Gateway
+Lease owned by the exact Sandbox with the expected Pod UID and connection epoch.
+The fixture assigns the Pod address before Gateway starts observing it.
+
+State belongs to this case. Its exported ownership matches the guest's 107:107
+home-setup identity; launcher cleanup restores host ownership, stops QEMU and
+virtiofsd, removes the named container and checks that the listener is gone.
+This target does not assert orderly guest poweroff; the boot-only target above
+owns that behavior.
+
+No Session or supervised executor is created. The ingress endpoint is configured
+but unused, so this target makes no History-delivery, harness, executor or cgroup
+operation claim. Envtest authors Sandbox/Pod status, and a test CA supplies trust.
+The test does not establish controller reconciliation, cert-manager issuance,
+Secret projection, KubeVirt, PVC or App behavior. Those deployment cases remain.
+
+The client-trust control supplies an unrelated CA to the Runtime's Gateway-client
+verification. It retains the healthy authenticated-readiness assertion and must
+fail it after the packaged Runtime starts:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_results \
+  --runs_per_test=1 --flaky_test_attempts=1 \
+  --test_env=DIRECT_VM_BOOT_WRONG_GATEWAY_CLIENT_CA_CONTROL=1
+```
