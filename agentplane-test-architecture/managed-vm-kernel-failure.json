@@ -1,0 +1,22 @@
+{
+  "final_ci_result": "all three required checks SUCCESS; PR #16220 merged",
+  "fresh_distinct_test_labels": 5,
+  "fresh_test_records": 6,
+  "invocation": "803186fd-16fa-57b5-b4b2-cbc6ae2cd6ff",
+  "issue": "https://github.com/agentydragon/ducktape/issues/16222",
+  "limit": "One run; no population failure rate or causal PR saving. Raw response and server log retained separately.",
+  "observed_failure": {
+    "automatic_reexecution_process_seconds": 358.833311,
+    "failed_action_exit_code": -2,
+    "failed_action_process_seconds": 154.354727,
+    "failed_process_cpu_seconds": 666.206703,
+    "failure_mechanism_limit": "Kernel fault is observed. Why that memory state occurred, and relation to snapshot restoration, remain unknown; action cgroup memory is not whole-VM memory.",
+    "failure_signature": "REAPI14 VM health check DeadlineExceeded; managed VM kernel 5.15.0 general protection fault in update_blocked_averages+0x250/0x740",
+    "kernel_log_boot_time_seconds": 2944.121606,
+    "kernel_task": "kworker/6:1",
+    "kernel_workqueue": "virtio_vsock",
+    "not_an_application_assertion_failure": true,
+    "vm_log_tail_digest": "0734dbf7c87d66c08cd445c450bb72bdda59635d9555bbe104b72b4fa3fbb238/19592"
+  },
+  "tested_commit": "6f1ead144a1b673179dca7618816d66440f76ab1"
+}

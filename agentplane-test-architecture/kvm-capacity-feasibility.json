@@ -1,0 +1,121 @@
+{
+  "bounded_experiment_proposal_only": {
+    "minimal_candidate_source_diff": "In cluster/cdk8s/buildbuddy_kvm_worker.py, raise the autoscaler max from 3 to 4 and replace required hostname anti-affinity with a high-weight preferred hostname anti-affinity term. Retain HIL region, SVM/VMX requirement, local SSD storage class, per-worker disk, and one-action-per-VM behavior. Do not add a node-name selector. This is a proposal only; no source/config change was made.",
+    "not_authorized_or_done": "No deployment, scale change, HPA edit, infrastructure apply, test traffic, or source edit was performed. Root must decide whether the tradeoff merits a reviewed experiment.",
+    "placement_expectation": "Under the measured three-worker snapshot, if scheduling requests remain similar and local SSD remains available, node anti-affinity preference will favor spreading when feasible; the fourth worker can only fit by CPU on n1001419 among the three SSD worker nodes, so it may colocate there. HDD-only HIL nodes remain excluded by the local SSD volume binding.",
+    "record": "Record HPA recommendation/desired replicas and timestamps; VMPool replicas; Pending/scheduled virt-launcher events and node; PVC binding/PV node affinity; Ready VM and executor registration; queue wait, action completion and failure/retry status; per-host CPU and memory usage, scheduler requests, SSD free capacity/IO, and impact on unrelated host workloads. Compare at the same actual demand and report observed variation; a single run is not a reliability or speedup claim.",
+    "rollback": "Stop adding test demand, revert to max=3 and the current required anti-affinity, let active actions drain, and confirm three VMs/executors are registered. Existing downscale policy stabilizes 900s and removes at most one worker per 300s; rollback is not instantaneous. Keep the current failure/ownership boundary and do not manually delete a VM or PVC as part of the experiment.",
+    "test_shape": "After separate owner review and an approved quiet window, compare baseline and candidate with a bounded burst of four real kvm-vm CI actions/PR jobs. First isolate capacity by retaining the current +1/900s scale policy; that can make the test slow. If faster arrival is also the question, use a separate follow-up changing only the scale-up policy period (current +1/900s) so placement and timing effects are distinguishable."
+  },
+  "conditional_capacity": {
+    "allow_soft_spread": "At the measured 3-worker request snapshot, n1001419 is the only one of the three current worker hosts with enough remaining CPU to accept a fourth launcher request. Its measured request headroom is adequate, but leaves only 1507m schedulable CPU by requests. KVM scheduler quantity and local SSD capacity are adequate. This is a candidate placement, not evidence that concurrent CPU/disk workloads will retain acceptable latency.",
+    "preserve_hard_anti_affinity": "No fourth placement on the three current eligible SSD HIL nodes; four distinct nodes would be required, so a new/requalified host is needed."
+  },
+  "created_at_utc": "2026-11-13T12:33:17Z",
+  "finding": {
+    "conclusion": "A fourth worker does not strictly require a new host under the observed scheduler requests: with the current 3-worker placement, ovh-ns1001419 has room by CPU, memory, KVM scheduler quantity, and local SSD for one additional launcher. Today the source-owned required pod anti-affinity prevents that placement, and the autoscaler max is 3. If the hard one-per-host policy is retained, a fourth distinct SSD-backed HIL host is required; no such fourth host is currently available.",
+    "interpretation": "Colocation is scheduler-feasible at this snapshot, not demonstrated to be performant or safe under simultaneous actions. The current policy intentionally limits correlated host failure and disk contention to one worker. Whether the throughput benefit outweighs that isolation tradeoff requires an explicitly reviewed experiment."
+  },
+  "limits": {
+    "external_host": "Wyrm2 is outside the HIL selector and its current LINSTOR status aggregates HDD and SSD; it was excluded rather than claiming per-SSD capacity.",
+    "faster_scale": "The historical scale/queue window is in iteration4/kvm-pool-window/summary.json and was a selected historical observation, not a repeat. Existing +1/900s is a configured limit; no quicker scale-up was measured.",
+    "kvm": "The observed 1k is Kubernetes' advertised extended-resource quantity, not a guarantee of 1000 performant guest VMs; no simultaneous multi-worker-on-one-host test was run.",
+    "resource_requests_are_not_usage": "Kubernetes requested resources establish scheduling eligibility; they do not show actual concurrent CPU/disk contention or performance. CPU headroom after colocating is only 1507m by requests, and current total limits may be overcommitted.",
+    "snapshot_age": "The three-worker request snapshot is 2026-11-13 12:11:20Z; later live state at about 12:22Z was min=1. Capacity and background requests can change.",
+    "storage": "The later LINSTOR free-capacity number is aggregate reported capacity for the node SSD pool, not a direct reservation guarantee for a new PVC. It exceeded the observed 84.8Gi PVC/PV capacity by a large margin in this snapshot."
+  },
+  "live_evidence": {
+    "candidate_additional_launcher_request": {
+      "candidate_on": "ovh-ns1001419",
+      "cpu_m": "4010 (4 CPU + 10m)",
+      "devices": {
+        "devices.kubevirt.io/kvm": 1,
+        "devices.kubevirt.io/tun": 1,
+        "devices.kubevirt.io/vhost-net": 1
+      },
+      "ephemeral_storage": "100M",
+      "memory": "8568Mi + 40M = approximately 8.404Gi",
+      "other_two_nodes": "At the three-worker snapshot, n104952 and n104963 had less CPU headroom than one additional 4010m launcher request (2394m and 1846m). Their memory headroom was not the binding constraint.",
+      "post_schedule_cpu_headroom_m": "1507",
+      "post_schedule_memory_headroom": "approximately 33.79GiB",
+      "post_schedule_ssd_free": "Approximately 248.52GiB after one additional observed-volume-sized allocation: the source template requests 80Gi, but each existing worker PVC/PV is 84.8Gi in the API snapshot. Starting free SSD capacity was approximately 333.32GiB.",
+      "source": "private/executor-pods.json; compute plus volumerootdisk containers"
+    },
+    "kvm_device_quantity": "All six HIL VMX nodes advertised devices.kubevirt.io/kvm=1k allocatable. Existing worker launcher requests 1. Thus one-per-host is not imposed by the observed device-resource scheduler quantity; CPU, node-local SSD and source anti-affinity determine this case.",
+    "later_snapshot": {
+      "captured_utc_approx": "2026-11-13T12:22:12Z",
+      "source_files": [
+        "private/current-nodes.describe.txt",
+        "private/current-hpa.json",
+        "private/current-vmpool.json",
+        "private/current-vmi.json",
+        "private/current-pods.json",
+        "private/current-pvcs.json",
+        "private/current-linstorsatellites.json"
+      ],
+      "state": "After the HPA scaled down, the pool/HPA had settled at one worker on ovh-ns1001419. These later snapshots refresh the SSD capacity and current min=1 state; do not treat them as an atomic snapshot with the earlier three-worker node requests. The three-worker capacity conclusion below uses the earlier three-worker node snapshot."
+    },
+    "other_hil_hosts": "The other three HIL VMX nodes have only HDD LINSTOR pools. With the current SSD-only class they cannot host the worker disk, even where other resources exist. Their scheduler headroom was also below one 4010m/approximately 8.404Gi launcher request at the snapshot; best was n103711 with 3143m CPU and 6.95GiB memory free.",
+    "ssd_hil_hosts": [
+      {
+        "node": "ovh-ns1001419",
+        "ssd_pool": "present; LINSTOR freeCapacityBytes=357900455936 (~333.32GiB) in the later snapshot",
+        "three_worker_allocatable_cpu_m": "11950",
+        "three_worker_allocatable_memory": "64965252Ki (~61.96GiB)",
+        "three_worker_cpu_free_m": "5517",
+        "three_worker_memory_free": "~42.19GiB",
+        "three_worker_requested_cpu_m": "6433",
+        "three_worker_requested_memory_bytes": "21221707766 (~19.76GiB)",
+        "worker_assignment": "worker-0"
+      },
+      {
+        "node": "ovh-ns104952",
+        "ssd_pool": "present",
+        "three_worker_allocatable_cpu_m": "7950",
+        "three_worker_cpu_free_m": "2394",
+        "three_worker_requested_cpu_m": "5556",
+        "worker_assignment": "worker-1"
+      },
+      {
+        "node": "ovh-ns104963",
+        "ssd_pool": "present",
+        "three_worker_allocatable_cpu_m": "7950",
+        "three_worker_cpu_free_m": "1846",
+        "three_worker_requested_cpu_m": "6104",
+        "worker_assignment": "worker-2"
+      }
+    ],
+    "three_worker_snapshot": {
+      "captured_utc": "2026-11-13T12:11:20Z",
+      "source_files": [
+        "private/nodes.describe.txt",
+        "private/executor-pods.json",
+        "private/vmi.json",
+        "private/executor-pvcs.json"
+      ],
+      "state": "Three workers were Running on distinct SSD-backed HIL nodes: worker-0 on ovh-ns1001419, worker-1 on ovh-ns104952, worker-2 on ovh-ns104963. The node describe snapshot was taken at 12:11:20Z; this is a point-in-time scheduler-request view, not a usage history."
+    }
+  },
+  "private_evidence_directory": "/tmp/agents/2026_11_12/agentplane-ci-replan/iteration5/kvm-capacity-feasibility/private/",
+  "scope": {
+    "actions": "Read-only source inspection and cluster/API snapshots only; no source/config/infra mutation, no tests, no scheduling experiment.",
+    "scratch": "Raw API responses and describe outputs remain in private/; summary contains only allowlisted capacity facts.",
+    "workspace": "No repository source files changed by this task."
+  },
+  "source_contract": {
+    "anti_affinity": "cluster/cdk8s/buildbuddy_kvm_worker.py:231-245 imposes required hostname anti-affinity matching the worker labels. Its comment says each worker stays off nodes with another worker. cluster/k8s/buildbuddy-kvm-worker/README.md:3-6 explains this as limiting one node failure or disk contention to one worker. This is an explicit scheduling policy, not a hardware KVM limit.",
+    "autoscaling": "cluster/cdk8s/buildbuddy_kvm_worker.py:461-476 currently sets min=1, max=3, and scale-up stabilization=120s with at most +1 pod per 900s. Lines 481-485 use 900s scale-down stabilization and at most -1 pod per 300s.",
+    "kubevirt": "cluster/cdk8s/kubevirt/app.py:50-70 configures feature gates and a USB permitted-host-device rule; it does not configure a KVM max-device count. Live node allocatable reports devices.kubevirt.io/kvm=1k. Kubernetes quantity suffix k is decimal kilo, so this is 1000 schedulable units; each worker launcher requests 1. This is scheduler quantity, not a claim that 1000 VMs would have acceptable physical performance.",
+    "rollout": "cluster/cdk8s/buildbuddy_kvm_worker.py:350-361 says a template change replaces at most one VM at a time. README.md:17-26 says scale-in drains active work up to the task deadline; it does not guarantee completion on node/host failure. Changing anti-affinity in the VM template therefore needs a quiet rollout and registration verification.",
+    "storage": "cluster/cdk8s/buildbuddy_kvm_worker.py:291-311 creates a per-worker 80Gi PVC with piraeus-ssd-local-delete. cluster/cdk8s/piraeus.py:652-661 uses local LINSTOR pool ssd, placementCount=1, allowRemoteVolumeAccess=false, and WaitForFirstConsumer. This requires the SSD volume to reside on the selected node.",
+    "worker_placement": "cluster/cdk8s/buildbuddy_kvm_worker.py:153-154 selects topology.kubernetes.io/region=hil; lines 216-229 require a node advertising either svm or vmx."
+  },
+  "source_evidence_paths": [
+    "cluster/cdk8s/buildbuddy_kvm_worker.py",
+    "cluster/cdk8s/kubevirt/app.py",
+    "cluster/cdk8s/piraeus.py",
+    "cluster/k8s/buildbuddy-kvm-worker/README.md"
+  ],
+  "task": "Read-only physical eligibility/cost check for a fourth BuildBuddy KVM worker and faster scale-up",
+  "validation": "No tests or builds were run; this was a read-only evidence task. Source and live snapshots were inspected, and no repository source changes were made."
+}
