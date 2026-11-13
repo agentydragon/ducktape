@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Organizing Agentplane from first principles</title>
+
+    <meta name="color-scheme" content="light dark" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/core@9.6.1/styles.css"
+      integrity="sha384-i9tDmARQSxqmzSCjbU/VkZGPbv8PjopI///D0KBD2i8+Y/wjaqYR8TDcV69RytF8"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="../report.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@mantine/charts@9.6.1/styles.css"
+      integrity="sha384-SAaixzmOuoOlEdvk2Tg+2gOI+7JIMU05jOmxjegc3CUuKmNXOkUNkFwM93V7hSId"
+      crossorigin="anonymous"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19.3.0?target=es2022",
+          "react/jsx-runtime": "https://esm.sh/react@19.3.0/jsx-runtime?target=es2022",
+          "react-dom": "https://esm.sh/react-dom@19.3.0?external=react&target=es2022",
+          "react-dom/client": "https://esm.sh/react-dom@19.3.0/client?external=react&target=es2022",
+          "@mantine/core": "https://esm.sh/@mantine/core@9.6.1?bundle&external=react,react-dom&target=es2022",
+          "@mantine/hooks": "https://esm.sh/@mantine/hooks@9.6.1?external=react&target=es2022",
+          "@mantine/charts": "https://esm.sh/@mantine/charts@9.6.1?bundle&external=react,react-dom,@mantine/core,@mantine/hooks,recharts&target=es2022",
+          "recharts": "https://esm.sh/recharts@3.3.0?bundle&external=react,react-dom,react-is&target=es2022",
+          "react-is": "https://esm.sh/react-is@19.3.0?target=es2022",
+          "htm": "https://esm.sh/htm@3.1.1?target=es2022"
+        }
+      }
+    </script>
+    <script>
+      document.documentElement.dataset.mantineColorScheme = matchMedia(
+        "(prefers-color-scheme: dark)",
+      ).matches
+        ? "dark"
+        : "light";
+    </script>
+  </head>
+  <body>
+    <div id="report-content"></div>
+    <noscript>This report uses JavaScript for Mantine components.</noscript>
+    <script type="module">
+      import {
+        Anchor,
+        Blockquote,
+        Box,
+        Code,
+        Container,
+        Group,
+        List,
+        Paper,
+        SimpleGrid,
+        Stack,
+        Table,
+        Text,
+        Title,
+      } from "@mantine/core";
+      import { html, mount } from "../report.js";
+      function Report() {
+        return html`<${Container}
+          component="main"
+          size="74rem"
+          py="xl"
+          style=${{ overflowWrap: "anywhere" }}
+        >
+          <header>
+            <${Title} order=${1} mt="md" mb="sm"
+              >${"Organizing an agent platform"}<//
+            >
+            <${Text} component="p" my="sm"
+              >${"A first-principles architecture, source inventory and staged adoption plan for Agentplane."}<//
+            >
+            <${Text} component="p" c="dimmed" size="sm"
+              >${"Source inventory: 12 November 2026 · repository snapshot bd12dd2be9 · proposed architecture, not a live deployment inventory"}<//
+            >
+          </header>
+          <${Group} component="nav" gap="sm" my="md" aria-label="Contents"
+            ><${Anchor} href=${"#thesis"}>${"Start with ownership"}<//
+            ><${Anchor} href=${"#model"}>${"A small core model"}<//
+            ><${Anchor} href=${"#ownership"}>${"Give each decision an owner"}<//
+            ><${Anchor} href=${"#flows"}
+              >${"Follow a command across failures"}<//
+            ><${Anchor} href=${"#deployment"}>${"Deploy for a reason"}<//
+            ><${Anchor} href=${"#boundaries"}>${"Enforce at the authority"}<//
+            ><${Anchor} href=${"#packages"}
+              >${"Put contracts and implementation beside their owner"}<//
+            ><${Anchor} href=${"#rules"}>${"What the Go boundaries mean"}<//
+            ><${Anchor} href=${"#inventory"}>${"What owns each fact today"}<//
+            ><${Anchor} href=${"#coverage"}
+              >${"What is specified, and what is evidenced"}<//
+            ><${Anchor} href=${"#hierarchy"}
+              >${"Build a hierarchy within each owner"}<//
+            ><${Anchor} href=${"#adoption"}
+              >${"Move useful code now; keep decisions separate"}<//
+            ><${Anchor} href=${"#sources"}
+              >${"Sources and design judgment"}<//
+            ><//
+          >
+          <${Stack} component="section" id=${"thesis"} gap="sm" my="xl"
+            ><${Box}>${"01 / Design thesis"}<//
+            ><${Title} order=${2} mt="lg" mb="xs">${"Start with ownership"}<//
+            ><${Text} component="p" my="sm"
+              >${"Organize around the components that can make durable decisions: who owns a fact, how it is recorded, who may change it, and what happens if a process disappears mid-operation."}<//
+            ><${Blockquote} color=${"teal"} my="md"
+              ><strong>${"Scope."}</strong
+              >${" This is a proposed design, not an inventory of the current Agentplane implementation. Names and the directory tree are illustrative; the purpose is to expose the boundaries and their consequences."}<//
+            ><${SimpleGrid} cols=${{ base: 1, sm: 3 }} spacing="md"
+              ><${Paper} withBorder=${true} p="md" radius="md"
+                ><${Title} order=${3} mt="lg" mb="xs">${"Authority"}<//
+                ><${Text} component="p" my="sm"
+                  >${"Each durable fact has a clear owner and a supported interface for changing or reading it."}<//
+                ><//
+              ><${Paper} withBorder=${true} p="md" radius="md"
+                ><${Title} order=${3} mt="lg" mb="xs">${"Isolation"}<//
+                ><${Text} component="p" my="sm"
+                  >${"An environment is the security boundary for the code, credentials, filesystem and Sessions within it."}<//
+                ><//
+              ><${Paper} withBorder=${true} p="md" radius="md"
+                ><${Title} order=${3} mt="lg" mb="xs">${"Evidence"}<//
+                ><${Text} component="p" my="sm"
+                  >${"A request, its admission, an attempted effect and a confirmed outcome are distinct facts."}<//
+                ><//
+              ><//
+            ><//
+          ><${Stack} component="section" id=${"model"} gap="sm" my="xl"
+            ><${Box}>${"02 / Vocabulary"}<//
+            ><${Title} order=${2} mt="lg" mb="xs">${"A small core model"}<//
+            ><${List} spacing="xs"
+              ><${List.Item}
+                ><strong>${"Principal:"}</strong
+                >${" a human, service or agent identity that can receive permissions."}<//
+              ><${List.Item}
+                ><strong>${"Environment:"}</strong
+                >${" an isolated place to execute code, with an identity, storage, network policy and lifecycle."}<//
+              ><${List.Item}
+                ><strong>${"Session:"}</strong
+                >${" durable agent work with commands, events, execution state and an assigned environment."}<//
+              ><${List.Item}
+                ><strong>${"Action:"}</strong
+                >${" a requested effect in another system, with a policy decision and an execution record."}<//
+              ><${List.Item}
+                ><strong>${"Message:"}</strong
+                >${" a durable notification or communication addressed to a principal or Session."}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              >${"In this proposal, a conversation is a read view of a Session. Multiple Sessions in an environment share its security boundary unless an additional isolation mechanism is explicitly provided."}<//
+            ><//
+          ><${Stack} component="section" id=${"ownership"} gap="sm" my="xl"
+            ><${Box}>${"03 / Logical components"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Give each decision an owner"}<//
+            ><${Box} style=${{ overflowX: "auto" }}
+              ><${Table}
+                withTableBorder=${true}
+                striped=${true}
+                highlightOnHover=${true}
+                ><thead>
+                  <tr>
+                    <th>${"Component"}</th>
+                    <th>${"Owns and decides"}</th>
+                    <th>${"Boundary"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>${"Identity & policy"}</td>
+                    <td>
+                      ${"Principals, credentials, grants and policy evaluation."}
+                    </td>
+                    <td>
+                      ${"Other owners enforce the decision for their own operation."}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>${"Environment manager"}</td>
+                    <td>
+                      ${"Desired configuration, placement, lifecycle and observed environment status."}
+                    </td>
+                    <td>
+                      ${"Does not own Session history or Action decisions."}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>${"Session service"}</td>
+                    <td>
+                      ${"Session identity and placement, durable command admission, retained event archive and read projections."}
+                    </td>
+                    <td>
+                      ${"The runtime produces execution observations; a view is not an execution authority."}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>${"Environment runtime"}</td>
+                    <td>
+                      ${"Local processes, workspace operations, execution, local journals and reporting observations."}
+                    </td>
+                    <td>
+                      ${"Does not own global identity or operator policy."}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>${"Action service"}</td>
+                    <td>
+                      ${"Action catalog, requests, approval, execution attempts and receipts."}
+                    </td>
+                    <td>
+                      ${"Owns external effects; a gateway does not duplicate its decisions."}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>${"Messaging"}</td>
+                    <td>
+                      ${"Subscriptions, inboxes, delivery state and acknowledgements."}
+                    </td>
+                    <td>
+                      ${"Does not own the recipient’s Session lifecycle."}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>${"Access gateways"}</td>
+                    <td>
+                      ${"Browser, CLI, MCP, model and network protocol adaptation."}
+                    </td>
+                    <td>
+                      ${"Authenticate and translate; do not create parallel business authorities."}
+                    </td>
+                  </tr>
+                </tbody><//
+              ><//
+            ><${Text} component="p" my="sm"
+              >${"These are logical boundaries, not a requirement for one deployment or database server per row."}<//
+            ><//
+          ><${Stack} component="section" id=${"flows"} gap="sm" my="xl"
+            ><${Box}>${"04 / The lifecycle"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Follow a command across failures"}<//
+            ><${Group} gap="xs" wrap="wrap" my="md"
+              ><span>${"Client"}</span><b>${"→"}</b
+              ><span>${"Session service"}</span><b>${"→"}</b
+              ><span>${"Runtime"}</span><b>${"→"}</b
+              ><span>${"Agent process"}</span><b>${"→"}</b
+              ><span>${"Event archive"}</span><//
+            ><${List} type="ordered" spacing="xs"
+              ><${List.Item}
+                >${"The caller submits a command with a stable idempotency key. The Session service durably records it and returns a receipt."}<//
+              ><${List.Item}
+                >${"A delivery worker sends the same command to the designated runtime. The runtime durably records its admission before carrying out work."}<//
+              ><${List.Item}
+                >${"The runtime journals observed events locally, then delivers them with ordered cursors. The Session service retains and acknowledges them."}<//
+              ><${List.Item}
+                >${"Read projections provide a conversation view; retained events remain available subject to the archive’s documented settlement and retention rules."}<//
+              ><//
+            ><${Blockquote} color=${"yellow"} my="md"
+              ><strong>${"Uncertain effects stay uncertain."}</strong
+              >${" A queue receipt, a network write and a timeout do not prove what an external process did. Retry transport with the same identity where safe; do not replay a non-idempotent effect merely because its result is unknown. Reconcile against evidence first."}<//
+            ><${Text} component="p" my="sm"
+              >${"For database updates that must cause later delivery, a transactional outbox is one possible mechanism. It commits the state change and pending delivery together; consumers still need to handle duplicates. "}<${Anchor}
+                href=${"https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html"}
+                >${"AWS pattern ↗"}<//
+              ><//
+            ><//
+          ><${Stack} component="section" id=${"deployment"} gap="sm" my="xl"
+            ><${Box}>${"05 / Physical design"}<//
+            ><${Title} order=${2} mt="lg" mb="xs">${"Deploy for a reason"}<//
+            ><${Text} component="p" my="sm"
+              >${"Start with a modest number of processes. Run the environment runtime inside the environment for isolation. A Session service can initially contain command delivery, history ingestion and projection workers; separate them later when scale, privileges, reliability or release cadence justify it. A controller loop is a responsibility, not automatically its own service."}<//
+            ><${Text} component="p" my="sm"
+              >${"Give each state owner its own schema or database and access credentials, even when several databases share a PostgreSQL cluster. The runtime keeps a local durable journal on retained environment storage. Other components read and mutate owned state through its API, rather than reaching into private tables."}<//
+            ><${Text} component="p" my="sm"
+              >${"For Kubernetes environments, a reconciler can observe desired resources and move actual state toward them. The platform API need not expose Kubernetes objects to every caller. "}<${Anchor}
+                href=${"https://kubernetes.io/docs/concepts/architecture/controller/"}
+                >${"Kubernetes controllers ↗"}<//
+              ><//
+            ><${Blockquote} color=${"teal"} my="md"
+              ><strong>${"Ownership is not process count."}</strong
+              >${" Combining two modules in one binary does not grant either permission to bypass the other’s authority. Splitting a binary does not by itself create a coherent boundary."}<//
+            ><//
+          ><${Stack} component="section" id=${"boundaries"} gap="sm" my="xl"
+            ><${Box}>${"06 / Trust and protocols"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Enforce at the authority"}<//
+            ><${List} spacing="xs"
+              ><${List.Item}
+                ><strong>${"Actions:"}</strong
+                >${" the Action owner authorizes and records effects for every client, including the UI, CLI and MCP adapter."}<//
+              ><${List.Item}
+                ><strong>${"Execution:"}</strong
+                >${" the runtime exposes a narrow, authenticated API and binds requests to verified identity and environment placement."}<//
+              ><${List.Item}
+                ><strong>${"Egress:"}</strong
+                >${" a gateway enforces network policy and can inject external credentials without giving those secrets to general agent processes."}<//
+              ><${List.Item}
+                ><strong>${"Models:"}</strong
+                >${" an authenticated gateway mediates provider access. A native harness or a central sampler can use the same Session and event contracts; placement does not redefine history."}<//
+              ><${List.Item}
+                ><strong>${"Presentation:"}</strong
+                >${" the browser app composes APIs. Essential backend work continues when the app is unavailable."}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              >${"Use gRPC and protobuf where typed internal APIs and streaming are useful; use HTTP for browser access, OAuth, webhooks and provider protocols. MCP is an adapter for clients that use that protocol. The transport does not itself supply durable delivery or exactly-once effects. "}<${Anchor}
+                href=${"https://grpc.io/docs/what-is-grpc/core-concepts/"}
+                >${"gRPC concepts ↗"}<//
+              ><//
+            ><//
+          ><${Stack} component="section" id=${"packages"} gap="sm" my="xl"
+            ><${Box}>${"07 / Code organization"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Put contracts and implementation beside their owner"}<//
+            ><${Text} component="p" my="sm"
+              >${"The sketch below uses current component names and process groupings, with proposed package homes shown explicitly. A component’s public contract is importable by other components; its private implementation sits under its owner. The tree does not prescribe a new Session service or a binary split."}<//
+            ><${Code}
+              block=${true}
+              style=${{ overflowX: "auto", whiteSpace: "pre" }}
+              >${"agentplane/\n  runner_gateway/\n    dispatcher/\n      api/                     # proposed home for its public wire contract\n      internal/                # admission and delivery implementation, where fitting\n    environments/              # environment management\n    gateway/                   # authenticated runtime routing\n    main.go                    # existing combined process; split is undecided\n\n  history_service/\n    api/                       # existing server handlers; public contracts can live below\n      history/                 # proposed home for History read proto and bindings\n      ingress/                 # proposed home for journal ingress proto and bindings\n    internal/\n      reads/                   # proposed first move: current reads/ implementation\n      storage/                 # possible later private implementation\n    projection/                # fold workers; preserve existing ownership\n    threadfold/                # currently also used by central-sampler tests\n    main.go\n\n  notification_service/\n    api/                       # existing RPC handlers\n    internal/\n      inboxaccess/             # proposed move: current inboxaccess/\n    store/\n    worker/\n    main.go\n\n  action_service/\n    api/                       # existing RPC handlers\n    store/\n    worker/\n    main.go\n  env/runtime/\n    execution/  session/  journal/  harness/  claude/  codex/\n  workload_identity/\n  egress/\n  app/\n  cli/"}<//
+            ><${Text} component="p" my="sm"
+              >${"A directory that groups contracts is not necessarily itself a Go package; the existing "}<${Code}>${"history_service/api"}</${Code}>${" is already a server-handler package and can have child contract packages. Place contracts outside "}<${Code}>${"internal/"}</${Code}>${" if callers outside the owner need them. Keep protobuf package/service names and wire semantics stable when moving files; a directory name alone does not introduce a new API version."}<//
+            ><${Text} component="p" my="sm"
+              >${"Do not move "}<${Code}>${"threadfold"}</${Code}>${" inside History’s "}<${Code}>${"internal/"}</${Code}>${" while the central sampler tests import it. Decide whether those tests should exercise History’s public boundary or whether a smaller shared projection contract is actually justified before changing that dependency."}<//
+            ><//
+          ><${Stack} component="section" id=${"rules"} gap="sm" my="xl"
+            ><${Box}>${"08 / Conventions"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"What the Go boundaries mean"}<//
+            ><${Title} order=${3} mt="lg" mb="xs"
+              >${"Commands assemble; packages implement"}<//
+            ><${Text} component="p" my="sm"
+              >${"Keep "}<${Code}>${"main"}</${Code}>${" focused on configuration, constructing dependencies, starting and stopping the process. "}<${Code}>${"cmd/"}</${Code}>${" is a common layout for repositories with commands and importable packages, not a language requirement. "}<${Anchor}
+                href=${"https://go.dev/doc/modules/layout"}
+                >${"Go module layout ↗"}<//
+              ><//
+            ><${Title} order=${3} mt="lg" mb="xs"
+              >${"Use "}<${Code}>${"internal/"}</${Code}>${" to constrain imports"}<//
+            ><${Text} component="p" my="sm"
+              >${"Go permits importing a package below "}<${Code}>${"internal/"}</${Code}>${" only from the tree rooted at the directory immediately above that "}<${Code}>${"internal"}</${Code}>${" directory. Thus "}<${Code}>${"session/cmd/sessiond"}</${Code}>${" may import "}<${Code}>${"session/internal/postgres"}</${Code}>${", but "}<${Code}>${"action/"}</${Code}>${" may not. This is a build-time import rule, not a runtime security boundary. "}<${Anchor}
+                href=${"https://pkg.go.dev/cmd/go#hdr-Internal_Directories"}
+                >${"Go command reference ↗"}<//
+              ><//
+            ><${Title} order=${3} mt="lg" mb="xs"
+              >${"Name packages for what they do"}<//
+            ><${Text} component="p" my="sm"
+              >${"Prefer short, meaningful names like "}<${Code}>${"journal"}</${Code}>${" or "}<${Code}>${"lifecycle"}</${Code}>${". Avoid catch-all packages such as "}<${Code}>${"common"}</${Code}>${", "}<${Code}>${"utils"}</${Code}>${" or one giant "}<${Code}>${"types"}</${Code}>${" package. A directory used only to group other directories does not itself have to be a Go package. "}<${Anchor}
+                href=${"https://go.dev/blog/package-names"}
+                >${"Go package names ↗"}<//
+              ><//
+            ><${Title} order=${3} mt="lg" mb="xs"
+              >${"Use interfaces at real seams"}<//
+            ><${Text} component="p" my="sm"
+              >${"Go interfaces are implemented implicitly. When an interface is useful, define a small one near the consumer’s needs; implementations can return concrete types. Do not introduce an interface for every struct, or translate every protobuf message to a duplicate domain type without a reason. "}<${Anchor}
+                href=${"https://go.dev/wiki/CodeReviewComments#interfaces"}
+                >${"Go review guidance ↗"}<//
+              ><//
+            ><${Title} order=${3} mt="lg" mb="xs"
+              >${"Follow the dependency direction"}<//
+            ><${Text} component="p" my="sm"
+              >${"Clients import public contracts; transport handlers call their owner’s logic; implementations depend on narrowly scoped contracts, not on another service’s private database package. Keep related test files next to the code they verify. Integration tests should exercise real boundaries and failure behavior, not just mock the same implementation assumptions."}<//
+            ><//
+          ><${Stack} component="section" id=${"inventory"} gap="sm" my="xl"
+            ><${Box}>${"09 / Stage 1 · Source inventory"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"What owns each fact today"}<//
+            ><${Blockquote} color=${"teal"} my="md"
+              ><strong>${"Scope and snapshot."}</strong
+              >${" Read-only source and test inventory of local "}<${Code}>${"origin/devel"}</${Code}>${" at "}<${Code}>${"bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82"}</${Code}>${", 12 November 2026. This is a repository snapshot, not a live database, Kubernetes, rollout or fresh CI inventory. Earlier proposal sections describe a possible target. This section distinguishes that target from current implementation."}<//
+            >${"\n"}<${Box} style=${{ overflowX: "auto" }}
+              ><${Table}
+                withTableBorder=${true}
+                striped=${true}
+                highlightOnHover=${true}
+                ><thead>
+                  <tr>
+                    <th>${"Fact or action"}</th>
+                    <th>${"Current owner, state and interface"}</th>
+                    <th>${"Failure / lifecycle boundary"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Environment desired and observed state"}</td>
+                    <td>
+                      ${"Runner Gateway’s EnvironmentService creates and changes Sandbox resources; Sandbox Controller reconciles Pods or VMs, state PVCs, credentials and "}<${Code}>${"Sandbox.status"}</${Code}>${". Kubernetes API is the desired/observed state interface. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/docs/system_overview.md#sandbox-lifecycle-and-runner-control"}
+                        >${"Topology ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Managed deletion waits for Runtime quiescence and the final History acknowledgement. API deletion timestamps, caches and DB tombstones are separate events, not one transaction."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Session directory and commands"}</td>
+                    <td>
+                      ${"Dispatcher in Runner Gateway owns logical Session records, placement and queue receipts in its PostgreSQL database. App, CLI and brokers call its gRPC API. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/runner_gateway/dispatcher/SPEC.md"}
+                        >${"Dispatcher contract ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Queue acceptance, Runtime admission and native effect are different facts. A sticky possible-forwarding marker preserves uncertainty. After Sandbox deletion, cleanup removes receipts; terminal watch snapshots are not durable future reads."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Native Sessions and execution"}</td>
+                    <td>
+                      ${"Environment Runtime owns durable local Session records, SQLite journals, native harness state and process execution. Gateway authenticates and proxies to Runtime over mTLS. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/env/runtime/docs/session_protocol.md"}
+                        >${"Session protocol ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Admission and event commit are atomic locally; planned work with an unproven native outcome remains pending, not resent. Pod and VM successor processes require their respective external or systemd fences."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Shutdown and sealing"}</td>
+                    <td>
+                      ${"Runtime owns admission closure, component drain, native and Execution fencing, journal seal and delivery; its lifecycle worker observes exact-generation component status. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/env/runtime/docs/lifecycle.md"}
+                        >${"Lifecycle ownership ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"It retains the environment owner through fencing and final durable History acknowledgement. The Sandbox Controller waits for this managed handshake; forced deletion bypasses it."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"History and Thread view"}</td>
+                    <td>
+                      ${"History Service owns archive ingress, retained history and the Thread fold in "}<${Code}>${"sandbox_service"}</${Code}>${" PostgreSQL; Electric replicates fold data through the app to browsers. App stores presentation metadata separately. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/history_service/README.md"}
+                        >${"History ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/docs/thread_view_sync.md"}
+                        >${"Thread sync ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Runtime retains and retries its local journal when remote ingress is unavailable. History may settle streamed deltas and record covered/removed ranges; do not promise every original chunk remains in the archive. Electric availability is a separate dependency."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Central Sessions"}</td>
+                    <td>
+                      ${"Optional central sampler owns command/effect journal, provider continuation and leases in its own PostgreSQL database; it exports to History and invokes the environment Executor through Gateway. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/central_sampler/SPEC.md"}
+                        >${"Sampler contract ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"V1 requires a fixed Sandbox-backed executor at creation. Unknown provider/executor effects or lost live cells are retained and reconciled; no automatic mutation replay. It is a distinct event producer, not the native Runtime."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Actions and external MCP"}</td>
+                    <td>
+                      ${"Action Service owns ActionRequests, Decisions, execution and its "}<${Code}>${"actions"}</${Code}>${" DB; MCP edge owns Connections and external OAuth in its own DB and forwards calls. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/action_service/SPEC.md"}
+                        >${"Action contract ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/mcp_edge/README.md"}
+                        >${"MCP edge ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Action idempotency is caller-scoped: a repeated key is refused and the original request is looked up. Execution uncertainty must not trigger a fresh Action. Connection revocation does not undo an already accepted Action."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Identity, grants and egress"}</td>
+                    <td>
+                      ${"Policy Controller issues WorkloadCredentials and reconciles grants; Sandbox Controller requests incarnation-bound credentials. Services independently resolve and authorize SVID or token callers. Egress owns network decisions and credential substitution. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/docs/workload_authentication.md"}
+                        >${"Workload authentication ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/egress/SPEC.md"}
+                        >${"Egress contract ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Identity rollout is in progress. UID-bound credentials reject same-name replacements; standing name-only records have different semantics. An Identity reference is not itself proof or authority."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Inbox and notices"}</td>
+                    <td>
+                      ${"Notification Service owns subscriptions, inboxes, cursors and notice bookkeeping in PostgreSQL. It reads Actions and History through APIs and submits notices through Dispatcher. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/notification_service/docs/architecture.md"}
+                        >${"Notification internals ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"A persisted notice keeps its command ID and attempt evidence; delivery waits for sufficient History evidence and does not treat admission as harness confirmation. Policy for sends after environment deletion remains open."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"UI, external clients and models"}</td>
+                    <td>
+                      ${"App is a browser-facing composition client; CLI and MCP expose service-owned operations. LLM ingress authenticates inference calls before LiteLLM. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/docs/service_boundaries.md"}
+                        >${"Service boundaries ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/llm_ingress/README.md"}
+                        >${"LLM ingress ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Backends should run without the app; the tested scope varies by path. External APIs and providers have their own availability and outcome boundaries."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                </tbody><//
+              ><//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Storage and ownership implications"}<//
+            ><${Text} component="p" my="sm"
+              >${"The single proposed Session authority is "}<em>${"not"}</em>${" today’s topology: Dispatcher, History, Runtime, Notification and sampler each own different Session-keyed facts. The current project direction keeps Dispatcher PostgreSQL and History separate until the explicitly deferred ownership review decides otherwise. A shared UUID or PostgreSQL cluster is not a reason to merge the services or tables. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/plans/task_dag.md#session_data_ownership_design--review-session-data-services-and-databases"}
+                >${"SESSION_DATA_OWNERSHIP_DESIGN ↗"}<//
+              ><//
+            ><//
+          ><${Stack} component="section" id=${"coverage"} gap="sm" my="xl"
+            ><${Box}>${"10 / Stage 2 · Contract and test inventory"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"What is specified, and what is evidenced"}<//
+            ><${Text} component="p" my="sm"
+              >${"These are source-inspected contracts and test cases. A test’s presence shows intended coverage, not a fresh pass, a live deployment result or proof of cases outside its fixture. Test execution results from this investigation are recorded separately below."}<//
+            ><${Box} style=${{ overflowX: "auto" }}
+              ><${Table}
+                withTableBorder=${true}
+                striped=${true}
+                highlightOnHover=${true}
+                ><thead>
+                  <tr>
+                    <th>${"Boundary"}</th>
+                    <th>${"Existing evidence to reuse"}</th>
+                    <th>${"Gap / limit"}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Admission and retries"}</td>
+                    <td>
+                      <${Code}>${"TestAdmissionIsDurableAndIdempotent"}<//
+                      >${", "}<${Code}>${"TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts"}</${Code}>${", and "}<${Code}>${"TestOnlyRunnerAdmissionRecordsAdmission"}</${Code}>${". "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/runner_gateway/dispatcher/store_integration_test.go"}
+                        >${"Dispatcher tests ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      <${Code}>${"DISPATCHER_HARNESS_CONFIRMATION"}<//
+                      >${" says "}<${Code}>${"HARNESS_CONFIRMED"}</${Code}>${" has no writer; decide and test the canonical evidence before presenting it as a settled delivery state."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Restart / no replay"}</td>
+                    <td>
+                      <${Code}
+                        >${"TestDispatchKeepsUncertainNativeWritePendingAndDoesNotResend"}<//
+                      >${", "}<${Code}>${"TestExecutionControllerFencesBeforeReplacementAndDoesNotReplay"}</${Code}>${"; sampler has "}<${Code}>${"TestExecutorDoesNotReplayMutationAfterLostReply"}</${Code}>${". "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/env/runtime/session/native_test.go"}
+                        >${"Native tests ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/central_sampler/executor_test.go"}
+                        >${"Sampler tests ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Tests cover named paths, not all possible harness effects; native execution before durable confirmation is explicitly not proven duplicate-free across every restart."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Deletion and replacement"}</td>
+                    <td>
+                      <${Code}
+                        >${"TestDeletionAfterLostCommandReplyRemainsUnknown"}<//
+                      >${", "}<${Code}>${"TestDeliveryAttemptAndDeletionFenceOrderings"}</${Code}>${", and system test "}<${Code}>${"test_session_command_cannot_cross_deletion"}</${Code}>${". "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/system_tests/suites/test_session_deletion.py"}
+                        >${"Deletion suite ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Current watcher-only terminal snapshots can be missed or lost on reconnect after receipt cleanup. Explicit Session deletion and UUID reuse are not established. Manual finalizer bypass is outside the managed-deletion proof."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Drain and History outage"}</td>
+                    <td>
+                      <${Code}
+                        >${"TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement"}<//
+                      >${"; "}<${Code}>${"test_history_outage"}</${Code}>${" exercises a central-sampler turn and History catch-up. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/env/runtime/ingress_owner_test.go"}
+                        >${"Runtime tests ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/system_tests/README.md#central-sampler"}
+                        >${"System test scope ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Different fixtures cover native and central boundaries. A system-test scenario is not live rollout proof; the project explicitly waived broader disruption exercises unless normal use exposes a regression."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Identity and independent access"}</td>
+                    <td>
+                      <${Code}
+                        >${"TestAnIdentitySVIDReadsTheSessionsItsIdentityExecuted"}<//
+                      >${"; external MCP delegation suite scales the app down and checks its bounded authorization scenario. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/history_service/svid_test.go"}
+                        >${"History identity test ↗"}<//
+                      >${" · "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/system_tests/suites/mcp/test_delegation.py"}
+                        >${"MCP delegation test ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"Do not generalize this to every workload or access path. Session-to-Identity admission, direct Kubernetes rebind and same-name replacement races need their reviewed contract and corresponding tests."}
+                    </td>
+                  </tr>
+                  ${"\n"}
+                  <tr>
+                    <td>${"Browser synchronization"}</td>
+                    <td>
+                      ${"History fold and Electric-backed thread synchronization are implemented; system scenarios cover reconnect and suspend/resume. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/system_tests/README.md#behavior-specific-anchors"}
+                        >${"System scenarios ↗"}<//
+                      >
+                    </td>
+                    <td>
+                      ${"The saved acceptance note leaves server memory, off-window Electric traffic and Electric failover/scale evidence open. Its checks are dated; remeasure before claiming current behavior. "}<${Anchor}
+                        href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/debug/conversation_acceptance.md"}
+                        >${"Acceptance note ↗"}<//
+                      >
+                    </td>
+                  </tr>
+                  ${"\n"}
+                </tbody><//
+              ><//
+            ><${Title} order=${3} mt="lg" mb="xs">${"Investigation test run"}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Passed:"}</strong
+              >${" "}<${Code}>${"//agentplane/env/runtime:runtime_test"}</${Code}>${", "}<${Code}>${"//agentplane/env/runtime/session:session_test"}</${Code}>${", and "}<${Code}>${"//agentplane/runner_gateway/dispatcher:store_integration_test"}</${Code}>${" on BuildBuddy from a clean worktree at the source revision above. "}<${Anchor}
+                href=${"https://app.buildbuddy.io/invocation/67716f54-172a-4179-8eec-b78744e0377c"}
+                >${"Invocation 67716f54 ↗"}<//
+              >${". These cover the selected suites only; the system scenarios in the matrix were not run here."}<//
+            ><${Text} component="p" my="sm"
+              >${"The first attempt from the dirty primary checkout failed before tests: BuildBuddy rejected an 86,911,061-byte mirrored state against its 50,000,000-byte message limit. The clean worktree avoids including untracked user files. No system test, live cluster probe or migration was run in this investigation."}<//
+            ><//
+          ><${Stack} component="section" id=${"hierarchy"} gap="sm" my="xl"
+            ><${Box}>${"11 / Navigating large packages"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Build a hierarchy within each owner"}<//
+            ><${Text} component="p" my="sm"
+              >${"The earlier tree showed service boundaries but under-specified large packages. A source count at the inventoried revision finds 68 Go files in "}<${Code}>${"central_sampler/"}</${Code}>${", 57 in "}<${Code}>${"env/runtime/"}</${Code}>${", 51 in "}<${Code}>${"notification_service/store/"}</${Code}>${" and 27 in "}<${Code}>${"runner_gateway/dispatcher/"}</${Code}>${". These counts include tests; file count identifies navigation hotspots, not proof that every directory needs a split."}<//
+            ><${Blockquote} color=${"teal"} my="md"
+              ><strong>${"Go constraint:"}</strong
+              >${" a subdirectory is a different package. Files with methods on the same concrete type cannot simply be moved into separate directories: the type and its methods must stay together, or the responsibilities must be extracted into different types with an explicit dependency. Plan those changes around invariants and transactions, not filename prefixes."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Central sampler: split by operational responsibility"}<//
+            ><${Code}
+              block=${true}
+              style=${{ overflowX: "auto", whiteSpace: "pre" }}
+              >${"central_sampler/\n  cmd/                       # existing entry point\n  api/                       # public sampler protocol (future move)\n  protocol/                  # existing provider-neutral content contracts\n  anthropic/  responses/     # existing provider adapters\n  internal/\n    promptimage/             # image preparation and its tests: first slice\n    codemode/                # candidate: code-mode host, protocol and cell behavior\n    executor/                # candidate: Executor connection and operations\n    historyexport/           # candidate: History outbox delivery and ACKs\n    sessionstore/            # candidate: leases, intents, commands and transactions\n    runtime/                 # candidate: per-Session work and lifecycle orchestration\n  service.go                 # gRPC boundary, until dependencies support moving it\n  settings.go"}<//
+            ><${Text} component="p" my="sm"
+              >${"Start with "}<${Code}>${"image_preparation.go"}</${Code}>${" and its tests: its model-facing image behavior is a coherent capability used from "}<${Code}>${"codemode.go"}</${Code}>${". It currently calls "}<${Code}>${"decodeProtocolObject"}</${Code}>${" from "}<${Code}>${"executor_operations.go"}</${Code}>${"; preserve that strict object/trailing-data behavior with a genuinely shared protocol decoding home or an equivalent well-scoped design, not an import back into the parent. Keep the tests for image limits, formats and placeholders. Then extract further coherent components one at a time, based on their real dependencies. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/central_sampler/image_preparation.go"}
+                >${"Image preparation ↗"}<//
+              >${" · "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/central_sampler/executor_operations.go"}
+                >${"Shared decoder ↗"}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              >${"The larger split is not a mechanical move. "}<${Code}>${"CodeMode"}</${Code}>${", "}<${Code}>${"Executor"}</${Code}>${", "}<${Code}>${"Runtime"}</${Code}>${" and "}<${Code}>${"Store"}</${Code}>${" currently refer to each other. Move an entire responsibility with a narrow, meaningful contract; avoid a cycle or a new interface for each method. Keep lease fences, durable intent/effect transitions and their SQL transactions intact. Existing "}<${Code}>${"anthropic/"}</${Code}>${", "}<${Code}>${"responses/"}</${Code}>${" and "}<${Code}>${"protocol/"}</${Code}>${" are already useful boundaries; do not recreate them."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Environment Runtime: isolate lifecycle owners without breaking fences"}<//
+            ><${Code}
+              block=${true}
+              style=${{ overflowX: "auto", whiteSpace: "pre" }}
+              >${"env/runtime/\n  cmd/  control/  execution/  harness/  journal/  session/  supervision/ # existing\n  internal/\n    lifecycle/               # candidate: environment transition coordination\n    sessioncontrol/          # candidate: Session admission and lifecycle owner\n    executioncontrol/        # candidate: execution lifecycle and fencing\n    historydelivery/         # candidate: journal push and acknowledgement\n  runtime.go                 # composition and process lifetime"}<//
+            ><${Text} component="p" my="sm"
+              >${"Files such as "}<${Code}>${"session_admission.go"}</${Code}>${", "}<${Code}>${"session_lifecycle_controller.go"}</${Code}>${", "}<${Code}>${"execution_lifecycle.go"}</${Code}>${" and "}<${Code}>${"lifecycle_controller.go"}</${Code}>${" indicate real responsibilities, but many are methods on "}<${Code}>${"*Runtime"}</${Code}>${" or share its admission lock and lifecycle state. Extract a whole controller or coordinator only after defining who owns those facts; do not distribute one lock or generation fence across packages with hidden callbacks. Existing "}<${Code}>${"session/"}</${Code}>${", "}<${Code}>${"execution/"}</${Code}>${" and "}<${Code}>${"supervision/"}</${Code}>${" stay their established owners. First map shutdown and reconciliation, then choose one bounded extraction that preserves exact-generation fencing and final History acknowledgement. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/env/runtime/docs/lifecycle.md"}
+                >${"Lifecycle contract ↗"}<//
+              ><//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Notification Service: organize storage by transaction, not provider prefix"}<//
+            ><${Code}
+              block=${true}
+              style=${{ overflowX: "auto", whiteSpace: "pre" }}
+              >${"notification_service/\n  api/  github/  model/  worker/       # existing responsibilities\n  internal/\n    inboxaccess/                       # first owner-boundary move\n    storage/\n      inbox/                           # candidate: inbox/message operations\n      github/                          # candidate: GitHub observations and ingestion\n      transaction/                     # only if a real shared transaction owner is needed\n  migrations/                          # one database and migration owner remains"}<//
+            ><${Text} component="p" my="sm"
+              >${"The existing "}<${Code}>${"store/"}</${Code}>${" mixes inbox operations with many "}<${Code}>${"github_*"}</${Code}>${" files, which makes navigation difficult. However, GitHub ingestion allocates positions, invalidates access, wakes inboxes and records notifications in transactions; several methods are on the same "}<${Code}>${"*Store"}</${Code}>${". Map each transaction and its lock order before assigning packages. A split must preserve one atomic transaction when multiple responsibilities participate; it must not turn each directory into an independently committed repository or wrap the same Store repeatedly. Treat the tree as a target candidate, not a mechanical list of files to move. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/notification_service/store/github_ingest.go"}
+                >${"GitHub ingestion ↗"}<//
+              >${" · "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/notification_service/docs/architecture.md"}
+                >${"Storage architecture ↗"}<//
+              ><//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Dispatcher: separate transport, delivery and persistence carefully"}<//
+            ><${Code}
+              block=${true}
+              style=${{ overflowX: "auto", whiteSpace: "pre" }}
+              >${"runner_gateway/dispatcher/\n  api/                       # public contract; RPC implementation may be separate\n  internal/\n    admission/               # candidate: Session / command admission\n    delivery/                # candidate: worker, wake and routing\n    store/                   # candidate: transactions and possible-forwarding fence\n    watch/                   # candidate: watch and terminal delivery\n    placement/               # candidate: placement validation\n  # composition under Dispatcher; current Gateway binary may still host it"}<//
+            ><${Text} component="p" my="sm"
+              >${"Today "}<${Code}>${"api.go"}</${Code}>${", "}<${Code}>${"delivery.go"}</${Code}>${", "}<${Code}>${"store.go"}</${Code}>${", "}<${Code}>${"watch.go"}</${Code}>${" and "}<${Code}>${"placement.go"}</${Code}>${" provide a useful starting map. Separate the stable delivery responsibility from RPC translation, but first map "}<${Code}>${"Store"}</${Code}>${" methods, terminal snapshots and lease/cleanup transactions. The possible-forwarding marker and deletion fence must remain coordinated in the same durable boundary; package movement does not itself close the existing watcher/reconnect gap. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/runner_gateway/dispatcher/SPEC.md"}
+                >${"Dispatcher contract ↗"}<//
+              ><//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"How to decide the next extraction"}<//
+            ><${List} type="ordered" spacing="xs"
+              ><${List.Item}
+                >${"Name the responsibility and the facts it owns; trace its users, mutable state, transaction and shutdown boundaries."}<//
+              ><${List.Item}
+                >${"Move the cohesive implementation and its tests together. Keep the API small and meaningful; preserve semantic types rather than introducing empty wrappers."}<//
+              ><${List.Item}
+                >${"Run the existing unit, integration and race suites relevant to the moved code, plus the affected binaries. Make each independently reviewable."}<//
+              ><${List.Item}
+                >${"If extraction requires a behavior or ownership decision, document that specific dependency and choose another ready slice; do not block unrelated moves."}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              >${"These are candidate package boundaries grounded in the pinned source inventory, not claims that cycle analysis or each extraction has already been completed."}<//
+            ><//
+          ><${Stack} component="section" id=${"adoption"} gap="sm" my="xl"
+            ><${Box}>${"12 / Adoption plan · actionable slices"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Move useful code now; keep decisions separate"}<//
+            ><${Text} component="p" my="sm"
+              >${"The inventory and the three focused test suites establish a bounded starting point. The first moves below are independent, reviewable PRs: none requires resolving command outcome retention, identity cutover, Session database ownership, or the Runtime shutdown investigation. Recheck the latest base and open work before dispatch. The first two PRs are open for review; other slices remain proposals."}<//
+            >${"\n"}<${Blockquote} color=${"teal"} my="md"
+              ><strong>${"Rules for every move:"}</strong
+              >${" preserve behavior, authentication, gRPC method and protobuf package names, schemas, identities and persisted data; update every caller, generated binding, Bazel label and relevant documentation in the same change. No transitional shims. Run the checks that cover the actual diff, open a PR and report its exact CI status. A package move is not an authorization to change rollout or security semantics."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Now · PR 1: make History reads private to History"}<//
+            ><${Text} component="p" size="sm"><${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15931"}>${"PR #15931"}<//>${" opened 12 November 2026; check GitHub for current status."}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Move:"}</strong
+              >${" "}<${Code}>${"agentplane/history_service/reads"}</${Code}>${" → "}<${Code}>${"agentplane/history_service/internal/reads"}</${Code}>${". This package implements History-owned reads; the inspected Go imports and Bazel references are inside History. Update "}<${Code}>${"main.go"}</${Code}>${", "}<${Code}>${"api/"}</${Code}>${", projection tests, its own BUILD and all other references. Keep the public History RPC and its generated contract where they are for this PR. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/history_service/reads/BUILD.bazel"}
+                >${"Current reads package ↗"}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Why:"}</strong
+              >${" enforce the existing owner boundary using Go’s import rule, while leaving the externally consumed API untouched. "}<strong>${"Checks:"}</strong>${" moved "}<${Code}>${"internal/reads:integration_test"}</${Code}>${", History API integration and History binary build; include projection tests if their dependencies changed. Verify no old imports or labels remain. "}<strong>${"Rollback:"}</strong>${" revert the source-only move. Leave schemas, running services and other History packages out."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Now · PR 2: make inbox authorization an owned implementation"}<//
+            ><${Text} component="p" size="sm"><${Anchor} href=${"https://github.com/agentydragon/ducktape/pull/15938"}>${"PR #15938"}<//>${" opened 12 November 2026; check GitHub for current status."}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Move:"}</strong
+              >${" "}<${Code}>${"agentplane/notification_service/inboxaccess"}</${Code}>${" → "}<${Code}>${"agentplane/notification_service/internal/inboxaccess"}</${Code}>${". At the inspected revision its Go imports and BUILD references are within Notification Service. Update the service, API, tests and BUILD labels together; preserve policy resolution, identity checks and errors exactly. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/notification_service/inboxaccess/BUILD.bazel"}
+                >${"Current inbox-access package ↗"}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Why:"}</strong
+              >${" make the already service-scoped authorization implementation enforceably private. "}<strong>${"Checks:"}</strong>${" moved "}<${Code}>${"internal/inboxaccess:inboxaccess_test"}</${Code}>${", Notification API unit/integration tests and Notification binary build. "}<strong>${"Rollback:"}</strong>${" revert the move. This does not implement new Session authorization rules or change the identity cutover."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Now · PR 3: give shared workload transport an honest home"}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Move:"}</strong
+              >${" rename "}<${Code}>${"agentplane/environment_runtime_transport"}</${Code}>${" to "}<${Code}>${"agentplane/workload_identity/transport"}</${Code}>${", subject to confirming the destination has no import cycle at implementation time. It supplies shared SPIFFE/TLS transport for many services, not just Runtime. Include its Python configuration module and testing helpers; update Go/Python imports, Bazel visibility and labels, cdk8s and documentation in one coherent change. The current scan finds a broad cross-service reference surface, so this is a separate, larger mechanical PR. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/environment_runtime_transport/BUILD.bazel"}
+                >${"Transport package ↗"}<//
+              >${" · "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/plans/task_dag.md#transport_package_rename--a-shorter-home-for-environment_runtime_transport"}
+                >${"Existing rename item ↗"}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Checks:"}</strong
+              >${" moved transport race suite, workload-identity resolver and issuer tests, changed service builds and the CI checks covering Python/cdk8s consumers. Preserve certificate verification, URI values, credentials and configuration wire shapes; do not modify token audiences or policies. "}<strong>${"Rollback:"}</strong>${" revert the whole move. If the destination introduces a cycle or falsely narrows the package’s purpose, choose another neutral shared home in that PR rather than extracting unrelated behavior."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Next · PR 4: relocate one History public contract"}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Move:"}</strong
+              >${" put "}<${Code}>${"history_service.proto"}</${Code}>${" and its generated Go/Python/TypeScript targets under "}<${Code}>${"history_service/api/history/"}</${Code}>${", while retaining its protobuf package, fully qualified RPC methods, fields and HTTP routes. Its existing "}<${Code}>${"api/"}</${Code}>${" package contains server handlers; a child package can hold the public contract. Update actual consumers, proto and language imports, BUILD labels, generated schemas and docs atomically. Keep "}<${Code}>${"session_ingress.proto"}</${Code}>${" as a separate follow-up, not a prerequisite. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/history_service/BUILD.bazel"}
+                >${"Existing contract targets ↗"}<//
+              ><//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Why next:"}</strong
+              >${" it demonstrates the agreed component-owned API layout without deciding Session storage topology. This is wider than PRs 1–2: a preliminary textual scan found roughly 135 files referencing either History read or ingress contracts, so enumerate the exact read-contract subset before starting. Generated file paths and descriptors may change even when protobuf wire names do not; check their consumers and compatibility explicitly. "}<strong>${"Checks:"}</strong>${" regenerate/build all Go, Python and TS consumers; History API and app/browser integration checks; compare full RPC names and descriptor-dependent uses. "}<strong>${"Rollback:"}</strong>${" revert the atomic source/build migration; no data rewrite."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Now · PR 5: extract sampler image preparation"}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Move:"}</strong
+              >${" "}<${Code}>${"central_sampler/image_preparation.go"}</${Code}>${" and "}<${Code}>${"image_preparation_test.go"}</${Code}>${" into "}<${Code}>${"central_sampler/internal/promptimage/"}</${Code}>${"; update the code-mode caller. The current implementation depends on the shared strict "}<${Code}>${"decodeProtocolObject"}</${Code}>${" helper located in "}<${Code}>${"executor_operations.go"}</${Code}>${", so move that common decoding behavior to an appropriate dependency-neutral protocol home or select another design that preserves object validation, numeric decoding and trailing-data rejection. Do not add a parent-package import cycle or silently weaken validation."}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Why:"}</strong
+              >${" this removes a coherent feature and its tests from the largest flat package; it is a first step toward the hierarchy above, not merely a path rename. "}<strong>${"Checks:"}</strong>${" moved image preparation tests and "}<${Code}>${"//agentplane/central_sampler:central_sampler_unit_test"}</${Code}>${"; include relevant code-mode tests and service build. Preserve the exact image limits, placeholders and provider-facing results. "}<strong>${"Rollback:"}</strong>${" revert the cohesive extraction. It does not require a sampler reliability change."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Next · PR 6+: extract one cohesive subsystem at a time"}<//
+            ><${Text} component="p" my="sm"
+              >${"After PR 5, pick a genuinely separable sampler subsystem—such as History export or executor protocol—by tracing its actual dependencies. Move its implementation and tests together; preserve journal, leases and acknowledgement semantics. In parallel, draw the actual transaction map for Notification’s GitHub and inbox storage, and identify a small transaction-preserving extraction. Map Runtime shutdown and select one bounded lifecycle owner extraction; no other code-organization PR waits on those maps."}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Checks:"}</strong
+              >${" run the matching existing sampler integration and race suites, Notification store integration tests or Runtime lifecycle races as appropriate. Do not split a concrete receiver’s methods across Go packages, manufacture one-method wrappers, change database ownership, or treat a package split as a reliability fix."}<//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Parallel · Reliability and identity work retain their own tracks"}<//
+            ><${Text} component="p" my="sm"
+              ><strong>${"Dispatcher outcomes:"}</strong
+              >${" "}<${Code}>${"SESSION_DELETION_FENCE"}</${Code}>${" needs a bounded, durable post-deletion receipt design for reconnect and delayed watchers. "}<strong>${"Runtime:"}</strong>${" map admission, native/Execution fence, journal seal and exact History acknowledgement, then simplify one evidenced shutdown/reconciliation path with race tests. "}<strong>${"Identity:"}</strong>${" continue the existing admission, rebind and lifecycle-grant decisions and their cutover tests. These can run alongside the moves; none is a global prerequisite for them. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/plans/task_dag.md"}
+                >${"Current task DAG ↗"}<//
+              ><//
+            >${"\n"}<${Title} order=${3} mt="lg" mb="xs"
+              >${"Later · Ownership and physical deployment decisions"}<//
+            ><${Text} component="p" my="sm"
+              ><${Code}>${"SESSION_DATA_OWNERSHIP_DESIGN"}<//
+              >${" and "}<${Code}>${"DISPATCHER_PERSISTENCE_MODEL_DESIGN"}</${Code}>${" compare the current split with alternatives using actual facts, lifetimes and measured costs. Dispatcher’s PostgreSQL-backed queue and separate History remain the current direction until reviewed otherwise. Defer a Session-service merge, database migration, new binary topology or broad rename until its own rationale and plan are established; do not make that review a prerequisite for PRs 1–4."}<//
+            ><${Text} component="p" my="sm"
+              >${"If a reviewed decision later moves state, inventory live writers and data, prove a consistent backup/restore, fence the old owner before enabling the new one, reconcile IDs and cursors, and define rollback or forward repair. Preserve authored work and never replay effects to rebuild history. "}<${Anchor}
+                href=${"https://github.com/agentydragon/ducktape/blob/bd12dd2be9f1c2ccfa13edcbfd75f3ae0555db82/agentplane/docs/staging_data_preservation.md"}
+                >${"Data preservation procedure ↗"}<//
+              ><//
+            >${"\n"}<${Blockquote} color=${"yellow"} my="md"
+              ><strong>${"Scheduling:"}</strong
+              >${" PRs 1–3 and 5 can be dispatched in parallel; PR 4 can run independently after its own consumer inventory. PR 6 names follow-on extractions, not a blanket prerequisite for the other work. File conflicts do not establish dependencies. Existing test evidence is baseline evidence, not a claim of exact-head CI for future changes. Broad sampler disruption exercises remain subject to the existing operator hold."}<//
+            ><//
+          ><${Stack} component="section" id=${"sources"} gap="sm" my="xl"
+            ><${Box}>${"13 / References"}<//
+            ><${Title} order=${2} mt="lg" mb="xs"
+              >${"Sources and design judgment"}<//
+            ><${Text} component="p" my="sm"
+              >${"The links below support the named conventions. The component boundaries, ownership choices and failure protocol in this document are a design proposal informed by those conventions, not requirements imposed by them."}<//
+            ><${List} spacing="xs"
+              ><${List.Item}
+                ><${Anchor} href=${"https://go.dev/doc/modules/layout"}
+                  >${"Go: Organizing a Go module"}<//
+                >${" — package directories, commands and internal supporting packages."}<//
+              ><${List.Item}
+                ><${Anchor}
+                  href=${"https://pkg.go.dev/cmd/go#hdr-Internal_Directories"}
+                  >${"Go command: Internal directories"}<//
+                >${" — exact import visibility rule."}<//
+              ><${List.Item}
+                ><${Anchor} href=${"https://go.dev/blog/package-names"}
+                  >${"Go blog: Package names"}<//
+                >${" — package naming and avoiding catch-all packages."}<//
+              ><${List.Item}
+                ><${Anchor}
+                  href=${"https://go.dev/wiki/CodeReviewComments#interfaces"}
+                  >${"Go code review comments: Interfaces"}<//
+                >${" — consumer-side interfaces and concrete implementations."}<//
+              ><${List.Item}
+                ><${Anchor}
+                  href=${"https://kubernetes.io/docs/concepts/architecture/controller/"}
+                  >${"Kubernetes: Controllers"}<//
+                >${" — reconciliation of desired and observed state."}<//
+              ><${List.Item}
+                ><${Anchor}
+                  href=${"https://grpc.io/docs/what-is-grpc/core-concepts/"}
+                  >${"gRPC: Core concepts"}<//
+                >${" — service definitions, generated code and streaming RPCs."}<//
+              ><${List.Item}
+                ><${Anchor}
+                  href=${"https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html"}
+                  >${"AWS: Transactional outbox pattern"}<//
+                >${" — durable publication and duplicate delivery considerations."}<//
+              ><//
+            ><//
+          >
+        <//>`;
+      }
+      mount(Report);
+    </script>
+  </body>
+</html>
