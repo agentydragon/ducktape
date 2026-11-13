@@ -35,6 +35,10 @@ fn claimed_modules_export_their_entry_points() {
             ],
         ),
         (
+            "editor/packages/excalidraw/data/restore.js",
+            &["restore", "restoreElements", "restoreLibraryItems"],
+        ),
+        (
             "editor/packages/excalidraw/element/textWrapping.js",
             &["containsCJK", "wrapText"],
         ),
