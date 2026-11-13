@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "probe_ingress",
+    testonly = True,
+    srcs = ["probe_ingress.go"],
+    pure = "on",
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/api/ingress:session_ingress_go_proto",
+        "//agentplane/history_service/testing/spans",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
