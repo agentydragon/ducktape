@@ -259,6 +259,8 @@ spec:
                 secretKeyRef:
                   key: bearer-token
                   name: ha-mcp-bearer
+            - name: SSL_CERT_FILE
+              value: /var/run/public-web-pki/ca-certificates.crt
           envFrom:
             - configMapRef:
                 name: config
@@ -303,6 +305,10 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: false
+          volumeMounts:
+            - mountPath: /var/run/public-web-pki
+              name: configmap-public-web-pki
+              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -321,6 +327,9 @@ spec:
           name: tmp
         - emptyDir: {}
           name: data
+        - configMap:
+            name: public-web-pki
+          name: configmap-public-web-pki
 ---
 apiVersion: v1
 kind: Service

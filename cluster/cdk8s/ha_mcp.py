@@ -28,6 +28,7 @@ from cdk8s_plus_34 import (
     CpuResources,
     Deployment,
     EnvFrom,
+    EnvValue,
     ImagePullPolicy,
     MemoryResources,
     Service,
@@ -223,7 +224,7 @@ class HaMcpApp(Construct):
         deployment.containers[0].mount("/tmp", tmp_volume)
         deployment.containers[0].mount(_APP_DATA_DIR, data_volume)
 
-        deployment.add_container(
+        facade = deployment.add_container(
             name="facade",
             image=f"{_APP_FACADE_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
@@ -232,7 +233,8 @@ class HaMcpApp(Construct):
             env_variables={
                 # The same token agentplane-staging's Action Service presents (its ESO copy of
                 # this Secret) -- one source of truth, no drift.
-                "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": BEARER.env_value(self, "ha-mcp-bearer-ref")
+                "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": BEARER.env_value(self, "ha-mcp-bearer-ref"),
+                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(200)),
@@ -246,6 +248,12 @@ class HaMcpApp(Construct):
             # filesystem-write/root needs were never audited, so silently hardening it here
             # could break the running facade. Same rationale as litellm/proxy.py.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
+        )
+        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
+        facade.mount(
+            "/var/run/public-web-pki",
+            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
+            read_only=True,
         )
         pod_policy.harden(deployment)
         return deployment
@@ -316,6 +324,7 @@ def ha_mcp(
     directory: RenderedDirectory,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    cert_manager_environment: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -326,5 +335,6 @@ def ha_mcp(
             external_secrets_operator,
             # the ServiceMonitor CRD
             monitoring_crds,
+            cert_manager_environment,
         ),
     )
