@@ -1,0 +1,29 @@
+# Upstream owner: packages/excalidraw/scene/scroll.ts
+source_matches:
+  - match: |
+      var selected = ({
+        scenePoint: scenePoint,
+        viewportDimensions: viewportDimensions,
+        zoom: zoom,
+        offsets: offsets,
+      }) => {
+        STMT_LIST;
+        return (EXPR, {scrollX: EXPR, scrollY: EXPR});
+      };
+    bindings:
+      - local: selected
+        name: centerScrollOn
+
+  - match: |
+      var selected = (elements, appState) => {
+        if (EXPR, !elements.length) return {scrollX: 0, scrollY: 0};
+        STMT_LIST;
+        return EXPR({
+          scenePoint: {x: EXPR, y: EXPR},
+          viewportDimensions: {width: appState.width, height: appState.height},
+          zoom: appState.zoom,
+        });
+      };
+    bindings:
+      - local: selected
+        name: calculateScrollCenter
