@@ -55,7 +55,7 @@ Actions' upstream `mcp_oauth_token_state` is a separate, live owner and is outsi
 - Grant client ID is `https://claude.ai/oauth/mcp-oauth-client-metadata` in both databases.
   Source grant issuer is `https://agentplane-actions-staging.allegedly.works/`; edge grant issuer
   is `https://agentplane-actions-staging.allegedly.works` (no trailing slash). Do not normalize it
-  as a migration convenience: [`ResolveGrant`](../connections/authorizations.go) compares exact
+  as a migration convenience: [`ResolveGrant`](../internal/connections/authorizations.go) compares exact
   issuer and client strings as well as active status, binding and the current caller label.
 
 ### Serving and authority

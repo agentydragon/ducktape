@@ -41,7 +41,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/internal/connections",
         "//agentplane/mcp_edge/internal/mcpserver",
         "//agentplane/observability",
         "//agentplane/postgres",
@@ -71,7 +71,7 @@ go_test(
     deps = [
         "//agentplane/identity/auth/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
-        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/internal/connections",
         "//agentplane/mcp_edge/internal/mcpserver",
         "//agentplane/mcp_edge/migrations",
         "//agentplane/proto:identity_go_proto",
@@ -102,7 +102,7 @@ go_test(
     deps = [
         "//agentplane/identity/auth/auth",
         "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
-        "//agentplane/mcp_edge/connections",
+        "//agentplane/mcp_edge/internal/connections",
         "//agentplane/mcp_edge/internal/mcpserver",
         "//agentplane/mcp_edge/migrations",
         "//agentplane/proto:identity_go_proto",

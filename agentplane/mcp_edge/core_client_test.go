@@ -12,7 +12,7 @@ import (
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/google/uuid"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"

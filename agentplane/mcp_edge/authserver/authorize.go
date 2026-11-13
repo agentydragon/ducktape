@@ -15,7 +15,7 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 	"golang.org/x/oauth2"
 
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/connections"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 )
 
 // codeLifetime is how long a code may wait for its exchange after the operator's upstream sign-in.

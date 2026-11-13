@@ -9,8 +9,8 @@ go_library(
         "store.go",
         "watch.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/connections",
-    visibility = ["//agentplane:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections",
+    visibility = ["//agentplane/mcp_edge:__subpackages__"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/streaming",

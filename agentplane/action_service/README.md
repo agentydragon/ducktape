@@ -30,7 +30,7 @@ Console's being the one to retire, not two systems that happen to resemble each 
 
 ## External Connections
 
-External MCP Connections are owned by [`mcp_edge/connections`](../mcp_edge/connections/); the
+External MCP Connections are owned by [`mcp_edge/internal/connections`](../mcp_edge/internal/connections/); the
 generated [`ConnectionService`](../mcp_edge/api/connection/connection_service.proto) defines its operator API.
 Consent can select only a ServiceAccount in the current labeled Action callers view. The MCP edge
 resolves a Connection grant to its currently bound ServiceAccount before admitting a bearer.
@@ -43,7 +43,7 @@ future uses of existing tokens act as; unbinding revokes the Connection's grants
 submitted continue through the Action lifecycle.
 The operator can list or watch Connections, rename, rebind, and unbind them; the
 integration app presents the operator UI ([consent UI](../app/README.md)). See the
-[ConnectionService implementation](../mcp_edge/connections/service.go) and
+[ConnectionService implementation](../mcp_edge/internal/connections/service.go) and
 [authorization server](../mcp_edge/authserver/authserver.go).
 
 The executable contract is deliberately small:
@@ -84,8 +84,8 @@ grants no authority. Consent alone does not create a grant. At successful OAuth 
 authorization server rechecks the enrollment, selected caller, and reconnect version, then creates
 an active grant; reconnect also revokes the Connection's previous grants. Grant changes and token
 issuance share the code-exchange transaction. See the
-[enrollment store](../mcp_edge/connections/enrollments.go),
-[authorization store](../mcp_edge/connections/authorizations.go),
+[enrollment store](../mcp_edge/internal/connections/enrollments.go),
+[authorization store](../mcp_edge/internal/connections/authorizations.go),
 [consent API](../mcp_edge/api/connection/connection_service.proto), and
 [OAuth code exchange](../mcp_edge/authserver/tokens.go).
 
