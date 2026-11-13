@@ -1,4 +1,4 @@
-package centralsampler
+package toolcontract
 
 import (
 	"encoding/json"
@@ -11,8 +11,8 @@ import (
 )
 
 func TestExecDescriptionDeclaresEveryNestedToolInput(t *testing.T) {
-	definitions := toolDefinitions()
-	description, err := execToolDescription(definitions, protocol.ExecEncodingFreeform)
+	definitions := testToolDefinitions()
+	description, err := ExecToolDescription(definitions, protocol.ExecEncodingFreeform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,11 +88,11 @@ func hasTypeScriptProperty(declaration, name string) bool {
 }
 
 func TestHostToolDefinitionsCarryDeclarationsWithoutSchemas(t *testing.T) {
-	source := toolDefinitions()
+	source := testToolDefinitions()
 	if len(source) == 0 {
 		t.Fatal("toolDefinitions returned no tools")
 	}
-	definitions, err := hostToolDefinitions(source)
+	definitions, err := HostToolDefinitions(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +131,28 @@ func TestHostToolDefinitionsCarryDeclarationsWithoutSchemas(t *testing.T) {
 	slices.Sort(gotNames)
 	if !slices.Equal(gotNames, wantNames) {
 		t.Fatalf("host definition names = %v, want exactly one of each source tool name %v", gotNames, wantNames)
+	}
+}
+
+func testToolDefinitions() []protocol.CodeToolDefinition {
+	closed := false
+	return []protocol.CodeToolDefinition{
+		{
+			Name: "weather-tool", ToolName: protocol.ToolName{Name: "weather-tool"},
+			Description: "Look up weather.", Kind: "function",
+			InputSchema: &protocol.JSONSchema{
+				Type: "object", Required: []string{"city"}, AdditionalProperties: &closed,
+				Properties: map[string]protocol.JSONSchema{"city": {Type: "string"}},
+			},
+			OutputSchema: &protocol.JSONSchema{
+				Type: "object", Required: []string{"forecast"},
+				Properties: map[string]protocol.JSONSchema{"forecast": {Type: "string"}},
+			},
+		},
+		{
+			Name: "apply-patch", ToolName: protocol.ToolName{Name: "apply-patch"},
+			Description: "Apply a patch.", Kind: "freeform",
+		},
 	}
 }
 
@@ -207,19 +229,19 @@ func TestParseExecSource(t *testing.T) {
 	ten, thousand := 10, 1000
 	for _, tc := range []struct {
 		name, input string
-		expected    execSource
+		expected    ExecSource
 	}{
-		{"plain", "text('hi')", execSource{code: "text('hi')"}},
-		{"pragma", "// @exec: {\"yield_time_ms\": 10}\ntext('hi')", execSource{code: "text('hi')", yieldTimeMS: &ten}},
-		{"indented both fields", "  // @exec: {\"yield_time_ms\": 10, \"max_output_tokens\": 1000}\na\nb", execSource{code: "a\nb", yieldTimeMS: &ten, maxOutputTokens: &thousand}},
+		{"plain", "text('hi')", ExecSource{Code: "text('hi')", YieldTimeMS: defaultExecYieldTimeMS}},
+		{"pragma", "// @exec: {\"yield_time_ms\": 10}\ntext('hi')", ExecSource{Code: "text('hi')", YieldTimeMS: ten}},
+		{"indented both fields", "  // @exec: {\"yield_time_ms\": 10, \"max_output_tokens\": 1000}\na\nb", ExecSource{Code: "a\nb", YieldTimeMS: ten, MaxOutputTokens: &thousand}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseExecSource(tc.input)
+			got, err := ParseExecSource(tc.input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.code != tc.expected.code || !equalIntPointer(got.yieldTimeMS, tc.expected.yieldTimeMS) || !equalIntPointer(got.maxOutputTokens, tc.expected.maxOutputTokens) {
-				t.Fatalf("parseExecSource(%q) = %+v, want %+v", tc.input, got, tc.expected)
+			if got.Code != tc.expected.Code || got.YieldTimeMS != tc.expected.YieldTimeMS || !equalIntPointer(got.MaxOutputTokens, tc.expected.MaxOutputTokens) {
+				t.Fatalf("ParseExecSource(%q) = %+v, want %+v", tc.input, got, tc.expected)
 			}
 		})
 	}
@@ -233,30 +255,30 @@ func TestParseExecSource(t *testing.T) {
 		"// @exec: {\"max_output_tokens\": 1.5}\ncode",
 		"// @exec: {\"yield_time_ms\": 9007199254740992}\ncode",
 	} {
-		if _, err := parseExecSource(input); err == nil {
-			t.Errorf("parseExecSource(%q) accepted invalid input", input)
+		if _, err := ParseExecSource(input); err == nil {
+			t.Errorf("ParseExecSource(%q) accepted invalid input", input)
 		}
 	}
 }
 
 func TestParseWaitArgumentsAppliesCodexDefaults(t *testing.T) {
-	parsed, err := parseWaitArguments(`{"cell_id":"cell"}`)
+	parsed, err := ParseWaitArguments(`{"cell_id":"cell"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.yieldTimeMS != defaultWaitYieldTimeMS || parsed.maxTokens != nil || parsed.terminate {
+	if parsed.YieldTimeMS != defaultWaitYieldTimeMS || parsed.MaxTokens != nil || parsed.Terminate {
 		t.Fatalf("wait defaults = %+v", parsed)
 	}
-	parsed, err = parseWaitArguments(`{"cell_id":"cell","yield_time_ms":5,"max_tokens":7,"terminate":true}`)
+	parsed, err = ParseWaitArguments(`{"cell_id":"cell","yield_time_ms":5,"max_tokens":7,"terminate":true}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.yieldTimeMS != 5 || parsed.maxTokens == nil || *parsed.maxTokens != 7 || !parsed.terminate {
+	if parsed.YieldTimeMS != 5 || parsed.MaxTokens == nil || *parsed.MaxTokens != 7 || !parsed.Terminate {
 		t.Fatalf("wait arguments = %+v", parsed)
 	}
 	for _, input := range []string{`{}`, `{"cell_id":"cell","yield_time_ms":-1}`, `{"cell_id":"cell","max_tokens":0.5}`} {
-		if _, err := parseWaitArguments(input); err == nil {
-			t.Errorf("parseWaitArguments(%s) accepted invalid input", input)
+		if _, err := ParseWaitArguments(input); err == nil {
+			t.Errorf("ParseWaitArguments(%s) accepted invalid input", input)
 		}
 	}
 }

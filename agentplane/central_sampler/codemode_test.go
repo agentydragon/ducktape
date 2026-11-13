@@ -51,7 +51,7 @@ func TestJSONExecPreparesNativeCodeWithoutChangingSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if prepared.operation.(codemode.ExecuteOperation).Request.YieldTimeMS != defaultExecYieldTimeMS {
+	if prepared.operation.(codemode.ExecuteOperation).Request.YieldTimeMS != 30_000 {
 		t.Fatal("JSON exec lost default yield time")
 	}
 }

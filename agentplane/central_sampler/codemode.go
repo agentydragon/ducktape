@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
+
+// Codex rust-v0.162.1 core/src/unified_exec/mod.rs DEFAULT_MAX_OUTPUT_TOKENS, the
+// resolve_max_tokens fallback for both exec max_output_tokens and wait max_tokens.
+const defaultCodeModeMaxOutputTokens = 10_000
 
 type CodeMode struct {
 	*codemode.Session
@@ -83,19 +87,15 @@ func (r *CodeMode) prepareCall(ctx context.Context, call protocol.ToolInvocation
 	if call.Name != "exec" || call.Encoding != protocol.ExecEncodingFreeform {
 		return preparedCall{}, &toolError{fmt.Sprintf("unsupported model tool %q (%s)", call.Name, call.Encoding)}
 	}
-	source, err := parseExecSource(call.Input)
+	source, err := toolcontract.ParseExecSource(call.Input)
 	if err != nil {
 		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareExecute(call.CallID, source)
 }
 
-func (r *CodeMode) prepareExecute(callID string, source execSource) (preparedCall, error) {
-	yieldMS := defaultExecYieldTimeMS
-	if source.yieldTimeMS != nil {
-		yieldMS = *source.yieldTimeMS
-	}
-	hostDefinitions, err := hostToolDefinitions(toolDefinitions())
+func (r *CodeMode) prepareExecute(callID string, source toolcontract.ExecSource) (preparedCall, error) {
+	hostDefinitions, err := toolcontract.HostToolDefinitions(toolDefinitions())
 	if err != nil {
 		return preparedCall{}, err
 	}
@@ -103,106 +103,36 @@ func (r *CodeMode) prepareExecute(callID string, source execSource) (preparedCal
 	if err != nil {
 		return preparedCall{}, err
 	}
-	request := codemode.ExecuteRequest{ToolCallID: callID, Source: source.code, EnabledTools: definitions, YieldTimeMS: yieldMS, MaxOutputTokens: source.maxOutputTokens}
+	request := codemode.ExecuteRequest{ToolCallID: callID, Source: source.Code, EnabledTools: definitions, YieldTimeMS: source.YieldTimeMS, MaxOutputTokens: source.MaxOutputTokens}
 	return preparedCall{
 		operation: codemode.ExecuteOperation{SessionOperation: codemode.SessionOperation{Method: "session/execute", SessionID: r.ID()}, Request: request},
-		execute:   true, maxTokens: source.maxOutputTokens,
+		execute:   true, maxTokens: source.MaxOutputTokens,
 	}, nil
-}
-
-type jsonExecInput struct {
-	Code            *string `json:"code,omitempty"`
-	CellID          *string `json:"cell_id,omitempty"`
-	YieldTimeMS     *uint64 `json:"yield_time_ms,omitempty" jsonschema:"minimum=0"`
-	MaxOutputTokens *uint64 `json:"max_output_tokens,omitempty" jsonschema:"minimum=0"`
-	Terminate       *bool   `json:"terminate,omitempty"`
 }
 
 // JSON exec uses the same host operations and journal as the native freeform contract.
 // Resuming through exec keeps the compatibility surface to one function.
 func (r *CodeMode) prepareJSONCall(ctx context.Context, call protocol.ToolInvocation) (preparedCall, error) {
-	var input jsonExecInput
-	if err := decodeToolInput([]byte(call.Input), &input); err != nil {
-		return preparedCall{}, &toolError{err.Error()}
-	}
-	if (input.Code == nil) == (input.CellID == nil) {
-		return preparedCall{}, &toolError{"exec requires exactly one of code or cell_id"}
-	}
-	if input.CellID != nil {
-		terminate := input.Terminate != nil && *input.Terminate
-		arguments, err := resolveWaitArguments(waitInput{
-			CellID: *input.CellID, YieldTimeMS: input.YieldTimeMS,
-			MaxTokens: input.MaxOutputTokens, Terminate: terminate,
-		})
-		if err != nil {
-			return preparedCall{}, &toolError{err.Error()}
-		}
-		return r.prepareWaitArguments(ctx, arguments)
-	}
-	if input.Terminate != nil {
-		return preparedCall{}, &toolError{"terminate requires cell_id"}
-	}
-	if strings.TrimSpace(*input.Code) == "" {
-		return preparedCall{}, &toolError{"exec requires non-empty code"}
-	}
-	yieldMS, err := safeIntegerArgument("yield_time_ms", input.YieldTimeMS)
+	parsed, err := toolcontract.ParseJSONExecInput(call.Input)
 	if err != nil {
 		return preparedCall{}, &toolError{err.Error()}
 	}
-	maxTokens, err := safeIntegerArgument("max_output_tokens", input.MaxOutputTokens)
-	if err != nil {
-		return preparedCall{}, &toolError{err.Error()}
+	if parsed.Wait != nil {
+		return r.prepareWaitArguments(ctx, *parsed.Wait)
 	}
-	return r.prepareExecute(call.CallID, execSource{code: *input.Code, yieldTimeMS: yieldMS, maxOutputTokens: maxTokens})
-}
-
-type waitArguments struct {
-	cellID      string
-	yieldTimeMS int
-	// maxTokens is nil when the model omits it.
-	maxTokens *int
-	terminate bool
-}
-
-// parseWaitArguments applies Codex rust-v0.162.1 core/src/tools/code_mode/wait_handler.rs
-// ExecWaitArgs defaults.
-func parseWaitArguments(input string) (waitArguments, error) {
-	var arguments waitInput
-	if err := decodeToolInput([]byte(input), &arguments); err != nil {
-		return waitArguments{}, err
-	}
-	return resolveWaitArguments(arguments)
-}
-
-func resolveWaitArguments(arguments waitInput) (waitArguments, error) {
-	if arguments.CellID == "" {
-		return waitArguments{}, errors.New("wait requires a string cell_id")
-	}
-	yieldMS, err := safeIntegerArgument("yield_time_ms", arguments.YieldTimeMS)
-	if err != nil {
-		return waitArguments{}, err
-	}
-	maxTokens, err := safeIntegerArgument("max_tokens", arguments.MaxTokens)
-	if err != nil {
-		return waitArguments{}, err
-	}
-	parsed := waitArguments{cellID: arguments.CellID, yieldTimeMS: defaultWaitYieldTimeMS, maxTokens: maxTokens, terminate: arguments.Terminate}
-	if yieldMS != nil {
-		parsed.yieldTimeMS = *yieldMS
-	}
-	return parsed, nil
+	return r.prepareExecute(call.CallID, *parsed.Source)
 }
 
 func (r *CodeMode) prepareWait(ctx context.Context, input string) (preparedCall, error) {
-	arguments, err := parseWaitArguments(input)
+	arguments, err := toolcontract.ParseWaitArguments(input)
 	if err != nil {
 		return preparedCall{}, &toolError{err.Error()}
 	}
 	return r.prepareWaitArguments(ctx, arguments)
 }
 
-func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArguments) (preparedCall, error) {
-	cellID := arguments.cellID
+func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments toolcontract.WaitArguments) (preparedCall, error) {
+	cellID := arguments.CellID
 	state, err := r.store.ExecutionState(ctx, r.owner)
 	if err != nil {
 		return preparedCall{}, err
@@ -222,78 +152,12 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments waitArgum
 		return preparedCall{}, &toolError{err.Error()}
 	}
 	session := codemode.SessionOperation{Method: "session/wait", SessionID: r.ID()}
-	if arguments.terminate {
+	if arguments.Terminate {
 		session.Method = "session/terminate"
-		return preparedCall{operation: codemode.TerminateOperation{SessionOperation: session, CellID: nativeID}, maxTokens: arguments.maxTokens}, nil
+		return preparedCall{operation: codemode.TerminateOperation{SessionOperation: session, CellID: nativeID}, maxTokens: arguments.MaxTokens}, nil
 	}
-	request := codemode.WaitRequest{CellID: nativeID, YieldTimeMS: arguments.yieldTimeMS}
-	return preparedCall{operation: codemode.WaitOperation{SessionOperation: session, Request: request}, maxTokens: arguments.maxTokens}, nil
-}
-
-// safeIntegerArgument bounds an unsigned tool argument to the JavaScript safe integer range, as
-// Codex does, so it fits the host protocol's integers.
-func safeIntegerArgument(name string, value *uint64) (*int, error) {
-	if value == nil {
-		return nil, nil
-	}
-	if *value > maxJSSafeInteger {
-		return nil, fmt.Errorf("%s must be a non-negative safe integer", name)
-	}
-	converted := int(*value)
-	return &converted, nil
-}
-
-type execSource struct {
-	code            string
-	yieldTimeMS     *int
-	maxOutputTokens *int
-}
-
-// parseExecSource ports Codex rust-v0.162.1 code-mode-protocol/src/description.rs
-// parse_exec_source, including its model-facing error text.
-func parseExecSource(input string) (execSource, error) {
-	const supported = "supported fields `yield_time_ms` and `max_output_tokens`"
-	if strings.TrimSpace(input) == "" {
-		return execSource{}, errors.New("exec expects raw JavaScript source text (non-empty). Provide JS only, optionally with first-line `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.")
-	}
-	firstLine, rest, _ := strings.Cut(input, "\n")
-	pragma, found := strings.CutPrefix(strings.TrimLeftFunc(firstLine, unicode.IsSpace), execPragmaPrefix)
-	if !found {
-		return execSource{code: input}, nil
-	}
-	if strings.TrimSpace(rest) == "" {
-		return execSource{}, errors.New("exec pragma must be followed by JavaScript source on subsequent lines")
-	}
-	directive := strings.TrimSpace(pragma)
-	if directive == "" {
-		return execSource{}, errors.New("exec pragma must be a JSON object with " + supported)
-	}
-	var value any
-	if err := json.Unmarshal([]byte(directive), &value); err != nil {
-		return execSource{}, fmt.Errorf("exec pragma must be valid JSON with %s: %w", supported, err)
-	}
-	fields, ok := value.(map[string]any)
-	if !ok {
-		return execSource{}, errors.New("exec pragma must be a JSON object with " + supported)
-	}
-	for key := range fields {
-		if key != "yield_time_ms" && key != "max_output_tokens" {
-			return execSource{}, fmt.Errorf("exec pragma only supports `yield_time_ms` and `max_output_tokens`; got `%s`", key)
-		}
-	}
-	var arguments execPragma
-	if err := json.Unmarshal([]byte(directive), &arguments); err != nil {
-		return execSource{}, fmt.Errorf("exec pragma fields `yield_time_ms` and `max_output_tokens` must be non-negative safe integers: %w", err)
-	}
-	yieldMS, err := safeIntegerArgument("exec pragma field `yield_time_ms`", arguments.YieldTimeMS)
-	if err != nil {
-		return execSource{}, err
-	}
-	maxOutputTokens, err := safeIntegerArgument("exec pragma field `max_output_tokens`", arguments.MaxOutputTokens)
-	if err != nil {
-		return execSource{}, err
-	}
-	return execSource{code: rest, yieldTimeMS: yieldMS, maxOutputTokens: maxOutputTokens}, nil
+	request := codemode.WaitRequest{CellID: nativeID, YieldTimeMS: arguments.YieldTimeMS}
+	return preparedCall{operation: codemode.WaitOperation{SessionOperation: session, Request: request}, maxTokens: arguments.MaxTokens}, nil
 }
 
 // observe records the observed cell's lifecycle status.
