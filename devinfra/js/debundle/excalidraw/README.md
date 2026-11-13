@@ -47,6 +47,8 @@ module it bundles. Every other chunk is `inline_in_entry`.
     class, including element maps, selection caching, frame filtering,
     insertion and update notifications. Its two static-map writes and four
     source helpers remain in the entry at their original initialization positions.
+  - `editor`: `packages/excalidraw/emitter` restores the complete `Emitter`
+    class used by history and other editor subscriptions.
   - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
     source path and names for element classification, arrow/text bindings,
     frame variants and roundness rules.
@@ -67,7 +69,8 @@ every input chunk has an accepting gate and translation-validation summary and,
 unless fully swapped, a non-empty emitted entry, and every static chunk import
 names an input chunk. `spec_output_test` asserts the spec's effects through the
 e2e helpers: claimed modules' export specifiers, geometry and scalar math under
-Node, the clsx import rewrite and strip, and the swap report.
+Node, event delivery and subscription cleanup under Node, the clsx import
+rewrite and strip, and the swap report.
 `test_smoke` loads the accepted tree's browser harness in headless Chromium
 from a test-owned server. The server serves `app/`, Excalidraw's fonts from
 the package (`app/index.html` sets `EXCALIDRAW_ASSET_PATH`), and the swapped

@@ -1,0 +1,25 @@
+# Original home: packages/excalidraw/emitter.ts
+source_matches:
+  - match: |
+      var selectedEmitter = class {
+        ANYTHING;
+        on(...handlers) {
+          STMT_LIST;
+        }
+        once(...handlers) {
+          STMT_LIST;
+        }
+        off(...handlers) {
+          STMT_LIST;
+        }
+        trigger(...payload) {
+          STMT_LIST;
+        }
+        clear() {
+          STMT_LIST;
+        }
+        ANYTHING;
+      };
+    bindings:
+      - local: selectedEmitter
+        name: Emitter

@@ -39,6 +39,7 @@ fn claimed_modules_export_their_entry_points() {
             &["containsCJK", "wrapText"],
         ),
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
+        ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
             "editor/packages/excalidraw/element/bounds.js",
             &["getVisibleSceneBounds", "doBoundsIntersect"],
@@ -141,6 +142,36 @@ console.log(JSON.stringify([
         "[5,true,[5,9],true,false,[0.6,0.8],[0,0],1,11,true,true,10,1.23,1.5,false,true,[-10,20,390,320],true,false,false]\n",
         "",
     );
+}
+
+#[test]
+fn recovered_emitter_delivers_and_detaches_handlers_under_node() {
+    let probe_dir = tempfile::tempdir().expect("tempdir");
+    let probe = probe_dir.path().join("probe.mjs");
+    let module = out_root().join("app/editor/packages/excalidraw/emitter.js");
+    fs::write(
+        &probe,
+        format!(
+            r#"
+import {{ Emitter }} from {};
+const emitter = new Emitter();
+const events = [];
+const detach = emitter.on(value => events.push(`on:${{value}}`));
+emitter.once(value => events.push(`once:${{value}}`));
+emitter.trigger('a');
+emitter.trigger('b');
+detach();
+emitter.trigger('c');
+emitter.on(value => events.push(`cleared:${{value}}`));
+emitter.clear();
+emitter.trigger('d');
+console.log(JSON.stringify(events));
+"#,
+            serde_json::to_string(&format!("file://{}", module.display())).unwrap(),
+        ),
+    )
+    .expect("write probe");
+    assert_node_output(&probe, "[\"on:a\",\"once:a\",\"on:b\"]\n", "");
 }
 
 #[test]
