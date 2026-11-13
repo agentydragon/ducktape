@@ -105,8 +105,9 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	seed := func(sandbox SandboxSnapshot, execution SessionExecution, creator Caller) string {
 		t.Helper()
 		sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
+		testPlacement(spec, sandbox.Name, sandbox.UID)
 		if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), sessionID, sandbox.Name, sandbox.UID,
-			testPlacement(spec, sandbox.Name, sandbox.UID), spec, nil, nil, execution, creator); err != nil {
+			spec, nil, nil, execution, creator); err != nil {
 			t.Fatalf("seed Session: %v", err)
 		}
 		return sessionID

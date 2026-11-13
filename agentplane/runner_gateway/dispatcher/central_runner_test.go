@@ -15,6 +15,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -83,7 +84,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		Identity: &identitypb.Identity{Name: "executor-identity", Uid: "00000000-0000-4000-8000-00000000a008"},
 	}
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Session{
-		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity,
+		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity,
 	}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
 	if err := runner.CreateSession(context.Background(), sandbox, "session", spec, &setup, execution); err != nil {
@@ -103,7 +104,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("changed binding accepted: %v", err)
 	}
 	nativeSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
+	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
 	if err := runner.CreateSession(context.Background(), sandbox, "native", nativeSpec, nil, execution); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +115,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if native.calls != 1 {
 		t.Fatalf("missing Session caused native delivery: %d calls", native.calls)
 	}
-	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
+	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
 	if _, err := runner.Deliver(context.Background(), changed, "native", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("native Session routed to replacement Sandbox: %v", err)
 	}
@@ -128,7 +129,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("native calls %d", native.calls)
 	}
 	runner.Target = nil
-	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity}}
+	runner.Store = openingFixture{&Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity}}
 	if err := runner.CreateSession(context.Background(), sandbox, "disabled", spec, nil, SessionExecution{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
 	}

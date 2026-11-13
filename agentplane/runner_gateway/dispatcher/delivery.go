@@ -12,6 +12,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
@@ -398,7 +399,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 	if !hasExecutionIdentity(principalSession) {
 		return nil
 	}
-	if head != nil && principalSession != nil && principalSession.Placement.requiresReadyExecutor() &&
+	if head != nil && principalSession != nil && principalSession.Placement.RequiresReadyExecutor() &&
 		(principalSession.State == SessionFailedState || principalSession.State == SessionUnknownState) {
 		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
 	}
@@ -527,7 +528,7 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 // conflicting retained request. Other terminal codes do not prove native rejection.
 func (w *DeliveryWorker) sessionFailure(session *Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
 	key := "session:" + session.SessionID
-	if session.Placement == CentralSampler {
+	if session.Placement == placement.CentralSampler {
 		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
 		return sessionMaterializationFromDelivery(state), reason, nil
 	}

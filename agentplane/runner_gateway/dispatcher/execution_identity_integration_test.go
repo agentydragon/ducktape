@@ -213,8 +213,9 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatalf("Identity caller CreateSession on a Sandbox acting as it: %v, want PermissionDenied", err)
 	}
 	owned, ownedSpec := uuid.NewString(), &sessionpb.SessionSpec{}
+	testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID)
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, owned, ownerSandbox.Name, ownerSandbox.UID,
-		testPlacement(ownedSpec, ownerSandbox.Name, ownerSandbox.UID), ownedSpec, nil, nil,
+		ownedSpec, nil, nil,
 		SessionExecution{Identity: ownerIdentity}, IdentityCaller{Identity: ownerIdentity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed the Identity's Session: %v", err)
 	}
@@ -238,8 +239,9 @@ func TestIdentitySVIDCallerActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	// Another Identity's Session and a Session created by a ServiceAccount actor for another Identity.
 	otherSandbox := SandboxSnapshot{Name: other.Sandbox.Name, Namespace: other.Sandbox.Namespace, UID: string(other.Sandbox.UID)}
 	otherSession, otherSpec := uuid.NewString(), &sessionpb.SessionSpec{}
+	testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID)
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, otherSession, otherSandbox.Name, otherSandbox.UID,
-		testPlacement(otherSpec, otherSandbox.Name, otherSandbox.UID), otherSpec, nil, nil,
+		otherSpec, nil, nil,
 		SessionExecution{Identity: otherIdentity},
 		IdentityCaller{Identity: otherIdentity, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed another Identity's Session: %v", err)
@@ -299,8 +301,9 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 	defer cancel()
 
 	sessionID, spec := uuid.NewString(), &sessionpb.SessionSpec{}
+	testPlacement(spec, sandbox.Name, sandbox.UID)
 	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, sandbox.Name, sandbox.UID,
-		testPlacement(spec, sandbox.Name, sandbox.UID), spec, nil, nil, SessionExecution{Identity: named}, IdentityCaller{Identity: named, Proof: IdentitySVID{}}); err != nil {
+		spec, nil, nil, SessionExecution{Identity: named}, IdentityCaller{Identity: named, Proof: IdentitySVID{}}); err != nil {
 		t.Fatalf("seed an Identity-run Session: %v", err)
 	}
 	for _, commandID := range []string{"identity-run-input", "identity-run-stranded"} {

@@ -20,6 +20,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/utils/ptr"
@@ -363,7 +364,7 @@ type Dispatch struct {
 
 type Session struct {
 	SessionID, SandboxName, SandboxUID string
-	Placement                          SessionPlacement
+	Placement                          placement.SessionPlacement
 	// ExecutionIdentity is the exact Identity incarnation the Session's Sandbox named at creation.
 	// It is immutable. A legacy row with no Identity is retained for privileged platform reads, never
 	// reassigned to the Sandbox's current Identity.
@@ -831,7 +832,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if session.Placement.requiresReadyExecutor() && (session.State == SessionFailedState || session.State == SessionUnknownState) {
+		if session.Placement.RequiresReadyExecutor() && (session.State == SessionFailedState || session.State == SessionUnknownState) {
 			return ErrSessionUnconfirmed
 		}
 		var count int
@@ -1078,30 +1079,24 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(spec, o.Spec); err != nil {
 		return nil, err
 	}
-	o.Placement = placementOf(o.Spec)
+	o.Placement = placement.PlacementOf(o.Spec)
 	if o.Placement == "" {
 		return nil, errors.New("stored Session has no placement")
 	}
-	target := requestTarget(&dispatcherpb.CreateSessionRequest{Spec: o.Spec})
+	target := placement.RequestTarget(&dispatcherpb.CreateSessionRequest{Spec: o.Spec})
 	if target.GetName() != o.SandboxName || target.GetUid() != o.SandboxUID {
 		return nil, errors.New("stored Session placement disagrees with executor projection")
 	}
 	return o, nil
 }
 
-// CreateSessionForCaller stores the immutable execution account separately from the verified
+// CreateSessionWithPlacementForCaller stores the immutable execution account separately from the verified
 // caller attribution. Retrying a concurrently inserted session requires retained read authority.
-func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
-	return s.createSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller, nil)
+func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller) (*Session, error) {
+	return s.createSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, placement.PlacementOf(spec), spec, setupScript, wakeCaller, execution, caller, nil)
 }
 
-// CreateSessionWithPlacementForCallerAndCheck revalidates the live execution identity after the
-// Sandbox admission lock. The external API supplies the check; direct store tests may omit it.
-func (s *Store) CreateSessionWithPlacementForCallerAndCheck(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
-	return s.createSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, execution, caller, check)
-}
-
-func (s *Store) createSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
+func (s *Store) createSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement placement.SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
 	if callerAttribution(caller) == nil {
 		return nil, errors.New("creator identity is required")
 	}
@@ -1138,7 +1133,7 @@ func (o *Session) authorizeRetry(caller Caller) error {
 	return ErrNotFound
 }
 
-func (o *Session) matchRequest(sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string) error {
+func (o *Session) matchRequest(sandboxName, sandboxUID string, placement placement.SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string) error {
 	if spec == nil {
 		return ErrSessionConflict
 	}
@@ -1156,14 +1151,14 @@ func (o *Session) matchRequest(sandboxName, sandboxUID string, placement Session
 	return nil
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, sessionPlacement placement.SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, execution SessionExecution, caller Caller, check func(context.Context) error) (*Session, error) {
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
-	if !placement.matchesSpec(spec) {
+	if !sessionPlacement.MatchesSpec(spec) {
 		return nil, errors.New("Session placement does not match spec")
 	}
-	target := requestTarget(&dispatcherpb.CreateSessionRequest{Spec: spec})
+	target := placement.RequestTarget(&dispatcherpb.CreateSessionRequest{Spec: spec})
 	if target.GetName() != sandboxName || target.GetUid() != sandboxUID {
 		return nil, errors.New("Session placement does not match executor projection")
 	}
@@ -1190,7 +1185,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 					return err
 				}
 			}
-			if err := existing.matchRequest(sandboxName, sandboxUID, placement, spec, setupScript); err != nil {
+			if err := existing.matchRequest(sandboxName, sandboxUID, sessionPlacement, spec, setupScript); err != nil {
 				return err
 			}
 			result = existing

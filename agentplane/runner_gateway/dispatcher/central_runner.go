@@ -12,6 +12,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -59,8 +60,8 @@ func validateSessionExecutor(session *Session, sandbox SandboxSnapshot) error {
 	return nil
 }
 
-func ValidateRuntime(placement SessionPlacement, setup *string, target *CentralTarget) error {
-	if placement != CentralSampler {
+func ValidateRuntime(sessionPlacement placement.SessionPlacement, setup *string, target *CentralTarget) error {
+	if sessionPlacement != placement.CentralSampler {
 		return nil
 	}
 	if target == nil {
@@ -105,7 +106,7 @@ func (r *RoutingRunner) CreateSession(ctx context.Context, sandbox SandboxSnapsh
 	if err := ValidateRuntime(session.Placement, setup, r.Target); err != nil {
 		return err
 	}
-	if session.Placement == EnvironmentHosted {
+	if session.Placement == placement.EnvironmentHosted {
 		return r.Native.CreateSession(ctx, sandbox, id, spec, setup, execution)
 	}
 	if sandbox.Incarnation == "" {
@@ -129,7 +130,7 @@ func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id
 	if err := validateSessionExecutor(session, sandbox); err != nil {
 		return nil, err
 	}
-	if session.Placement == EnvironmentHosted {
+	if session.Placement == placement.EnvironmentHosted {
 		return r.Native.Deliver(ctx, sandbox, id, command)
 	}
 	var admission *eventlogpb.EventEntry
