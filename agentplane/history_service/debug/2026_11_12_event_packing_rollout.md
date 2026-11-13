@@ -97,3 +97,6 @@ caught up and the logical slot was current. WAL archiving had no recorded failur
 were current, the original 512 MB retention limit was restored and verified on both instances with
 no pending restart. The Postgres maintenance annotation was removed; staging Flux was not suspended.
 The superseded suspended canary Job was deleted, with its committed work retained and verified.
+At 04:48:04, the final archive queue was empty, physical replay lag was zero, and both slots were
+active and reserved. After a checkpoint, the primary had 16,901,935,104 bytes free and the replica
+17,455,464,448 bytes free. Local port-forwards and probe credentials were removed.
