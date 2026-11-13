@@ -4,7 +4,7 @@ package identity
 import (
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
 )
 
 // UntrustedWorkloadTokenHeader is a retired token-forwarding header. Both the sidecar and proxy

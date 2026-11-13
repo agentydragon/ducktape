@@ -6,7 +6,7 @@ go_library(
         "json.go",
         "presentation.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/presentation",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/presentation",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "//agentplane/egress/resources",

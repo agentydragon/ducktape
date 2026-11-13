@@ -10,7 +10,7 @@ import (
 	egressapi "github.com/agentydragon/ducktape/agentplane/egress/api/v1alpha1"
 	egressclient "github.com/agentydragon/ducktape/agentplane/egress/client/clientset/versioned"
 	egressinformers "github.com/agentydragon/ducktape/agentplane/egress/client/informers/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	corev1 "k8s.io/api/core/v1"

@@ -27,11 +27,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	"github.com/agentydragon/ducktape/agentplane/egress/identity"
-	"github.com/agentydragon/ducktape/agentplane/egress/policy"
-	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
-	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/presentation"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/upstream"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/google/uuid"
 )

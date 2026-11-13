@@ -6,7 +6,7 @@ go_library(
         "classify.go",
         "resolver.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/egress/upstream",
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/internal/upstream",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
         "@dev_dny_code_ssrf//:ssrf",

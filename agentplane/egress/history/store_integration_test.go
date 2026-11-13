@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/egress/decision"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
 	"github.com/google/uuid"
 )
 

@@ -10,7 +10,7 @@ go_library(
     deps = [
         "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/api/v1alpha1",
-        "//agentplane/egress/policy",
+        "//agentplane/egress/internal/policy",
         "//agentplane/egress/resources",
         "//agentplane/identity/auth/auth",
         "//agentplane/policy/reader",
@@ -31,7 +31,7 @@ go_test(
     embed = [":rules"],
     deps = [
         "//agentplane/egress/api/rules:egress_rules_go_proto",
-        "//agentplane/egress/policy",
+        "//agentplane/egress/internal/policy",
         "//agentplane/egress/resources",
         "//agentplane/identity/auth/auth",
         "//agentplane/policy/api/v1alpha1",
