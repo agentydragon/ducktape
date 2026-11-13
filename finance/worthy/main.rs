@@ -1,4 +1,4 @@
-// RUST_LOG=rust_main=trace bazel run :rust_main
+// RUST_LOG=rust_main=trace bb run //finance/worthy:rust_main
 
 use alphavantage_converter::AlphaVantageConverter;
 use asset::Asset;
