@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "077a0f88e4ad9d62db2f22dd43cb7f4116f52e69386b9aca5effdb70ef6621e3",
-  "evidence_sha256": "430820b2b5d814cb472efd83d8e3d209f73a7795538058de33dd9f26294214f8",
+  "report_sha256": "31b12baffa4e210428d9d35294b34a88ed10d4d5e1bdfb1df12c97b4f1f7df3b",
+  "evidence_sha256": "d046e6473cd7b194ae42936a2a9c30f91166ef306ac590dbaa835a7c7350fde4",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -53,5 +53,13 @@
     "../agentplane-test-architecture/setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
     "../agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
     "../agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7"
-  }
+  },
+  "architecture_iteration10": {
+    "observed_at_utc": "2026-11-13T22:27:42Z",
+    "source_head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "evidence_file": "../agentplane-test-architecture/iteration10.json",
+    "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
+  },
+  "prepared_at_utc": "2026-11-13T22:27:42Z"
 }

@@ -46,12 +46,18 @@
   },
   "repository": "https://github.com/agentydragon/ducktape",
   "source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
-  "window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
+  "window_utc": [
+    "2026-11-05T07:20:00Z",
+    "2026-11-12T07:20:00Z"
+  ],
   "scope": "Seven-day BuildBuddy target statistics and exact-window target history; final-24-hour PR-head required-check states; exact-window merged-PR required-check visibility; source and guest evidence for selected failures.",
   "target_stats": {
     "api": "BuildBuddy GetTargetStats with explicit canonical repo, devel branch filter, since=168h and until=0s.",
     "collected_at_utc": "2026-11-12T07:25:26Z",
-    "effective_window_utc": ["2026-11-05T07:25:26Z", "2026-11-12T07:25:26Z"],
+    "effective_window_utc": [
+      "2026-11-05T07:25:26Z",
+      "2026-11-12T07:25:26Z"
+    ],
     "requested_window_offset_seconds": 326,
     "limit": "The API accepted a relative duration rather than explicit timestamps. These target-run summary rows are not unique physical attempts; likelyFlakyRuns is a service heuristic.",
     "rows": [
@@ -234,7 +240,10 @@
     "all_selected_target_status_rows_exact_window": 9921
   },
   "pr_head_checks_final_24h": {
-    "window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
+    "window_utc": [
+      "2026-11-11T07:20:00Z",
+      "2026-11-12T07:20:00Z"
+    ],
     "collected_at_utc": "2026-11-12T07:46:51Z",
     "method": "159 observed distinct exact PR heads in the final 24-hour Actions snapshot after trusted-fork workflow linkage, including heads superseded later; each row records that observed head\u2019s latest visible required-gate outcome.",
     "required_gates": [
@@ -266,7 +275,10 @@
     "population_note": "Observed distinct PR heads, not only the current head of each open PR; superseded heads remain in the denominator."
   },
   "merged_pr_gates": {
-    "window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
+    "window_utc": [
+      "2026-11-05T07:20:00Z",
+      "2026-11-12T07:20:00Z"
+    ],
     "method": "complete UTC-day merged-PR partitions; current exact-head CheckRun rollups compared with mergedAt; latest visible matching attempt per named gate",
     "returned_partition_records": 1229,
     "merged_prs_in_window": 1176,
@@ -357,8 +369,19 @@
       }
     },
     "visible_red_by_merge_candidates": [
-      15153, 15155, 15166, 15174, 15170, 15157, 15162, 15164, 15175, 15195,
-      15215, 15457, 15639
+      15153,
+      15155,
+      15166,
+      15174,
+      15170,
+      15157,
+      15162,
+      15164,
+      15175,
+      15195,
+      15215,
+      15457,
+      15639
     ],
     "limit": "statusCheckRollup exposes current latest-visible checks, not complete historical attempts; later reruns can hide the state that was visible at merge",
     "inference_boundary": "These classifications identify candidates for review. They do not prove a required-check bypass or forced merge because current latest-visible check state does not reconstruct every attempt available at merge time.",
@@ -601,7 +624,9 @@
         ],
         "diagnosis_or_visibility_limit": "Mixed failures in one Bazel invocation: the test_pod messaging case was Unschedulable because the node reported insufficient memory; five mcp:test_actions cases timed out waiting for Sandbox Ready while environment-runtime restarted. No retained previous-container exit reason ties the readiness failures to a deeper common cause.",
         "owner_comment_summary": null,
-        "auto_merge_disabled_events_utc": ["2026-11-09T19:08:41Z"],
+        "auto_merge_disabled_events_utc": [
+          "2026-11-09T19:08:41Z"
+        ],
         "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
       },
       {
@@ -649,7 +674,9 @@
         ],
         "diagnosis_or_visibility_limit": "The artifact check saw cache.allegedly.works return HTTP 503 / connection refused; Nix disabled that substituter and required store paths were unavailable. Its dependency build also hit an AnyIO test timeout in test_thread_cancelled_and_abandoned[asyncio+uvloop]. The gate had multiple failures; no single root cause was established.",
         "owner_comment_summary": null,
-        "auto_merge_disabled_events_utc": ["2026-11-10T16:43:09Z"],
+        "auto_merge_disabled_events_utc": [
+          "2026-11-10T16:43:09Z"
+        ],
         "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
       },
       {
@@ -673,7 +700,9 @@
         ],
         "diagnosis_or_visibility_limit": "mcp:test_gateway_crash failed with KeyError(holderIdentity) while central_sampler.py read resumed lease data at line 638; a later log entry reports history NOT_FOUND. The immediate exception is clear, but why the field was absent is unresolved.",
         "owner_comment_summary": null,
-        "auto_merge_disabled_events_utc": ["2026-11-11T05:51:14Z"],
+        "auto_merge_disabled_events_utc": [
+          "2026-11-11T05:51:14Z"
+        ],
         "history_limit": "The row reflects the latest matching gate attempt exposed in the current rollup and its timing relative to merged_at; it cannot reconstruct superseded historical attempts or the organization ruleset decision at merge."
       }
     ],
@@ -819,7 +848,10 @@
     "observed_at_utc": "2026-11-12T12:00:20Z",
     "population_refresh": {
       "performed": false,
-      "retained_window_utc": ["2026-11-05T07:20:00Z", "2026-11-12T07:20:00Z"],
+      "retained_window_utc": [
+        "2026-11-05T07:20:00Z",
+        "2026-11-12T07:20:00Z"
+      ],
       "retained_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
       "note": "Selected PR and intervention updates only. The existing target, PR-head, and merged-PR denominators above remain tied to their original windows and collection methods."
     },
@@ -827,7 +859,11 @@
       {
         "id": "1",
         "topic": "Codex 0.162.1 memory-control capability boundary",
-        "pr_numbers": [15800, 15869, 15883],
+        "pr_numbers": [
+          15800,
+          15869,
+          15883
+        ],
         "pr_urls": [
           "https://github.com/agentydragon/ducktape/pull/15800",
           "https://github.com/agentydragon/ducktape/pull/15869",
@@ -854,7 +890,11 @@
       {
         "id": "4",
         "topic": "Browser projection evidence and setup failure separation",
-        "pr_numbers": [15811, 15821, 15848],
+        "pr_numbers": [
+          15811,
+          15821,
+          15848
+        ],
         "pr_urls": [
           "https://github.com/agentydragon/ducktape/pull/15811",
           "https://github.com/agentydragon/ducktape/pull/15821",
@@ -962,7 +1002,11 @@
       }
     ],
     "sibling_latency_followups": {
-      "pr_numbers": [15188, 15822, 15842],
+      "pr_numbers": [
+        15188,
+        15822,
+        15842
+      ],
       "report_path": "../latency/",
       "note": "Store acceptance, admission-width and KVM placement experiments are reported with timings and their non-speedup limits in the latency report supplement."
     }
@@ -971,7 +1015,10 @@
     "reviewed_at_utc": "2026-11-13T01:18:12.076914+00:00",
     "inspected_devel_commit": "93f2ba8eeff36265d6e7887836b615c39b4ad985",
     "population_source_devel_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
-    "population_window_utc": ["2026-11-10T00:00:00Z", "2026-11-12T23:59:19Z"],
+    "population_window_utc": [
+      "2026-11-10T00:00:00Z",
+      "2026-11-12T23:59:19Z"
+    ],
     "population_observed_at_utc": "2026-11-13T00:03:05.170318+00:00",
     "scope": "Supplement to existing reports: selected failed-attempt audit of the 22 recovered production-backend heads. The existing mainline, merged-PR and all-PR populations were not recollected.",
     "summary": {
@@ -1029,9 +1076,13 @@
         "head_sha": "ed5f1f4e2b89bbfe727df8a55caa771d147277da",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42771715093/job/129680811638",
         "completed_at_utc": "2026-11-10T07:05:55Z",
-        "failed_targets": ["//agentplane/env/e2e:test_initialize"],
+        "failed_targets": [
+          "//agentplane/env/e2e:test_initialize"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/env/e2e:test_initialize"],
+        "test_failed_targets": [
+          "//agentplane/env/e2e:test_initialize"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1057,9 +1108,13 @@
         "head_sha": "efb4b0b08c766ed47168ce06f8ab60932a389f9b",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42789441963/job/129738802469",
         "completed_at_utc": "2026-11-10T09:28:40Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_pod"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_pod"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_pod"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_pod"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1067,7 +1122,9 @@
         "head_sha": "2a2032444f7a0e1de0b4c7ec5686474499d9490e",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42801741554/job/129780728965",
         "completed_at_utc": "2026-11-10T10:58:20Z",
-        "failed_targets": ["//agentplane/history_service/fold:test_recording"],
+        "failed_targets": [
+          "//agentplane/history_service/fold:test_recording"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
         "test_failed_targets": [
           "//agentplane/history_service/fold:test_recording"
@@ -1079,9 +1136,13 @@
         "head_sha": "cdb40285f80da1cdf3241bbebc3b8f8bc94646da",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42810459543/job/129810268333",
         "completed_at_utc": "2026-11-10T12:00:42Z",
-        "failed_targets": ["//agentplane/app:test_thread_browser"],
+        "failed_targets": [
+          "//agentplane/app:test_thread_browser"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/app:test_thread_browser"],
+        "test_failed_targets": [
+          "//agentplane/app:test_thread_browser"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1101,9 +1162,13 @@
         "head_sha": "e94e30b72846bd7467fd36b5464b8ddd9da63997",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42890885287/job/130091411106",
         "completed_at_utc": "2026-11-10T20:16:56Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1111,9 +1176,13 @@
         "head_sha": "aed9175b73ac811ce788935d83070479b4541db1",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42908507891/job/130152685620",
         "completed_at_utc": "2026-11-10T22:01:11Z",
-        "failed_targets": ["//agentplane/app:test_thread_browser"],
+        "failed_targets": [
+          "//agentplane/app:test_thread_browser"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/app:test_thread_browser"],
+        "test_failed_targets": [
+          "//agentplane/app:test_thread_browser"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1121,9 +1190,13 @@
         "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130188140965",
         "completed_at_utc": "2026-11-10T23:12:56Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1131,9 +1204,13 @@
         "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130177391971",
         "completed_at_utc": "2026-11-10T22:44:02Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1141,7 +1218,9 @@
         "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130174248746",
         "completed_at_utc": "2026-11-10T22:32:46Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
         "test_failed_targets": [],
         "remote_execution_failed_targets": [
@@ -1153,9 +1232,13 @@
         "head_sha": "a065ad40c83321f6a15612c48ca221422695ce10",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42911870369/job/130164314372",
         "completed_at_utc": "2026-11-10T22:25:53Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1163,9 +1246,13 @@
         "head_sha": "6fa67275f62743e7dd78b8b587ead8f72e5cba2a",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42919828687/job/130191561872",
         "completed_at_utc": "2026-11-10T23:21:05Z",
-        "failed_targets": ["//agentplane/app:test_thread_browser"],
+        "failed_targets": [
+          "//agentplane/app:test_thread_browser"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/app:test_thread_browser"],
+        "test_failed_targets": [
+          "//agentplane/app:test_thread_browser"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1201,7 +1288,9 @@
         "head_sha": "8f9bf22b68436d5746b0d43b191e312169911951",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/42988093982/job/130414017595",
         "completed_at_utc": "2026-11-11T08:46:37Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
         "test_failed_targets": [],
         "remote_execution_failed_targets": [
@@ -1213,9 +1302,13 @@
         "head_sha": "13d3ed09bb271b3138ed63aaf0db580bef949dfc",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43143642851/job/130936285344",
         "completed_at_utc": "2026-11-12T02:59:40Z",
-        "failed_targets": ["//agentplane/llm_ingress:ingress_test"],
+        "failed_targets": [
+          "//agentplane/llm_ingress:ingress_test"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/llm_ingress:ingress_test"],
+        "test_failed_targets": [
+          "//agentplane/llm_ingress:ingress_test"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1237,9 +1330,13 @@
         "head_sha": "899756b77b86f52b4f3fd055bb27dec67fe4c814",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43170062662/job/131020959753",
         "completed_at_utc": "2026-11-12T06:52:57Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1263,9 +1360,13 @@
         "head_sha": "fb9695a5faf6f58f30c9540a50236758e06e4e8b",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43202409169/job/131128920478",
         "completed_at_utc": "2026-11-12T10:51:27Z",
-        "failed_targets": ["//agentplane/central_sampler:test_service"],
+        "failed_targets": [
+          "//agentplane/central_sampler:test_service"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/central_sampler:test_service"],
+        "test_failed_targets": [
+          "//agentplane/central_sampler:test_service"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1273,9 +1374,13 @@
         "head_sha": "b28fd61ca4b6084cc77382a82d66e147d5a07bfd",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43204893730/job/131137457445",
         "completed_at_utc": "2026-11-12T11:09:14Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
-        "test_failed_targets": ["//agentplane/system_tests/suites:test_vm"],
+        "test_failed_targets": [
+          "//agentplane/system_tests/suites:test_vm"
+        ],
         "remote_execution_failed_targets": []
       },
       {
@@ -1299,7 +1404,9 @@
         "head_sha": "a2608c19dbf58aa8fe0500c468f74033dd0dd6a3",
         "job_url": "https://github.com/agentydragon/ducktape/actions/runs/43312805528/job/131512978207",
         "completed_at_utc": "2026-11-12T21:58:24Z",
-        "failed_targets": ["//agentplane/system_tests/suites:test_pod"],
+        "failed_targets": [
+          "//agentplane/system_tests/suites:test_pod"
+        ],
         "tested_merge_sha": "not reconstructed in this signature audit",
         "test_failed_targets": [],
         "remote_execution_failed_targets": []
@@ -2166,7 +2273,9 @@
         "lanes": {
           "1": {
             "issue": "https://github.com/agentydragon/ducktape/issues/16025",
-            "prs": [16041],
+            "prs": [
+              16041
+            ],
             "status": "Controlled sufficient mechanism established; natural incident RPC sequence remains unknown.",
             "finding": "Native Bazel9.2.0 already changes Execute to same-ID WaitExecution after first Operation. One post-Operation INTERNAL reset recovers at remote_retries=1. Two reset controls exhaust the budget with Exit34/no TestResult while physical action passes.",
             "controls": [
@@ -2204,7 +2313,9 @@
           },
           "7": {
             "issue": "https://github.com/agentydragon/ducktape/issues/16031",
-            "prs": [16055],
+            "prs": [
+              16055
+            ],
             "status": "Historical admitted-turn stall remains unexplained; fresh natural failure classified as QEMU crash.",
             "natural_failure": {
               "invocation": "fe172529-66fa-5a0f-bbe1-bab5f5372d6a",
@@ -2236,7 +2347,10 @@
               "provider_failure": "UNAVAILABLE pausing outer Firecracker: fc.sock connection refused after138.841s of worker execution; no completed VM testcase proof.",
               "guest_shutdown_complete_receipts": 4,
               "turn_wait_spans": 12,
-              "turn_wait_range_s": [2.633763, 33.212003]
+              "turn_wait_range_s": [
+                2.633763,
+                33.212003
+              ]
             },
             "limits": [
               "No recurrence of 300-second admitted-turn stall.",
@@ -2250,7 +2364,9 @@
           },
           "8": {
             "issue": "https://github.com/agentydragon/ducktape/issues/16032",
-            "prs": [16053],
+            "prs": [
+              16053
+            ],
             "status": "Existing phases localize faithful controlled discovery timeout; natural historical cause unknown.",
             "fresh_exposure": {
               "invocation": "937eaae6-3988-4d8a-bede-7730610d1a9a",
@@ -2259,8 +2375,14 @@
               "cached": 0,
               "physical_test_runner_ids": 3,
               "successful_auth_exchanges": 6,
-              "client_exchange_range_ms": [40.142, 131.082],
-              "go_discovery_range_ms": [9.473, 99.5]
+              "client_exchange_range_ms": [
+                40.142,
+                131.082
+              ],
+              "go_discovery_range_ms": [
+                9.473,
+                99.5
+              ]
             },
             "controlled_fault": {
               "invocation": "b87aacfa-6152-4481-bd99-308ccd3316c4",
@@ -2285,7 +2407,10 @@
           },
           "9": {
             "issue": "https://github.com/agentydragon/ducktape/issues/16033",
-            "prs": [16045, 16051],
+            "prs": [
+              16045,
+              16051
+            ],
             "status": "Candidate merged; exact final head57a401ef6ae8b092c943324895c288dee997656f has all three required checks successful. Ten focused fresh physical stream attempts passed; natural elimination unmeasured.",
             "natural_failure": {
               "invocation": "c210960a-e5ab-5a68-9ab2-cf847b5b0052",
@@ -2435,9 +2560,18 @@
             "fresh_suite_outcomes": 12,
             "returned_unique_physical_ids": 15,
             "cold_warm": {
-              "vm": [2, 1],
-              "pod": [1, 2],
-              "mcp_actions": [3, 3]
+              "vm": [
+                2,
+                1
+              ],
+              "pod": [
+                1,
+                2
+              ],
+              "mcp_actions": [
+                3,
+                3
+              ]
             },
             "recommendation": "Merged diagnostic only; identify cold reasons before retaining more mutable state",
             "next_trigger": "Seven complete UTC days or first fifty fresh retained-suite outcomes if later; cache/failure/missing exposure separate; group backend/worker/key/fingerprint/reason",
@@ -2484,7 +2618,12 @@
             "source_head_with_green_ci": "d3a16a55ce03945ccb8bd3099ce023d48009d118",
             "required_test_invocation": "8fc46831-49f2-5de7-b099-3d12bd3493bd",
             "required_test_fresh": true,
-            "abba_baselines": ["warm", "warm", "warm", "cold"],
+            "abba_baselines": [
+              "warm",
+              "warm",
+              "warm",
+              "cold"
+            ],
             "case_count_per_arm": 5,
             "case_envelope_means_seconds": {
               "control": 112.3362215,
@@ -3087,9 +3226,27 @@
             "invocation": "5015ac95-5e20-403c-b7f7-ef0c0278bd8f",
             "result": "5/5 passed",
             "exposure": "one managed Firecracker worker, 4CU; cold warmup then four warm lifecycles; ordinary probes; identical fixture CAS; fresh namespace/PG/rootSecret UIDs; all cleanup complete",
-            "setup_seconds": [96.096, 43.585, 31.438, 32.994, 50.398],
-            "cleanup_seconds": [27.426, 27.005, 27.86, 27.782, 26.467],
-            "lifecycle_seconds": [126.735, 73.484, 62.329, 64.171, 80.346],
+            "setup_seconds": [
+              96.096,
+              43.585,
+              31.438,
+              32.994,
+              50.398
+            ],
+            "cleanup_seconds": [
+              27.426,
+              27.005,
+              27.86,
+              27.782,
+              26.467
+            ],
+            "lifecycle_seconds": [
+              126.735,
+              73.484,
+              62.329,
+              64.171,
+              80.346
+            ],
             "order": [
               "warmup-excluded",
               "control-a",
@@ -3100,9 +3257,18 @@
             "mean_control_setup_seconds": 46.9915,
             "mean_candidate_setup_seconds": 32.216,
             "difference_seconds": 14.7755,
-            "native_check_seconds": [0.525414, 0.541462],
-            "candidate_skips": [14, 14],
-            "control_import_span_sums_seconds": [29.502767, 29.601197],
+            "native_check_seconds": [
+              0.525414,
+              0.541462
+            ],
+            "candidate_skips": [
+              14,
+              14
+            ],
+            "control_import_span_sums_seconds": [
+              29.502767,
+              29.601197
+            ],
             "action_input_root": "79f899c08190f6e3fce2cc34e0f1c8a3b2911e967e0fa7bcf664f9448742e56c/165",
             "baseline_source_sha256": "8da7a528e8171bd9043baceaf1e2375f34ec0fe123061e216a5c7354c048c91c",
             "experiment_source_sha256": "0dd9e068203c26c32678b0105656461c444ad05a5efc02aa21bbc537ffe71538",
@@ -3378,7 +3544,10 @@
             "process_seconds": 152.835469,
             "setup_seconds": 79.54,
             "envtools_import_seconds": 22.004807,
-            "sandbox_ready_seconds": [7.272, 6.351],
+            "sandbox_ready_seconds": [
+              7.272,
+              6.351
+            ],
             "cleanup_seconds": 26.553,
             "input_fetch_wall_seconds": 1.356486,
             "actual_download_bytes": 1941164914,
@@ -3389,7 +3558,10 @@
             "process_seconds": 128.471558,
             "setup_seconds": 59.097,
             "envtools_import_seconds": 7.996676,
-            "sandbox_ready_seconds": [5.645, 6.539],
+            "sandbox_ready_seconds": [
+              5.645,
+              6.539
+            ],
             "cleanup_seconds": 26.605,
             "input_fetch_wall_seconds": 0.51535,
             "actual_download_bytes": 768203437,
@@ -3923,7 +4095,10 @@
     }
   },
   "prior_backend_refresh": {
-    "window": ["2026-11-10T00:00:00Z", "2026-11-12T23:59:19Z"],
+    "window": [
+      "2026-11-10T00:00:00Z",
+      "2026-11-12T23:59:19Z"
+    ],
     "source_devel_commit": "649fcbec4c7b2cda8fdc617d092201c45607a474",
     "summary": {
       "name": "All production backend",
@@ -4073,7 +4248,10 @@
     "report_commit": "8032ec1140281be66ee934b69bb71b25f892be82"
   },
   "backend_refresh": {
-    "window": ["2026-11-10T00:00:00Z", "2026-11-13T03:03:35Z"],
+    "window": [
+      "2026-11-10T00:00:00Z",
+      "2026-11-13T03:03:35Z"
+    ],
     "source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
     "observed_at_utc": "2026-11-13T03:04:30.559122+00:00",
     "summary": {
@@ -4408,5 +4586,12 @@
       "setup": "The0a9 native profile has93.111s before the first physical Bridge action. APT spans cover5.747s and its exact log has no Debian404s; the remaining combined analysis/build gap is unclassified. The separate manual8a5 run has45live-mirror package404s plus22snapshot metadata misses, with no attributable delay established.",
       "historical_observed_at_utc": "2026-11-13T18:08:10.196892Z"
     }
+  },
+  "architecture_iteration10": {
+    "observed_at_utc": "2026-11-13T22:27:42Z",
+    "source_head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "evidence_file": "../agentplane-test-architecture/iteration10.json",
+    "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "scope": "Supplemental source194 snapshot and manual contract evidence only; original fleet windows, populations, rates and denominators remain unchanged."
   }
 }

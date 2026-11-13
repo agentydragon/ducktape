@@ -1,0 +1,518 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-13T22:27:42Z",
+  "repository": "https://github.com/agentydragon/ducktape",
+  "scope": "Selected architecture and guest-contract evidence through the current PR head. No new fleet latency or reliability census; existing windows, rates, and denominators remain unchanged.",
+  "source": {
+    "branch": "agent/test-architecture-pivot",
+    "pull_request": 16102,
+    "pull_request_url": "https://github.com/agentydragon/ducktape/pull/16102",
+    "head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "required_checks": {
+      "conclusion": "All three required checks SUCCESS on exact PR head 1948106 as of 22:10:16Z; no current-head physical/JUnit cohort is curated.",
+      "workflow_runs": [
+        {
+          "name": "Bazel CI",
+          "run_id": 43515531246,
+          "job_id": 132196439008,
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/43515531246",
+          "status": "SUCCESS"
+        },
+        {
+          "name": "Nix build",
+          "run_id": 43515531247,
+          "job_id": 132196438952,
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/43515531247",
+          "status": "SUCCESS"
+        },
+        {
+          "name": "Pre-commit checks",
+          "run_id": 43515531102,
+          "job_id": 132196437837,
+          "url": "https://github.com/agentydragon/ducktape/actions/runs/43515531102",
+          "status": "SUCCESS"
+        }
+      ],
+      "pr_state": "RES head 194810646c5122f5574ae7d6ad9fe02044cc7113; draft; mergeable; all three required checks SUCCESS.",
+      "limit": "All three required checks passed on exact source 1948106. The candidate real CLI/Egress/Notification composition remains uncommitted and is not covered by these checks. No current-head physical/JUnit cohort is curated.",
+      "observed_at_utc": "2026-11-13T22:10:16Z",
+      "tested_merge": "14d13a5b8ac8c613cf5716c33d21cd96c0f79028",
+      "tested_base": "18991ff3ec6698eec059ce3159214a60c6756138",
+      "verified_merge_parents": [
+        "18991ff3ec6698eec059ce3159214a60c6756138",
+        "194810646c5122f5574ae7d6ad9fe02044cc7113"
+      ],
+      "native_test_invocation": "612839ed-efc3-5e7b-ab92-ce34b17b1600",
+      "native_elapsed_seconds": 516.411,
+      "native_metadata_limit": "Completed SUCCESS invocation metadata and verified Git commit parents only; no full physical/JUnit/CPU audit for this head and no matched saving."
+    },
+    "pending_worktree_composition": {
+      "status": "uncommitted; six failed NEW physical guest exposures across three earlier real-CLI runs; later full packaged guest composition passed 2/2 with child GO_TEST_WRAP=0; independent wrong-URI negative did not pass CLI response interpretation; no current-head CI coverage or fleet-rate update",
+      "summary": "Root is composing both packaged guest Shell turns with the real CLI through Egress, the sidecar and a seeded Notification subscription, plus a post-operation host SVID-rotation negative.",
+      "limit": "The composition is not included in pushed witness-only head 1948106 or its successful required checks. Three earlier invocations produced six failed NEW test results: parser assumption, harness-output contamination and Notification shutdown at the unchanged 10s deadline. A Python-only fixture reproduced the TERM timeout without Gateway, Runtime, Egress or guest; the child GO_TEST_WRAP=0 control passed in 45.5s (56.578s invocation), supporting but not proving the rules_go XML-wrapper hypothesis. The subsequent full packaged guest composition passed 2/2 NEW TestRunner actions (Codex 140.3s; Claude 198.4s; invocation 239.693s) with GO_TEST_WRAP=0. This is a focused manual contract pass, not current-head CI, a fleet reliability-rate update or a speed comparison. The separate wrong-server-URI negative failed at CLI response interpretation: it returned an error object where the test expected the seeded subscription; teardown completed without the Notification shutdown failure. The exact TLS error payload is not inspected, so no transport cause is inferred.",
+      "validation_history": [
+        {
+          "buildbuddy_invocation_id": "b1e55f70-8748-4bff-9619-ec6fcc42d516",
+          "url": "https://app.buildbuddy.io/invocation/b1e55f70-8748-4bff-9619-ec6fcc42d516",
+          "outcome": "Stopped on mypy before either guest test executed.",
+          "cause": "Root dataclass typed Notifications as the synchronous Stub while the channel is asynchronous; corrected to generated NotificationsAsyncStub.",
+          "classification": "Implementation/type failure before guest execution; not a guest test failure or flake."
+        },
+        {
+          "buildbuddy_invocation_id": "b1582db4-ba88-48ec-8bac-2e316779deb6",
+          "url": "https://app.buildbuddy.io/invocation/b1582db4-ba88-48ec-8bac-2e316779deb6",
+          "outcome": "Ruff stopped on a compound assertion before test execution.",
+          "correction": "Assertion fixed; hooks pass.",
+          "classification": "Implementation/lint failure before guest execution; not a test failure or flake."
+        },
+        {
+          "buildbuddy_invocation_id": "e7a6dbad-406f-462b-be87-768f5f756dfb",
+          "url": "https://app.buildbuddy.io/invocation/e7a6dbad-406f-462b-be87-768f5f756dfb",
+          "outcome": "Both real guest tests executed and failed; two failed NEW physical guest exposures. Metadata audit found exactly two unique completed TestRunner records, invocationLinkType=1, no merged/extra records; both TestResults failed.",
+          "diagnosis": "The CLI returned the accepted Identity and seeded Notification row, but the parser wrongly expected a bare array. The pinned CLI output contract emits compact JSON, one object per line.",
+          "cleanup": "The attempt reported driver SIGINT (-2) after the primary assertion. Later investigation found Python waited on the child while its stdout PIPE remained unread. This is a plausible shutdown wedge mechanism, not yet validated as the cause; the subsequent communicate()-based drain is under test.",
+          "classification": "Manual contract test failures in the uncommitted composition; keep these two exposures outside the retained reliability population and do not classify them as healthy passes.",
+          "test_runner_records": [
+            {
+              "guest": "Codex",
+              "execution_seconds": 115.916536,
+              "cpu_seconds": 216.576902,
+              "result": "failed"
+            },
+            {
+              "guest": "Claude",
+              "execution_seconds": 121.272102,
+              "cpu_seconds": 256.793293,
+              "result": "failed"
+            }
+          ]
+        },
+        {
+          "buildbuddy_invocation_id": "4787345e-c7ae-4d07-b7ec-e4c70dadf48b",
+          "url": "https://app.buildbuddy.io/invocation/4787345e-c7ae-4d07-b7ec-e4c70dadf48b",
+          "outcome": "Both guest tests executed and failed; two additional failed NEW physical guest exposures. Metadata audit found exactly two unique completed TestRunner records, invocationLinkType=1, no merged/extra records; both TestResults failed.",
+          "diagnosis": "Codex reached the end of content and host-SVID-rotation assertions, then Notification-child shutdown exceeded 10s. Claude read the CLI response, but a native harness <system-reminder> followed tool output and contaminated the strict whole-output JSON parse.",
+          "cleanup": "The subsequent ec2558 invocation used the explicit delimiter and communicate() drain; both guest tests still failed at Notification shutdown, so these changes did not resolve the wedge or establish its cause.",
+          "classification": "Manual guest contract failures; keep all four NEW physical exposures from these two invocations outside the retained fleet reliability population.",
+          "test_runner_records": [
+            {
+              "guest": "Codex",
+              "execution_seconds": 149.105805,
+              "cpu_seconds": 299.753055,
+              "result": "failed"
+            },
+            {
+              "guest": "Claude",
+              "execution_seconds": 110.348527,
+              "cpu_seconds": 215.562844,
+              "result": "failed"
+            }
+          ]
+        },
+        {
+          "buildbuddy_invocation_id": "ec2558a9-92dd-4591-8c0d-f0247397b4e5",
+          "url": "https://app.buildbuddy.io/invocation/ec2558a9-92dd-4591-8c0d-f0247397b4e5",
+          "outcome": "Both guest tests failed at Notification child shutdown with the unchanged 10s deadline. Metadata audit found exactly two unique completed NEW TestRunner records (invocationLinkType=1), no merged/extra records; both tests failed.",
+          "diagnosis": "Explicit shell completion delimiter and communicate() stdout drain did not resolve shutdown. The previous unread-PIPE + wait() theory is not established.",
+          "classification": "Two failed NEW physical guest exposures; keep all six failed manual exposures across the three runs outside fleet reliability rates.",
+          "test_runner_records": [
+            {
+              "guest": "Codex",
+              "execution_seconds": 154.396376,
+              "cpu_seconds": 327.094174,
+              "result": "failed"
+            },
+            {
+              "guest": "Claude",
+              "execution_seconds": 216.341282,
+              "cpu_seconds": 462.897374,
+              "result": "failed"
+            }
+          ],
+          "assertions_before_teardown": "Source order and retained bbr output show both test bodies returned successfully through real CLI parsing, shared setup, sameBootId, host-identity positive check, old-SVID UNAUTHENTICATED checks, and fixed WorkloadCredential/PodUID assertions. The final failure was Notification process _stop RuntimeError; no active primary assertion exception or cleanup note was present."
+        }
+      ],
+      "latest_submission": {
+        "real_guest_composition": {
+          "invocation_id": "d68330b6-2d7c-4dbe-b3e7-ade6cd9fc5f7",
+          "url": "https://app.buildbuddy.io/invocation/d68330b6-2d7c-4dbe-b3e7-ade6cd9fc5f7",
+          "status": "Passed 2/2 NEW physical TestRunner actions on d68330b6 with child GO_TEST_WRAP=0; this uncommitted result is not covered by head 1948106 CI and does not alter fleet reliability rates or establish a speed saving.",
+          "completed_at_utc": "2026-11-13T22:17:01Z",
+          "invocation_seconds": 239.693,
+          "action_records": 2,
+          "action_status": "two unique completed NEW TestRunner records; no merged/extra records or status errors",
+          "guest_results": [
+            {
+              "guest": "Codex",
+              "result": "passed",
+              "execution_seconds": 140.3
+            },
+            {
+              "guest": "Claude",
+              "result": "passed",
+              "execution_seconds": 198.4
+            }
+          ],
+          "classification": "Focused manual packaged-guest contract pass; outside fleet reliability rates, not current-head CI, and not speed evidence.",
+          "test_runner_records": [
+            {
+              "guest": "Codex",
+              "execution_seconds": 140.3,
+              "result": "passed"
+            },
+            {
+              "guest": "Claude",
+              "execution_seconds": 198.4,
+              "result": "passed"
+            }
+          ]
+        },
+        "next_real_guest_run": {
+          "status": "failed; completed without teardown failure",
+          "invocation_id": "d2cba508-bfdb-4cf5-b23f-ce9eeb35b115",
+          "url": "https://app.buildbuddy.io/invocation/d2cba508-bfdb-4cf5-b23f-ce9eeb35b115",
+          "scope": "Independent Claude wrong-server-URI negative. The CLI returned an error object where the test expected the seeded subscription; teardown completed without Notification shutdown failure. The exact TLS error payload has not been inspected; no transport cause is inferred."
+        },
+        "limit": "The first three manual guest invocations produced six failed NEW results across parser/harness-output and Notification-shutdown stages; those outcomes remain failures. After the Python-only GO_TEST_WRAP=0 control passed, the full packaged composition d68330b6 passed 2/2 NEW TestRunner actions in 239.693s (Codex 140.3s, Claude 198.4s). This is one focused manual composition pass, not a fleet reliability rate or speed comparison, and is not covered by required CI on pushed head 1948106. The independent wrong-server-URI negative d2cba508 did not pass CLI response interpretation: an error object appeared where the seeded subscription was expected; teardown completed normally. The exact TLS error payload was not inspected, so the cause remains unknown.",
+        "thin_candidate": {
+          "invocation_id": "e1822efe-6946-4b67-9774-f176cf62939d",
+          "url": "https://app.buildbuddy.io/invocation/e1822efe-6946-4b67-9774-f176cf62939d",
+          "status": "one physical pytest passed (1/1) in 307.24s; overall Bazel elapsed 591s per worker; final trace assertion included",
+          "limit": "Thin candidate is not a matched speed comparison or an equivalent replacement for deployed full-VM acceptance. Detailed physical/JUnit artifact metadata pending."
+        },
+        "negative_control": {
+          "invocation_id": "d2cba508-bfdb-4cf5-b23f-ce9eeb35b115",
+          "url": "https://app.buildbuddy.io/invocation/d2cba508-bfdb-4cf5-b23f-ce9eeb35b115",
+          "status": "failed at CLI response interpretation; teardown completed normally",
+          "finding": "The CLI returned an error object where the test expected the seeded subscription. The exact TLS error payload has not been inspected, so no transport cause is inferred."
+        }
+      }
+    },
+    "thin_candidate_witness": {
+      "invocation_id": "e1822efe-6946-4b67-9774-f176cf62939d",
+      "url": "https://app.buildbuddy.io/invocation/e1822efe-6946-4b67-9774-f176cf62939d",
+      "physical_pytest": "1 passed in 307.24s; final trace assertion included",
+      "overall_bazel_elapsed_seconds_per_worker": 591,
+      "limit": "The e1822 invocation ran on the patched 542 worktree before witness-only commit 1948106. Root reverified the four selected source-file hashes after commit; this still is not a literal 1948106 test, a matched speed comparison, or equivalent replacement for deployed full-VM acceptance."
+    },
+    "last_green_checkpoint": {
+      "head": "542e6152491f16e1cd677ad25b81cd5b7243cef8",
+      "pull_request": 16102,
+      "required_checks": {
+        "conclusion": "all three required checks succeeded",
+        "workflow_id": 43508024093,
+        "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43508024093",
+        "native_invocation_id": "657b546d-1a27-599f-8f0a-ff2bd114ad28",
+        "native_invocation_url": "https://app.buildbuddy.io/invocation/657b546d-1a27-599f-8f0a-ff2bd114ad28",
+        "limit": "All three required checks passed on exact source 542e615. The tested merge parent is a1121a0, not the later observed origin/devel 2d2be67. Native elapsed is not workflow-creation-to-last-required-check time. The K3s target summary is not a complete required-target, per-case, physical-action, JUnit or CPU cohort.",
+        "tested_merge": "569b82520907d2c89e6c0f501e67b7ef2ce4f7e0",
+        "tested_merge_url": "https://github.com/agentydragon/ducktape/commit/569b82520907d2c89e6c0f501e67b7ef2ce4f7e0",
+        "tested_merge_parents": [
+          "a1121a0ad80a6c65485f177e3d55a682cddd6249",
+          "542e6152491f16e1cd677ad25b81cd5b7243cef8"
+        ],
+        "native_invocation_status": "COMPLETE / SUCCESS",
+        "native_elapsed_seconds": 549.365
+      },
+      "tested_merge": "569b82520907d2c89e6c0f501e67b7ef2ce4f7e0",
+      "tested_base": "a1121a0ad80a6c65485f177e3d55a682cddd6249"
+    },
+    "head_url": "https://github.com/agentydragon/ducktape/commit/194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "thin_witness_source_relation": {
+      "tested_worktree": "patched 542e615 worktree before witness-only commit 1948106 was created",
+      "commit_relation": "Root verified matching SHA256 values for all four selected witness files again after commit.",
+      "limit": "Do not describe e1822 as a literal 1948106 test. It validates the candidate worktree, not exact committed-head CI."
+    },
+    "follow_up_controls": [
+      {
+        "name": "Go driver seeded identity, same WorkloadCredential rotation, old-SVID refusal/new owned read, TERM shutdown",
+        "status": "passed",
+        "duration_seconds": 35.5,
+        "invocation_id": "0bbd486a-d7be-44b7-bf09-9b771c257917",
+        "url": "https://app.buildbuddy.io/invocation/0bbd486a-d7be-44b7-bf09-9b771c257917",
+        "limit": "Control did not reproduce the Python composition shutdown wedge or establish production repair."
+      },
+      {
+        "name": "Go TERM-only shutdown control",
+        "status": "passed",
+        "duration_seconds": 43,
+        "invocation_id": "1e313f9e-37c7-4743-a74c-5a935d7eb854",
+        "url": "https://app.buildbuddy.io/invocation/1e313f9e-37c7-4743-a74c-5a935d7eb854",
+        "limit": "Control only; does not prove production Notification shutdown reliability."
+      },
+      {
+        "name": "Python-only Notification child TERM control with GO_TEST_WRAP=0",
+        "status": "passed",
+        "duration_seconds": 45.5,
+        "invocation_seconds": 56.578,
+        "invocation_id": "c142d99a-b2e0-447e-adcb-8b3908f3a2dc",
+        "url": "https://app.buildbuddy.io/invocation/c142d99a-b2e0-447e-adcb-8b3908f3a2dc",
+        "scope": "Python-only child lifecycle control; no Gateway, Runtime, Egress or guest.",
+        "finding": "Python-only child lifecycle control passed 1/1 in 45.5s (56.578s invocation) with GO_TEST_WRAP=0; supports but does not prove the rules_go XML-wrapper hypothesis. The subsequent packaged guest composition d68330b6 passed 2/2, but this control alone is not production repair evidence."
+      },
+      {
+        "name": "Full packaged CLI/Egress/Notification composition with child GO_TEST_WRAP=0",
+        "status": "passed 2/2",
+        "invocation_seconds": 239.693,
+        "completed_at_utc": "2026-11-13T22:17:01Z",
+        "invocation_id": "d68330b6-2d7c-4dbe-b3e7-ade6cd9fc5f7",
+        "url": "https://app.buildbuddy.io/invocation/d68330b6-2d7c-4dbe-b3e7-ade6cd9fc5f7",
+        "action_records": 2,
+        "guest_results": [
+          {
+            "guest": "Codex",
+            "result": "passed",
+            "execution_seconds": 140.3
+          },
+          {
+            "guest": "Claude",
+            "result": "passed",
+            "execution_seconds": 198.4
+          }
+        ],
+        "limit": "Two unique completed NEW TestRunner records; no merged/extra records or status errors. This is an uncommitted focused manual contract pass, outside fleet reliability rates and not a speed comparison or current-head CI."
+      },
+      {
+        "name": "Independent Claude wrong-server-URI Notification negative",
+        "status": "failed at CLI response interpretation; teardown completed normally",
+        "invocation_id": "d2cba508-bfdb-4cf5-b23f-ce9eeb35b115",
+        "url": "https://app.buildbuddy.io/invocation/d2cba508-bfdb-4cf5-b23f-ce9eeb35b115",
+        "finding": "The CLI returned an error object where the test expected the seeded subscription. The exact TLS error payload has not been inspected; no transport cause is inferred. No Notification shutdown failure occurred."
+      }
+    ],
+    "source_branch_devel_base": "93a364ebcfa16898d1d4646b95933d789a456b61"
+  },
+  "last_curated_required_checkpoint": {
+    "source_head": "21962292287e585ef3415eeaa66e9cc621913e1c",
+    "tested_base": "f138affeba1654bb624a24af002a96b99490cc49",
+    "tested_merge": "75d2b2f53432803390352837e809a49733694acc",
+    "workflow_id": 43500412229,
+    "workflow_url": "https://github.com/agentydragon/ducktape/actions/runs/43500412229",
+    "native_invocation_id": "792dfb27-5ce9-5127-b849-caca435cd624",
+    "native_invocation_url": "https://app.buildbuddy.io/invocation/792dfb27-5ce9-5127-b849-caca435cd624",
+    "workflow_creation_to_last_required_check_seconds": 650,
+    "native_test_elapsed_seconds": 545.284,
+    "fresh_test_launches": 138,
+    "fresh_unique_test_labels": 128,
+    "nonempty_junit_files": 138,
+    "actual_junit_cases": 1023,
+    "fresh_k3s_suite_actions": 13,
+    "failures": 0,
+    "errors": 0,
+    "skipped_cases": 0,
+    "retries": 0,
+    "merged_or_failed_physical_records": 0,
+    "actions_with_reported_cpu": 137,
+    "actions_without_reported_cpu": 1,
+    "limit": "One XML-generator action is excluded from the 138 test launches. These are correlated execution and JUnit counts, not independent reliability trials. Source/base exposure differs from the earlier checkpoint; this is not a matched saving comparison."
+  },
+  "guest_setup_contract": {
+    "source_base": "21962292287e585ef3415eeaa66e9cc621913e1c",
+    "selected_source_patch_sha256": "464e9e76950e3e745cc0f9f29e431ef76e4da93c84f809fcf625e0b736df7e8b",
+    "positive": {
+      "invocation_id": "e75b5d2d-0710-45fc-949b-1ad456bf3f08",
+      "url": "https://app.buildbuddy.io/invocation/e75b5d2d-0710-45fc-949b-1ad456bf3f08",
+      "new_physical_test_actions": 3,
+      "junit_cases": 3,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "retries": 0,
+      "merged_actions": 0,
+      "coverage": [
+        "The existing deployed VM setup script and assertion AST are shared with both packaged guests.",
+        "Both direct guests run the full setup probe and a second fresh Session that observes detached-descendant and cgroup cleanup.",
+        "The full deployed VM scenario retains both setup operations and all existing assertions.",
+        "The original two Shell turns complete before the additional setup Sessions."
+      ],
+      "limit": "Manual assertion-transfer validation. It does not establish a required-gate saving, reliability rate, actual OOM enforcement, or equivalence to controller, issuer, KubeVirt, PVC, private-kernel, and deployed egress/Notification behavior."
+    },
+    "negative_control": {
+      "invocation_id": "ad13dcbd-b4f3-4942-90c1-9591507657a9",
+      "url": "https://app.buildbuddy.io/invocation/ad13dcbd-b4f3-4942-90c1-9591507657a9",
+      "new_physical_test_actions": 1,
+      "expected_failures": 1,
+      "observed_failure": "After the original two Shell turns, the setup assertion sees real TasksMax=96 and pids.max=96 where the contract requires 512.",
+      "limit": "Deliberate failure exposure, excluded from healthy reliability counts."
+    },
+    "retained_history": "Earlier implementation failures and the two intended executor-boundary and wrong-History controls remain documented in the guest-session source note; they are not erased by the later positive."
+  },
+  "notification_contract": {
+    "invocation_id": "f8bf3c52-44c2-4d32-bb8c-18d5796c15e3",
+    "url": "https://app.buildbuddy.io/invocation/f8bf3c52-44c2-4d32-bb8c-18d5796c15e3",
+    "fresh_tests": 1,
+    "result": "A production serve subprocess returns the exact seeded subscription through an accepted WorkloadCredential SVID; a trusted but unrecorded SVID receives Unauthenticated.",
+    "limits": [
+      "This is an owned nonempty read, not live credential revocation.",
+      "It does not yet prove the packaged CLI through the real Egress and sidecar route."
+    ]
+  },
+  "merged_port_dispositions": [
+    {
+      "pull_request": 16233,
+      "boundary": "Runtime listener ownership",
+      "url": "https://github.com/agentydragon/ducktape/pull/16233",
+      "disposition": "Merged; scoped source repair and socket regression."
+    },
+    {
+      "pull_request": 16235,
+      "boundary": "ASGI/MCP ownership",
+      "url": "https://github.com/agentydragon/ducktape/pull/16235",
+      "disposition": "Merged."
+    },
+    {
+      "pull_request": 16241,
+      "boundary": "App/Gateway ownership",
+      "url": "https://github.com/agentydragon/ducktape/pull/16241",
+      "disposition": "Merged."
+    },
+    {
+      "pull_request": 16247,
+      "boundary": "Live policy grant same-Pod-UID ownership",
+      "url": "https://github.com/agentydragon/ducktape/pull/16247",
+      "disposition": "Merged; a live policy grant must keep the same Pod UID."
+    },
+    {
+      "pull_request": 16251,
+      "boundary": "Dispatcher and deletion MCP inputs",
+      "url": "https://github.com/agentydragon/ducktape/pull/16251",
+      "disposition": "Merged."
+    },
+    {
+      "pull_request": 16252,
+      "boundary": "CLI artifact ownership",
+      "url": "https://github.com/agentydragon/ducktape/pull/16252",
+      "disposition": "Merged."
+    },
+    {
+      "pull_request": 16264,
+      "boundary": "Central-recovery fixture",
+      "url": "https://github.com/agentydragon/ducktape/pull/16264",
+      "disposition": "Merged; removes three Dex/MCP fixture and OAuth-service dependencies from four existing fault suites. The default 120s timeout and required gate are unchanged; required CI was green before merge."
+    },
+    {
+      "pull_request": 16040,
+      "boundary": "Usable OCI import",
+      "url": "https://github.com/agentydragon/ducktape/pull/16040",
+      "disposition": "Merged. Warm same-worker ABBA setup fell from 46.992s to 32.216s (14.776s); this does not establish a cold or whole-CI saving."
+    }
+  ],
+  "retained_experiment_limits": [
+    "Eight Bridge shards lowered selected elapsed by 24.9% while increasing summed action CPU by 62.8%; the arrangement remains unqualified on devel.",
+    "Python bytecode collection remains off after a cold/full-workload compile cost of 4,202.992 CPU seconds.",
+    "The eight-pass read-only guest-mount screen is confounded by the first warm run.",
+    "The managed action-VM scheduler panic tracked by issue 16222 is not a measured recurrence-rate repair.",
+    "The live BuildBuddy observer repair tracked by issue 13270 remains unshipped and separate from inner recovery tracked by issue 16025.",
+    "CaseBatch/PVC measurement remains tracked by issue 16034; the held image baseline in PR 15214 has no proved saving.",
+    "The source-branch 45s budget experiment remains an explicit tradeoff, not a port disposition.",
+    "The previously rejected renderer-batching and annotation proposals remain rejected."
+  ],
+  "follow_up_triggers": [
+    {
+      "trigger": "Decide whether selected-label archive diagnostics and Central Sampler auth/History-outage coverage merit independent, small ports.",
+      "acceptance": "Specify the owning boundary and focused regression for each candidate; report disposition separately. Make no speed claim absent a matched physical cohort."
+    },
+    {
+      "trigger": "Replace the mixed whole-suite concurrency screen with a selected-graph, counterbalanced screen before any concurrency recommendation.",
+      "acceptance": "Preserve the existing full-qualification bar: 30 qualified source pairs, 100 honest fresh contract actions, three busy windows and a four-PR burst."
+    },
+    {
+      "trigger": "Correct and rerun the wrong-server-URI Notification negative contract.",
+      "acceptance": "Invocation d2cba508 failed at CLI response interpretation: it returned an error object where the test expected the seeded subscription, then tore down without a shutdown failure. Inspect only the bounded response evidence needed to specify the negative contract; do not infer the TLS cause without its error payload. Keep the d68330b6 two passing actions and six earlier failures separate; no fleet reliability-rate or speed claim follows."
+    },
+    {
+      "trigger": "Finish exact-head required CI for pushed witness-only commit 1948106, then validate any later composition commit separately.",
+      "acceptance": "All three required checks passed on exact pushed witness-only head 1948106. Record any later composition commit separately with its exact checks, native invocation, tested merge parents, physical launches, JUnit and retry outcomes; no current-head physical/JUnit cohort is curated."
+    },
+    {
+      "trigger": "Issue 16028 by 2026-11-20: observe the naturally selected backend head.",
+      "acceptance": "Capture warm and cold conditions plus last-gate CPU and retries; keep feedback latency separate from action time and CPU."
+    },
+    {
+      "trigger": "Issue 16034 by 2026-11-20: complete the CaseBatch/PVC follow-up.",
+      "acceptance": "Report the existing measurement window and its physical attempts without replacing the retained reliability population."
+    },
+    {
+      "trigger": "Before any test-frequency or gate promotion.",
+      "acceptance": "Complete the all-selected-graph counterbalanced screen: 30 qualified source pairs, 100 honest fresh contract actions, three busy windows, and a four-PR burst. This qualification is not complete; do not claim diminishing returns."
+    }
+  ],
+  "source_artifacts": [
+    {
+      "path": "agentplane/system_tests/debug/test_architecture_iteration5.md",
+      "url": "https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_iteration5.md",
+      "sha256": "ace6fb354fc43582d02d95a85377f2c3643bd4daa2c13f88a65fc10b575cdfc5"
+    },
+    {
+      "path": "agentplane/system_tests/debug/test_architecture_guest_setup_contract.json",
+      "url": "https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_guest_setup_contract.json",
+      "sha256": "a23d5193818de2d2a01807d3164735da352643404c57b9998733f4b4aa019015"
+    },
+    {
+      "path": "agentplane/system_tests/debug/test_architecture_required_2196229.json",
+      "url": "https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_required_2196229.json",
+      "sha256": "5808ff9f09af69e049b65cefd7bc3d47cb974beb0ab836525daaf8bebf3bfaa4"
+    },
+    {
+      "path": "agentplane/system_tests/debug/test_architecture_guest_session.md",
+      "url": "https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/system_tests/debug/test_architecture_guest_session.md",
+      "sha256": "bcbdcc930a66aadffe10cd6d89e3a9d7aa6e2725f126b6e1527f5e0157a81110"
+    },
+    {
+      "path": "agentplane/cli/output.go",
+      "url": "https://github.com/agentydragon/ducktape/blob/542e6152491f16e1cd677ad25b81cd5b7243cef8/agentplane/cli/output.go#L18-L24",
+      "sha256": "402cb8be95e05007bab9f79793e45dade9110c9ed1f918ec59ffd401542861a2",
+      "role": "CLI JSON output uses one compact JSON object per item per line; this is the format the guest parser now validates."
+    },
+    {
+      "path": "agentplane-test-architecture/required-542-k3s-summary.json",
+      "url": "required-542-k3s-summary.json",
+      "sha256": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69",
+      "role": "Narrow target-summary metadata for the exact 542e615 tested merge; incomplete and explicitly unqualified for full-CI or physical evidence."
+    }
+  ],
+  "devel_context": {
+    "refreshed_origin_devel_head": "2d2be67f54ad4af19db9b478b32f83ceddbe7096",
+    "relationship_to_tested_source": "No evidence that PR head 542e615 was tested on this refreshed devel head; preserve the recorded exact-head CI result without implying this base.",
+    "candidate_standalone_ports": [
+      {
+        "area": "Selected-label archive diagnostics",
+        "status": "Candidate follow-up; no new implementation or validation claimed.",
+        "claim_limit": "A diagnostic/observability port only; no speed claim."
+      },
+      {
+        "area": "Central Sampler authentication and History-outage coverage",
+        "status": "Candidate follow-up; no new implementation or validation claimed.",
+        "claim_limit": "Coverage/ownership work only; no speed claim."
+      }
+    ],
+    "concurrency_screen": {
+      "status": "unqualified",
+      "reason": "The four-case concurrency screen mixed whole-suite conditions and does not establish a matched selected-graph result.",
+      "claim_limit": "Do not use it to infer a speedup, concurrency recommendation, or diminishing returns."
+    },
+    "url": "https://github.com/agentydragon/ducktape/commit/2d2be67f54ad4af19db9b478b32f83ceddbe7096"
+  },
+  "selected_k3s_target_metadata": {
+    "artifact": "required-542-k3s-summary.json",
+    "artifact_sha256": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69",
+    "target_summaries_passed": 13,
+    "target_summary_count_scope": "12 of 13 were on a filtered metadata page; the missing exact VM label was queried separately. This is not the complete required target population.",
+    "observed_tail": {
+      "pod_target_duration_seconds": 404.835,
+      "pod_last_stop_utc": "2026-11-13T21:19:04.948Z",
+      "vm_target_duration_seconds": 324.917,
+      "vm_last_stop_utc": "2026-11-13T21:18:13.683Z",
+      "mcp_services_target_duration_seconds": 330.881,
+      "mcp_services_last_stop_utc": "2026-11-13T21:17:31.329Z",
+      "pod_finish_after_vm_seconds": 51.265
+    },
+    "limit": "Bazel target-summary clocks only, not REAPI action/queue/CPU durations. Freshness, per-case counts, JUnit, retries, action merging and cache classification are unqualified. The Pod/VM tail is only within these K3s summaries; other tests/gates can finish later. Not comparable to the distinct 2196229 source/base/population."
+  },
+  "selected_graph_tail_limits": {
+    "existing_balanced_pod_slices": "Retain 21 cases but duplicate fixture setup CPU.",
+    "prior_run": "No full-graph tail bound is established by this report; any selected-graph comparison must measure both Pod and VM tails together.",
+    "vm_acceptance": "Keep issued identity, real launcher, mounts/relay, post-operation identity, private guest kernel and OOM ownership until faithful proof transfer.",
+    "qualification": "No all-selected-graph counterbalanced screen is qualified."
+  }
+}

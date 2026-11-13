@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:49.914251+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "fac397d808a006fbb8fb118fa90ab73f1e820d6bb16e4545d0b168f6f60cf665",
-  "evidence_sha256": "9e3032bcbd9d463ca7f7f35c13ffc2ed2105750313876b7226f1b22759f7511f",
+  "report_sha256": "aa2c579d3431bd5072bb9c5331c2542ac1ba63d9bc1052739c18af38405d510f",
+  "evidence_sha256": "39fa60e16a902e3f884b634aa9f5b39f6adc686dd51ef0489a44b6a97219277a",
   "evidence_schema_version": 3,
   "population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "feedback_clock": "Earliest exact-head PR workflow creation to latest successful completion of all three required gates; workflow creation proxies unavailable push timestamps. Not auto-merge eligibility.",
@@ -15,7 +15,10 @@
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
   "supplemental_followup_scope": "Selected Nov 12 investigations through 23:20 UTC; original population window, source pin, denominators and rates are unchanged.",
-  "earlier_all_pr_window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
+  "earlier_all_pr_window_utc": [
+    "2026-11-11T07:20:00Z",
+    "2026-11-12T07:20:00Z"
+  ],
   "earlier_all_pr_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
   "backend_collection_started_at_utc": "2026-11-13T03:03:35Z",
   "backend_observed_at_utc": "2026-11-13T03:04:30.559122+00:00",
@@ -57,5 +60,13 @@
     "../agentplane-test-architecture/setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
     "../agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
     "../agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7"
-  }
+  },
+  "architecture_iteration10": {
+    "observed_at_utc": "2026-11-13T22:27:42Z",
+    "source_head": "194810646c5122f5574ae7d6ad9fe02044cc7113",
+    "evidence_file": "../agentplane-test-architecture/iteration10.json",
+    "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
+    "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
+  },
+  "prepared_at_utc": "2026-11-13T22:27:42Z"
 }
