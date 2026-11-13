@@ -1,4 +1,4 @@
-package sandboxcontroller
+package runnercontrol
 
 import (
 	"testing"

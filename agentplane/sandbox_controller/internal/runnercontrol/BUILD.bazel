@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "runnercontrol",
+    srcs = [
+        "quiescer.go",
+        "suspender.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/runnercontrol",
+    visibility = ["//agentplane/sandbox_controller/cmd:__pkg__"],
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/net/peertls",
+        "//agentplane/observability",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/sandbox_controller/internal/controller",
+        "//agentplane/sandboxes/api",
+        "//agentplane/sandboxes/environmentruntimeclient",
+        "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "runnercontrol_test",
+    srcs = ["quiescer_test.go"],
+    embed = [":runnercontrol"],
+    deps = ["//agentplane/proto:session_go_proto"],
+)

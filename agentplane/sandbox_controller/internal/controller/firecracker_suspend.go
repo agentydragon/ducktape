@@ -6,13 +6,9 @@ import (
 	"math"
 	"time"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
-	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,36 +19,6 @@ import (
 type RuntimeSuspender interface {
 	Prepare(context.Context, *sandboxapi.Sandbox, int64, time.Time) error
 	Resume(context.Context, *sandboxapi.Sandbox, int64) error
-}
-
-type GatewaySuspender struct {
-	TLS       *peertls.ClientTLS
-	Target    string
-	TokenFile string
-}
-
-func (g GatewaySuspender) withClient(ctx context.Context, sandbox *sandboxapi.Sandbox, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
-	return environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
-		Target:    environmentruntimeclient.ExpandTarget(g.Target, sandbox.Name, sandbox.Namespace),
-		TokenFile: g.TokenFile, TLS: g.TLS, Timeout: quiesceTimeout,
-		SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,
-	}, call)
-}
-
-func (g GatewaySuspender) Prepare(ctx context.Context, sandbox *sandboxapi.Sandbox, generation int64, idleSince time.Time) error {
-	return g.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
-		_, err := client.PrepareSuspend(ctx, &environmentruntimepb.PrepareSuspendRequest{
-			Generation: generation, IfIdleSince: timestamppb.New(idleSince),
-		})
-		return err
-	})
-}
-
-func (g GatewaySuspender) Resume(ctx context.Context, sandbox *sandboxapi.Sandbox, generation int64) error {
-	return g.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
-		_, err := client.ResumeAdmission(ctx, &environmentruntimepb.ResumeAdmissionRequest{Generation: generation})
-		return err
-	})
 }
 
 func firecrackerSuspending(sandbox *sandboxapi.Sandbox) bool {
