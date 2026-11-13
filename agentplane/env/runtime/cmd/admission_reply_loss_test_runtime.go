@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/coordinator"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,7 +32,7 @@ type admissionAttempt struct {
 
 // This replacement factory is linked only into the focused native test executable. Authorization
 // still runs in control.Server before this interceptor; the fault is after Runtime's real handler.
-func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
+func newRuntime(config coordinator.Config) (*coordinator.Runtime, error) {
 	directory := filepath.Join(config.StateDir, admissionReplyLossDirectory)
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
 		}
 		return response, nil
 	}
-	return runtime.New(config)
+	return coordinator.New(config)
 }
 
 func writeAdmissionAttempt(directory string, attempt int, record admissionAttempt) error {

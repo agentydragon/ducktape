@@ -55,9 +55,9 @@ go_binary(
     pure = "on",
     deps = [
         "//agentplane/env/configuration",
-        "//agentplane/env/runtime",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
-        "//agentplane/env/runtime/workspace",
+        "//agentplane/env/runtime/internal/coordinator",
+        "//agentplane/env/runtime/internal/workspace",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_grpc//:grpc",
