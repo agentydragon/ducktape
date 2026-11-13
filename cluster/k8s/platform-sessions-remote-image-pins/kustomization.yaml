@@ -4,7 +4,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/platform-sessions-gateway
     newTag: devel-20261113220532-18991ff # {"$imagepolicy": "flux-system:platform-sessions-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-blueshield
-    newTag: main-20261112121239-cd33af4 # {"$imagepolicy": "flux-system:platform-sessions-blueshield:tag"}
+    newTag: main-20261113231518-68180ad # {"$imagepolicy": "flux-system:platform-sessions-blueshield:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-chatgpt
     newTag: main-20261113214300-047a0ac # {"$imagepolicy": "flux-system:platform-sessions-chatgpt:tag"}
   - name: git.allegedly.works/ducktape-ci/platform-sessions-quest-scheduler
