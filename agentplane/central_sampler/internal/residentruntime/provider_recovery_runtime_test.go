@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"bytes"
@@ -49,7 +49,7 @@ func setProviderRetryDueNow(t *testing.T, store *sessionstore.Store, intentID st
 func startProviderSamplingRuntime(t *testing.T, store *sessionstore.Store, settings samplersettings.Settings) (*Runtime, func()) {
 	t.Helper()
 	manager, _ := newFakeCodeModeManager(t)
-	runtime := NewRuntime(store, settings, manager)
+	runtime := New(store, settings, manager)
 	cancel, done := startRuntimeForTest(t, runtime)
 	var once sync.Once
 	stop := func() {
@@ -589,7 +589,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 		t.Fatal(err)
 	}
 
-	runtime := NewRuntime(store, settings, manager)
+	runtime := New(store, settings, manager)
 	cancel, done := startRuntimeForTest(t, runtime)
 	var stopOnce sync.Once
 	stop := func() {

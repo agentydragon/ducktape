@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"context"

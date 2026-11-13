@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"bytes"
@@ -80,7 +80,7 @@ func waitRuntimeDone(t *testing.T, done <-chan error) {
 func TestRuntimeShutdownWaitsForClaimReturnAndReleasesOwnership(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	runtime := NewRuntime(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	claimCommitted := make(chan sessionstore.Owner, 1)
 	allowClaimReturn := make(chan struct{})
 	runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (sessionstore.Owner, error) {
@@ -123,7 +123,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	logged := captureLogs(t)
-	runtime := NewRuntime(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := New(store, samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 5, LeaseSeconds: 60}, fakeCodeHost(t))
 	releaseCommitted := make(chan sessionstore.Owner, 1)
 	allowReleaseReturn := make(chan struct{})
 	runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
@@ -195,7 +195,7 @@ func TestRuntimeShutdownWaitsForReleaseReturn(t *testing.T) {
 }
 
 func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := New(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 2
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -218,7 +218,7 @@ func TestRuntimeShutdownKeepsEffectContextAliveUntilDriverSettles(t *testing.T) 
 }
 
 func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
-	runtime := NewRuntime(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
+	runtime := New(newTestStore(t), samplersettings.Settings{MaxLiveSessions: 1, RPCTimeoutSeconds: 1, LeaseSeconds: 60}, fakeCodeHost(t))
 	seconds := 1
 	runtime.settings.ShutdownDrainSeconds = &seconds
 	cancel, done := startRuntimeForTest(t, runtime)
@@ -380,7 +380,7 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 	}
 	manager, peers := newFakeCodeModeManager(t)
 	manager.store = store
-	f.runtime = NewRuntime(store, settings, manager)
+	f.runtime = New(store, settings, manager)
 	f.peers = peers
 	f.runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
 		work, err := store.LiveWork(ctx, owner)

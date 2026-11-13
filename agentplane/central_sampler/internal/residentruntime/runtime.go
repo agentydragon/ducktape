@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"context"
@@ -47,8 +47,8 @@ func (s *residentSession) signal() {
 	}
 }
 
-// NewRuntime takes the shared Code Mode host it attaches logical sessions to and shuts down.
-func NewRuntime(store *sessionstore.Store, settings samplersettings.Settings, codeHost *CodeModeHost) *Runtime {
+// New takes the shared Code Mode host it attaches logical sessions to and shuts down.
+func New(store *sessionstore.Store, settings samplersettings.Settings, codeHost *CodeModeHost) *Runtime {
 	return &Runtime{
 		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: executor.New,
 		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),

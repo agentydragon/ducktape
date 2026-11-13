@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"

@@ -375,7 +375,7 @@ saw "The retained exec-server session was definitively lost" and lost its proces
 replacement keeps the native session and its processes alive across any control-plane disconnect,
 by holding the session in the environment or by an eager reconnect inside the expiry window. The
 sampler's drain-time handling of live cells is a separate fix dispatched the same day
-(`central_sampler/runtime.go`).
+(`central_sampler/internal/residentruntime/runtime.go`).
 
 ### `CENTRAL_SAMPLER_PREFIX_RECOVERY` — retain valid provider response prefixes
 

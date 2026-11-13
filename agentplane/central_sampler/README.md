@@ -34,6 +34,12 @@ the existing ownership and context fences before the runtime performs network I/
 integration tests use the sampler-owned `testing/exportfixture` source without importing Store
 internals.
 
+`internal/residentruntime` owns resident scheduling, provider I/O, the Code Mode binding and
+coordinated drain. `internal/rpc` owns authentication/admission, status mapping and request/event
+streaming. `cmd` composes these concrete owners and the History exporter. Public RPC, provider
+protocol and export contracts remain in `api`, `protocol`, `providers` and `historyexport`; there
+is no Go implementation package at the service root.
+
 [The API](api/sampler.proto) is usable without the integration app. [SPEC.md](SPEC.md) defines admission,
 recovery and evidence.
 
@@ -177,8 +183,8 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 
 ## Verification
 
-Run `//agentplane/central_sampler:central_sampler_unit_test` for the remaining runtime unit tests
-without starting PostgreSQL. `//agentplane/central_sampler:central_sampler_test` runs runtime and
+Run `//agentplane/central_sampler/internal/residentruntime:unit_test` for the remaining runtime unit tests
+without starting PostgreSQL. `//agentplane/central_sampler/internal/residentruntime:integration_test` runs runtime and
 provider integration cases. `//agentplane/central_sampler/internal/executor:executor_test` covers
 Runner session/resume, cursor, image and no-replay behavior;
 `//agentplane/central_sampler/internal/sessionstore:sessionstore_test` covers Store, recovery,

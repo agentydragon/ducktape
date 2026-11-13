@@ -1,4 +1,4 @@
-package centralsampler
+package residentruntime
 
 import (
 	"encoding/json"
@@ -139,7 +139,7 @@ func checkRuntimeTurnProgress(t *testing.T, turnTimeoutSeconds *int) {
 			},
 		},
 	}
-	runtime := NewRuntime(store, settings, fakeCodeHost(t))
+	runtime := New(store, settings, fakeCodeHost(t))
 	if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
 		CommandId: "long-provider-turn",
 		Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "keep making semantic progress"}},
