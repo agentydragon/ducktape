@@ -138,7 +138,12 @@ def main() -> None:
         "--check", action="store_true", help="Exit with code 1 if any orphans or dead whitelist entries exist"
     )
     parser.add_argument(
-        "--keep-going", action="store_true", help="Continue past Bazel query errors (e.g. broken external deps)"
+        "--keep-going",
+        action="store_true",
+        help=(
+            "Continue past Bazel query errors (e.g. broken external deps); partial results may misclassify "
+            "orphans and whitelist entries"
+        ),
     )
     args = parser.parse_args()
 

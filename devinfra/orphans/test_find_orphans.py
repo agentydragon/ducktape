@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -83,24 +84,39 @@ def test_keep_going_applies_to_source_file_query(tmp_path: Path, monkeypatch, ca
     whitelist = tmp_path / "whitelist.txt"
     whitelist.write_text("")
 
+    keep_going_values: list[bool] = []
+
     class PartialQueryWorkspace:
         root = tmp_path
 
         def query(self, _expr: str, *, keep_going: bool = False) -> list[BazelLabel]:
-            assert keep_going
+            keep_going_values.append(keep_going)
+            if not keep_going:
+                raise subprocess.CalledProcessError(3, "bazel query")
             return [BazelLabel.parse("//pkg:kept.py")]
 
     workspace = PartialQueryWorkspace()
     monkeypatch.setattr("devinfra.orphans.find_orphans.get_build_workspace_directory", lambda: tmp_path)
     monkeypatch.setattr("devinfra.orphans.find_orphans.detect_bazel_backend", lambda: BazelBackend.LOCAL)
     monkeypatch.setattr("devinfra.orphans.find_orphans.BazelWorkspace", lambda **_kwargs: workspace)
-    monkeypatch.setattr("devinfra.orphans.find_orphans.get_git_files", lambda _root: {Path("pkg/kept.py")})
+    monkeypatch.setattr(
+        "devinfra.orphans.find_orphans.get_git_files", lambda _root: {Path("pkg/kept.py"), Path("pkg/unreturned.py")}
+    )
     monkeypatch.setattr("devinfra.orphans.find_orphans.query_orphan_py_libraries", lambda *_args, **_kwargs: set())
-    monkeypatch.setattr("sys.argv", ["find_orphans", "--keep-going", "--whitelist", str(whitelist)])
 
+    monkeypatch.setattr("sys.argv", ["find_orphans", "--whitelist", str(whitelist)])
+    try:
+        main()
+    except subprocess.CalledProcessError:
+        pass
+    else:
+        raise AssertionError("the source-file query should fail without --keep-going")
+
+    monkeypatch.setattr("sys.argv", ["find_orphans", "--keep-going", "--whitelist", str(whitelist)])
     main()
 
-    assert capsys.readouterr().out == ""
+    assert keep_going_values == [False, True]
+    assert capsys.readouterr().out == "pkg/unreturned.py\n"
 
 
 if __name__ == "__main__":
