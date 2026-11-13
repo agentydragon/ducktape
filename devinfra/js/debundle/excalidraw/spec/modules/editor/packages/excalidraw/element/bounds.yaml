@@ -1,0 +1,24 @@
+# Upstream owner: packages/excalidraw/element/bounds.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      var getVisibleSceneBounds = ({ scrollX, scrollY, width, height, zoom }) => [
+        -scrollX,
+        -scrollY,
+        -scrollX + width / zoom.value,
+        -scrollY + height / zoom.value,
+      ];
+    bindings:
+      - getVisibleSceneBounds
+
+  - match: |
+      var doBoundsIntersect = (bounds1, bounds2) => {
+        if (bounds1 == null || bounds2 == null) return !1;
+        let [minX1, minY1, maxX1, maxY1] = bounds1,
+          [minX2, minY2, maxX2, maxY2] = bounds2;
+        return minX1 < maxX2 &&
+          maxX1 > minX2 &&
+          minY1 < maxY2 &&
+          maxY1 > minY2;
+      };
+    bindings:
+      - doBoundsIntersect

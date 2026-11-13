@@ -50,6 +50,9 @@ module it bundles. Every other chunk is `inline_in_entry`.
   - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
     source path and names for element classification, arrow/text bindings,
     frame variants and roundness rules.
+  - `editor`: `packages/excalidraw/element/bounds` restores `getVisibleSceneBounds`
+    and `doBoundsIntersect` for viewport/zoom conversion and strict rectangle
+    intersection. The remaining source family is still residual.
   - `editor`: `packages/math/{point,vector,angle,utils}` restores the original
     package paths and names for point geometry, vector arithmetic, angle
     conversion, tolerances and rounding. Its emitted modules run under Node
