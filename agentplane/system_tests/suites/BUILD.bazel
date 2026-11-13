@@ -233,8 +233,10 @@ k3s_suite(
     ],
 )
 
-# One real guest proves image boot, workload credential issuance, and public Runtime/Gateway
-# readiness. The required test_vm target retains the harness, systemd, cgroup, and tool contracts.
+# Two real guests retain the deployed boot/artifact path, per-Pod WorkloadCredential certificate
+# binding, and authenticated Runtime/Gateway readiness. Claude also requires the private guest
+# supervision receipt; both harnesses run supervised setup and one workspace write/read operation.
+# The required test_vm target still owns its full tool, egress, notification, and supervision probes.
 k3s_suite(
     name = "test_vm_boot_contract_candidate",
     srcs = ["test_vm_boot_contract.py"],
@@ -246,13 +248,24 @@ k3s_suite(
         "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:supervision",
+        "//agentplane/system_tests/vm:trace_contract",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
