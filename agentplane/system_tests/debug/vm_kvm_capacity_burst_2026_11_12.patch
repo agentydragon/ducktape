@@ -1,0 +1,16 @@
+diff --git a/agentplane/system_tests/suites/BUILD.bazel b/agentplane/system_tests/suites/BUILD.bazel
+index 10a079aabb..d055f3f2f8 100644
+--- a/agentplane/system_tests/suites/BUILD.bazel
++++ b/agentplane/system_tests/suites/BUILD.bazel
+@@ -167,6 +167,11 @@ k3s_suite(
+ k3s_suite(
+     name = "test_vm",
+     srcs = ["test_vm.py"],
++    exec_properties = {
++        "test.EstimatedCPU": "4",
++        "test.EstimatedMemory": "7GiB",
++        "test.EstimatedFreeDiskBytes": "50GB",
++    },
+     stack = "vm",
+     deps = [
+         "//:conftest",

@@ -1,0 +1,865 @@
+{
+  "burst_source": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+  "repeat_source": "42e142053c685c792366bd47620d45fbe43513e8",
+  "burst_invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+  "repeat_invocation": "3b6a56ab-9e98-4428-964c-4e9ef30b2ed3",
+  "physical_burst": [
+    {
+      "label": "//agentplane/system_tests/suites/mcp:test_actions",
+      "id": "/uploads/b7c2e324-a821-4a8a-abe3-81ee7fb4413d/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+      "worker": "f05088d0-ba91-49d8-b520-b21739b84c12",
+      "queued": "2026-11-13T03:01:50.986622Z",
+      "worker_start": "2026-11-13T03:01:51.047171Z",
+      "start": "2026-11-13T03:01:51.530381Z",
+      "finish": "2026-11-13T03:06:05.709729Z",
+      "queue_seconds": 0.060549,
+      "preparation_seconds": 0.48321,
+      "fetch_seconds": 0.392722,
+      "process_seconds": 254.179348,
+      "cpu_seconds": 717.397033
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_pod",
+      "id": "/uploads/066cb59b-6eb6-44c5-a0df-b9bf47b1ae1f/blobs/6e5888952288c5bd5337346d0035766f09a6e761ab8b162585eb83c59a49a12c/1218",
+      "worker": "dbd6fa1f-1dae-4f18-a290-f7a3f055a7b5",
+      "queued": "2026-11-13T03:01:50.987009Z",
+      "worker_start": "2026-11-13T03:01:51.050100Z",
+      "start": "2026-11-13T03:01:51.372464Z",
+      "finish": "2026-11-13T03:09:22.795656Z",
+      "queue_seconds": 0.063091,
+      "preparation_seconds": 0.322364,
+      "fetch_seconds": 0.232417,
+      "process_seconds": 451.423192,
+      "cpu_seconds": 1206.921874
+    },
+    {
+      "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+      "id": "/uploads/7e6d71e1-d60b-433d-9d95-fa11b7b6b004/blobs/85e739bd51543c6eed55bd5f2c3b84596499704f0e5e54bd90d22dce511a5fd8/596",
+      "worker": "d81a9661-db05-446a-a80d-bb4a4ba17367",
+      "queued": "2026-11-13T03:01:51.088920Z",
+      "worker_start": "2026-11-13T03:01:50.014461Z",
+      "start": "2026-11-13T03:01:52.206872Z",
+      "finish": "2026-11-13T03:05:25.425640Z",
+      "queue_seconds": null,
+      "preparation_seconds": 2.192411,
+      "fetch_seconds": 2.062072,
+      "process_seconds": 213.218768,
+      "cpu_seconds": null
+    },
+    {
+      "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+      "id": "/uploads/358b5b8a-e4a4-4457-abbf-2eac0e89a18e/blobs/b8b4a54e1658f60c0978dadce2a2f181506751410bfc89c569e77735891d09d2/596",
+      "worker": "146477bc-d2e0-4c4e-9a29-83609667ada5",
+      "queued": "2026-11-13T03:01:51.089331Z",
+      "worker_start": "2026-11-13T03:01:49.607403Z",
+      "start": "2026-11-13T03:01:57.782413Z",
+      "finish": "2026-11-13T03:06:07.729345Z",
+      "queue_seconds": null,
+      "preparation_seconds": 8.17501,
+      "fetch_seconds": 8.065252,
+      "process_seconds": 249.946932,
+      "cpu_seconds": null
+    },
+    {
+      "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+      "id": "/uploads/5b58494b-4fe6-4972-8812-cdfae05da426/blobs/317359e9bab85bebfb08a2713507fc6d8068b7bf99c5008cff6ca69fed2e175b/596",
+      "worker": "ba3d5986-08c2-4769-9349-53af3181eb7a",
+      "queued": "2026-11-13T03:01:51.094107Z",
+      "worker_start": "2026-11-13T03:01:50.533524Z",
+      "start": "2026-11-13T03:02:24.753503Z",
+      "finish": "2026-11-13T03:06:25.019269Z",
+      "queue_seconds": null,
+      "preparation_seconds": 34.219979,
+      "fetch_seconds": 13.396848,
+      "process_seconds": 240.265766,
+      "cpu_seconds": null
+    },
+    {
+      "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+      "id": "/uploads/dffa01db-886a-4a70-a5b2-aecbc3ddae35/blobs/7b2ea16f90b1bf09e35eb4740af818ed5012f8ab6d7837349e64cae963ca6172/596",
+      "worker": "d81a9661-db05-446a-a80d-bb4a4ba17367",
+      "queued": "2026-11-13T03:01:51.094993Z",
+      "worker_start": "2026-11-13T03:05:26.409245Z",
+      "start": "2026-11-13T03:05:26.726585Z",
+      "finish": "2026-11-13T03:09:06.064570Z",
+      "queue_seconds": 215.314252,
+      "preparation_seconds": 0.31734,
+      "fetch_seconds": 0.295799,
+      "process_seconds": 219.337985,
+      "cpu_seconds": null
+    },
+    {
+      "label": "//agentplane/system_tests/suites:test_vm",
+      "id": "/uploads/51021fdd-a9ae-4ced-8559-7d102331e4dc/blobs/0d3648d9b0a8d073d6461d1f4e7a78c374c3a051357b94ec18984e89a8f7d0b1/1896",
+      "worker": "6894bb48-4db4-4a06-92e9-bee5e35cfa2c",
+      "queued": "2026-11-13T03:01:51.110689Z",
+      "worker_start": "2026-11-13T03:01:51.186236Z",
+      "start": "2026-11-13T03:01:53.742076Z",
+      "finish": "2026-11-13T03:07:59.396912Z",
+      "queue_seconds": 0.075547,
+      "preparation_seconds": 2.55584,
+      "fetch_seconds": 1.954209,
+      "process_seconds": 365.654836,
+      "cpu_seconds": 1198.318241
+    }
+  ],
+  "common_vm_inputs": {
+    "managed": {
+      "agentplane/system_tests/suites/test_vm.py": {
+        "name": "test_vm.py",
+        "digest": {
+          "hash": "47bef949b8cac63bdf38f1ce1c4adf54e29cedb89960ab0181855e470191c186",
+          "sizeBytes": "3526"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/deployment/stack.py": {
+        "name": "stack.py",
+        "digest": {
+          "hash": "ba03903df400819eecf7f5c3a07f93be19dc0641cb3a128a3683f2f9d943121f",
+          "sizeBytes": "33122"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/k3s/baseline.py": {
+        "name": "baseline.py",
+        "digest": {
+          "hash": "3c661110380ac3d699f20f3c905e1522f9ac58f48b6f7fa91b824d5c7dcb1c59",
+          "sizeBytes": "47466"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/vm/configuration.py": {
+        "name": "configuration.py",
+        "digest": {
+          "hash": "09847ec827e46c438d6b9e39a4dcac958e5c7b00e0b8bf8f347de243572cff11",
+          "sizeBytes": "1421"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/deployment/rendered/local-model-vm.json": {
+        "name": "local-model-vm.json",
+        "digest": {
+          "hash": "69930d67740cf8b57a4d65c219c0d175d264ca29d3c947ffe7967c5868ca7fa8",
+          "sizeBytes": "284572"
+        },
+        "isExecutable": true
+      },
+      "platform": {
+        "EstimatedCPU": "4",
+        "EstimatedFreeDiskBytes": "50GB",
+        "EstimatedMemory": "7GiB",
+        "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+        "workload-isolation-type": "firecracker"
+      }
+    },
+    "kvm": {
+      "agentplane/system_tests/suites/test_vm.py": {
+        "name": "test_vm.py",
+        "digest": {
+          "hash": "47bef949b8cac63bdf38f1ce1c4adf54e29cedb89960ab0181855e470191c186",
+          "sizeBytes": "3526"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/deployment/stack.py": {
+        "name": "stack.py",
+        "digest": {
+          "hash": "ba03903df400819eecf7f5c3a07f93be19dc0641cb3a128a3683f2f9d943121f",
+          "sizeBytes": "33122"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/k3s/baseline.py": {
+        "name": "baseline.py",
+        "digest": {
+          "hash": "3c661110380ac3d699f20f3c905e1522f9ac58f48b6f7fa91b824d5c7dcb1c59",
+          "sizeBytes": "47466"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/vm/configuration.py": {
+        "name": "configuration.py",
+        "digest": {
+          "hash": "09847ec827e46c438d6b9e39a4dcac958e5c7b00e0b8bf8f347de243572cff11",
+          "sizeBytes": "1421"
+        },
+        "isExecutable": true
+      },
+      "agentplane/system_tests/deployment/rendered/local-model-vm.json": {
+        "name": "local-model-vm.json",
+        "digest": {
+          "hash": "69930d67740cf8b57a4d65c219c0d175d264ca29d3c947ffe7967c5868ca7fa8",
+          "sizeBytes": "284572"
+        },
+        "isExecutable": true
+      },
+      "platform": {
+        "EstimatedCPU": "4",
+        "EstimatedFreeDiskBytes": "50GB",
+        "EstimatedMemory": "7GiB",
+        "Pool": "kvm-vm",
+        "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+        "workload-isolation-type": "docker"
+      }
+    },
+    "matching": {
+      "agentplane/system_tests/suites/test_vm.py": true,
+      "agentplane/system_tests/deployment/stack.py": true,
+      "agentplane/system_tests/k3s/baseline.py": true,
+      "agentplane/system_tests/vm/configuration.py": true,
+      "agentplane/system_tests/deployment/rendered/local-model-vm.json": true
+    }
+  },
+  "kvm_acceleration": [
+    {
+      "label": "test_vm_kvm",
+      "run": 3,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-96f2x_dbde3a4f-aa2f-45a7-a65b-f9a1dd3645bd/shutdown-0-1794539091752708050.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/89254e85383fc3a57fde001173e4d8cc1f78e1ea22572ac075168ba85121a2bc/83160",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 3,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-96f2x_dbde3a4f-aa2f-45a7-a65b-f9a1dd3645bd/shutdown-1-1794539097785146794.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/6f6ca7369efa1602887ba213c5492091f6fad2fb45dbaab17712aa7cb16933fc/78304",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 3,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-hlpc7_aee94107-e65c-4b38-84af-b12937294636/shutdown-0-1794539094755008397.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ba21bcab2a311bbca1f0effe575a10b5f1f36efedccf321780dd1153ab435183/82819",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 1,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-66pxv_82d6924d-0cab-421c-a0db-9882707bd6f7/shutdown-0-1794539135367065937.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/af2d3244be494fdac52b12afdfd1c1201f04ef5b0f47093b737640614d5b95cd/82961",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 1,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-v8h59_429c4168-dbbe-484e-9b9c-45966ed01e1d/shutdown-0-1794539130848601510.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/23e12b1d35bec3946a7e449f4fdbee6d7d5e450007d992895a2373b9f8f3fb08/85294",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 4,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-jq5t9_19d30f0a-0020-469b-89eb-f5f200e7d009/shutdown-0-1794539155174533077.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/7ba8dfbd00f4f02d90b5ef7a446032e3162065b042ea7e6f31711749fa57bb77/83084",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 4,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-mzft6_1c7a54f3-a8eb-4a19-904d-a777ebd5d537/shutdown-0-1794539151413364801.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/73b2b526241cef3f173729f22f2b6f58f7adaa1bb3014d7f92b55cec6a7b8106/82825",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 2,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-1-q7hjq_b8f98039-1ef3-455f-a18a-784248ea36fb/shutdown-0-1794539313275280047.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/b40812a3557a9e034b5af44fa2dae283ccc179e95004dda48cff2e800672ee94/85411",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 2,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-gcrdc_9ef09d45-2169-433e-8898-da05ed27dba9/shutdown-0-1794539309817676350.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/ce9206f952d5d1dfd3c368cfd36617bba3a546c01380a851c2e63e144b0a33a5/85091",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    },
+    {
+      "label": "test_vm_kvm",
+      "run": 2,
+      "artifact": "test.outputs/vm-artifacts/host-qemu/systest_virt-launcher-systest-vm-2-gcrdc_9ef09d45-2169-433e-8898-da05ed27dba9/shutdown-1-1794539317307924132.txt",
+      "uri": "bytestream://remote.buildbuddy.io/blobs/3fc17e7357922f7bbc33734922f8c74ff5f40f5f41870f398e2d684cc2fc7465/82901",
+      "kvm": true,
+      "tcg": false,
+      "exit": 0
+    }
+  ],
+  "selected_graphs": [
+    {
+      "name": "burst",
+      "invocation": "b2fe7d70-e305-4bf1-a933-bca60f59405b",
+      "recorded_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
+      "complete": true,
+      "success": true,
+      "bazel_seconds": 493.894,
+      "actions": [
+        {
+          "name": "test_actions-run1-attempt1",
+          "label": "//agentplane/system_tests/suites/mcp:test_actions",
+          "setup_seconds": 81.836416,
+          "baseline": "warm",
+          "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+          "cleanup": "complete",
+          "namespace_uid": "348556a0-e9b2-421e-a223-65938d2d58fb",
+          "postgres_pod_uid": "a89e29ca-43b3-4cc5-994d-a012bfbe1f78",
+          "root_secret_uid": "732b7f8d-68a8-4413-9baa-404fa7bb2201",
+          "case_envelope_seconds": 112.542236,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+              "seconds": 30.15888
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+              "seconds": 30.705471
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+              "seconds": 57.090836
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+              "seconds": 13.137827
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+              "seconds": 12.13428
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "5",
+            "time": "230.560",
+            "timestamp": "2026-11-13T03:02:07.802808+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "physical_id": "/uploads/b7c2e324-a821-4a8a-abe3-81ee7fb4413d/blobs/f16d873cbb9587dfc26a5501c1c76c39e0f5f10e019f34df0bc8ab6e6980f07c/1218",
+          "process_seconds": 254.179348,
+          "cpu_seconds": 717.397033
+        },
+        {
+          "name": "test_pod-run1-attempt1",
+          "label": "//agentplane/system_tests/suites:test_pod",
+          "setup_seconds": 66.910387,
+          "baseline": "warm",
+          "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+          "cleanup": "complete",
+          "namespace_uid": "890f13cb-f222-4055-bfc0-27b149d1415c",
+          "postgres_pod_uid": "024d64a8-0d73-4d60-bbae-7325cd3cef95",
+          "root_secret_uid": "bf9335de-fe22-49f2-9d2d-acbb5ed09ab4",
+          "case_envelope_seconds": 322.816339,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+              "seconds": 22.030671
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+              "seconds": 19.752133
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+              "seconds": 13.388828
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+              "seconds": 21.293846
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+              "seconds": 39.947818
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+              "seconds": 113.323427
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+              "seconds": 25.918617
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+              "seconds": 19.143879
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+              "seconds": 17.247276
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+              "seconds": 30.509125
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+              "seconds": 1.159786
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+              "seconds": 3.857595
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+              "seconds": 22.259091
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+              "seconds": 45.27414
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+              "seconds": 0.015396
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+              "seconds": 1.379349
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+              "seconds": 1.436836
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+              "seconds": 23.108836
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+              "seconds": 19.127327
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+              "seconds": 5.910354
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+              "seconds": 101.861036
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "21",
+            "time": "432.005",
+            "timestamp": "2026-11-13T03:02:07.617289+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "physical_id": "/uploads/066cb59b-6eb6-44c5-a0df-b9bf47b1ae1f/blobs/6e5888952288c5bd5337346d0035766f09a6e761ab8b162585eb83c59a49a12c/1218",
+          "process_seconds": 451.423192,
+          "cpu_seconds": 1206.921874
+        },
+        {
+          "name": "test_vm-run1-attempt1",
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "setup_seconds": 184.534143,
+          "baseline": "cold",
+          "fingerprint": "383d22083e7b31b8f87ccd00e012784fd199134370ac229e297482d975fac680",
+          "cleanup": "complete",
+          "namespace_uid": "b4043ca5-b669-4c47-8d39-6f8626d5aa35",
+          "postgres_pod_uid": "81c3f025-da1a-45e7-8caf-926235791fd5",
+          "root_secret_uid": "6a5c3cdb-4b1a-49ce-a677-da3ca506d120",
+          "case_envelope_seconds": 128.270397,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 128.270397
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "348.174",
+            "timestamp": "2026-11-13T03:02:09.426611+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "physical_id": "/uploads/51021fdd-a9ae-4ced-8559-7d102331e4dc/blobs/0d3648d9b0a8d073d6461d1f4e7a78c374c3a051357b94ec18984e89a8f7d0b1/1896",
+          "process_seconds": 365.654836,
+          "cpu_seconds": 1198.318241
+        },
+        {
+          "name": "test_vm_kvm-run1-attempt1",
+          "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "setup_seconds": 136.291214,
+          "baseline": "nonretained",
+          "fingerprint": null,
+          "cleanup": null,
+          "namespace_uid": null,
+          "postgres_pod_uid": null,
+          "root_secret_uid": null,
+          "case_envelope_seconds": 89.484361,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 89.484361
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "241.423",
+            "timestamp": "2026-11-13T03:02:04.840235+00:00",
+            "hostname": "44019e9817f7"
+          }
+        },
+        {
+          "name": "test_vm_kvm-run2-attempt1",
+          "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "setup_seconds": 113.311648,
+          "baseline": "nonretained",
+          "fingerprint": null,
+          "cleanup": null,
+          "namespace_uid": null,
+          "postgres_pod_uid": null,
+          "root_secret_uid": null,
+          "case_envelope_seconds": 84.801131,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 84.801131
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "212.465",
+            "timestamp": "2026-11-13T03:05:32.322465+00:00",
+            "hostname": "9ccc5cd2450d"
+          }
+        },
+        {
+          "name": "test_vm_kvm-run3-attempt1",
+          "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "setup_seconds": 111.030814,
+          "baseline": "nonretained",
+          "fingerprint": null,
+          "cleanup": null,
+          "namespace_uid": null,
+          "postgres_pod_uid": null,
+          "root_secret_uid": null,
+          "case_envelope_seconds": 81.269647,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 81.269647
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "206.379",
+            "timestamp": "2026-11-13T03:01:57.775800+00:00",
+            "hostname": "12bc773e04e2"
+          }
+        },
+        {
+          "name": "test_vm_kvm-run4-attempt1",
+          "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "setup_seconds": 128.656727,
+          "baseline": "nonretained",
+          "fingerprint": null,
+          "cleanup": null,
+          "namespace_uid": null,
+          "postgres_pod_uid": null,
+          "root_secret_uid": null,
+          "case_envelope_seconds": 87.864175,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 87.864175
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "231.555",
+            "timestamp": "2026-11-13T03:02:31.864294+00:00",
+            "hostname": "b80ff60f49ff"
+          }
+        }
+      ]
+    },
+    {
+      "name": "graph-repeat",
+      "invocation": "3b6a56ab-9e98-4428-964c-4e9ef30b2ed3",
+      "recorded_commit": "42e142053c685c792366bd47620d45fbe43513e8",
+      "complete": true,
+      "success": true,
+      "bazel_seconds": 439.182,
+      "actions": [
+        {
+          "name": "test_actions-run1-attempt1",
+          "label": "//agentplane/system_tests/suites/mcp:test_actions",
+          "setup_seconds": 111.292513,
+          "baseline": "warm",
+          "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+          "cleanup": "complete",
+          "namespace_uid": "52367765-ffab-4039-8d1c-4993501f8d9a",
+          "postgres_pod_uid": "a2a11d27-5e96-4f87-aa7a-d4746288328b",
+          "root_secret_uid": "71606c37-5a9f-468f-877e-751ce0367a59",
+          "case_envelope_seconds": 124.32398,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_executes_mcp_action",
+              "seconds": 39.943438
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_agent_mcp_bff_decision",
+              "seconds": 41.438903
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_launcher_drives_only_the_sandbox_it_launched",
+              "seconds": 58.860471
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[claude]",
+              "seconds": 13.205708
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/mcp/test_actions.py::test_operator_links_oauth_mcp_server[codex]",
+              "seconds": 12.293481
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "5",
+            "time": "272.788",
+            "timestamp": "2026-11-13T03:14:17.823452+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "physical_id": "/uploads/90068504-05f2-48b0-a513-442e2a2da2a8/blobs/bb4a9c848671d642428f479bee7e47dc457d1a66b5eefadfe66d43adbc7a9751/1218",
+          "process_seconds": 293.543081,
+          "cpu_seconds": 842.527504
+        },
+        {
+          "name": "test_pod-run1-attempt1",
+          "label": "//agentplane/system_tests/suites:test_pod",
+          "setup_seconds": 90.473436,
+          "baseline": "warm",
+          "fingerprint": "5ff8042eef24a680fdfac6406899b35384a3999eddf751f07025fdb415500d24",
+          "cleanup": "complete",
+          "namespace_uid": "10f56651-5002-4fbf-b602-bb9ce88e2859",
+          "postgres_pod_uid": "7d7856e5-510f-4bc8-8d19-1d11f3eca130",
+          "root_secret_uid": "7f50c75c-9682-4a50-b71f-80c219ef6d83",
+          "case_envelope_seconds": 246.654614,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+              "seconds": 24.060463
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_command_box_presents_its_own_svid]",
+              "seconds": 22.165826
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes]",
+              "seconds": 14.78852
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it]",
+              "seconds": 19.542047
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+              "seconds": 83.289789
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+              "seconds": 45.431512
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+              "seconds": 21.37845
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+              "seconds": 43.586789
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+              "seconds": 21.456668
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+              "seconds": 25.022484
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+              "seconds": 1.424607
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+              "seconds": 3.848024
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+              "seconds": 21.947986
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+              "seconds": 46.802078
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_an_unknown_thread_is_not_found]",
+              "seconds": 0.028058
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+              "seconds": 1.545853
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+              "seconds": 1.893511
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]",
+              "seconds": 25.314464
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+              "seconds": 16.622483
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event]",
+              "seconds": 20.626367
+            },
+            {
+              "nodeid": "agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn]",
+              "seconds": 7.36214
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "21",
+            "time": "384.187",
+            "timestamp": "2026-11-13T03:14:19.518124+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "physical_id": "/uploads/1ec3605a-edd2-4eba-a363-6ff938fea654/blobs/6e5888952288c5bd5337346d0035766f09a6e761ab8b162585eb83c59a49a12c/1218",
+          "process_seconds": 407.993555,
+          "cpu_seconds": 1248.156635
+        },
+        {
+          "name": "test_vm-run1-attempt1",
+          "label": "//agentplane/system_tests/suites:test_vm",
+          "setup_seconds": 66.493407,
+          "baseline": "warm",
+          "fingerprint": "383d22083e7b31b8f87ccd00e012784fd199134370ac229e297482d975fac680",
+          "cleanup": "complete",
+          "namespace_uid": "3b958af0-4224-46ad-afc0-d3590189d814",
+          "postgres_pod_uid": "1ae3837f-bfa6-4c6b-9c25-3e76f45e0c0d",
+          "root_secret_uid": "42ad5d65-45e2-4a05-a2fb-6888c58ad321",
+          "case_envelope_seconds": 169.533327,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 169.533327
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "270.056",
+            "timestamp": "2026-11-13T03:14:17.003134+00:00",
+            "hostname": "192.168.241.2"
+          },
+          "physical_id": "/uploads/9df8f2f3-643b-4022-9ebc-932cb7c9e436/blobs/0d3648d9b0a8d073d6461d1f4e7a78c374c3a051357b94ec18984e89a8f7d0b1/1896",
+          "process_seconds": 289.581548,
+          "cpu_seconds": 927.106416
+        },
+        {
+          "name": "test_vm_kvm-run1-attempt1",
+          "label": "//agentplane/system_tests/x/vm_kvm:test_vm_kvm",
+          "setup_seconds": 111.054144,
+          "baseline": "nonretained",
+          "fingerprint": null,
+          "cleanup": null,
+          "namespace_uid": null,
+          "postgres_pod_uid": null,
+          "root_secret_uid": null,
+          "case_envelope_seconds": 79.714595,
+          "cases": [
+            {
+              "nodeid": "agentplane/system_tests/suites/test_vm.py::test_vm_scenarios",
+              "seconds": 79.714595
+            }
+          ],
+          "junit": {
+            "name": "pytest",
+            "errors": "0",
+            "failures": "0",
+            "skipped": "0",
+            "tests": "1",
+            "time": "204.828",
+            "timestamp": "2026-11-13T03:14:02.916387+00:00",
+            "hostname": "f237a1fb0905"
+          },
+          "physical_id": "/uploads/ac97e097-f5b0-4fd0-9a5f-3e23901e5f23/blobs/e9fcc832598d7273ec39db76ff43aa9e5ae2f3b8a7600a28bf7a51f04b012251/596",
+          "process_seconds": 211.644233,
+          "cpu_seconds": null
+        }
+      ]
+    }
+  ],
+  "source_limit": "Repeated graph has newer source and a changed central sampler OCI image in MCP. Managed VM and Pod Action digests are identical to burst, but this is not a controlled same-source full-graph treatment.",
+  "pool_window_utc": ["2026-11-13T03:00:00Z", "2026-11-13T03:10:00Z"],
+  "pool_samples_step_seconds": 15,
+  "pool_registered_healthy": 3,
+  "pool_assigned_milli_cpu_per_busy_worker": 4000,
+  "pool_assigned_ram_bytes_per_busy_worker": 7516192768,
+  "local_reservation_sum_max": 9,
+  "limits": [
+    "Three initial KVM queue timestamps are inverted and unknown.",
+    "Local reservations are not unique pending tasks or central scheduler backlog.",
+    "All three workers were already registered; scale-up boot and registration latency was not tested.",
+    "Managed actual delivered CPU and memory and concurrent provider load are not exposed.",
+    "KVM CPU usage and peak memory are absent from native usage records.",
+    "KVM retains no K3s baseline; host image-cache cold state was not established.",
+    "A selected graph excludes remaining suites, build/lint gates and GitHub feedback."
+  ]
+}
