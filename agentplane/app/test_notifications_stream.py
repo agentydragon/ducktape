@@ -17,7 +17,7 @@ from google.protobuf.empty_pb2 import Empty
 from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.app.testing.replication_process import AppProcess
 from agentplane.grpc.serving import serving
-from agentplane.notification_service import notifications_pb2 as pb, notifications_pb2_grpc as rpc
+from agentplane.notification_service.api.notifications import notifications_pb2 as pb, notifications_pb2_grpc as rpc
 
 # gazelle:include_dep @pypi//protobuf
 

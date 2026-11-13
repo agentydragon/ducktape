@@ -37,7 +37,7 @@ from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.environment_runtime_transport.config import ClientTLS
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.notification_service import notifications_pb2_grpc
+from agentplane.notification_service.api.notifications import notifications_pb2_grpc
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp

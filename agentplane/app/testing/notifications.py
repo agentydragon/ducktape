@@ -6,7 +6,7 @@ from typing import override
 
 import grpc
 
-from agentplane.notification_service import notifications_pb2 as pb, notifications_pb2_grpc as rpc
+from agentplane.notification_service.api.notifications import notifications_pb2 as pb, notifications_pb2_grpc as rpc
 
 # Generated messages use protobuf field-presence stubs.
 # gazelle:include_dep @pypi//protobuf

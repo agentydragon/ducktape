@@ -25,7 +25,7 @@ from more_itertools import one
 from pydantic import BaseModel
 
 from agentplane.app.testing.client import Client
-from agentplane.notification_service import notifications_pb2
+from agentplane.notification_service.api.notifications import notifications_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import send_grant

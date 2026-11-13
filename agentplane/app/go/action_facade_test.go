@@ -21,7 +21,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
-	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	notificationpb "github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

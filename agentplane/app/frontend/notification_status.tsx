@@ -19,7 +19,7 @@ import {
   type InboxEntrySummary,
   type Source,
   type Subscription,
-} from "../../notification_service/notifications_pb";
+} from "../../notification_service/api/notifications/notifications_pb";
 import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followWatch } from "./watch_stream";
 import { inboxWatchUrl } from "./threads/thread_notices";

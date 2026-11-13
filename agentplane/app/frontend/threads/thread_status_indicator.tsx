@@ -5,7 +5,7 @@ import type { JSX } from "react";
 import { MarkGlyph } from "../mark_glyph";
 import { THREAD_STATUS_MARKS, type ThreadStatusKind } from "../status_mark";
 import { ThreadNoticeBadge } from "./thread_notices";
-import type { Inbox } from "../../../notification_service/notifications_pb";
+import type { Inbox } from "../../../notification_service/api/notifications/notifications_pb";
 import "./thread_status_indicator.css";
 
 export function ThreadStatusIndicator({

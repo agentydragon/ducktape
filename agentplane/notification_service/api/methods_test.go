@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
