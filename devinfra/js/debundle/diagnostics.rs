@@ -1,5 +1,7 @@
 //! Structured, invocation-owned diagnostics; analysis never chooses an output stream.
 
+pub mod progress;
+
 use crate::{RedundantPureMemberHint, RedundantPurityHint};
 use spec::AdmissionCheck;
 use std::collections::BTreeMap;
@@ -27,8 +29,9 @@ pub enum ChunkDiagnostic {
 
 /// Shared by parallel chunk work. A command drains it even when analysis fails.
 /// Draining orders chunks and their typed diagnostic identities deterministically.
-#[derive(Debug, Default)]
-pub struct Diagnostics {
+#[derive(Default)]
+pub struct Diagnostics<'a> {
+    progress: Option<&'a dyn progress::Observer>,
     collected: Mutex<CollectedDiagnostics>,
 }
 
@@ -44,7 +47,30 @@ pub struct CollectedDiagnostics {
     pub chunks: BTreeMap<String, Vec<ChunkDiagnostic>>,
 }
 
-impl Diagnostics {
+impl std::fmt::Debug for Diagnostics<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Diagnostics").finish_non_exhaustive()
+    }
+}
+
+impl<'a> Diagnostics<'a> {
+    pub fn with_progress(observer: &'a dyn progress::Observer) -> Self {
+        Self {
+            progress: Some(observer),
+            ..Self::default()
+        }
+    }
+
+    pub fn progress(&self, chunk: &str, phase: progress::Phase, state: progress::State) {
+        if let Some(observer) = self.progress {
+            observer.observe(progress::Event {
+                chunk,
+                phase,
+                state,
+            });
+        }
+    }
+
     pub fn record_chunk(&self, chunk: &str, diagnostic: ChunkDiagnostic) {
         self.collected
             .lock()

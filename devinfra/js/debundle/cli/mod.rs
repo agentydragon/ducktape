@@ -478,8 +478,7 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
     let query_format = top_level_query_format(&args.command);
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
-    let stderr = io::stderr();
-    let mut stderr = stderr.lock();
+    let mut stderr = io::stderr();
     let result = (|| {
         let invocation = if args.invocation.requested() {
             Some(ResolvedInvocation::capture(
@@ -530,7 +529,7 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
 }
 
 fn run_debundle_cli(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: DebundleArgs,
     invocation: Option<ResolvedInvocation>,
     analysis_engine_sha256: &'static str,

@@ -17,7 +17,7 @@ fn main() -> std::process::ExitCode {
             validate_transform_arg_matches(&matches)?;
             Args::from_arg_matches(&matches)?
                 .project
-                .run(&mut std::io::stderr().lock())
+                .run(&mut std::io::stderr())
         })();
         match result {
             Ok(()) => std::process::ExitCode::SUCCESS,

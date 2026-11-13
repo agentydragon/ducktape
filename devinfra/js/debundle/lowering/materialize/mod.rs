@@ -9,6 +9,7 @@ mod plan_builder;
 mod residual_atomic_report;
 mod residual_extractions_report;
 
+use analysis::diagnostics::progress::{Phase, State};
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
@@ -16,7 +17,6 @@ use source_identity::{ChunkId, StatementId};
 use staged_analysis::chunk_facts::{
     ChunkFacts, ChunkFactsContext, LogicalChunkFacts, compute_logical_chunk_facts,
 };
-use staged_analysis::progress::emit_debundle_progress;
 
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
@@ -74,7 +74,7 @@ use swc_ecma_ast::*;
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
 pub(super) struct ChunkContext<'a> {
-    pub(super) diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub(super) diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
     pub(super) ownership_subset: Option<&'a OwnershipSubset>,
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
@@ -190,6 +190,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         artifact,
         artifact_indexes,
         chunk_id,
+        diagnostics,
         target_dir,
         keep_going,
         list_template_identifiers,
@@ -230,7 +231,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         chunk_id,
     )?;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
+    diagnostics.progress(chunk_id, Phase::MaterializeLogicalChunk, State::Start);
     let mut explicit_requests = explicit_requests;
 
     let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
@@ -387,6 +388,7 @@ pub(super) fn finish_logical_chunk(
         artifact,
         artifact_indexes,
         chunk_id,
+        diagnostics,
         target_dir,
         ownership_subset,
         report_emission,
@@ -429,7 +431,7 @@ pub(super) fn finish_logical_chunk(
     )?;
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::Start);
     let LogicalChunkFacts {
         facts: mut analysis,
         imported_callables,
@@ -546,7 +548,7 @@ pub(super) fn finish_logical_chunk(
             },
         )?;
     }
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::End);
     let source_unit_layout = SourceUnitLayout::checked(
         &precomputed.dependency_graph,
         &ast_analysis.source_unit_syntax_locations,

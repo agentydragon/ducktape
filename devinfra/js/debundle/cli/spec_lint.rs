@@ -224,7 +224,7 @@ impl ProbeTarget {
 }
 
 pub fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: SpecLintArgs,
     output: &mut dyn Write,
 ) -> Result<()> {
@@ -349,7 +349,7 @@ fn authored_loader_host_keys(host: &spec::HostBehavior) -> Vec<HostBehaviorKey> 
 /// some analysis consumed (an unconsumed one is already exact). A probed
 /// annotation's finding replaces its cheap lead.
 fn probe_annotations(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: &SpecLintArgs,
     cli: &pipeline::TransformRequest,
     spec: &TransformSpec,

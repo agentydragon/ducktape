@@ -256,7 +256,7 @@ fn possible_discharges(
 }
 
 pub(super) fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ExplainIntegrityArgs,
     roots: CurrentRoots,
     output: &mut dyn std::io::Write,

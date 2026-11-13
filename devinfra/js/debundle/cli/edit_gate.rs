@@ -177,7 +177,7 @@ impl<'a> Gate<'a> {
     /// skipped gates don't pay for spec assembly.
     pub fn check(
         &self,
-        stderr: &mut dyn std::io::Write,
+        stderr: &mut (dyn std::io::Write + Send),
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
     ) -> Result<()> {
@@ -188,7 +188,7 @@ impl<'a> Gate<'a> {
     /// binding their edit intended, not merely some unique declaration.
     pub fn check_expected(
         &self,
-        stderr: &mut dyn std::io::Write,
+        stderr: &mut (dyn std::io::Write + Send),
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
         expected: &[ExpectedResolvedMember],
@@ -219,7 +219,7 @@ impl<'a> Gate<'a> {
     /// residual, against the same graph used to plan the edit.
     pub fn check_source_units(
         &self,
-        stderr: &mut dyn std::io::Write,
+        stderr: &mut (dyn std::io::Write + Send),
         modules_root: &Path,
         post_spec: &PostEditSpec,
         assignments: &SourceUnitModuleAssignments,
@@ -841,7 +841,7 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 }
 
 fn gate_post_edit_assignment_with_expected(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     dependency_graph_path: &Path,
     input: &DependencyGraphInput,
     modules_root: &Path,

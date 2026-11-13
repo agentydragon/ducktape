@@ -1,7 +1,7 @@
 //! Shared fact computation and loaded-fact validation, independent of lowering.
-use super::progress::emit_debundle_progress;
 use analysis::AnalysisInputs;
 use analysis::analysis_inputs::CallableSummary;
+use analysis::diagnostics::progress::{Phase, State};
 use analysis::execution_evidence::SourceLocator;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
@@ -20,7 +20,7 @@ pub struct LogicalChunkAnalysisContext<'a> {
     pub artifact: &'a ChunkBundle,
     pub artifact_indexes: &'a ArtifactIndexes,
     pub chunk_id: &'a str,
-    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
     pub file: Option<&'a str>,
     pub export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
 }
@@ -53,7 +53,7 @@ pub fn analyze_logical_chunk(
             lines: &line_index,
         }),
     );
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::Start);
     let LogicalChunkFacts { facts, .. } = compute_logical_chunk_facts(
         ChunkFactsContext {
             artifact,
@@ -72,7 +72,7 @@ pub fn analyze_logical_chunk(
         projection,
         program_summary,
     )?;
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::End);
     Ok(facts)
 }
 
@@ -80,7 +80,7 @@ pub fn analyze_logical_chunk(
 /// program summary: the chunk's source and where its dynamic imports
 /// land. It never sees the chunk's plan builder or assignment.
 pub struct ChunkFactsContext<'a> {
-    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
     pub artifact: &'a ChunkBundle,
     pub artifact_indexes: &'a ArtifactIndexes,
     pub chunk_id: &'a str,
