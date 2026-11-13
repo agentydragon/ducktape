@@ -1770,6 +1770,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
         piraeus_cluster_kustomization,
+        cert_manager_environment_kustomization,
     )
     sdr_artifact = artifact("sdr", f"{PARKED_ROOT}/sdr")
     parked_flux_kustomizations.sdr(flux_chart, sdr_artifact, external_secrets_operator_kustomization)

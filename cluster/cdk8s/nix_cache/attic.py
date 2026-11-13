@@ -383,19 +383,24 @@ def _local_server(scope: Construct) -> None:
                                 },
                                 limits={"memory": k8s.Quantity.from_string("256Mi")},
                             ),
+                            env=[k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt")],
                             volume_mounts=[
-                                k8s.VolumeMount(name="cache-keys", mount_path="/secrets/cache-keys", read_only=True)
+                                k8s.VolumeMount(name="cache-keys", mount_path="/secrets/cache-keys", read_only=True),
+                                k8s.VolumeMount(
+                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                ),
                             ],
                         )
                     ],
                     volumes=[
+                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
                         k8s.Volume(
                             name="cache-keys",
                             secret=k8s.SecretVolumeSource(
                                 secret_name="attic-cache-keys",
                                 items=[k8s.KeyToPath(key=name, path=name) for name in ("main", "gaffer", "public")],
                             ),
-                        )
+                        ),
                     ],
                 )
             ),
@@ -544,9 +549,12 @@ def _rotation(scope: Construct) -> None:
                             restart_policy="OnFailure",
                             volumes=[
                                 k8s.Volume(
+                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
+                                ),
+                                k8s.Volume(
                                     name="rotators-config",
                                     config_map=k8s.ConfigMapVolumeSource(name=_ROTATORS_CONFIG_MAP),
-                                )
+                                ),
                             ],
                             security_context=k8s.PodSecurityContext(
                                 run_as_non_root=True,
@@ -558,12 +566,20 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[_GITHUB_PAT.key("token").env_var("GIT_TOKEN")],
+                                    env=[
+                                        _GITHUB_PAT.key("token").env_var("GIT_TOKEN"),
+                                        k8s.EnvVar(
+                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
+                                        ),
+                                    ],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
                                     volume_mounts=[
-                                        k8s.VolumeMount(name="rotators-config", mount_path="/config", read_only=True)
+                                        k8s.VolumeMount(name="rotators-config", mount_path="/config", read_only=True),
+                                        k8s.VolumeMount(
+                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
+                                        ),
                                     ],
                                     resources=k8s.ResourceRequirements(
                                         requests={

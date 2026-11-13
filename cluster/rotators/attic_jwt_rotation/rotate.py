@@ -465,10 +465,8 @@ def rotate_cmd(
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     config = Config.model_validate(yaml.safe_load(config_path.read_text()))
 
-    # The image bakes /etc/ssl/certs/ca-certificates.crt via
-    # //third_party/debian_slim:cacerts; point libgit2 at it (it ignores
-    # GIT_SSL_CAINFO/SSL_CERT_FILE).
-    _configure_ca_trust(Path("/etc/ssl/certs/ca-certificates.crt"))
+    # libgit2 ignores SSL_CERT_FILE, so pass the configured system trust bundle explicitly.
+    _configure_ca_trust(Path(os.environ.get("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")))
 
     repo_dir = Path("/tmp/repo")
     repo_dir.mkdir()
