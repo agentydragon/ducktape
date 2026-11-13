@@ -132,29 +132,24 @@ class IssueTable {
 
   async fillIssueTable() {
     this.$issueList.empty();
-    const promises = [];
     const issues = await this.getIssues();
     for (const note of issues) {
       const issueCell = $("<td>");
       const hotlistsCell = $("<td>");
 
-      promises.push(
-        this.createIssueLink(note).then((issueLink) => {
-          issueCell.append(issueLink);
-        })
-      );
+      this.createIssueLink(note).then((issueLink) => {
+        issueCell.append(issueLink);
+      });
 
-      promises.push(
-        this.getHotlistsForIssue(note.noteId).then((hotlistIds) => {
-          return Promise.all(
-            hotlistIds.map((hotlistId) =>
-              api
-                .createNoteLink(hotlistId, { showTooltip: true, showNoteIcon: true })
-                .then((hotlistLink) => hotlistsCell.append(hotlistLink))
-            )
-          );
-        })
-      );
+      this.getHotlistsForIssue(note.noteId).then((hotlistIds) => {
+        return Promise.all(
+          hotlistIds.map((hotlistId) =>
+            api
+              .createNoteLink(hotlistId, { showTooltip: true, showNoteIcon: true })
+              .then((hotlistLink) => hotlistsCell.append(hotlistLink))
+          )
+        );
+      });
 
       const row = $("<tr>").append(issueCell).append(hotlistsCell);
       this.$issueList.append(row);
