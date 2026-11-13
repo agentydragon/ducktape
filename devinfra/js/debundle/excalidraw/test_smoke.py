@@ -1055,5 +1055,51 @@ async def test_snapping_reference_geometry_and_pointer_offsets(playwright_driver
         }
 
 
+async def test_shape_deconstruction_preserves_edges_and_curves(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const shape = await import('./editor/packages/excalidraw/element/utils.js');
+                const rectangle = {x: 10, y: 20, width: 100, height: 60, roundness: null};
+                const [edges, curves] = shape.deconstructRectanguloidElement(rectangle, 5);
+                const [diamondEdges, diamondCurves] = shape.deconstructDiamondElement(rectangle);
+                const rounded = {...rectangle, roundness: {type: 3, value: 8}};
+                const summarizeRounded = deconstruct => {
+                    const [sides, corners] = deconstruct(rounded);
+                    return {sideCount: sides.length, curveCount: corners.length,
+                        controlPointCounts: corners.map(corner => corner.length),
+                        joined: sides.every((side, index) =>
+                            corners.some(corner => JSON.stringify(corner[3]) === JSON.stringify(side[0])) &&
+                            corners.some(corner => JSON.stringify(corner[0]) === JSON.stringify(side[1])))};
+                };
+                return {edges, curves, diamondEdges, diamondCurves,
+                    rounded: [shape.deconstructRectanguloidElement, shape.deconstructDiamondElement].map(
+                        summarizeRounded)};
+            }"""
+        )
+        assert result["edges"] == [
+            [[5, 15], [115, 15]],
+            [[115, 15], [115, 85]],
+            [[5, 85], [115, 85]],
+            [[5, 85], [5, 15]],
+        ]
+        assert result["curves"] == result["diamondCurves"] == []
+        assert result["diamondEdges"] == [
+            [[60, 20], [110, 50]],
+            [[110, 50], [60, 80]],
+            [[60, 80], [10, 50]],
+            [[10, 50], [60, 20]],
+        ]
+        assert (
+            result["rounded"]
+            == [{"sideCount": 4, "curveCount": 4, "controlPointCounts": [4, 4, 4, 4], "joined": True}] * 2
+        )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

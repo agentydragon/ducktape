@@ -106,6 +106,13 @@ fn claimed_modules_export_their_entry_points() {
             &["getVisibleSceneBounds", "doBoundsIntersect"],
         ),
         (
+            "editor/packages/excalidraw/element/utils.js",
+            &[
+                "deconstructRectanguloidElement",
+                "deconstructDiamondElement",
+            ],
+        ),
+        (
             "editor/packages/excalidraw/element/transformHandles.js",
             &["canResizeFromSides", "getOmitSidesForDevice"],
         ),

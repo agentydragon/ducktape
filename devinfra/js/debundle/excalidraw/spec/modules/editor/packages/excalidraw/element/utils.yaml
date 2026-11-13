@@ -1,0 +1,20 @@
+# Original home: packages/excalidraw/element/utils.ts
+source_matches:
+  - match: |
+      function selected(element, offset = 0) {
+        let radius = EXPR(Math.min(element.width, element.height), element);
+        STMT_LIST;
+      }
+    bindings:
+      - local: selected
+        name: deconstructRectanguloidElement
+  - match: |
+      function selected(element, offset = 0) {
+        let [topX, topY, rightX, rightY, bottomX, bottomY, leftX, leftY] = EXPR(element),
+          verticalRadius = EXPR(Math.abs(topX - leftX), element),
+          horizontalRadius = EXPR(Math.abs(rightY - topY), element);
+        STMT_LIST;
+      }
+    bindings:
+      - local: selected
+        name: deconstructDiamondElement
