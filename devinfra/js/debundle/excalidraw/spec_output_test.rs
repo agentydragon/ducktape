@@ -43,6 +43,18 @@ fn claimed_modules_export_their_entry_points() {
             &["containsCJK", "wrapText"],
         ),
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
+        (
+            "editor/packages/excalidraw/snapping.js",
+            &[
+                "getReferenceSnapPoints",
+                "getSnapLinesAtPointer",
+                "getVisibleGaps",
+                "isSnappingEnabled",
+                "snapDraggedElements",
+                "snapNewElement",
+                "snapResizingElements",
+            ],
+        ),
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
             "editor/packages/excalidraw/clipboard.js",

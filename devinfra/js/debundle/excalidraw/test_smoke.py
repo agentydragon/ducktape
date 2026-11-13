@@ -1008,5 +1008,52 @@ async def test_clipboard_parsing_and_system_round_trip(playwright_driver: Playwr
         }
 
 
+async def test_snapping_reference_geometry_and_pointer_offsets(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const snap = await import('./editor/packages/excalidraw/snapping.js');
+                const {newElement} = await import('./editor/packages/excalidraw/element/newElement.js');
+                const {getDefaultAppState} = await import('./editor/packages/excalidraw/appState.js');
+                const left = newElement({type: 'rectangle', x: 100, y: 100, width: 100, height: 100});
+                const right = newElement({type: 'rectangle', x: 300, y: 100, width: 100, height: 100});
+                const elements = [left, right];
+                const map = new Map(elements.map(element => [element.id, element]));
+                const app = {props: {}, state: {...getDefaultAppState(), width: 1280, height: 800,
+                    objectsSnapModeEnabled: true, gridModeEnabled: false}};
+                const points = snap.getReferenceSnapPoints(elements, [left], app.state, map);
+                const gaps = snap.getVisibleGaps(elements, [], app.state, map);
+                const pointer = snap.getSnapLinesAtPointer(elements, app, {x: 102, y: 103}, {}, map);
+                const enabled = options => snap.isSnappingEnabled({app, selectedElements: [], ...options});
+                const modes = [enabled({event: {ctrlKey: false}}), enabled({event: {ctrlKey: true}}),
+                    enabled({event: null, selectedElements: [{type: 'arrow'}]})];
+                app.state.objectsSnapModeEnabled = false;
+                modes.push(enabled({event: {ctrlKey: true}}));
+                app.props.gridModeEnabled = true;
+                modes.push(enabled({event: {ctrlKey: true}}));
+                return {points, gaps: {horizontal: gaps.horizontalGaps.map(gap => ({
+                    length: gap.length, overlap: gap.overlap})), vertical: gaps.verticalGaps},
+                    pointer: {offset: pointer.originOffset,
+                        directions: [...new Set(pointer.snapLines.map(line => line.direction))].sort(),
+                        types: [...new Set(pointer.snapLines.map(line => line.type))]},
+                    modes, snappableTools: ['rectangle', 'text', 'arrow', 'freedraw'].map(
+                        snap.isActiveToolNonLinearSnappable), rounded: snap.round(1.23456789)};
+            }"""
+        )
+        assert result == {
+            "points": [[300, 100], [400, 100], [300, 200], [400, 200], [350, 150]],
+            "gaps": {"horizontal": [{"length": 100, "overlap": [100, 200]}], "vertical": []},
+            "pointer": {"offset": {"x": -2, "y": -3}, "directions": ["horizontal", "vertical"], "types": ["pointer"]},
+            "modes": [True, False, False, True, False],
+            "snappableTools": [True, True, False, False],
+            "rounded": 1.234568,
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
