@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const waitTestID = "/instance/uploads/original/blobs/hash/123"
@@ -105,6 +106,41 @@ func TestExecutionWaitObservesOnlyOriginalAction(t *testing.T) {
 				t.Fatalf("zero values omitted: %s", b)
 			}
 		})
+	}
+}
+
+func TestExecutionWaitPreservesReplayedProgressTimestamp(t *testing.T) {
+	progress, err := anypb.New(&repb.ExecutionProgress{
+		Timestamp:      timestamppb.New(time.Date(2026, 11, 12, 23, 42, 10, 123, time.UTC)),
+		ExecutionState: repb.ExecutionProgress_EXECUTING_COMMAND,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	md, err := anypb.New(&repb.ExecuteOperationMetadata{
+		Stage:                    repb.ExecutionStage_EXECUTING,
+		PartialExecutionMetadata: &repb.ExecutedActionMetadata{AuxiliaryMetadata: []*anypb.Any{progress}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := &longrunningpb.Operation{Name: waitTestID, Metadata: md}
+	before := time.Now().UTC()
+	updates, err := runExecutionWaitTest(t, &executionWaitServer{updates: []*longrunningpb.Operation{
+		pending, pending, waitTestOperation(t, true, &repb.ExecuteResponse{Result: &repb.ActionResult{}}),
+	}})
+	after := time.Now().UTC()
+	if err != nil || len(updates) != 3 {
+		t.Fatalf("updates=%+v error=%v", updates, err)
+	}
+	for _, update := range updates[:2] {
+		observed, err := time.Parse(time.RFC3339Nano, update.ObservedAt)
+		if err != nil || observed.Before(before) || observed.After(after) || update.ProgressState != "EXECUTING_COMMAND" || update.ProgressAt != "2026-11-12T23:42:10.000000123Z" {
+			t.Fatalf("progress update = %+v, parse error = %v", update, err)
+		}
+	}
+	if updates[2].ProgressState != "" || updates[2].ProgressAt != "" {
+		t.Fatalf("terminal update invented progress: %+v", updates[2])
 	}
 }
 

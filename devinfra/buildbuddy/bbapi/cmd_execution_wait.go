@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/spf13/cobra"
@@ -16,7 +17,10 @@ import (
 // status/exit values explicit when present and absent while still in progress.
 type executionWaitUpdate struct {
 	ExecutionID   string `json:"execution_id"`
+	ObservedAt    string `json:"observed_at"`
 	Stage         string `json:"stage"`
+	ProgressState string `json:"progress_state,omitempty"`
+	ProgressAt    string `json:"progress_at,omitempty"`
 	Done          bool   `json:"done"`
 	ResultPresent bool   `json:"result_present"`
 	StatusCode    *int32 `json:"status_code,omitempty"`
@@ -31,7 +35,10 @@ func executionWaitCmd() *cobra.Command {
 		Short: "Observe an accepted action with read-only WaitExecution",
 		Long: `Attach to the exact existing execution ID without submitting or cancelling work.
 Print updates until a terminal action result arrives. With --json, each update
-is one JSON line with explicit terminal status/exit values. A zero exit means
+is one JSON line with the local observation time and, when supplied, executor
+progress state and timestamp. The progress timestamp is not a worker-start or
+attempt identifier; clocks may differ and reconnecting can replay an update.
+Terminal status/exit values are explicit. A zero exit means
 this action returned a result with OK status and exit code zero; it says nothing
 about other actions, the Bazel invocation or the native CI job. A stream failure,
 missing result, nonzero status or nonzero exit code returns an error. Re-run this
@@ -61,7 +68,7 @@ Use bb execution get <exact-id> for a retained cached response after completion.
 					return json.NewEncoder(cmd.OutOrStdout()).Encode(update)
 				}
 				if !update.Done {
-					_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s (action pending)\n", update.ExecutionID, update.Stage)
+					_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s observed=%s progress=%s progress_at=%s (action pending)\n", update.ExecutionID, update.Stage, update.ObservedAt, update.ProgressState, update.ProgressAt)
 					return err
 				}
 				_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %s status=%v result_present=%t exit_code=%v\n",
@@ -106,7 +113,18 @@ func waitForExecution(ctx context.Context, client repb.ExecutionClient, executio
 				return fmt.Errorf("decode execution metadata: %w", err)
 			}
 		}
-		update := executionWaitUpdate{ExecutionID: executionID, Stage: md.GetStage().String(), Done: op.GetDone()}
+		update := executionWaitUpdate{ExecutionID: executionID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), Stage: md.GetStage().String(), Done: op.GetDone()}
+		for _, auxiliary := range md.GetPartialExecutionMetadata().GetAuxiliaryMetadata() {
+			progress := &repb.ExecutionProgress{}
+			if !auxiliary.MessageIs(progress) || auxiliary.UnmarshalTo(progress) != nil {
+				continue
+			}
+			update.ProgressState = progress.GetExecutionState().String()
+			if timestamp := progress.GetTimestamp(); timestamp != nil && timestamp.CheckValid() == nil {
+				update.ProgressAt = timestamp.AsTime().UTC().Format(time.RFC3339Nano)
+			}
+			break
+		}
 		var terminalErr error
 		if op.GetDone() {
 			if failure := op.GetError(); failure != nil {
