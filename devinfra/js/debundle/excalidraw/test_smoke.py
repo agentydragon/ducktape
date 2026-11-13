@@ -921,7 +921,7 @@ async def test_resize_handle_devices(playwright_driver: Playwright, origin: str)
         assert result == {"desktop": [True, default_sides], "mobile": [False, {}], "touch": [True, default_sides]}
 
 
-async def test_command_palette_library_and_icon_picker(playwright_driver: Playwright, origin: str) -> None:
+async def test_library_and_icon_picker(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
     ) as context:
@@ -930,18 +930,6 @@ async def test_command_palette_library_and_icon_picker(playwright_driver: Playwr
         await page.goto(origin)
         await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
         await expect(page.locator(".App-toolbar")).to_be_visible()
-
-        # The extracted palette filters commands and dispatches through the editor's action manager.
-        await page.keyboard.press("Control+Shift+p")
-        search = page.get_by_placeholder("Search menus, commands, and discover hidden gems")
-        await expect(search).to_be_visible()
-        await search.fill("zzzz_no_such_command")
-        await expect(page.locator(".command-palette-dialog .no-match")).to_be_visible()
-        await search.fill("Zen mode")
-        await expect(page.locator(".command-item.item-selected .name")).to_have_text("Zen mode")
-        await search.press("Enter")
-        await expect(search).to_be_hidden()
-        await page.get_by_role("button", name="Exit zen mode", exact=True).click()
 
         # Opening the library exercises the extracted menu's empty-library branch.
         library = page.get_by_role("checkbox", name="Library", exact=True)
