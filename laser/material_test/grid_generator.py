@@ -909,6 +909,18 @@ def generate_rd(config: GridConfig) -> RdJob:
     Uses the same energy-based sort ordering as generate(). Coordinates are in
     Ruida's Y-down system (Y increases downward, origin at top-left).
     """
+    axes = [("x", config.x), ("y", config.y)]
+    if config.cols is not None:
+        axes.append(("cols", config.cols))
+    if config.rows is not None:
+        axes.append(("rows", config.rows))
+    supported_axis_params = {CutParam.POWER_PCT, CutParam.SPEED_MM_S}
+    for name, axis in axes:
+        if axis.param not in supported_axis_params:
+            raise ValueError(f"Ruida .rd output does not support {name} sweep axis {axis.param.value!r}")
+    if config.cut.kerf_mm != 0:
+        raise ValueError(f"Ruida .rd output does not support kerf_mm={config.cut.kerf_mm!r}; expected 0")
+
     n_outer_cols = len(config.cols.values) if config.cols is not None else 1
     n_outer_rows = len(config.rows.values) if config.rows is not None else 1
     inner_stride = config.geometry.cell_size_mm + config.geometry.gap_mm
@@ -1015,8 +1027,9 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.fmt == "rd":
         rd_job = generate_rd(config)
+        rd_bytes = rd_job.to_bytes()
         with Path(output_path).open("wb") as fb:
-            fb.write(rd_job.to_bytes())
+            fb.write(rd_bytes)
     else:
         project = generate(config)
         with Path(output_path).open("w", encoding="utf-8") as f:

@@ -23,6 +23,8 @@ from laser.material_test.grid_generator import (
     _param_short_label,
     fmt_val,
     generate,
+    generate_rd,
+    main,
 )
 
 # ── fmt_val ────────────────────────────────────────────────────────────────────
@@ -307,6 +309,81 @@ def test_generate_3d_border():
     rects = [s for s in project.shapes if isinstance(s, RectShape)]
     inner_rects = 3 * 2 * 2  # x * y * outer_cols
     assert len(rects) == inner_rects + 1  # +1 for border
+
+
+@pytest.mark.parametrize("axis_name", ["x", "y", "cols", "rows"])
+@pytest.mark.parametrize(
+    ("param", "default_value"),
+    [(CutParam.KERF_MM, 0.0), (CutParam.Z_OFFSET_MM, 0.0), (CutParam.Z_PER_PASS_MM, 0.0), (CutParam.NUM_PASSES, 1.0)],
+)
+def test_generate_rd_rejects_unsupported_sweep_axes_even_at_default(
+    axis_name: str, param: CutParam, default_value: float
+):
+    axes = {
+        "x": AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
+        "y": AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+    }
+    axes[axis_name] = AxisConfig(param=param, values=[default_value])
+    config = GridConfig(**axes)
+
+    with pytest.raises(ValueError, match=f"{axis_name}.*{param.value}"):
+        generate_rd(config)
+
+
+def test_generate_rd_rejects_nonzero_constant_kerf():
+    config = _minimal_config(cut=CutConfig(kerf_mm=0.1))
+    with pytest.raises(ValueError, match="kerf_mm"):
+        generate_rd(config)
+
+
+@pytest.mark.parametrize(
+    ("section", "kwargs"),
+    [
+        ("cut", {"num_passes": 2}),
+        ("cut", {"z_offset_mm": 0.1}),
+        ("cut", {"z_per_pass_mm": -0.1}),
+        ("border", {"enabled": True, "num_passes": 2}),
+    ],
+    ids=["cut-passes", "cut-z-offset", "cut-z-per-pass", "border-passes"],
+)
+def test_generate_rd_rejects_unsupported_constant_and_border_settings(section: str, kwargs: dict[str, object]):
+    section_config = CutConfig(**kwargs) if section == "cut" else BorderConfig(**kwargs)
+    config = _minimal_config(**{section: section_config})
+
+    with pytest.raises(ValueError, match=r"num_passes|z_offset_mm|z_per_pass_mm"):
+        generate_rd(config).to_bytes()
+
+
+def test_generate_rd_default_settings_and_border_still_serialize():
+    config = _minimal_config(
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        border=BorderConfig(enabled=True, padding_mm=0),
+    )
+    job = generate_rd(config)
+
+    assert len(job.layers) == 2
+    assert len(job.rects) == 2
+    assert job.layers[-1].num_passes == 1
+    assert job.to_bytes().endswith(bytes([0x60]))  # scrambled D7 EOF
+
+
+def test_rd_cli_failure_preserves_existing_output(tmp_path):
+    config_path = tmp_path / "unsupported.toml"
+    config_path.write_text(
+        'x = { param = "power_pct", values = [10.0] }\n'
+        'y = { param = "speed_mm_s", values = [50.0] }\n'
+        "[cut]\nnum_passes = 2\n",
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "existing.rd"
+    original_output = b"existing output must survive serialization failure"
+    output_path.write_bytes(original_output)
+
+    with pytest.raises(ValueError, match="num_passes"):
+        main([str(config_path), "--format", "rd", "--output", str(output_path)])
+
+    assert output_path.read_bytes() == original_output
 
 
 def test_auto_subtitle_excludes_outer_axes():
