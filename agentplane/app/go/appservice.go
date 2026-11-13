@@ -3,6 +3,7 @@ package main
 import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
+	"github.com/agentydragon/ducktape/agentplane/app/go/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/app/go/status"
 )
 
@@ -10,7 +11,7 @@ import (
 // authenticates callers; it does not expose an in-cluster gRPC service.
 type appService struct {
 	apppb.UnimplementedAppServiceServer
-	config           Config
+	config           settings.Config
 	systemStatus     *status.Checker
 	policySetNames   policySetNameReader
 	environments     sessionEnvironmentReader

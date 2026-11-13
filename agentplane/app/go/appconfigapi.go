@@ -119,3 +119,10 @@ func (s *appService) GetFrontendConfig(context.Context, *apppb.GetFrontendConfig
 	}
 	return &apppb.GetFrontendConfigResponse{FrontendConfig: config}, nil
 }
+
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
+}

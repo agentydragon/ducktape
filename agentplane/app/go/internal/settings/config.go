@@ -1,4 +1,4 @@
-package main
+package settings
 
 import (
 	"bytes"
@@ -205,7 +205,8 @@ func defaultConfig() Config {
 	}
 }
 
-func loadConfig() (Config, error) {
+// Load reads the required deployment settings and explicit runtime Secret inputs.
+func Load() (Config, error) {
 	c := defaultConfig()
 	var sandboxPresetOrder []string
 	path := os.Getenv("AGENTPLANE_CONFIG_FILE")
