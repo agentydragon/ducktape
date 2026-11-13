@@ -403,3 +403,21 @@ func completeEmptyRefresh(ctx context.Context, state *githubstate.State, lease g
 		return errors.New("fixture does not support this refresh kind")
 	}
 }
+
+func requireDeferred(t *testing.T, err error) *githubstate.RefreshDeferredError {
+	t.Helper()
+	var deferred *githubstate.RefreshDeferredError
+	if !errors.As(err, &deferred) {
+		t.Fatalf("error = %v, want *githubstate.RefreshDeferredError", err)
+	}
+	return deferred
+}
+
+func (g githubFixture) status(t *testing.T, sub githubSubscription) githubstate.Status {
+	t.Helper()
+	status := g.get(t, sub.ID).GitHub
+	if status == nil {
+		t.Fatal("a GitHub subscription has no GitHub status")
+	}
+	return *status
+}
