@@ -6,10 +6,9 @@ Hardware: 2× NVIDIA RTX 5090 (64 GB VRAM total).
 Cluster config: `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_FLASH_ATTENTION=1`.
 Endpoint: `https://litellm.allegedly.works/v1` (LiteLLM proxy).
 
-Scripts:
-
-- Throughput: `benchmark_ollama.py` → `bazel run //hack/benchmark_ollama:benchmark_ollama`
-- NIAH recall: `niah.py` → `bazel run //hack/benchmark_ollama:niah`
+The current `benchmark_ollama.py` measures throughput and NIAH recall via
+`bb run //x/benchmark_ollama:benchmark_ollama_bin`. The historical NIAH runs
+below used a separate `niah.py` script that is no longer present.
 
 Raw JSONL logs are next to this file: `niah_results_*.jsonl`.
 
@@ -53,8 +52,8 @@ update to `1048576` is applied by Flux.
 
 Pending. Model pull job is in progress. Re-run:
 
-```
-bazel run //hack/benchmark_ollama:benchmark_ollama -- --models gpt-oss-120b-128k
+```bash
+bb run //x/benchmark_ollama:benchmark_ollama_bin -- --models gpt-oss-120b-128k
 ```
 
 ## NIAH (Needle-in-Haystack) — gpt-oss:20b
@@ -138,11 +137,9 @@ regardless of the per-request `num_ctx` override:
 `OLLAMA_NUM_CTX=1048576` has been deployed. The default context sizes now include 256k
 and 512k. Re-run to validate recall at extended context:
 
-```
-bazel run //hack/benchmark_ollama:niah -- \
-  --log-dir /path/to/hack/benchmark_ollama \
-  --benchmarks-md /path/to/hack/benchmark_ollama/benchmarks.md \
-  --seed 200
+```bash
+bb run //x/benchmark_ollama:benchmark_ollama_bin -- \
+  --models gpt-oss-20b-128k --context-sizes 256000 512000
 ```
 
 <!-- Results appended by niah.py -->

@@ -6,10 +6,10 @@ needle-in-haystack recall (niah). Each configuration runs for up to
 first.
 
 Usage:
-    bazel run //hack/benchmark_ollama:benchmark_ollama
-    bazel run //hack/benchmark_ollama:benchmark_ollama -- --models gpt-oss-20b-128k
-    bazel run //hack/benchmark_ollama:benchmark_ollama -- --niah-samples 0  # skip NIAH
-    bazel run //hack/benchmark_ollama:benchmark_ollama -- --unload-between-models
+    bb run //x/benchmark_ollama:benchmark_ollama_bin
+    bb run //x/benchmark_ollama:benchmark_ollama_bin -- --models gpt-oss-20b-128k
+    bb run //x/benchmark_ollama:benchmark_ollama_bin -- --niah-samples 0  # skip NIAH
+    bb run //x/benchmark_ollama:benchmark_ollama_bin -- --unload-between-models
 
 Environment:
     OLLAMA_API_KEY  API key for litellm.allegedly.works (optional)
@@ -523,7 +523,7 @@ def main() -> None:
         raw = args.log_dir
         log_dir = raw if raw.is_absolute() else build_wd / raw
     else:
-        log_dir = build_wd / "hack" / "benchmark_ollama"
+        log_dir = build_wd / "x" / "benchmark_ollama"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")

@@ -1,3 +1,4 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
@@ -11,6 +12,14 @@ py_library(
 
 py_binary(
     name = "benchmark_ollama_bin",
-    main_module = "hack.benchmark_ollama.benchmark_ollama",
+    main_module = "x.benchmark_ollama.benchmark_ollama",
     deps = [":benchmark_ollama"],
+)
+
+sh_test(
+    name = "test_cli",
+    srcs = ["test_cli.sh"],
+    args = ["$(rlocationpath :benchmark_ollama_bin)"],
+    data = [":benchmark_ollama_bin"],
+    use_bash_launcher = True,
 )
