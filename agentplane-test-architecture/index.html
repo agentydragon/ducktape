@@ -150,7 +150,7 @@
         ],
         [
           "M4 · Real acceptance and qualification · pending",
-          "Keep owner/native contracts, focused real deployment acceptance, and app/browser/MCP journeys required. Complete 30 pinned PR base/head pairs, three busy windows, a four-PR burst and the rerun-inclusive required-feedback distribution. The 100 native case executions are 25 per contract, not 100 independent reliability trials.",
+          "Keep owner/native contracts, focused real deployment acceptance, and app/browser/MCP journeys required. A curated 30-pair historical source cohort is now prepared, but no pairs have been replayed; three busy windows, a four-PR burst and rerun-inclusive required-feedback comparison remain. The 100 native case executions are 25 per contract, not 100 independent reliability trials.",
         ],
         [
           "M5 · Prove a narrow frequency move · not enabled",
@@ -192,6 +192,35 @@
         const seconds = (value) =>
           Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
         const iteration4 = data?.iteration4;
+        const iteration5 = data?.iteration5;
+        const iteration5Cohort = iteration5?.historical_replay_cohort;
+        const iteration5PairRows = (iteration5Cohort?.pairs || []).map(
+          (pair) => [
+            html`<${Stack} gap=${0}>
+              <${Anchor} href=${pair.pr_url}>PR #${pair.pr_number}<//>
+              <${Text} size="xs" c="dimmed"
+                >${pair.stratum}; ${pair.changed_path_count} changed paths<//
+              >
+            <//>`,
+            html`<${Stack} gap=${0}>
+              <${Code}>${pair.tested_base_sha}<//>
+              <${Text} size="xs" c="dimmed">tested base<//>
+              <${Code}>${pair.tested_head_sha}<//>
+              <${Text} size="xs" c="dimmed">tested head<//>
+            <//>`,
+            `${pair.required_gate_outcome} · ${pair.workflow_attempts.length} attempt${pair.workflow_attempts.length === 1 ? "" : "s"}`,
+            `${pair.buildbuddy_bazel_exit_code || "No Bazel exit"} · ${pair.buildbuddy_invocation_status}`,
+          ],
+        );
+        const iteration5StrataRows = Object.entries(
+          iteration5Cohort?.selected_strata || {},
+        ).map(([stratum, sample]) => [
+          stratum,
+          `${sample.selected} / ${sample.frame} in frame`,
+          Object.entries(sample.required_gate_outcomes || {})
+            .map(([outcome, count]) => `${count} ${outcome}`)
+            .join(", "),
+        ]);
         const iteration4Cases = iteration4?.native_contracts?.cases || [];
         const iteration4Repeat = iteration4?.native_contracts?.repeat_run;
         const iteration4NativeCaseRows = iteration4Cases.map((item) => [
@@ -471,18 +500,8 @@
                   >`
                 : "Source commit pending"
             }
-            ${
-              sourceVariant?.branch
-                ? html`<${Text} size="xs" c="dimmed"
-                    >${sourceVariant.branch}<//
-                  >`
-                : null
-            }
-            ${
-              sourceVariant?.source_note
-                ? html`<${Text} size="xs">${sourceVariant.source_note}<//>`
-                : null
-            }
+            ${sourceVariant?.branch ? html`<${Text} size="xs" c="dimmed">${sourceVariant.branch}<//>` : null}
+            ${sourceVariant?.source_note ? html`<${Text} size="xs">${sourceVariant.source_note}<//>` : null}
           <//>`;
         };
         const iteration3VariantRows = iteration3Specs.map((spec) => {
@@ -559,12 +578,7 @@
               attemptLink,
               html`<${Stack} gap="xs">
                 <${Text} size="sm"
-                  >${
-                    run?.note ||
-                    (index === 0
-                      ? variant?.outcome || "No run result recorded"
-                      : "")
-                  }<//
+                  >${run?.note || (index === 0 ? variant?.outcome || "No run result recorded" : "")}<//
                 >
                 ${notes.map(
                   (note) =>
@@ -828,23 +842,25 @@
               >Iteration 3 ${iteration3StatusLabel}<//
             ><${Badge} color="orange">devel merge gate unchanged<//
             ><${Badge} color="teal">Iteration 4 native repeat passed<//
+            ><${Badge} color="orange">Iteration 5 qualification pending<//
             ><${Badge} color="blue"
               >Final source CI:
-              ${iteration4?.final_source_ci?.status || "Pending"}<//
+              ${iteration5?.final_source_ci?.status || "Pending"}<//
             ><//
           >
           <${Text} size="sm"
-            >${iteration4?.finding || "Iteration 4 evidence is loading; no new result is inferred while evidence is unavailable."}<//
+            >${iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · iteration 4 devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · current devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration4", "Iteration 4"],
+              ["iteration5", "Iteration 5"],
+              ["iteration4", "Iteration 4 history"],
               ["iteration3", "Iteration 3 history"],
               ["progress", "Progress"],
               ["architecture", "Architecture"],
@@ -859,18 +875,188 @@
             )}
           <//>
           <${Alert} color="blue" title="Current state">
-            Architecture work remains on draft PR #16102. Independent fixes
-            applicable to devel may be backported separately. The four native
-            outage contracts pass 25 exact-head repetitions each. Literal
-            selected graphs and ordinary required checks passed at source 220;
-            that workflow took 9m04s from creation to its last required check,
-            one observation with no reruns. Final source-head checks and the
-            full selected-graph comparison are recorded below. Required scenario
-            bodies and test frequency remain unchanged.
+            Architecture work remains on draft PR #16102 at published head
+            91f72591a1, integrated with current devel. Both independent
+            reliability backports have merged. All 24 manual-contract/rendering
+            cases and all three required CI checks pass on that exact head.
+            Required feedback took 8m55s from workflow creation; this is one
+            observation, with no matched speedup established. Earlier
+            patched-tree controls and historical required-check timings are
+            labeled below. Required scenario bodies and test frequency remain
+            unchanged.
+          <//>
+          <${Section}
+            id="iteration5"
+            title="Iteration 5: admission recovery, guest boot and replay preparation"
+          >
+            <${Alert}
+              color="orange"
+              title="Exact-head contracts and required CI pass; matched replay remains open"
+            >
+              ${iteration5?.finding || "Iteration 5 evidence is loading."}
+            <//>
+            <${Title} order=${3} mt="xl" mb="sm">Published-head validation<//>
+            ${p("At source 91f72591a1, four targets pass 24 cases in four fresh physical TestRunner actions, one attempt each, zero cached results and no skips or failures. This selected invocation took 110.206s; it is separate from complete required PR feedback. The prior a27 head stopped at analysis on stale Runtime package paths and ran no tests; 91f follows devel's internal coordinator/workspace move.")}
+            <${Anchor}
+              href="https://app.buildbuddy.io/invocation/895cac51-2716-40ce-a28c-d7b6bd01a04e"
+              >Exact-head contract invocation 895cac51<//
+            >
+            <${Rows}
+              headers=${["Target", "Cases", "Process / CPU seconds"]}
+              rows=${[
+                ["Native recovery", "4", "80.536 / 109.585"],
+                ["Lost admission reply", "1", "57.705 / 117.294"],
+                ["Direct guest boot", "1", "62.565 / 108.729"],
+                ["Rendering controls", "18", "41.947 / 36.954"],
+              ]}
+            />
+            ${p("All three required checks also pass on this head. The CI-tested merge is e87c4db3f3 with devel base 5ba7661c07 and PR head 91f72591a1. Workflow creation at 11:16:50Z to the last required result at 11:25:45Z is 535s (8m55s). Ten fresh K3s TestRunner actions contribute 43 passing cases, including both Firecracker cases and the full VM case; other results may be cached. The draft PR's review/merge eligibility and push-to-green clock are not measured by this interval. Different source, cache state and load prevent comparison with the prior 12m01s head as a causal saving.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/actions/runs/43415783373"
+                >All required CI checks passed · 8m55s<//
+              >
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/b6fa5edb-f4bf-52e9-9840-25564f6f8b60"
+                >Required test invocation<//
+              >
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/35f7e95a-8a3d-5145-ad48-12ad9a55a613"
+                >Required build invocation<//
+              >
+            <//>
+            <${Title} order=${3} mt="xl" mb="sm">Admission reply loss<//>
+            ${p("The fifth manual native target, //agentplane/x/native_contracts:test_admission_reply_loss, exercises a real Runtime admission whose reply is lost after the journal records it. The positive path returns byte-identical stored responses for the duplicate and accepts the next fresh input. A seeded real-journal conflict rejects replay; the temporary mutation was restored. Both invocations used a patched d717 working tree, not an unmodified literal source checkout.")}
+            <${Anchor}
+              href=${`${repo}/commit/${iteration5?.admission_reply_loss?.source_commit || "d717b4256d63c540179e61b5b90ed8c7d25f64d4"}`}
+              >Source baseline d717b425 (tests used patched working trees)<//
+            >
+            <${Rows}
+              headers=${["Run", "Outcome", "Source and limit"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href=${iteration5?.admission_reply_loss?.positive?.url || "https://app.buildbuddy.io/invocation/0b289ddb-c9ff-4c99-8e0b-c29abcefd284"}
+                    >Positive ·
+                    ${iteration5?.admission_reply_loss?.positive?.invocation || "0b289ddb"}<//
+                  >`,
+                  "One admission; two handler calls; full replies equal; next fresh input accepted",
+                  "Patched d717 working tree; manual native target",
+                ],
+                [
+                  html`<${Anchor}
+                    href=${iteration5?.admission_reply_loss?.seeded_conflict?.url || "https://app.buildbuddy.io/invocation/b10c10d5-74cd-4e1b-b738-28e9c68fdd94"}
+                    >Seeded journal conflict ·
+                    ${iteration5?.admission_reply_loss?.seeded_conflict?.invocation || "b10c10d5"}<//
+                  >`,
+                  "Valid identical-command replay rejected as AlreadyExists; expected contract failure; mutation restored",
+                  "Patched d717 working tree; not literal-source CI",
+                ],
+              ]}
+            />
+            <${Title} order=${3} mt="xl" mb="sm">Direct guest boot<//>
+            ${p("A direct-QEMU run booted the current packaged guest kernel, initramfs, root disk and Runtime disk with seven mounts, nonce verification and poweroff. The guest mounted three real configuration ISOs with empty filesystems and left Runtime unconfigured. The initial case took 61.2s pytest / 69.3s Bazel target wall and 17.336 guest serial seconds; the cleanup-tested positive took 53.177s pytest / 60.512s TestRunner execution and powered down cleanly. A wrong-config negative waited for the required config device, wrote no readiness nonce and failed the same readiness assertion as intended. The retained marker, serial, mount, poweroff and cleanup artifacts are verified; literal published-head validation now passes. These are isolated boot/package witnesses, not equivalent full-VM timing.")}
+            <${Rows}
+              headers=${["Boot evidence", "Observed result", "Limit"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/dd39c14f-badf-45e0-9b74-3cac57d20364"
+                    >Initial current-guest positive dd39c14f<//
+                  >`,
+                  "1 case · 61.2s pytest · 69.3s Bazel target · 17.336s guest serial",
+                  "Not literal source; boot-only, no VM scenario equivalence",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/eb0cc3b8-7312-4360-bea2-3e14b6a04bd3"
+                    >Cleanup-tested positive eb0cc3b8<//
+                  >`,
+                  "1 case · 53.177s pytest · 60.512s TestRunner · 11.514s boot-to-poweroff",
+                  "Patched d717; later literal 91f contract also passes",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/8388bce1-d471-498b-a6ee-202e0496bc12"
+                    >Wrong-config expected-failure 8388bce1<//
+                  >`,
+                  "Linux/systemd waited 30s for config device; no ready nonce; expected readiness assertion failed",
+                  "QEMU status 124; cleanup exit 0; not an unexplained test failure",
+                ],
+                [
+                  "Required platform acceptance",
+                  "Real K3s/App/controller/PKI and full VM/Firecracker acceptance remain required",
+                  "No merge-gate coverage moved",
+                ],
+              ]}
+            />
+            <${Title} order=${3} mt="xl" mb="sm">KVM profile and capacity<//>
+            ${p("The new NO_MCP_EDGE Firecracker profile keeps the live guest, PKI, egress, App and native transport; neither retained hardware case uses external Connections. Its renderer-equivalence and hardware screen passed on the patched d717 tree, and all 18 renderer controls also pass on literal 91f. Both hardware cases pass as fresh physical actions in required CI on that published head.")}
+            <${Rows}
+              headers=${["Profile screen", "Observed result", "Limit"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/85ecece4-f355-40f9-9cf1-0c370065ff1d"
+                    >NO_MCP_EDGE Firecracker screen 85ecece4<//
+                  >`,
+                  "18 render cases and 2 unchanged hardware cases passed; 0 skips; 244.629s target, 408.884s selected invocation",
+                  "Patched d717; no measured saving or gate/frequency change",
+                ],
+              ]}
+            />
+            ${p("During the d717 Firecracker action, compatible KVM capacity was fully occupied: three registered/up workers, all with assigned CPU, at the configured pool maximum of three. The action queued 310.328s. Removing only that observed queue gives 153.499s of conditional test-tail headroom; it is not measured complete-feedback saving. No capacity setting was changed.")}
+            <${Anchor}
+              href="https://app.buildbuddy.io/invocation/d91c70d4-3460-54bc-94a0-164f963b0882"
+              >d717 source workflow / Firecracker invocation d91c70d4<//
+            >
+            <${Title} order=${3} mt="xl" mb="sm"
+              >Selector input ownership proven<//
+            >
+            ${p("On literal 91f, a single identical comment-only MCP-edge change was hashed under two deployment compositions. Restoring full Pod/VM/Firecracker profiles selects 18 tests; the candidate selects 15. The only removed tests are test_pod, test_vm and test_firecracker. All 15 other tests, including MCP services and external-Connection acceptance, stay selected. The architecture stays constant within each base/head pair and all four hash outputs contain 43,204 entries.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/c51d318c-90ea-4fe0-a892-6110260728ef"
+                >Source-pinned selector probe<//
+              >
+              <${Anchor} href="selector-counterfactual.sh"
+                >Download exact probe script<//
+              >
+            <//>
+            ${p("This is a synthetic selection-only counterfactual: no tests ran and no feedback-time saving is inferred. Its control restores only fixture/image ownership and is not a qualified executable full-gate control. Raw hashes and label sets are preserved in the uploaded archive, with identities recorded in evidence.json. The actual 15-head historical MCP frame contains no isolated MCP-edge-only PR, so this footprint's frequency and practical benefit remain unmeasured.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >Historical replay inputs prepared; no replay run<//
+            >
+            ${p("The sample pins actual tested CI base/head pairs from source-resolved Actions logs, matching BuildBuddy commit metadata and immutable Git parents. It deliberately includes failed and cancelled heads. Current PR API bases are retained separately where they differ from the historical tested base. This is cohort preparation only: no historical test graphs were replayed and no matched performance result or savings claim exists.")}
+            <${Rows}
+              headers=${["Stratum", "Selected / frame", "Required outcomes"]}
+              rows=${iteration5StrataRows}
+            />
+            ${p("Across the 30 selected heads there are 40 Bazel workflow attempts and 25 green, 4 failed and 1 cancelled latest required outcomes. BuildBuddy's results are kept separate: 24 SUCCESS, 4 TESTS_FAILED, one REMOTE_CACHE_EVICTED and one invocation with no Bazel exit. Four current PR API bases differ from the historical tested base; all are retained separately. Three log fetch commands exited nonzero, but each still yielded source and invocation values corroborated against BuildBuddy and Git metadata.")}
+            ${p("A read-only changed-path audit of the full 15-head MCP frame found no PR confined to MCP-edge implementation or MCP-specific tests: every head also changes Action, App, Gateway/platform, proto, common fixture, or other shared inputs. The smallest, #15383, changes only two Action-service mcpexec test files and does not touch MCP-edge. The proposed Firecracker NO_MCP_EDGE profile is therefore a possible invalidation cut, not an observed isolated MCP workload saving; actual selector and complete-feedback measurements remain required.")}
+            <${Accordion} variant="separated" my="md">
+              <${Accordion.Item} value="pairs">
+                <${Accordion.Control}
+                  >Show all 30 exact historical CI base/head pairs and
+                  outcomes<//
+                >
+                <${Accordion.Panel}>
+                  <${Rows}
+                    minWidth=${1120}
+                    headers=${["PR / class", "Exact tested base and head", "Required gate / attempts", "BuildBuddy result"]}
+                    rows=${iteration5PairRows}
+                  />
+                <//>
+              <//>
+            <//>
+            <${Title} order=${3} mt="xl" mb="sm"
+              >What remains before promotion<//
+            >
+            ${p("The direct-QEMU wrong-configuration negative rejected readiness as expected, and retained artifacts are verified. Literal published-head contracts and all three required checks pass on 91f72591a1. The existing app-free Central Sampler integration is being extended with real incoming authentication and a bounded History outage; those additions have not yet been validated. Next, execute the prepared compatible candidate/control pairs across real busy windows and a four-PR burst; assign each retained assertion to its owning contract before changing selection. Keep the devel gate unchanged. Apply the stop rule if the strongest remaining candidate cannot repay implementation, review and maintenance within about a quarter and the two best probes show no worthwhile gain. No complete-feedback saving has been measured.")}
           <//>
           <${Section}
             id="iteration4"
-            title="Iteration 4: native outage contracts and physical execution evidence"
+            title="Iteration 4 history: native outages and physical execution evidence"
           >
             <${Alert}
               color="teal"
@@ -1010,7 +1196,7 @@
                 >Fresh full VM validation<//
               >
             <//>
-            ${p("Recovery preserves exactly one StorageClass create, two PV creates and two loop attachments. The API stall's underlying cause and real recurrence-rate improvement remain unknown. The fresh literal-d717 full VM run passed: one physical TestRunner, 379.284s process, 359.159s JUnit suite. This validates retained behavior, not a recurrence rate. An independent devel backport is being prepared.")}
+            ${p("Recovery preserves exactly one StorageClass create, two PV creates and two loop attachments. The API stall's underlying cause and real recurrence-rate improvement remain unknown. The fresh literal-d717 full VM run passed: one physical TestRunner, 379.284s process, 359.159s JUnit suite. This validates retained behavior, not a recurrence rate. PR #16201 later merged the bounded read-only LIST repair on 2026-11-13 10:16:56 UTC; Iteration 5 records its final state.")}
             ${p("Ordinary required CI for the synthetic merge of head 220 passed all three checks in 9m04s, with no reruns on that attempt. This observation is not a causal saving; the iteration 3 9m49 result belongs to that earlier stage. Final head d717b425 passed all three required checks in 12m01s; the distinct 7d46adc2 observation took 10m21s. Neither is a matched improvement comparison.")}
             <${Title} order=${3} mt="xl" mb="sm"
               >VM image ownership and replay evidence<//
@@ -1078,8 +1264,12 @@
               href="https://github.com/agentydragon/ducktape/pull/16198"
               >CaseBatch devel PR #16198<//
             >
-            ${p("PR #16198 contains only the nested-outcome driver repair and its control tests; it is open and unmerged. The bounded PVC-read recovery backport is being prepared separately. Seeded controls establish the repaired behavior, not the incidence of future CI failures.")}
-            ${p("The next bounded probe boots the current guest kernel/initramfs/root/Runtime artifacts directly with declared QEMU tooling, avoiding K3s/KubeVirt setup for generic guest/systemd packaging guarantees. It must first prove real boot with explicit disk/config ownership. It cannot claim actual controller-issued identity, PKI, scheduling, storage, App routing or KubeVirt equivalence; those acceptance paths stay required.")}
+            <${Anchor}
+              href="https://github.com/agentydragon/ducktape/pull/16201"
+              >PVC LIST devel PR #16201<//
+            >
+            ${p("At the Iteration 4 snapshot, #16198 was open and #16201 was being prepared. Both later merged independently to devel: #16198 at 2026-11-13 09:57:54 UTC and #16201 at 10:16:56 UTC. Their seeded controls establish repaired behavior, not the incidence of future CI failures.")}
+            ${p("At the Iteration 4 checkpoint, the next bounded probe was direct QEMU boot of the current guest kernel/initramfs/root/Runtime artifacts. Iteration 5 records initial and cleanup-tested positives plus an expected-failure wrong-configuration control; retained artifacts are verified and literal source-head validation passes. This boot-only witness cannot claim actual controller-issued identity, PKI, scheduling, storage, App routing, full VM timing or KubeVirt equivalence; those acceptance paths stay required.")}
             ${p("App removal alone is lower priority: in the boot-candidate trace its image import was 2.207s, versus 28.284s guest-root and 14.782s virt-launcher imports. Setup children overlap. The trace was cold at source 9bce, not d717; it supplies a hypothesis, not additive savings or a forecast.")}
             <${Title} order=${3} mt="xl" mb="sm"
               >Continue, then stop on evidence<//
@@ -1101,7 +1291,7 @@
                 ],
                 [
                   "Qualification still pending",
-                  "30 pinned PR base/head pairs, three busy windows, a four-PR burst, and exact rerun-inclusive whole-PR feedback. The 100 fresh native case exposures are 25 per contract, but are not 100 independent failure trials.",
+                  "Thirty pinned historical CI base/head pairs are prepared; replaying compatible candidate/control graphs, three busy windows, a four-PR burst and exact rerun-inclusive whole-PR feedback remain. The 100 native case exposures are 25 per contract, not 100 independent failure trials.",
                 ],
               ]}
             />
@@ -1166,11 +1356,7 @@
               headers=${["Scope", "Iteration 3 boundary"]}
               rows=${iteration3CoverageRows}
             />
-            ${
-              iteration3ClosureNote
-                ? p(linkInvocationIds(iteration3ClosureNote))
-                : null
-            }
+            ${iteration3ClosureNote ? p(linkInvocationIds(iteration3ClosureNote)) : null}
             ${
               iteration3ProjectionSpike
                 ? html`<${Box}
