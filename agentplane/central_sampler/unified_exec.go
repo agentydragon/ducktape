@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
@@ -344,15 +345,15 @@ type processObservation struct {
 func (o processObservation) unifiedExecResult(sessionID *int, maxOutputTokens *int, chunkID string) *unifiedExecResult {
 	collected := o.output.WithOmissionMarker()
 	// Codex rust-v0.162.1 utils/string/src/truncate.rs approx_tokens_from_byte_count.
-	tokens := (o.output.TotalBytes() + approxBytesPerToken - 1) / approxBytesPerToken
+	tokens := tooloutput.ApproxTokenCountBytes(o.output.TotalBytes())
 	result := &unifiedExecResult{ChunkID: chunkID, WallTimeSeconds: o.wallTime, ExitCode: o.exitCode, OriginalTokenCount: &tokens}
 	if !o.exited {
 		result.SessionID = sessionID
 	}
 	if maxOutputTokens != nil {
-		result.Output = truncateExecOutput(collected, o.output.OmittedBytes(), tokens, *maxOutputTokens)
+		result.Output = tooloutput.TruncateExecOutput(collected, o.output.OmittedBytes(), tokens, *maxOutputTokens)
 	} else {
-		result.Output = lossyUTF8(collected)
+		result.Output = tooloutput.LossyUTF8(collected)
 	}
 	return result
 }

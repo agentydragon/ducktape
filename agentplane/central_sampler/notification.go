@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -112,7 +113,7 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, owner Owner
 		if err != nil {
 			return false, err
 		}
-		output := []protocol.ContentPart{{Type: "input_text", Text: truncateMiddleWithTokenBudget(notification.text, notificationTokenLimit)}}
+		output := []protocol.ContentPart{{Type: "input_text", Text: tooloutput.TruncateTextWithTokenBudget(notification.text, notificationTokenLimit)}}
 		if err := s.recordEvidence(ctx, tx, owner, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_RECORDED,
 			map[string]any{"cell_id": notification.cellID, "call_id": notification.callID, "output": output}); err != nil {
 			return false, err

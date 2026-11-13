@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
@@ -37,9 +38,9 @@ func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([
 	if err != nil {
 		return nil, err
 	}
-	var observation codeObservation
+	var observation tooloutput.Observation
 	if !prepared.execute {
-		observation, err = decodeWaitObservation(value)
+		observation, err = tooloutput.DecodeWaitObservation(value)
 	} else {
 		err = protocol.DecodeObject(value, &observation)
 	}
@@ -53,7 +54,11 @@ func (r *CodeMode) Execute(ctx context.Context, call protocol.ToolInvocation) ([
 	if duration := observation.Cell.CodeModeHostDurationNS; duration != nil {
 		wallTime = time.Duration(*duration)
 	}
-	output, err := cellOutput(observation, r.CellHandle(observation.Cell.CellID), prepared.maxTokens, wallTime)
+	maxTokens := defaultCodeModeMaxOutputTokens
+	if prepared.maxTokens != nil {
+		maxTokens = *prepared.maxTokens
+	}
+	output, err := tooloutput.RenderCellOutput(observation, r.CellHandle(observation.Cell.CellID), maxTokens, wallTime)
 	if err != nil {
 		return nil, err
 	}
@@ -292,14 +297,14 @@ func parseExecSource(input string) (execSource, error) {
 }
 
 // observe records the observed cell's lifecycle status.
-func (r *CodeMode) observe(ctx context.Context, observation codeObservation) error {
+func (r *CodeMode) observe(ctx context.Context, observation tooloutput.Observation) error {
 	status := protocol.CellCompleted
 	switch observation.Kind {
-	case codeYielded:
+	case tooloutput.ObservationYielded:
 		status = protocol.CellLive
-	case codeTerminated:
+	case tooloutput.ObservationTerminated:
 		status = protocol.CellTerminated
-	case codeResult:
+	case tooloutput.ObservationResult:
 	default:
 		return fmt.Errorf("unsupported cell observation %q", observation.Kind)
 	}
@@ -328,7 +333,7 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 			outcomes[cell.ID] = map[string]any{"error": requestErr.Error()}
 			continue
 		}
-		observation, err := decodeWaitObservation(value)
+		observation, err := tooloutput.DecodeWaitObservation(value)
 		if err != nil {
 			outcomes[cell.ID] = map[string]any{"error": err.Error()}
 			continue
@@ -336,7 +341,7 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 		if err := r.observe(ctx, observation); err != nil {
 			outcomes[cell.ID] = map[string]any{"error": err.Error()}
 		} else {
-			outcomes[cell.ID] = map[string]any{"stopped": observation.Kind != codeYielded}
+			outcomes[cell.ID] = map[string]any{"stopped": observation.Kind != tooloutput.ObservationYielded}
 		}
 	}
 	return outcomes, nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 )
 
 type executionMethod string
@@ -97,7 +98,7 @@ func (f executionFailureRecord) evidence(includeMessage bool) executionFailureEv
 	}
 	if f.output != nil {
 		buffered := f.output.RetainedBytes()
-		text := lossyUTF8(buffered)
+		text := tooloutput.LossyUTF8(buffered)
 		base64 := make([]byte, len(buffered))
 		copy(base64, buffered)
 		bufferedBytes, omittedBytes := len(buffered), f.output.OmittedBytes()
@@ -194,11 +195,11 @@ func observedOutputEvidence(output *outputbuffer.Buffer) observedProcessOutput {
 		tail = retained[len(retained)-shownBytes/2:]
 	}
 	displayOmitted := len(retained) - len(head) - len(tail)
-	text := lossyUTF8(head)
+	text := tooloutput.LossyUTF8(head)
 	if displayOmitted > 0 || output.OmittedBytes() > 0 {
 		text += fmt.Sprintf("\n... %d retained bytes not shown; %d earlier bytes omitted ...\n", displayOmitted, output.OmittedBytes())
 	}
-	text += lossyUTF8(tail)
+	text += tooloutput.LossyUTF8(tail)
 	return observedProcessOutput{
 		Text: text, Encoding: "utf8_lossy", RetainedBytes: len(retained), OmittedBytes: output.OmittedBytes(),
 		DisplayOmittedBytes: displayOmitted, ShownHeadBytes: len(head), ShownTailBytes: len(tail),

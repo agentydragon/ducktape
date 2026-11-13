@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 )
 
 var testBash = &execShell{Name: "bash", Path: "/bin/bash"}
@@ -136,11 +137,11 @@ func TestUnifiedExecResultShape(t *testing.T) {
 func TestTruncateExecOutputKeepsOmissionNotice(t *testing.T) {
 	output := outputbuffer.New(16)
 	output.Append(bytes.Repeat([]byte("x"), 40))
-	text := truncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 2)
+	text := tooloutput.TruncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 2)
 	if !strings.HasPrefix(text, "Warning: truncated output (original token count: 10)\n... 24 bytes omitted ...\n\n") {
 		t.Fatalf("truncated=%q", text)
 	}
-	if fits := truncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 1000); fits != string(output.WithOmissionMarker()) {
+	if fits := tooloutput.TruncateExecOutput(output.WithOmissionMarker(), output.OmittedBytes(), 10, 1000); fits != string(output.WithOmissionMarker()) {
 		t.Fatalf("output within budget changed: %q", fits)
 	}
 }

@@ -1,4 +1,4 @@
-package centralsampler
+package tooloutput
 
 import (
 	"fmt"
@@ -8,9 +8,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 )
 
-// lossyUTF8 replaces each invalid byte with U+FFFD, as Rust String::from_utf8_lossy does for
+// LossyUTF8 replaces each invalid byte with U+FFFD, as Rust String::from_utf8_lossy does for
 // single-byte faults (Rust folds a truncated multi-byte prefix into one replacement).
-func lossyUTF8(data []byte) string {
+func LossyUTF8(data []byte) string {
 	if utf8.Valid(data) {
 		return string(data)
 	}
@@ -23,18 +23,18 @@ func lossyUTF8(data []byte) string {
 	return out.String()
 }
 
-// truncateExecOutput applies a model-requested token budget to collected process output.
+// TruncateExecOutput applies a model-requested token budget to collected process output.
 // Codex rust-v0.162.1 core/src/tools/context.rs ExecCommandToolOutput::truncated_output_with_policy
 // and utils/output-truncation/src/lib.rs formatted_truncate_text.
-func truncateExecOutput(output []byte, omittedBytes int, originalTokenCount int, maxTokens int) string {
-	text := lossyUTF8(output)
+func TruncateExecOutput(output []byte, omittedBytes int, originalTokenCount int, maxTokens int) string {
+	text := LossyUTF8(output)
 	budget := maxTokens * approxBytesPerToken
 	if omittedBytes == 0 {
 		if len(text) <= budget {
 			return text
 		}
 		return fmt.Sprintf("Warning: truncated output (original token count: %d)\nTotal output lines: %d\n\n%s",
-			approxTokenCount(text), countLines(text), truncateMiddleWithTokenBudget(text, maxTokens))
+			approxTokenCount(text), countLines(text), TruncateTextWithTokenBudget(text, maxTokens))
 	}
 	marker := outputbuffer.OmissionMarker(omittedBytes)
 	if len(text) <= budget {
@@ -43,10 +43,15 @@ func truncateExecOutput(output []byte, omittedBytes int, originalTokenCount int,
 		}
 		return marker + "\n" + text
 	}
-	truncated := truncateMiddleWithTokenBudget(text, maxTokens)
+	truncated := TruncateTextWithTokenBudget(text, maxTokens)
 	notice := ""
 	if !strings.Contains(truncated, marker) {
 		notice = marker + "\n"
 	}
 	return fmt.Sprintf("Warning: truncated output (original token count: %d)\n%s\n%s", originalTokenCount, notice, truncated)
+}
+
+// ApproxTokenCountBytes estimates tokens from a byte count using Codex's four-byte heuristic.
+func ApproxTokenCountBytes(byteCount int) int {
+	return (byteCount + approxBytesPerToken - 1) / approxBytesPerToken
 }
