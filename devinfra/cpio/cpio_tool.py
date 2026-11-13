@@ -2,8 +2,9 @@
 
 Usage: cpio_tool.py <output.cpio> <manifest.json>
 
-Only "file" entries are supported. Non-zero uid/gid and user/group names
-(which cpio does not represent) are rejected.
+Only "file" entries are supported. Non-zero uid/gid and user/group names are
+rejected; this writer stores uid/gid as zero, and newc has no username/group-name
+fields.
 """
 
 import sys
