@@ -17,6 +17,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	githubapi "github.com/google/go-github/v88/github"
 	"github.com/google/uuid"
@@ -142,7 +143,7 @@ func (h *Handler) receive(ctx context.Context, header http.Header, raw []byte) (
 	}
 	created, err := h.database.IngestGitHub(ctx, ingest)
 	switch {
-	case errors.Is(err, store.ErrDeliveryReused):
+	case errors.Is(err, githubstate.ErrDeliveryReused):
 		return http.StatusConflict, refusal{Detail: err.Error()}
 	case unavailable(ctx, err):
 		return http.StatusServiceUnavailable, refusal{Detail: backendDown}

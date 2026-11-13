@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
@@ -21,10 +22,10 @@ func reviewsSelected(source model.GitHubSource) bool {
 }
 
 // Review API failures have their own durable deadline and do not stop ordinary webhook or lifecycle delivery.
-func (p *Provider) refreshReviews(ctx context.Context, subject store.GitHubSubjectKey, fence store.GitHubAccessFence) (*time.Time, error) {
-	key := store.GitHubReviewRefreshKey{AppID: p.appID, InstallationID: fence.Key.InstallationID, Subject: subject}
+func (p *Provider) refreshReviews(ctx context.Context, subject githubstate.SubjectKey, fence githubstate.AccessFence) (*time.Time, error) {
+	key := githubstate.ReviewRefreshKey{AppID: p.appID, InstallationID: fence.Key.InstallationID, Subject: subject}
 	lease, err := p.state.Acquire(ctx, key)
-	var deferred *store.RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if errors.As(err, &deferred) {
 		return &deferred.Until, nil
 	}
@@ -44,7 +45,7 @@ func (p *Provider) refreshReviews(ctx context.Context, subject store.GitHubSubje
 		if err != nil {
 			err = p.refreshFailed(ctx, *lease, err)
 		} else {
-			err = p.state.CompleteReviews(ctx, *lease, []store.GitHubAccessFence{fence}, reviews)
+			err = p.state.CompleteReviews(ctx, *lease, []githubstate.AccessFence{fence}, reviews)
 		}
 		if errors.As(err, &deferred) {
 			return &deferred.Until, nil

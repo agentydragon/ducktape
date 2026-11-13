@@ -71,7 +71,7 @@ func TestReviewPermissionFailureDoesNotBlockCommentsOrCommitResources(t *testing
 		t.Fatalf("entries = %d, want comment and CI despite review failure", got)
 	}
 	view := h.subscription(subscription.ID)
-	if view.GitHub.Reviews == nil || view.GitHub.Reviews.Failure == nil || view.GitHub.Reviews.Failure.Kind != store.FailureAccessDenied {
+	if view.GitHub.Reviews == nil || view.GitHub.Reviews.Failure == nil || view.GitHub.Reviews.Failure.Kind != model.FailureAccessDenied {
 		t.Fatalf("review refresh = %+v, want independent denial", view.GitHub.Reviews)
 	}
 	if view.Failure != nil || view.GitHub.Subject.Failure != nil || view.GitHub.CheckRuns.Failure != nil || view.GitHub.CommitStatuses.Failure != nil {

@@ -9,7 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/bazelbuild/rules_go/go/runfiles"
@@ -106,7 +107,7 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := store.GitHubIngest{
+			want := githubstate.Ingest{
 				AppID: vector.Ingest.AppID, DeliveryID: vector.DeliveryID, InstallationID: vector.Ingest.InstallationID,
 				Event: vector.Event, Digest: digest, Action: vector.Ingest.Action, HeadSHA: vector.Ingest.HeadSHA,
 			}
@@ -114,7 +115,7 @@ func TestDeliveriesPythonAcceptsAreStoredAsPythonStoresThem(t *testing.T) {
 				want.Repository = &model.GitHubRepository{ID: *vector.Ingest.RepositoryID, Name: *vector.Ingest.RepositoryName}
 			}
 			for _, subject := range vector.Ingest.Subjects {
-				want.Subjects = append(want.Subjects, store.GitHubSubjectKey{
+				want.Subjects = append(want.Subjects, githubstate.SubjectKey{
 					RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey,
 				})
 			}

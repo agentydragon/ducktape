@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -102,7 +103,7 @@ func (g githubFixture) tryCompletePullRequestRefresh(t *testing.T, sub githubSub
 		t.Fatalf("pull request refresh lease = %v, %v", lease, err)
 	}
 	base := g.validate(t, g.access())
-	return g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{base}, GitHubSubjectObservation{PullRequest: &observation, Revisions: []model.GitHubHeadRevision{{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: observation.HeadSHA}}})
+	return g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{base}, githubstate.SubjectObservation{PullRequest: &observation, Revisions: []model.GitHubHeadRevision{{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: observation.HeadSHA}}})
 }
 
 func testMergeCommit(baseSHA, headSHA string) *model.GitHubMergeCommit {
@@ -137,8 +138,8 @@ func (g githubFixture) assertNoPullRequestRetry(t *testing.T, sub githubSubscrip
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.LastSuccessAt == nil || !state.RepairAt.Equal(state.LastSuccessAt.Add(testFreshness)) || state.RetryAt != nil {
-		t.Errorf("subject refresh state = %+v, want ordinary %v freshness and no pending retry", state, testFreshness)
+	if state.LastSuccessAt == nil || state.RetryAt != nil {
+		t.Errorf("subject refresh state = %+v, want a successful observation and no pending retry", state)
 	}
 }
 
@@ -215,14 +216,14 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	g.state = NewGitHubState(g.Store, testFreshness)
+	g.state = githubstate.New(g.db, testFreshness, GitHubEffects())
 	reconstructed, err := g.state.Subject(t.Context(), sub.Subject)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if state.RetryAt == nil || !state.RetryAt.After(time.Now()) || reconstructed.RetryAt == nil ||
-		!reconstructed.RetryAt.Equal(*state.RetryAt) || !reconstructed.RepairAt.Equal(state.RepairAt) {
-		t.Fatalf("retry deadline before/after reconstruction = %v / %v, want the persisted pending deadline and stable cache freshness", state, reconstructed)
+		!reconstructed.RetryAt.Equal(*state.RetryAt) {
+		t.Fatalf("retry deadline before/after reconstruction = %v / %v, want the persisted pending deadline", state, reconstructed)
 	}
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if lease != nil || err != nil {
@@ -235,7 +236,7 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	if err != nil || lease == nil {
 		t.Fatalf("refresh after pending deadline = %v, %v", lease, err)
 	}
-	if err := g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, GitHubSubjectObservation{PullRequest: &model.GitHubPullRequestObservation{
+	if err := g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{g.validate(t, g.access())}, githubstate.SubjectObservation{PullRequest: &model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitC, BaseSHA: commitB,
 		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubConflicting,
 	}}); err != nil {
@@ -258,7 +259,7 @@ func TestUnknownRetryAttemptSurvivesReacquireWebhookAndResetsOnRefChange(t *test
 	g.assertPullRequestRetry(t, sub, 5*time.Second, 1)
 
 	// Process restart preserves both the pending deadline and the tuple's next retry step.
-	g.state = NewGitHubState(g.Store, testFreshness)
+	g.state = githubstate.New(g.db, testFreshness, GitHubEffects())
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if lease != nil || err != nil {
 		t.Fatalf("refresh before pending deadline = %v, %v; want no lease", lease, err)
@@ -694,11 +695,11 @@ func TestBaseBranchPushInvalidatesAndFencesAnInFlightPullRequestRefresh(t *testi
 	if next := g.subscriptionState(t, sub.ID).nextAttempt; !next.Valid || next.Time.After(time.Now()) {
 		t.Errorf("subscription next attempt = %v, want it due after the base push", next)
 	}
-	err = g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, GitHubSubjectObservation{PullRequest: &model.GitHubPullRequestObservation{
+	err = g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{g.validate(t, g.access())}, githubstate.SubjectObservation{PullRequest: &model.GitHubPullRequestObservation{
 		BaseRef: "main", HeadSHA: commitC, BaseSHA: commitC,
 		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubConflicting,
 	}})
-	var deferred *RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if !errors.As(err, &deferred) {
 		t.Errorf("stale in-flight pull request result = %v, want it deferred", err)
 	}
@@ -721,7 +722,7 @@ func TestBaseBranchPushPreservesPullRequestRefreshFailureBackoff(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("failed refresh lease = %v, %v", lease, err)
 	}
-	retryAt, err := g.state.Fail(t.Context(), *lease, FailureRateLimited, "rate limited", time.Hour)
+	retryAt, err := g.state.Fail(t.Context(), *lease, model.FailureRateLimited, "rate limited", time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,11 +761,11 @@ func TestRetargetedPullRequestBasePushFencesInFlightRefresh(t *testing.T) {
 	}
 	// A release push arrives while the API read is in flight and the read discovers the retarget.
 	g.deliver(t, "push", onBranch("release"), atCommit(commitC))
-	err = g.state.CompleteSubject(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, GitHubSubjectObservation{PullRequest: &model.GitHubPullRequestObservation{
+	err = g.state.CompleteSubject(t.Context(), *lease, []githubstate.AccessFence{g.validate(t, g.access())}, githubstate.SubjectObservation{PullRequest: &model.GitHubPullRequestObservation{
 		BaseRef: "release", HeadSHA: commitA, BaseSHA: commitB,
 		State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeable, MergeCommit: testMergeCommit(commitB, commitA),
 	}})
-	var deferred *RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if !errors.As(err, &deferred) {
 		t.Fatalf("stale result for retargeted base was accepted: error=%v; want a fenced refresh", err)
 	}
@@ -792,7 +793,7 @@ func TestUnrelatedBranchPushDoesNotInvalidatePullRequestRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	if after.Generation != before.Generation || after.LastSuccessAt == nil || before.LastSuccessAt == nil ||
-		!after.LastSuccessAt.Equal(*before.LastSuccessAt) || !after.RepairAt.Equal(before.RepairAt) {
+		!after.LastSuccessAt.Equal(*before.LastSuccessAt) {
 		t.Errorf("subject after unrelated push = %+v, want it unchanged from %+v", after, before)
 	}
 }

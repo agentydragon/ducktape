@@ -178,7 +178,7 @@ func TestSandboxStatusShowsEachSubscriptionAndWhenItsSourceIsNextRead(t *testing
 	requireEqual(t, len(byID), 2)
 	for _, id := range []uuid.UUID{failing.ID, cancelled.ID} {
 		status := byID[id]
-		if status.Failure == nil || status.Failure.Kind != FailureUnavailable || status.Failure.Message != "Actions Service unavailable" {
+		if status.Failure == nil || status.Failure.Kind != model.FailureUnavailable || status.Failure.Message != "Actions Service unavailable" {
 			t.Errorf("subscription %s failure = %+v", id, status.Failure)
 		}
 		requireBetween(t, "NextSourceCheckAt", status.NextSourceCheckAt, time.Now().Add(55*time.Second), time.Now().Add(time.Minute))

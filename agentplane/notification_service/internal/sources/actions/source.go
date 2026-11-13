@@ -46,7 +46,7 @@ var _ sources.Provider = (*Source)(nil)
 // An Owner follows only the requests its exact Identity incarnation submitted.
 func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
 	if owner.Identity.Name == "" || owner.Identity.UID == "" {
-		return nil, &sources.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
+		return nil, &sources.ProviderError{Kind: model.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	request, err := s.Service.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: requestID.String()})
 	if err != nil {
@@ -60,7 +60,7 @@ func (s *Source) Events(ctx context.Context, owner store.Owner, requestID uuid.U
 	owned := owner.Identity.Name != "" && owner.Identity.UID != "" &&
 		caller.GetName() == owner.Identity.Name && caller.GetUid() == owner.Identity.UID
 	if !owned {
-		return nil, &sources.ProviderError{Kind: store.FailureAccessDenied, Message: "SourceNotOwnedError"}
+		return nil, &sources.ProviderError{Kind: model.FailureAccessDenied, Message: "SourceNotOwnedError"}
 	}
 	if afterSequence < 0 || afterSequence > maxEventSequence {
 		return nil, validationFailure()
@@ -97,7 +97,7 @@ func (s *Source) Process(ctx context.Context, claim store.Claim, due store.DueSu
 	}
 	err = s.Store.RecordActionEvents(ctx, claim, due, events)
 	if errors.Is(err, store.ErrActionHistoryGap) {
-		return &sources.ProviderError{Kind: store.FailureProcessingError, Message: "ConflictError"}
+		return &sources.ProviderError{Kind: model.FailureProcessingError, Message: "ConflictError"}
 	}
 	return err
 }
@@ -127,21 +127,21 @@ func rpcFailure(ctx context.Context, err error) error {
 		return err
 	}
 	code := status.Code(err)
-	kind := store.FailureProcessingError
+	kind := model.FailureProcessingError
 	message := code.String()
 	switch code {
 	case codes.ResourceExhausted:
-		kind = store.FailureRateLimited
+		kind = model.FailureRateLimited
 	case codes.Unauthenticated, codes.PermissionDenied, codes.NotFound:
-		kind = store.FailureAccessDenied
+		kind = model.FailureAccessDenied
 	case codes.Canceled, codes.DeadlineExceeded, codes.Internal, codes.Unknown, codes.Unavailable:
-		kind, message = store.FailureUnavailable, "TransportError"
+		kind, message = model.FailureUnavailable, "TransportError"
 	}
 	return &sources.ProviderError{Kind: kind, Message: message}
 }
 
 func validationFailure() error {
-	return &sources.ProviderError{Kind: store.FailureProcessingError, Message: "ValidationError"}
+	return &sources.ProviderError{Kind: model.FailureProcessingError, Message: "ValidationError"}
 }
 
 func validActionState(state action_servicepb.ActionState) bool {

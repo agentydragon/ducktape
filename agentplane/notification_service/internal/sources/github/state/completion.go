@@ -1,4 +1,4 @@
-package store
+package state
 
 import (
 	"context"
@@ -11,15 +11,15 @@ import (
 )
 
 // completeRefresh validates the lease and access fences in the same transaction as its writes.
-func (g *GitHubState) completeRefresh(ctx context.Context, lease GitHubRefreshLease, fences []GitHubAccessFence, write func(*sql.Tx) error) error {
-	return g.store.transaction(ctx, func(tx *sql.Tx) error {
-		if err := githubLock(ctx, tx); err != nil {
+func (g *State) completeRefresh(ctx context.Context, lease RefreshLease, fences []AccessFence, write func(*sql.Tx) error) error {
+	return g.transaction(ctx, func(tx *sql.Tx) error {
+		if err := Lock(ctx, tx); err != nil {
 			return err
 		}
 		if _, err := leased(ctx, tx, lease); err != nil {
 			return err
 		}
-		valid, err := fencesValid(ctx, tx, fences)
+		valid, err := FencesValidTx(ctx, tx, fences)
 		if err != nil {
 			return err
 		}
@@ -34,8 +34,8 @@ func (g *GitHubState) completeRefresh(ctx context.Context, lease GitHubRefreshLe
 }
 
 // CompleteCheckRuns commits a successful check-run read, including an empty result.
-func (g *GitHubState) CompleteCheckRuns(ctx context.Context, lease GitHubRefreshLease, fences []GitHubAccessFence, runs []model.GitHubCheckRun) error {
-	return g.completeCommit(ctx, lease, fences, model.EventCheckRun, func(tx *sql.Tx, key GitHubCommitRefreshKey, at time.Time, observe func(int64, string, func(int64) (bool, error)) error) error {
+func (g *State) CompleteCheckRuns(ctx context.Context, lease RefreshLease, fences []AccessFence, runs []model.GitHubCheckRun) error {
+	return g.completeCommit(ctx, lease, fences, model.EventCheckRun, func(tx *sql.Tx, key CommitRefreshKey, at time.Time, observe func(int64, string, func(int64) (bool, error)) error) error {
 		for _, run := range runs {
 			if err := observe(run.RepositoryID, run.HeadSHA, func(installationID int64) (bool, error) {
 				return observeGitHubCheckRun(ctx, tx, key.AppID, installationID, run, at)
@@ -48,8 +48,8 @@ func (g *GitHubState) CompleteCheckRuns(ctx context.Context, lease GitHubRefresh
 }
 
 // CompleteCommitStatuses commits a successful commit-status read, including an empty result.
-func (g *GitHubState) CompleteCommitStatuses(ctx context.Context, lease GitHubRefreshLease, fences []GitHubAccessFence, statuses []model.GitHubCommitStatus) error {
-	return g.completeCommit(ctx, lease, fences, model.EventStatus, func(tx *sql.Tx, key GitHubCommitRefreshKey, at time.Time, observe func(int64, string, func(int64) (bool, error)) error) error {
+func (g *State) CompleteCommitStatuses(ctx context.Context, lease RefreshLease, fences []AccessFence, statuses []model.GitHubCommitStatus) error {
+	return g.completeCommit(ctx, lease, fences, model.EventStatus, func(tx *sql.Tx, key CommitRefreshKey, at time.Time, observe func(int64, string, func(int64) (bool, error)) error) error {
 		for _, status := range statuses {
 			if err := observe(status.RepositoryID, status.SHA, func(installationID int64) (bool, error) {
 				return observeGitHubCommitStatus(ctx, tx, key.AppID, installationID, status, at)
@@ -61,11 +61,11 @@ func (g *GitHubState) CompleteCommitStatuses(ctx context.Context, lease GitHubRe
 	})
 }
 
-func (g *GitHubState) completeCommit(ctx context.Context, lease GitHubRefreshLease, fences []GitHubAccessFence, event model.EventName,
-	record func(*sql.Tx, GitHubCommitRefreshKey, time.Time, func(int64, string, func(int64) (bool, error)) error) error,
+func (g *State) completeCommit(ctx context.Context, lease RefreshLease, fences []AccessFence, event model.EventName,
+	record func(*sql.Tx, CommitRefreshKey, time.Time, func(int64, string, func(int64) (bool, error)) error) error,
 ) error {
 	return g.completeRefresh(ctx, lease, fences, func(tx *sql.Tx) error {
-		commit, ok := lease.Key.(GitHubCommitRefreshKey)
+		commit, ok := lease.Key.(CommitRefreshKey)
 		if !ok || commit.Event != event {
 			return errors.New("commit refresh lease does not match its observation resource")
 		}
@@ -137,19 +137,16 @@ func (g *GitHubState) completeCommit(ctx context.Context, lease GitHubRefreshLea
 			return err
 		}
 		if changed {
-			if err := wakeGitHubInboxes(ctx, tx, commit.AppID); err != nil {
-				return err
-			}
-			return notify(ctx, tx)
+			return g.publish(ctx, tx, commit.AppID)
 		}
 		return nil
 	})
 }
 
 // CompleteReviews commits the current submitted and dismissed reviews under their independent refresh lease.
-func (g *GitHubState) CompleteReviews(ctx context.Context, lease GitHubRefreshLease, fences []GitHubAccessFence, reviews []model.GitHubReviewObservation) error {
+func (g *State) CompleteReviews(ctx context.Context, lease RefreshLease, fences []AccessFence, reviews []model.GitHubReviewObservation) error {
 	return g.completeRefresh(ctx, lease, fences, func(tx *sql.Tx) error {
-		review, ok := lease.Key.(GitHubReviewRefreshKey)
+		review, ok := lease.Key.(ReviewRefreshKey)
 		if !ok {
 			return errors.New("reviews require a review refresh lease")
 		}
@@ -175,7 +172,7 @@ func (g *GitHubState) CompleteReviews(ctx context.Context, lease GitHubRefreshLe
 		changed := false
 		for _, observation := range reviews {
 			didChange, err := observeGitHubPRReview(ctx, tx, review.AppID, review.InstallationID,
-				review.Subject.RepositoryID, mustPRNumber(review.Subject), observation, at)
+				review.Subject.RepositoryID, PRNumber(review.Subject), observation, at)
 			if err != nil {
 				return err
 			}
@@ -183,7 +180,7 @@ func (g *GitHubState) CompleteReviews(ctx context.Context, lease GitHubRefreshLe
 		}
 		if changed {
 			if err := invalidateOtherGitHubReviewRefreshes(ctx, tx, review.AppID, review.InstallationID,
-				review.Subject.RepositoryID, mustPRNumber(review.Subject)); err != nil {
+				review.Subject.RepositoryID, PRNumber(review.Subject)); err != nil {
 				return err
 			}
 		}
@@ -194,31 +191,28 @@ func (g *GitHubState) CompleteReviews(ctx context.Context, lease GitHubRefreshLe
 			return err
 		}
 		if changed {
-			if err := wakeGitHubInboxes(ctx, tx, review.AppID); err != nil {
-				return err
-			}
-			return notify(ctx, tx)
+			return g.publish(ctx, tx, review.AppID)
 		}
 		return nil
 	})
 }
 
-// GitHubSubjectObservation is the revision association learned by one subject refresh.
+// SubjectObservation is the revision association learned by one subject refresh.
 // PullRequest is present only when the subject is a pull request.
-type GitHubSubjectObservation struct {
+type SubjectObservation struct {
 	Revisions   []model.GitHubHeadRevision
 	PullRequest *model.GitHubPullRequestObservation
 }
 
 // CompleteSubject commits a subject read and its PR observation together under the subject lease.
-func (g *GitHubState) CompleteSubject(ctx context.Context, lease GitHubRefreshLease, fences []GitHubAccessFence, observation GitHubSubjectObservation) error {
+func (g *State) CompleteSubject(ctx context.Context, lease RefreshLease, fences []AccessFence, observation SubjectObservation) error {
 	return g.completeRefresh(ctx, lease, fences, func(tx *sql.Tx) error {
-		subject, ok := lease.Key.(GitHubSubjectKey)
+		subject, ok := lease.Key.(SubjectKey)
 		if !ok {
 			return errors.New("subject observations require a subject refresh lease")
 		}
 		if len(observation.Revisions) > 0 {
-			if err := addRevisions(ctx, tx, subject, observation.Revisions); err != nil {
+			if err := AddRevisionsTx(ctx, tx, subject, observation.Revisions); err != nil {
 				return err
 			}
 		}
@@ -231,16 +225,16 @@ func (g *GitHubState) CompleteSubject(ctx context.Context, lease GitHubRefreshLe
 			return err
 		}
 		if observation.PullRequest != nil {
-			return g.store.observePullRequest(ctx, tx, subject, fences, *observation.PullRequest, at)
+			return g.observePullRequest(ctx, tx, subject, fences, *observation.PullRequest, at)
 		}
 		return nil
 	})
 }
 
 // CompleteAccess validates repository access. A nil name retains the already stored name.
-func (g *GitHubState) CompleteAccess(ctx context.Context, lease GitHubRefreshLease, repositoryName *string) error {
+func (g *State) CompleteAccess(ctx context.Context, lease RefreshLease, repositoryName *string) error {
 	return g.completeRefresh(ctx, lease, nil, func(tx *sql.Tx) error {
-		if _, ok := lease.Key.(GitHubAccessKey); !ok {
+		if _, ok := lease.Key.(AccessKey); !ok {
 			return errors.New("access observations require an access refresh lease")
 		}
 		table, where, args := refreshWhere(lease.Key)

@@ -319,7 +319,7 @@ func TestEveryWriteOfAClaimIsFencedByTheLease(t *testing.T) {
 				"DeliveryFailed":          func() error { return f.DeliveryFailed(t.Context(), claim, notice, "failed") },
 				"Receipt":                 func() error { return f.Receipt(t.Context(), claim, notice, entry, 0) },
 				"SourceFailed": func() error {
-					return f.SourceFailed(t.Context(), claim, subscription, FailureUnavailable, "unavailable", time.Minute)
+					return f.SourceFailed(t.Context(), claim, subscription, model.FailureUnavailable, "unavailable", time.Minute)
 				},
 				"SourceDeferred": func() error { return f.SourceDeferred(t.Context(), claim, subscription, time.Now().Add(time.Hour)) },
 			}
@@ -492,7 +492,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 	if err := f.SourceDeferred(t.Context(), claim, due.Subscription, time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	requireEqual(t, f.get(t, older.ID).Failure, (*SourceFailure)(nil))
+	requireEqual(t, f.get(t, older.ID).Failure, (*model.SourceFailure)(nil))
 	due = f.source(t, claim)
 	if due == nil {
 		t.Fatal("no subscription was due after the first was postponed")
@@ -514,7 +514,7 @@ func TestSourceFailureIsShownOnTheSubscriptionAndRetried(t *testing.T) {
 	f.addEvents(t, subscription, 1, 2)
 	claim := f.sourceClaim(t)
 
-	fail := func(kind SourceFailureKind, message string) Subscription {
+	fail := func(kind model.SourceFailureKind, message string) Subscription {
 		t.Helper()
 		due := f.source(t, claim)
 		if due == nil {
@@ -531,9 +531,9 @@ func TestSourceFailureIsShownOnTheSubscriptionAndRetried(t *testing.T) {
 	}
 
 	before := time.Now()
-	first := fail(FailureUnavailable, "unavailable")
+	first := fail(model.FailureUnavailable, "unavailable")
 	after := time.Now()
-	if first.Failure == nil || first.Failure.Kind != FailureUnavailable || first.Failure.Message != "unavailable" {
+	if first.Failure == nil || first.Failure.Kind != model.FailureUnavailable || first.Failure.Message != "unavailable" {
 		t.Fatalf("failure = %+v", first.Failure)
 	}
 	requireBetween(t, "Since", &first.Failure.Since, before, after)
@@ -550,14 +550,14 @@ func TestSourceFailureIsShownOnTheSubscriptionAndRetried(t *testing.T) {
 
 	// The same kind of failure keeps its start; a different kind starts again.
 	retry()
-	again := fail(FailureUnavailable, "still unavailable")
+	again := fail(model.FailureUnavailable, "still unavailable")
 	if again.Failure.Message != "still unavailable" || !again.Failure.Since.Equal(first.Failure.Since) ||
 		!again.Failure.ObservedAt.After(first.Failure.ObservedAt) {
 		t.Errorf("same kind: %+v after %+v", again.Failure, first.Failure)
 	}
 	retry()
-	changed := fail(FailureRateLimited, "rate limited")
-	if changed.Failure.Kind != FailureRateLimited || !changed.Failure.Since.After(first.Failure.Since) {
+	changed := fail(model.FailureRateLimited, "rate limited")
+	if changed.Failure.Kind != model.FailureRateLimited || !changed.Failure.Since.After(first.Failure.Since) {
 		t.Errorf("new kind: %+v after %+v", changed.Failure, first.Failure)
 	}
 }
@@ -573,10 +573,10 @@ func TestSourceFailureHealthIsPerSubscription(t *testing.T) {
 	if due == nil || due.ID != failing.ID {
 		t.Fatalf("source = %+v, want the failing subscription", due)
 	}
-	if err := f.SourceFailed(t.Context(), claim, due.Subscription, FailureProcessingError, "failed", time.Minute); err != nil {
+	if err := f.SourceFailed(t.Context(), claim, due.Subscription, model.FailureProcessingError, "failed", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	requireEqual(t, f.get(t, healthy.ID).Failure, (*SourceFailure)(nil))
+	requireEqual(t, f.get(t, healthy.ID).Failure, (*model.SourceFailure)(nil))
 	if f.get(t, failing.ID).Failure == nil {
 		t.Error("the failing subscription shows no failure")
 	}
@@ -604,7 +604,7 @@ func TestAnOutcomeReportedAfterTheSubscriptionChangedIsIgnored(t *testing.T) {
 			changed := f.get(t, created.ID)
 			postponed := time.Now().Add(time.Hour).Truncate(time.Microsecond)
 
-			if err := f.SourceFailed(t.Context(), claim, due.Subscription, FailureUnavailable, "unavailable", time.Minute); err != nil {
+			if err := f.SourceFailed(t.Context(), claim, due.Subscription, model.FailureUnavailable, "unavailable", time.Minute); err != nil {
 				t.Fatal(err)
 			}
 			if err := f.SourceDeferred(t.Context(), claim, due.Subscription, postponed); err != nil {
@@ -628,10 +628,10 @@ func TestAFailureReportedAfterTheSubscriptionExpiredIsIgnored(t *testing.T) {
 	}
 	f.exec(t, `UPDATE subscription SET expires_at = now() - interval '1 second' WHERE id = $1`, created.ID)
 
-	if err := f.SourceFailed(t.Context(), claim, due.Subscription, FailureUnavailable, "unavailable", time.Minute); err != nil {
+	if err := f.SourceFailed(t.Context(), claim, due.Subscription, model.FailureUnavailable, "unavailable", time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	requireEqual(t, f.get(t, created.ID).Failure, (*SourceFailure)(nil))
+	requireEqual(t, f.get(t, created.ID).Failure, (*model.SourceFailure)(nil))
 }
 
 func TestUnavailableDestinationKeepsInboxAndSubscriptionsAndSchedulesSourceWork(t *testing.T) {

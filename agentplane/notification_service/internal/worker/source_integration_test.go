@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/status"
@@ -17,21 +18,21 @@ func TestProviderFailuresAreShownOnTheSubscriptionAndRetried(t *testing.T) {
 	for _, c := range []struct {
 		name    string
 		failure error
-		kind    store.SourceFailureKind
+		kind    model.SourceFailureKind
 		message string
 		retry   time.Duration
 	}{
 		{
-			"default retry", &sources.ProviderError{Kind: store.FailureUnavailable, Message: "Actions Service unavailable"},
-			store.FailureUnavailable, "Actions Service unavailable", sources.DefaultRetry,
+			"default retry", &sources.ProviderError{Kind: model.FailureUnavailable, Message: "Actions Service unavailable"},
+			model.FailureUnavailable, "Actions Service unavailable", sources.DefaultRetry,
 		},
 		{
-			"retry the Provider asks for", &sources.ProviderError{Kind: store.FailureRateLimited, Message: "rate limited", RetryAfter: 10 * time.Second},
-			store.FailureRateLimited, "rate limited", 10 * time.Second,
+			"retry the Provider asks for", &sources.ProviderError{Kind: model.FailureRateLimited, Message: "rate limited", RetryAfter: 10 * time.Second},
+			model.FailureRateLimited, "rate limited", 10 * time.Second,
 		},
 		{
 			"quota", &store.QuotaError{Quota: store.EntriesPerInbox, Limit: 10},
-			store.FailureProcessingError, "QuotaError", sources.DefaultRetry,
+			model.FailureProcessingError, "QuotaError", sources.DefaultRetry,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -71,7 +72,7 @@ func TestADeferredSourceShowsNoFailureAndWaitsForItsTime(t *testing.T) {
 	}
 
 	shown := h.subscription(t, subscription.ID)
-	requireEqual(t, [2]any{shown.Failure, shown.RetryAt}, [2]any{(*store.SourceFailure)(nil), (*time.Time)(nil)})
+	requireEqual(t, [2]any{shown.Failure, shown.RetryAt}, [2]any{(*model.SourceFailure)(nil), (*time.Time)(nil)})
 	next, err := h.store.NextSourceWorkAt(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +94,7 @@ func TestAProviderBreakingItsContractIsReturnedAfterTheInboxIsReleased(t *testin
 		t.Fatalf("step = %v, %v; want the Provider's error for subscription %s", worked, err, subscription.ID)
 	}
 	// It is not shown as a source failure, and the inbox is not held until its lease runs out.
-	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
+	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*model.SourceFailure)(nil))
 	requireEqual(t, h.sourceClaim(t).ID, subscription.InboxID)
 }
 
@@ -110,7 +111,7 @@ func TestAProviderWhoseClaimWasLostLeavesTheInboxToItsNewOwner(t *testing.T) {
 		t.Fatalf("source step = %v, %v", worked, err)
 	}
 
-	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
+	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*model.SourceFailure)(nil))
 	// Nothing was released on the new owner's behalf.
 	h.requireNoSourceDue(t)
 }
@@ -184,7 +185,7 @@ func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T
 				}
 			}
 			requireEqual(t, h.row(t, subscription.InboxID).deliveryError, (*string)(nil))
-			requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
+			requireEqual(t, h.subscription(t, subscription.ID).Failure, (*model.SourceFailure)(nil))
 		})
 	}
 }

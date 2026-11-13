@@ -68,7 +68,7 @@ func TestCheckRunPermissionFailureDoesNotBlockOrdinaryWebhookDelivery(t *testing
 		t.Fatalf("entries = %d, want the ordinary comment", got)
 	}
 	view := h.subscription(subscription.ID)
-	if view.GitHub == nil || view.GitHub.CheckRuns == nil || view.GitHub.CheckRuns.Failure == nil || view.GitHub.CheckRuns.Failure.Kind != store.FailureAccessDenied {
+	if view.GitHub == nil || view.GitHub.CheckRuns == nil || view.GitHub.CheckRuns.Failure == nil || view.GitHub.CheckRuns.Failure.Kind != model.FailureAccessDenied {
 		t.Fatalf("GitHub status = %+v, want independent check-run access failure", view.GitHub)
 	}
 	if view.GitHub.Subject.Failure != nil || view.Failure != nil {
@@ -180,7 +180,7 @@ func TestCommitResourcePermissionFailuresAreIndependent(t *testing.T) {
 			if failChecks {
 				failed, succeeded = succeeded, failed
 			}
-			if failed == nil || failed.Failure == nil || failed.Failure.Kind != store.FailureAccessDenied {
+			if failed == nil || failed.Failure == nil || failed.Failure.Kind != model.FailureAccessDenied {
 				t.Fatalf("failed refresh = %+v, want independent access error", failed)
 			}
 			if succeeded == nil || succeeded.LastSuccessAt == nil || succeeded.Failure != nil {

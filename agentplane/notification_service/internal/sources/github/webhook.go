@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/go-github/v88/github"
@@ -426,30 +427,30 @@ func refEvent(body object) (correlation, error) {
 //
 // A body is a JSON object, and the fields read have exact types and names: an ID or a number must be a JSON
 // integer, and a timestamp RFC 3339.
-func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) (store.GitHubIngest, error) {
+func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) (githubstate.Ingest, error) {
 	correlate, ok := correlators[event]
 	if !ok {
-		return store.GitHubIngest{}, ErrUnsupportedEvent
+		return githubstate.Ingest{}, ErrUnsupportedEvent
 	}
 	if !utf8.Valid(raw) || !json.Valid(raw) {
-		return store.GitHubIngest{}, invalidPayload("body is not JSON")
+		return githubstate.Ingest{}, invalidPayload("body is not JSON")
 	}
 	body, err := asObject(raw, "body")
 	if err != nil {
-		return store.GitHubIngest{}, err
+		return githubstate.Ingest{}, err
 	}
 	common, err := parseEnvelope(body)
 	if err != nil {
-		return store.GitHubIngest{}, err
+		return githubstate.Ingest{}, err
 	}
 	found, err := correlate(body)
 	if err != nil {
-		return store.GitHubIngest{}, err
+		return githubstate.Ingest{}, err
 	}
 	if common.repository == nil && event != "installation" && event != "installation_repositories" {
-		return store.GitHubIngest{}, ErrMissingRepository
+		return githubstate.Ingest{}, ErrMissingRepository
 	}
-	ingest := store.GitHubIngest{
+	ingest := githubstate.Ingest{
 		AppID:          appID,
 		DeliveryID:     deliveryID,
 		InstallationID: common.installationID,
@@ -465,9 +466,9 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 	digest.Write(raw)
 	ingest.Digest = digest.Sum(nil)
 	for _, subject := range found.subjects {
-		key, err := store.NewGitHubSubjectKey(common.repository.ID, subject)
+		key, err := githubstate.NewSubjectKey(common.repository.ID, subject)
 		if err != nil {
-			return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+			return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 		}
 		ingest.Subjects = append(ingest.Subjects, key)
 	}
@@ -482,7 +483,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		case string(model.EventCheckRun):
 			checkRun, err := webhookCheckRun(body, common.action, *found.sha)
 			if err != nil {
-				return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+				return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 			}
 			if checkRun != nil {
 				checkRun.RepositoryID = common.repository.ID
@@ -491,7 +492,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 		case string(model.EventStatus):
 			commitStatus, err := webhookCommitStatus(body, *found.sha)
 			if err != nil {
-				return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+				return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 			}
 			if commitStatus != nil {
 				commitStatus.RepositoryID = common.repository.ID
@@ -501,7 +502,7 @@ func ParseDelivery(appID int64, event string, deliveryID uuid.UUID, raw []byte) 
 	}
 	ingest.Review, ingest.Lifecycle, err = webhookPRState(body, event, common.action)
 	if err != nil {
-		return store.GitHubIngest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
+		return githubstate.Ingest{}, fmt.Errorf("%w: %w", ErrInvalidPayload, err)
 	}
 
 	return ingest, nil

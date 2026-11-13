@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -34,17 +35,17 @@ func toInt32(field string, value int64) (int32, error) {
 	return int32(value), nil
 }
 
-func failureKind(kind store.SourceFailureKind) (notificationspb.SourceFailureKind, error) {
+func failureKind(kind model.SourceFailureKind) (notificationspb.SourceFailureKind, error) {
 	switch kind {
-	case store.FailureRateLimited:
+	case model.FailureRateLimited:
 		return notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_RATE_LIMITED, nil
-	case store.FailureUnavailable:
+	case model.FailureUnavailable:
 		return notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_UNAVAILABLE, nil
-	case store.FailureAccessDenied:
+	case model.FailureAccessDenied:
 		return notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_ACCESS_DENIED, nil
-	case store.FailureSourceChanged:
+	case model.FailureSourceChanged:
 		return notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_SOURCE_CHANGED, nil
-	case store.FailureProcessingError:
+	case model.FailureProcessingError:
 		return notificationspb.SourceFailureKind_SOURCE_FAILURE_KIND_PROCESSING_ERROR, nil
 	default:
 		return 0, fmt.Errorf("stored source failure kind %q is unknown", kind)
@@ -60,7 +61,7 @@ type observation struct {
 	errorObserved *timestamppb.Timestamp
 }
 
-func observe(lastSuccessAt *time.Time, failure *store.SourceFailure) (observation, error) {
+func observe(lastSuccessAt *time.Time, failure *model.SourceFailure) (observation, error) {
 	view := observation{lastSuccessAt: timestamp(lastSuccessAt)}
 	if failure == nil {
 		return view, nil
@@ -129,7 +130,7 @@ func subjectView(subject model.GitHubSubject) (*notificationspb.GitHubSubject, e
 }
 
 // subjectKeyView is the subject a shared row is indexed under, which is what subjectKey makes of it.
-func subjectKeyView(key store.GitHubSubjectKey) (*notificationspb.GitHubSubject, error) {
+func subjectKeyView(key githubstate.SubjectKey) (*notificationspb.GitHubSubject, error) {
 	switch key.Kind {
 	case "pull_request", "issue":
 		number, err := strconv.ParseInt(key.Key, 10, 64)
@@ -175,11 +176,11 @@ func sourceView(source model.Source) (*notificationspb.Source, error) {
 	}
 }
 
-func refreshStatus(refresh store.GitHubRefreshStatus) (observation, error) {
+func refreshStatus(refresh githubstate.RefreshStatus) (observation, error) {
 	return observe(refresh.LastSuccessAt, refresh.Failure)
 }
 
-func githubStatusView(status *store.GitHubStatus) (*notificationspb.GitHubStatus, error) {
+func githubStatusView(status *githubstate.Status) (*notificationspb.GitHubStatus, error) {
 	if status == nil {
 		return nil, nil
 	}
@@ -218,7 +219,7 @@ func githubStatusView(status *store.GitHubStatus) (*notificationspb.GitHubStatus
 		}
 	}
 	for _, access := range status.Access {
-		seen, err := refreshStatus(access.GitHubRefreshStatus)
+		seen, err := refreshStatus(access.RefreshStatus)
 		if err != nil {
 			return nil, err
 		}
@@ -230,7 +231,7 @@ func githubStatusView(status *store.GitHubStatus) (*notificationspb.GitHubStatus
 			RetryAt: timestamp(access.RetryAt), RefreshingUntil: timestamp(access.RefreshingUntil),
 		})
 	}
-	seen, err := refreshStatus(status.Subject.GitHubRefreshStatus)
+	seen, err := refreshStatus(status.Subject.RefreshStatus)
 	if err != nil {
 		return nil, err
 	}

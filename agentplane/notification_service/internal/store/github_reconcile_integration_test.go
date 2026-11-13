@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
@@ -18,9 +19,9 @@ func TestTheSharedStateAReconcileReadsIsReadAsItWasWritten(t *testing.T) {
 		t.Fatalf("RepositoryName = %q, %v", name, err)
 	}
 	state, err := g.state.Subject(ctx, sub.Subject)
-	requireEqual(t, []any{state, err}, []any{GitHubSubjectState{}, error(nil)})
+	requireEqual(t, []any{state, err}, []any{githubstate.SubjectState{}, error(nil)})
 
-	var deferred *RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if _, err := g.state.ValidUntil(ctx, g.access()); !errors.As(err, &deferred) {
 		t.Fatalf("ValidUntil of an access never validated: error = %v, want a deferral", err)
 	}
@@ -48,7 +49,7 @@ func TestOnlyTheGrantsOnRepositoriesHoldingARevisionOfTheSubjectAreRevisionGrant
 		t.Fatal(err)
 	}
 	// A grant of an App other than the subject's is not shared.
-	if err := g.state.Grant(ctx, GitHubAccessKey{AppID: g.app + 1, InstallationID: g.installation + 5, RepositoryID: fork.ID}, fork.Name); err != nil {
+	if err := g.state.Grant(ctx, githubstate.AccessKey{AppID: g.app + 1, InstallationID: g.installation + 5, RepositoryID: fork.ID}, fork.Name); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +60,7 @@ func TestOnlyTheGrantsOnRepositoriesHoldingARevisionOfTheSubjectAreRevisionGrant
 	g.addRevisions(t, sub.Subject, model.GitHubHeadRevision{Repository: model.GitHubRepository{ID: g.repository, Name: testRepositoryName}, SHA: commitA})
 
 	grants, err = g.state.RevisionGrants(ctx, g.app, sub.Subject)
-	requireEqual(t, []any{grants, err}, []any{[]GitHubAccessKey{key}, error(nil)})
+	requireEqual(t, []any{grants, err}, []any{[]githubstate.AccessKey{key}, error(nil)})
 	grants, err = g.state.RevisionGrants(ctx, g.app, other.Subject)
 	requireEqual(t, []any{len(grants), err}, []any{0, error(nil)})
 }

@@ -3,11 +3,12 @@ package github
 import (
 	"context"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
-func (p *Provider) readCheckRuns(ctx context.Context, subject store.GitHubSubjectKey, fences []store.GitHubAccessFence) ([]model.GitHubCheckRun, error) {
+func (p *Provider) readCheckRuns(ctx context.Context, subject githubstate.SubjectKey, fences []githubstate.AccessFence) ([]model.GitHubCheckRun, error) {
 	targets, err := p.commitTargets(ctx, subject, fences)
 	if err != nil {
 		return nil, err

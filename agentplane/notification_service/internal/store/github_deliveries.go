@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
@@ -24,7 +25,7 @@ type GitHubMatch struct {
 	InboxID        uuid.UUID
 	AppID          int64
 	// Subject is the subject followed, in the repository the subscription is bound to.
-	Subject GitHubSubjectKey
+	Subject githubstate.SubjectKey
 	Filters []model.EventFilter
 	// Observation selection controls raw suppression for native commit events. Explicit check-run action filters
 	// keep matching raw webhook actions and do not select generated check-run facts.
@@ -32,7 +33,7 @@ type GitHubMatch struct {
 	ObserveCommitStatuses bool
 	// Fences are the grants the subscription may read under: a delivery of a repository outside them is not
 	// owed, however it matches.
-	Fences []GitHubAccessFence
+	Fences []githubstate.AccessFence
 }
 
 // GitHubDelivery is a stored delivery that matched, with the identity of its entry.
@@ -170,8 +171,8 @@ type GitHubRecording struct {
 	// More says the page was full: the subscription is due again at once.
 	More bool
 	// Fences are the grants the match was read under, and Subject and SubjectGeneration the subject refresh.
-	Fences            []GitHubAccessFence
-	Subject           GitHubSubjectKey
+	Fences            []githubstate.AccessFence
+	Subject           githubstate.SubjectKey
 	SubjectGeneration int64
 	// RepairAt is the earliest expiry among access fences, checked again while recording.
 	RepairAt time.Time
@@ -184,11 +185,11 @@ type GitHubRecording struct {
 //
 // Nothing is appended, and the subscription is made due at once, if a fence or the subject refresh no longer
 // holds. If a grant expires while the page is written, the transaction is rolled back and the call fails with
-// *RefreshDeferredError. It fails with ErrClaimLost if the claim no longer holds, and does nothing for a
+// *githubstate.RefreshDeferredError. It fails with ErrClaimLost if the claim no longer holds, and does nothing for a
 // cancelled, expired or changed subscription.
 func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubRecording) error {
 	return s.transaction(ctx, func(tx *sql.Tx) error {
-		if err := githubLock(ctx, tx); err != nil {
+		if err := githubstate.Lock(ctx, tx); err != nil {
 			return err
 		}
 		if _, err := fenced(ctx, tx, claim); err != nil {
@@ -204,16 +205,15 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		if cancelled || version != recording.Version || !expiresAt.After(now()) {
 			return nil
 		}
-		var subjectGeneration int64
-		table, where, args := refreshWhere(recording.Subject)
-		if err := tx.QueryRowContext(ctx, "SELECT generation FROM "+table+" WHERE "+where, args...).Scan(&subjectGeneration); err != nil {
-			return fmt.Errorf("%s %+v: %w", table, recording.Subject, err)
+		subjectGeneration, err := githubstate.SubjectGenerationTx(ctx, tx, recording.Subject)
+		if err != nil {
+			return err
 		}
 		current := len(recording.Fences) > 0 && recording.RepairAt.After(now()) &&
 			subjectGeneration == recording.SubjectGeneration
 		if current {
 			var err error
-			if current, err = fencesValid(ctx, tx, recording.Fences); err != nil {
+			if current, err = githubstate.FencesValidTx(ctx, tx, recording.Fences); err != nil {
 				return err
 			}
 		}
@@ -262,12 +262,12 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			}
 		}
 		// Appending took time: roll the whole page back if a grant expired meanwhile.
-		valid, err := fencesValid(ctx, tx, recording.Fences)
+		valid, err := githubstate.FencesValidTx(ctx, tx, recording.Fences)
 		if err != nil {
 			return err
 		}
 		if !valid || !recording.RepairAt.After(now()) {
-			return &RefreshDeferredError{Until: now()}
+			return &githubstate.RefreshDeferredError{Until: now()}
 		}
 		return notify(ctx, tx)
 	})

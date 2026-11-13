@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // refreshSubject refreshes the subject unless it is fresh or another refresh holds it: the commits it is at, in
 // the repositories holding them, and the grant on a pull request's fork when the App is installed there.
-func (p *Provider) refreshSubject(ctx context.Context, source model.GitHubSource, subject store.GitHubSubjectKey, base store.GitHubAccessFence) error {
+func (p *Provider) refreshSubject(ctx context.Context, source model.GitHubSource, subject githubstate.SubjectKey, base githubstate.AccessFence) error {
 	lease, err := p.state.Acquire(ctx, subject)
 	if err != nil || lease == nil {
 		return err
@@ -19,7 +20,7 @@ func (p *Provider) refreshSubject(ctx context.Context, source model.GitHubSource
 	if err != nil {
 		return p.refreshFailed(ctx, *lease, err)
 	}
-	return p.state.CompleteSubject(ctx, *lease, []store.GitHubAccessFence{base}, store.GitHubSubjectObservation{Revisions: observation.revisions, PullRequest: observation.pullRequest})
+	return p.state.CompleteSubject(ctx, *lease, []githubstate.AccessFence{base}, githubstate.SubjectObservation{Revisions: observation.revisions, PullRequest: observation.pullRequest})
 }
 
 type subjectObservation struct {
@@ -27,7 +28,7 @@ type subjectObservation struct {
 	pullRequest *model.GitHubPullRequestObservation
 }
 
-func (p *Provider) readSubject(ctx context.Context, source model.GitHubSource, subject store.GitHubSubjectKey, installation int64) (subjectObservation, error) {
+func (p *Provider) readSubject(ctx context.Context, source model.GitHubSource, subject githubstate.SubjectKey, installation int64) (subjectObservation, error) {
 	name, err := p.state.RepositoryName(ctx, subject.RepositoryID)
 	if err != nil {
 		return subjectObservation{}, err

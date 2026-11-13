@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -132,26 +133,26 @@ func TestGitHubRefreshStatusViewsSeparateCheckRunsCommitStatusesAndReviews(t *te
 	reviewsErrorObserved := reviewsErrorSince.Add(time.Second)
 	reviewsRetryAt := reviewsErrorObserved.Add(time.Minute)
 	reviewsRefreshingUntil := reviewsRetryAt.Add(time.Minute)
-	status, err := githubStatusView(&store.GitHubStatus{
-		Subject: store.GitHubSubjectStatus{Key: store.GitHubSubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
-		CheckRuns: &store.GitHubRefreshStatus{
+	status, err := githubStatusView(&githubstate.Status{
+		Subject: githubstate.SubjectStatus{Key: githubstate.SubjectKey{RepositoryID: 22, Kind: "pull_request", Key: "7"}},
+		CheckRuns: &githubstate.RefreshStatus{
 			LastSuccessAt: &lastSuccess,
-			Failure: &store.SourceFailure{
-				Kind: store.FailureRateLimited, Message: "rate limited", Since: errorSince, ObservedAt: errorObserved,
+			Failure: &model.SourceFailure{
+				Kind: model.FailureRateLimited, Message: "rate limited", Since: errorSince, ObservedAt: errorObserved,
 			},
 			RetryAt: &retryAt, RefreshingUntil: &refreshingUntil,
 		},
-		CommitStatuses: &store.GitHubRefreshStatus{
+		CommitStatuses: &githubstate.RefreshStatus{
 			LastSuccessAt: &statusesLastSuccess,
-			Failure: &store.SourceFailure{
-				Kind: store.FailureAccessDenied, Message: "statuses denied", Since: statusesErrorSince, ObservedAt: statusesErrorObserved,
+			Failure: &model.SourceFailure{
+				Kind: model.FailureAccessDenied, Message: "statuses denied", Since: statusesErrorSince, ObservedAt: statusesErrorObserved,
 			},
 			RetryAt: &statusesRetryAt, RefreshingUntil: &statusesRefreshingUntil,
 		},
-		Reviews: &store.GitHubRefreshStatus{
+		Reviews: &githubstate.RefreshStatus{
 			LastSuccessAt: &reviewsLastSuccess,
-			Failure: &store.SourceFailure{
-				Kind: store.FailureUnavailable, Message: "reviews unavailable", Since: reviewsErrorSince, ObservedAt: reviewsErrorObserved,
+			Failure: &model.SourceFailure{
+				Kind: model.FailureUnavailable, Message: "reviews unavailable", Since: reviewsErrorSince, ObservedAt: reviewsErrorObserved,
 			},
 			RetryAt: &reviewsRetryAt, RefreshingUntil: &reviewsRefreshingUntil,
 		},

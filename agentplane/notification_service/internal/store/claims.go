@@ -6,6 +6,8 @@ import (
 	"errors"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 )
 
@@ -291,7 +293,7 @@ type DueSubscription struct {
 	// which is its creation's `after_sequence` until it records one. Nil for a GitHub subscription.
 	ActionsAfterSequence *int64
 	// GitHubAccess is the access a GitHub subscription was authorized under when it was created, nil for any other.
-	GitHubAccess *GitHubAccessKey
+	GitHubAccess *githubstate.AccessKey
 	// Generation moves on each time GitHub ingress wakes the subscription, so that a read made before can tell
 	// that it may have missed a delivery.
 	Generation int64
@@ -318,7 +320,7 @@ func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, erro
 		due.ActionsAfterSequence = &afterSequence.Int64
 	}
 	if app.Valid {
-		due.GitHubAccess = &GitHubAccessKey{AppID: app.Int64, InstallationID: installation.Int64, RepositoryID: repository.Int64}
+		due.GitHubAccess = &githubstate.AccessKey{AppID: app.Int64, InstallationID: installation.Int64, RepositoryID: repository.Int64}
 	}
 	return &due, nil
 }
@@ -326,7 +328,7 @@ func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, erro
 // SourceFailed records that the subscription's source could not be processed, and defers its next attempt by
 // retryAfter. The failure's start moves only when its kind changes. A subscription that was cancelled, expired
 // or renewed since it was read as source (its version moved) keeps its state.
-func (s *Store) SourceFailed(ctx context.Context, claim Claim, source Subscription, kind SourceFailureKind, message string, retryAfter time.Duration) error {
+func (s *Store) SourceFailed(ctx context.Context, claim Claim, source Subscription, kind model.SourceFailureKind, message string, retryAfter time.Duration) error {
 	return s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
 		failed := now()
 		result, err := tx.ExecContext(ctx, `

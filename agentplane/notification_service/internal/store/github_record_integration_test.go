@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
@@ -283,7 +284,7 @@ func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	}
 	g.expireAccessWhenAppended(t)
 
-	var deferred *RefreshDeferredError
+	var deferred *githubstate.RefreshDeferredError
 	if err := g.record(t, claim, step); !errors.As(err, &deferred) {
 		t.Fatalf("recording = %v, want it deferred", err)
 	}

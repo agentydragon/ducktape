@@ -12,6 +12,7 @@ go_library(
         "github_reviews.go",
         "identity.go",
         "selection.go",
+        "source_failure.go",
         "subscription.go",
         "validation.go",
     ],

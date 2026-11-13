@@ -145,7 +145,7 @@ func TestRecordActionEventsRefusesAGapAndRecordsNothingOfTheRead(t *testing.T) {
 	request := subscription.Source.(model.ActionsSource).RequestID
 	claim := f.claim(t)
 	f.mustRecord(t, claim, subscription, eventsThrough(1, 2))
-	if err := f.SourceFailed(t.Context(), claim, f.get(t, subscription.ID), FailureUnavailable, "HTTP 503", time.Minute); err != nil {
+	if err := f.SourceFailed(t.Context(), claim, f.get(t, subscription.ID), model.FailureUnavailable, "HTTP 503", time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	failure := f.get(t, subscription.ID).Failure
@@ -247,7 +247,7 @@ func TestRecordActionEventsClearsTheFailureOfItsSubscriptionAlone(t *testing.T) 
 	second := f.subscribe(t, f.body("second"))
 	claim := f.claim(t)
 	for _, subscription := range []Subscription{first, second} {
-		if err := f.SourceFailed(t.Context(), claim, subscription, FailureRateLimited, "HTTP 429", time.Minute); err != nil {
+		if err := f.SourceFailed(t.Context(), claim, subscription, model.FailureRateLimited, "HTTP 429", time.Minute); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -258,7 +258,7 @@ func TestRecordActionEventsClearsTheFailureOfItsSubscriptionAlone(t *testing.T) 
 	after := time.Now()
 
 	recovered := f.get(t, first.ID)
-	requireEqual(t, recovered.Failure, (*SourceFailure)(nil))
+	requireEqual(t, recovered.Failure, (*model.SourceFailure)(nil))
 	requireEqual(t, recovered.RetryAt, (*time.Time)(nil))
 	requireBetween(t, "last_success_at", recovered.LastSuccessAt, before, after)
 	requireEqual(t, f.get(t, second.ID), untouched)

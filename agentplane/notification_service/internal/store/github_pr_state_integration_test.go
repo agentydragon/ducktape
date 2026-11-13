@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
@@ -30,9 +31,9 @@ func testPRReview(id int64, state model.GitHubReviewState, sha string) model.Git
 	}
 }
 
-func (g githubFixture) pollReviews(t *testing.T, subject GitHubSubjectKey, reviews []model.GitHubReviewObservation) {
+func (g githubFixture) pollReviews(t *testing.T, subject githubstate.SubjectKey, reviews []model.GitHubReviewObservation) {
 	t.Helper()
-	key := GitHubReviewRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: subject}
+	key := githubstate.ReviewRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: subject}
 	lease, err := g.state.Acquire(t.Context(), key)
 	if err != nil {
 		t.Fatal(err)
@@ -50,19 +51,19 @@ func (g githubFixture) pollReviews(t *testing.T, subject GitHubSubjectKey, revie
 	if lease == nil {
 		t.Fatal("review refresh did not acquire after its durable deadline was advanced")
 	}
-	if err := g.state.CompleteReviews(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, reviews); err != nil {
+	if err := g.state.CompleteReviews(t.Context(), *lease, []githubstate.AccessFence{g.validate(t, g.access())}, reviews); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func reviewDelivery(g githubFixture, number int64, observation model.GitHubReviewObservation, action string) GitHubIngest {
+func reviewDelivery(g githubFixture, number int64, observation model.GitHubReviewObservation, action string) githubstate.Ingest {
 	observation.Action = &action
 	ingest := g.delivery(string(model.EventPullRequestReview), withAction(action), onPullRequest(number))
-	ingest.Review = &GitHubPRReviewObservation{PullRequestNumber: number, Review: observation}
+	ingest.Review = &githubstate.PRReviewObservation{PullRequestNumber: number, Review: observation}
 	return ingest
 }
 
-func lifecycleDelivery(g githubFixture, number int64, state model.GitHubPullRequestState, head, baseRef, action string) GitHubIngest {
+func lifecycleDelivery(g githubFixture, number int64, state model.GitHubPullRequestState, head, baseRef, action string) githubstate.Ingest {
 	observation := model.GitHubPRLifecycleObservation{
 		PullRequestNumber: number, State: state, HeadSHA: head, BaseRef: baseRef, Action: &action,
 	}
@@ -303,14 +304,14 @@ func TestGitHubReviewLeaseIsFencedByPRChangeAndInstallationRevocation(t *testing
 				BaseRef: "main", HeadSHA: commitA, BaseSHA: commitB,
 				State: model.GitHubPullRequestOpen, Mergeability: model.GitHubMergeabilityUnknown,
 			})
-			key := GitHubReviewRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject}
+			key := githubstate.ReviewRefreshKey{AppID: g.app, InstallationID: g.installation, Subject: sub.Subject}
 			lease, err := g.state.Acquire(t.Context(), key)
 			if err != nil || lease == nil {
 				t.Fatalf("review lease = %v, %v", lease, err)
 			}
 			test.act(t, g, sub)
-			err = g.state.CompleteReviews(t.Context(), *lease, []GitHubAccessFence{g.validate(t, g.access())}, []model.GitHubReviewObservation{testPRReview(7003, model.ReviewApproved, commitB)})
-			var deferred *RefreshDeferredError
+			err = g.state.CompleteReviews(t.Context(), *lease, []githubstate.AccessFence{g.validate(t, g.access())}, []model.GitHubReviewObservation{testPRReview(7003, model.ReviewApproved, commitB)})
+			var deferred *githubstate.RefreshDeferredError
 			if !errors.As(err, &deferred) {
 				t.Fatalf("stale review success error = %v, want deferred write fence", err)
 			}

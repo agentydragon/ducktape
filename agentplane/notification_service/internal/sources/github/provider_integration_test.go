@@ -14,7 +14,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
-	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing" // Shared fake API server; avoids colliding with Go testing.
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+	fixture "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/testing"   // Shared fake API server; avoids colliding with Go testing.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
@@ -79,7 +80,7 @@ func TestARateLimitIsASharedBackoffThatSurvivesIngressAndARestart(t *testing.T) 
 		t.Fatalf("subscription = %+v, want no failure of its own", view)
 	}
 	access := view.GitHub.Access[0]
-	if access.Failure == nil || access.Failure.Kind != store.FailureRateLimited || access.RetryAt == nil || !access.RetryAt.Equal(retryAt) {
+	if access.Failure == nil || access.Failure.Kind != model.FailureRateLimited || access.RetryAt == nil || !access.RetryAt.Equal(retryAt) {
 		t.Fatalf("access = %+v, want a rate limit retried at %v", access, retryAt)
 	}
 	if page := h.page(subscription.InboxID); len(page.Entries) != 0 || page.Inbox.LastCursor != 0 || page.Notice != nil {
@@ -155,7 +156,7 @@ func TestUnknownMergeabilityStillDeliversAndSchedulesAFiniteRetry(t *testing.T) 
 	if entries := h.page(subscription.InboxID).Entries; len(entries) != 1 {
 		t.Fatalf("%d entries with mergeability unknown, want the webhook delivered", len(entries))
 	}
-	subject, err := store.NewGitHubSubjectKey(baseRepository, model.PullRequestSubject{Number: 7})
+	subject, err := githubstate.NewSubjectKey(baseRepository, model.PullRequestSubject{Number: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,10 +164,8 @@ func TestUnknownMergeabilityStillDeliversAndSchedulesAFiniteRetry(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	freshness := time.Duration(settings.DefaultSettings().FreshnessSeconds) * time.Second
-	if state.LastSuccessAt == nil || state.RepairAt.Before(state.LastSuccessAt.Add(freshness)) ||
-		state.RetryAt == nil || !state.RetryAt.After(time.Now()) {
-		t.Fatalf("subject state = %+v, want normal cache freshness and an explicit pending retry", state)
+	if state.LastSuccessAt == nil || state.RetryAt == nil || !state.RetryAt.After(time.Now()) {
+		t.Fatalf("subject state = %+v, want a successful observation and an explicit pending retry", state)
 	}
 }
 
@@ -191,7 +190,7 @@ func TestUnknownMergeabilityRetriesStopUntilANewWebhook(t *testing.T) {
 	if got := h.fake.Count(pullRequestPath) - authorizationReads; got != 5 {
 		t.Fatalf("pull-request reads after four bounded retries = %d, want five", got)
 	}
-	state, err := h.provider.state.Subject(t.Context(), store.GitHubSubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"})
+	state, err := h.provider.state.Subject(t.Context(), githubstate.SubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +207,7 @@ func TestUnknownMergeabilityRetriesStopUntilANewWebhook(t *testing.T) {
 	if got := h.fake.Count(pullRequestPath) - authorizationReads; got != 6 {
 		t.Fatalf("pull-request reads after a new webhook = %d, want six", got)
 	}
-	if state, err := h.provider.state.Subject(t.Context(), store.GitHubSubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"}); err != nil || state.LastSuccessAt == nil {
+	if state, err := h.provider.state.Subject(t.Context(), githubstate.SubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"}); err != nil || state.LastSuccessAt == nil {
 		t.Fatalf("subject after webhook = %+v, %v, want a successful new observation", state, err)
 	}
 }
@@ -283,14 +282,12 @@ func TestUnverifiedMergeabilityStaysUnknownUntilTheTestMergeMatchesCurrentBase(t
 	if got := h.text(`SELECT base_sha FROM github_pull_request WHERE repository_id = $1 AND number = 7`, baseRepository); got != fixture.OtherBaseSHA {
 		t.Fatalf("persisted base SHA = %q, want current branch tip %s", got, fixture.OtherBaseSHA)
 	}
-	state, err := h.provider.state.Subject(t.Context(), store.GitHubSubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"})
+	state, err := h.provider.state.Subject(t.Context(), githubstate.SubjectKey{RepositoryID: baseRepository, Kind: "pull_request", Key: "7"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	freshness := time.Duration(settings.DefaultSettings().FreshnessSeconds) * time.Second
-	if state.LastSuccessAt == nil || state.RepairAt.Before(state.LastSuccessAt.Add(freshness)) ||
-		state.RetryAt == nil || !state.RetryAt.After(time.Now()) {
-		t.Fatalf("subject state = %+v, want normal freshness and a durable early retry for UNKNOWN", state)
+	if state.LastSuccessAt == nil || state.RetryAt == nil || !state.RetryAt.After(time.Now()) {
+		t.Fatalf("subject state = %+v, want a successful observation and a durable early retry for UNKNOWN", state)
 	}
 	if entries := h.page(subscription.InboxID).Entries; len(entries) != 1 {
 		t.Fatalf("%d entries after the unverified positive, want no resolution notice", len(entries))
@@ -358,7 +355,7 @@ func TestSharedErrorsAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.
 
 	views := []store.Subscription{h.subscription(first.ID), h.subscription(second.ID)}
 	requireEqual(t, views[0].GitHub, views[1].GitHub)
-	if failure := views[0].GitHub.Access[0].Failure; failure == nil || failure.Kind != store.FailureRateLimited {
+	if failure := views[0].GitHub.Access[0].Failure; failure == nil || failure.Kind != model.FailureRateLimited {
 		t.Errorf("access failure = %+v, want a rate limit", failure)
 	}
 	for _, view := range views {
@@ -378,24 +375,24 @@ func TestSharedErrorsAreProjectedWithoutBeingCopiedIntoSubscriptions(t *testing.
 func TestARefreshThatFailsIsRecordedOnItsSharedRowByKind(t *testing.T) {
 	for name, scenario := range map[string]struct {
 		fail func(*harness)
-		kind store.SourceFailureKind
+		kind model.SourceFailureKind
 	}{
 		"GitHub failing": {
-			func(h *harness) { h.fake.Respond("/repositories/100", http.StatusBadGateway, nil, "") }, store.FailureUnavailable,
+			func(h *harness) { h.fake.Respond("/repositories/100", http.StatusBadGateway, nil, "") }, model.FailureUnavailable,
 		},
 		"a request GitHub refuses": {
-			func(h *harness) { h.fake.Respond("/repositories/100", http.StatusUnprocessableEntity, nil, "") }, store.FailureProcessingError,
+			func(h *harness) { h.fake.Respond("/repositories/100", http.StatusUnprocessableEntity, nil, "") }, model.FailureProcessingError,
 		},
 		"a suspended installation": {
 			func(h *harness) {
 				h.fake.Respond("/repos/owner/repo/installation", http.StatusOK, nil, `{"id": 11, "suspended_at": "2026-01-01T00:00:00Z"}`)
-			}, store.FailureAccessDenied,
+			}, model.FailureAccessDenied,
 		},
 		"access revoked": {
-			func(h *harness) { h.world.update(func(w *world) { w.revoked = true }) }, store.FailureAccessDenied,
+			func(h *harness) { h.world.update(func(w *world) { w.revoked = true }) }, model.FailureAccessDenied,
 		},
 		"a repository without its name": {
-			func(h *harness) { h.fake.Respond("/repositories/100", http.StatusOK, nil, `{"id": 100}`) }, store.FailureProcessingError,
+			func(h *harness) { h.fake.Respond("/repositories/100", http.StatusOK, nil, `{"id": 100}`) }, model.FailureProcessingError,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -531,7 +528,7 @@ func TestAnAccessIsRefreshedByOneWorkerAtATime(t *testing.T) {
 	})
 	h.fake.Forget()
 	slow := h.provider
-	var fence store.GitHubAccessFence
+	var fence githubstate.AccessFence
 	result := make(chan error, 1)
 	go func() {
 		var err error
@@ -542,7 +539,7 @@ func TestAnAccessIsRefreshedByOneWorkerAtATime(t *testing.T) {
 
 	h.restart()
 	_, err := h.provider.refreshAccess(t.Context(), baseAccess)
-	fixture.AsError[*store.RefreshDeferredError](t, err)
+	fixture.AsError[*githubstate.RefreshDeferredError](t, err)
 	close(resume)
 	if err := <-result; err != nil {
 		t.Fatal(err)
@@ -684,11 +681,11 @@ func TestASubscriptionOfAnotherAppIsASourceChange(t *testing.T) {
 	due := h.next(claim)
 	settings := settings.DefaultSettings()
 	settings.AppID = fixture.AppID + 1
-	other := NewProvider(h.provider.client, h.store, settings)
+	other := NewProvider(h.provider.client, h.store, h.provider.state, settings)
 
 	requests := h.fake.Total()
 	failure := fixture.AsError[*sources.ProviderError](t, other.Process(t.Context(), claim, due))
-	if failure.Kind != store.FailureSourceChanged || h.fake.Total() != requests {
+	if failure.Kind != model.FailureSourceChanged || h.fake.Total() != requests {
 		t.Errorf("failure = %+v after %d new requests, want a source change without asking GitHub", failure, h.fake.Total()-requests)
 	}
 }

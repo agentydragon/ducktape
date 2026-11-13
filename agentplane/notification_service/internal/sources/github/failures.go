@@ -8,13 +8,15 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
+	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 )
 
 // refreshFailed records a failed refresh on its shared row and returns the deferral that ends the reconcile until
 // the row may be refreshed again. An error that is none of the client's typed failures is returned as it is, and
 // the lease runs out.
-func (p *Provider) refreshFailed(ctx context.Context, lease store.GitHubRefreshLease, cause error) error {
+func (p *Provider) refreshFailed(ctx context.Context, lease githubstate.RefreshLease, cause error) error {
 	failure, ok := classify(cause)
 	if !ok {
 		return cause
@@ -25,13 +27,13 @@ func (p *Provider) refreshFailed(ctx context.Context, lease store.GitHubRefreshL
 	}
 	slog.WarnContext(ctx, "GitHub shared refresh failed", "key", lease.Key, "cause", failure.message,
 		"retry_seconds", failure.retry.Seconds())
-	return &store.RefreshDeferredError{Until: until}
+	return &githubstate.RefreshDeferredError{Until: until}
 }
 
 // refreshFailure is how a refresh's error shows on the shared row: the message is safe to show, never an upstream
 // body or a token.
 type refreshFailure struct {
-	kind    store.SourceFailureKind
+	kind    model.SourceFailureKind
 	message string
 	retry   time.Duration
 }
@@ -47,21 +49,21 @@ func classify(err error) (refreshFailure, bool) {
 	var invalid *client.InvalidResponseError
 	switch {
 	case errors.As(err, &limited):
-		return refreshFailure{store.FailureRateLimited, err.Error(), time.Duration(limited.RetrySeconds) * time.Second}, true
+		return refreshFailure{model.FailureRateLimited, err.Error(), time.Duration(limited.RetrySeconds) * time.Second}, true
 	case errors.As(err, &denied):
-		return refreshFailure{store.FailureAccessDenied, err.Error(), sources.DefaultRetry}, true
+		return refreshFailure{model.FailureAccessDenied, err.Error(), sources.DefaultRetry}, true
 	case errors.As(err, &changed):
-		return refreshFailure{store.FailureSourceChanged, err.Error(), sources.DefaultRetry}, true
+		return refreshFailure{model.FailureSourceChanged, err.Error(), sources.DefaultRetry}, true
 	case errors.As(err, &status):
-		kind := store.FailureProcessingError
+		kind := model.FailureProcessingError
 		if status.StatusCode >= 500 {
-			kind = store.FailureUnavailable
+			kind = model.FailureUnavailable
 		}
 		return refreshFailure{kind, err.Error(), sources.DefaultRetry}, true
 	case errors.As(err, &transport):
-		return refreshFailure{store.FailureUnavailable, "GitHub request failed", sources.DefaultRetry}, true
+		return refreshFailure{model.FailureUnavailable, "GitHub request failed", sources.DefaultRetry}, true
 	case errors.As(err, &invalid):
-		return refreshFailure{store.FailureProcessingError, "GitHub returned an invalid response", sources.DefaultRetry}, true
+		return refreshFailure{model.FailureProcessingError, "GitHub returned an invalid response", sources.DefaultRetry}, true
 	}
 	return refreshFailure{}, false
 }
