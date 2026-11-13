@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -25,6 +24,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/admission"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/mcpserver"
@@ -108,20 +108,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, grpcListener,
 	if err != nil {
 		return err
 	}
-	gate := api.NewGate(api.GateOptions{
-		Operators: operators,
-		AdditionalOperatorMethods: []string{
-			connection_servicepb.ConnectionService_ListConnectionIdentities_FullMethodName,
-			connection_servicepb.ConnectionService_ListConnections_FullMethodName,
-			connection_servicepb.ConnectionService_GetConnection_FullMethodName,
-			connection_servicepb.ConnectionService_UpdateConnection_FullMethodName,
-			connection_servicepb.ConnectionService_RebindConnection_FullMethodName,
-			connection_servicepb.ConnectionService_UnbindConnection_FullMethodName,
-			connection_servicepb.ConnectionService_WatchConnections_FullMethodName,
-			connection_servicepb.ConnectionService_PreviewConnectionEnrollment_FullMethodName,
-			connection_servicepb.ConnectionService_DecideConnectionEnrollment_FullMethodName,
-		},
-	})
+	gate := admission.NewGate(operators)
 	connectionStore := connections.NewStore(db, identities, identities)
 	grpcServer := grpc.NewServer(observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(gate.UnaryInterceptor), grpc.ChainStreamInterceptor(gate.StreamInterceptor))

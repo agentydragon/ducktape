@@ -11,7 +11,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -192,22 +191,6 @@ func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 	wantCode(t, "a cancellation while draining", err, codes.Unavailable)
 	_, err = s.decideAs(t, s.operatorToken, decision(request, allow))
 	wantCode(t, "a Decision while draining", err, codes.Unavailable)
-}
-
-// The standalone MCP edge's ConnectionService uses this shared Gate: operators pass to the service, while workload
-// tokens are refused before Kubernetes TokenReview.
-func TestOnlyAnOperatorPassesTheGateToTheConnectionService(t *testing.T) {
-	reviews := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
-	s := serveWith(t, reviews, &catalog.Catalog{})
-	for _, token := range []string{callerToken, readerToken} {
-		_, err := s.connections.ListConnections(as(t, token), &connection_servicepb.ListConnectionsRequest{})
-		wantCode(t, "a workload's call", err, codes.Unauthenticated)
-	}
-	if calls := reviews.Calls.Load(); calls != 0 {
-		t.Errorf("%d workload tokens reviewed", calls)
-	}
-	_, err := s.connections.ListConnections(as(t, s.operatorToken), &connection_servicepb.ListConnectionsRequest{})
-	wantCode(t, "an operator's call", err, codes.Unimplemented)
 }
 
 func connectionContext(t *testing.T, ctx context.Context, actorToken string, envelope *delegationpb.Delegation) context.Context {

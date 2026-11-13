@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -20,12 +19,7 @@ import (
 )
 
 func TestGateExplicitlyClassifiesEveryRegisteredMethod(t *testing.T) {
-	connectionMethods := grpcmethods.Of(connection_servicepb.ConnectionService_ServiceDesc)
-	additionalMethods := make([]string, len(connectionMethods))
-	for i, method := range connectionMethods {
-		additionalMethods[i] = method.Name
-	}
-	gate := NewGate(GateOptions{AdditionalOperatorMethods: additionalMethods})
+	gate := NewGate(GateOptions{})
 	for _, tc := range []struct {
 		name      string
 		desc      grpc.ServiceDesc
@@ -34,7 +28,6 @@ func TestGateExplicitlyClassifiesEveryRegisteredMethod(t *testing.T) {
 		{"workload Action API", action_servicepb.ActionService_ServiceDesc, true},
 		{"operator API", operator_action_servicepb.OperatorActionService_ServiceDesc, true},
 		{"Web Push API", web_push_servicepb.WebPushService_ServiceDesc, true},
-		{"MCP Connection API", connection_servicepb.ConnectionService_ServiceDesc, true},
 		{"health API", healthpb.Health_ServiceDesc, false},
 		{"linkage API", linkage_servicepb.LinkageService_ServiceDesc, false},
 	} {

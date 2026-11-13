@@ -53,8 +53,6 @@ type GateOptions struct {
 	// ConnectionDelegation carries method-scoped authority for the MCP edge. Only the Action
 	// methods listed in this map may receive Connection provenance.
 	ConnectionDelegation auth.Methods
-	// AdditionalOperatorMethods names methods owned by another service that this Gate serves.
-	AdditionalOperatorMethods []string
 }
 
 // Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
@@ -108,9 +106,6 @@ func NewGate(options GateOptions) *Gate {
 		healthpb.Health_Check_FullMethodName:                              nil,
 		healthpb.Health_List_FullMethodName:                               nil,
 		healthpb.Health_Watch_FullMethodName:                              nil,
-	}
-	for _, method := range options.AdditionalOperatorMethods {
-		g.methods[method] = g.authenticateOperator
 	}
 	return g
 }

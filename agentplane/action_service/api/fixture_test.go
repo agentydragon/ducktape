@@ -28,7 +28,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
-	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -151,11 +150,9 @@ type served struct {
 	databaseURL string
 	client      action_servicepb.ActionServiceClient
 	// operators is the OperatorActionService client.
-	operators operator_action_servicepb.OperatorActionServiceClient
-	// connections is the MCP edge ConnectionService used to exercise this shared Gate's operator admission.
-	connections connection_servicepb.ConnectionServiceClient
-	linkageRPC  linkage_servicepb.LinkageServiceClient
-	health      healthpb.HealthClient
+	operators  operator_action_servicepb.OperatorActionServiceClient
+	linkageRPC linkage_servicepb.LinkageServiceClient
+	health     healthpb.HealthClient
 	// url is the base URL of the HTTP facade.
 	url string
 	// operatorToken is a token the issuer signed for the operator.
@@ -349,22 +346,10 @@ func serveWithPolicy(
 	s.gate = NewGate(GateOptions{
 		Workloads: workloads, Callers: labeledAccounts{}, ReaderAccounts: []auth.Account{readerAccount, labeledReaderAccount},
 		Operators: operators,
-		AdditionalOperatorMethods: []string{
-			connection_servicepb.ConnectionService_ListConnections_FullMethodName,
-			connection_servicepb.ConnectionService_GetConnection_FullMethodName,
-			connection_servicepb.ConnectionService_UpdateConnection_FullMethodName,
-			connection_servicepb.ConnectionService_RebindConnection_FullMethodName,
-			connection_servicepb.ConnectionService_UnbindConnection_FullMethodName,
-			connection_servicepb.ConnectionService_WatchConnections_FullMethodName,
-			connection_servicepb.ConnectionService_PreviewConnectionEnrollment_FullMethodName,
-			connection_servicepb.ConnectionService_DecideConnectionEnrollment_FullMethodName,
-		},
 	})
 	grpcServer := grpc.NewServer(grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))
-	// The standalone MCP edge reuses this Gate; a stub keeps its method behind the auth interceptor here.
-	connection_servicepb.RegisterConnectionServiceServer(grpcServer, connection_servicepb.UnimplementedConnectionServiceServer{})
 	linkage_servicepb.RegisterLinkageServiceServer(grpcServer, linkage.NewService(s.linkages))
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
@@ -397,7 +382,6 @@ func serveWithPolicy(
 	t.Cleanup(func() { connection.Close() })
 	s.client = action_servicepb.NewActionServiceClient(connection)
 	s.operators = operator_action_servicepb.NewOperatorActionServiceClient(connection)
-	s.connections = connection_servicepb.NewConnectionServiceClient(connection)
 	s.linkageRPC = linkage_servicepb.NewLinkageServiceClient(connection)
 	s.health = healthpb.NewHealthClient(connection)
 	s.url = "http://" + httpListener.Addr().String()
