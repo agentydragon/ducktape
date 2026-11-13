@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 )
 
 // enrollments is how many enrollments the authorization requests created.

@@ -15,7 +15,7 @@ import { type JSX, useEffect, useState } from "react";
 
 import { displayableError } from "../client";
 import { Verdict } from "../../../action_service/action_service_pb";
-import { GrantStatus } from "../../../mcp_edge/connection_service_pb";
+import { GrantStatus } from "../../../mcp_edge/api/connection/connection_service_pb";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 import { toJson } from "@bufbuild/protobuf";
 import { TimeAgo } from "../time_ago";

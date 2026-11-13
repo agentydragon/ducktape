@@ -18,7 +18,7 @@ from more_itertools import one
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
-from agentplane.mcp_edge import connection_service_pb2
+from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster

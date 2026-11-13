@@ -21,7 +21,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.auth import AuthorizationCodeResult, OAuthClientMetadata
 from pydantic import AnyUrl
 
-from agentplane.mcp_edge import connection_service_pb2
+from agentplane.mcp_edge.api.connection import connection_service_pb2
 from agentplane.proto import identity_pb2
 from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,

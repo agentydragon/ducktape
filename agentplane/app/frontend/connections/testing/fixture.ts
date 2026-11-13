@@ -6,7 +6,7 @@ import {
   GrantSchema,
   GrantStatus,
   type Connection,
-} from "../../../../mcp_edge/connection_service_pb";
+} from "../../../../mcp_edge/api/connection/connection_service_pb";
 import { IdentitySchema } from "../../../../proto/identity_pb";
 
 export function sampleConnection(): Connection {

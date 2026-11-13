@@ -4,7 +4,12 @@ import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
 import { create, toJson, type JsonObject } from "@bufbuild/protobuf";
 
-import { ConnectionSchema, GrantSchema, GrantStatus, type Connection } from "../../../mcp_edge/connection_service_pb";
+import {
+  ConnectionSchema,
+  GrantSchema,
+  GrantStatus,
+  type Connection,
+} from "../../../mcp_edge/api/connection/connection_service_pb";
 import { IdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";

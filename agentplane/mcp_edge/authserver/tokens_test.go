@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"golang.org/x/oauth2"
 
-	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
 )
 

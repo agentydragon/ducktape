@@ -13,7 +13,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
-	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/connection_servicepb"
+	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -46,7 +46,7 @@ func NewService(store *Store, gate Gate, updates *wakeups.Hub) *Service {
 	return &Service{store: store, gate: gate, updates: updates}
 }
 
-// failure answers a failed call with the status code connection_service.proto names for it. A refusal this package
+// failure answers a failed call with the status code named by the Connection API contract. A refusal this package
 // wrote is answered as it is; a fault of the database gets a fixed message, and its cause is logged.
 func failure(ctx context.Context, err error) error {
 	switch {
