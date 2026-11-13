@@ -793,6 +793,9 @@ class Egress(Construct):
                 failure_threshold=60,
             ),
             tolerate_control_plane=True,
+            annotations={
+                "configmap.reloader.stakater.com/reload": f"{self.env.namespace}-egress-upstream-ca,public-web-pki"
+            },
             placement=self.placement if zones is None else None,
             replica_profile=self.env.egress.replicas,
             traffic_distribution=self.env.egress.traffic_distribution,

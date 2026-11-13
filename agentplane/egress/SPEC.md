@@ -201,6 +201,8 @@ after a successful response, and HTTP upgrades are relayed as protocol switches.
   not against the interception root, which the proxy issues rather than trusts. That bundle carries
   the public roots plus this cluster's CA, which is what lets a `clusterInternal` rule reach the API
   server; a destination it does not cover fails the connection rather than being carried unverified.
+- The deployment rolls proxy replicas when the public or upstream trust ConfigMap changes. The
+  normal bounded drain applies; requests still active at its deadline may be interrupted.
 - The connection is made to the address that was checked: a name is resolved once per admission
   window (30 seconds) and every dial in it goes to that address, so a name cannot be re-pointed
   between the check and the connect. A dial for a target the gate did not admit is not made. An

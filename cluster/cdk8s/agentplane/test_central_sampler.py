@@ -48,6 +48,10 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     namespace = staging.ENV.namespace
     assert _resource(staging_manifests, "Database", "central-sampler")["spec"]["databaseReclaimPolicy"] == "retain"
     deployment = _resource(staging_manifests, "Deployment", central_sampler.NAME)
+    assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
+        "central-sampler-settings",
+        "public-web-pki",
+    }
     pod = deployment["spec"]["template"]["spec"]
     assert deployment["spec"]["replicas"] == 2
     assert deployment["spec"]["minReadySeconds"] == 5

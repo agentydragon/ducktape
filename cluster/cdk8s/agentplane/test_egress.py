@@ -121,6 +121,10 @@ def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[s
 
 def test_staging_requires_the_tls_hop_and_rules_boundary(catalog_manifests: list[dict[str, Any]]) -> None:
     deployment = _by_name(catalog_manifests, "Deployment", "egress")
+    assert set(deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"].split(",")) == {
+        f"{staging.ENV.namespace}-egress-upstream-ca",
+        "public-web-pki",
+    }
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
