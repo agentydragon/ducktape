@@ -4209,6 +4209,8 @@ spec:
       namespace: ducktape-flux
     - name: seaweedfs-operator
       namespace: ducktape-flux
+    - name: cert-manager-environment
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/study-casino
   prune: true
