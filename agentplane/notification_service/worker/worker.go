@@ -277,10 +277,9 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 }
 
 // checkSessionOwner checks the claimed inbox's already-persisted Identity against what the Session authority recorded.
-// Legacy rows without an Identity owner remain retained but are not adopted or delivered.
 func (w *Worker) checkSessionOwner(claim store.Claim, session *dispatcherpb.Session) error {
 	identity, ok := sessionidentity.IdentityRun(session, claim.SessionID, claim.DestinationRef)
-	if !ok || claim.OwnerUID != nil || claim.OwnerIdentity == nil || *claim.OwnerIdentity != identity {
+	if !ok || claim.OwnerIdentity != identity {
 		return errOwnerMismatch
 	}
 	return nil

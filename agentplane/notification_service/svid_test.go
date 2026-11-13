@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestSVIDListenerRetainsLegacyInboxAndRejectsDeletedSandbox(t *testing.T) {
+func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-"+uuid.NewString(), testNamespace)
 	other := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "svid-"+uuid.NewString(), testNamespace)
 	setSandboxIdentity(t, &workload)
@@ -48,10 +48,7 @@ func TestSVIDListenerRetainsLegacyInboxAndRejectsDeletedSandbox(t *testing.T) {
 	if err := inboxes.OpenInbox(t.Context(), store.Owner{Identity: model.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, SandboxUID: ref.UID}, ref, "svid-session"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.db.ExecContext(t.Context(), `UPDATE inbox SET owner_uid = $2,
-		owner_identity_name = NULL, owner_identity_uid = NULL WHERE session_id = $1`, "svid-session", workload.Principal.ServiceAccountUID); err != nil {
-		t.Fatal(err)
-	}
+
 	for i, caller := range []workloadauthtesting.IdentityWorkload{workload, other} {
 		config := ca.Issue(t, caller.URI)
 		credentials, err := config.ClientCredentials(environment_runtime_transport.NotificationsURI)
@@ -76,6 +73,9 @@ func TestSVIDListenerRetainsLegacyInboxAndRejectsDeletedSandbox(t *testing.T) {
 			t.Fatalf("SVID plus bearer authenticated: %v", mixedErr)
 		}
 		want := 0
+		if i == 0 {
+			want = 1
+		}
 		if len(response.GetInboxes()) != want {
 			t.Fatalf("caller %s sees %d inboxes, want %d", caller.Sandbox.Name, len(response.GetInboxes()), want)
 		}

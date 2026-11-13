@@ -271,44 +271,6 @@ func TestWorkerDoesNotReadSourcesAfterSandboxIdentityReplacement(t *testing.T) {
 	}
 }
 
-func TestWorkerRetainsAnOwnerlessLegacyInboxWithoutReadingSources(t *testing.T) {
-	h := newHarness(t, debounce(0, 0))
-	subscription := h.subscribe(t, "legacy-owner")
-	h.exec(t, `UPDATE inbox SET owner_identity_name = NULL, owner_identity_uid = NULL WHERE id = $1`, subscription.InboxID)
-	worked, err := h.worker.step(t.Context())
-	if err != nil || worked {
-		t.Fatalf("legacy inbox work = %v, %v; want no claim", worked, err)
-	}
-	if next, err := h.store.NextWorkAt(t.Context()); err != nil || next != nil {
-		t.Fatalf("legacy inbox work deadline = %v, %v; want none", next, err)
-	}
-	if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
-		t.Fatal("an unowned legacy inbox reached a source or runner")
-	}
-	row := h.row(t, subscription.InboxID)
-	if row.retired {
-		t.Fatal("the retained legacy inbox was retired")
-	}
-	if row.lastCursor != 0 {
-		t.Fatalf("legacy inbox cursor changed: %d", row.lastCursor)
-	}
-	if row.deliveryError != nil {
-		t.Fatalf("legacy inbox delivery error changed: %v", row.deliveryError)
-	}
-	var ownerUID, identityName, identityUID sql.NullString
-	if err := h.db.QueryRowContext(t.Context(), `SELECT owner_uid, owner_identity_name, owner_identity_uid FROM inbox WHERE id = $1`, subscription.InboxID).
-		Scan(&ownerUID, &identityName, &identityUID); err != nil {
-		t.Fatal(err)
-	}
-	if ownerUID.Valid || identityName.Valid || identityUID.Valid {
-		t.Fatalf("legacy ownership changed: account UID %v, Identity %v/%v", ownerUID, identityName, identityUID)
-	}
-	inboxes, err := h.store.ListInboxes(t.Context(), testIncarnation)
-	if err != nil || len(inboxes) != 0 {
-		t.Fatalf("Identity inboxes = %v, %v; legacy inbox must not be adopted", inboxes, err)
-	}
-}
-
 // An inbox whose Session the Dispatcher recorded as executing as an Identity alone, its Sandbox having
 // no ServiceAccount, is that Identity incarnation's: its notices are delivered, and a same-named
 // successor recorded for the Session is an owner mismatch.

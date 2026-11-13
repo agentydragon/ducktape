@@ -78,9 +78,6 @@ func (w *Worker) checkDestination(ctx context.Context, claim store.Claim) error 
 		return &staleDestinationError{staleUIDChanged}
 	}
 	owner := claim.Holder()
-	if claim.OwnerUID != nil || claim.OwnerIdentity == nil {
-		return errOwnerMismatch
-	}
 	identity, found, err := w.Sandboxes.ExecutionIdentity(ctx, view.Identity)
 	if err != nil {
 		return unavailable(err)

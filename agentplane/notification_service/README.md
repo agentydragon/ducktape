@@ -22,9 +22,9 @@ intact through the placement migration.
 Inbox ownership pins the Identity name and UID recorded by the Dispatcher Session, together with the
 exact destination Sandbox UID. Workloads can read and mutate only inboxes with that owner and Sandbox
 incarnation. A same-name replacement Identity or Sandbox cannot inherit an inbox. New inboxes require
-proven Session ownership at creation; retained ownerless or ServiceAccount-owned inboxes remain stored,
-readable through the configured operator diagnostic, and excluded from worker claims. There is no owner
-backfill from current objects or later Session snapshots. An Action source additionally requires the
+proven Session ownership at creation, and the database requires a complete Identity owner. Legacy
+ownerless and ServiceAccount-owned inboxes were deleted from staging; the service has no legacy owner
+representation or backfill path. An Action source additionally requires the
 request's exact `caller_identity`; retained ServiceAccount caller attribution grants no source access.
 
 Identity callers subscribe to Sessions recorded as executing as their exact Identity and placed in the

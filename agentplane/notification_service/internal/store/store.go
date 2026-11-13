@@ -38,7 +38,7 @@ type Quotas struct {
 }
 
 // Owner pins the Session's Identity and Sandbox incarnations. Recreating either resource does not
-// transfer its inboxes. The historical account columns never authorize an owner read or write.
+// transfer its inboxes.
 type Owner struct {
 	Identity   model.Identity
 	SandboxUID string
@@ -47,7 +47,7 @@ type Owner struct {
 // ownerPredicate selects the inboxes of alias (an inbox table alias, a source constant) owner has
 // established, with bind parameters numbered from first.
 func ownerPredicate(owner Owner, alias string, first int) (string, []any) {
-	return fmt.Sprintf("%[1]sowner_uid IS NULL AND %[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d AND $%[2]d <> '' AND $%[3]d <> '' AND $%[4]d <> ''",
+	return fmt.Sprintf("%[1]sdestination_uid = $%[2]d AND %[1]sowner_identity_name = $%[3]d AND %[1]sowner_identity_uid = $%[4]d AND $%[2]d <> '' AND $%[3]d <> '' AND $%[4]d <> ''",
 			alias, first, first+1, first+2),
 		[]any{owner.SandboxUID, owner.Identity.Name, owner.Identity.UID}
 }

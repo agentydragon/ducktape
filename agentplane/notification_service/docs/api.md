@@ -27,9 +27,8 @@ Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions must match its exact Identity name and UID and the Sandbox
 incarnation controlling its credential. Recreating either object under the same name grants no access
 to the predecessor's inboxes. New inboxes require exact Dispatcher Session ownership at creation.
-Retained ownerless or ServiceAccount-owned rows remain inaccessible to workload owners and are excluded
-from worker claims; later Session snapshots do not establish their owner. Operator diagnostic reads
-remain available. Action sources require the request's exact `caller_identity`; missing or legacy
+The database requires a complete Identity owner; legacy ownerless and ServiceAccount-owned inboxes
+were deleted from staging. Operator diagnostic reads remain available for Identity-owned inboxes. Action sources require the request's exact `caller_identity`; missing or legacy
 ServiceAccount ownership refuses new subscriptions and source reads without discarding retained entries.
 The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
 Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and

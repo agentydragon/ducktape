@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 func actionsEvents(request uuid.UUID, count int) []model.ActionsEvent {
@@ -467,76 +468,6 @@ func TestIdentityUIDFencesRetainedInboxAndSubscriptions(t *testing.T) {
 	}
 }
 
-func TestLegacyInboxesStayRetainedWithoutIdentityAdoption(t *testing.T) {
-	for _, legacyUID := range []string{"", "legacy-account-uid"} {
-		t.Run(legacyUID, func(t *testing.T) {
-			f := newIsolatedFixture(t, messageQuotas())
-			body := f.body("retained")
-			subscription := f.subscribe(t, body)
-			message := f.message(newOwner(), "retained-message", "Retain this message.")
-			sent := f.send(t, message)
-			notice := f.prepareNotice(t, f.claim(t))
-			f.exec(t, `UPDATE notice SET attempted = true WHERE command_id = $1`, notice.CommandID)
-			var accountUID any
-			if legacyUID != "" {
-				accountUID = legacyUID
-			}
-			f.exec(t, `UPDATE inbox SET owner_uid = $2, owner_identity_name = NULL, owner_identity_uid = NULL WHERE id = $1`, subscription.InboxID, accountUID)
-			retained := func() string {
-				t.Helper()
-				var row string
-				if err := f.db.QueryRowContext(t.Context(), `SELECT jsonb_build_object(
-					'inbox', to_jsonb(i),
-					'subscriptions', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM subscription s WHERE inbox_id = i.id),
-					'entries', (SELECT jsonb_agg(to_jsonb(e) ORDER BY cursor) FROM entry e WHERE inbox_id = i.id),
-					'messages', (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM message m WHERE inbox_id = i.id),
-					'notices', (SELECT jsonb_agg(to_jsonb(n) ORDER BY command_id) FROM notice n WHERE inbox_id = i.id)
-				)::text FROM inbox i WHERE id = $1`, subscription.InboxID).Scan(&row); err != nil {
-					t.Fatal(err)
-				}
-				return row
-			}
-			before := retained()
-			owner := f.incarnation()
-			if inboxes, err := f.ListInboxes(t.Context(), owner); err != nil || len(inboxes) != 0 {
-				t.Fatalf("Identity listed legacy inboxes: %+v, %v", inboxes, err)
-			}
-			for name, call := range map[string]func() error{
-				"read":         func() error { _, err := f.Read(t.Context(), owner, subscription.InboxID, 0, 128); return err },
-				"acknowledge":  func() error { _, err := f.Acknowledge(t.Context(), owner, subscription.InboxID, 1); return err },
-				"retire":       func() error { return f.Retire(t.Context(), owner, subscription.InboxID) },
-				"subscription": func() error { _, err := f.GetSubscription(t.Context(), owner, subscription.ID); return err },
-				"renew":        func() error { _, err := f.Renew(t.Context(), owner, subscription.ID, 1, 7); return err },
-				"cancel":       func() error { _, err := f.Cancel(t.Context(), owner, subscription.ID); return err },
-				"open":         func() error { return f.OpenInbox(t.Context(), owner, body.DestinationRef, body.SessionID) },
-				"subscribe":    func() error { _, err := f.Subscribe(t.Context(), owner, body, nil); return err },
-			} {
-				if err := call(); !errors.Is(err, ErrNotFound) {
-					t.Errorf("%s = %v, want ErrNotFound", name, err)
-				}
-			}
-			if _, err := f.Send(t.Context(), message); !errors.Is(err, ErrNoInbox) {
-				t.Fatalf("legacy recipient message retry = %v", err)
-			}
-			if receipt, err := f.SentMessage(t.Context(), message.Sender, sent.ID); err != nil || receipt.ID != sent.ID {
-				t.Fatalf("sender lost its retained receipt: %+v, %v", receipt, err)
-			}
-			if claim, err := f.Claim(t.Context()); err != nil || claim != nil {
-				t.Fatalf("legacy inbox entered delivery queue: %+v, %v", claim, err)
-			}
-			if deadline, err := f.NextWorkAt(t.Context()); err != nil || deadline != nil {
-				t.Fatalf("legacy inbox scheduled delivery: %v, %v", deadline, err)
-			}
-			if status, _, err := f.SessionStatus(t.Context(), body.DestinationRef.Namespace, body.SessionID, nil, Debounce{}, true, true); err != nil || status == nil || status.Inbox.ID != subscription.InboxID {
-				t.Fatalf("operator lost retained inbox: %+v, %v", status, err)
-			}
-			if after := retained(); after != before {
-				t.Fatal("legacy inbox, subscription, entries, or message changed")
-			}
-		})
-	}
-}
-
 func TestAnIdentityOwnsExactlyItsIncarnationAndSandboxInboxes(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	owner := f.incarnation()
@@ -555,5 +486,22 @@ func TestAnIdentityOwnsExactlyItsIncarnationAndSandboxInboxes(t *testing.T) {
 	}
 	if _, err := f.Acknowledge(t.Context(), owner, sub.InboxID, 0); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestInboxSchemaRequiresIdentityOwnership(t *testing.T) {
+	f := newIsolatedFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, f.body("identity-schema"))
+	assertColumnExists(t, f.db, "inbox", "owner_uid", false)
+	for _, column := range []string{"owner_identity_name", "owner_identity_uid"} {
+		_, err := f.db.ExecContext(t.Context(), "UPDATE inbox SET "+column+" = NULL WHERE id = $1", subscription.InboxID)
+		var constraint *pq.Error
+		if !errors.As(err, &constraint) || constraint.Code != "23502" || constraint.Column != column {
+			t.Fatalf("clearing %s = %v, want its NOT NULL violation", column, err)
+		}
+	}
+	page := f.read(t, subscription.InboxID, 0)
+	if page.Inbox.OwnerIdentity != f.incarnation().Identity {
+		t.Fatalf("persisted owner = %+v, want %+v", page.Inbox.OwnerIdentity, f.incarnation().Identity)
 	}
 }

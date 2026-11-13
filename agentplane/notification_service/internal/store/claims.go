@@ -22,10 +22,6 @@ var ErrClaimLost = errors.New("inbox claim lost")
 
 var inboxLease = lease.Table{Name: "inbox", Key: []string{"id"}, Holder: "claim", Until: "claim_until"}
 
-// Retained legacy rows remain available to operator diagnostics, but never enter the delivery queue.
-const identityOwnedInbox = `owner_uid IS NULL AND owner_identity_name IS NOT NULL AND owner_identity_name <> ''
-	AND owner_identity_uid IS NOT NULL AND owner_identity_uid <> ''`
-
 // Claim is an inbox a worker holds under a lease. Every write made for a claim is fenced: it fails with
 // ErrClaimLost unless the lease is still this worker's.
 type Claim struct {
@@ -39,10 +35,7 @@ type Claim struct {
 
 // Holder is the Identity and Sandbox incarnation persisted on the claimed inbox.
 func (c Claim) Holder() Owner {
-	if c.OwnerUID != nil || c.OwnerIdentity == nil {
-		return Owner{}
-	}
-	return Owner{Identity: *c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
+	return Owner{Identity: c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
 }
 
 // heldInbox is the claimed inbox as a fenced call reads it, locked for update.
@@ -61,7 +54,6 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 		inbox, err := scanInbox(tx.QueryRowContext(ctx, `
 			SELECT `+inboxColumns+`, stale_check_at FROM inbox
 			WHERE NOT retired AND next_attempt <= now() AND claim_until <= now()
-				AND `+identityOwnedInbox+`
 			ORDER BY next_attempt LIMIT 1 FOR UPDATE SKIP LOCKED`),
 			&staleCheckAt)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -205,7 +197,7 @@ func nullTime(t *time.Time) sql.NullTime {
 func (s *Store) NextWorkAt(ctx context.Context) (*time.Time, error) {
 	var deadline sql.NullTime
 	if err := s.db.QueryRowContext(ctx,
-		`SELECT min(greatest(next_attempt, claim_until)) FROM inbox WHERE NOT retired AND next_attempt IS NOT NULL AND `+identityOwnedInbox).
+		`SELECT min(greatest(next_attempt, claim_until)) FROM inbox WHERE NOT retired AND next_attempt IS NOT NULL`).
 		Scan(&deadline); err != nil {
 		return nil, err
 	}

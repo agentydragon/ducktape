@@ -18,10 +18,8 @@ import (
 // Inbox is one Session's inbox: the entries of every source its subscriptions follow, in the order they were
 // committed. A cursor is an entry's position, from 1.
 type Inbox struct {
-	ID       uuid.UUID
-	OwnerUID *string
-	// OwnerIdentity is the Identity incarnation established as an owner, nil while none is.
-	OwnerIdentity  *model.Identity
+	ID             uuid.UUID
+	OwnerIdentity  model.Identity
 	DestinationRef model.DestinationRef
 	SessionID      string
 	// LastCursor is the cursor of the newest committed entry, or 0.
@@ -69,7 +67,7 @@ type InboxPage struct {
 }
 
 const inboxColumns = `id, destination_namespace, destination_name, destination_uid,
-	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error, owner_uid,
+	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error,
 	owner_identity_name, owner_identity_uid`
 
 type rowScanner interface{ Scan(...any) error }
@@ -78,10 +76,10 @@ type rowScanner interface{ Scan(...any) error }
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
 	var namespace, name, uid sql.NullString
-	var deliveryError, ownerUID, identityName, identityUID sql.NullString
+	var deliveryError sql.NullString
 	if err := row.Scan(append([]any{
 		&inbox.ID, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
-		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError, &ownerUID, &identityName, &identityUID,
+		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError, &inbox.OwnerIdentity.Name, &inbox.OwnerIdentity.UID,
 	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
@@ -89,12 +87,6 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	inbox.DestinationRef, err = destinationRefFromColumns(inbox.ID, namespace, name, uid)
 	if err != nil {
 		return Inbox{}, err
-	}
-	if ownerUID.Valid {
-		inbox.OwnerUID = &ownerUID.String
-	}
-	if identityUID.Valid {
-		inbox.OwnerIdentity = &model.Identity{Name: identityName.String, UID: identityUID.String}
 	}
 	if deliveryError.Valid {
 		inbox.DeliveryError = &deliveryError.String
@@ -167,11 +159,11 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner Owner, ref mo
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid,
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
 			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10, $11)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written, nil,
+		uuid.New(), ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written,
 		owner.Identity.Name, owner.Identity.UID); err != nil {
 		return Inbox{}, err
 	}
