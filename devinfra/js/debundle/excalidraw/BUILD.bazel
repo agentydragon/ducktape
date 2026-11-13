@@ -2,7 +2,7 @@ load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_rust//rust:defs.bzl", "rust_test")
-load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -126,8 +126,23 @@ filegroup(
 )
 
 # The spec: a few source-anchored modules and vendor swaps (README.md § Spec).
-debundle_pipeline(
+debundle_analysis(
+    name = "analysis",
+    input_data = [":source"],
+    package_roots = {
+        "//:node_modules/clsx/dir": "clsx",
+        "//:node_modules/roughjs/dir": "roughjs",
+    },
+    spec_tree_inputs = [":spec"],
+    tree_config = "config.yaml",
+    tree_modules = "spec/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "spec/vendor_marks.yaml",
+)
+
+debundle_apply(
     name = "debundle",
+    analysis = ":analysis",
     input_data = [":source"],
     package_roots = {
         "//:node_modules/clsx/dir": "clsx",
@@ -139,12 +154,6 @@ debundle_pipeline(
     tree_modules = "spec/modules",
     tree_source_root = ":source",
     tree_vendor_marks = "spec/vendor_marks.yaml",
-)
-
-filegroup(
-    name = "analysis",
-    srcs = [":debundle"],
-    output_group = "analysis",
 )
 
 py_test(

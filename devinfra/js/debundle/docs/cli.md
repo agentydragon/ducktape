@@ -792,7 +792,7 @@ full projection and matching analysis artifact across selection edits; an
 engine, source or analysis-contract change still requires a matching fresh
 analysis.
 
-Bazel's `debundle_pipeline` accepts `ownership_subset = "retained.json"`.
+Bazel's `debundle_apply` accepts `ownership_subset = "retained.json"`.
 Keep `tree_modules` and its declared inputs complete. Only the Pipeline action
 reads this manifest; changing it leaves the projection and Analyze inputs
 unchanged. The attribute cannot be combined with `split_dependency_graphs`.
@@ -817,9 +817,10 @@ name is literally `note`; commuting-contract notes stay with the graph report.
 `run --analysis` refuses an artifact computed by another engine, from other
 sources, or for another projection, naming what differs; rerun the first two
 commands then. Its output equals `debundle run`'s. Under Bazel,
-`debundle_pipeline` runs these as three actions, so an assignment edit reuses
-the cached `DebundleAnalyze` result; its `analysis` output group holds the
-projection and the artifact for running the last command locally.
+`debundle_analysis` owns projection and Analyze, while each `debundle_apply`
+requires that shared target and owns the final action. An assignment edit reuses
+the cached `DebundleAnalyze` result. The `analysis` output group holds the
+projection and artifact for running the last command locally.
 
 After a graph-only build, the analysis artifact may still be in the remote
 cache rather than the local output directory. Request its output group before

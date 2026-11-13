@@ -1,2 +1,0 @@
-members:
-  - selector: { binding: { name: value } }

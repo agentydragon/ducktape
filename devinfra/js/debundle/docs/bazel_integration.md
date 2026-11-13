@@ -1,185 +1,108 @@
 # Bazel integration
 
-## Standard target family for a corpus
+## Explicit analysis and apply stages
 
-`debundle_product.bzl`'s `debundle_product` declares every standard Debundle
-target of one tree-shaped corpus from one call, composing the
-[`debundle_pipeline` rule](#pipeline-rule) and the
-[`debundle_cli` launcher](#graph-command-launchers):
+Declare `debundle_analysis` once for one input bundle and one set of semantic
+analysis premises. Each `debundle_apply` must name that target explicitly. There
+is no combined rule or target-family macro that can silently start another
+analysis when adding a spec variant.
 
 ```python
-load("@ducktape//devinfra/js/debundle:debundle_product.bzl", "debundle_product")
+load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 
-debundle_product(
-    name = "debundle",
-    spec = "spec",
-    # Target holding the chunk the spec reads (`tree_source_root`).
-    source = "//path/to:bundle_inputs",
-    input_data = ["//path/to:vendor_bundles"],
+debundle_analysis(
+    name = "analysis",
+    analysis_threads = 2,
+    input_data = ["//path/to:bundle_inputs"],
     package_roots = {"//:node_modules/react/dir": "react"},
-    readable = True,
-    ownership_subset = "spec/passing_subset.json",
-    residual_baseline = "spec/residual_baseline",
-    cli_main_chunk = "main",
-    cli_chunks = ["settings", "worker"],
-    cli_source_root = "path/to/extracted",
-    analysis_threads = 2,
-)
-```
-
-| Target                                | Declared when       | What it is                                                                   |
-| ------------------------------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `debundle`                            | always              | Gated pipeline with `split_dependency_graphs`                                |
-| `debundle_analysis`                   | always              | Its `analysis` output group (projection and analysis)                        |
-| `debundle_graphs`                     | always              | Its `dependency_graphs` output group                                         |
-| `debundle_readable`                   | `readable`          | `emit_on_rejection` reading-only tree; reuses `debundle_analysis`            |
-| `debundle_passing`                    | `ownership_subset`  | Ownership-subset run; reuses `debundle_analysis`                             |
-| `debundle_residual_baseline`          | `residual_baseline` | Gated pipeline over the baseline spec; own analysis unless reusing           |
-| `debundle_residual_baseline_analysis` | `residual_baseline` | Its `analysis` output group                                                  |
-| `debundle_cli`                        | `cli_main_chunk`    | Launcher on `reports/tree/<cli_main_chunk>/dependency_graph.json.gz`         |
-| `debundle_cli_<chunk>`                | each `cli_chunks`   | Launcher on that chunk's graph, or `cli_chunk_graphs[<chunk>]`'s if remapped |
-
-Launchers share the `<name>_cli` prefix so they sort together in `bazel query`
-output and `bazel run :debundle_cli<TAB>` completes exactly the launchers; no
-other family member starts with it. Every launcher reads the gated target's
-graphs; `cli_chunk_graphs = {"lazy": "main"}` points `debundle_cli_lazy` at the
-main chunk's graph.
-
-`spec` is a package-relative directory holding `spec_config.yaml`, `modules/`
-and `sources/vendor/vendor_marks.yaml`; its spec tree inputs are every `.yaml`
-below it and `modules`, excluding a residual baseline nested inside it. Pass
-`debundle_spec(dir, config = ..., modules = ..., vendor_marks = ..., srcs = ...)`
-for a corpus whose files live elsewhere, e.g.
-`debundle_spec("spec", vendor_marks = "spec/vendor_marks.yaml")`;
-`residual_baseline` accepts the same forms. `residual_baseline_reuses_analysis`
-makes the baseline reuse `debundle_analysis` (its projection must match). All
-variants read the same `source`, `input_data` and `package_roots`; `tags`,
-`testonly` and `visibility` apply to every target, `exec_properties` to every
-pipeline, `analysis_threads` to every target that runs Analyze.
-
-Drop to the raw rule for a flat spec, a variant with its own sources or package
-roots, a custom `debundler`/`analyzer`/`projector` attribute (the label flags
-still apply to the family), or diagnostic attrs (`full_reports`,
-`effect_conflicts_jsonl`, `fail_fast`). A raw target can still reuse a family's
-analysis with `analysis = ":debundle_analysis"`.
-
-## Pipeline rule
-
-`pipeline.bzl` provides a Bazel rule for running `debundle run` as a normal
-build action:
-
-```python
-load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
-
-debundle_pipeline(
-    name = "debundle",
-    # Limit Rayon workers for this target's Analyze action; 0 keeps the
-    # inherited RAYON_NUM_THREADS or Rayon's default.
-    analysis_threads = 2,
-    input_data = [
-        "//path/to:bundle_inputs",
-    ],
-    package_roots = {
-        "//:node_modules/react/dir": "react",
-        "//:node_modules/zod/dir": "zod",
-    },
-    spec_tree_inputs = [":spec_data"],
-    tree_config = "spec/spec_config.yaml",
-    # Target holding the chunk the spec reads. Its files' own root becomes
-    # the root `inputs.root` / `inputs.js_list_path` resolve against, so a
-    # committed chunk resolves against the execroot and a build-extracted
-    # one against bazel-bin -- no need to vendor the chunk into git.
     tree_source_root = "//path/to:bundle_inputs",
+    tree_config = "spec/spec_config.yaml",
     tree_modules = "spec/modules",
     tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
+    spec_tree_inputs = [":spec_data"],
 )
+
+debundle_apply(
+    name = "debundle",
+    analysis = ":analysis",
+    input_data = ["//path/to:bundle_inputs"],
+    package_roots = {"//:node_modules/react/dir": "react"},
+    tree_source_root = "//path/to:bundle_inputs",
+    tree_config = "spec/spec_config.yaml",
+    tree_modules = "spec/modules",
+    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
+    spec_tree_inputs = [":spec_data"],
+)
+
+debundle_apply(
+    name = "debundle_passing",
+    analysis = ":analysis",
+    ownership_subset = "passing_subset.json",
+    input_data = ["//path/to:bundle_inputs"],
+    package_roots = {"//:node_modules/react/dir": "react"},
+    tree_source_root = "//path/to:bundle_inputs",
+    tree_config = "spec/spec_config.yaml",
+    tree_modules = "spec/modules",
+    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
+    spec_tree_inputs = [":spec_data"],
+)
+
 ```
 
-The rule writes a tree artifact named `<target>.out` under `bazel-bin`. It
-declares the spec, input data, package roots, and action tools as Bazel
-inputs/tools, then runs them from `BAZEL_BINDIR` so source-relative spec paths
-resolve the same way they do in ordinary builds. By default the rule uses
-`@ducktape//devinfra/js/debundle:debundle` for the full pipeline and
-`:debundle_project_analysis` for projection; consumers can select another full
-CLI at repo or command-line scope with:
+| Rule                | Registered actions                                         | Default output                                               |
+| ------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
+| `debundle_analysis` | `DebundleProjectAnalysis`, `DebundleAnalyze`               | Canonical `.analysis_projection` and saved `.analysis` files |
+| `debundle_apply`    | `DebundleApply`; optional on-demand `DebundleExportGraphs` | `<name>.out/` with emitted JavaScript and bounded reports    |
+
+`analysis` requires a direct `debundle_analysis` target with its typed provider;
+a filegroup or arbitrary artifact is not accepted. Building the analysis target
+never applies a spec or emits JavaScript. Adding apply targets never registers
+projection or Analyze actions. The ordinary Bazel dependency graph makes every
+consumer depend on the same saved artifact; caching and action deduplication need
+no side cache or opt-in reuse flag.
+
+A different module layout, rename, retained ownership subset, graph-only option,
+or report sink can reuse analysis when its canonical semantic projection is
+unchanged. A different bundle, vendor interpretation, host premise or
+analysis-relevant annotation requires its own explicit analysis target. The native
+engine still checks engine identity, source digests and the current spec's
+projection before consuming saved facts. The same input file alone is not enough
+to justify sharing facts computed under different assumptions. Never force a
+shared target by weakening those checks.
+
+Full exported dependency graphs belong to apply: they include authored graph
+options and module ownership. They consume the saved source facts and do not
+repeat interpreter analysis. Keep source-fact computation and graph export
+distinct when reading `aquery` or requesting outputs.
+
+Both rules declare their complete spec, input data and package roots. A tree spec
+uses `tree_config`, `tree_modules`, `tree_vendor_marks`, and `spec_tree_inputs`.
+Config and vendor-mark labels can name generated files; `tree_modules` is a
+package-relative directory. A flat YAML uses `spec` instead. `tree_source_root`
+is the target holding the bundle: its files' root determines whether embedded
+source paths resolve against the execroot or `bazel-bin`, including bundles
+extracted from pinned upstream artifacts.
+
+`analysis_threads` belongs only to `debundle_analysis`: zero uses the inherited
+Rayon setting, a positive value sets the tracked `RAYON_NUM_THREADS` environment
+on Analyze only, and negative values fail. The analysis rule owns the `analyzer`
+and `projector` tool attributes; apply owns `debundler` and all emission/report
+controls. Label flags select the source-built tools in the execution
+configuration. The analyzer and CLI must have the same configured analysis
+identity, derived from the complete `staged_analysis` closure. Edits confined to
+assignment, lowering or the CLI do not invalidate that identity; shared analysis
+dependencies remain conservative invalidation boundaries.
+
+To check a many-spec integration, query its actual actions:
 
 ```sh
-bazelisk build //path/to:debundle \
-  --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
+bazelisk aquery 'mnemonic("DebundleAnalyze", deps(set(//path/to:debundle //path/to:debundle_passing)))'
 ```
 
-`analysis_threads` controls only `DebundleAnalyze`: zero omits the override,
-using inherited `RAYON_NUM_THREADS` when set or Rayon's default otherwise. A
-positive value sets the tracked action environment `RAYON_NUM_THREADS` to that
-value. Negative values fail during rule analysis. Projection, Pipeline, and
-graph export keep their existing action environments.
-
-`DebundleAnalyze` uses the separate `:debundle_analyze` executable, selected by
-the `:analyzer` label flag or the rule's `analyzer` attribute. It accepts the
-`analyze` command's options directly. `DebundleProjectAnalysis` uses the small
-`:debundle_project_analysis` executable, selected by the `:projector` label flag
-or the rule's `projector` attribute. It accepts the transform inputs and
-`--out` directly, and calls the same `pipeline::project_analysis` function
-as `debundle spec project-analysis`. Only the Pipeline and optional graph-export
-actions use the full CLI.
-The analyzer depends on `:staged_analysis`, independently of `:pipeline`,
-`:lowering` and `:cli`. Edits confined to those latter crates leave the Analyze
-tool and its compiled identity unchanged. Source inputs and projection bytes
-must also be unchanged to reuse its action. Shared dependencies, including
-artifact and vendor code, remain conservative invalidation boundaries.
-
-Custom CLI/analyzer pairs must embed the same generated configured analysis
-identity, generated from the complete `:staged_analysis` closure; mismatches fail
-before decoding facts. Both tools use the execution
-configuration. Their native linking policy must match the shared identity rule;
-binary-specific linking overrides are outside this pairing contract. The
-identity includes Rust compiled outputs, build-script outputs and linker flags,
-selected native libraries, and Rust/C++ toolchain files and link configuration.
-It identifies this compiled closure, not runtime executable bytes or external
-system libraries. The standalone public CLI still analyzes in process and needs
-no companion, including after Nix rewrites its ELF interpreter. Saved graphs
-retain their exact full-CLI executable digest and source/spec checks.
-
-The analysis header uses `analysis_engine_sha256`; earlier artifacts with
-`engine_sha256` must be regenerated. Source digests and canonical projection
-checks remain mandatory.
-
-## Share analysis between spec variants
-
-Pass `analysis` to reuse an existing target's saved analysis. Bazel obtains that
-artifact through the producing action's ordinary cache or executes that action
-when needed. The consuming target registers no projection or Analyze action;
-assignment, gates, translation validation and emission still run against its
-current spec. The CLI rejects incompatible engine, source or analysis-projection
-identities. Module assignments and renames may differ when the projection permits
-it; changing an analysis-relevant author contract requires fresh analysis.
-
-```python
-debundle_pipeline(
-    name = "debundle_variant",
-    # A family's `<name>_analysis`, or any filegroup selecting a pipeline's
-    # `analysis` output group.
-    analysis = ":debundle_analysis",
-    input_data = ["//path/to:bundle_inputs"],
-    spec_tree_inputs = [":variant_spec_data"],
-    tree_config = ":generated_variant_config",
-    tree_modules = "spec/modules",
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-)
-```
-
-`analysis` accepts a single `.analysis` file or a filegroup containing exactly one
-such file. The consuming target forwards those files in its own `analysis`
-output group. Selecting the producer's `analysis` group does not select its
-emission or graph-export actions. `analysis_threads` must remain zero on a
-consumer; set the worker limit on the producer instead.
-
-`tree_config` and `tree_vendor_marks` are file labels and accept generated files.
-`tree_modules` remains a package-relative directory, with its complete YAML inputs
-declared through `spec_tree_inputs`. Every variant must declare its complete
-source, spec and package inputs even when it shares analysis. Optional graph
-exports consume that same analysis through the existing separate action.
+There should be one Analyze action per deliberately distinct semantic analysis,
+regardless of the number of apply targets. Rule tests also execute two different
+spec layouts over one shared analyzed bundle and check both emitted behavior and
+module boundaries.
 
 ## Output groups and gate rejection
 
@@ -189,7 +112,7 @@ rejection is the only failure — with a `GATE_REJECTED` marker, as well as 0.
 Every other failure still fails
 the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
-output on gate rejection); the family declares it as `<name>_readable`.
+output on gate rejection); name such targets `<name>_readable`.
 
 Default builds write small reports and emitted modules without full graph
 serialization, including when `split_dependency_graphs = True`. That attr
@@ -206,7 +129,7 @@ the detailed rejection report follows the materializer's existing selection.
 Graph selection does not enable full effect-conflict JSONL or other full-detail
 evidence. The default output group never depends on this export action.
 
-The family's `<name>_graphs` selects that group; adapters should request that group only for graph refresh/query work; normal
+A filegroup can select that group for graph refresh/query work; normal
 validation and source regeneration remain small. Gate-rejected reading trees
 retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
 graph their diagnostics explain how to request one instead of naming a
@@ -242,7 +165,7 @@ debundle_cli(
 `graph_source_data` is provided, while `source_data` is a generated directory
 used directly as `DEBUNDLE_SOURCE_ROOT`. Each generated source, graph-source,
 and package root must provide exactly one directory artifact. `package_roots`
-uses the same label-to-package-name mapping as `debundle_pipeline`.
+uses the same label-to-package-name mapping as `debundle_apply`.
 The default `debundler` is the public label flag used by the pipeline, so a
 command-line override selects the same executable. If the pipeline target sets
 its `debundler` attribute directly, pass that same label to `debundle_cli`.
@@ -272,11 +195,11 @@ bazelisk build //path/to:debundle \
 
 This can still run actions that produce source or package inputs. `native_inputs`
 does not select `DebundleProjectAnalysis`, `DebundleAnalyze`, or
-`DebundlePipeline`. The `analysis` group includes the projection and analysis
+`DebundleApply`. The `analysis` group includes the projection and analysis
 artifact and runs Analyze; `dependency_graphs` also depends on that shared
 analysis artifact. `debundler` contains only the exact full CLI selected by the
 rule's `debundler` attribute or label flag. `projector` contains only the exact
-projection executable selected by its `projector` attribute or label flag.
+projection executable selected by the analysis target's `projector` attribute or label flag.
 
 For a complete native replay packet containing inputs, analysis artifacts, and
 both action executables, request all four groups:
@@ -294,8 +217,8 @@ at the valid roots in the relocated input tree.
 
 ## Integration boundary
 
-Corpus integrations use `debundle_product.bzl`, `pipeline.bzl`'s
-`debundle_pipeline`, `debundle_cli.bzl`, the public
+Corpus integrations use `pipeline.bzl`'s explicit `debundle_analysis` and
+`debundle_apply` rules, `debundle_cli.bzl`, the public
 `:debundler`, `:analyzer`, and `:projector` label flags, or the public CLI
 executables.
 `README.md`, `SPEC.md`, and `perf_wrapper.sh` are exported resources.
@@ -337,7 +260,7 @@ bb execution get EXECUTION_ID --output=json > /tmp/TASK/cli-action.json
 bbapi blob download --manifest /tmp/TASK/downloads.json
 ```
 
-Use the pipeline's `DebundlePipeline` command to identify its full CLI tool
+Use the pipeline's `DebundleApply` command to identify its full CLI tool
 path, then choose the completed `Rustc` execution with that exact
 `primaryOutputPath`, ending in `/devinfra/js/debundle/debundle`. This matters
 when the invocation builds several configurations. In its response,
@@ -405,7 +328,7 @@ Deviation: a consumer that replaces `debundler` runs that binary's own solver.
 
 ## Profiling
 
-`debundle_pipeline` has no profiling targets: `perf` needs the host kernel and
+`debundle_apply` has no profiling targets: `perf` needs the host kernel and
 massif/heaptrack need their own binaries on `PATH`, so sandboxed profile actions
 produced empty or misleading output. Run an `-c opt` debundler binary under
 `perf_wrapper.sh` directly. It writes the reports next to a rerunnable command
