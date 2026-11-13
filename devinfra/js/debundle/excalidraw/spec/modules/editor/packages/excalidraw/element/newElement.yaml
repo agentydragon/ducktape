@@ -48,3 +48,39 @@ source_matches:
     bindings:
       - local: selected
         name: newTextElement
+  - match: |
+      var selected = (opts) => _newElementBase("embeddable", opts);
+    bindings:
+      - local: selected
+        name: newEmbeddableElement
+  - match: |
+      var selected = (opts) => ({ ..._newElementBase("iframe", opts) });
+    bindings:
+      - local: selected
+        name: newIframeElement
+  - match: |
+      var selected = (opts) =>
+        EXPR(
+          {
+            ..._newElementBase("frame", opts),
+            type: "frame",
+            name: opts?.name || null,
+          },
+          {},
+        );
+    bindings:
+      - local: selected
+        name: newFrameElement
+  - match: |
+      var selected = (opts) =>
+        EXPR(
+          {
+            ..._newElementBase("magicframe", opts),
+            type: "magicframe",
+            name: opts?.name || null,
+          },
+          {},
+        );
+    bindings:
+      - local: selected
+        name: newMagicFrameElement

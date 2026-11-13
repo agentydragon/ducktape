@@ -605,10 +605,17 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
                 const rectangle = create.newElement({id: 'constructed-rectangle', type: 'rectangle',
                     x: 10, y: 20, width: 30, height: 40, seed: 4, version: 3, versionNonce: 9, locked: true});
                 const ellipse = create._newElementBase('ellipse', {id: 'constructed-ellipse', x: 1, y: 2});
+                const embeddable = create.newEmbeddableElement({id: 'constructed-embeddable', x: 3, y: 4});
+                const iframe = create.newIframeElement({id: 'constructed-iframe', x: 5, y: 6});
+                const frame = create.newFrameElement({id: 'constructed-frame', name: 'Frame', x: 7, y: 8});
+                const magicFrame = create.newMagicFrameElement({id: 'constructed-magic-frame',
+                    name: 'Magic frame', x: 9, y: 10});
                 const text = create.newTextElement({id: 'constructed-text', x: 100, y: 200,
                     text: 'hello\tworld\r\n界', fontFamily: 3, fontSize: 20, lineHeight: 1.2,
                     textAlign: 'center', verticalAlign: 'middle'});
                 return {
+                    constructors: [embeddable, iframe, frame, magicFrame].map(
+                        ({id, type, x, y, name}) => [id, type, x, y, name ?? null]),
                     rectangle: [rectangle.id, rectangle.type, rectangle.x, rectangle.y,
                                 rectangle.width, rectangle.height, rectangle.seed, rectangle.version,
                                 rectangle.versionNonce, rectangle.locked, rectangle.isDeleted],
@@ -623,6 +630,12 @@ async def test_element_construction(playwright_driver: Playwright, origin: str) 
             }"""
         )
         assert result == {
+            "constructors": [
+                ["constructed-embeddable", "embeddable", 3, 4, None],
+                ["constructed-iframe", "iframe", 5, 6, None],
+                ["constructed-frame", "frame", 7, 8, "Frame"],
+                ["constructed-magic-frame", "magicframe", 9, 10, "Magic frame"],
+            ],
             "rectangle": ["constructed-rectangle", "rectangle", 10, 20, 30, 40, 4, 3, 9, True, False],
             "defaults": ["ellipse", 0, 0, [], None, None, 1, 0],
             "text": ["text", "hello        world\n界", "hello        world\n界", 3, 20, 1.2, None, True],
