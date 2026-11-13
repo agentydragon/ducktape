@@ -1,7 +1,7 @@
 """Hermetic erofs image rule."""
 
 def _erofs_image_impl(ctx):
-    # A fixed UUID and timestamp make the image a function of the tar and compression setting.
+    # A fixed UUID and timestamp make image output reproducible for identical action inputs.
     arguments = [
         ctx.file._closure.path,
         "mkfs.erofs",
