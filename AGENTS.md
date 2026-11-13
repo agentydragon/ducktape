@@ -76,7 +76,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 
 ## Git
 
-- Never amend a pushed commit.
+- Never run `git commit --amend` on a pushed commit. You may rebase only a branch you created that backs a PR you own, to keep that PR mergeable; publish rewrites with `--force-with-lease`. Do not rewrite any other pushed branch, including `main`, `devel`, shared branches, or branches owned by someone else.
 - Never `git reset --soft` onto a moved base; rebase, then squash against `$(git merge-base HEAD origin/devel)`.
 - Committing on `devel` trips `no-commit-to-branch`; `SKIP=` it only with explicit user approval.
 - **A dirty checkout is the user's.** Never switch branches or commit on top of it unasked; if the work doesn't build on that state, use a fresh worktree; ask if ambiguous.
