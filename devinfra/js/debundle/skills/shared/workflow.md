@@ -189,6 +189,7 @@ the actual mutual/direct blockers and rerun the gate on that assignment.
 | Established cause                                                                          | Next action                                                                                                                                                                                                                                                                                         |
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Invalid selectors, missing anchors, stale inputs or incomplete probe context               | Repair the probe before drawing semantic conclusions. Ownership reduction must preserve the full selector and assertion context.                                                                                                                                                                    |
+| A source-unit assignment splits a structural atom                                          | Inspect the complete group and its edge evidence. The atom is a co-location rule under the current analysis; it does not by itself prove that a separate atom is extractable. See [structural atoms and extraction candidates](../../docs/cli.md#structural-atoms-and-extraction-candidates).       |
 | Concrete initialization reads, writes or ordering make the requested split unsafe          | Repair the spec around the complete indivisible group, including anonymous statements and later mutations. Try one coherent owner or retain initialization in residual, then rerun the gate.                                                                                                        |
 | A constraint represents possible behavior of opaque calls, getters, callbacks or providers | Establish the actual implementation and runtime premises, then choose [inference, sound recognition or an audited annotation](#choose-the-solution-depth). Conservative rejection can be correct under the existing contract. The [contract chooser](initialization_contracts.md) routes the audit. |
 | The analysis or validator contradicts established facts under the current contract         | Follow the [bug reproduction workflow](../../docs/bug_reproductions.md): isolate the stage, minimize a neutral case that fails for the same reason, and verify the repair against the original blocker.                                                                                             |
@@ -257,13 +258,14 @@ are not additional authored claims; report unmatched labels separately.
    lower bound. Alternatively start from an existing passing partial spec or
    the residual-only baseline. Include anonymous statements and complete
    atomic units in each group.
-   An atomic-group rejection is a co-location constraint: inspect the complete
-   group and try assigning it to one coherent owner before treating it as
-   requiring semantic improvement. Preserve anonymous units and full selector
-   context in the probe; group size alone does not establish incoherence. This
-   only addresses the co-location requirement: rerun the normal gate, since
-   module cycles, order, exports, or interaction with entry co-location may
-   still reject the assignment.
+   An atomic-group rejection means the assignment split a current co-location
+   group: inspect the complete group and try assigning it to one coherent owner
+   before treating it as requiring semantic improvement. Preserve anonymous
+   units and full selector context in the probe; group size alone does not
+   establish incoherence. A complete group is not automatically an extraction
+   candidate: rerun the normal gate on the full assignment, since module cycles,
+   order, exports, or interaction with entry co-location may still reject it.
+   See [structural atoms and extraction candidates](../../docs/cli.md#structural-atoms-and-extraction-candidates).
 2. Restore groups, run the normal gate, and split failing additions against
    the same passing base. Keep passing groups and continue on rejected
    combinations. If both halves

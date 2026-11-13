@@ -17,7 +17,10 @@ Use the adapter's current graph, matching modules tree, source, and reports.
 Planning is read-only; a query may evaluate a candidate's gate without applying it.
 Start with `graph-summary`, then use `describe` and `inspect-source --id` before
 recommending an assignment. Use `coverage` for ownership and `atoms` for the
-complete source-unit groups that must move together.
+complete source-unit groups the current analysis requires to share a destination.
+Separate groups are not necessarily independently extractable; see [structural
+atoms and extraction candidates](cli.md#structural-atoms-and-extraction-candidates)
+before treating a residual inventory as a peel verdict.
 `describe` defaults to 20 rows per section. Check its truncation metadata and use
 `--all` when deriving a complete assignment or dependency closure from its rows.
 
