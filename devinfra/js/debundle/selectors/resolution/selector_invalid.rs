@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use source_match::{
     AnonymousProblem, AnythingPosition, BindingProblem, ClaimProblem, SourceMatchError,
 };
+use swc_common::Spanned;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum InvalidSelectorError {

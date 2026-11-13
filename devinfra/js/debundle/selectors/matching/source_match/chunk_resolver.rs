@@ -665,7 +665,7 @@ fn group_matches_declarator_holes(
             selector_var_declarator_binding_location(needle_var, request_id, selector, target)
                 .map(|location| (target.clone(), location))
         })
-        .collect::<Result<_>>()?;
+        .collect::<MatchResult<_>>()?;
     let needle_index = needle_index(needle)?;
     let free = free_identifiers([&needle_index]);
     let mode = selector_mode(selector);
@@ -887,7 +887,7 @@ fn group_matches_general(
             selector_binding_location(needles, request_id, selector, target)
                 .map(|location| (target.clone(), location))
         })
-        .collect::<Result<_>>()?;
+        .collect::<MatchResult<_>>()?;
     let needle_indices = needles
         .iter()
         .map(needle_index)

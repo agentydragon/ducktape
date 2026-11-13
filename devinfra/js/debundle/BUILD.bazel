@@ -348,6 +348,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:strum",
+        "@crates//:swc_common",
         "@crates//:thiserror",
     ],
 )
