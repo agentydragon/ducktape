@@ -844,22 +844,23 @@
             ><${Badge} color="teal">Iteration 4 native repeat passed<//
             ><${Badge} color="orange">Iteration 5 qualification pending<//
             ><${Badge} color="blue"
-              >Final source CI:
+              >Historical source91f CI:
               ${iteration5?.final_source_ci?.status || "Pending"}<//
             ><//
           >
           <${Text} size="sm"
-            >${iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
+            >${data?.iteration6?.finding || iteration5?.finding || iteration4?.finding || "Iteration evidence is loading; no new result is inferred while evidence is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · current devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration5", "Iteration 5"],
+              ["iteration6", "Current implementation"],
+              ["iteration5", "Iteration 5 history"],
               ["iteration4", "Iteration 4 history"],
               ["iteration3", "Iteration 3 history"],
               ["progress", "Progress"],
@@ -875,19 +876,90 @@
             )}
           <//>
           <${Alert} color="blue" title="Current state">
-            Architecture work remains on draft PR #16102 at published head
-            91f72591a1, integrated with current devel. Both independent
-            reliability backports have merged. All 24 manual-contract/rendering
-            cases and all three required CI checks pass on that exact head.
-            Required feedback took 8m55s from workflow creation; this is one
-            observation, with no matched speedup established. Earlier
-            patched-tree controls and historical required-check timings are
-            labeled below. Required scenario bodies and test frequency remain
-            unchanged.
+            Architecture source 66320ca996 on draft PR #16102 passes all three
+            required checks in 10m01s from workflow creation. Six selected
+            targets also pass: 25 Python JUnit cases, plus the Go startup
+            target. This is a source-specific validation, with no matched
+            speedup established. Required scenario bodies and frequency stay in
+            place. The previous 91f measurements remain labeled as history
+            below.
+          <//>
+          <${Section}
+            id="iteration6"
+            title="Current implementation: authenticated recovery and measured limits"
+          >
+            <${Title} order=${3}>Current source validation<//>
+            ${p("At literal 66320ca996, six test targets and the shared native-fixture library passed in a fresh selected run: four recovery cases, admission reply loss, direct guest boot, native Sampler integration, 18 renderer cases and the Go startup target. There are 25 observed Python JUnit cases with zero failures, errors or skips; the Go target reports PASS but its XML has no testcase elements. The selected command took 214.289s, separate from full PR feedback.")}
+            <${Rows}
+              headers=${["Evidence", "Observed result", "Boundary"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/actions/runs/43421055848"
+                    >Required CI at 663 · 10m01s<//
+                  >`,
+                  "All three required checks SUCCESS; 101 NEW physical TestRunner records",
+                  "Workflow-created 11:56:37Z to last required 12:06:38Z. Actual merge a3327d980b, base d865fea587, PR head66320ca996. No full JUnit census or matched speedup.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/a6473fb1-6753-4c40-925b-3efd0b738dfd"
+                    >Literal663 selected contracts<//
+                  >`,
+                  "Six fresh test targets; 25 Python cases;Go startup PASS",
+                  "One run/shard/attempt per target;zero cached test results. This is a selected command, not whole-PR latency.",
+                ],
+                [
+                  "Firecracker queue clock",
+                  "Reported worker-start precedes queued timestamp by 0.388s",
+                  "Queue wait is unknown. Do not clamp the inverted clock to zero or claim a current queue bottleneck.",
+                ],
+              ]}
+            />
+            <${Title} order=${3} mt="lg"
+              >Sampler authorization and History catch-up<//
+            >
+            ${p("The existing native integration now uses real TokenReview: a wrong audience returns UNAUTHENTICATED and an unauthorized service account returns PERMISSION_DENIED, leaving no Session or events; the allowed account then succeeds. It pauses the real History PID while the Sampler completes a held turn, verifies terminal contiguous journal events, resumes and redials History, requires exact prefix-plus-suffix catch-up, then completes fresh input and compares full retained contents. Existing shell, patch, image, stale-incarnation and lease-release assertions remain. Exact 663 validation passes; this envtest/test-CA composition does not replace real controller, issuer, Secret, storage, App or guest acceptance.")}
+            <${Title} order=${3} mt="lg"
+              >Merged improvements and a concealed retry<//
+            >
+            ${p("Independent devel PR #16218 repaired a stale peer-TLS import and BUILD label in the Sampler startup test. PR #16220 removed unused MCP-edge inputs from the unchanged required Pod, VM and Firecracker tests; it merged at 12:18:27Z after all required checks passed. The earlier synthetic selector probe proves the input cut; historical workload frequency and complete-feedback savings are still unmeasured.")}
+            ${p("The green #16220 CI contains six fresh physical test actions for five distinct targets. The first VM action ran 154.355s, then ended with REAPI 14/exit -2 and a VM health-check deadline. Its archived managed-VM kernel 5.15.0 log contains a general-protection fault in update_blocked_averages; an automatic re-execution ran 358.833s and passed. This is observed infrastructure failure, not an application assertion or a population flake rate. Why the kernel reached that state, including any snapshot relation, remains unknown.")}
+            <${Anchor}
+              href="https://github.com/agentydragon/ducktape/issues/16222"
+              >Kernel-failure evidence and follow-up · #16222<//
+            >
+            <${Title} order=${3} mt="lg">Setup profile and physical capacity<//>
+            ${p("The 214.289s selected run has a 75.104s sum of critical-path markers, but their timestamps span 146.305s with 71.201s between markers, and the direct-guest test runs later to 214.226s. Action-processing and remote-process interval unions cover about 210s and 209s; this is real overlapping work, not 139s of proven idle overhead. The profile does not explain every inter-action wait. Render takes 28.757s process time versus 1.947s JUnit case sum; the 26.810s difference remains unclassified pending a process profile.")}
+            ${p("APT resolution occupies 20.191s in this cold selected run, including 17.005s fetching/parsing indexes. Main CI already restores Bazel's validated generated module lockfile; the profile is not evidence of its steady-state miss rate. Do not split the shared resolver or promise 20s savings without that measurement. Existing OCI-import optimization remains in #16028/#16040.")}
+            ${p("The read-only KVM audit distinguishes policy from hardware. Exactly three current HIL VMX hosts have eligible local SSD. At the three-worker snapshot, ovh-ns1001419 alone had request headroom for a fourth 4.01 CPU/~8.40Gi launcher, leaving 1.507 CPU; later SSD capacity was sufficient for another observed-size volume. Nodes advertise 1000 KVM scheduler units, not one. Required one-worker-per-host anti-affinity and max 3 currently prevent colocation. A max 4 with preferred spread experiment could test contention, but no placement, scaler or live infrastructure was changed; request headroom is not measured simultaneous performance or failure isolation.")}
+            <${Title} order=${3} mt="lg"
+              >Historical replay: partial, with failures preserved<//
+            >
+            ${p("The first #15687 replay failed staging before any graph because the scratch Git database lacked a promisor remote. A localized repair passed its isolated Git regression and verified all four expected trees on the hosted retry. The control then selected 117 affected targets and 51 tests before runtime tag filtering. Candidate loading failed on missing pair-era helper prerequisites: _POD_DEPS and k3s_suite's args support. No selected tests ran and no candidate/control timing comparison exists. Explicit compatibility repair and the remaining 30-pair qualification are still work, not a completed experiment.")}
+            <${Title} order=${3} mt="lg"
+              >Next implementation and adoption boundary<//
+            >
+            ${p("Extend the direct guest witness to run the packaged production Runtime under guest systemd, using fixture-issued mTLS and the real Gateway with exact Sandbox UID/incarnation status. Require the same healthy-readiness assertion to reject seeded wrong client trust. That work is in progress, without a passing result claimed here. Preserve the boot-only controls and every full deployment path. Then complete compatible graph replay and matched feedback/load qualification. No gate or frequency promotion follows from the current green checks.")}
+            <${Group} gap="md" my="sm">
+              <${Anchor} href="native-contract-validation.json"
+                >Contract results<//
+              >
+              <${Anchor} href="native-setup-profile.json"
+                >Bazel profile analysis<//
+              >
+              <${Anchor} href="kvm-capacity-feasibility.json">Capacity audit<//>
+              <${Anchor} href="managed-vm-kernel-failure.json"
+                >Physical retry<//
+              >
+              <${Anchor} href="historical-selector-first-pair.json"
+                >Historical replay attempts<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration5"
-            title="Iteration 5: admission recovery, guest boot and replay preparation"
+            title="Iteration 5 history: admission recovery, guest boot and replay preparation"
           >
             <${Alert}
               color="orange"

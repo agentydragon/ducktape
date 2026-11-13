@@ -1,0 +1,47 @@
+{
+  "attempts": [
+    {
+      "archive": "9ac13c88bf1727b49f48dce4df2411f846d2273624fe4ba10987f83a1b696e45/3630",
+      "invocation": "cbfb412f-9f36-49fe-937f-9672c4e5d9ce",
+      "result": "Staging failed before any graph: scratch object database could not retrieve promised historical blobs."
+    },
+    {
+      "archive": "1f116dcaad388ee236f384c2a2105b843c0118fb76a5e267610ab1c488d3e9d1/489159444",
+      "invocation": "e1b25d6b-e543-4d18-b1e5-56f990d73713",
+      "result": "Scratch promisor repair verified all four expected trees; control completed; candidate failed graph loading on missing pair-era helper prerequisites."
+    }
+  ],
+  "candidate_graph_errors": [
+    "_POD_DEPS undefined",
+    "k3s_suite lacks args parameter required by candidate manual targets"
+  ],
+  "control_affected_targets": 117,
+  "control_pre_runtime_tag_filter_tests": 51,
+  "limit": "One behavior-neutral Runtime cleanup pair with a d717 overlay; not latest663, 30-pair qualification, executed tests or speedup evidence.",
+  "selected_target_execution": false,
+  "source": {
+    "architecture_overlay_base": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+    "architecture_overlay_head": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+    "checkout_sha_expected": "d717b4256d63c540179e61b5b90ed8c7d25f64d4",
+    "ci_tested_merge_commit": "2f9d5576a6609417e290e3a02d81911248f3dbd0",
+    "ci_tested_merge_tree_expected": "adb8317827a459e02187e418356c04b541f234be",
+    "cohort_pair_delta_paths": [
+      "agentplane/env/runtime/execution/adapter/adapter_test.go",
+      "agentplane/env/runtime/runtime.go"
+    ],
+    "cohort_pr_number": 15687,
+    "cohort_sha256": "d2c94a25a41ea9599c366addd3ad7e952b9c7f19db8c6ec8c58d4f4fcbaa49b9",
+    "historical_pair_delta_sha256_newline_terminated": "96b8d799f655e29845ec8bbab6c026495889a44b6e16afe7c1c09ca3907be944",
+    "pair_patch_sha256": "156586bb37f1819eaf042054fa4f9bcb15cc3bdb56627f34841a0f5a5aa94a8e",
+    "pr_head_commit_only_for_identity": "ba7ef4c42c19941702d0e9714d06e941dfe73b35",
+    "pr_head_tree_identity_only": "91505fc39ec8121187954f5a756ee48fc9a92900",
+    "tested_base_commit": "44d0f077b7d2640c02833dc1864ef0165224d1ba"
+  },
+  "status": "PARTIAL; not a timing comparison",
+  "verified_tree_ids": {
+    "candidate_base": "4aab4b02c4fb67431d99bc00353e5d06ca13839b",
+    "candidate_tested_merge": "e9a35781cd0b6c84b18cb15c54655df09e2887b7",
+    "control_base": "334c900c5dfb35b435df1783098730874432da84",
+    "control_tested_merge": "adb8317827a459e02187e418356c04b541f234be"
+  }
+}

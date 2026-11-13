@@ -1,0 +1,353 @@
+{
+  "action_activity": {
+    "action_processing_duration_sum_seconds": 709.574,
+    "action_processing_event_count": 1762,
+    "action_processing_interval_union_seconds": 209.788,
+    "miss_attribution": "Neither the profile nor available cache summary maps misses to the module extension or any single target/phase.",
+    "miss_count_reported_by_parent": 74,
+    "remote_action_cache_hit_marker_count": 1626,
+    "remote_file_fetch_interval_union_seconds": 7.253,
+    "remote_process_wall_duration_sum_seconds": 613.632,
+    "remote_process_wall_event_count": 43,
+    "remote_process_wall_interval_union_seconds": 208.759,
+    "remote_queue_event_count": 43,
+    "remote_queue_interval_union_seconds": 2.664,
+    "remote_queue_max_seconds": 0.069,
+    "remote_setup_interval_union_seconds": 5.565,
+    "remote_upload_interval_union_seconds": 10.297
+  },
+  "artifact_kind": "allowlisted_profile_analysis",
+  "candidate_followup": {
+    "acceptance": "Do not keep an extension split unless measured CI miss frequency and exact selected-target repeated profiles show a worthwhile wall reduction, while same pins, generated inputs, and GNOME/GTK consumers remain equivalent and pass.",
+    "action": "Keep an APT-extension split as a low-priority cold-setup hypothesis only; before changing it, measure actual CI lockfile-cache miss frequency and repeat selected-target module-resolution spans. If misses are material, test splitting the unrelated gnome_shell_test apt dependency set while preserving pins and all consumers.",
+    "uncertainty": "The profile cannot attribute extension time to one dependency set, and no same-source repeat was measured. CI already restores/saves a Bazel-validated MODULE.bazel.lock outside its clean checkout. On a lockfile hit, this extension may not be evaluated. A prior matched experiment measured 33.208 seconds between later APT-off and strict validated-reuse queries, but does not establish fleet cache-hit frequency. Splitting may duplicate parsing and alter repository keys.",
+    "why": "The profile directly observes a 20.191-second rules_distroless apt extension span, and source confirms gnome_shell_test is unrelated to this selected Agentplane target set while trixie_vm_guest remains required."
+  },
+  "critical_path_trace": {
+    "component_durations_sum_seconds": 75.104,
+    "component_event_count": 42,
+    "first_component": "action 'Writing file external/rules_go++go_sdk+main___download_0_linux_amd64/packages.txt [for tool]'",
+    "inter_component_gaps_sum_seconds": 71.201,
+    "largest_inter_component_gap_seconds": 25.013,
+    "last_component": "action 'Testing //agentplane/x/native_contracts:test_recovery'",
+    "note": "Bazel reports the sum of critical-path action durations; trace timestamps expose gaps between component actions. The profile does not assign those gaps to a specific dependency-readiness or local scheduler cause.",
+    "timestamp_end_seconds": 150.969,
+    "timestamp_span_seconds": 146.305,
+    "timestamp_start_seconds": 4.664
+  },
+  "invocation": {
+    "child_invocation_id": "a6473fb1-6753-4c40-925b-3efd0b738dfd",
+    "direct_export_parent_id": "515325dc-09ec-43f7-b6e9-1a75d53709b3",
+    "scope": "selected native/guest/central/render contract targets plus explicit library build; not full PR CI",
+    "tested_commit": "66320ca9960967305b7683dbfbacae6456c46a1a",
+    "unresolved_parent_run_id": "2ea47ad4-92e6-4a28-b03c-1aea7c651b65",
+    "unresolved_parent_run_note": "BuildBuddy returns NotFound when queried as an invocation; relation/type is unestablished."
+  },
+  "known_limits": [
+    "No test/build was rerun for this analysis. This is one invocation; it cannot quantify same-source steady-state behavior.",
+    "The action-processing and remote-process unions cover many scheduled action intervals; they are not a single path and must not be added to action counts, CPU totals, or the 75.10-second critical path.",
+    "For test_render, 28.757 seconds remote process wall and 1.947 seconds summed JUnit case time leave 26.810 seconds unclassified. No available span attributes it to imports, collection, fixtures, or transport/setup.",
+    "The 5.141-second difference between direct export parent duration 219.430 seconds and child duration 214.289 seconds is arithmetic only; there is no phase clock proving setup or teardown.",
+    "TestRunner executions had one physical runner, one attempt, and zero cached test results; this does not imply other actions were cold-cache.",
+    "The tested CI path already restores/saves a Bazel-validated MODULE.bazel.lock outside the cleaned checkout. A fresh-server profile with 20.191 seconds in the apt extension does not establish how often ordinary CI misses that cache; a split is only a lower-priority cold-setup hypothesis until miss frequency is measured."
+  ],
+  "largest_profiled_setup_activity": {
+    "category": "bazel module processing",
+    "caveat": "This profile does not break extension time down by dependency set or prove that the GNOME set accounts for the observed span.",
+    "event": "evaluate module extension: @@rules_distroless+//apt:extensions.bzl%apt",
+    "nested_fetch_and_parse_sources_seconds": 17.005,
+    "source_audit": "The tested MODULE declares apt dependency sets in one shared extension. The unrelated gnome_shell_test set includes GNOME/GTK and is used by Aiquota and finance tests; this selected Agentplane target set requires trixie_vm_guest for the guest image.",
+    "span_seconds": 20.191,
+    "start_seconds": 1.999
+  },
+  "largest_repository_fetch_spans": [
+    {
+      "repository": "@@+image_pins+kubevirt_virt_launcher_linux_amd64",
+      "span_seconds": 4.146,
+      "start_seconds": 1.995
+    },
+    {
+      "repository": "@@+http_archive+claude_code_cli_linux_x64",
+      "span_seconds": 2.831,
+      "start_seconds": 1.998
+    },
+    {
+      "repository": "@@rules_python++pip+ducktape_pypi_314_pillow_cp314_cp314_manylinux_2_27_x86_64_251bf95b",
+      "span_seconds": 0.491,
+      "start_seconds": 2.055
+    },
+    {
+      "repository": "@@gazelle++go_deps+org_golang_x_image",
+      "span_seconds": 0.136,
+      "start_seconds": 2.24
+    },
+    {
+      "repository": "@@gazelle++go_deps+io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetricgrpc",
+      "span_seconds": 0.135,
+      "start_seconds": 2.253
+    }
+  ],
+  "profile": {
+    "build_targets_event": {
+      "end_seconds": 214.256,
+      "span_seconds": 212.909,
+      "start_seconds": 1.347
+    },
+    "bytes": 326500,
+    "combined_phase_marker": "Load, analyze dependencies and build artifacts",
+    "critical_path_reported_seconds": 75.1,
+    "elapsed_seconds": 214.289,
+    "separate_load_analysis_execution_wall_times_available": false,
+    "sha256": "42ced50c83c6c2bf8923661f0b8be62135333ff7905f8f47fd303741559e442e",
+    "source": "BuildBuddy tool-log command.profile.gz"
+  },
+  "render_genrule_actions": [
+    {
+      "action_processing_wall_seconds": 24.515,
+      "start_seconds": 4.812,
+      "target": "//agentplane/system_tests/deployment:render_local_model_mcp_fixtures"
+    },
+    {
+      "action_processing_wall_seconds": 25.195,
+      "start_seconds": 29.407,
+      "target": "//agentplane/system_tests/deployment:render_local_model_pod"
+    },
+    {
+      "action_processing_wall_seconds": 22.133,
+      "start_seconds": 54.626,
+      "target": "//agentplane/system_tests/deployment:render_local_model_firecracker"
+    },
+    {
+      "action_processing_wall_seconds": 25.127,
+      "start_seconds": 56.16,
+      "target": "//agentplane/system_tests/deployment:render_local_model_vm"
+    },
+    {
+      "action_processing_wall_seconds": 31.067,
+      "start_seconds": 76.802,
+      "target": "//agentplane/system_tests/deployment:render_local_model_central_services"
+    },
+    {
+      "action_processing_wall_seconds": 23.208,
+      "start_seconds": 81.289,
+      "target": "//agentplane/system_tests/deployment:render_local_model"
+    },
+    {
+      "action_processing_wall_seconds": 37.221,
+      "start_seconds": 86.368,
+      "target": "//agentplane/system_tests/deployment:render_local_model_central"
+    },
+    {
+      "action_processing_wall_seconds": 27.801,
+      "start_seconds": 104.498,
+      "target": "//agentplane/system_tests/deployment:render_local_model_central_budget"
+    }
+  ],
+  "test_runner_costs": [
+    {
+      "action_processing_start_seconds": 77.878,
+      "action_processing_wall_seconds": 73.09,
+      "cached_test_runs": 0,
+      "case_time_sum_seconds": 59.512,
+      "input_fetch_seconds": 0.444,
+      "junit_cases": [
+        {
+          "classname": "agentplane.x.native_contracts.test_recovery",
+          "name": "test_runtime_transport_outage_retains_history_and_accepts_next_input",
+          "time_seconds": 25.096
+        },
+        {
+          "classname": "agentplane.x.native_contracts.test_recovery",
+          "name": "test_runtime_admission_is_idempotent_after_restart_without_dispatcher_replay",
+          "time_seconds": 11.567
+        },
+        {
+          "classname": "agentplane.x.native_contracts.test_recovery",
+          "name": "test_active_runtime_crash_preserves_history_and_does_not_resubmit_the_turn",
+          "time_seconds": 13.775
+        },
+        {
+          "classname": "agentplane.x.native_contracts.test_recovery",
+          "name": "test_history_outage_replays_the_runtime_journal_and_resumes_the_reader_cursor",
+          "time_seconds": 9.074
+        }
+      ],
+      "peak_memory_mib": 1069.3,
+      "post_execution_upload_seconds": 0.15,
+      "queue_seconds": 0.063,
+      "remote_test_runner_cpu_seconds": 89.411,
+      "remote_test_runner_process_wall_seconds": 71.922,
+      "target": "//agentplane/x/native_contracts:test_recovery",
+      "worker_start_to_execution_seconds": 0.527
+    },
+    {
+      "action_processing_start_seconds": 152.617,
+      "action_processing_wall_seconds": 61.609,
+      "cached_test_runs": 0,
+      "case_time_sum_seconds": 51.488,
+      "input_fetch_seconds": 0.459,
+      "junit_cases": [
+        {
+          "classname": "agentplane.x.direct_vm_boot.test_guest_boot",
+          "name": "test_real_guest_boot_and_missing_config_serial_control",
+          "time_seconds": 51.488
+        }
+      ],
+      "peak_memory_mib": 857.1,
+      "post_execution_upload_seconds": 0.105,
+      "queue_seconds": 0.058,
+      "remote_test_runner_cpu_seconds": 106.103,
+      "remote_test_runner_process_wall_seconds": 60.482,
+      "target": "//agentplane/x/direct_vm_boot:test_guest_boot",
+      "worker_start_to_execution_seconds": 0.542
+    },
+    {
+      "action_processing_start_seconds": 107.871,
+      "action_processing_wall_seconds": 39.361,
+      "cached_test_runs": 0,
+      "case_time_sum_seconds": 24.515,
+      "input_fetch_seconds": 0.458,
+      "junit_cases": [
+        {
+          "classname": "agentplane.x.native_contracts.test_admission_reply_loss",
+          "name": "test_dispatcher_retries_after_real_runtime_admission_reply_is_lost",
+          "time_seconds": 24.515
+        }
+      ],
+      "peak_memory_mib": 1034.1,
+      "post_execution_upload_seconds": 0.155,
+      "queue_seconds": 0.062,
+      "remote_test_runner_cpu_seconds": 44.858,
+      "remote_test_runner_process_wall_seconds": 38.213,
+      "target": "//agentplane/x/native_contracts:test_admission_reply_loss",
+      "worker_start_to_execution_seconds": 0.538
+    },
+    {
+      "action_processing_start_seconds": 132.3,
+      "action_processing_wall_seconds": 38.968,
+      "cached_test_runs": 0,
+      "case_time_sum_seconds": 25.944,
+      "input_fetch_seconds": 0.141,
+      "junit_cases": [
+        {
+          "classname": "agentplane.central_sampler.test_gateway_integration",
+          "name": "test_gateway_shell_patch_and_history_survive_executor_loss",
+          "time_seconds": 25.944
+        }
+      ],
+      "peak_memory_mib": 1041.4,
+      "post_execution_upload_seconds": 0.137,
+      "queue_seconds": 0.059,
+      "remote_test_runner_cpu_seconds": 71.413,
+      "remote_test_runner_process_wall_seconds": 38.016,
+      "target": "//agentplane/central_sampler:test_gateway_integration",
+      "worker_start_to_execution_seconds": 0.256
+    },
+    {
+      "action_processing_start_seconds": 151.135,
+      "action_processing_wall_seconds": 29.583,
+      "cached_test_runs": 0,
+      "case_time_sum_seconds": 1.947,
+      "input_fetch_seconds": 0.226,
+      "junit_cases": [
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows",
+          "time_seconds": 0.022
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_default_and_mcp_profiles_keep_real_connection_service[K3S_DEFAULT_FIXTURE_RLOCATION]",
+          "time_seconds": 0.004
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_default_and_mcp_profiles_keep_real_connection_service[K3S_FIXTURE_RLOCATION]",
+          "time_seconds": 0.008
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge[K3S_VM_FIXTURE_RLOCATION]",
+          "time_seconds": 1.109
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge[K3S_FIRECRACKER_FIXTURE_RLOCATION]",
+          "time_seconds": 0.619
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_direct_fixture_uses_gateway_and_embedded_migrations",
+          "time_seconds": 0.086
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling",
+          "time_seconds": 0.009
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode",
+          "time_seconds": 0.001
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_vm_boot_evidence_selects_only_oom_guest_at_runtime",
+          "time_seconds": 0.003
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_libvirt_monitor_debug_is_opt_in_and_confined_to_test_vms",
+          "time_seconds": 0.005
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_vm_fixture_uses_raw_block_workspace_and_filesystem_state",
+          "time_seconds": 0.005
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_FIXTURE_RLOCATION]",
+          "time_seconds": 0.015
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_CENTRAL_FIXTURE_RLOCATION]",
+          "time_seconds": 0.014
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring[K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION]",
+          "time_seconds": 0.014
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_central_recovery_keeps_native_services_without_oauth_fixture_workloads",
+          "time_seconds": 0.012
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads",
+          "time_seconds": 0.008
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline",
+          "time_seconds": 0.008
+        },
+        {
+          "classname": "agentplane.system_tests.deployment.test_render",
+          "name": "test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary",
+          "time_seconds": 0.005
+        }
+      ],
+      "peak_memory_mib": 1007.2,
+      "post_execution_upload_seconds": 0.103,
+      "queue_seconds": 0.058,
+      "remote_test_runner_cpu_seconds": 32.648,
+      "remote_test_runner_process_wall_seconds": 28.757,
+      "target": "//agentplane/system_tests/deployment:test_render",
+      "worker_start_to_execution_seconds": 0.312
+    }
+  ]
+}
