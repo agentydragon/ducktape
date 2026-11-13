@@ -47,6 +47,11 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   companion declares its own bundle. These counts are not transferred bytes.
   Representative Claude/Codex consumers and the discarded-journal control were
   exercised; this does not finish reusable fixture extraction or the contract matrix.
+  Iteration 3 moves the unchanged backend composition to
+  `testing/native_service_fixtures.py`, with explicit pytest imports. The healthy
+  recovery passes and discarded-journal control rejects the missing retained
+  Session. The pilot remains manual; active-work, History-gap and fencing
+  composition contracts still need implementation and seeded-defect evidence.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -58,6 +63,12 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   Deployments. Real packaged services, Kubernetes faults and Pod-bound client
   credentials remain. Other MCP/OAuth and app/browser targets keep their profiles.
   Broader per-contract ownership of the common service image graph remains open.
+  Pod scenarios now have their own profile omitting only the MCP edge construct
+  and image input. Actions remains required by command-box acceptance. All 21 Pod
+  cases passed unchanged across source-pinned control/concurrency/profile runs;
+  configured graph queries prove the image edge is absent. Unused app Connection
+  routes remain unavailable in this profile, so external connections retain their
+  separate MCP/app witnesses. Dispatcher/probe and other profiles are unchanged.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
   acceptance and existing controller fake-clock matrix. Trace producer/watch timing
@@ -71,6 +82,14 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   next-input assertions. A five-second trial failed real post-roll recovery and
   remains recorded as a failed experiment, not a passing retry. The 45-second
   candidate passed the unchanged real recovery scenario and rendering checks.
+  Four cases now overlap pre-reserved independent harness pairs without adding
+  Sandboxes. Their first full-suite screen is mixed and does not establish a suite
+  saving. The unchanged same-Pod Secret-recovery case varied13–109s; an experimental
+  5s kubelet cadence produced 23–29s in three selected-case executions versus
+  22/29/91s control. Real Secret projection and the >=60s idle timer remain. Node
+  configz confirms both cadences; candidate baselines rebuilt cold, so repeat
+  counterbalanced load/cost exposure before adoption claims. Live policy grant
+  now also requires the original Pod UID.
 - **P5, shadow/replay:** compose the candidate graph, replay >=30 pinned base/head
   pairs spanning Runtime/app/MCP/platform and three busy windows; collect >=100
   fresh contract executions. Include cold/warm and four-PR burst exposure. Pin both
@@ -84,6 +103,8 @@ P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
 graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.
 Iteration evidence and the remaining coverage boundaries are recorded in
 [`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
+The next implementation screen and its coverage/measurement limits are in
+[`system_tests/debug/test_architecture_iteration3.md`](../system_tests/debug/test_architecture_iteration3.md).
 
 ## Admission evidence for a smaller gate
 
