@@ -922,50 +922,64 @@ def invalidate_snapshot_on_action_error(*, enabled: bool) -> Iterator[None]:
 
 
 def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> tuple[K3s, dict[str, Any], bool]:
-    # Protect diagnostic callers too: only BuildBuddy's remote exec property grants this lifecycle.
-    if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
-        raise RuntimeError("retaining k3s requires BuildBuddy's executor persistence permission")
-    _BASELINE_ROOT.mkdir(exist_ok=True)
-    binary = _BASELINE_ROOT / "k3s"
-    k3s = K3s(_BASELINE_ROOT, binary)
-    previous = json.loads(_BASELINE_MARKER.read_text()) if _BASELINE_MARKER.exists() else None
-    if previous is not None:
-        if previous.get("state") not in {"clean", "dirty"}:
-            raise RuntimeError("invalid persistence state marker")
-        if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
-            try:
-                current = _baseline_identity(k3s, int(previous["identity"]["pid"]))
-            except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
-                logger.warning("retained k3s is unhealthy; rebuilding the owned baseline: %s", exc)
+    with tracer.start_as_current_span("system_test.k3s.baseline.open") as span:
+        # Protect diagnostic callers too: only BuildBuddy's remote exec property grants this lifecycle.
+        if os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") != "1":
+            raise RuntimeError("retaining k3s requires BuildBuddy's executor persistence permission")
+        span.set_attribute("persistence.fingerprint", fingerprint)
+        span.set_attribute("persistence.layers_in_memory", layers_in_memory)
+        span.set_attribute("persistence.reason", "missing_marker")
+        _BASELINE_ROOT.mkdir(exist_ok=True)
+        binary = _BASELINE_ROOT / "k3s"
+        k3s = K3s(_BASELINE_ROOT, binary)
+        previous = json.loads(_BASELINE_MARKER.read_text()) if _BASELINE_MARKER.exists() else None
+        if previous is not None:
+            if previous.get("state") not in {"clean", "dirty"}:
+                raise RuntimeError("invalid persistence state marker")
+            span.set_attribute("persistence.previous_fingerprint", previous["fingerprint"])
+            span.set_attribute("persistence.previous_state", previous["state"])
+            if previous["fingerprint"] == fingerprint and previous["state"] == "clean":
+                try:
+                    current = _baseline_identity(k3s, int(previous["identity"]["pid"]))
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                    span.set_attribute("persistence.reason", "unhealthy")
+                    logger.warning("retained k3s is unhealthy; rebuilding the owned baseline: %s", exc)
+                else:
+                    if current == previous["identity"]:
+                        span.set_attribute("persistence.outcome", "warm")
+                        span.set_attribute("persistence.reason", "reused")
+                        previous["state"] = "dirty"
+                        write_marker(previous)
+                        return k3s, previous, True
+                    span.set_attribute("persistence.reason", "identity_changed")
+                    logger.warning("retained k3s identity changed; rebuilding the owned baseline")
             else:
-                if current == previous["identity"]:
-                    previous["state"] = "dirty"
-                    write_marker(previous)
-                    return k3s, previous, True
-                logger.warning("retained k3s identity changed; rebuilding the owned baseline")
-        else:
-            logger.info(
-                "rebuilding k3s baseline: state=%s, inputs_match=%s",
-                previous["state"],
-                previous["fingerprint"] == fingerprint,
-            )
-        stop_owned(k3s, previous)
-        _BASELINE_MARKER.unlink()
-    shutil.copy2(source, binary)
-    previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
-    os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_BASELINE_ROOT)
-    try:
-        process = k3s.start(layers_in_memory=layers_in_memory, detached=True)
-    finally:
-        if previous_outputs is None:
-            os.environ.pop("TEST_UNDECLARED_OUTPUTS_DIR", None)
-        else:
-            os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = previous_outputs
-    # Until the marker is durable, this action still owns the process directly. A failed identity
-    # probe or marker write must not leave an unmarked detached server for the next action to reset.
-    with contextlib.ExitStack() as starting:
-        starting.callback(k3s.stop, process)
-        marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _baseline_identity(k3s, process.pid)}
-        write_marker(marker)
-        starting.pop_all()
-    return k3s, marker, False
+                span.set_attribute(
+                    "persistence.reason", "dirty" if previous["state"] == "dirty" else "fingerprint_mismatch"
+                )
+                logger.info(
+                    "rebuilding k3s baseline: state=%s, inputs_match=%s",
+                    previous["state"],
+                    previous["fingerprint"] == fingerprint,
+                )
+            stop_owned(k3s, previous)
+            _BASELINE_MARKER.unlink()
+        shutil.copy2(source, binary)
+        previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
+        os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_BASELINE_ROOT)
+        try:
+            process = k3s.start(layers_in_memory=layers_in_memory, detached=True)
+        finally:
+            if previous_outputs is None:
+                os.environ.pop("TEST_UNDECLARED_OUTPUTS_DIR", None)
+            else:
+                os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = previous_outputs
+        # Until the marker is durable, this action still owns the process directly. A failed identity
+        # probe or marker write must not leave an unmarked detached server for the next action to reset.
+        with contextlib.ExitStack() as starting:
+            starting.callback(k3s.stop, process)
+            marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _baseline_identity(k3s, process.pid)}
+            write_marker(marker)
+            starting.pop_all()
+        span.set_attribute("persistence.outcome", "cold")
+        return k3s, marker, False
