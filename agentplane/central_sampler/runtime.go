@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/settings"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 )
 
 type Runtime struct {
