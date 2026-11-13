@@ -12,7 +12,8 @@ MCP endpoint. Manifests: [`cluster/k8s/agents/plaid-mcp/`](../../../cluster/k8s/
 
 ## Configuration
 
-Both use `PlaidWebSettings`:
+Both use shared `PlaidSettings`; the Link UI adds its OIDC fields through
+`PlaidWebSettings`:
 
 - `PLAID_MCP_PLAID_ENV` (`sandbox`|`production`), `PLAID_MCP_CLIENT_ID`,
   `PLAID_MCP_CLIENT_SECRET`.
@@ -80,11 +81,11 @@ first) and the rest as `required_if_supported_products`, which never fails the f
 
 ## Webhooks and sync
 
-`/webhooks/plaid` (same Gateway route as the UI, the only OIDC-exempt endpoint) verifies Plaid's
-ES256 JWT and raw-body hash, then stores the full body and envelope metadata in
-`plaid_webhook_deliveries` (public schema, readable by `plaid_ro`) before dispatch — inspect it
-for handled, ignored and unrecognized deliveries, including fields the envelope model does not
-know.
+`/webhooks/plaid` shares the Gateway route with the UI. The app's OIDC login gate also exempts
+`/healthz` for cluster probes. The webhook verifies Plaid's ES256 JWT and raw-body hash, then
+stores the full body and envelope metadata in `plaid_webhook_deliveries` (public schema, readable
+by `plaid_ro`) before dispatch — inspect it for handled, ignored and unrecognized deliveries,
+including fields the envelope model does not know.
 
 - Durably queued: `TRANSACTIONS / SYNC_UPDATES_AVAILABLE` (runs `/transactions/sync`), and
   `HOLDINGS`, `INVESTMENTS_TRANSACTIONS`, `LIABILITIES` `/ DEFAULT_UPDATE` (run the full Item
