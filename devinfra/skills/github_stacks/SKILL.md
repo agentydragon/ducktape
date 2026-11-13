@@ -7,6 +7,10 @@ description: Create and maintain native GitHub stacks of dependent pull requests
 
 Use native stacks for dependent GitHub PRs. All branches must belong to the same
 repository; cross-fork stacks are unsupported. Keep independent changes independent.
+Order layers so landable work forms a contiguous bottom portion and blocked work
+is higher up, subject to real code and deployment dependencies. Reorder or split
+independent work when a blocked layer would otherwise prevent ready work from
+landing; do not bypass a genuine dependency or deployment gate.
 
 ## Create or extend
 
@@ -35,6 +39,15 @@ Use GitHub's **Rebase stack** action or, when installed, `gh stack rebase --upst
 and `gh stack push` to carry lower-layer edits upward. Keep history linear. After
 server-side rebases or partial merges, fetch the rewritten branches before pushing;
 verify current heads and checks. Unchanged diffs retain approvals on stack rebases.
+Reassess the ordering when readiness changes: a ready layer above a blocked one
+cannot land on its own. Plan any reorder before changing membership, preserving
+incremental diffs and verifying branch bases and checks afterward. The REST
+`unstack` operation removes all removable unmerged layers, not a chosen suffix;
+queued layers can remain. The add endpoint only appends at the top.
+Before pushing reordered heads, retarget PR bases so a PR's head does not become
+an ancestor of its old base: GitHub can otherwise mark the PR merged into that
+feature branch even though its changes have not reached trunk. If that happens,
+verify the trunk and recover the unlanded changes in a replacement PR.
 
 Every layer inherits the trunk's protections and required checks; GitHub Actions
 branch filters also use the stack trunk. Review each layer's incremental diff.
