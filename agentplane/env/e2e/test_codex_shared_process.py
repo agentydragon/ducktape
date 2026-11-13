@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import socket
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -10,8 +12,10 @@ import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
+from agentplane.env.e2e.testing.gateway import Gateway, serve_gateway
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
 from agentplane.proto import event_pb2, session_pb2
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -20,6 +24,17 @@ from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, Shell
 pytestmark = pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 
 SESSION_IDS = ("shared-first", "shared-second")
+
+
+@pytest.fixture
+async def runner_gateway(sandbox: SandboxCluster, tmp_path: Path) -> AsyncIterator[Gateway]:
+    """Reoccupy the released default-loopback port before the production Runtime starts."""
+    async with serve_gateway(sandbox, tmp_path) as gateway:
+        _, port = gateway.target.rsplit(":", 1)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as occupied:
+            occupied.bind(("127.0.0.1", int(port)))
+            occupied.listen()
+            yield gateway
 
 
 async def _open(driver: RunnerDriver, spec: session_pb2.SessionSpec, workspace: Path) -> dict[str, SessionFollow]:

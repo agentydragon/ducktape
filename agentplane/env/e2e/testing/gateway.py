@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import grpc
 
@@ -248,9 +248,8 @@ async def serve_gateway(sandbox: SandboxCluster, directory: Path) -> AsyncIterat
     credentials = grpc.ssl_channel_credentials(
         root_certificates=ca.cert_pem, private_key=gateway_key.read_bytes(), certificate_chain=gateway_cert.read_bytes()
     )
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        target = f"127.0.0.1:{listener.getsockname()[1]}"
+    address = _sandbox_loopback_address(sandbox.uid)
+    target = f"{address}:9090"
     control = ControlListener(credentials)
     try:
         yield Gateway(
@@ -263,3 +262,9 @@ async def serve_gateway(sandbox: SandboxCluster, directory: Path) -> AsyncIterat
         )
     finally:
         await control.disconnect()
+
+
+def _sandbox_loopback_address(uid: str) -> str:
+    value = UUID(uid).int
+    octets = (1 + ((value >> 8) % 126), 1 + ((value >> 16) % 254), 1 + ((value >> 24) % 254))
+    return f"127.{octets[0]}.{octets[1]}.{octets[2]}"
