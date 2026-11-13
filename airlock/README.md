@@ -6,8 +6,8 @@ reconnect flows; the server stores refresh and access tokens in Kubernetes
 Secrets and refreshes access tokens in the background.
 
 Airlock has no MCP endpoint, tool proxy, action queue, or operator tool-approval
-API. Haku Console owns the live risky-MCP-tool policy, approval, audit, and result
-flow; see <../haku/console/README.md>.
+API. Agentplane's [Action Service](../agentplane/action_service/README.md) owns its
+Action policies, approvals, and execution records.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ operator session.
 ## Running
 
 ```bash
-bazel run //airlock:server_bin
+bb run //airlock:server
 ```
 
 Config is YAML at `CONFIG_PATH` (default `/etc/airlock/config.yaml`; `session_seconds` caps the
