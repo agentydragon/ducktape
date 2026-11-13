@@ -40,7 +40,20 @@ func TestSamplerBaselineAdoptsCompletedRewriteWithoutTouchingData(t *testing.T) 
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	migrationExec(t, store.DB(), `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,'fixture-history',73)`, session.ID)
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=15`)
+	// Model a database that has the completed v14 rewrite and the v15 schema, but
+	// lost the v15 Goose marker before v16 existed. Re-run both adoption and the
+	// new provider-attempt migration from that state.
+	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_retry_due_idx`)
+	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_predecessor_idx`)
+	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_attempt_step_idx`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent DROP CONSTRAINT sampler_intent_provider_attempt_fields_check`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent DROP CONSTRAINT sampler_intent_provider_previous_fk`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent DROP CONSTRAINT sampler_intent_provider_step_fk`)
+	migrationExec(t, store.DB(), `ALTER TABLE sampler_intent
+		DROP COLUMN provider_step_id, DROP COLUMN provider_attempt_no, DROP COLUMN provider_attempt_budget,
+		DROP COLUMN provider_attempt_lease_until, DROP COLUMN provider_retry_not_before,
+		DROP COLUMN previous_provider_intent_id, DROP COLUMN provider_command_id`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id>=15`)
 	migrationExec(t, store.DB(), `INSERT INTO central_sampler_goose_version(version_id,is_applied) SELECT generate_series(1,14),true`)
 	var relation uint64
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT 'sampler_event'::regclass::oid`).Scan(&relation); err != nil {
