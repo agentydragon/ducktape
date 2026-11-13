@@ -41,6 +41,14 @@ fn claimed_modules_export_their_entry_points() {
         ("editor/packages/excalidraw/scene/Scene.js", &["Scene"]),
         ("editor/packages/excalidraw/emitter.js", &["Emitter"]),
         (
+            "editor/packages/excalidraw/store.js",
+            &["Store", "CaptureUpdateAction", "getObservedAppState"],
+        ),
+        (
+            "editor/packages/excalidraw/change.js",
+            &["AppStateChange", "ElementsChange"],
+        ),
+        (
             "editor/packages/excalidraw/element/bounds.js",
             &["getVisibleSceneBounds", "doBoundsIntersect"],
         ),

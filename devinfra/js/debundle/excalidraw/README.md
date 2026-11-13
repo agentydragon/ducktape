@@ -49,6 +49,11 @@ module it bundles. Every other chunk is `inline_in_entry`.
     source helpers remain in the entry at their original initialization positions.
   - `editor`: `packages/excalidraw/emitter` restores the complete `Emitter`
     class used by history and other editor subscriptions.
+  - `editor`: `packages/excalidraw/store` restores `Store`, `Snapshot`,
+    `StoreIncrementEvent`, capture actions and observed-state helpers;
+    `packages/excalidraw/change` restores `Delta`, `AppStateChange` and
+    `ElementsChange`. The emitted static-field initialization statements stay
+    in the entry at their original positions.
   - `editor`: `packages/excalidraw/element/typeChecks` preserves the original
     source path and names for element classification, arrow/text bindings,
     frame variants and roundness rules.
@@ -85,6 +90,9 @@ detection. Separate browser probes exercise element predicates, UTF-8 data URL
 round trips, binary blob reads, image MIME normalization and library loading.
 The Scene probe checks static lookup by object/id, deleted-element filtering,
 selection, update subscription and cleanup.
+The store/change probe checks snapshot reuse, capture scheduling, notifications,
+the non-enumerable observed-state marker, and forward/inverse state and element
+changes.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the
