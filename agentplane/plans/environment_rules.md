@@ -1,17 +1,25 @@
 # The `environment` rule type
 
-Status: **design for review, 2026-11-10; no code.** The decision node is
+Status: **operator-selected design; implementation remains open.** The Identity cutover, #15742
+and #15744, is merged with live acceptance recorded in
+[`sandbox_identity_cutover_2026_11_12`](../docs/sandbox_identity_cutover_2026_11_12/README.md).
+The cutover implements Identity self-read for the four Environment inventory RPCs, but not an
+`environment` policy rule: explicit Identity resume and Identity native `CreateSession` remain
+refused. The implementation slices are explicit `resume`, followed by native `CreateSession`
+`bind_session`. The decision node remains
 [`ENVIRONMENT_RULE_TYPE_DESIGN`](task_dag.md#environment_rule_type_design--explicit-environment-lifecycle-rules);
 `ENVIRONMENT_LIFECYCLE_RULES` implements it. Settled and not reopened here
 ([identity plan](identity_and_kubernetes_accounts.md#identity-lifetime), operator 2026-11-10): acting
 in a workload is implied for its bound Identity, and so are same-Identity messaging and the wake it
-causes; lifecycle control (resume, suspend, delete or rebind an environment as a direct request,
-or create Sessions on it) needs an explicit grant. This is that grant: one `PolicySet` rule type,
-bound to a subject by the ordinary `PolicyBinding`. Rebinding stays with the configured managers
-for now ([below](#operations)). Creating environments is
-`AGENT_LAUNCH_POLICY_DESIGN`'s. Action boxes are not targets: a box is not a Sandbox and has no
-`spec.identity`, and creating or disposing one stays with the Action Service's `sandbox` group under
-`action_auto_approve`.
+causes; direct lifecycle control (resume, suspend, delete or rebind an environment, or create
+Sessions on it) needs an explicit grant. This is that grant: one `PolicySet` rule type, bound to a
+subject by the ordinary `PolicyBinding`. Rebinding stays with configured managers for now
+([below](#operations)). Creating environments is `AGENT_LAUNCH_POLICY_DESIGN`'s. Action boxes are
+not targets: a box is not a Sandbox and has no `spec.identity`, and creating or disposing one stays
+with the Action Service's `sandbox` group under `action_auto_approve`.
+
+The complete operation vocabulary below is the selected target shape; the first implementation slice
+accepts `resume` only. Add each later operation only with its enforcing consumer.
 
 ## Schema
 
@@ -74,13 +82,12 @@ A selector's fields:
 
 - **`sandbox`**: a Sandbox by name, optionally pinned to one incarnation by UID, matched exactly
   as `session_inbox_access` matches it (`inboxaccess.Rule.covers`).
-- **`boundIdentity: {name: I}`**: a Sandbox matches when its current `spec.identity.name` equals `I`,
-  as the evaluator's Sandbox informer sees it; nothing records which Sandboxes once matched. The rule pins no
-  Identity UID: `spec.identity` is name-only, and the incarnation a Sandbox runs as is the Sandbox's
-  record (its current `WorkloadCredential`). A recreated `I` therefore matches the same Sandboxes, as
-  it acts in them; the caller's own incarnation is fenced by the reader's subject lookup, which names
-  a binding only while the live Identity has the caller's UID. A Sandbox with no `spec.identity`
-  matches no `boundIdentity`. `boundIdentity` names an Identity; it selects nothing by label.
+- **`boundIdentity: {name: I}`**: a Sandbox matches when its current `spec.identity.name` equals
+  `I`, as the evaluator sees it; nothing records which Sandboxes once matched. `spec.identity` is
+  name-only. The caller's Identity subject is fenced by the policy reader against the live Identity
+  UID; target checks use the current Sandbox spec and live Identity, not a Sandbox WorkloadCredential
+  reissue gate. A Sandbox with no `spec.identity` matches no `boundIdentity`. `boundIdentity` names
+  an Identity; it selects nothing by label.
 - **`boundIdentity: {self: true}`**: as `{name: I}`, with `I` the Identity the binding's subject
   names, resolved per subject when the index computes its grants. It lets one PolicySet, such as
   "bind your own Sessions to your own environments", serve every Identity it is bound to.
@@ -96,19 +103,19 @@ Other operations on a named Sandbox create no work as a new Identity and keep th
 No selector matches by inbox tag, by label, by namespace or by creator: tags address messages,
 lifecycle by namespace or label would be selection, and a creator never changes, so a grant keyed
 on it could not be revoked or expire (operator, 2026-11-11). Bindings with a ServiceAccount subject
-grant no `environment` rule;
-until `IDENTITY_CUTOVER` removes them, ServiceAccount callers keep today's
-`resumePolicy.allowOwnServiceAccount` and configured roles.
+grant no `environment` rule. ServiceAccount callers retain their separately configured component
+roles; `resumePolicy.allowOwnServiceAccount` gates automatic wake of the Sandbox's bound Identity,
+not explicit resume.
 
 ## Operations
 
-| Operation      | Allows                                                                                                        | Where it lands                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `read`         | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord` | EnvironmentService (implemented RPCs)                                                            |
-| `resume`       | `ResumeEnvironment` of an idle-suspended target                                                               | EnvironmentService → lifecycle manager (implemented RPC)                                         |
-| `suspend`      | `SuspendEnvironment`                                                                                          | EnvironmentService (implemented RPC)                                                             |
-| `delete`       | `DeleteEnvironment`                                                                                           | EnvironmentService (implemented RPC)                                                             |
-| `bind_session` | creating a Session–environment binding: `CreateSession` placed on the target, or `AttachEnvironment` of it    | Dispatcher (implemented RPC; Identity admission is the addition), `AttachEnvironment` per #15436 |
+| Operation      | Intended authority                                                                                            | Current code / planned consumer                                                                                                                                                                            |
+| -------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `read`         | `ListEnvironments`, `WatchEnvironments`, `GetEnvironment`, `WatchEnvironment`, `GetEnvironmentIdentityRecord` | The first four Identity self-read RPCs are already implemented; the identity-record RPC remains ServiceAccount-only today, with the selected future `read` semantics retained for when it is grant-backed. |
+| `resume`       | `ResumeEnvironment` of an idle-suspended target                                                               | Existing RPC is ServiceAccount/operator-only; explicit Identity grant is the first implementation slice.                                                                                                   |
+| `suspend`      | `SuspendEnvironment`                                                                                          | Existing ServiceAccount manager path; outside this implementation scope.                                                                                                                                   |
+| `delete`       | `DeleteEnvironment`                                                                                           | Existing ServiceAccount manager path; outside this implementation scope.                                                                                                                                   |
+| `bind_session` | Native `CreateSession` creating a Session–environment binding; future attachment if specified                 | Existing RPC rejects Identity callers; add the grant with its native Dispatcher consumer in slice two. No attachment RPC exists today.                                                                     |
 
 Rules for the operations:
 
@@ -149,9 +156,9 @@ Rules for the operations:
      [`SESSION_CROSS_IDENTITY_AUTHORITY`](task_dag.md#session_cross_identity_authority--acting-on-another-identitys-sessions). At a
      native `CreateSession`, S does not exist yet and this step does not apply.
   2. A `bind_session` rule of the caller's matches E.
-  3. S's Identity is E's bound Identity. This is the existing invariant, not policy: a native
-     `CreateSession` takes the Session's Identity from the placed Sandbox, delivery refuses a
-     mismatch, and the [session model](session_environment_model.md) requires it of attachments. No
+  3. S's Identity is E's bound Identity. This is the existing Session–environment invariant, not a
+     creator–environment identity requirement: native `CreateSession` takes the new Session's
+     Identity from the placed Sandbox, delivery refuses a mismatch, and the [session model](session_environment_model.md) requires it of attachments. No
      grant overrides it. Rules allowing a binding across Identities may come later
      ([`CROSS_IDENTITY_SESSION_BINDING`](task_dag.md#cross_identity_session_binding--binding-a-session-to-another-identitys-environment)); this rule type does not express them.
   4. E's own state allows it: no operator stop or pending delete, and the incarnation is current.
@@ -172,20 +179,27 @@ Rules for the operations:
 
 ## Evaluation points
 
-All points read one shared index: `policy/reader`'s `Index[R]` with rule type `environment`, a parser
-beside the evaluator (as `inboxaccess.ParseRule`), `Grants(reader.Identity{Name, UID})` for the
-subject, and a `EnvironmentReady` binding condition through `WatchRules`. EnvironmentService, the
-lifecycle manager and Dispatcher share the Runner Gateway process, so the Gateway holds one index and
-passes it to each. Reads and list filtering match against the Gateway's Sandbox informer, so a
-just-rebound Sandbox may show for one informer lag. Mutations recheck the match against the uncached
-Sandbox the lifecycle manager already rereads and patches under its `resourceVersion`, so a rebind
-between check and patch is caught there.
+Current state: `Rule.Type` has no `environment`; `operations` and `targets` are used by
+`session_inbox_access`. The reusable `policy/reader.Index[R]` and `WatchRules` can supply a shared
+Identity name+UID index and watch readiness, but there is no environment parser, index or
+`EnvironmentReady` condition yet. EnvironmentService, the lifecycle manager and Dispatcher share
+the Runner Gateway process, so the planned implementation uses one index and passes it to each.
 
-| Evaluator                                                 | Caller it evaluates                                                                                    | Reads                                                     |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| EnvironmentService (`runner_gateway/environments/`)       | a direct Identity SVID, or a delegated Identity effective caller (Session delegation, central sampler) | the index; the Sandbox's name, UID and `spec.identity`    |
-| Dispatcher `CreateSession`, `AttachEnvironment`           | the Identity effective caller; the Identity the request names                                          | the index; the placed or attached Sandbox                 |
-| Action Service (`session_delegation`, `orchestration_v1`) | nothing itself: it forwards the request's caller as the effective caller and the backend evaluates     | `action_auto_approve` only, for the Action request itself |
+All proposed grant points read that shared index: `policy/reader`'s `Index[R]` with an environment
+parser beside the evaluator (as `inboxaccess.ParseRule`), `Grants(reader.Identity{Name, UID})` for
+the subject, and an `EnvironmentReady` binding condition through `WatchRules`.
+
+The watched policy view may lag Kubernetes events. Re-evaluate the grant on every Sandbox
+UID/resourceVersion conflict retry and fail closed when the existing reader/watchhealth readiness
+contract is unavailable. Sandbox UID/RV fencing does not atomically serialize a PolicyBinding or
+Identity change with a Sandbox patch; document the accepted observation bound and error behavior,
+without global locking or a promise of instantaneous revocation.
+
+| Evaluator                                                 | Caller it evaluates                                                                                                                     | Reads                                                                                                      |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| EnvironmentService (`runner_gateway/environments/`)       | direct Identity or delegated Identity effective caller for existing reads; Identity admission is a planned addition for explicit resume | current self-read checks Sandbox name/UID/spec binding and live Identity; planned resume adds shared index |
+| Dispatcher `CreateSession`                                | existing Identity admission is followed by an explicit Identity rejection; grant is planned for new environment placement               | planned shared index plus exact selected Sandbox and its current bound Identity                            |
+| Action Service (`session_delegation`, `orchestration_v1`) | nothing itself: it forwards the request's caller as the effective caller and the backend evaluates                                      | `action_auto_approve` only, for the Action request itself                                                  |
 
 Platform components stay authorized by role
 ([delegated authorization](../docs/delegated_authorization.md)): the app and system-test driver as
@@ -199,6 +213,38 @@ grant becomes an owned `PolicySet` whose `environment` rule names the new Sandbo
 A refusal is `NotFound` where the caller can't read the target, by a `read` rule or because it is
 bound to the caller's Identity (EnvironmentService does not
 confirm existence), else `PermissionDenied`.
+
+## Implementation sequence and checks
+
+1. Add the environment RuleType, selector/CEL validation, parser and shared typed reader for
+   `resume` only, then wire explicit Identity resume through EnvironmentService and lifecycle. Keep
+   the direct Pod-bound operator path. Add a typed Identity grant eligibility reason and expose its
+   resume precondition only while currently authorized. Do not restore
+   `ALLOWED_OWN_SERVICE_ACCOUNT`.
+2. Add `bind_session` to the accepted operation vocabulary with its selector constraints and native
+   Dispatcher consumer in the same dependent PR. Reuse the same index. Permit only a new
+   environment-hosted Identity creation with a matching grant; preserve ServiceAccount privileges,
+   receipt/idempotency and identity-change admission behavior. Do not add AttachEnvironment. P2
+   depends on P1; if P1 is still open, stack it using native GitHub Stacks.
+
+Implementation validation is scoped to the changed code:
+
+- Run these Go suites with `bbr test`:
+  `//agentplane/policy/reader:reader_test`,
+  `//agentplane/runner_gateway/environments:environments_test`,
+  `//agentplane/runner_gateway/environments/lifecycle:lifecycle_test`, and
+  `//agentplane/runner_gateway/dispatcher:store_integration_test`.
+- Build generated policy API targets with `bbr build`:
+  `//agentplane/policy/api/v1alpha1:generated_crds` and
+  `//agentplane/policy/api/v1alpha1:policy_types_proto`.
+
+Then run relevant Agentplane system tests and include staging authorization rollback evidence. Extend existing tests for Identity subject name+UID/expiry/watch
+readiness, grant-scoped resume and stale preconditions, rebind during native placement, caller vs
+actor and creator vs target execution Identity, and exact receipt recovery. Retain existing tests for
+self-read, direct operator requested-stop resume, incomplete current-generation idle stopping
+(no budget or mutation before Stopped), conflicts, target UID, shared budget, unknown patch reply/no
+replay, `wake_callers` automatic-only and Identity automatic wake. This planning refresh itself needs
+no tests.
 
 ## Worked examples
 
@@ -223,8 +269,9 @@ The Session in `research-a` calls `GetEnvironment(research-b)` then
 `ResumeEnvironment(research-b, token)`: the index resolves `self` to `research` and grants `resume`, the reread shows
 `spec.identity: research`, and the manager patches the wake generation. A message to
 `research-b`'s Session would have woken it without this rule; the rule is for the direct request.
-The same set, bound to other Identities, serves each of them. Additions: Identity admission on the
-two RPCs and the rule check.
+The same set, bound to other Identities, serves each of them. `GetEnvironment` Identity admission
+already exists; the additions are Identity admission for explicit `ResumeEnvironment` and the rule
+check.
 
 **An orchestrator drives two named workers.** Identity `orchestrator` holds
 `operations: [resume, bind_session]` on
@@ -238,7 +285,8 @@ and `GetEnvironment` is `NotFound` without `read`. Operations: implemented RPCs;
 in Dispatcher is the addition `SESSION_SUBAGENT_DELEGATION` builds on.
 
 **No rule.** Identity `scratch` has no `environment` binding. `ResumeEnvironment` on its own suspended
-Sandbox is refused; a same-Identity message still wakes it under `allowOwnServiceAccount`.
+Sandbox is refused; a same-Identity message still wakes it only when the existing
+`resumePolicy.allowOwnServiceAccount` setting permits automatic wake.
 
 **A rebind stops a match.** The operator stops `research-b` and rebinds it to `audit`. The next
 `ResumeEnvironment(research-b)` from `research` finds `spec.identity: audit` and is `NotFound`; its
@@ -252,7 +300,7 @@ so no `environment` rule applies. It passes when `ci-daily` holds a `session` ru
 `identities: [{self: true}]` ([question 5](#questions-for-the-operator)); without one it is
 `PermissionDenied`. The app, as a privileged caller, can still create it.
 
-**#15436, attach.** `ci-daily` holds `bind_session` on
+**#15436, future attach (no RPC today).** `ci-daily` holds `bind_session` on
 `environments: [{sandbox: {name: ci-build}, boundIdentity: {name: ci-daily}}]`.
 `AttachEnvironment(S, target: ci-build)` passes when the caller's Identity is S's (`ci-daily`), the
 rule matches, and `ci-build` is bound to `ci-daily`. The same call on a Session of another Identity
@@ -297,7 +345,7 @@ authority over S.
    under `SESSION_IDENTITY_AUTHZ`.
 2. **Reading your own environments: settled, implied** (operator, 2026-11-11). An Identity may
    read the environments bound to it without a rule, since acting in them already reveals more than
-   the descriptor (the deferred branch's self-read). `read` stays in this rule for every other
+   the descriptor and this self-read is already implemented. `read` stays in this rule for every other
    target, such as an orchestrator's workers.
 3. **`delete` only by name: settled yes** (operator, 2026-11-11). A `boundIdentity` target covers
    environments that do not exist yet, and deletion loses their workspace and state volumes; naming
