@@ -100,6 +100,7 @@ py_library(
 py_library(
     name = "claude_model",
     srcs = ["claude_model.py"],
+    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":scripted_model",
         "//agentplane/native/claude:blocks",
@@ -127,6 +128,7 @@ py_library(
 py_library(
     name = "scripted_model",
     srcs = ["scripted_model.py"],
+    visibility = _FIXTURE_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = ["//agentplane/native/testing:model_endpoint"],
 )
 

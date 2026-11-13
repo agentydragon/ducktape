@@ -51,6 +51,10 @@ The fixture assigns the Pod address before Gateway starts observing it.
 State belongs to this case. Its exported ownership matches the guest's 107:107
 home-setup identity; launcher cleanup restores host ownership, stops QEMU and
 virtiofsd, removes the named container and checks that the listener is gone.
+The existing 120-second QEMU lifetime bounds Linux/systemd boot. The separate
+30-second authenticated-RPC deadline starts after the packaged Runtime emits a
+serial record; Docker loading and guest mounts cannot consume that RPC budget.
+
 This target does not assert orderly guest poweroff; the boot-only target above
 owns that behavior.
 
@@ -68,4 +72,36 @@ fail it after the packaged Runtime starts:
 bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_results \
   --runs_per_test=1 --flaky_test_attempts=1 \
   --test_env=DIRECT_VM_BOOT_WRONG_GATEWAY_CLIENT_CA_CONTROL=1
+```
+
+## Packaged Claude Session
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results
+```
+
+This manual contract starts the real Dispatcher, Gateway and Go History Service against the
+fixture Kubernetes API, then starts the packaged Runtime under the guest's production systemd units.
+The guest launches the root image's pinned Claude CLI. Two Dispatcher inputs drive two real
+Claude Shell calls: the first writes a nonce to the workspace and the next reads that same file.
+The test checks both requested command IDs in contiguous, sourced History events and requires two
+completed turns under one Runtime boot ID.
+
+The guest reaches the fixture model-config endpoint and History through the slirp host address;
+both are real local services. Runtime presents its fixture-issued client SVID, and validates History's
+fixture-issued server SVID against the configured History identity. This target does not create a K3s
+cluster, controller, issued Secret, KubeVirt VM or PVC, and it disables
+the executor resource budget. Those deployment and executor acceptance boundaries remain with the
+existing system tests.
+
+The opt-in History identity control adds a test-only TLS relay with the same CA and localhost DNS
+but a different valid service URI. Before the guest starts, a real read-only Health.Check through
+both authenticated TLS legs must return SERVING from the healthy History process. Runtime still
+requires the canonical History URI. Its rejection must prevent the ordinary History-backed
+Session contract from completing; inspect the Runtime TLS rejection and preflight logs when
+qualifying the expected failure:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results \
+  --test_env=DIRECT_VM_SESSION_WRONG_HISTORY_SERVER_IDENTITY_CONTROL=1
 ```

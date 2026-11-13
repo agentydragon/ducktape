@@ -21,8 +21,8 @@ class _ModelConfig(model_config_pb2_grpc.ModelConfigServiceServicer):
 
 
 @asynccontextmanager
-async def model_config() -> AsyncIterator[str]:
+async def model_config(*, listen_host: str = "127.0.0.1", advertised_host: str | None = None) -> AsyncIterator[str]:
     server = grpc.aio.server()
     model_config_pb2_grpc.add_ModelConfigServiceServicer_to_server(_ModelConfig(), server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port:
-        yield f"127.0.0.1:{port}"
+    async with serving(server, f"{listen_host}:0", grace_s=0) as port:
+        yield f"{advertised_host or listen_host}:{port}"
