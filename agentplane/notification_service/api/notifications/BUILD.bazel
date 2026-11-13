@@ -11,7 +11,7 @@ proto_library(
     srcs = ["notifications.proto"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/action_service:action_service_proto",
+        "//agentplane/action_service/api/contracts:action_service_proto",
         "//agentplane/proto:identity_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:empty_proto",
