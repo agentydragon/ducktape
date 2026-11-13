@@ -354,9 +354,6 @@ func projectSamplerHistory(t *testing.T, fixture samplerExportFixture, sessionID
 	if err != nil {
 		t.Fatalf("project retained sampler history: %v", err)
 	}
-	if backlog.Sessions != 1 || backlog.Behind != 0 {
-		t.Fatalf("History projection backlog=%+v, want one caught-up Session", backlog)
-	}
 	var through uint64
 	if err := fixture.historyDB.QueryRowContext(t.Context(),
 		"SELECT through_cursor FROM thread_checkpoint WHERE thread_id = $1", threadID).Scan(&through); err != nil {
@@ -364,6 +361,14 @@ func projectSamplerHistory(t *testing.T, fixture samplerExportFixture, sessionID
 	}
 	if through != page.GetLastCursor() {
 		t.Fatalf("History projected through %d, want committed cursor %d", through, page.GetLastCursor())
+	}
+	var pending bool
+	if err := fixture.historyDB.QueryRowContext(t.Context(),
+		"SELECT EXISTS (SELECT 1 FROM session_fold_pending WHERE session_id = $1)", threadID).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending {
+		t.Fatalf("History kept sampler session pending after projection: %+v", backlog)
 	}
 
 	rows, err := fixture.historyDB.QueryContext(t.Context(), `SELECT entity_kind, entity_id, state FROM thread_entity
