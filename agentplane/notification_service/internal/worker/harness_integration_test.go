@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -222,7 +223,7 @@ func newFakeProvider() *fakeProvider {
 	return &fakeProvider{reconciled: make(chan store.DueSubscription, 64)}
 }
 
-func (p *fakeProvider) Reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
+func (p *fakeProvider) Process(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
 	p.mu.Lock()
 	p.calls = append(p.calls, due)
 	handle := p.handle
@@ -234,7 +235,7 @@ func (p *fakeProvider) Reconcile(ctx context.Context, claim store.Claim, due sto
 	if handle != nil {
 		return handle(ctx, claim, due)
 	}
-	return &ProviderDeferred{Until: time.Now().Add(time.Hour)}
+	return &sources.ProviderDeferred{Until: time.Now().Add(time.Hour)}
 }
 
 func (p *fakeProvider) on(handle func(ctx context.Context, claim store.Claim, due store.DueSubscription) error) {
@@ -255,14 +256,15 @@ func (p *fakeProvider) callCount() int {
 
 // harness is a Worker over real PostgreSQL, with fakes for what it calls out to.
 type harness struct {
-	db         *sql.DB
-	store      *store.Store
-	worker     *Worker
-	settings   Settings
-	sandboxes  *fakeSandboxes
-	history    *fakeHistory
-	dispatcher *fakeDispatcher
-	actions    *fakeProvider
+	db           *sql.DB
+	store        *store.Store
+	worker       *Worker
+	sourceWorker *sources.Worker
+	settings     Settings
+	sandboxes    *fakeSandboxes
+	history      *fakeHistory
+	dispatcher   *fakeDispatcher
+	actions      *fakeProvider
 }
 
 // newHarness starts from a database without the other tests' inboxes: the worker claims whichever inbox is due.
@@ -295,8 +297,9 @@ func (h *harness) restart() {
 	h.store = store.New(h.db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 	h.worker = &Worker{
 		Store: h.store, Namespace: testNamespace, Sandboxes: h.sandboxes, History: h.history,
-		Dispatcher: h.dispatcher, Actions: h.actions, Settings: h.settings,
+		Dispatcher: h.dispatcher, Settings: h.settings,
 	}
+	h.sourceWorker = &sources.Worker{Store: h.store, Providers: map[string]sources.Provider{"actions": h.actions}}
 }
 
 func (h *harness) exec(t *testing.T, query string, args ...any) {
@@ -309,12 +312,16 @@ func (h *harness) exec(t *testing.T, query string, args ...any) {
 // step works one inbox, which must be due.
 func (h *harness) step(t *testing.T) {
 	t.Helper()
-	worked, err := h.worker.step(t.Context())
+	sourceWorked, err := h.sourceWorker.ProcessOne(t.Context())
 	if err != nil {
-		t.Fatalf("step: %v", err)
+		t.Fatalf("source step: %v", err)
 	}
-	if !worked {
-		t.Fatal("no inbox was due")
+	deliveryWorked, err := h.worker.ProcessOne(t.Context())
+	if err != nil {
+		t.Fatalf("delivery step: %v", err)
+	}
+	if !sourceWorked && !deliveryWorked {
+		t.Fatal("no source or delivery work was due")
 	}
 }
 
@@ -508,6 +515,18 @@ func (h *harness) claim(t *testing.T) store.Claim {
 	return *claim
 }
 
+func (h *harness) sourceClaim(t *testing.T) store.Claim {
+	t.Helper()
+	claim, err := h.store.ClaimSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil {
+		t.Fatal("no source was due")
+	}
+	return *claim
+}
+
 func (h *harness) requireNoneDue(t *testing.T) {
 	t.Helper()
 	claim, err := h.store.Claim(t.Context())
@@ -516,6 +535,17 @@ func (h *harness) requireNoneDue(t *testing.T) {
 	}
 	if claim != nil {
 		t.Fatalf("inbox %s was due", claim.ID)
+	}
+}
+
+func (h *harness) requireNoSourceDue(t *testing.T) {
+	t.Helper()
+	claim, err := h.store.ClaimSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim != nil {
+		t.Fatalf("inbox %s has due source work", claim.ID)
 	}
 }
 

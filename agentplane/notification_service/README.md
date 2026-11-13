@@ -35,7 +35,7 @@ intact. Historical `owner_namespace` and `owner_name` columns name the destinati
 so the existing inbox quota remains per Sandbox incarnation.
 
 For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
-subscriptions active. Workers continue reconciling subscription sources and store unread
+subscriptions active. Source workers continue processing due subscriptions and store unread
 entries and prepared notices, but do not submit notices until the original UID is found.
 The configured `unavailable_destination_retry_s` controls the retry interval for an unavailable
 destination; a source due earlier is still read. A same-name replacement never receives the
@@ -135,8 +135,10 @@ The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` w
 paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
 the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN
 connection is up and a query succeeds; it fails once the service is told to stop) and `livez` is liveness (the
-process answers). Four workers claim inboxes, and one that returns or fails ends the process, logging the types of
-its error and never its message.
+process answers). Four source workers process durable due subscriptions independently of four inbox-delivery workers.
+A source can publish events while its destination is offline; delivery still checks the current Session and
+Sandbox ownership before sending a notice. A worker that returns or fails ends the process, logging the types
+of its error and never its message.
 
 ## Configuration
 
@@ -188,7 +190,7 @@ counts one sender's messages past the inbox's acknowledged cursor.
 ### GitHub event retention
 
 `github_delivery_retention_days` defaults to 7 and accepts whole days from 1 to 3650, or explicit YAML `null` for infinite retention.
-The distinction is preserved: an omitted key uses seven days, while `github_delivery_retention_days: null` disables cleanup of both raw deliveries and generated mergeability transitions; zero remains invalid. Workers delete up to 1000 expired raw deliveries per cleanup pass, once a minute per worker,
+The distinction is preserved: an omitted key uses seven days, while `github_delivery_retention_days: null` disables cleanup of both raw deliveries and generated mergeability transitions; zero remains invalid. GitHub maintenance deletes up to 1000 expired raw deliveries per cleanup pass, once a minute,
 including their IDs, digests and subject links. This bounds source replay, late association
 matching and delivery-ID deduplication, including for active subscriptions. Inbox payload copies
 keep their independent 30-day retention. The same setting also deletes up to 1000 expired generated
@@ -196,14 +198,30 @@ pull-request mergeability transitions and 1000 generated CI transitions and 1000
 current pull-request snapshots remain. Old CI heads without active PR followers are pruned in bounded batches;
 current facts for an actively followed head and copied inbox payloads retain their independent lifetimes. Changing this setting does not enable the GitHub provider.
 
-Current check-run and commit-status repair follows `github.freshness_seconds` (default 600 seconds, configurable
-from 60 to 3600 seconds in static YAML). Worker scheduling, GitHub API
-or access failures, and rate-limit backoff can extend the interval; GitHub state propagation has no guaranteed
-settling time. It observes current facts for followed PR heads, not full event or action history. PR defaults
-continue to report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter
-reports all observed check-run states. Explicit check-run action filters select actual webhook actions only;
-repair does not invent `created`, `in_progress` or `completed` actions. The existing pull-request subscription
-command and default filters are unchanged. Branch and fixed-commit CI notifications continue to use raw webhook events. See the
+### GitHub source work and inbox delivery
+
+GitHub work is triggered by durable webhook receipts and subscription creation or renewal. Successful
+subscriptions go idle. A queued page continuation, a new ingress generation, a transient failure or rate limit,
+and a bounded mergeability-settling attempt schedule only their unfinished work. Restarting resumes the due
+rows and expired claims; no successful subscription is periodically rerun.
+
+`github.freshness_seconds` (default 600, range 60–3600) bounds cached access checks and observations when
+pending work needs them. Expiry alone does not schedule a request. GitHub does not automatically retry failed
+webhooks; recover missing deliveries through the App's delivery history/redelivery operation. A missed event
+can remain missing until a later triggering event, subscription renewal or explicit redelivery.
+
+The GitHub source coordinates API access, interpretation, refresh policy, backoff and raw-receipt retention
+under `internal/sources/github/`. Shared refresh SQL still lives in the store. The source coordinator under `internal/sources/` processes due subscriptions
+without a live Sandbox or runner. `internal/worker/` owns inbox notice delivery and source-independent inbox
+retention. The store retains the explicit same-transaction adapters between typed source state and durable
+subscriptions/entries; source access fences, subscription versions, quota checks, publication and progress
+commit together. A receipt arriving during a source pass leaves a newer generation pending.
+
+Targeted catch-up reads current facts for followed PR heads, not full event or action history. PR defaults
+report completed check-run facts and all commit statuses; an explicitly unfiltered `check_run` filter reports
+all observed check-run states. Explicit action filters select actual webhook actions only; catch-up does not
+invent `created`, `in_progress` or `completed` actions. The subscription command and default filters are
+unchanged. Branch and fixed-commit CI notifications use raw webhook events. See the
 [agent GitHub guide](docs/agents/github.md#follow-github-activity) for identity, payload and filter details.
 
 Migration 11 retires the legacy aggregate GitHub CI tables and normalization/cursor columns. The

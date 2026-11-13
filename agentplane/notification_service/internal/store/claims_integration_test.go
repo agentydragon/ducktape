@@ -61,9 +61,41 @@ func (f fixture) requireNoneDue(t *testing.T) {
 	}
 }
 
+func (f fixture) sourceClaim(t *testing.T) Claim {
+	t.Helper()
+	claim, err := f.ClaimSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil {
+		t.Fatal("no source work was due")
+	}
+	return *claim
+}
+
+func (f fixture) requireNoSourceDue(t *testing.T) {
+	t.Helper()
+	claim, err := f.ClaimSource(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim != nil {
+		t.Fatalf("source work in inbox %s was due", claim.ID)
+	}
+}
+
 func (f fixture) nextWorkAt(t *testing.T) *time.Time {
 	t.Helper()
 	next, err := f.NextWorkAt(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return next
+}
+
+func (f fixture) nextSourceWorkAt(t *testing.T) *time.Time {
+	t.Helper()
+	next, err := f.NextSourceWorkAt(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,6 +219,50 @@ func TestConcurrentClaimsNeverShareAnInbox(t *testing.T) {
 	requireEqual(t, got, want)
 }
 
+func TestConcurrentSourceClaimsNeverShareAnInbox(t *testing.T) {
+	f := newClaimFixture(t)
+	const inboxes, workers = 6, 12
+	want := map[uuid.UUID]bool{}
+	for i := range inboxes {
+		want[f.subscribe(t, sessionBody("first", fmt.Sprintf("session-%d", i))).InboxID] = true
+	}
+
+	var (
+		mutex   sync.Mutex
+		claimed []uuid.UUID
+		group   sync.WaitGroup
+	)
+	failures := make(chan error, workers)
+	for range workers {
+		group.Go(func() {
+			claim, err := f.ClaimSource(context.Background())
+			if err != nil {
+				failures <- err
+				return
+			}
+			if claim != nil {
+				mutex.Lock()
+				claimed = append(claimed, claim.ID)
+				mutex.Unlock()
+			}
+		})
+	}
+	group.Wait()
+	close(failures)
+	for err := range failures {
+		t.Fatal(err)
+	}
+
+	got := map[uuid.UUID]bool{}
+	for _, id := range claimed {
+		if got[id] {
+			t.Errorf("inbox %s was claimed twice", id)
+		}
+		got[id] = true
+	}
+	requireEqual(t, got, want)
+}
+
 func TestAnExpiredLeaseIsClaimedAgainAndTheOldClaimLosesItsWrites(t *testing.T) {
 	f := newClaimFixture(t)
 	f.subscribe(t, f.body("first"))
@@ -264,8 +340,12 @@ func TestInboxesWithNothingToWatchAreNotWorkedAgain(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.requireNoneDue(t)
+		f.requireNoSourceDue(t)
 		if next := f.nextWorkAt(t); next != nil {
 			t.Errorf("NextWorkAt = %s, want none", next)
+		}
+		if next := f.nextSourceWorkAt(t); next != nil {
+			t.Errorf("NextSourceWorkAt = %s, want none", next)
 		}
 	})
 	t.Run("last subscription cancelled", func(t *testing.T) {
@@ -277,8 +357,12 @@ func TestInboxesWithNothingToWatchAreNotWorkedAgain(t *testing.T) {
 			t.Fatal(err)
 		}
 		f.requireNoneDue(t)
+		f.requireNoSourceDue(t)
 		if next := f.nextWorkAt(t); next != nil {
 			t.Errorf("NextWorkAt = %s, want none", next)
+		}
+		if next := f.nextSourceWorkAt(t); next != nil {
+			t.Errorf("NextSourceWorkAt = %s, want none", next)
 		}
 	})
 }
@@ -293,35 +377,31 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 		// notice is "awaiting" when one for the entries is prepared and awaits its receipts, "failed" when it ended
 		// with an error.
 		notice        string
-		subscription  time.Duration
 		deliveryError *string
 		noticeDue     *time.Duration
 		staleCheck    *time.Duration
 
 		wantAtOffset     *time.Duration
 		wantAfterRelease *time.Duration
+		wantNone         bool
 	}{
-		{name: "idle until the subscription is due", subscription: time.Hour, wantAtOffset: ptr(time.Hour)},
-		{name: "a subscription that is overdue is due now", subscription: -time.Minute, wantAfterRelease: ptr(time.Duration(0))},
-		{name: "entries without a deadline wait the backoff", entries: 1, subscription: time.Hour, wantAfterRelease: ptr(5 * time.Second)},
-		{name: "entries wait for the debounce deadline", entries: 1, subscription: time.Hour, noticeDue: ptr(2 * time.Second), wantAtOffset: ptr(2 * time.Second)},
-		{name: "a debounce deadline that has passed is due now", entries: 1, subscription: time.Hour, noticeDue: ptr(-time.Second), wantAfterRelease: ptr(time.Duration(0))},
-		{name: "a subscription due before the debounce deadline", entries: 1, subscription: time.Second, noticeDue: ptr(2 * time.Second), wantAtOffset: ptr(time.Second)},
-		{name: "a notice awaiting receipts is followed at the backoff", entries: 1, notice: "awaiting", subscription: time.Hour, wantAfterRelease: ptr(5 * time.Second)},
-		{name: "a failed notice leaves nothing to follow", entries: 1, notice: "failed", subscription: time.Hour, wantAtOffset: ptr(time.Hour)},
-		{name: "a failure postpones work that is due", entries: 1, subscription: time.Hour, deliveryError: &failure, noticeDue: ptr(-time.Second), wantAfterRelease: ptr(5 * time.Second)},
-		{name: "a failure postpones a subscription that is overdue", subscription: -time.Minute, deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
-		{name: "a failure does not bring later work forward", subscription: time.Hour, deliveryError: &failure, wantAtOffset: ptr(time.Hour)},
-		{name: "an unavailable destination is rechecked at its deadline", entries: 1, subscription: time.Hour, noticeDue: ptr(-time.Second), staleCheck: ptr(10 * time.Second), wantAtOffset: ptr(10 * time.Second)},
-		{name: "an unavailable destination past its deadline is due now", subscription: time.Hour, staleCheck: ptr(-10 * time.Second), wantAfterRelease: ptr(time.Duration(0))},
-		{name: "an unavailable destination past its deadline waits out a failure", subscription: time.Hour, staleCheck: ptr(-10 * time.Second), deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
+		{name: "an idle inbox has no delivery work", wantNone: true},
+		{name: "entries without a deadline wait the backoff", entries: 1, wantAfterRelease: ptr(5 * time.Second)},
+		{name: "entries wait for the debounce deadline", entries: 1, noticeDue: ptr(2 * time.Second), wantAtOffset: ptr(2 * time.Second)},
+		{name: "a debounce deadline that has passed is due now", entries: 1, noticeDue: ptr(-time.Second), wantAfterRelease: ptr(time.Duration(0))},
+		{name: "a notice awaiting receipts is followed at the backoff", entries: 1, notice: "awaiting", wantAfterRelease: ptr(5 * time.Second)},
+		{name: "a failed notice leaves nothing to follow", entries: 1, notice: "failed", wantNone: true},
+		{name: "a failure postpones work that is due", entries: 1, deliveryError: &failure, noticeDue: ptr(-time.Second), wantAfterRelease: ptr(5 * time.Second)},
+		{name: "a failure does not bring later work forward", entries: 1, deliveryError: &failure, noticeDue: ptr(time.Hour), wantAtOffset: ptr(time.Hour)},
+		{name: "an unavailable destination is rechecked at its deadline", entries: 1, noticeDue: ptr(-time.Second), staleCheck: ptr(10 * time.Second), wantAtOffset: ptr(10 * time.Second)},
+		{name: "an unavailable destination past its deadline is due now", staleCheck: ptr(-10 * time.Second), wantAfterRelease: ptr(time.Duration(0))},
+		{name: "an unavailable destination past its deadline waits out a failure", staleCheck: ptr(-10 * time.Second), deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newClaimFixture(t)
 			start := time.Now()
 			subscription := f.subscribe(t, f.body("first"))
 			f.addEvents(t, subscription, 1, c.entries)
-			f.exec(t, `UPDATE subscription SET next_attempt = $2 WHERE id = $1`, subscription.ID, start.Add(c.subscription))
 			if c.staleCheck != nil {
 				f.exec(t, `UPDATE inbox SET stale_check_at = $2 WHERE id = $1`, subscription.InboxID, start.Add(*c.staleCheck))
 			}
@@ -351,6 +431,10 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 				requireBetween(t, "next work", next, start.Add(*c.wantAtOffset), start.Add(*c.wantAtOffset))
 			case c.wantAfterRelease != nil:
 				requireBetween(t, "next work", next, before.Add(*c.wantAfterRelease), after.Add(*c.wantAfterRelease))
+			case c.wantNone:
+				if next != nil {
+					t.Errorf("next work = %s, want none", next)
+				}
 			case next != nil:
 				t.Errorf("next work = %s, want none", next)
 			}
@@ -395,7 +479,7 @@ func TestSourceIsTheDueSubscriptionThatHasWaitedLongest(t *testing.T) {
 		f.exec(t, `UPDATE subscription SET next_attempt = now() - $2::interval WHERE id = $1`, id, wait)
 	}
 	f.exec(t, `UPDATE subscription SET next_attempt = now() + interval '1 hour' WHERE id = $1`, later.ID)
-	claim := f.claim(t)
+	claim := f.sourceClaim(t)
 
 	due := f.source(t, claim)
 	if due == nil {
@@ -428,7 +512,7 @@ func TestSourceFailureIsShownOnTheSubscriptionAndRetried(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, f.body("first"))
 	f.addEvents(t, subscription, 1, 2)
-	claim := f.claim(t)
+	claim := f.sourceClaim(t)
 
 	fail := func(kind SourceFailureKind, message string) Subscription {
 		t.Helper()
@@ -483,7 +567,7 @@ func TestSourceFailureHealthIsPerSubscription(t *testing.T) {
 	failing := f.subscribe(t, f.body("failing"))
 	healthy := f.subscribe(t, f.body("healthy"))
 	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 minute' WHERE id = $1`, failing.ID)
-	claim := f.claim(t)
+	claim := f.sourceClaim(t)
 
 	due := f.source(t, claim)
 	if due == nil || due.ID != failing.ID {
@@ -511,7 +595,7 @@ func TestAnOutcomeReportedAfterTheSubscriptionChangedIsIgnored(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			f := newClaimFixture(t)
 			created := f.subscribe(t, f.body("first"))
-			claim := f.claim(t)
+			claim := f.sourceClaim(t)
 			due := f.source(t, claim)
 			if due == nil {
 				t.Fatal("the subscription was not due")
@@ -537,7 +621,7 @@ func TestAnOutcomeReportedAfterTheSubscriptionChangedIsIgnored(t *testing.T) {
 func TestAFailureReportedAfterTheSubscriptionExpiredIsIgnored(t *testing.T) {
 	f := newClaimFixture(t)
 	created := f.subscribe(t, f.body("first"))
-	claim := f.claim(t)
+	claim := f.sourceClaim(t)
 	due := f.source(t, claim)
 	if due == nil {
 		t.Fatal("the subscription was not due")
@@ -567,18 +651,55 @@ func TestUnavailableDestinationKeepsInboxAndSubscriptionsAndSchedulesSourceWork(
 	requireEqual(t, f.get(t, subscription.ID).Cancelled, false)
 	f.requireNoneDue(t)
 
-	// A source due before the next destination recheck remains claimable.
+	// Source work is due independently of the destination retry. Releasing the source claim leaves the delivery
+	// recheck deadline intact.
 	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.ID)
-	f.exec(t, `UPDATE inbox SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.InboxID)
-	claim = f.claim(t)
-	if err := f.ObserveStale(t.Context(), claim, "uid_changed", time.Hour); err != nil {
+	beforeRelease := f.nextWorkAt(t)
+	claim = f.sourceClaim(t)
+	due := f.source(t, claim)
+	if due == nil || due.ID != subscription.ID {
+		t.Fatalf("source = %+v, want the subscription despite delivery backoff", due)
+	}
+	f.requireNoneDue(t)
+	if err := f.ReleaseSource(t.Context(), claim); err != nil {
 		t.Fatal(err)
 	}
-	if next := f.nextWorkAt(t); next == nil || next.After(time.Now()) {
-		t.Errorf("NextWorkAt = %v, want the source due now", next)
+	if next := f.nextWorkAt(t); next == nil || beforeRelease == nil || !next.Equal(*beforeRelease) {
+		t.Errorf("NextWorkAt after ReleaseSource = %v, want unchanged delivery deadline %v", next, beforeRelease)
 	}
+	f.requireNoneDue(t)
 	requireEqual(t, f.read(t, subscription.InboxID, 0).Inbox.Retired, false)
 	requireEqual(t, f.get(t, subscription.ID).Cancelled, false)
+}
+
+func TestDeliveryFailureBackoffDoesNotDelaySourceWorkAndSourceReleasePreservesIt(t *testing.T) {
+	f := newClaimFixture(t)
+	subscription := f.subscribe(t, f.body("first"))
+	f.addEvents(t, subscription, 1, 1)
+	deliveryClaim := f.claim(t)
+	failure := "ServiceError"
+	beforeRelease := time.Now()
+	if err := f.Release(t.Context(), deliveryClaim, &failure, ptr(time.Now().Add(-time.Second))); err != nil {
+		t.Fatal(err)
+	}
+	afterRelease := time.Now()
+	backoff := f.nextWorkAt(t)
+	requireBetween(t, "delivery backoff", backoff, beforeRelease.Add(releaseBackoff), afterRelease.Add(releaseBackoff))
+
+	// The delivery retry is in the future, but a due source subscription can claim the shared inbox lease.
+	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.ID)
+	sourceClaim := f.sourceClaim(t)
+	if due := f.source(t, sourceClaim); due == nil || due.ID != subscription.ID {
+		t.Fatalf("source = %+v, want due subscription", due)
+	}
+	f.requireNoneDue(t)
+	if err := f.ReleaseSource(t.Context(), sourceClaim); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.nextWorkAt(t); got == nil || !got.Equal(*backoff) {
+		t.Errorf("delivery deadline after ReleaseSource = %v, want unchanged %v", got, backoff)
+	}
+	requireEqual(t, f.read(t, subscription.InboxID, 0).Inbox.DeliveryError, &failure)
 }
 
 func TestAFoundDestinationClearsTheUnavailableState(t *testing.T) {

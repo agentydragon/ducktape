@@ -11,9 +11,9 @@ go_library(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/bearer",
+        "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/internal/store",
-        "//agentplane/notification_service/internal/worker",
         "//agentplane/notification_service/model",
         "//agentplane/proto:identity_go_proto",
         "@com_github_google_uuid//:uuid",
@@ -35,9 +35,9 @@ go_test(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/grpc/bearer",
+        "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/internal/store",
-        "//agentplane/notification_service/internal/worker",
         "//agentplane/notification_service/migrations",
         "//agentplane/notification_service/model",
         "//agentplane/proto:identity_go_proto",

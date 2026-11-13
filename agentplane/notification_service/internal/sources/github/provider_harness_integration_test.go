@@ -272,7 +272,7 @@ func (h *harness) requireNoneDue(claim store.Claim) {
 // reconcile reads the claimed inbox's next due subscription, and fails the test if that fails.
 func (h *harness) reconcile(claim store.Claim) {
 	h.t.Helper()
-	if err := h.provider.Reconcile(h.t.Context(), claim, h.next(claim)); err != nil {
+	if err := h.provider.Process(h.t.Context(), claim, h.next(claim)); err != nil {
 		h.t.Fatal(err)
 	}
 }
@@ -288,7 +288,7 @@ func (h *harness) reconcileAll(claim store.Claim) {
 		if due == nil {
 			return
 		}
-		if err := h.provider.Reconcile(h.t.Context(), claim, *due); err != nil {
+		if err := h.provider.Process(h.t.Context(), claim, *due); err != nil {
 			h.t.Fatal(err)
 		}
 	}

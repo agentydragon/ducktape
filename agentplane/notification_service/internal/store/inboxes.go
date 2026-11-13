@@ -400,7 +400,7 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 			return &QuotaError{Quota: EntriesPerInbox, Limit: s.quotas.EntriesPerInbox}
 		}
 		cursor++
-		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2 WHERE id = $1`, inboxID, cursor); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET last_cursor = $2, next_attempt = least(next_attempt, now()) WHERE id = $1`, inboxID, cursor); err != nil {
 			return err
 		}
 		if err := entrystorage.Insert(ctx, tx, inboxID, cursor, event, payload, now()); err != nil {

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/client"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 )
 
 func TestARefreshFailureIsRecordedUnderItsKindAndRetryDelay(t *testing.T) {
@@ -22,14 +22,14 @@ func TestARefreshFailureIsRecordedUnderItsKindAndRetryDelay(t *testing.T) {
 	}{
 		{"rate limit", &client.RateLimitedError{StatusCode: 403, RetrySeconds: 120}, store.FailureRateLimited, 120 * time.Second},
 		{"secondary rate limit", fmt.Errorf("reading: %w", &client.RateLimitedError{StatusCode: 429, RetrySeconds: 7}), store.FailureRateLimited, 7 * time.Second},
-		{"access", &client.AccessError{StatusCode: 403}, store.FailureAccessDenied, worker.DefaultRetry},
-		{"uninstalled", &client.NotInstalledError{}, store.FailureAccessDenied, worker.DefaultRetry},
-		{"suspended", &client.SuspendedError{}, store.FailureAccessDenied, worker.DefaultRetry},
-		{"source changed", &client.SourceChangedError{Reason: "identity changed"}, store.FailureSourceChanged, worker.DefaultRetry},
-		{"server error", &client.StatusError{StatusCode: 502}, store.FailureUnavailable, worker.DefaultRetry},
-		{"unexpected status", &client.StatusError{StatusCode: 302}, store.FailureProcessingError, worker.DefaultRetry},
-		{"transport", &client.TransportError{Err: errors.New("dial tcp")}, store.FailureUnavailable, worker.DefaultRetry},
-		{"invalid response", &client.InvalidResponseError{Reason: "no id"}, store.FailureProcessingError, worker.DefaultRetry},
+		{"access", &client.AccessError{StatusCode: 403}, store.FailureAccessDenied, sources.DefaultRetry},
+		{"uninstalled", &client.NotInstalledError{}, store.FailureAccessDenied, sources.DefaultRetry},
+		{"suspended", &client.SuspendedError{}, store.FailureAccessDenied, sources.DefaultRetry},
+		{"source changed", &client.SourceChangedError{Reason: "identity changed"}, store.FailureSourceChanged, sources.DefaultRetry},
+		{"server error", &client.StatusError{StatusCode: 502}, store.FailureUnavailable, sources.DefaultRetry},
+		{"unexpected status", &client.StatusError{StatusCode: 302}, store.FailureProcessingError, sources.DefaultRetry},
+		{"transport", &client.TransportError{Err: errors.New("dial tcp")}, store.FailureUnavailable, sources.DefaultRetry},
+		{"invalid response", &client.InvalidResponseError{Reason: "no id"}, store.FailureProcessingError, sources.DefaultRetry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failure, ok := classify(tc.err)

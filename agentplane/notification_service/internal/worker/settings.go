@@ -10,10 +10,7 @@ import (
 // Settings are the worker's tunables, as the service's settings file holds them: the service's config embeds
 // this struct under the keys its mapstructure tags name.
 type Settings struct {
-	// GitHubDeliveryRetentionDays bounds raw receipts and generated mergeability history; nil retains both
-	// indefinitely.
-	GitHubDeliveryRetentionDays *int           `mapstructure:"github_delivery_retention_days"`
-	NoticeDebounce              NoticeDebounce `mapstructure:"notice_debounce"`
+	NoticeDebounce NoticeDebounce `mapstructure:"notice_debounce"`
 	// UnavailableDestinationRetrySeconds is the retry interval for an unavailable or replaced destination.
 	UnavailableDestinationRetrySeconds float64 `mapstructure:"unavailable_destination_retry_s"`
 }
@@ -37,16 +34,12 @@ func DefaultSettings() Settings {
 	return Settings{
 		NoticeDebounce:                     NoticeDebounce{QuietSeconds: 2, MaxWaitSeconds: 10},
 		UnavailableDestinationRetrySeconds: 30,
-		GitHubDeliveryRetentionDays:        new(7),
 	}
 }
 
 // Validate checks the bounds of the settings.
 func (s Settings) Validate() error {
 	var failures []error
-	if days := s.GitHubDeliveryRetentionDays; days != nil && (*days < 1 || *days > 3650) {
-		failures = append(failures, errors.New("github_delivery_retention_days must be null or 1 to 3650"))
-	}
 	if s.NoticeDebounce.QuietSeconds < 0 || s.NoticeDebounce.QuietSeconds > 3600 {
 		failures = append(failures, errors.New("notice_debounce.quiet_seconds must be 0 to 3600"))
 	}

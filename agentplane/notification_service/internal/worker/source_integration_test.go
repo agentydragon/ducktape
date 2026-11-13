@@ -3,12 +3,11 @@ package worker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/status"
@@ -23,16 +22,16 @@ func TestProviderFailuresAreShownOnTheSubscriptionAndRetried(t *testing.T) {
 		retry   time.Duration
 	}{
 		{
-			"default retry", &ProviderError{Kind: store.FailureUnavailable, Message: "Actions Service unavailable"},
-			store.FailureUnavailable, "Actions Service unavailable", DefaultRetry,
+			"default retry", &sources.ProviderError{Kind: store.FailureUnavailable, Message: "Actions Service unavailable"},
+			store.FailureUnavailable, "Actions Service unavailable", sources.DefaultRetry,
 		},
 		{
-			"retry the Provider asks for", &ProviderError{Kind: store.FailureRateLimited, Message: "rate limited", RetryAfter: 10 * time.Second},
+			"retry the Provider asks for", &sources.ProviderError{Kind: store.FailureRateLimited, Message: "rate limited", RetryAfter: 10 * time.Second},
 			store.FailureRateLimited, "rate limited", 10 * time.Second,
 		},
 		{
 			"quota", &store.QuotaError{Quota: store.EntriesPerInbox, Limit: 10},
-			store.FailureProcessingError, "QuotaError", DefaultRetry,
+			store.FailureProcessingError, "QuotaError", sources.DefaultRetry,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -41,7 +40,10 @@ func TestProviderFailuresAreShownOnTheSubscriptionAndRetried(t *testing.T) {
 			h.actions.returns(c.failure)
 
 			before := time.Now()
-			h.step(t)
+			worked, err := h.sourceWorker.ProcessOne(t.Context())
+			if err != nil || !worked {
+				t.Fatalf("source step = %v, %v", worked, err)
+			}
 			after := time.Now()
 
 			shown := h.subscription(t, subscription.ID)
@@ -52,7 +54,7 @@ func TestProviderFailuresAreShownOnTheSubscriptionAndRetried(t *testing.T) {
 			requireWithin(t, "retry", shown.RetryAt, before.Add(c.retry), after.Add(c.retry))
 			// The destination is fine, so the inbox shows nothing wrong, and the source waits for its retry.
 			requireEqual(t, h.row(t, subscription.InboxID).deliveryError, (*string)(nil))
-			h.requireNoneDue(t)
+			h.requireNoSourceDue(t)
 		})
 	}
 }
@@ -61,18 +63,21 @@ func TestADeferredSourceShowsNoFailureAndWaitsForItsTime(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
 	subscription := h.subscribe(t, "first")
 	until := time.Now().Add(2 * time.Hour).Truncate(time.Microsecond)
-	h.actions.returns(&ProviderDeferred{Until: until})
+	h.actions.returns(&sources.ProviderDeferred{Until: until})
 
-	h.step(t)
+	worked, err := h.sourceWorker.ProcessOne(t.Context())
+	if err != nil || !worked {
+		t.Fatalf("source step = %v, %v", worked, err)
+	}
 
 	shown := h.subscription(t, subscription.ID)
 	requireEqual(t, [2]any{shown.Failure, shown.RetryAt}, [2]any{(*store.SourceFailure)(nil), (*time.Time)(nil)})
-	next, err := h.store.NextWorkAt(t.Context())
+	next, err := h.store.NextSourceWorkAt(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	requireWithin(t, "next work", next, until, until)
-	h.requireNoneDue(t)
+	h.requireNoSourceDue(t)
 }
 
 func TestAProviderBreakingItsContractIsReturnedAfterTheInboxIsReleased(t *testing.T) {
@@ -81,27 +86,33 @@ func TestAProviderBreakingItsContractIsReturnedAfterTheInboxIsReleased(t *testin
 	bug := errors.New("provider bug")
 	h.actions.returns(bug)
 
-	worked, err := h.worker.step(t.Context())
+	worked, err := h.sourceWorker.ProcessOne(t.Context())
 
-	var unclassified *UnclassifiedProviderError
+	var unclassified *sources.UnclassifiedProviderError
 	if !worked || !errors.As(err, &unclassified) || unclassified.SubscriptionID != subscription.ID || !errors.Is(err, bug) {
 		t.Fatalf("step = %v, %v; want the Provider's error for subscription %s", worked, err, subscription.ID)
 	}
 	// It is not shown as a source failure, and the inbox is not held until its lease runs out.
 	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
-	requireEqual(t, h.claim(t).ID, subscription.InboxID)
+	requireEqual(t, h.sourceClaim(t).ID, subscription.InboxID)
 }
 
 func TestAProviderWhoseClaimWasLostLeavesTheInboxToItsNewOwner(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
 	subscription := h.subscribe(t, "first")
-	h.actions.returns(store.ErrClaimLost)
+	h.actions.on(func(_ context.Context, claim store.Claim, _ store.DueSubscription) error {
+		h.exec(t, `UPDATE inbox SET claim = $2, claim_until = now() + interval '1 hour' WHERE id = $1`, claim.ID, uuid.New())
+		return store.ErrClaimLost
+	})
 
-	h.step(t)
+	worked, err := h.sourceWorker.ProcessOne(t.Context())
+	if err != nil || !worked {
+		t.Fatalf("source step = %v, %v", worked, err)
+	}
 
 	requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
 	// Nothing was released on the new owner's behalf.
-	h.requireNoneDue(t)
+	h.requireNoSourceDue(t)
 }
 
 func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T) {
@@ -140,7 +151,12 @@ func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T
 			defer cancel()
 			done := make(chan error, 1)
 			go func() {
-				_, err := h.worker.step(ctx)
+				var err error
+				if c.name == "reading a source" {
+					_, err = h.sourceWorker.ProcessOne(ctx)
+				} else {
+					_, err = h.worker.ProcessOne(ctx)
+				}
 				done <- err
 			}()
 			<-started
@@ -149,12 +165,24 @@ func TestShuttingDownGivesTheInboxBackWithoutShowingTheInterruption(t *testing.T
 			if err := <-done; !errors.Is(err, context.Canceled) {
 				t.Fatalf("step = %v, want context.Canceled", err)
 			}
-			// The lease would hold the inbox for thirty seconds; its release schedules the next work soon.
-			next, err := h.store.NextWorkAt(t.Context())
+			// Both workers release an interrupted claim promptly instead of waiting for its lease to expire.
+			var next *time.Time
+			var err error
+			if c.name == "reading a source" {
+				next, err = h.store.NextSourceWorkAt(t.Context())
+			} else {
+				next, err = h.store.NextWorkAt(t.Context())
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			requireWithin(t, "next work", next, time.Time{}, time.Now().Add(5*time.Second))
+			if c.name == "reading a source" {
+				claim := h.sourceClaim(t)
+				if err := h.store.ReleaseSource(t.Context(), claim); err != nil {
+					t.Fatal(err)
+				}
+			}
 			requireEqual(t, h.row(t, subscription.InboxID).deliveryError, (*string)(nil))
 			requireEqual(t, h.subscription(t, subscription.ID).Failure, (*store.SourceFailure)(nil))
 		})
@@ -180,7 +208,7 @@ func TestAStopWhileTheInboxIsBeingGivenBackDoesNotKeepTheLease(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_, _ = h.worker.step(ctx)
+		_, _ = h.worker.ProcessOne(ctx)
 	}()
 	<-submitting
 	// With the row held, the step has finished its work and waits in its release, where the stop arrives.
@@ -221,7 +249,7 @@ func TestAReleaseThatFailsWhileStoppingIsLoggedByItsType(t *testing.T) {
 		return read.Err()
 	})
 
-	_, err := h.worker.step(ctx)
+	_, err := h.sourceWorker.ProcessOne(ctx)
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("step = %v, want context.Canceled", err)
@@ -260,64 +288,5 @@ func (h *harness) awaitQueryWaitingForARow(t *testing.T) {
 		case <-expired:
 			t.Fatal("no query waited for the inbox row")
 		}
-	}
-}
-
-// insertGitHubSubscription adds a GitHub subscription to the inbox, as the GitHub stage's store will, with the
-// rows it follows.
-func (h *harness) insertGitHubSubscription(t *testing.T, inboxID uuid.UUID) uuid.UUID {
-	t.Helper()
-	repository := "owner/repository-" + uuid.NewString()
-	h.exec(t, `INSERT INTO github_installation (app_id, installation_id, generation) VALUES (1, 2, 0) ON CONFLICT DO NOTHING`)
-	var repositoryID int64
-	if err := h.db.QueryRowContext(t.Context(),
-		`INSERT INTO github_repository (full_name) VALUES ($1) RETURNING repository_id`, repository).Scan(&repositoryID); err != nil {
-		t.Fatal(err)
-	}
-	creation := model.Subscribe{
-		DestinationRef: destination(), SessionID: testSession, IdempotencyKey: "github",
-		Source: model.GitHubSource{Repository: repository, Subject: model.PullRequestSubject{Number: 1}}, LifetimeDays: 7,
-	}
-	access := &store.GitHubAccessKey{AppID: 1, InstallationID: 2, RepositoryID: repositoryID}
-	subscription, err := h.store.Subscribe(t.Context(), store.Owner{Identity: testOwner, SandboxUID: testSandboxUID}, creation, access)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if subscription.InboxID != inboxID {
-		t.Fatalf("GitHub subscription inbox = %s, want %s", subscription.InboxID, inboxID)
-	}
-	return subscription.ID
-}
-
-func TestGitHubSubscriptionsAreReadByTheGitHubProvider(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("provider enabled=%v", enabled), func(t *testing.T) {
-			h := newIsolatedHarness(t, debounce(3600, 3600))
-			actions := h.subscribe(t, "first")
-			h.postponeSources(t)
-			github := h.insertGitHubSubscription(t, actions.InboxID)
-			provider := newFakeProvider()
-			if enabled {
-				h.worker.GitHub = provider
-			}
-
-			h.step(t)
-
-			requireEqual(t, h.actions.callCount(), 0)
-			if enabled {
-				if len(provider.calls) != 1 {
-					t.Fatalf("%d GitHub reads, want 1", len(provider.calls))
-				}
-				if _, ok := provider.calls[0].Source.(model.GitHubSource); !ok || provider.calls[0].ID != github {
-					t.Errorf("read %+v, want the GitHub subscription", provider.calls[0].Subscription)
-				}
-				return
-			}
-			// A disabled provider is a source that is unavailable, which the subscription shows and retries.
-			shown := h.subscription(t, github)
-			if shown.Failure == nil || shown.Failure.Kind != store.FailureUnavailable {
-				t.Errorf("failure = %+v, want an unavailable source", shown.Failure)
-			}
-		})
 	}
 }

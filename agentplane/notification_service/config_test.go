@@ -104,7 +104,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 		t.Fatal(err)
 	}
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" || c.TokenAudience != "test-notifications" ||
-		c.OperatorReaderAccount != "test-app" || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
+		c.OperatorReaderAccount != "test-app" || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.RunnerGateway.ControlTarget != "{sandbox}-control.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
@@ -133,7 +133,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
 		t.Errorf("quota defaults: %+v", c.Quotas)
 	}
-	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 7) {
+	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 7) {
 		t.Errorf("worker defaults: %+v", c.Settings)
 	}
 	if c.RunnerGateway.RequestTimeoutSeconds != 5 || c.HistoryService.RequestTimeoutSeconds != 20 ||
@@ -153,7 +153,7 @@ func TestStaticEnvironmentVariablesDoNotOverrideTheSettingsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 2 ||
-		c.Actions.RequestTimeoutSeconds != 5 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 14) {
+		c.Actions.RequestTimeoutSeconds != 5 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) {
 		t.Errorf("static settings were affected by environment variables: %+v", c)
 	}
 }
@@ -275,7 +275,7 @@ func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := c.GitHubDeliveryRetentionDays
+			got := c.GitHubRetention.Days
 			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
 				t.Fatalf("retention = %v, want %v", got, tc.want)
 			}

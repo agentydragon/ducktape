@@ -12,14 +12,14 @@ import (
 
 // Each commit resource has its own deadline and error state. Pending mergeability retries do not accelerate
 // either read, and a classified failure in one resource does not stop the other's observations or raw activity.
-func (p *Provider) refreshCommitResource(ctx context.Context, key store.GitHubCommitRefreshKey, fences []store.GitHubAccessFence) (time.Time, error) {
+func (p *Provider) refreshCommitResource(ctx context.Context, key store.GitHubCommitRefreshKey, fences []store.GitHubAccessFence) (*time.Time, error) {
 	lease, err := p.state.Acquire(ctx, key)
 	var deferred *store.RefreshDeferredError
 	if errors.As(err, &deferred) {
-		return deferred.Until, nil
+		return &deferred.Until, nil
 	}
 	if err != nil {
-		return time.Time{}, err
+		return nil, err
 	}
 	if lease != nil {
 		switch key.Event {
@@ -38,17 +38,17 @@ func (p *Provider) refreshCommitResource(ctx context.Context, key store.GitHubCo
 				err = p.state.CompleteCommitStatuses(ctx, *lease, fences, statuses)
 			}
 		default:
-			return time.Time{}, fmt.Errorf("unsupported commit resource %q", key.Event)
+			return nil, fmt.Errorf("unsupported commit resource %q", key.Event)
 		}
 		if errors.As(err, &deferred) {
-			return deferred.Until, nil
+			return &deferred.Until, nil
 		}
 		if err != nil {
-			return time.Time{}, err
+			return nil, err
 		}
 	}
 	state, err := p.state.CommitState(ctx, key)
-	return state.RepairAt, err
+	return state.RetryAt, err
 }
 
 type commitTarget struct {

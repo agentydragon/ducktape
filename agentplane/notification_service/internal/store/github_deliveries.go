@@ -173,8 +173,10 @@ type GitHubRecording struct {
 	Fences            []GitHubAccessFence
 	Subject           GitHubSubjectKey
 	SubjectGeneration int64
-	// RepairAt is when the match must be made again: the earliest a grant, or the subject's refresh, goes stale.
+	// RepairAt is the earliest expiry among access fences, checked again while recording.
 	RepairAt time.Time
+	// RetryAt is when pending work should resume after this page, if any.
+	RetryAt *time.Time
 }
 
 // RecordGitHub appends the matched deliveries to the claimed inbox and schedules the subscription's next
@@ -240,9 +242,13 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			return err
 		}
 		// Ingress that committed since the subscription was read must not be overwritten by an idle schedule.
-		next := recording.RepairAt
+		var next *time.Time
+		if recording.RetryAt != nil {
+			next = recording.RetryAt
+		}
 		if recording.More || mergeabilityMore || commitMore || prStateMore || generation != recording.Generation {
-			next = now()
+			due := now()
+			next = &due
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE subscription SET next_attempt = $2, last_success_at = $3, error_kind = NULL, error = NULL,

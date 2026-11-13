@@ -1,6 +1,4 @@
-// Package worker works the Notification Service's inboxes: it reads each subscription's source into its inbox,
-// and tells the agent when entries await it with a notice that it submits to the Session's runner and follows
-// to confirmation.
+// Package worker delivers notices for entries already committed to the Notification Service's inboxes.
 //
 // Every durable decision is in the store's rows, so any replica can resume any inbox: a worker claims an inbox
 // under a 30-second lease, every write it makes is fenced by that lease, and what it does next is scheduled by
@@ -17,7 +15,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 )
@@ -27,10 +24,9 @@ import (
 const stepBudget = store.LeaseDuration - 10*time.Second
 
 const (
-	// cleanupInterval is how often Run expires raw GitHub receipts, old inbox payloads and long-retired inboxes.
-	cleanupInterval = time.Minute
 	// storageRetry is the wait after the database fails.
-	storageRetry = 5 * time.Second
+	storageRetry    = 5 * time.Second
+	cleanupInterval = time.Minute
 	// releaseGrace bounds giving a claim back, which a stop does not interrupt.
 	releaseGrace = 5 * time.Second
 )
@@ -44,85 +40,82 @@ type Worker struct {
 	History   History
 	// Dispatcher submits notices. Its calls are idempotent by command ID.
 	Dispatcher Dispatcher
-	// Actions reads Action request subscriptions.
-	Actions Provider
-	// GitHub reads GitHub subscriptions, or is nil while the provider is off, which shows on each GitHub
-	// subscription as an unavailable source.
-	GitHub   Provider
-	Settings Settings
+	Settings   Settings
 }
 
-// Run works inboxes until ctx ends, which returns nil. A claim, a source or a notice that fails is retried by
-// the schedule the failure leaves in the rows. A database failure is retried after five seconds; a Provider
-// failure outside its contract returns its *UnclassifiedProviderError.
+// Run delivers notices until ctx ends, which returns nil. A delivery failure is retried by the schedule the
+// failure leaves in the rows. A database failure is retried after five seconds.
 //
 // changes signals that work was committed on some replica (store.WorkChannel). Run reads the rows after
 // clearing it, so a commit that races with a query leaves a signal for the next wait.
 func (w *Worker) Run(ctx context.Context, changes <-chan struct{}) error {
-	var sweep retention
+	var cleanup cleanupState
 	for {
 		select {
 		case <-changes:
 		default:
 		}
-		idle, worked, err := w.advance(ctx, &sweep)
-		var unclassified *UnclassifiedProviderError
+		if !time.Now().Before(cleanup.due) {
+			after, err := w.Store.Cleanup(ctx, cleanup.after)
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err != nil {
+				slog.WarnContext(ctx, "notification inbox retention unavailable; retrying", "error", err)
+				if !wait(ctx, changes, storageRetry) {
+					return nil
+				}
+				continue
+			}
+			cleanup.after = after
+			cleanup.due = time.Now().Add(cleanupInterval)
+		}
+		worked, err := w.ProcessOne(ctx)
 		switch {
 		case ctx.Err() != nil:
 			return nil
-		case errors.As(err, &unclassified):
-			return err
 		case err != nil:
 			slog.WarnContext(ctx, "notification storage unavailable; retrying", "error", err)
-			idle = storageRetry
 		case worked:
 			continue
 		}
-		timer := time.NewTimer(idle)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil
-		case <-changes:
-		case <-timer.C:
+
+		idle := storageRetry
+		if err == nil {
+			idle = time.Until(cleanup.due)
+			next, nextErr := w.Store.NextWorkAt(ctx)
+			if ctx.Err() != nil {
+				return nil
+			}
+			if nextErr != nil {
+				slog.WarnContext(ctx, "notification storage unavailable; retrying", "error", nextErr)
+				idle = storageRetry
+			} else if next != nil {
+				idle = min(idle, time.Until(*next))
+			}
 		}
-		timer.Stop()
+		if !wait(ctx, changes, max(idle, 0)) {
+			return nil
+		}
 	}
 }
 
-// retention schedules cleanup of GitHub receipts and mergeability history, then pages through inbox retention,
-// one batch a minute.
-type retention struct {
+type cleanupState struct {
 	after *uuid.UUID
 	due   time.Time
 }
 
-// advance runs the retention page if it is due, then one step. When there was nothing to work it returns how
-// long to idle: until the next retention page or the next durable deadline, whichever is first.
-func (w *Worker) advance(ctx context.Context, sweep *retention) (idle time.Duration, worked bool, err error) {
-	if !time.Now().Before(sweep.due) {
-		if days := w.Settings.GitHubDeliveryRetentionDays; days != nil {
-			if err = w.Store.CleanupGitHubDeliveries(ctx, time.Now().Add(-time.Duration(*days)*24*time.Hour)); err != nil {
-				return 0, false, err
-			}
-		}
-		if sweep.after, err = w.Store.Cleanup(ctx, sweep.after); err != nil {
-			return 0, false, err
-		}
-		sweep.due = time.Now().Add(cleanupInterval)
+func wait(ctx context.Context, changes <-chan struct{}, duration time.Duration) bool {
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-changes:
+		return true
+	case <-timer.C:
+		return true
 	}
-	if worked, err = w.step(ctx); err != nil || worked {
-		return 0, worked, err
-	}
-	idle = time.Until(sweep.due)
-	next, err := w.Store.NextWorkAt(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	if next != nil {
-		idle = min(idle, time.Until(*next))
-	}
-	return max(idle, 0), false, nil
 }
 
 // attended is what working one claim leaves to do.
@@ -133,11 +126,8 @@ type attended struct {
 	released bool
 }
 
-// step works the inbox that has waited longest, if one is due, and reports whether there was one. The order is
-// the delivery policy: the destination is checked, the next due source is read, then the notice is prepared
-// once its debounce has run out and delivered; and whatever happens, the claim is released with the next
-// deadline computed from the rows.
-func (w *Worker) step(ctx context.Context) (bool, error) {
+// ProcessOne delivers at most one due inbox notice. Run calls this same bounded operation.
+func (w *Worker) ProcessOne(ctx context.Context) (bool, error) {
 	claim, err := w.Store.Claim(ctx)
 	if err != nil || claim == nil {
 		return false, err
@@ -186,8 +176,7 @@ func carriedError(claim store.Claim) *string {
 	return nil
 }
 
-// attend works a claimed inbox within the step budget, and classifies how it ended. The error it returns is
-// the one the step must not hide: the database failing, or a Provider breaking its contract.
+// attend works a claimed inbox within the step budget, and classifies how delivery ended.
 func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error) {
 	// While the history cannot be followed, notices are prepared but never delivered.
 	outcome := attended{deliveryError: carriedError(claim)}
@@ -260,9 +249,6 @@ func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) erro
 			return err
 		}
 	}
-	if err := w.readSource(ctx, claim); err != nil {
-		return err
-	}
 	notice, err := w.prepareNotice(ctx, claim)
 	if err != nil {
 		return err
@@ -282,58 +268,5 @@ func (w *Worker) checkSessionOwner(claim store.Claim, session *dispatcherpb.Sess
 	if !ok || claim.OwnerIdentity != identity {
 		return errOwnerMismatch
 	}
-	return nil
-}
-
-// readSource reads the claimed inbox's next due subscription, if any, and records the outcome on it.
-func (w *Worker) readSource(ctx context.Context, claim store.Claim) error {
-	due, err := w.Store.Source(ctx, claim)
-	if err != nil || due == nil {
-		return err
-	}
-	err = w.reconcile(ctx, claim, *due)
-
-	var deferred *ProviderDeferred
-	var failure *ProviderError
-	var quota *store.QuotaError
-	switch {
-	case err == nil:
-		return nil
-	case errors.As(err, &deferred):
-		return w.Store.SourceDeferred(ctx, claim, due.Subscription, deferred.Until)
-	case errors.As(err, &failure):
-		return w.sourceFailed(ctx, claim, *due, failure.Kind, failure.Message, failure.RetryAfter)
-	case errors.As(err, &quota):
-		return w.sourceFailed(ctx, claim, *due, store.FailureProcessingError, "QuotaError", 0)
-	case errors.Is(err, store.ErrClaimLost) || ctx.Err() != nil:
-		return err
-	default:
-		return &UnclassifiedProviderError{SubscriptionID: due.ID, Err: err}
-	}
-}
-
-func (w *Worker) reconcile(ctx context.Context, claim store.Claim, due store.DueSubscription) error {
-	switch due.Source.(type) {
-	case model.ActionsSource:
-		return w.Actions.Reconcile(ctx, claim, due)
-	case model.GitHubSource:
-		if w.GitHub == nil {
-			return &ProviderError{Kind: store.FailureUnavailable, Message: "GitHub provider is disabled"}
-		}
-		return w.GitHub.Reconcile(ctx, claim, due)
-	default:
-		return errors.New("subscription has no source")
-	}
-}
-
-func (w *Worker) sourceFailed(ctx context.Context, claim store.Claim, due store.DueSubscription, kind store.SourceFailureKind, message string, retryAfter time.Duration) error {
-	if retryAfter == 0 {
-		retryAfter = DefaultRetry
-	}
-	if err := w.Store.SourceFailed(ctx, claim, due.Subscription, kind, message, retryAfter); err != nil {
-		return err
-	}
-	slog.WarnContext(ctx, "notification source retry", "inbox", claim.ID, "subscription", due.ID, "cause", message,
-		"retry_seconds", retryAfter.Seconds())
 	return nil
 }

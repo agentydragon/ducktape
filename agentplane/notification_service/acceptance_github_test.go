@@ -133,8 +133,10 @@ func hasGitHubBaseline(subscription map[string]any) bool {
 	return true
 }
 
-func advanceGitHubAcceptanceDeadlines(t *testing.T, service running, subscriptionID, inboxID string) {
+func queueGitHubAcceptanceCatchup(t *testing.T, service running, subscriptionID string) {
 	t.Helper()
+	// Seed a durable catch-up job, as creation, renewal or webhook ingress does. Cache expiry alone
+	// never schedules a job; the old observations here ensure the pending job reads fresh facts.
 	for _, statement := range []struct {
 		query string
 		args  []any
@@ -144,7 +146,6 @@ func advanceGitHubAcceptanceDeadlines(t *testing.T, service running, subscriptio
 		{`UPDATE github_commit_refresh SET last_success_at = now() - interval '11 minutes', next_attempt = NULL, claim = NULL, claim_until = NULL WHERE app_id = 42 AND repository_id = 100 AND subject_kind = 'pull_request' AND subject_key = '7'`, nil},
 		{`UPDATE github_review_refresh SET last_success_at = now() - interval '11 minutes', next_attempt = NULL, claim = NULL, claim_until = NULL WHERE app_id = 42 AND repository_id = 100 AND subject_kind = 'pull_request' AND subject_key = '7'`, nil},
 		{`UPDATE subscription SET next_attempt = now() WHERE id = $1`, []any{subscriptionID}},
-		{`UPDATE inbox SET next_attempt = now(), claim = NULL WHERE id = $1`, []any{inboxID}},
 	} {
 		result, err := service.db.ExecContext(t.Context(), statement.query, statement.args...)
 		if err != nil {
@@ -155,7 +156,7 @@ func advanceGitHubAcceptanceDeadlines(t *testing.T, service running, subscriptio
 			t.Fatal(err)
 		}
 		if rows == 0 {
-			t.Fatalf("deadline update affected no rows: %s", statement.query)
+			t.Fatalf("pending-work fixture update affected no rows: %s", statement.query)
 		}
 	}
 }
@@ -190,7 +191,7 @@ func recoveredGitHubFactSet(t *testing.T, entries []any, subscriptionID string) 
 	return facts
 }
 
-func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWebhooks(t *testing.T) {
+func TestPendingGitHubCatchupSurvivesServiceRestartAndDeduplicatesLateWebhooks(t *testing.T) {
 	clearGitHubAcceptanceState(t)
 	api := fixture.NewFake(t)
 	api.Respond(acceptancePRPath, http.StatusOK, nil, acceptanceOpenPullRequest())
@@ -209,7 +210,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	service := start(t, tune)
 
 	request := &notificationspb.CreateSubscriptionRequest{
-		SessionId: testSession, IdempotencyKey: "missed-github-updates",
+		SessionId: testSession, IdempotencyKey: "pending-github-catchup",
 		Source: &notificationspb.Source{Provider: &notificationspb.Source_Github{Github: &notificationspb.GitHubSource{
 			Repository: "owner/repo",
 			Subject: &notificationspb.GitHubSubject{Subject: &notificationspb.GitHubSubject_PullRequest{
@@ -253,12 +254,12 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	api.Respond(acceptanceChecksPath, http.StatusOK, nil, acceptanceCheckRuns())
 	api.Respond(acceptanceStatusesPath, http.StatusOK, nil, acceptanceCommitStatuses)
 	api.Respond(acceptanceReviewsPath, http.StatusOK, nil, acceptanceReviews)
-	advanceGitHubAcceptanceDeadlines(t, service, subscriptionID, inboxID)
+	queueGitHubAcceptanceCatchup(t, service, subscriptionID)
 
-	// Startup alone must discover the durable deadlines; no webhook, database notification or manual worker wake is sent.
+	// Startup must discover the recorded catch-up job without a new webhook, database notification or worker wake.
 	service = restart(t, tune)
 	var recovered []any
-	eventually(t, "four current GitHub facts repaired by the restarted service", func() bool {
+	eventually(t, "four current GitHub facts read by the restarted source worker", func() bool {
 		recovered = inboxEntries(t, service)
 		return len(recovered) == 4
 	})
@@ -386,7 +387,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 		t.Errorf("accepted late webhook receipts = %d, want four", deliveries)
 	}
 
-	// Expire the same persisted repair deadlines once more while stopped. Startup polls unchanged current state;
+	// Queue another explicit catch-up while stopped. Startup reads unchanged current state;
 	// the recovered identities, cursors and payloads must remain stable.
 	before := githubSubscription(t, service, subscriptionID)["lastSuccessAt"]
 	if err := service.stop(); !errors.Is(err, context.Canceled) {
@@ -396,7 +397,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	for _, path := range []string{acceptancePRPath, acceptanceChecksPath, acceptanceStatusesPath, acceptanceReviewsPath} {
 		counts[path] = api.Count(path)
 	}
-	advanceGitHubAcceptanceDeadlines(t, service, subscriptionID, inboxID)
+	queueGitHubAcceptanceCatchup(t, service, subscriptionID)
 	service = restart(t, tune)
 	eventually(t, "unchanged scheduled GitHub polls after restart", func() bool {
 		for path, previous := range counts {

@@ -18,9 +18,9 @@ import (
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -204,7 +204,7 @@ func (f fixture) subscribe(t *testing.T) store.Subscription {
 
 func (f fixture) claim(t *testing.T) store.Claim {
 	t.Helper()
-	claim, err := f.store.Claim(t.Context())
+	claim, err := f.store.ClaimSource(t.Context())
 	if err != nil || claim == nil {
 		t.Fatalf("claim = %v, %v", claim, err)
 	}
@@ -226,7 +226,7 @@ func (f fixture) reconcileWith(t *testing.T, source *Source, claim store.Claim) 
 	if err != nil || due == nil {
 		t.Fatalf("source = %v, %v", due, err)
 	}
-	return source.Reconcile(t.Context(), claim, *due)
+	return source.Process(t.Context(), claim, *due)
 }
 
 func (f fixture) entries(t *testing.T, inboxID uuid.UUID) []store.Entry {
@@ -250,9 +250,9 @@ func (f fixture) lastCursor(t *testing.T, inboxID uuid.UUID) int64 {
 
 func requireFailure(t *testing.T, err error, kind store.SourceFailureKind, message string) {
 	t.Helper()
-	var failure *worker.ProviderError
+	var failure *sources.ProviderError
 	if !errors.As(err, &failure) {
-		t.Fatalf("error = %v, want a *worker.ProviderError", err)
+		t.Fatalf("error = %v, want a *sources.ProviderError", err)
 	}
 	if failure.Kind != kind || failure.Message != message || failure.RetryAfter != 0 {
 		t.Fatalf("failure = %+v, want kind %s, message %q and the default retry", *failure, kind, message)
@@ -568,9 +568,9 @@ func TestReconcileReturnsTheCancellationOfItsContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	err = f.source.Reconcile(ctx, claim, *due)
+	err = f.source.Process(ctx, claim, *due)
 
-	var failure *worker.ProviderError
+	var failure *sources.ProviderError
 	if !errors.Is(err, context.Canceled) || errors.As(err, &failure) {
 		t.Errorf("error = %v, want the context's cancellation", err)
 	}
@@ -603,7 +603,7 @@ func TestAnUnreadableTokenIsNotAFailureOfTheSubscription(t *testing.T) {
 
 	err := f.reconcile(t, claim)
 
-	var failure *worker.ProviderError
+	var failure *sources.ProviderError
 	if err == nil || errors.As(err, &failure) || status.Code(err) != codes.Unavailable {
 		t.Errorf("error = %v, want an unclassified token-file Unavailable error", err)
 	}

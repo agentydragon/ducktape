@@ -131,14 +131,14 @@ func (g githubFixture) assertNoPullRequestRetry(t *testing.T, sub githubSubscrip
 		t.Errorf("mergeability retry attempt = %d, want %d", stored.recheckAttempt, wantAttempt)
 	}
 	if retry := g.pullRequestRetryAt(t, sub); retry.Valid {
-		t.Errorf("mergeability retry deadline = %v, want ordinary freshness only", retry)
+		t.Errorf("mergeability retry deadline = %v, want no scheduled retry", retry)
 	}
 	state, err := g.state.Subject(t.Context(), sub.Subject)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.LastSuccessAt == nil || !state.RepairAt.Equal(state.LastSuccessAt.Add(testFreshness)) {
-		t.Errorf("subject repair state = %+v, want ordinary %v freshness", state, testFreshness)
+	if state.LastSuccessAt == nil || !state.RepairAt.Equal(state.LastSuccessAt.Add(testFreshness)) || state.RetryAt != nil {
+		t.Errorf("subject refresh state = %+v, want ordinary %v freshness and no pending retry", state, testFreshness)
 	}
 }
 
@@ -220,12 +220,13 @@ func TestPendingMergeabilityRetrySurvivesStateReconstructionAndKeepsLastResult(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.RepairAt.After(time.Now()) || !reconstructed.RepairAt.Equal(state.RepairAt) {
-		t.Fatalf("repair deadline before/after reconstruction = %v / %v, want the persisted pending deadline", state.RepairAt, reconstructed.RepairAt)
+	if state.RetryAt == nil || !state.RetryAt.After(time.Now()) || reconstructed.RetryAt == nil ||
+		!reconstructed.RetryAt.Equal(*state.RetryAt) || !reconstructed.RepairAt.Equal(state.RepairAt) {
+		t.Fatalf("retry deadline before/after reconstruction = %v / %v, want the persisted pending deadline and stable cache freshness", state, reconstructed)
 	}
 	lease, err := g.state.Acquire(t.Context(), sub.Subject)
 	if lease != nil || err != nil {
-		t.Fatalf("refresh during pending window = %v, %v; want no lease and no error until %v", lease, err, reconstructed.RepairAt)
+		t.Fatalf("refresh during pending window = %v, %v; want no lease and no error until %v", lease, err, reconstructed.RetryAt)
 	}
 
 	g.exec(t, `UPDATE github_subject SET next_attempt = now() - interval '1 second'
@@ -301,7 +302,6 @@ func TestUnknownRetryScheduleCapsAtSixtySecondsAndSettledResultsResetIt(t *testi
 		{15 * time.Second, 2},
 		{45 * time.Second, 3},
 		{time.Minute, 4},
-		{time.Minute, 4},
 	}
 	for i, step := range want {
 		g.observePullRequest(t, sub, unknown)
@@ -310,6 +310,8 @@ func TestUnknownRetryScheduleCapsAtSixtySecondsAndSettledResultsResetIt(t *testi
 		}
 		g.assertPullRequestRetry(t, sub, step.delay, step.attempt)
 	}
+	g.observePullRequest(t, sub, unknown)
+	g.assertNoPullRequestRetry(t, sub, 4)
 
 	conflicting := unknown
 	conflicting.Mergeability = model.GitHubConflicting
@@ -344,7 +346,7 @@ func TestConflictingRetryScheduleStopsAfterThreeEarlyRechecks(t *testing.T) {
 		g.observePullRequest(t, sub, conflicting)
 		g.assertPullRequestRetry(t, sub, step.delay, step.attempt)
 	}
-	// Once the unchanged conflict exhausts its short retry budget, source freshness controls the next read.
+	// Once the unchanged conflict exhausts its short retry budget, it waits for another source trigger.
 	g.observePullRequest(t, sub, conflicting)
 	g.assertNoPullRequestRetry(t, sub, 3)
 

@@ -283,7 +283,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	if err != nil {
 		t.Fatal(err)
 	}
-	repairAt := subject.RepairAt
+	retryAt := subject.RetryAt
 	fences := []GitHubAccessFence{base}
 	grants, err := g.state.RevisionGrants(ctx, g.app, sub.Subject)
 	if err != nil {
@@ -296,7 +296,9 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 			if !errors.As(err, &deferred) {
 				t.Fatal(err)
 			}
-			repairAt = minTime(repairAt, deferred.Until)
+			if retryAt == nil || deferred.Until.Before(*retryAt) {
+				retryAt = &deferred.Until
+			}
 			continue
 		} else if lease != nil {
 			if err := completeEmptyRefresh(ctx, g.state, *lease); err != nil {
@@ -309,12 +311,15 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 		}
 		fences = append(fences, fence)
 	}
+	var repairAt time.Time
 	for _, fence := range fences {
 		validUntil, err := g.state.ValidUntil(ctx, fence.Key)
 		if err != nil {
 			t.Fatal(err)
 		}
-		repairAt = minTime(repairAt, validUntil)
+		if repairAt.IsZero() || validUntil.Before(repairAt) {
+			repairAt = validUntil
+		}
 	}
 	matched, err := g.GitHubDeliveries(ctx, GitHubMatch{
 		SubscriptionID: sub.ID, InboxID: sub.InboxID, AppID: g.app, Subject: sub.Subject,
@@ -327,7 +332,7 @@ func (g githubFixture) prepare(t *testing.T, sub githubSubscription) githubStep 
 	return githubStep{GitHubRecording{
 		SubscriptionID: sub.ID, Version: version, Generation: generation, Matched: matched,
 		More: len(matched) == GitHubDeliveryPageSize, Fences: fences, Subject: sub.Subject,
-		SubjectGeneration: subject.Generation, RepairAt: repairAt,
+		SubjectGeneration: subject.Generation, RepairAt: repairAt, RetryAt: retryAt,
 	}}
 }
 
@@ -341,13 +346,6 @@ func (g githubFixture) record(t *testing.T, claim Claim, step githubStep) error 
 func (g githubFixture) reconcile(t *testing.T, claim Claim, sub githubSubscription) error {
 	t.Helper()
 	return g.record(t, claim, g.prepare(t, sub))
-}
-
-func minTime(a, b time.Time) time.Time {
-	if b.Before(a) {
-		return b
-	}
-	return a
 }
 
 // labels are the labels of the entries' payloads.

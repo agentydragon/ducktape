@@ -81,6 +81,46 @@ func (s *Store) Claim(ctx context.Context) (*Claim, error) {
 	return claim, err
 }
 
+// ClaimSource leases the inbox with the oldest due source subscription, or returns nil when no source is due.
+// Delivery work has its own deadline in inbox.next_attempt and is not considered here.
+func (s *Store) ClaimSource(ctx context.Context) (*Claim, error) {
+	var claim *Claim
+	err := s.transaction(ctx, func(tx *sql.Tx) error {
+		var found Claim
+		var staleCheckAt sql.NullTime
+		inbox, err := scanInbox(tx.QueryRowContext(ctx, `
+			SELECT `+inboxColumns+`, stale_check_at FROM inbox i
+			WHERE NOT retired AND claim_until <= now() AND EXISTS (
+				SELECT 1 FROM subscription s
+				WHERE s.inbox_id = i.id AND NOT s.cancelled AND s.expires_at > now() AND s.next_attempt <= now()
+			)
+			ORDER BY (
+				SELECT min(s.next_attempt) FROM subscription s
+				WHERE s.inbox_id = i.id AND NOT s.cancelled AND s.expires_at > now()
+			) LIMIT 1 FOR UPDATE OF i SKIP LOCKED`), &staleCheckAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found.held, err = inboxLease.Acquire(ctx, tx, []any{inbox.ID}, LeaseDuration)
+		if err != nil {
+			return err
+		}
+		found.Inbox = inbox
+		if staleCheckAt.Valid {
+			found.staleCheckAt = utc(staleCheckAt.Time)
+		}
+		if err := notify(ctx, tx); err != nil {
+			return err
+		}
+		claim = &found
+		return nil
+	})
+	return claim, err
+}
+
 // fenced locks the claimed inbox for update, or fails with ErrClaimLost when the claim no longer holds it.
 func fenced(ctx context.Context, tx *sql.Tx, claim Claim) (heldInbox, error) {
 	if err := inboxLease.Fence(ctx, tx, claim.held); errors.Is(err, lease.ErrLost) {
@@ -115,19 +155,13 @@ func (s *Store) fencedTransaction(ctx context.Context, claim Claim, f func(tx *s
 	})
 }
 
-// Release gives the inbox back and schedules its next work from the durable state alone: the earliest due
-// subscription, a notice still awaiting receipts, or entries no notice covers yet, due at noticeDueAt (the
-// debounce deadline, nil when there is none). deliveryError is shown on the inbox until the next release
-// replaces it, and a failure postpones the next work by at least five seconds.
+// Release gives the inbox back and schedules delivery work from the durable state alone: a notice still awaiting
+// receipts, or entries no notice covers yet, due at noticeDueAt (the debounce deadline, nil when there is none).
+// Source deadlines are scheduled independently by ClaimSource. deliveryError is shown on the inbox until the
+// next release replaces it, and a failure postpones delivery work by at least five seconds.
 func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string, noticeDueAt *time.Time) error {
 	return s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
 		released := now()
-		var nextSource sql.NullTime
-		if err := tx.QueryRowContext(ctx, `
-			SELECT min(next_attempt) FROM subscription WHERE inbox_id = $1 AND NOT cancelled AND expires_at > now()`,
-			held.ID).Scan(&nextSource); err != nil {
-			return err
-		}
 		notice, err := latestNotice(ctx, tx, held.ID)
 		if err != nil {
 			return err
@@ -142,9 +176,6 @@ func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string,
 				next = &deadline
 			}
 		}
-		if nextSource.Valid {
-			earliest(nextSource.Time)
-		}
 		if waiting {
 			earliest(backoff)
 		} else if unread {
@@ -158,26 +189,28 @@ func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string,
 			next = &backoff
 		}
 		if held.staleCheckAt != nil {
-			// Keep source work due while delivery is unavailable, but do not retry a pending notice
-			// or unread entries before the destination's next check.
+			// Do not retry a pending notice or unread entries before the destination's next check.
 			recheck := *held.staleCheckAt
 			if deliveryError != nil && recheck.Before(backoff) {
 				recheck = backoff
 			}
 			next = &recheck
-			if nextSource.Valid && nextSource.Time.Before(recheck) {
-				sourceDue := nextSource.Time
-				if deliveryError != nil && sourceDue.Before(backoff) {
-					sourceDue = backoff
-				}
-				next = utc(sourceDue)
-			}
 		}
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET delivery_error = $2, next_attempt = $3 WHERE id = $1`,
 			held.ID, deliveryError, nullTime(next)); err != nil {
+			return err
+		}
+		return notify(ctx, tx)
+	})
+}
+
+// ReleaseSource gives a source claim back without changing any delivery state or deadline.
+func (s *Store) ReleaseSource(ctx context.Context, claim Claim) error {
+	return s.fencedTransaction(ctx, claim, func(tx *sql.Tx, _ heldInbox) error {
+		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
 		}
 		return notify(ctx, tx)
@@ -207,27 +240,33 @@ func (s *Store) NextWorkAt(ctx context.Context) (*time.Time, error) {
 	return utc(deadline.Time), nil
 }
 
+// NextSourceWorkAt is the earliest durable source deadline after an inbox lease expires. Nil when no live
+// subscription has source work scheduled.
+func (s *Store) NextSourceWorkAt(ctx context.Context) (*time.Time, error) {
+	var deadline sql.NullTime
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT min(greatest(s.next_attempt, i.claim_until))
+		FROM subscription s JOIN inbox i ON i.id = s.inbox_id
+		WHERE NOT i.retired AND NOT s.cancelled AND s.expires_at > now() AND s.next_attempt IS NOT NULL`).Scan(&deadline); err != nil {
+		return nil, err
+	}
+	if !deadline.Valid {
+		return nil, nil
+	}
+	return utc(deadline.Time), nil
+}
+
 // ObserveStale records an unavailable exact Sandbox incarnation. The inbox and its subscriptions
 // remain live; source reads continue, while notice delivery waits for a matching destination.
 func (s *Store) ObserveStale(ctx context.Context, claim Claim, reason string, retry time.Duration) error {
 	return s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
 		recheck := now().Add(retry)
-		var nextSource sql.NullTime
-		if err := tx.QueryRowContext(ctx, `
-			SELECT min(next_attempt) FROM subscription WHERE inbox_id = $1 AND NOT cancelled AND expires_at > now()`,
-			held.ID).Scan(&nextSource); err != nil {
-			return err
-		}
-		next := recheck
-		if nextSource.Valid && nextSource.Time.Before(next) {
-			next = nextSource.Time
-		}
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			UPDATE inbox SET stale_check_at = $2, next_attempt = $3, delivery_error = $4 WHERE id = $1`,
-			held.ID, recheck, next, "destination unavailable: "+reason); err != nil {
+			held.ID, recheck, recheck, "destination unavailable: "+reason); err != nil {
 			return err
 		}
 		return notify(ctx, tx)

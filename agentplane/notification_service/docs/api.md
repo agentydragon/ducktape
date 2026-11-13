@@ -253,18 +253,18 @@ Association evidence may predate the subscription, but delivered receipts must f
 boundary. This is not complete reconstruction of uncaptured heads or events from an uninstalled fork.
 Payload SHA, not inbox order, identifies the revision involved.
 
-The service also repairs current check-run and commit-status facts for followed PR heads on
-`github.freshness_seconds` (default 600 seconds). Worker scheduling, GitHub API/access failures and rate-limit
-backoff can extend the interval; GitHub state propagation has no guaranteed settling time. The existing PR
-defaults repair completed check-run facts and all commit statuses. An explicitly unfiltered `check_run` filter
-follows all observed check-run states. Explicit check-run action filters such as `check_run:created` or
-`check_run:completed` select actual webhook actions only; polling does not invent or replay those actions. A
-currently completed check run may yield a completed fact to the default subscription even when its created webhook
-was missed, without claiming recovery of the `created` action. The subscribe command and filters are unchanged.
+The service reads current check-run and commit-status facts for followed PR heads when subscription
+creation/renewal, an ingested webhook, or a specific failed/pending job triggers work. Success leaves the
+subscription idle. `github.freshness_seconds` bounds cached state reused by that work; it does not schedule
+periodic repair. Rate limits and transient failures retain explicit retry deadlines. Missed webhooks require
+redelivery or a later source trigger; current-state catch-up does not recover a complete action history.
+The existing PR defaults report completed check-run facts and all commit statuses. An explicitly unfiltered
+`check_run` filter follows all observed states. Explicit `check_run:created` and `check_run:completed` filters
+select actual webhook actions only. Subscription commands and filters are unchanged.
 
 Each generated `event.githubObservation` identifies the GitHub App, repository, event category and durable sequence
 ordered within that category; it has no webhook delivery ID. A normalized fact uses the same identity whether a
-webhook or periodic repair observes it first. The check-run or commit-status payload mirrors the native GitHub
+webhook or targeted catch-up observes it first. The check-run or commit-status payload mirrors the native GitHub
 object and carries no `event` or `action`; the event category is in the identity. Check-run payloads contain
 `repositoryId`, `headSha`, `id`, optional `appId` for the check's owning App, `name`, `status`, optional
 `conclusion`, `detailsUrl`, optional `startedAt` and `completedAt`, and `observedAt`. Check-run statuses are
@@ -316,9 +316,9 @@ are observations, not promises of notice delivery.
 PR observations retain GitHub's lifecycle states `OPEN`, `CLOSED` (without merging), and `MERGED`
 separately from mergeability states `MERGEABLE`, `CONFLICTING`, and `UNKNOWN`. Only open PRs generate
 mergeability notifications or schedule mergeability rechecks; terminal lifecycle states do neither.
-`UNKNOWN` retries after 5, 15 and 45 seconds, then every 60 seconds until a settled result or source
-failure. `CONFLICTING` gets three early rechecks after 5, 15 and 45 seconds, then ordinary subject
-refreshes (600 seconds by default). These are successive delays, not deadlines from the first read.
+`UNKNOWN` gets four settling retries after 5, 15, 45 and 60 seconds. `CONFLICTING` gets three
+early rechecks after 5, 15 and 45 seconds. Exhausted results wait for a new event or explicit
+catch-up. These are successive delays, not deadlines from the first read.
 The attempt counter and deadline survive worker restarts. A changed observed ref/state tuple resets
 the counter; repeated invalidations of an unchanged tuple do not. Access failures and rate limits
 use the existing source-error backoff. Rechecks improve detection latency without proving negative

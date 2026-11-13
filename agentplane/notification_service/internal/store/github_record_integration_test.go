@@ -40,7 +40,7 @@ func (g githubFixture) claimHolder(t *testing.T) uuid.NullUUID {
 	return holder
 }
 
-func TestRecordingAPageDeliversItAndSchedulesTheNextLook(t *testing.T) {
+func TestRecordingAPageDeliversItAndLeavesQuietSubscriptionIdle(t *testing.T) {
 	g := newGitHubFixture(t)
 	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
@@ -62,9 +62,8 @@ func TestRecordingAPageDeliversItAndSchedulesTheNextLook(t *testing.T) {
 	if !state.lastSuccess.Valid || state.errorKind.Valid {
 		t.Errorf("subscription state = %+v, want a success and no failure", state)
 	}
-	// The next look is the repair, when the grant or the subject goes stale, not before.
-	if !state.nextAttempt.Valid || !state.nextAttempt.Time.Equal(step.RepairAt) {
-		t.Errorf("next attempt = %v, want the repair at %v", state.nextAttempt, step.RepairAt)
+	if state.nextAttempt.Valid {
+		t.Errorf("next attempt = %v, want successful subscription idle", state.nextAttempt)
 	}
 	if after := g.inboxUpdatedAt(t); !after.After(before) {
 		t.Errorf("inbox updated at %v, want it moved on from %v", after, before)
@@ -84,6 +83,30 @@ func TestRecordingAPageDeliversItAndSchedulesTheNextLook(t *testing.T) {
 		t.Errorf("inbox updated at %v, want it left at %v", after, before)
 	}
 	g.requireDelivered(t, "comment")
+}
+
+func TestWebhookMakesAnIdleGitHubSubscriptionDueAgain(t *testing.T) {
+	g := newGitHubFixture(t)
+	sub := g.follow(t, g.source(model.PullRequestSubject{Number: 7}), "follow")
+	claim := g.claimInbox(t, g.inbox)
+	if err := g.reconcile(t, claim, sub); err != nil {
+		t.Fatal(err)
+	}
+	if next := g.subscriptionState(t, sub.ID).nextAttempt; next.Valid {
+		t.Fatalf("next attempt = %v after a quiet success, want idle", next)
+	}
+
+	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("after idle"))
+	if next := g.subscriptionState(t, sub.ID).nextAttempt; !next.Valid || next.Time.After(now()) {
+		t.Fatalf("next attempt = %v after webhook ingress, want due now", next)
+	}
+	if err := g.reconcile(t, claim, sub); err != nil {
+		t.Fatal(err)
+	}
+	g.requireDelivered(t, "after idle")
+	if next := g.subscriptionState(t, sub.ID).nextAttempt; next.Valid {
+		t.Errorf("next attempt = %v after webhook delivery, want idle", next)
+	}
 }
 
 func TestRecordingDoesNothingForASubscriptionThatMovedOn(t *testing.T) {
@@ -173,8 +196,8 @@ func TestIngressAfterTheSnapshotLeavesTheSubscriptionDueAtOnce(t *testing.T) {
 				want = []string{"first", "second"}
 			}
 			g.requireDelivered(t, want...)
-			if next := g.subscriptionState(t, sub.ID).nextAttempt; !next.Valid || !next.Time.After(now()) {
-				t.Errorf("next attempt = %v, want the later repair", next)
+			if next := g.subscriptionState(t, sub.ID).nextAttempt; next.Valid {
+				t.Errorf("next attempt = %v after the queued delivery, want idle", next)
 			}
 		})
 	}
