@@ -1,0 +1,3109 @@
+{
+  "checks": {
+    "all30_pairs_staged_or_have_explicit_incompatibility_reason": true,
+    "all30_pinned_merge_commits_and_parents_verified": true,
+    "all_compatible_pairs_preserve_exact_original_pair_patch": true,
+    "all_compatible_pairs_preserve_full_app_test_ast_and_decorators": true,
+    "all_compatible_pairs_use_the_same_app_cut_operations_on_both_arms": true,
+    "all_nonoverlapping_pairs_have_identical_overlay_entries_on_both_arms": true,
+    "no_bazel_selector_build_test_or_remote_execution": true,
+    "no_nonreviewed_theirs_fallback": true
+  },
+  "cohort": {
+    "pair_count": 30,
+    "pair_pr_numbers": [
+      15237, 15255, 15256, 15323, 15379, 15393, 15442, 15443, 15444, 15445,
+      15493, 15570, 15644, 15651, 15687, 15694, 15713, 15714, 15725, 15744,
+      15835, 15844, 15858, 15878, 15893, 15906, 15945, 15990, 16009, 16020
+    ],
+    "snapshot_cohort_sha256": "0c8f2fda78a96ca6312caa02ceff78b63bbc7406e646eb17729deb38c71772fc"
+  },
+  "compatible_pair_count": 30,
+  "incompatible_pair_count": 0,
+  "overlay_status_counts": {
+    "A": 2,
+    "D": 0,
+    "M": 9
+  },
+  "pairs": [
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "86d81dcb72dfc8887cf9ea9d4e553dfb463ebabf",
+      "base_tree": "6facd02d4b67117ccf7108942ad1effa1aaf38d6",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "707413e823082c05f77382ebac8f4cb8f3cf951f",
+      "candidate_base_tree": "185d2e3b248c00cf81d0910c097be6f42dd2b67b",
+      "candidate_pair_delta_path_count": 51,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "4d1a60bb4fcc672c5ec8a56edbbe07b5e2819fa4abed97c7a95e7e5a06f64196",
+      "candidate_pair_delta_status_counts": {
+        "A": 2,
+        "D": 0,
+        "M": 49
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "f5b6a2a364eeed62e19bb3c914d55bff88020b61",
+      "candidate_tested_merge_tree": "7b02bc3954406d866c5ac422a663f0bb0423a6cc",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 51,
+      "original_pair_delta_sha256": "4d1a60bb4fcc672c5ec8a56edbbe07b5e2819fa4abed97c7a95e7e5a06f64196",
+      "original_pair_delta_status_counts": {
+        "A": 2,
+        "D": 0,
+        "M": 49
+      },
+      "original_pair_patch_sha256": "9c33311bce7bccbcf21181ae51137909abb0e906e04cf9035ab2b2668fa2c888",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "7b02bc3954406d866c5ac422a663f0bb0423a6cc",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15237,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "4b51b24ef6cd073c4a26909b6293a4e7e39c1566",
+      "tested_merge_commit": "9e5065149467fc9641fc65f72e565f32da9f0469",
+      "tested_merge_parents": [
+        "86d81dcb72dfc8887cf9ea9d4e553dfb463ebabf",
+        "4b51b24ef6cd073c4a26909b6293a4e7e39c1566"
+      ],
+      "tested_merge_tree": "150795751f1c2e9dd70857697feb6a0a4af91c20"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "e22674c90af4f828129aef4e79cd4bd36a6e9d41",
+      "base_tree": "a3e0af9ef1dcad88119ba5fa3cac5413284c72ea",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "30469fea37472a36e0621bfb9291ca0b2a3ca8ee",
+      "candidate_base_tree": "d4faa9af71aa667e5580942a75ac069d91a2d064",
+      "candidate_pair_delta_path_count": 13,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "2a4ab2a4f33e1b9c84b3c2daea23ab17322c311ae254f314780ec590ecba3735",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 12
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "7689eab971e2096b5cd0413cac3331771ee470af",
+      "candidate_tested_merge_tree": "9a652c64a4ecab7932594fdf55ccbc04c6f7eaa4",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 13,
+      "original_pair_delta_sha256": "2a4ab2a4f33e1b9c84b3c2daea23ab17322c311ae254f314780ec590ecba3735",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 12
+      },
+      "original_pair_patch_sha256": "1531907a8726cf6337891154abdd7ae008b4bf2d9e7eb6c89773bff4489c10dd",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "9a652c64a4ecab7932594fdf55ccbc04c6f7eaa4",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15255,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "e5887d8547db29cfb91f2156cd00098a83629eaa",
+      "tested_merge_commit": "df0eda064a504f4b44522df9844110fbf06d7a4f",
+      "tested_merge_parents": [
+        "e22674c90af4f828129aef4e79cd4bd36a6e9d41",
+        "e5887d8547db29cfb91f2156cd00098a83629eaa"
+      ],
+      "tested_merge_tree": "48d86bcb64e2d0ac864ccf6c4dd4044bc591469d"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "e4ef853b7dc4ceac7cdd727810be6044692df28b",
+      "base_tree": "077a5177b15a68ee27b7d1ccabbcc550abb4cd26",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "089f8bae5f85d7fb19cf68f5c558cc398225f7be",
+      "candidate_base_tree": "c920535a885ad43f9416a344469cb8b2fd94fbe3",
+      "candidate_pair_delta_path_count": 24,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "9350f29e54b170ffc273157b4b6443a9cca31df346098936a05869683dbbb2ea",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 23
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "b8f4bc63ad288a19e8c00b991d24e9263fb5122e",
+      "candidate_tested_merge_tree": "0d84f0f038cb62ea5639ce4a6832f75921a0a309",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 24,
+      "original_pair_delta_sha256": "9350f29e54b170ffc273157b4b6443a9cca31df346098936a05869683dbbb2ea",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 23
+      },
+      "original_pair_patch_sha256": "073ae71e4ce7a2b6291f6e4ffbdb627d9f5d02531b6a9e5579014920e622f993",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "0d84f0f038cb62ea5639ce4a6832f75921a0a309",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15256,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "82ff7425ddd140f9c7ba8915112526bdcefba5c7",
+      "tested_merge_commit": "35efb62b6a2d2ecbc1cca1f52abc627787117e25",
+      "tested_merge_parents": [
+        "e4ef853b7dc4ceac7cdd727810be6044692df28b",
+        "82ff7425ddd140f9c7ba8915112526bdcefba5c7"
+      ],
+      "tested_merge_tree": "3b8ccb0c18b945e3b40f7abcf195babb9461b2d8"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "51883ee80a3961da13dc87c681873264de451c9b",
+      "base_tree": "e41f9024d9ff0f82ee88851c71becb32d3cabdb8",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "75bcf1415dae8beb170de95edb679fa38c2799bc",
+      "candidate_base_tree": "efde9e17af422163e7e4cb63fc3cf8cb5f3c4003",
+      "candidate_pair_delta_path_count": 12,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "6f63fd7c842978188f43116f9684273a6622eae06c6c6391f195bdf2295a0945",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 12
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "250cc08728556a3ce9b797800174ac1c8f82460c",
+      "candidate_tested_merge_tree": "2d95e5f72b714aca29e8e3cf7e124dc354441400",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 12,
+      "original_pair_delta_sha256": "6f63fd7c842978188f43116f9684273a6622eae06c6c6391f195bdf2295a0945",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 12
+      },
+      "original_pair_patch_sha256": "2efac3cc48a3dc115cc2290326fc021b104571f2c588c149923a107e0ae521c6",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "2d95e5f72b714aca29e8e3cf7e124dc354441400",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15323,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "App/browser",
+      "tested_head_commit": "f666aee34adf911daf9b04eb56775d41386c2296",
+      "tested_merge_commit": "e9a65dc6f74d857bea3110e0c75ae5ed1891e130",
+      "tested_merge_parents": [
+        "51883ee80a3961da13dc87c681873264de451c9b",
+        "f666aee34adf911daf9b04eb56775d41386c2296"
+      ],
+      "tested_merge_tree": "d045010067c02e658a4cce394a166bc51beb05be"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "e4b65683bb5320d16a3656e5796794b9137e9191",
+      "base_tree": "195f01f575c824d612a8b3efe5d43e115a2ef533",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "3d1b6bd12d5da70ee026ddd8511d9a684003eecc",
+      "candidate_base_tree": "2ddea36e68efdd77dd643c33a08f1caf95af4274",
+      "candidate_pair_delta_path_count": 2,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "1f5f1907f5837d9c3755e2fe649b60da02b797b32174ef77c88aa63ba306b3a2",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 2
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "2496cf84b15826c7bbe5edfe894254cfab642473",
+      "candidate_tested_merge_tree": "52194b0ef4d3797e2081af4181abb09c59511dd0",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 2,
+      "original_pair_delta_sha256": "1f5f1907f5837d9c3755e2fe649b60da02b797b32174ef77c88aa63ba306b3a2",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 2
+      },
+      "original_pair_patch_sha256": "bba660c2fa0a04a8457316de40ca7db4420016caf33c03ba2072f38d60d070f9",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "52194b0ef4d3797e2081af4181abb09c59511dd0",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15379,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "failed",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "8fc416c9e41b1e235205b7f53e22be5b26f8ba66",
+      "tested_merge_commit": "494827d5f6aad46e10f05deaf87e18a91c8892b7",
+      "tested_merge_parents": [
+        "e4b65683bb5320d16a3656e5796794b9137e9191",
+        "8fc416c9e41b1e235205b7f53e22be5b26f8ba66"
+      ],
+      "tested_merge_tree": "d77a7875f3818d516dbb2d101614a9cb7f172744"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "dbe00fbe4bf5a28699b574df4dfd13d0de4ec773",
+      "base_tree": "328f8bfebde762e1ba1a1a5243d5dccedb9d1ccf",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "138f7e0993978305aa29d33cb24a2cee9dcac058",
+      "candidate_base_tree": "723a1b3a7ac6d0216f8b9ce3c4512fce7894abd0",
+      "candidate_pair_delta_path_count": 2,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "abc7762fd00375c36bb3effbb9196cd2b91f2ddfab4c34cc7197931a836b9edf",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 2
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "84fa1dbb65065bc2d093b64cc3668ede4fa071ca",
+      "candidate_tested_merge_tree": "2a60a63d691aadd5cd99999c206aabf746f7ebab",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 2,
+      "original_pair_delta_sha256": "abc7762fd00375c36bb3effbb9196cd2b91f2ddfab4c34cc7197931a836b9edf",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 2
+      },
+      "original_pair_patch_sha256": "fe9f34ed76e31e2f4ff174af710e877040c50b250e2310bf7cf7699fbd98927f",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "2a60a63d691aadd5cd99999c206aabf746f7ebab",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15393,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "failed",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "3d5c6c3f727ac272f960ff44aa040466b9d2461d",
+      "tested_merge_commit": "6ae2f6786c89aaf6e6a7f46fc9b0a2021e8258ac",
+      "tested_merge_parents": [
+        "dbe00fbe4bf5a28699b574df4dfd13d0de4ec773",
+        "3d5c6c3f727ac272f960ff44aa040466b9d2461d"
+      ],
+      "tested_merge_tree": "91e7201e7a5500b5294181af1e9dd00cc892e2e0"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "6c21b55d40683c14e6318629a484e7b623f72f30",
+      "base_tree": "abbf95218aa9c02958c1f6ccaf6ee803ee2426b1",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "5e7e7abb4cf7aed5a7033b376f0549eb006f5e7a",
+      "candidate_base_tree": "bfc0045bf9495c08c062ebe57454864a40ba52df",
+      "candidate_pair_delta_path_count": 7,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "fb25ed785ebddb8a9d72147ac3d3f3bdace134d4a28a7a35d0a6376a7d5fc9fb",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 7
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "ab6ce4f527ec7c3bf8e828c35fe866edb88aa131",
+      "candidate_tested_merge_tree": "2e2e869dc84f3bf8135583cf12436b059c675110",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 7,
+      "original_pair_delta_sha256": "fb25ed785ebddb8a9d72147ac3d3f3bdace134d4a28a7a35d0a6376a7d5fc9fb",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 7
+      },
+      "original_pair_patch_sha256": "c47b094c518cede68c36798fc0d3201bcb57a41d7aabf97b039b8f48061d77ed",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "2e2e869dc84f3bf8135583cf12436b059c675110",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15442,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "e47a0c1c08ae10761c85e59f771e643d508a88f1",
+      "tested_merge_commit": "d27dc70c59a8c591398b4c3462c751d0bcdad0b6",
+      "tested_merge_parents": [
+        "6c21b55d40683c14e6318629a484e7b623f72f30",
+        "e47a0c1c08ae10761c85e59f771e643d508a88f1"
+      ],
+      "tested_merge_tree": "bc57de87926ce1c00f9518d2aea629b86b86920f"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "b3e59b82337853f3aeed90333cb0b51d949437ad",
+      "base_tree": "7ab462fe46415206867e26f46e40aacb5b23aaf5",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "181329f95bc320e2a75489eeb5e8e084e38e2144",
+      "candidate_base_tree": "c4ea086d5f89420a168f4146d30addc16b14c77c",
+      "candidate_pair_delta_path_count": 16,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "161790ea85dd22445f3358e3062cd4c7cab2c7db285e880e41150a009b52effc",
+      "candidate_pair_delta_status_counts": {
+        "A": 2,
+        "D": 0,
+        "M": 14
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "68cb49e9b3a328259a20e50bcf9bab6d780656e3",
+      "candidate_tested_merge_tree": "ea96220654250c9e1a5388f1c6693e14939c386f",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 16,
+      "original_pair_delta_sha256": "161790ea85dd22445f3358e3062cd4c7cab2c7db285e880e41150a009b52effc",
+      "original_pair_delta_status_counts": {
+        "A": 2,
+        "D": 0,
+        "M": 14
+      },
+      "original_pair_patch_sha256": "eb330075371f509cb471cb749b8c88b6c578ba4a4c1ae5dcada3a29caf4e0a7d",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "ea96220654250c9e1a5388f1c6693e14939c386f",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15443,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "App/browser",
+      "tested_head_commit": "cdb40285f80da1cdf3241bbebc3b8f8bc94646da",
+      "tested_merge_commit": "650f61ef3f4ee6d6f9ee0bd9b1993f5c0e252132",
+      "tested_merge_parents": [
+        "b3e59b82337853f3aeed90333cb0b51d949437ad",
+        "cdb40285f80da1cdf3241bbebc3b8f8bc94646da"
+      ],
+      "tested_merge_tree": "9954391c35d0e5e0dadec477aec87ba67dac2871"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "56648fcb13730d19bfbac9ef18f1140617571ba3",
+      "base_tree": "1185d369a6137c4c67529d34f224d6e1e17848da",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "0d7e94e0de633663f90c92cda2010ea07ccf1bd9",
+      "candidate_base_tree": "ccc320ee5680bf7b87707dad76d19ef1dcb30b11",
+      "candidate_pair_delta_path_count": 17,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "9fd97a564e6ccc1e5df44cbf2d4cb79e4b0a8ffc68530613b507547763c22efc",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 16
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "983fba47b77f32ada2c1bdf958823f21e7c98ba1",
+      "candidate_tested_merge_tree": "bccad9966b6f3ba0192cd7e6b8984d443d7c2987",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 17,
+      "original_pair_delta_sha256": "9fd97a564e6ccc1e5df44cbf2d4cb79e4b0a8ffc68530613b507547763c22efc",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 16
+      },
+      "original_pair_patch_sha256": "51217ba33084e4363a401a015c86fcfb2f2e07ff433e0db1385d8c009c05e293",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "bccad9966b6f3ba0192cd7e6b8984d443d7c2987",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15444,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "App/browser",
+      "tested_head_commit": "7c4463a412629b0df0a8e5ad818f16e6125a1b31",
+      "tested_merge_commit": "9fd853dd55ba3d724e32eeb7c7d9f05d14f0becb",
+      "tested_merge_parents": [
+        "56648fcb13730d19bfbac9ef18f1140617571ba3",
+        "7c4463a412629b0df0a8e5ad818f16e6125a1b31"
+      ],
+      "tested_merge_tree": "5ba84581f31e1dd1336e56e0b66ea4ebbd1cffc7"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "56648fcb13730d19bfbac9ef18f1140617571ba3",
+      "base_tree": "1185d369a6137c4c67529d34f224d6e1e17848da",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "0d7e94e0de633663f90c92cda2010ea07ccf1bd9",
+      "candidate_base_tree": "ccc320ee5680bf7b87707dad76d19ef1dcb30b11",
+      "candidate_pair_delta_path_count": 34,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "8d722ce4198ac483a402e4b72890d2c13ff03365c0c2328d12876f1ea3f375d8",
+      "candidate_pair_delta_status_counts": {
+        "A": 4,
+        "D": 0,
+        "M": 30
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "d0f760d659019cc0c367eb9291e1467d3eb08655",
+      "candidate_tested_merge_tree": "fa73735bc2f83b78932208d73cf5281e7651807a",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 34,
+      "original_pair_delta_sha256": "bc04a03306ad4c33542bcaf4b714d78f4458c7b2824c5a8eee840128d2da4bac",
+      "original_pair_delta_status_counts": {
+        "A": 4,
+        "D": 0,
+        "M": 30
+      },
+      "original_pair_patch_sha256": "8cc0df1cd190f949d66daa4afda04082bb73f76f571a9801cc88f35c059d042a",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": null,
+      "overlay_equality_scope": "historical pair edits overlap App-cut paths; exact original pair patch replay validates the merged arm",
+      "overlay_intersections_with_pair_delta": [
+        "agentplane/app/BUILD.bazel",
+        "agentplane/app/test_thread_browser.py",
+        "agentplane/runner_gateway/BUILD.bazel"
+      ],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "fa73735bc2f83b78932208d73cf5281e7651807a",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15445,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "App/browser",
+      "tested_head_commit": "1583f27f2c5ddcf5990dc1167cc1d4851d82597e",
+      "tested_merge_commit": "b6ae10c45b0693e93d0bbf8f0423fe409bbcc7cf",
+      "tested_merge_parents": [
+        "56648fcb13730d19bfbac9ef18f1140617571ba3",
+        "1583f27f2c5ddcf5990dc1167cc1d4851d82597e"
+      ],
+      "tested_merge_tree": "3a47f0916a3bc3ffc864b354905e24adb27331b6"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "53b736c4ec85660e2fc6652f53adc8ca2ea5a20a",
+      "base_tree": "646dee328889fa7752ad2b0f2afd8800507cdd0b",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "988701049939a55389ac7e9ffff9987563ea2663",
+      "candidate_base_tree": "49d89a627a89f6de51ac0c28f7ff0d639ccfcb0b",
+      "candidate_pair_delta_path_count": 14,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "549c27608f0e5490e7eb8cfd41656aee02c8d28208c8f1099d6276aae4a54ca3",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 14
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "6a249a3d21c5d83b21b2098b69d502e2cd891941",
+      "candidate_tested_merge_tree": "969941e7be47d7cd3953dbea654a2e70afc3236d",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 14,
+      "original_pair_delta_sha256": "549c27608f0e5490e7eb8cfd41656aee02c8d28208c8f1099d6276aae4a54ca3",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 14
+      },
+      "original_pair_patch_sha256": "15094c11071339627d21cc0c6783f177dd854b4e40365fae7a3c97497ff410c9",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "969941e7be47d7cd3953dbea654a2e70afc3236d",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15493,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "a065ad40c83321f6a15612c48ca221422695ce10",
+      "tested_merge_commit": "31568ce99bd545d962e7212c9d43101227e662e8",
+      "tested_merge_parents": [
+        "53b736c4ec85660e2fc6652f53adc8ca2ea5a20a",
+        "a065ad40c83321f6a15612c48ca221422695ce10"
+      ],
+      "tested_merge_tree": "7ae54154014fde944e76e3a6c082fe88adaa8f15"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "1e0aa905a87b76454da4c3b0462adbb456e053be",
+      "base_tree": "b95f707f52eacd35b1ba041322ce26b7a9c5d14f",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "65a024ae83e40bce7ceff5f6f158fcb2533e56d7",
+      "candidate_base_tree": "215a9ca75b40cbf8161829b2a331bf3377dac307",
+      "candidate_pair_delta_path_count": 1,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "f14942bed9f0befa162fa9cdfdfb35b1daa371a27c6f45feeccf976009214b7d",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 1
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "acca9df1016617483e85343a6d87daaee7932cd9",
+      "candidate_tested_merge_tree": "e5f3401ee6191b46335eb3463aaead4d7c814e97",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 1,
+      "original_pair_delta_sha256": "f14942bed9f0befa162fa9cdfdfb35b1daa371a27c6f45feeccf976009214b7d",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 1
+      },
+      "original_pair_patch_sha256": "a3edeb9fd71b48d2ae51ef51a8699154cad67e81c433873319d42d297ed1fafd",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "e5f3401ee6191b46335eb3463aaead4d7c814e97",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15570,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "6fa67275f62743e7dd78b8b587ead8f72e5cba2a",
+      "tested_merge_commit": "fa5a7aeef02d1a602b42a9854abe932a49440152",
+      "tested_merge_parents": [
+        "1e0aa905a87b76454da4c3b0462adbb456e053be",
+        "6fa67275f62743e7dd78b8b587ead8f72e5cba2a"
+      ],
+      "tested_merge_tree": "10a827e5500bb96af698bbd1fdb668f92e50e38c"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "534d98775611806e5542bd4aceae0fa53e73d5bc",
+      "base_tree": "f5c939ca365e24e7a95584f09b8619fb1fa1169b",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "1711df5c12d0fee43e226613fb0a6e1ecf9f8ada",
+      "candidate_base_tree": "cca7df54ae4179ed3f86498def044b135e4bf7df",
+      "candidate_pair_delta_path_count": 48,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "20ada3864674e05ef347639024c19e5bcd9f3b6882a99f9e9ba9c31f3c40f33a",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 47
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "f5ee7aef6fb5e4f3ac6425eba6d0c989f2f35d2e",
+      "candidate_tested_merge_tree": "d618720490f1a8555e0359462c79e4c68aadd075",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 48,
+      "original_pair_delta_sha256": "20ada3864674e05ef347639024c19e5bcd9f3b6882a99f9e9ba9c31f3c40f33a",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 47
+      },
+      "original_pair_patch_sha256": "74b4e2843b939ca3e4f306abfb20cbb9e21ba1cab4c802d0dfe8a5f841ab6654",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "d618720490f1a8555e0359462c79e4c68aadd075",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15644,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "failed",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "7b4886ea6e1aa0c0c5c2bac4af42a9236f7c73a8",
+      "tested_merge_commit": "26730ebf150da5d4223b1c0fadc7b23cc733506c",
+      "tested_merge_parents": [
+        "534d98775611806e5542bd4aceae0fa53e73d5bc",
+        "7b4886ea6e1aa0c0c5c2bac4af42a9236f7c73a8"
+      ],
+      "tested_merge_tree": "d89dc14836f4861d013c33fcd55dc548b31bc6b7"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "568b5b3b8b416ef074959e11c6887c6bc29ac196",
+      "base_tree": "8768437046d08170ba3fa681dbc650d6d48982a3",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "6f883675df5305c4a7e15f25e55a5f950965138e",
+      "candidate_base_tree": "d1e78549d53577fa5f63e7416c015c4562d90263",
+      "candidate_pair_delta_path_count": 6,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "132b467ba33d57416e412f144795dd5386b2ad0741a13bc358a1546ce5c8ee95",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 6
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "fc8d9b8305153051f447ee16854c524bf9b48464",
+      "candidate_tested_merge_tree": "3951c5b4c44c9366a72bbae152a2f055b98cd48e",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 6,
+      "original_pair_delta_sha256": "132b467ba33d57416e412f144795dd5386b2ad0741a13bc358a1546ce5c8ee95",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 6
+      },
+      "original_pair_patch_sha256": "45808fa8d80acb445e53c74553b850b48d0c4e016c5cb046714429b1d2a27a10",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "3951c5b4c44c9366a72bbae152a2f055b98cd48e",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15651,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "55e14099c26632184b2035c465b810722b62ce37",
+      "tested_merge_commit": "b999dd801c9e41941ee57aa5d01138ec568437cd",
+      "tested_merge_parents": [
+        "568b5b3b8b416ef074959e11c6887c6bc29ac196",
+        "55e14099c26632184b2035c465b810722b62ce37"
+      ],
+      "tested_merge_tree": "83d02c06fc2a8ba7f483aedb033699fb19411c4d"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "44d0f077b7d2640c02833dc1864ef0165224d1ba",
+      "base_tree": "334c900c5dfb35b435df1783098730874432da84",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "7b2711d504c6afeead952808430dd6a3ad6e154f",
+      "candidate_base_tree": "ea827e0dcd4310f25e15cd2ff0b8a679452eaaa2",
+      "candidate_pair_delta_path_count": 2,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "cab25750d3f4fe71b6a50702289dd429250305138cfedb62781eb80f0e5687d7",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 2
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "04836f7ed9f9dd95ec112303f7c28eefdfca0a2e",
+      "candidate_tested_merge_tree": "d77d5ed726f1b44b1330675417bdf90fc44c5af6",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 2,
+      "original_pair_delta_sha256": "cab25750d3f4fe71b6a50702289dd429250305138cfedb62781eb80f0e5687d7",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 2
+      },
+      "original_pair_patch_sha256": "10dca8bcd0d829ca1a6b4524f8897f673110718f4949a9cc883d3a45da1d5ef1",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "d77d5ed726f1b44b1330675417bdf90fc44c5af6",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15687,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "ba7ef4c42c19941702d0e9714d06e941dfe73b35",
+      "tested_merge_commit": "2f9d5576a6609417e290e3a02d81911248f3dbd0",
+      "tested_merge_parents": [
+        "44d0f077b7d2640c02833dc1864ef0165224d1ba",
+        "ba7ef4c42c19941702d0e9714d06e941dfe73b35"
+      ],
+      "tested_merge_tree": "adb8317827a459e02187e418356c04b541f234be"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "f9c4214f7cfb30fd52c100a90944eaba9bc51a66",
+      "base_tree": "473eedfc7f6ddb8a564c53628cd1dfac23454ad1",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "1f289099c6d2e28d2bf45b34ed2ba921f3cd2e68",
+      "candidate_base_tree": "a769b77d408f8ba7cc08736f762ae6dacc6cda3d",
+      "candidate_pair_delta_path_count": 4,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "364bdd930669559f6383a576dba7ae188ac3abef6ec6a0241abaef9234dd07f5",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 4
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "4a7df7a4f77e74f5d6e6a90aa82fc2ee9b6549fc",
+      "candidate_tested_merge_tree": "57027e682cd41f869c0e4ff1ba051a5527a12dcb",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 4,
+      "original_pair_delta_sha256": "364bdd930669559f6383a576dba7ae188ac3abef6ec6a0241abaef9234dd07f5",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 4
+      },
+      "original_pair_patch_sha256": "ce2b61e9e944cb7c39f00ca6fdf886ab7fe94d246eb824e0e935f3deeb02e55a",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "57027e682cd41f869c0e4ff1ba051a5527a12dcb",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15694,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "991f2203d026bb3562264fef4bfed8fe33350459",
+      "tested_merge_commit": "dcdf6c3205ce95ffce367021795089448be15396",
+      "tested_merge_parents": [
+        "f9c4214f7cfb30fd52c100a90944eaba9bc51a66",
+        "991f2203d026bb3562264fef4bfed8fe33350459"
+      ],
+      "tested_merge_tree": "2ba0b635ede4a5748257a97195eb761b1a8fc675"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "2d7bc7955e1371626f1ff5125e36730f0f4d6b68",
+      "base_tree": "759f9d267830b4f37b15be5244f205ab7235713e",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "d0eff7d66ed74145fa54d157a70b4034674b2aa0",
+      "candidate_base_tree": "696ba141937dfe0fd340af1b87b76560c99fd343",
+      "candidate_pair_delta_path_count": 59,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "b47fb7ab4f8a605112fa4f114b042c4c47c474f17bc52129bf3ca71d989047dd",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 58
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "3124bf480c72e33a9495d27601f9514e3876f82a",
+      "candidate_tested_merge_tree": "582617272ad8dc74fc235808b3041556001399fb",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 59,
+      "original_pair_delta_sha256": "b47fb7ab4f8a605112fa4f114b042c4c47c474f17bc52129bf3ca71d989047dd",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 58
+      },
+      "original_pair_patch_sha256": "cf70585647e9d1ecb90c546acc58fe95a5031b7e85955cfc5b2201d5f1249033",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "582617272ad8dc74fc235808b3041556001399fb",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15713,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "failed",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "5f871520732ace079869697f235252fe41138f44",
+      "tested_merge_commit": "01407c7aed7e2d9af71c0460d67ee1cdae75c746",
+      "tested_merge_parents": [
+        "2d7bc7955e1371626f1ff5125e36730f0f4d6b68",
+        "5f871520732ace079869697f235252fe41138f44"
+      ],
+      "tested_merge_tree": "cd1a971b31a92d151263aded4ffab88a4fb58e04"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "369296d11e9b02ab78cd2b0212c8f1e6563ac08d",
+      "base_tree": "ced712cbf087abcc15236b4f4d3db7a231b4133f",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "9f2a1dfcfbd475b8ea589d9556947e2c3d0000c8",
+      "candidate_base_tree": "4000d80906a11c1b79a74acf7e44fd8429befd50",
+      "candidate_pair_delta_path_count": 3,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "4e182c7acaea714118f25d3a8802380892fbca6ed52d21bec2f82f6c67a8c4f2",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 2
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "ff72150ee598059050aff2b54659e4193c8a0d63",
+      "candidate_tested_merge_tree": "e763513177f0a5b0276ee55d5b86a3a12d331480",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 3,
+      "original_pair_delta_sha256": "4e182c7acaea714118f25d3a8802380892fbca6ed52d21bec2f82f6c67a8c4f2",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 2
+      },
+      "original_pair_patch_sha256": "c67601c3e29f32745606b29d547cf85021524300868d12c189d80d63aee7a8a5",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "e763513177f0a5b0276ee55d5b86a3a12d331480",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15714,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "93da0a7a69be58a6aec415ba85dada31afa40940",
+      "tested_merge_commit": "e2569a61554f42ec77972498ae0c3c9c732f5c13",
+      "tested_merge_parents": [
+        "369296d11e9b02ab78cd2b0212c8f1e6563ac08d",
+        "93da0a7a69be58a6aec415ba85dada31afa40940"
+      ],
+      "tested_merge_tree": "589ceb5b9dda2af38cd9b5a419057f2e36b92dfc"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "4ab6049f6dde2df190f545634e1e1abf70260a81",
+      "base_tree": "6093ec22f6e08f4016f9d5dbead84ecc8aa47e66",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "b3259d012648b38d00bbbaa90f308b80ea3ec81f",
+      "candidate_base_tree": "23d6618c3fd493440a69308452ea631728c05784",
+      "candidate_pair_delta_path_count": 32,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "d314d2373065d5b77b7615be00f51b2b80c159c45560cf155f10b7993540a2ba",
+      "candidate_pair_delta_status_counts": {
+        "A": 3,
+        "D": 0,
+        "M": 29
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "6e860c05702800f15f9bbe3759edbb864414140e",
+      "candidate_tested_merge_tree": "65ee58c65a3af964af054953520b6fc29647a1de",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 32,
+      "original_pair_delta_sha256": "d314d2373065d5b77b7615be00f51b2b80c159c45560cf155f10b7993540a2ba",
+      "original_pair_delta_status_counts": {
+        "A": 3,
+        "D": 0,
+        "M": 29
+      },
+      "original_pair_patch_sha256": "13723194594621d1adf0be9e83e434777e40e8b269031d5cd6ec2ba579ecb88a",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "65ee58c65a3af964af054953520b6fc29647a1de",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15725,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "531f4fcaad4731ce549c8499cff106644c4dcded",
+      "tested_merge_commit": "def3a7aefbf3710b08464d1d7c2ce0a70681a0ce",
+      "tested_merge_parents": [
+        "4ab6049f6dde2df190f545634e1e1abf70260a81",
+        "531f4fcaad4731ce549c8499cff106644c4dcded"
+      ],
+      "tested_merge_tree": "ae8e86283dbd8d234df89ae71e4fda24640620f7"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "642063435fcd7246e3b973a45de103264bdeb867",
+      "base_tree": "6a13353e9f269a7f6308e9dc6427a140435e0224",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "edc1aae538de48f8bf90063dc5bfaffc57a8c1b0",
+      "candidate_base_tree": "4db1db096f65a0c9ab9934e98cb4cd8134d5725b",
+      "candidate_pair_delta_path_count": 24,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "4ccc4488ae126aed128a9d48597b9fd615b3c71e3304246c536fe4ba9f6a05fe",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 24
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "7062a40d79d75d83a3638bf7e09456c26651b4f3",
+      "candidate_tested_merge_tree": "64456dd6ce14b304092a1dd7a97fbb68cd8d4ebe",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 24,
+      "original_pair_delta_sha256": "4ccc4488ae126aed128a9d48597b9fd615b3c71e3304246c536fe4ba9f6a05fe",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 24
+      },
+      "original_pair_patch_sha256": "f998e4dd125337fc1e218b69d05f271454af7d7098993364cb979cf05329d4e7",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "64456dd6ce14b304092a1dd7a97fbb68cd8d4ebe",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15744,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "cc2ca9af2827d96e96174efd0d24fc8d08217eeb",
+      "tested_merge_commit": "369fdf7f7261a96a2e7ae88500cecd8d2ac6e01c",
+      "tested_merge_parents": [
+        "642063435fcd7246e3b973a45de103264bdeb867",
+        "cc2ca9af2827d96e96174efd0d24fc8d08217eeb"
+      ],
+      "tested_merge_tree": "b9acf4f0ecce53120ee184adcdeadfb7fa180880"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "1ade3b7a9be1fff05a916c43f9520f734d028bbb",
+      "base_tree": "db3a7e362f5660924b8be8d052aa3119cfaf112d",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "3177121c44db1e2cd0ef7a67443b5824cf6617de",
+      "candidate_base_tree": "501698a46c005f425373f6ca90fa0534bf5ce854",
+      "candidate_pair_delta_path_count": 1,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "fa741878ba6fe64ea30b0740d25e65a271386982e590b20a7a5309d38e7a3af7",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 1
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "3331fb25e893b84c6e8a0430b47355259c9f5a4d",
+      "candidate_tested_merge_tree": "f78618c9db302acb1b859df1136af2a3ddf9cbf6",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 1,
+      "original_pair_delta_sha256": "fa741878ba6fe64ea30b0740d25e65a271386982e590b20a7a5309d38e7a3af7",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 1
+      },
+      "original_pair_patch_sha256": "22bb35c9029e1e54594d55b0f752ec1801935de0e1f6214b69e577ee87f73de2",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "f78618c9db302acb1b859df1136af2a3ddf9cbf6",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15835,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "f955763be7b7eac72392dcf55752e32718ad21bd",
+      "tested_merge_commit": "fbc0c63d5a19c117e67dbb7322e63af9a5eb1946",
+      "tested_merge_parents": [
+        "1ade3b7a9be1fff05a916c43f9520f734d028bbb",
+        "f955763be7b7eac72392dcf55752e32718ad21bd"
+      ],
+      "tested_merge_tree": "4a2603938854feafb076556ee924f7f517289038"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "57160c6a7a275c856a0836dbacd6e64d8301a5d0",
+      "base_tree": "9bba99d098ebd6c75419045aea83b5f6901cd987",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "9d63875adc4514fc5097335f9c49e2eee6435dfe",
+      "candidate_base_tree": "9a2bf6f82d595fbd76b9ee03d7b27a3d16c104e9",
+      "candidate_pair_delta_path_count": 3,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "1bb6fa09c5d3550dc076e8a41865c61bb271fec1ea777fa2ffde749614433257",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 3
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "2293594a40cb41c7c766b7b2b9466d02bbf85c23",
+      "candidate_tested_merge_tree": "2f6e574b498e1914cbb89cab543060fbebd3436c",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 3,
+      "original_pair_delta_sha256": "1bb6fa09c5d3550dc076e8a41865c61bb271fec1ea777fa2ffde749614433257",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 3
+      },
+      "original_pair_patch_sha256": "7d5284d255352ce8c1eb00067eaafb0bf7d03335ade5cd4e0b317cdcf2d1c948",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "2f6e574b498e1914cbb89cab543060fbebd3436c",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15844,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "3908e706756f73b65e125d9861b9390f53971ccb",
+      "tested_merge_commit": "a0fd15c151f5bbee571eadee87ce79c7924bcdc8",
+      "tested_merge_parents": [
+        "57160c6a7a275c856a0836dbacd6e64d8301a5d0",
+        "3908e706756f73b65e125d9861b9390f53971ccb"
+      ],
+      "tested_merge_tree": "cdce4d3d50422dccf5b6f9dab1211844ba56a00a"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "fb3706895e3cfcabcb5d5eca7f7e7b855232ec41",
+      "base_tree": "2e57e488de52f287a3abeb3c019e5b5f1eb4d506",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "cf6923d0326e0bcab776a9819abf7335edc7b620",
+      "candidate_base_tree": "24d0f7d96354f65412ed33f98116fe453ab804cd",
+      "candidate_pair_delta_path_count": 7,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "63e9a6170155267f83a2f85b30e3a90e3101997a61fe7fd4299065cf7cf68691",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 6
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "6bf654d8dae6517ef0c26e9735871c2805487c1e",
+      "candidate_tested_merge_tree": "434d959499362caf366e6b853cb70812b04e7d9f",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 7,
+      "original_pair_delta_sha256": "63e9a6170155267f83a2f85b30e3a90e3101997a61fe7fd4299065cf7cf68691",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 6
+      },
+      "original_pair_patch_sha256": "e848fd641f04f631029a5c70d48ad43ed7b7c7a3dde60f9d6efc41a527f73d4a",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "434d959499362caf366e6b853cb70812b04e7d9f",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15858,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "b28fd61ca4b6084cc77382a82d66e147d5a07bfd",
+      "tested_merge_commit": "875f848c59992b930ffe7305643bf9381a92af70",
+      "tested_merge_parents": [
+        "fb3706895e3cfcabcb5d5eca7f7e7b855232ec41",
+        "b28fd61ca4b6084cc77382a82d66e147d5a07bfd"
+      ],
+      "tested_merge_tree": "1f252d984ad9a849d8d4842e4ff33e13436286a3"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "3c9a47e3bcb06daae88de28a3d315ca7ec519cc3",
+      "base_tree": "6b64212dea839c11547e52a6645cc77e9a01c6e3",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "d2e252581ac119d9108619174b2d01b7b3f4ad60",
+      "candidate_base_tree": "3ad132b877cf4d78bb41258098d6d8e31120d457",
+      "candidate_pair_delta_path_count": 1,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "063b94f2884fbf5f13afadb3c0f8c479bdae6d6a36bff818be6e4b70099cacd1",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 1
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "0d1c139627070e2a6fcd449edf4beb23cafd8f64",
+      "candidate_tested_merge_tree": "152a55ed64867c63deef8a987806aa379dfbd53c",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 1,
+      "original_pair_delta_sha256": "063b94f2884fbf5f13afadb3c0f8c479bdae6d6a36bff818be6e4b70099cacd1",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 1
+      },
+      "original_pair_patch_sha256": "cae0982e2d33e21aea62ac0667efcb90bb62a6ade29f3133dea2fef06f328688",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "152a55ed64867c63deef8a987806aa379dfbd53c",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15878,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "7221b92336382830075a017a3799b35e270d851c",
+      "tested_merge_commit": "86bd56e719ca9a795727f80a961a76e441f2ea6a",
+      "tested_merge_parents": [
+        "3c9a47e3bcb06daae88de28a3d315ca7ec519cc3",
+        "7221b92336382830075a017a3799b35e270d851c"
+      ],
+      "tested_merge_tree": "1e5cae9ccd2d1b435e2ffdb10cdb9abdf8a136bc"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "9c2e744e60175786e7d27cc33a874ea42b7c72fb",
+      "base_tree": "ea56348b7fe5a0190fa4a634ed2ff7d9344f1f5d",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "5dc273f54f314ba8a9f138baeef4589cdcef2c8d",
+      "candidate_base_tree": "3d250bc9c8b4d444626275ad267e91104e65fb6e",
+      "candidate_pair_delta_path_count": 35,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "766e9a984706014fc45ad6555e8eb64c5651c160ef96b5c8d3ce5e407f672031",
+      "candidate_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 35
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "e2f0ebf3e296aa7fe5ea6cbde010f88957bdf30f",
+      "candidate_tested_merge_tree": "2f84122b36e62bb325a0bfb43bfd2e517db05bf5",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 35,
+      "original_pair_delta_sha256": "766e9a984706014fc45ad6555e8eb64c5651c160ef96b5c8d3ce5e407f672031",
+      "original_pair_delta_status_counts": {
+        "A": 0,
+        "D": 0,
+        "M": 35
+      },
+      "original_pair_patch_sha256": "28edf3fd5f99cebc57398f7bfa4c86297d2a6f85682b2cb5070620739f335d41",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "2f84122b36e62bb325a0bfb43bfd2e517db05bf5",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15893,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "d99965db0bf20ac4194420cd96ded81546c97f26",
+      "tested_merge_commit": "66b2e3adc7dc79138f6f9543d39da45d396033e4",
+      "tested_merge_parents": [
+        "9c2e744e60175786e7d27cc33a874ea42b7c72fb",
+        "d99965db0bf20ac4194420cd96ded81546c97f26"
+      ],
+      "tested_merge_tree": "74e6479994e1ca6f8135ea33a9aa8456c6521ac5"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "765660ae82658ac7cab32b0bc288251a831a85b0",
+      "base_tree": "0b6ee13e529229841c18314586ad1b8950b8b2a3",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "74d123a89e4327603e142d2d4490ab9249822dae",
+      "candidate_base_tree": "63d4176fc2ec68f57c308d77d21cb444ec1cc1a7",
+      "candidate_pair_delta_path_count": 10,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "a127c77754179ffcf297593633ee8f3de2adc48c5007a45b6b3d5e78ec010617",
+      "candidate_pair_delta_status_counts": {
+        "A": 2,
+        "D": 0,
+        "M": 8
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "42cf9bfa5792e1b505343ee25b426ede502f16c8",
+      "candidate_tested_merge_tree": "5889ff0fa0eb4d6674db0d1922eef77528161d4d",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 10,
+      "original_pair_delta_sha256": "a127c77754179ffcf297593633ee8f3de2adc48c5007a45b6b3d5e78ec010617",
+      "original_pair_delta_status_counts": {
+        "A": 2,
+        "D": 0,
+        "M": 8
+      },
+      "original_pair_patch_sha256": "39f2fb3fe79f95876e717b4ecb99f36fc13bb1e605222518b46a4ecb76b47216",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "5889ff0fa0eb4d6674db0d1922eef77528161d4d",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15906,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "MCP",
+      "tested_head_commit": "e22c30a4925871e3e08ad63ef08ad6d3d9db9333",
+      "tested_merge_commit": "448e4bf92675263a46a59ac895f303915dba54fc",
+      "tested_merge_parents": [
+        "765660ae82658ac7cab32b0bc288251a831a85b0",
+        "e22c30a4925871e3e08ad63ef08ad6d3d9db9333"
+      ],
+      "tested_merge_tree": "66148d871186c62dc0fe7f209328d054869e0d47"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "578b64909b4a6949b317e33b10d41c79f19a5702",
+      "base_tree": "c70902d6d8b06de34f1a3ec20a8b74e55146c8da",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "fd0f29c6d2b45d2cf68990aa6f2ae2f98ef38736",
+      "candidate_base_tree": "7a0901a680496c896eba2533f8491b25a7b0fc20",
+      "candidate_pair_delta_path_count": 14,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "7f19a3143bf61927084d73d15af3fca31c99bf2e3043facbea5e9accbe773b38",
+      "candidate_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 13
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "df169ca5489b8472c76e5282e6acf68a98c00e83",
+      "candidate_tested_merge_tree": "6c9b3d3df1ef438d0f0d9a36225d8abac60fc13f",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 14,
+      "original_pair_delta_sha256": "7f19a3143bf61927084d73d15af3fca31c99bf2e3043facbea5e9accbe773b38",
+      "original_pair_delta_status_counts": {
+        "A": 1,
+        "D": 0,
+        "M": 13
+      },
+      "original_pair_patch_sha256": "8772dac5ed628a00f2589589c1a4f5b9a99b2179c2e49d10872d723d20018154",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "6c9b3d3df1ef438d0f0d9a36225d8abac60fc13f",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15945,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "cancelled",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "be4a91c3d5fabcabc408273fd9dcdd4b3cbe4f28",
+      "tested_merge_commit": "c5d081816c9289c1ead1562de9cfdebd929fd554",
+      "tested_merge_parents": [
+        "578b64909b4a6949b317e33b10d41c79f19a5702",
+        "be4a91c3d5fabcabc408273fd9dcdd4b3cbe4f28"
+      ],
+      "tested_merge_tree": "bd5abcfdbb77e9355675b35f05f1b7eebbe518f8"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "67c2514f87b40d646dbc87c82a2c94117fbfd8a2",
+      "base_tree": "7cc60bea77022686b51321d6ef5e8d60e428d7dd",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "e25b8693325037d921fcd69104527ca588e6f366",
+      "candidate_base_tree": "24163ceaa35734e9d5e1bc33abd286f9475315fe",
+      "candidate_pair_delta_path_count": 35,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "0ed4640b9c710f30f836c05c77df2c64a05f756e4c05820347918dc75b5dbb76",
+      "candidate_pair_delta_status_counts": {
+        "A": 2,
+        "D": 1,
+        "M": 32
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "da3806a733e014a8ba3aaf529aba56e1f3f6bbf0",
+      "candidate_tested_merge_tree": "70a961dcdf87685e138c24028624d0236f5952e8",
+      "cohort_changed_paths_raw_no_rename_match": false,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 35,
+      "original_pair_delta_sha256": "0ed4640b9c710f30f836c05c77df2c64a05f756e4c05820347918dc75b5dbb76",
+      "original_pair_delta_status_counts": {
+        "A": 2,
+        "D": 1,
+        "M": 32
+      },
+      "original_pair_patch_sha256": "ff66b75d1166645c47c18a07b531b665d0dc7225330ff16d8d992b88f7b3fb46",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "70a961dcdf87685e138c24028624d0236f5952e8",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 15990,
+      "rename_normalized_changed_paths": [
+        "agentplane/BUILD.bazel",
+        "agentplane/central_sampler/BUILD.bazel",
+        "agentplane/central_sampler/exporter.go",
+        "agentplane/central_sampler/exporter_test.go",
+        "agentplane/docs/runner_control.md",
+        "agentplane/docs/system_overview.md",
+        "agentplane/env/e2e/BUILD.bazel",
+        "agentplane/env/e2e/test_pid1_container.py",
+        "agentplane/env/runtime/BUILD.bazel",
+        "agentplane/env/runtime/ingress/BUILD.bazel",
+        "agentplane/env/runtime/ingress/client.go",
+        "agentplane/env/runtime/ingress/client_test.go",
+        "agentplane/env/runtime/ingress/supervisor.go",
+        "agentplane/env/runtime/ingress_fixture_test.go",
+        "agentplane/env/runtime/ingress_owner_test.go",
+        "agentplane/env/runtime/session_delivery_test.go",
+        "agentplane/history_service/BUILD.bazel",
+        "agentplane/history_service/README.md",
+        "agentplane/history_service/api/ingress/BUILD.bazel",
+        "agentplane/history_service/api/ingress/session_ingress.proto",
+        "agentplane/history_service/ingress/BUILD.bazel",
+        "agentplane/history_service/ingress/bounds_test.go",
+        "agentplane/history_service/ingress/delegated_sampler_test.go",
+        "agentplane/history_service/ingress/ingress.go",
+        "agentplane/history_service/ingress/ingress_test.go",
+        "agentplane/history_service/ingress/sampler_export_test.go",
+        "agentplane/history_service/ingress/svid_test.go",
+        "agentplane/history_service/main.go",
+        "agentplane/history_service/main_test.go",
+        "agentplane/history_service/svid_test.go",
+        "agentplane/history_service/testing/BUILD.bazel",
+        "agentplane/history_service/testing/go_service.py",
+        "agentplane/proto/session.proto",
+        "mypy.ini"
+      ],
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "7e2b87ffd67b0fd2a9537440c4aa97fe312a3cc7",
+      "tested_merge_commit": "1df92d51bd8c970a86d1b52f8f6eb914dd820352",
+      "tested_merge_parents": [
+        "67c2514f87b40d646dbc87c82a2c94117fbfd8a2",
+        "7e2b87ffd67b0fd2a9537440c4aa97fe312a3cc7"
+      ],
+      "tested_merge_tree": "c11a827d41457b508990c1358aeceb78bc1f52ee"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "0a313986d49492730ef2e8b2093086b2c0a017d0",
+      "base_tree": "2c34c188e18498b2996a17f49ebc9c3afb869af4",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "c4bf155cc10c326d8f1e6819f09c9f0da9668c8e",
+      "candidate_base_tree": "1ba9885ad59c1aeb3ff635858ccf05867f530d3b",
+      "candidate_pair_delta_path_count": 35,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "340c6cee9b621603601fcc9073dace92be752424958d39cd1a3a992c72e8ce72",
+      "candidate_pair_delta_status_counts": {
+        "A": 5,
+        "D": 0,
+        "M": 30
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "1e994b0d21b07ebb2096929f7738f942a78318fd",
+      "candidate_tested_merge_tree": "014410a9c0ad238079b937fb9620782a8006f7ab",
+      "cohort_changed_paths_raw_no_rename_match": true,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 35,
+      "original_pair_delta_sha256": "340c6cee9b621603601fcc9073dace92be752424958d39cd1a3a992c72e8ce72",
+      "original_pair_delta_status_counts": {
+        "A": 5,
+        "D": 0,
+        "M": 30
+      },
+      "original_pair_patch_sha256": "38e6dc8cf1fcfa31ad28b1ffd85e8e4249d7c4d7306e3cb6e418fdc5a721e00e",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "014410a9c0ad238079b937fb9620782a8006f7ab",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 16009,
+      "rename_normalized_changed_paths": null,
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "platform/wiring",
+      "tested_head_commit": "8e1ff05337635ce1f13f3a01711f933c6518eb11",
+      "tested_merge_commit": "20a9030893605db5a3002a88a4d91e9dfb7cdcf3",
+      "tested_merge_parents": [
+        "0a313986d49492730ef2e8b2093086b2c0a017d0",
+        "8e1ff05337635ce1f13f3a01711f933c6518eb11"
+      ],
+      "tested_merge_tree": "403eea7c98cdb738b206102cb32a16748f635da8"
+    },
+    {
+      "all_four_app_test_module_asts_and_decorators_preserved": true,
+      "base_commit": "68d2a6c302d9abc8eb19f70e9b51dc5060b0e36a",
+      "base_tree": "f845e5cd6850ea19b15ad8b8b5830fcd0c60d365",
+      "candidate_base_conflicts": [],
+      "candidate_base_provisional_tree": "187e50a2ad8b75a0f34cd35af613823984514166",
+      "candidate_base_tree": "094563d9510a39a33663e948f20ad4766139752f",
+      "candidate_pair_delta_path_count": 12,
+      "candidate_pair_delta_paths_and_statuses_equal": true,
+      "candidate_pair_delta_sha256": "1ea573b8b874e1e4021f2ba6bc70b187a24d5ec41c440c20b10a55fa8d3dafe2",
+      "candidate_pair_delta_status_counts": {
+        "A": 4,
+        "D": 1,
+        "M": 7
+      },
+      "candidate_tested_merge_conflicts": [],
+      "candidate_tested_merge_provisional_tree": "62b708bb449fffeac84f9a2380e19651cbff3756",
+      "candidate_tested_merge_tree": "fa56ed0d8da090c8072591da0cf9b21ed294ee4d",
+      "cohort_changed_paths_raw_no_rename_match": false,
+      "cohort_changed_paths_raw_no_rename_sha256_match": true,
+      "cohort_changed_paths_rename_normalized_match": true,
+      "cohort_changed_paths_rename_normalized_sha256_match": true,
+      "compatibility_status": "compatible",
+      "incompatibility_reasons": [],
+      "non_overlay_pair_blobs_unchanged": true,
+      "original_pair_delta_path_count": 12,
+      "original_pair_delta_sha256": "1ea573b8b874e1e4021f2ba6bc70b187a24d5ec41c440c20b10a55fa8d3dafe2",
+      "original_pair_delta_status_counts": {
+        "A": 4,
+        "D": 1,
+        "M": 7
+      },
+      "original_pair_patch_sha256": "87895f6cc9ea1530c925126a59133d7d8a803423635505dbede5b41f6a0ea9e5",
+      "overlay_entries_identical_between_candidate_arms_when_unmodified_by_pair": true,
+      "overlay_equality_scope": "no historical pair path overlaps the 11 App-cut paths",
+      "overlay_intersections_with_pair_delta": [],
+      "pair_era_adaptations_base": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_era_adaptations_equal_across_sides": true,
+      "pair_era_adaptations_merge": {
+        "legacy_target": {
+          "kind": "restore-legacy-target",
+          "pair_side_target_sha256": "a2cadaaa4e59f6f70e41022694ce0eee903bc3b52f77549ec96b6ac725ffae0b",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "reason": "retain historical fixture API while the App-cut targets use split fixtures",
+          "target": "runner_gateway"
+        },
+        "transport_import": {
+          "kind": "adapt-import-to-pair-era-module",
+          "module": "agentplane/environment_runtime_transport/config.py",
+          "path": "agentplane/app/testing/runtime_fixtures.py"
+        }
+      },
+      "pair_patch_application": {
+        "applied": true,
+        "candidate_patch_result_tree": "fa56ed0d8da090c8072591da0cf9b21ed294ee4d",
+        "equals_candidate_tested_merge": true
+      },
+      "pair_patch_applies_to_candidate_base_and_recreates_candidate_merge": true,
+      "pr_number": 16020,
+      "rename_normalized_changed_paths": [
+        "agentplane/central_sampler/BUILD.bazel",
+        "agentplane/central_sampler/README.md",
+        "agentplane/central_sampler/cmd/BUILD.bazel",
+        "agentplane/central_sampler/cmd/main.go",
+        "agentplane/central_sampler/exporter_outbox.go",
+        "agentplane/central_sampler/exporter_test.go",
+        "agentplane/central_sampler/historyexport/BUILD.bazel",
+        "agentplane/central_sampler/historyexport/exporter.go",
+        "agentplane/central_sampler/historyexport/exporter_test.go",
+        "agentplane/history_service/ingress/BUILD.bazel",
+        "agentplane/history_service/ingress/sampler_export_test.go"
+      ],
+      "required_gate_outcome": "green",
+      "reviewed_build_resolutions_base": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "reviewed_build_resolutions_merge": [
+        {
+          "conflict_count": 1,
+          "hunk_signature": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819",
+          "path": "agentplane/app/testing/BUILD.bazel",
+          "resolution": "used the previously reviewed one-hunk App target split, then restored the pair-side runner_gateway target if present"
+        }
+      ],
+      "same_pinned_app_cut_operations_used_for_both_arms": true,
+      "stratum": "Runtime/backend",
+      "tested_head_commit": "c3440e69ad2ae6631606e7ee1d7fb314a5c80d8e",
+      "tested_merge_commit": "94ef7295321a09da89968b5f6b3be08377465c7e",
+      "tested_merge_parents": [
+        "68d2a6c302d9abc8eb19f70e9b51dc5060b0e36a",
+        "c3440e69ad2ae6631606e7ee1d7fb314a5c80d8e"
+      ],
+      "tested_merge_tree": "a772ed1da7649f5819e98ed4138d6b4a4fdedaa6"
+    }
+  ],
+  "reviewed_conflict": {
+    "hunk_count": 1,
+    "path": "agentplane/app/testing/BUILD.bazel",
+    "resolution": "allow only this exact previously reviewed one-hunk target split; restore pair-side runner_gateway target; never use a generic --theirs fallback",
+    "signature_sha256": "0b35b55e698265df5f66f4a5c1f73936cda7bac9bb08fa2f639ac25adc829819"
+  },
+  "schema": "ducktape.historical_app_cut_cohort_stage.v1",
+  "scope": "Selector-free staging/audit of only the isolated 11-path App fixture ownership subfeature across the retained 30-pair cohort; not full architecture qualification or test execution.",
+  "source": {
+    "commit": "5699e8758f04bdf8c5834fbe21d7bafb8fbd9702",
+    "overlay_path_count": 11,
+    "overlay_paths": [
+      ["M", "agentplane/app/BUILD.bazel"],
+      ["M", "agentplane/app/integration_fixtures.py"],
+      ["M", "agentplane/app/test_bridge.py"],
+      ["M", "agentplane/app/test_history_gateway.py"],
+      ["M", "agentplane/app/test_live.py"],
+      ["M", "agentplane/app/test_thread_browser.py"],
+      ["M", "agentplane/app/testing/BUILD.bazel"],
+      ["A", "agentplane/app/testing/gateway_fixtures.py"],
+      ["A", "agentplane/app/testing/runtime_fixtures.py"],
+      ["M", "agentplane/runner_gateway/BUILD.bazel"],
+      ["M", "agentplane/runner_gateway/conftest.py"]
+    ],
+    "overlay_paths_sha256_newline_terminated": "e506be9fb995e9ff1d7ec6544522242346e4f317be941323a6e0cfb86bc575d7",
+    "parent": "135dba720768d9dfdb60a122145d9d23f9699dd0"
+  },
+  "status": "complete-inventory"
+}

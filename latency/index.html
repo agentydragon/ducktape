@@ -378,14 +378,81 @@
             >
               <${Stack} gap="sm">
                 <${Title} order=${2}
-                  >Bridge critical path and shard-count probe<//
+                  >Iteration 9 source update and retained Bridge evidence<//
                 >
                 <${Text} size="sm" c="dimmed">
                   Supplemental selected evidence, observed
-                  ${" "}${architectureFollowup.observed_at_utc}. The backend
-                  cohort windows, source revision and rate denominators above
-                  were not recollected.
+                  ${" "}${architectureFollowup.iteration9.observed_at_utc}. The
+                  backend cohort windows, source revision and rate denominators
+                  above were not recollected.
                 <//>
+                <${Title} order=${3} mt="sm">Current checked source · 8a555<//>
+                <${Text}>
+                  Source 8a555b2 passed all three required checks. The workflow
+                  creation-to-last-required-result clock was 351s; its native
+                  TestRunner invocation had 59 fresh physical actions and 292
+                  passing cases, with no failures, errors or skips. This is one
+                  observation, not a whole-CI saving. The older 0a9 workflow had
+                  eight fresh Bridge actions and a 264s clock, so those figures
+                  are not a matched comparison. ${" "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/required-ci-8a5-workflow.json"
+                    >8a555 required-CI record<//
+                  >
+                <//>
+                <${Text}>
+                  The bytecode collection screen used the same 24 collected
+                  cases and ran no bodies. Mean import self-time fell by 4.494s,
+                  while cold B1 added 3,455 PyCompile actions, 4,202.992 CPU
+                  seconds and 83.444s Bazel elapsed versus A1. The full
+                  warm-target comparison remains open; this result does not
+                  support adopting the change by itself. ${" "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/python-bytecode-collection-screen.json"
+                    >Collection and compile-cost evidence<//
+                  >
+                <//>
+                <${Text}>
+                  The earlier 0a9 profile recorded 93.111s before the first
+                  physical Bridge action. Its exact required-CI log had no
+                  Debian 404s and observed APT spans cover 5.747s. This
+                  architecture branch changes the CI driver, deliberately
+                  selecting a full-repository sweep; the profile includes
+                  unrelated projects. Its pre-test interval is not a measurement
+                  of ordinary backend selected-graph setup. A separate manual
+                  8a555 guest build logged 45 live-mirror package 404s and 22
+                  snapshot metadata misses, but no delay is attributed to those
+                  warnings; the combined analysis/build interval is
+                  unclassified. ${" "}
+                  <${Anchor}
+                    href="../agentplane-test-architecture/setup-attribution.json"
+                    >Setup attribution and limits<//
+                  >
+                <//>
+                <${Group} gap="md">
+                  <${Anchor}
+                    href="../agentplane-test-architecture/historical-app-cut-four-pair-selector.json"
+                    >Four additional historical selectors<//
+                  >
+                  <${Anchor}
+                    href="../agentplane-test-architecture/historical-app-cut-pair-deltas.jsonl"
+                    >Thirty pair deltas<//
+                  >
+                  <${Anchor}
+                    href="../agentplane-test-architecture/historical-app-cut-pair-asts.jsonl"
+                    >AST preservation audit<//
+                  >
+                <//>
+                <${Text}>
+                  Four additional historical App-cut selector pairs completed
+                  with identical runnable test sets in both arms: 29, 180, 285
+                  and 57 tests. The two Runtime-owning App suites stay selected
+                  wherever affected. The earlier #15858 pair removed 12
+                  unrelated App tests; this cut does not help every backend
+                  change. These are selector queries, with no selected builds or
+                  test bodies.
+                <//>
+                <${Title} order=${3} mt="sm">Prior source5699 critical path<//>
                 <${Text}>
                   In the 13 November source5699 full run, Bridge shard 2/4 was
                   the critical TestRunner at 109.44s; 98.31% of its duration was
@@ -430,9 +497,9 @@
                   760,
                 )}
                 <${Text}>
-                  The paired means were
+                  The paired means were${" "}
                   ${architectureFollowup.bridge_sharding_probe.arm_means.shards_4_bazel_elapsed_seconds}s
-                  at four shards and
+                  at four shards and${" "}
                   ${architectureFollowup.bridge_sharding_probe.arm_means.shards_8_bazel_elapsed_seconds}s
                   at eight shards, 24.90% lower selected-target elapsed at
                   eight. Mean physical envelope fell from 121.261s to 88.526s
@@ -452,12 +519,11 @@
                   Eight shards are enabled on the architecture branch as a
                   scheduling candidate. The 0a9acbf source passed all three
                   required checks with eight fresh Bridge actions and cached
-                  results for other tests. Its 264s feedback clock is not
-                  comparable as a saving to the earlier a16af 356s workflow,
-                  which had 65 fresh actions and a different last target. No
-                  whole-CI saving is claimed. Both shard settings sped up
-                  between their two runs, so worker and cache variability remain
-                  relevant. ${" "}
+                  results for other tests. The newer 8a555 workflow had 59 fresh
+                  actions across its native invocation; neither workflow is a
+                  matched shard-count experiment. No whole-CI saving is claimed.
+                  Both shard settings sped up between their two runs, so worker
+                  and cache variability remain relevant. ${" "}
                   <${Anchor} href="bridge-sharding-probe.json"
                     >Four-run source/CAS record<//
                   >

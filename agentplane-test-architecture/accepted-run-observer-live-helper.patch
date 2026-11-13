@@ -1,0 +1,901 @@
+diff --git a/cli/remotebazel/liveprobe/BUILD b/cli/remotebazel/liveprobe/BUILD
+new file mode 100644
+index 000000000..7d03cb7d5
+--- /dev/null
++++ b/cli/remotebazel/liveprobe/BUILD
+@@ -0,0 +1,48 @@
++load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
++
++package(default_visibility = ["//visibility:private"])
++
++go_library(
++    name = "liveprobe_lib",
++    srcs = ["liveprobe.go"],
++    importpath = "github.com/buildbuddy-io/buildbuddy/cli/remotebazel/liveprobe",
++    deps = [
++        "//proto:buildbuddy_service_go_proto",
++        "//proto:eventlog_go_proto",
++        "//proto:execution_stats_go_proto",
++        "//proto:invocation_go_proto",
++        "//proto:remote_execution_go_proto",
++        "//proto:runner_go_proto",
++        "//server/util/grpc_client",
++        "@org_golang_google_grpc//:grpc",
++        "@org_golang_google_grpc//codes",
++        "@org_golang_google_grpc//metadata",
++        "@org_golang_google_grpc//status",
++		"@org_golang_google_protobuf//proto",
++        "@org_golang_google_protobuf//types/known/anypb",
++    ],
++)
++
++go_binary(
++    name = "liveprobe",
++    embed = [":liveprobe_lib"],
++    visibility = ["//visibility:public"],
++)
++
++go_test(
++    name = "liveprobe_test",
++    srcs = ["liveprobe_test.go"],
++    embed = [":liveprobe_lib"],
++    deps = [
++        "//proto:buildbuddy_service_go_proto",
++        "//proto:eventlog_go_proto",
++        "//proto:execution_stats_go_proto",
++        "//proto:invocation_go_proto",
++        "//proto:remote_execution_go_proto",
++        "//proto:runner_go_proto",
++        "@org_golang_google_grpc//:grpc",
++        "@org_golang_google_grpc//codes",
++        "@org_golang_google_grpc//credentials/insecure",
++        "@org_golang_google_grpc//status",
++    ],
++)
+diff --git a/cli/remotebazel/liveprobe/liveprobe.go b/cli/remotebazel/liveprobe/liveprobe.go
+new file mode 100644
+index 000000000..40a002440
+--- /dev/null
++++ b/cli/remotebazel/liveprobe/liveprobe.go
+@@ -0,0 +1,714 @@
++// Command liveprobe runs one harmless remote command through a loopback gRPC
++// proxy that injects a log-observer failure after forwarding one real log chunk.
++// It is deliberately outside the production CLI package and is never used by CI.
++package main
++
++import (
++	"context"
++	"crypto/rand"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"flag"
++	"fmt"
++	"io"
++	"net"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"slices"
++	"strings"
++	"sync"
++	"time"
++
++	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
++	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
++	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
++	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
++	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
++	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
++	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
++	"google.golang.org/grpc"
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/metadata"
++	"google.golang.org/grpc/status"
++	"google.golang.org/protobuf/proto"
++	"google.golang.org/protobuf/types/known/anypb"
++)
++
++const (
++	defaultUpstream             = "grpcs://remote.buildbuddy.io"
++	defaultRemoteTimeout        = 5 * time.Minute
++	defaultFirstLogChunkTimeout = 60 * time.Second
++	defaultHarnessTimeout       = 8 * time.Minute
++	expectedRemoteExitCode      = 23
++)
++
++type options struct {
++	cliPath           string
++	upstream          string
++	branch            string
++	commit            string
++	reportPath        string
++	remoteTimeout     time.Duration
++	firstLogChunkWait time.Duration
++	harnessTimeout    time.Duration
++}
++
++type report struct {
++	StartedAt                    time.Time `json:"started_at"`
++	FinishedAt                   time.Time `json:"finished_at"`
++	SourceCommit                 string    `json:"source_commit"`
++	CLIPathSHA256                string    `json:"cli_path_sha256"`
++	ScriptNonceSHA256            string    `json:"script_nonce_sha256"`
++	RunName                      string    `json:"run_name"`
++	RunAttempts                  int       `json:"run_attempts"`
++	RunForwardAttempts           int       `json:"run_forward_attempts"`
++	RunForwardSucceeded          int       `json:"run_forward_succeeded"`
++	AcceptedInvocationID         string    `json:"accepted_invocation_id,omitempty"`
++	LogStreamAttempts            int       `json:"log_stream_attempts"`
++	LogStreamMatched             int       `json:"log_stream_matched"`
++	LogStreamForwardAttempts     int       `json:"log_stream_forward_attempts"`
++	LogChunksReceivedUpstream    int       `json:"log_chunks_received_upstream"`
++	LogChunksForwarded           int       `json:"log_chunks_forwarded"`
++	ObserverErrorsInjected       int       `json:"observer_errors_injected"`
++	LogObserverFailureCode       string    `json:"log_observer_failure_code,omitempty"`
++	CancelAttempts               int       `json:"cancel_attempts"`
++	CancelForwardAttempts        int       `json:"cancel_forward_attempts"`
++	GetExecutionAttempts         int       `json:"get_execution_attempts"`
++	GetExecutionForwardAttempts  int       `json:"get_execution_forward_attempts"`
++	ExecutionIDs                 []string  `json:"execution_ids,omitempty"`
++	WaitExecutionStreams         int       `json:"wait_execution_streams"`
++	WaitExecutionForwardAttempts int       `json:"wait_execution_forward_attempts"`
++	WaitExecutionNames           []string  `json:"wait_execution_names,omitempty"`
++	TerminalOperations           int       `json:"terminal_operations"`
++	TerminalResultUnpackOK       bool      `json:"terminal_result_unpack_ok"`
++	TerminalResultStatusCode     int32     `json:"terminal_result_status_code,omitempty"`
++	RemoteExitCode               *int32    `json:"remote_exit_code,omitempty"`
++	GetInvocationAttempts        int       `json:"get_invocation_attempts"`
++	GetInvocationForwardAttempts int       `json:"get_invocation_forward_attempts"`
++	GetInvocationAfterTerminal   int       `json:"get_invocation_after_terminal"`
++	GetInvocationBeforeTerminal  int       `json:"get_invocation_before_terminal"`
++	CLIExitCode                  *int      `json:"cli_exit_code,omitempty"`
++	CLIProcessError              bool      `json:"cli_process_error"`
++	CLIInvocationIDMatches       bool      `json:"cli_invocation_id_matches"`
++	ProbePassed                  bool      `json:"probe_passed"`
++	FailureStage                 string    `json:"failure_stage,omitempty"`
++	RPCErrorCodes                []string  `json:"rpc_error_codes,omitempty"`
++}
++
++type probe struct {
++	opts      options
++	cliHash   string
++	nonce     string
++	nonceHash string
++	runName   string
++	script    string
++	state     *state
++	report    report
++}
++
++type state struct {
++	mu sync.Mutex
++	r  report
++
++	runClaimed  bool
++	logClaimed  bool
++	terminal    bool
++	executionID string
++
++	backend bbspb.BuildBuddyServiceClient
++	exec    repb.ExecutionClient
++}
++
++type buildBuddyProxyServer interface {
++	run(context.Context, *rnpb.RunRequest) (*rnpb.RunResponse, error)
++	getEventLog(*elpb.GetEventLogChunkRequest, grpc.ServerStream) error
++	cancelExecutions(context.Context, *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error)
++	getExecution(context.Context, *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error)
++	getInvocation(context.Context, *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error)
++}
++
++type executionProxyServer interface {
++	waitExecution(*repb.WaitExecutionRequest, grpc.ServerStream) error
++}
++
++func main() {
++	var opts options
++	flag.StringVar(&opts.cliPath, "bb-binary", "", "path to the already-built bb executable")
++	flag.StringVar(&opts.upstream, "upstream", defaultUpstream, "BuildBuddy gRPC TLS endpoint")
++	flag.StringVar(&opts.branch, "run-from-branch", "master", "remote source branch for the harmless run")
++	flag.StringVar(&opts.commit, "run-from-commit", "", "remote source commit for the harmless run")
++	flag.StringVar(&opts.reportPath, "report", "", "path for allowlisted JSON evidence")
++	flag.DurationVar(&opts.remoteTimeout, "remote-timeout", defaultRemoteTimeout, "server-side remote run timeout")
++	flag.DurationVar(&opts.firstLogChunkWait, "first-log-chunk-timeout", defaultFirstLogChunkTimeout, "maximum wait for one real log chunk before injecting")
++	flag.DurationVar(&opts.harnessTimeout, "harness-timeout", defaultHarnessTimeout, "maximum local CLI process duration")
++	flag.Parse()
++
++	if err := validateOptions(opts); err != nil {
++		fmt.Fprintln(os.Stderr, "invalid liveprobe options")
++		os.Exit(2)
++	}
++	ctx, cancel := context.WithTimeout(context.Background(), opts.harnessTimeout)
++	defer cancel()
++	p, err := newProbe(opts)
++	if err == nil {
++		err = p.executeProbe(ctx)
++	}
++	if p != nil {
++		p.report.FinishedAt = time.Now().UTC()
++		p.report.ProbePassed = err == nil
++		if err != nil && p.report.FailureStage == "" {
++			p.report.FailureStage = "probe"
++		}
++		if writeErr := p.writeReport(); writeErr != nil {
++			fmt.Fprintln(os.Stderr, "could not write liveprobe report")
++			os.Exit(1)
++		}
++	}
++	if err != nil {
++		fmt.Fprintln(os.Stderr, "liveprobe failed; inspect the sanitized report")
++		os.Exit(1)
++	}
++}
++
++func validateOptions(opts options) error {
++	if opts.cliPath == "" || opts.reportPath == "" || opts.commit == "" || opts.branch == "" {
++		return errors.New("bb-binary, report, run-from-branch, and run-from-commit are required")
++	}
++	if opts.remoteTimeout <= 0 || opts.firstLogChunkWait <= 0 || opts.harnessTimeout <= opts.remoteTimeout {
++		return errors.New("timeouts must be positive and harness timeout must exceed remote timeout")
++	}
++	if opts.upstream != defaultUpstream {
++		return errors.New("upstream is pinned to the hosted BuildBuddy endpoint")
++	}
++	commit, err := hex.DecodeString(opts.commit)
++	if err != nil || len(commit) != 20 {
++		return errors.New("run-from-commit must be a full 40-character SHA")
++	}
++	return nil
++}
++
++func newProbe(opts options) (*probe, error) {
++	cliHash, err := fileSHA256(opts.cliPath)
++	if err != nil {
++		return nil, err
++	}
++	var random [24]byte
++	if _, err := rand.Read(random[:]); err != nil {
++		return nil, err
++	}
++	nonce := hex.EncodeToString(random[:])
++	nonceHash := sha256.Sum256([]byte(nonce))
++	runName := "remote run"
++	script := "set -eu; printf '%s\\n' '" + nonce + "'; exit 23"
++	p := &probe{
++		opts:      opts,
++		cliHash:   cliHash,
++		nonce:     nonce,
++		nonceHash: hex.EncodeToString(nonceHash[:]),
++		runName:   runName,
++		script:    script,
++	}
++	p.state = &state{}
++	p.report = report{
++		StartedAt:         time.Now().UTC(),
++		SourceCommit:      opts.commit,
++		CLIPathSHA256:     cliHash,
++		ScriptNonceSHA256: p.nonceHash,
++		RunName:           runName,
++	}
++	p.state.r = p.report
++	return p, nil
++}
++
++func fileSHA256(path string) (string, error) {
++	info, err := os.Stat(path)
++	if err != nil {
++		return "", fmt.Errorf("stat CLI binary: %w", err)
++	}
++	if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
++		return "", errors.New("CLI binary must be a regular executable file")
++	}
++	f, err := os.Open(path)
++	if err != nil {
++		return "", fmt.Errorf("open CLI binary: %w", err)
++	}
++	defer f.Close()
++	h := sha256.New()
++	if _, err := io.Copy(h, f); err != nil {
++		return "", fmt.Errorf("hash CLI binary: %w", err)
++	}
++	return hex.EncodeToString(h.Sum(nil)), nil
++}
++
++func (p *probe) executeProbe(ctx context.Context) error {
++	upstreamConn, err := grpc_client.DialSimple(p.opts.upstream)
++	if err != nil {
++		p.report.FailureStage = "upstream_dial"
++		return err
++	}
++	defer upstreamConn.Close()
++
++	p.state.backend = bbspb.NewBuildBuddyServiceClient(upstreamConn)
++	p.state.exec = repb.NewExecutionClient(upstreamConn)
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		p.report.FailureStage = "loopback_listen"
++		return err
++	}
++	defer listener.Close()
++	server := grpc.NewServer()
++	server.RegisterService(&buildBuddyServiceDesc, p)
++	server.RegisterService(&executionServiceDesc, p)
++	serveDone := make(chan error, 1)
++	go func() { serveDone <- server.Serve(listener) }()
++
++	workDir, err := os.Getwd()
++	if err != nil {
++		p.report.FailureStage = "get_workdir"
++		server.Stop()
++		<-serveDone
++		return err
++	}
++	iidFile := filepath.Join(os.TempDir(), "outer-stream-live-probe-"+p.nonce+".iid")
++	defer os.Remove(iidFile)
++	localTarget := "grpc://" + listener.Addr().String()
++	args := []string{
++		"remote",
++		"--remote_runner=" + localTarget,
++		"--timeout=" + p.opts.remoteTimeout.String(),
++		"--script=" + p.script,
++		"--invocation_id_file=" + iidFile,
++		"--run_from_branch=" + p.opts.branch,
++		"--run_from_commit=" + p.opts.commit,
++	}
++	cmdCtx, cancel := context.WithTimeout(ctx, p.opts.harnessTimeout)
++	defer cancel()
++	cmd := exec.CommandContext(cmdCtx, p.opts.cliPath, args...)
++	cmd.Dir = workDir
++	cmd.Stdout = io.Discard
++	cmd.Stderr = io.Discard
++	cmd.Env = os.Environ()
++	err = cmd.Run()
++	if err != nil {
++		p.report.CLIProcessError = true
++		if exitErr := new(exec.ExitError); errors.As(err, &exitErr) {
++			code := exitErr.ExitCode()
++			p.report.CLIExitCode = &code
++		} else {
++			p.report.FailureStage = "cli_process"
++		}
++	} else {
++		code := 0
++		p.report.CLIExitCode = &code
++	}
++	server.Stop()
++	if serveErr := <-serveDone; serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
++		p.report.FailureStage = "proxy_serve"
++		return serveErr
++	}
++
++	iidBytes, readErr := os.ReadFile(iidFile)
++	if readErr == nil {
++		p.report.CLIInvocationIDMatches = strings.TrimSpace(string(iidBytes)) == p.report.AcceptedInvocationID && p.report.AcceptedInvocationID != ""
++	}
++	p.state.mu.Lock()
++	p.report = p.state.r
++	p.state.mu.Unlock()
++	// Restore harness-owned fields that proxy handlers cannot change.
++	p.report.StartedAt = p.report.StartedAt.UTC()
++	p.report.SourceCommit = p.opts.commit
++	p.report.CLIPathSHA256 = p.cliHash
++	p.report.ScriptNonceSHA256 = p.nonceHash
++	p.report.RunName = p.runName
++	p.report.CLIProcessError = err != nil
++	if cmd.ProcessState != nil {
++		code := cmd.ProcessState.ExitCode()
++		p.report.CLIExitCode = &code
++	}
++	p.report.CLIInvocationIDMatches = readErr == nil && strings.TrimSpace(string(iidBytes)) == p.report.AcceptedInvocationID && p.report.AcceptedInvocationID != ""
++
++	if err != nil && !errors.As(err, new(*exec.ExitError)) {
++		return err
++	}
++	if err == nil || cmd.ProcessState == nil || cmd.ProcessState.ExitCode() != expectedRemoteExitCode {
++		p.report.FailureStage = "cli_exit_code"
++		return errors.New("CLI exit did not match the expected remote process exit")
++	}
++	if !p.passedContract() {
++		p.report.FailureStage = "contract_assertions"
++		return errors.New("proxy observations did not satisfy the probe contract")
++	}
++	return nil
++}
++
++func (p *probe) passedContract() bool {
++	r := p.report
++	return r.RunAttempts == 1 &&
++		r.RunForwardAttempts == 1 &&
++		r.RunForwardSucceeded == 1 &&
++		r.AcceptedInvocationID != "" &&
++		r.LogStreamAttempts == 1 &&
++		r.LogStreamMatched == 1 &&
++		r.LogStreamForwardAttempts == 1 &&
++		r.LogChunksReceivedUpstream == 1 &&
++		r.LogChunksForwarded == 1 &&
++		r.ObserverErrorsInjected == 1 &&
++		r.CancelAttempts == 0 &&
++		r.CancelForwardAttempts == 0 &&
++		r.GetExecutionAttempts > 0 &&
++		r.GetExecutionForwardAttempts > 0 &&
++		len(r.ExecutionIDs) == 1 &&
++		r.WaitExecutionStreams > 0 &&
++		r.WaitExecutionForwardAttempts > 0 &&
++		waitNamesMatch(r.WaitExecutionNames, r.ExecutionIDs[0]) &&
++		r.TerminalOperations == 1 &&
++		r.TerminalResultUnpackOK &&
++		r.TerminalResultStatusCode == 0 &&
++		r.RemoteExitCode != nil &&
++		*r.RemoteExitCode == expectedRemoteExitCode &&
++		r.GetInvocationAfterTerminal > 0 &&
++		r.GetInvocationForwardAttempts > 0 &&
++		r.GetInvocationBeforeTerminal == 0 &&
++		r.CLIExitCode != nil &&
++		*r.CLIExitCode == expectedRemoteExitCode &&
++		r.CLIInvocationIDMatches
++}
++
++func waitNamesMatch(names []string, executionID string) bool {
++	if len(names) == 0 || executionID == "" {
++		return false
++	}
++	for _, name := range names {
++		if name != executionID {
++			return false
++		}
++	}
++	return true
++}
++
++func (p *probe) writeReport() error {
++	data, err := json.MarshalIndent(p.report, "", "  ")
++	if err != nil {
++		return err
++	}
++	if err := os.MkdirAll(filepath.Dir(p.opts.reportPath), 0700); err != nil {
++		return err
++	}
++	tmp := p.opts.reportPath + ".tmp"
++	if err := os.WriteFile(tmp, append(data, '\n'), 0600); err != nil {
++		return err
++	}
++	return os.Rename(tmp, p.opts.reportPath)
++}
++
++func (s *state) recordCode(err error) {
++	if err == nil {
++		return
++	}
++	s.mu.Lock()
++	defer s.mu.Unlock()
++	s.r.RPCErrorCodes = append(s.r.RPCErrorCodes, status.Code(err).String())
++}
++
++func outgoingContext(ctx context.Context) context.Context {
++	md, ok := metadata.FromIncomingContext(ctx)
++	if !ok {
++		return ctx
++	}
++	return metadata.NewOutgoingContext(ctx, md.Copy())
++}
++
++func (p *probe) run(ctx context.Context, req *rnpb.RunRequest) (*rnpb.RunResponse, error) {
++	s := p.state
++	s.mu.Lock()
++	s.r.RunAttempts++
++	if s.runClaimed {
++		s.mu.Unlock()
++		return nil, status.Error(codes.FailedPrecondition, "one-shot probe accepts one Run")
++	}
++	s.runClaimed = true
++	s.mu.Unlock()
++
++	if req.GetName() != p.runName || len(req.GetSteps()) != 1 || req.GetSteps()[0].GetRun() != p.script {
++		return nil, status.Error(codes.PermissionDenied, "Run does not match the generated one-shot probe")
++	}
++	s.mu.Lock()
++	s.r.RunForwardAttempts++
++	s.mu.Unlock()
++	rsp, err := s.backend.Run(outgoingContext(ctx), req)
++	if err != nil {
++		s.recordCode(err)
++		return nil, err
++	}
++	if rsp.GetInvocationId() == "" {
++		return nil, status.Error(codes.DataLoss, "upstream Run returned no invocation ID")
++	}
++	s.mu.Lock()
++	s.r.RunForwardSucceeded++
++	s.r.AcceptedInvocationID = rsp.GetInvocationId()
++	s.mu.Unlock()
++	return rsp, nil
++}
++
++func (p *probe) getEventLog(req *elpb.GetEventLogChunkRequest, stream grpc.ServerStream) error {
++	s := p.state
++	s.mu.Lock()
++	s.r.LogStreamAttempts++
++	iid := s.r.AcceptedInvocationID
++	if iid == "" || req.GetInvocationId() != iid {
++		s.mu.Unlock()
++		return status.Error(codes.FailedPrecondition, "log stream invocation does not match accepted probe Run")
++	}
++	s.r.LogStreamMatched++
++	if s.logClaimed {
++		s.mu.Unlock()
++		return status.Error(codes.FailedPrecondition, "log observer stream was already claimed")
++	}
++	s.logClaimed = true
++	s.mu.Unlock()
++
++	ctx, cancel := context.WithTimeout(outgoingContext(stream.Context()), p.opts.firstLogChunkWait)
++	defer cancel()
++	s.mu.Lock()
++	s.r.LogStreamForwardAttempts++
++	s.mu.Unlock()
++	upstream, err := s.backend.GetEventLog(ctx, req)
++	if err != nil {
++		s.recordCode(err)
++		return err
++	}
++	chunk, err := upstream.Recv()
++	if err != nil {
++		s.recordCode(err)
++		return err
++	}
++	s.mu.Lock()
++	s.r.LogChunksReceivedUpstream++
++	s.mu.Unlock()
++	if err := stream.SendMsg(chunk); err != nil {
++		s.recordCode(err)
++		return err
++	}
++	s.mu.Lock()
++	s.r.LogChunksForwarded++
++	s.r.ObserverErrorsInjected++
++	s.r.LogObserverFailureCode = codes.Internal.String()
++	s.mu.Unlock()
++	return status.Error(codes.Internal, "injected isolated log-observer failure after upstream chunk")
++}
++
++func (p *probe) cancelExecutions(ctx context.Context, req *inpb.CancelExecutionsRequest) (*inpb.CancelExecutionsResponse, error) {
++	s := p.state
++	s.mu.Lock()
++	s.r.CancelAttempts++
++	iid := s.r.AcceptedInvocationID
++	if iid == "" || req.GetInvocationId() != iid {
++		s.mu.Unlock()
++		return nil, status.Error(codes.FailedPrecondition, "cancellation invocation does not match accepted probe Run")
++	}
++	s.r.CancelForwardAttempts++
++	s.mu.Unlock()
++	rsp, err := s.backend.CancelExecutions(outgoingContext(ctx), req)
++	if err != nil {
++		s.recordCode(err)
++	}
++	return rsp, err
++}
++
++func (p *probe) getExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
++	s := p.state
++	s.mu.Lock()
++	s.r.GetExecutionAttempts++
++	iid := s.r.AcceptedInvocationID
++	if iid == "" || req.GetExecutionLookup().GetInvocationId() != iid {
++		s.mu.Unlock()
++		return nil, status.Error(codes.FailedPrecondition, "execution lookup does not match accepted probe Run")
++	}
++	s.mu.Unlock()
++	s.mu.Lock()
++	s.r.GetExecutionForwardAttempts++
++	s.mu.Unlock()
++	rsp, err := s.backend.GetExecution(outgoingContext(ctx), req)
++	if err != nil {
++		s.recordCode(err)
++		return nil, err
++	}
++	if executions := rsp.GetExecution(); len(executions) > 0 {
++		id := executions[0].GetExecutionId()
++		if id != "" {
++			s.mu.Lock()
++			if s.executionID == "" {
++				s.executionID = id
++			}
++			if s.executionID != id {
++				s.mu.Unlock()
++				return nil, status.Error(codes.DataLoss, "upstream returned inconsistent execution IDs")
++			}
++			s.r.ExecutionIDs = appendUnique(s.r.ExecutionIDs, id)
++			s.mu.Unlock()
++		}
++	}
++	return rsp, nil
++}
++
++func (p *probe) getInvocation(ctx context.Context, req *inpb.GetInvocationRequest) (*inpb.GetInvocationResponse, error) {
++	s := p.state
++	s.mu.Lock()
++	s.r.GetInvocationAttempts++
++	iid := s.r.AcceptedInvocationID
++	if iid == "" || req.GetLookup().GetInvocationId() != iid {
++		s.mu.Unlock()
++		return nil, status.Error(codes.FailedPrecondition, "invocation lookup does not match accepted probe Run")
++	}
++	s.r.GetInvocationForwardAttempts++
++	if s.terminal {
++		s.r.GetInvocationAfterTerminal++
++	} else {
++		s.r.GetInvocationBeforeTerminal++
++	}
++	s.mu.Unlock()
++	rsp, err := s.backend.GetInvocation(outgoingContext(ctx), req)
++	if err != nil {
++		s.recordCode(err)
++		return nil, err
++	}
++	return rsp, nil
++}
++
++func (p *probe) waitExecution(req *repb.WaitExecutionRequest, stream grpc.ServerStream) error {
++	s := p.state
++	s.mu.Lock()
++	s.r.WaitExecutionStreams++
++	s.r.WaitExecutionNames = append(s.r.WaitExecutionNames, req.GetName())
++	if s.executionID == "" || req.GetName() != s.executionID {
++		s.mu.Unlock()
++		return status.Error(codes.FailedPrecondition, "WaitExecution name does not match observed execution")
++	}
++	s.mu.Unlock()
++
++	s.mu.Lock()
++	s.r.WaitExecutionForwardAttempts++
++	s.mu.Unlock()
++	upstream, err := s.exec.WaitExecution(outgoingContext(stream.Context()), req)
++	if err != nil {
++		s.recordCode(err)
++		return err
++	}
++	for {
++		op, err := upstream.Recv()
++		if err != nil {
++			s.recordCode(err)
++			return err
++		}
++		if !op.GetDone() {
++			if err := stream.SendMsg(op); err != nil {
++				s.recordCode(err)
++				return err
++			}
++			continue
++		}
++		var executeResponse repb.ExecuteResponse
++		unpackOK := false
++		if packed := op.GetResponse(); packed != nil {
++			unpackOK = anypb.UnmarshalTo(packed, &executeResponse, proto.UnmarshalOptions{}) == nil && executeResponse.GetResult() != nil
++		}
++		s.mu.Lock()
++		if err := stream.SendMsg(op); err != nil {
++			s.mu.Unlock()
++			s.recordCode(err)
++			return err
++		}
++		s.r.TerminalOperations++
++		s.terminal = true
++		s.r.TerminalResultUnpackOK = unpackOK
++		if unpackOK {
++			code := executeResponse.GetResult().GetExitCode()
++			s.r.RemoteExitCode = &code
++			s.r.TerminalResultStatusCode = executeResponse.GetStatus().GetCode()
++		}
++		s.mu.Unlock()
++		return nil
++	}
++}
++
++func appendUnique(values []string, v string) []string {
++	if slices.Contains(values, v) {
++		return values
++	}
++	return append(values, v)
++}
++
++func unaryHandler[Req any](method string, invoke func(context.Context, buildBuddyProxyServer, *Req) (any, error)) func(any, context.Context, func(any) error, grpc.UnaryServerInterceptor) (any, error) {
++	return func(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
++		req := new(Req)
++		if err := dec(req); err != nil {
++			return nil, err
++		}
++		service := srv.(buildBuddyProxyServer)
++		if interceptor == nil {
++			return invoke(ctx, service, req)
++		}
++		info := &grpc.UnaryServerInfo{Server: srv, FullMethod: "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/" + method}
++		handler := func(ctx context.Context, req any) (any, error) {
++			return invoke(ctx, service, req.(*Req))
++		}
++		return interceptor(ctx, req, info, handler)
++	}
++}
++
++func serverStreamHandler[Req any](invoke func(buildBuddyProxyServer, *Req, grpc.ServerStream) error) func(any, grpc.ServerStream) error {
++	return func(srv any, stream grpc.ServerStream) error {
++		req := new(Req)
++		if err := stream.RecvMsg(req); err != nil {
++			return err
++		}
++		return invoke(srv.(buildBuddyProxyServer), req, stream)
++	}
++}
++
++func executionStreamHandler[Req any](invoke func(executionProxyServer, *Req, grpc.ServerStream) error) func(any, grpc.ServerStream) error {
++	return func(srv any, stream grpc.ServerStream) error {
++		req := new(Req)
++		if err := stream.RecvMsg(req); err != nil {
++			return err
++		}
++		return invoke(srv.(executionProxyServer), req, stream)
++	}
++}
++
++var buildBuddyServiceDesc = grpc.ServiceDesc{
++	ServiceName: bbspb.BuildBuddyService_ServiceDesc.ServiceName,
++	HandlerType: (*buildBuddyProxyServer)(nil),
++	Methods: []grpc.MethodDesc{
++		{MethodName: "Run", Handler: unaryHandler("Run", func(ctx context.Context, s buildBuddyProxyServer, req *rnpb.RunRequest) (any, error) {
++			return s.run(ctx, req)
++		})},
++		{MethodName: "CancelExecutions", Handler: unaryHandler("CancelExecutions", func(ctx context.Context, s buildBuddyProxyServer, req *inpb.CancelExecutionsRequest) (any, error) {
++			return s.cancelExecutions(ctx, req)
++		})},
++		{MethodName: "GetExecution", Handler: unaryHandler("GetExecution", func(ctx context.Context, s buildBuddyProxyServer, req *espb.GetExecutionRequest) (any, error) {
++			return s.getExecution(ctx, req)
++		})},
++		{MethodName: "GetInvocation", Handler: unaryHandler("GetInvocation", func(ctx context.Context, s buildBuddyProxyServer, req *inpb.GetInvocationRequest) (any, error) {
++			return s.getInvocation(ctx, req)
++		})},
++	},
++	Streams: []grpc.StreamDesc{
++		{StreamName: "GetEventLog", Handler: serverStreamHandler(func(s buildBuddyProxyServer, req *elpb.GetEventLogChunkRequest, stream grpc.ServerStream) error {
++			return s.getEventLog(req, stream)
++		}), ServerStreams: true},
++	},
++}
++
++var executionServiceDesc = grpc.ServiceDesc{
++	ServiceName: "build.bazel.remote.execution.v2.Execution",
++	HandlerType: (*executionProxyServer)(nil),
++	Streams: []grpc.StreamDesc{
++		{StreamName: "WaitExecution", Handler: executionStreamHandler(func(s executionProxyServer, req *repb.WaitExecutionRequest, stream grpc.ServerStream) error {
++			return s.waitExecution(req, stream)
++		}), ServerStreams: true},
++	},
++}
+diff --git a/cli/remotebazel/liveprobe/liveprobe_test.go b/cli/remotebazel/liveprobe/liveprobe_test.go
+new file mode 100644
+index 000000000..36f88920d
+--- /dev/null
++++ b/cli/remotebazel/liveprobe/liveprobe_test.go
+@@ -0,0 +1,121 @@
++package main
++
++import (
++	"context"
++	"net"
++	"testing"
++	"time"
++
++	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
++	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
++	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
++	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
++	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
++	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
++	"google.golang.org/grpc"
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/credentials/insecure"
++	"google.golang.org/grpc/status"
++)
++
++func TestPassedContractRequiresSuccessfulTerminalStatus(t *testing.T) {
++	exitCode := int32(expectedRemoteExitCode)
++	cliExitCode := expectedRemoteExitCode
++	base := report{
++		RunAttempts:                  1,
++		RunForwardAttempts:           1,
++		RunForwardSucceeded:          1,
++		AcceptedInvocationID:         "accepted-iid",
++		LogStreamAttempts:            1,
++		LogStreamMatched:             1,
++		LogStreamForwardAttempts:     1,
++		LogChunksReceivedUpstream:    1,
++		LogChunksForwarded:           1,
++		ObserverErrorsInjected:       1,
++		ExecutionIDs:                 []string{"execution-id"},
++		GetExecutionAttempts:         1,
++		GetExecutionForwardAttempts:  1,
++		WaitExecutionStreams:         1,
++		WaitExecutionForwardAttempts: 1,
++		WaitExecutionNames:           []string{"execution-id"},
++		TerminalOperations:           1,
++		TerminalResultUnpackOK:       true,
++		TerminalResultStatusCode:     0,
++		RemoteExitCode:               &exitCode,
++		GetInvocationForwardAttempts: 1,
++		GetInvocationAfterTerminal:   1,
++		CLIExitCode:                  &cliExitCode,
++		CLIInvocationIDMatches:       true,
++	}
++	if !(&probe{report: base}).passedContract() {
++		t.Fatal("valid terminal result should satisfy probe contract")
++	}
++	base.TerminalResultStatusCode = 13
++	if (&probe{report: base}).passedContract() {
++		t.Fatal("non-OK terminal status must fail the probe contract")
++	}
++}
++
++func TestProxyServiceDescriptorsRejectUnmatchedCallsWithoutForwarding(t *testing.T) {
++	p := &probe{runName: "remote run", script: "safe nonce script", state: &state{}}
++	server := grpc.NewServer()
++	server.RegisterService(&buildBuddyServiceDesc, p)
++	server.RegisterService(&executionServiceDesc, p)
++	listener, err := net.Listen("tcp", "127.0.0.1:0")
++	if err != nil {
++		t.Fatal(err)
++	}
++	serveDone := make(chan error, 1)
++	go func() { serveDone <- server.Serve(listener) }()
++	t.Cleanup(func() {
++		server.Stop()
++		<-serveDone
++		_ = listener.Close()
++	})
++
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++	t.Cleanup(cancel)
++	conn, err := grpc.DialContext(ctx, listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() { _ = conn.Close() })
++
++	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
++	logStream, err := bbClient.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{InvocationId: "unmatched"})
++	if err == nil {
++		_, err = logStream.Recv()
++	}
++	if status.Code(err) != codes.FailedPrecondition {
++		t.Fatalf("GetEventLog error code = %s, want %s", status.Code(err), codes.FailedPrecondition)
++	}
++	if _, err := bbClient.CancelExecutions(ctx, &inpb.CancelExecutionsRequest{InvocationId: "unmatched"}); status.Code(err) != codes.FailedPrecondition {
++		t.Fatalf("CancelExecutions error code = %s, want %s", status.Code(err), codes.FailedPrecondition)
++	}
++	if _, err := bbClient.GetExecution(ctx, &espb.GetExecutionRequest{ExecutionLookup: &espb.ExecutionLookup{InvocationId: "unmatched"}}); status.Code(err) != codes.FailedPrecondition {
++		t.Fatalf("GetExecution error code = %s, want %s", status.Code(err), codes.FailedPrecondition)
++	}
++	if _, err := bbClient.GetInvocation(ctx, &inpb.GetInvocationRequest{Lookup: &inpb.InvocationLookup{InvocationId: "unmatched"}}); status.Code(err) != codes.FailedPrecondition {
++		t.Fatalf("GetInvocation error code = %s, want %s", status.Code(err), codes.FailedPrecondition)
++	}
++	if _, err := bbClient.Run(ctx, &rnpb.RunRequest{Name: "wrong run"}); status.Code(err) != codes.PermissionDenied {
++		t.Fatalf("Run error code = %s, want %s", status.Code(err), codes.PermissionDenied)
++	}
++
++	waitStream, err := repb.NewExecutionClient(conn).WaitExecution(ctx, &repb.WaitExecutionRequest{Name: "unmatched"})
++	if err == nil {
++		_, err = waitStream.Recv()
++	}
++	if status.Code(err) != codes.FailedPrecondition {
++		t.Fatalf("WaitExecution error code = %s, want %s", status.Code(err), codes.FailedPrecondition)
++	}
++
++	p.state.mu.Lock()
++	defer p.state.mu.Unlock()
++	if p.state.r.RunAttempts != 1 || p.state.r.RunForwardAttempts != 0 || p.state.r.RunForwardSucceeded != 0 {
++		t.Fatalf("Run counters = attempts:%d forwards:%d successes:%d, want 1/0/0", p.state.r.RunAttempts, p.state.r.RunForwardAttempts, p.state.r.RunForwardSucceeded)
++	}
++	if p.state.r.LogStreamAttempts != 1 || p.state.r.LogStreamMatched != 0 || p.state.r.LogStreamForwardAttempts != 0 || p.state.r.CancelAttempts != 1 || p.state.r.CancelForwardAttempts != 0 || p.state.r.GetExecutionAttempts != 1 || p.state.r.GetExecutionForwardAttempts != 0 || p.state.r.GetInvocationAttempts != 1 || p.state.r.GetInvocationForwardAttempts != 0 || p.state.r.WaitExecutionStreams != 1 || p.state.r.WaitExecutionForwardAttempts != 0 {
++		t.Fatalf("unexpected forwarding counters: %+v", p.state.r)
++	}
++}

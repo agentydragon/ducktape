@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:49.914251+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "eeec4dd1221b19d67c1d6f8a0a599b268bb9fdd0594158726e9f002376610b2e",
-  "evidence_sha256": "5eff92fffa226d7940b73fd3737df022b3ec593495a828fc232cdb4b5c9292af",
+  "report_sha256": "fac397d808a006fbb8fb118fa90ab73f1e820d6bb16e4545d0b168f6f60cf665",
+  "evidence_sha256": "9e3032bcbd9d463ca7f7f35c13ffc2ed2105750313876b7226f1b22759f7511f",
   "evidence_schema_version": 3,
   "population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "feedback_clock": "Earliest exact-head PR workflow creation to latest successful completion of all three required gates; workflow creation proxies unavailable push timestamps. Not auto-merge eligibility.",
@@ -39,12 +39,23 @@
   ],
   "backend_population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
-  "architecture_followup_observed_at_utc": "2026-11-13T15:58:33Z",
-  "architecture_followup_source_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
-  "architecture_followup_scope": "Selected Bridge 4/8/8/4 ABBA and later required-CI validation. Original backend population window, source revision, denominators and distributions remain unchanged.",
+  "architecture_followup_observed_at_utc": "2026-11-13T18:39:50.518998+00:00",
+  "architecture_followup_source_head": "8a555b21141fded2166fcc17cd14096187e22842",
+  "architecture_followup_scope": "Selected source8a CI, manual guest contracts, live unshipped observer proof, bytecode collection and setup/selector evidence. Original measurement populations, source pins, denominators and rates remain unchanged.",
   "architecture_followup_artifacts_sha256": {
     "bridge-sharding-probe.json": "d5558a2fd7de187080650726b950158eae869617de2694e54d73d981545424eb",
     "critical-path-5699.json": "ec3946f448097406d30ce46be879136e9ccb2f95abfa7fb79ff57567895c7f07",
-    "../agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171"
+    "../agentplane-test-architecture/required-ci-0a9-workflow.json": "57edaaf20cd5639bffbc6fa7d454528a336743789f0225ae1eb2b080b3bff171",
+    "../agentplane-test-architecture/guest-session-contract.json": "3ca543f371c9d92ca8d1b8211c142b71117ae3e124e3deceffdefe89389ea3f4",
+    "../agentplane-test-architecture/accepted-run-observer-live.json": "6e7fdb05669548081c50495127d7ecb36dbf142a1e78745c8208a58972ed6f0f",
+    "../agentplane-test-architecture/accepted-run-observer-live-helper.patch": "f8f9bdcab493d82a86823b1132ed0e71d2a0f9fcd1e3be2edb89b09c32b2042d",
+    "../agentplane-test-architecture/python-bytecode-collection-screen.json": "6bc254fc641ea37f081510b36bad745260796ca77b124989403224b56f4138da",
+    "../agentplane-test-architecture/required-ci-8a5-workflow.json": "c7b1bedc52c6401ae830a9337726d746a75f7a060a344789d7bd18f66d2113f8",
+    "../agentplane-test-architecture/historical-app-cut-cohort-stage.json": "a16cd58c67c460c709f774ace32efb03d1f7c5b6bda1b1c58773afd6d2a742b6",
+    "../agentplane-test-architecture/historical-app-cut-pair-deltas.jsonl": "79a184682caa8c3b9e90853ff80e237bfaee1507e1779df74c9af515ce81caf8",
+    "../agentplane-test-architecture/historical-app-cut-pair-asts.jsonl": "236d894ac0b8b875bbc4c2dae46abf30cc0109d82df314ab603db0856f4a4206",
+    "../agentplane-test-architecture/setup-attribution.json": "d7594d0a2854b2f9b2f462085797d97463a76a2b8465f3f37c3154bf9c649634",
+    "../agentplane-test-architecture/iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
+    "../agentplane-test-architecture/historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7"
   }
 }
