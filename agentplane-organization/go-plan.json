@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "source_sha": "60336d35f33a4b796962327d6c7e9c07cea56af7",
-  "observed_at_utc": "2026-11-13T19:44:10+00:00",
-  "scope": "Every tracked .go file under agentplane, including tests, experiments and generated files. No directory or filename exclusions.",
+  "source_sha": "8cadf53a8982f7ff5e14fc5410173de142d08235",
+  "observed_at_utc": "2026-11-13T20:20:28+00:00",
+  "scope": "Every tracked Go file and package under agentplane; every top-level Agentplane area is represented, with protocol, frontend, native-driver and documentation context. No Go directory or filename exclusions.",
   "counts": {
     "files": 1241,
     "directories": 217,
@@ -338,7 +338,43 @@
         "agentplane/action_service/api/web_push/web_push_service.proto"
       ],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep public API contracts and session delegation separate from private admission/linkage/worker/push/RPC owners. Existing domain packages describe real execution responsibilities.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Action admission, authorization, orchestration and execution",
+        "goal_summary": "Keep public API contracts and session delegation separate from private admission/linkage/worker/push/RPC owners. Existing domain packages describe real execution responsibilities.",
+        "reason": "The concrete package owners and production import graph remain sound; no ready filesystem move is supported by this component audit.",
+        "evidence_paths": [
+          "agentplane/action_service/README.md",
+          "agentplane/action_service/SPEC.md",
+          "agentplane/action_service/config.go",
+          "agentplane/action_service/main.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/action_service",
+          "agentplane/action_service/callers",
+          "agentplane/action_service/docs",
+          "agentplane/action_service/internal/admission/catalog",
+          "agentplane/action_service/internal/admission/informer",
+          "agentplane/action_service/internal/admission/policies",
+          "agentplane/action_service/internal/admission/policyview",
+          "agentplane/action_service/internal/linkage",
+          "agentplane/action_service/internal/mcpexec",
+          "agentplane/action_service/internal/push",
+          "agentplane/action_service/internal/rpc",
+          "agentplane/action_service/internal/store",
+          "agentplane/action_service/internal/worker",
+          "agentplane/action_service/migrations",
+          "agentplane/action_service/orchestration_v1",
+          "agentplane/action_service/orchestration_v1/contract",
+          "agentplane/action_service/sandbox",
+          "agentplane/action_service/sandbox/contract",
+          "agentplane/action_service/session_delegation",
+          "agentplane/action_service/session_delegation/contract",
+          "agentplane/action_service/testing/nettest",
+          "agentplane/action_service/testing/oauthprovider"
+        ]
+      }
     },
     {
       "id": "app",
@@ -522,11 +558,46 @@
         }
       ],
       "context_paths": [
-        "agentplane/app/frontend/",
-        "agentplane/app/app_service.proto"
+        "agentplane/app/app_service.proto",
+        "agentplane/app/frontend/actions/",
+        "agentplane/app/frontend/bindings/",
+        "agentplane/app/frontend/connections/",
+        "agentplane/app/frontend/identities/",
+        "agentplane/app/frontend/policy/",
+        "agentplane/app/frontend/sandboxes/",
+        "agentplane/app/frontend/service_worker/",
+        "agentplane/app/frontend/settings/",
+        "agentplane/app/frontend/threads/"
       ],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "App is already flat under app/: cmd/, internal/, frontend/ and app_service.proto. There is no go/ directory in the current or goal tree."
+      "goal_note": "Keep cmd/, internal/ and frontend/ directly under app/. Auth, bridge, proxy, sandboxes, server, settings and threads stay owner-local; browser code stays organized by feature. No app/go/ directory.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Browser-facing HTTP service and frontend",
+        "goal_summary": "Keep cmd/, internal/ and frontend/ directly under app/. Auth, bridge, proxy, sandboxes, server, settings and threads stay owner-local; browser code stays organized by feature. No app/go/ directory.",
+        "reason": "The browser API backend, auth, bridge, proxy, sandboxes, settings and status packages are app-owned; cmd/, internal/ and frontend/ already sit directly under app/. The source tree has no app/go/ directory. Keep server route handlers together with their Huma/auth composition.",
+        "evidence_paths": [
+          "agentplane/app/README.md",
+          "agentplane/app/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/app/cmd",
+          "agentplane/app/internal/auth",
+          "agentplane/app/internal/bridge",
+          "agentplane/app/internal/federation",
+          "agentplane/app/internal/historyclient",
+          "agentplane/app/internal/historydata",
+          "agentplane/app/internal/historywatch",
+          "agentplane/app/internal/httperror",
+          "agentplane/app/internal/migrations",
+          "agentplane/app/internal/proxy",
+          "agentplane/app/internal/sandboxes",
+          "agentplane/app/internal/server",
+          "agentplane/app/internal/settings",
+          "agentplane/app/internal/status",
+          "agentplane/app/internal/threads"
+        ]
+      }
     },
     {
       "id": "central_sampler",
@@ -814,7 +885,39 @@
       ],
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep private sessionstore, rpc, executor and residentruntime as concrete owners; retain protocol/provider contracts, content, tool contracts and migrations. Do not recreate a root forwarding package.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Sampling, durable state, Runner effects and resident scheduling",
+        "goal_summary": "Keep private sessionstore, rpc, executor and residentruntime as concrete owners; retain protocol/provider contracts, content, tool contracts and migrations. Do not recreate a root forwarding package.",
+        "reason": "Protocol, provider adapters, executor, code mode, runtime and Store are already distinct concrete owners. Keep sessionstore as the owner-generation/transaction authority; do not split receiver methods or transaction families. Keep residentruntime orchestration together until its no-replay, fencing and drain ownership contract supports a concrete extraction.",
+        "evidence_paths": [
+          "agentplane/central_sampler/README.md",
+          "agentplane/central_sampler/SPEC.md",
+          "agentplane/central_sampler/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/central_sampler/cmd",
+          "agentplane/central_sampler/historyexport",
+          "agentplane/central_sampler/internal/codemode",
+          "agentplane/central_sampler/internal/content",
+          "agentplane/central_sampler/internal/eventcodec",
+          "agentplane/central_sampler/internal/executor",
+          "agentplane/central_sampler/internal/outputbuffer",
+          "agentplane/central_sampler/internal/promptimage",
+          "agentplane/central_sampler/internal/residentruntime",
+          "agentplane/central_sampler/internal/rpc",
+          "agentplane/central_sampler/internal/sessionstore",
+          "agentplane/central_sampler/internal/settings",
+          "agentplane/central_sampler/internal/toolcontract",
+          "agentplane/central_sampler/internal/tooloutput",
+          "agentplane/central_sampler/migrations",
+          "agentplane/central_sampler/protocol",
+          "agentplane/central_sampler/providers/anthropic",
+          "agentplane/central_sampler/providers/responses",
+          "agentplane/central_sampler/testing/exportfixture"
+        ]
+      }
     },
     {
       "id": "cli",
@@ -858,7 +961,84 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep the coherent command package: invocation state, stdio, authentication, error/JSON envelopes and bounded watches are shared by its verbs. A package per verb would export one invocation’s state.",
+      "decision": {
+        "state": "KEEP",
+        "role": "One CLI invocation owner",
+        "goal_summary": "Keep the coherent command package: invocation state, stdio, authentication, error/JSON envelopes and bounded watches are shared by its verbs. A package per verb would export one invocation’s state.",
+        "reason": "A single Cobra executable owns the command tree, shared app/client state, error/output formatting and wait/reconciliation behavior. It has no production Go importers; splitting commands would require exporting the private app/client surface without an independent owner benefit.",
+        "evidence_paths": ["agentplane/cli/BUILD.bazel"],
+        "reviewed_package_paths": ["agentplane/cli"]
+      }
+    },
+    {
+      "id": "crds",
+      "path": "agentplane/crds",
+      "counts": {
+        "files": 0,
+        "directories": 0
+      },
+      "directories": [],
+      "context_paths": ["agentplane/crds/"],
+      "pending_tracks": [],
+      "goal_note": "Keep the manifest aggregate and generation/admission checks here. Go API types and markers remain with Sandbox, policy, credential and Egress owners.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Generated Kubernetes schemas and admission tests",
+        "goal_summary": "Keep the manifest aggregate and generation/admission checks here. Go API types and markers remain with Sandbox, policy, credential and Egress owners.",
+        "reason": "Keep the manifest aggregate and generation/admission checks here. Go API types and markers remain with Sandbox, policy, credential and Egress owners.",
+        "evidence_paths": [
+          "agentplane/crds/README.md",
+          "agentplane/crds/BUILD.bazel"
+        ],
+        "reviewed_package_paths": []
+      }
+    },
+    {
+      "id": "debug",
+      "path": "agentplane/debug",
+      "counts": {
+        "files": 0,
+        "directories": 0
+      },
+      "directories": [],
+      "context_paths": ["agentplane/debug/"],
+      "pending_tracks": [],
+      "goal_note": "Keep cross-component investigations here; owner-local investigations stay in their component. This is documentation context, not a Go implementation package.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Project-wide active investigation evidence",
+        "goal_summary": "Keep cross-component investigations here; owner-local investigations stay in their component. This is documentation context, not a Go implementation package.",
+        "reason": "Keep cross-component investigations here; owner-local investigations stay in their component. This is documentation context, not a Go implementation package.",
+        "evidence_paths": [
+          "agentplane/debug/2026_10_28_runner_shutdown_retry_policy.md",
+          "agentplane/debug/2026_10_30_kubernetes_ownership_review.md"
+        ],
+        "reviewed_package_paths": []
+      }
+    },
+    {
+      "id": "docs",
+      "path": "agentplane/docs",
+      "counts": {
+        "files": 0,
+        "directories": 0
+      },
+      "directories": [],
+      "context_paths": ["agentplane/docs/"],
+      "pending_tracks": [],
+      "goal_note": "Keep durable protocol/ownership documentation separate from remaining plans and active investigations; these documents are caller-closure inputs when packages move.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Durable contracts and cross-component design records",
+        "goal_summary": "Keep durable protocol/ownership documentation separate from remaining plans and active investigations; these documents are caller-closure inputs when packages move.",
+        "reason": "Keep durable protocol/ownership documentation separate from remaining plans and active investigations; these documents are caller-closure inputs when packages move.",
+        "evidence_paths": [
+          "agentplane/docs/a2a.md",
+          "agentplane/docs/action_policies.md"
+        ],
+        "reviewed_package_paths": []
+      }
     },
     {
       "id": "egress",
@@ -1072,7 +1252,39 @@
         "agentplane/egress/api/rules/egress_rules.proto"
       ],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep responsibility-specific internal packages and the separate sidecar binary. Resources remain a deliberate shared API for Policy Controller; moving them under one consumer would reverse ownership.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Central proxy, policy decision, RPC surfaces and sidecar",
+        "goal_summary": "Keep responsibility-specific internal packages and the separate sidecar binary. Resources remain a deliberate shared API for Policy Controller; moving them under one consumer would reverse ownership.",
+        "reason": "The concrete package owners and production import graph remain sound; no ready filesystem move is supported by this component audit.",
+        "evidence_paths": [
+          "agentplane/egress/README.md",
+          "agentplane/egress/SPEC.md",
+          "agentplane/egress/api/v1alpha1/doc.go",
+          "agentplane/egress/api/v1alpha1/scheme.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/egress/api/v1alpha1",
+          "agentplane/egress/cmd",
+          "agentplane/egress/docs",
+          "agentplane/egress/internal/admin",
+          "agentplane/egress/internal/decision",
+          "agentplane/egress/internal/history",
+          "agentplane/egress/internal/history/migrations",
+          "agentplane/egress/internal/identity",
+          "agentplane/egress/internal/informer",
+          "agentplane/egress/internal/policy",
+          "agentplane/egress/internal/presentation",
+          "agentplane/egress/internal/proxy",
+          "agentplane/egress/internal/rules",
+          "agentplane/egress/internal/upstream",
+          "agentplane/egress/resources",
+          "agentplane/egress/sidecar",
+          "agentplane/egress/x/iron_proxy",
+          "agentplane/egress/x/iron_proxy/bridge"
+        ]
+      }
     },
     {
       "id": "env",
@@ -1514,7 +1726,53 @@
         "privileged-auth",
         "protobuf-alignment"
       ],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep concrete Session, supervision, journal, ingress, Execution and backend owners. Coordinator’s possible lifecycle extraction stays gated on shared-state and shutdown ownership.",
+      "decision": {
+        "state": "DESIGN",
+        "role": "Environment Runtime, Session, Execution and backend adapters",
+        "goal_summary": "Keep concrete Session, supervision, journal, ingress, Execution and backend owners. Coordinator’s possible lifecycle extraction stays gated on shared-state and shutdown ownership.",
+        "reason": "Runtime is one Sandbox-scoped aggregate: coordinator.Runtime owns the COSI engine/state, admission gates, execution/session fences, supervisors, ingress and cleanup joins. Session admission, PrepareSuspend/ResumeAdmission, transition workers and Close directly share its mutable fields and mutexes. agentplane/env/runtime/internal/lifecycle owns COSI resource contracts and types; it is a leaf owner, not the candidate replacement for orchestration.",
+        "evidence_paths": [
+          "agentplane/env/runtime/SPEC.md",
+          "agentplane/env/runtime/docs/lifecycle.md",
+          "agentplane/env/runtime/docs/control.md",
+          "agentplane/env/runtime/docs/cosi.md"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/env/configuration",
+          "agentplane/env/cosi",
+          "agentplane/env/firecracker",
+          "agentplane/env/firecracker/cmd",
+          "agentplane/env/jsonrpc",
+          "agentplane/env/oneoff",
+          "agentplane/env/runtime/cmd",
+          "agentplane/env/runtime/codexappserver",
+          "agentplane/env/runtime/control",
+          "agentplane/env/runtime/execution/adapter",
+          "agentplane/env/runtime/execution/adapter/testing",
+          "agentplane/env/runtime/execution/cmd",
+          "agentplane/env/runtime/execution/codexexecserver",
+          "agentplane/env/runtime/execution/companion",
+          "agentplane/env/runtime/execution/companion/control",
+          "agentplane/env/runtime/execution/service",
+          "agentplane/env/runtime/harness",
+          "agentplane/env/runtime/ingress",
+          "agentplane/env/runtime/internal/bootstrap",
+          "agentplane/env/runtime/internal/coordinator",
+          "agentplane/env/runtime/internal/cosistate",
+          "agentplane/env/runtime/internal/harnesses/claude",
+          "agentplane/env/runtime/internal/harnesses/codex",
+          "agentplane/env/runtime/internal/lifecycle",
+          "agentplane/env/runtime/internal/retained",
+          "agentplane/env/runtime/internal/workspace",
+          "agentplane/env/runtime/journal",
+          "agentplane/env/runtime/session",
+          "agentplane/env/runtime/stream",
+          "agentplane/env/runtime/supervision",
+          "agentplane/env/runtime/testing/adaptertest",
+          "agentplane/env/scripts"
+        ]
+      }
     },
     {
       "id": "environments",
@@ -1526,7 +1784,18 @@
       "directories": [],
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Protocol source context; Go bindings are generated by Bazel, not tracked .go files."
+      "goal_note": "Retain the v1 protocol source independently of its generated Go bindings and concrete Gateway implementation; namespace alignment remains a separate compatibility migration.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Versioned Environment service contract",
+        "goal_summary": "Retain the v1 protocol source independently of its generated Go bindings and concrete Gateway implementation; namespace alignment remains a separate compatibility migration.",
+        "reason": "Retain the v1 protocol source independently of its generated Go bindings and concrete Gateway implementation; namespace alignment remains a separate compatibility migration.",
+        "evidence_paths": [
+          "agentplane/environments/v1/BUILD.bazel",
+          "agentplane/environments/v1/environment_service.proto"
+        ],
+        "reviewed_package_paths": []
+      }
     },
     {
       "id": "firecracker",
@@ -1593,7 +1862,26 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep host VM lifecycle cohesive, with existing vsock/workloadidentity boundaries and launcher/probe commands. Boot, credential delivery and shutdown share one guest lifecycle.",
+      "decision": {
+        "state": "KEEP",
+        "role": "VM launch, guest lifecycle, vsock and workload identity delivery",
+        "goal_summary": "Keep host VM lifecycle cohesive, with existing vsock/workloadidentity boundaries and launcher/probe commands. Boot, credential delivery and shutdown share one guest lifecycle.",
+        "reason": "agentplane/firecracker owns host-side VMM lifecycle and checkpoint work; cmd/launcher is the process edge. agentplane/env/firecracker owns the guest Runtime thaw and management client; the generated management proto under that owner is the host/guest contract.",
+        "evidence_paths": [
+          "agentplane/firecracker/SPEC.md",
+          "agentplane/firecracker/BUILD.bazel",
+          "agentplane/firecracker/guest_management.go",
+          "agentplane/firecracker/supervisor.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/firecracker",
+          "agentplane/firecracker/cmd/launcher",
+          "agentplane/firecracker/testing/runtime_probe",
+          "agentplane/firecracker/vsock",
+          "agentplane/firecracker/workloadidentity"
+        ]
+      }
     },
     {
       "id": "grpc",
@@ -1648,7 +1936,27 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Bearer injection, generated HTTP facades, graceful shutdown and bounded streaming sends have real callers in different services. The health probe is a deployed command. Keep capability packages independent of service ownership.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared RPC mechanics and a standalone TLS health probe",
+        "goal_summary": "Bearer injection, generated HTTP facades, graceful shutdown and bounded streaming sends have real callers in different services. The health probe is a deployed command. Keep capability packages independent of service ownership.",
+        "reason": "Bearer injection, generated HTTP facades, graceful shutdown and bounded streaming sends have real callers in different services. The health probe is a deployed command. Keep capability packages independent of service ownership.",
+        "evidence_paths": [
+          "agentplane/grpc/bearer/BUILD.bazel",
+          "agentplane/grpc/bearer/bearer.go",
+          "agentplane/grpc/facade/BUILD.bazel",
+          "agentplane/grpc/facade/facade.go",
+          "agentplane/grpc/graceful/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/grpc/bearer",
+          "agentplane/grpc/facade",
+          "agentplane/grpc/graceful",
+          "agentplane/grpc/healthprobe",
+          "agentplane/grpc/streaming"
+        ]
+      }
     },
     {
       "id": "history_service",
@@ -1834,8 +2142,33 @@
         "agentplane/history_service/api/history/history_service.proto",
         "agentplane/history_service/api/ingress/session_ingress.proto"
       ],
-      "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "pending_tracks": ["history_service-command", "protobuf-alignment"],
+      "goal_note": "Keep private ingress, storage, projection, reads, RPC, threadfold and cursor semantics independent. Move only the composition/maintenance command package to cmd/; data ownership and wire contracts remain unchanged.",
+      "decision": {
+        "state": "READY MOVE",
+        "role": "Archive ingress/storage, settlement, projection, reads and service commands",
+        "goal_summary": "Keep private ingress, storage, projection, reads, RPC, threadfold and cursor semantics independent. Move only the composition/maintenance command package to cmd/; data ownership and wire contracts remain unchanged.",
+        "reason": "Recommend moving the command package and all its colocated Go tests from the component root to cmd/. This is a path-only cleanup: service composition stays in the command, concrete implementations remain in internal/ and backfill/, and the installed binary plus compact-history/settle-history/--migrate-only CLI contract stays stable. Keeping root is also idiomatic for a single service binary, so this can remain optional if the project prefers the shortest diff.",
+        "evidence_paths": [
+          "agentplane/history_service/README.md",
+          "agentplane/history_service/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/history_service",
+          "agentplane/history_service/backfill",
+          "agentplane/history_service/internal/ingress",
+          "agentplane/history_service/internal/migrations",
+          "agentplane/history_service/internal/projection",
+          "agentplane/history_service/internal/reads",
+          "agentplane/history_service/internal/rpc",
+          "agentplane/history_service/internal/settledcursors",
+          "agentplane/history_service/internal/storage",
+          "agentplane/history_service/internal/threadfold",
+          "agentplane/history_service/ops",
+          "agentplane/history_service/testing",
+          "agentplane/history_service/testing/spans"
+        ]
+      }
     },
     {
       "id": "identity",
@@ -1951,7 +2284,53 @@
       ],
       "context_paths": [],
       "pending_tracks": ["privileged-auth"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep credential issuance, owner requests and live verifier lookup separate: requester never issues Certificates; resolver rechecks the current credential/Identity; operator verifies tokens while callers authorize. Auth metadata and delegation remain distinct from TLS mechanics.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Workload authentication, credentials and operator-token verification",
+        "goal_summary": "Keep credential issuance, owner requests and live verifier lookup separate: requester never issues Certificates; resolver rechecks the current credential/Identity; operator verifies tokens while callers authorize. Auth metadata and delegation remain distinct from TLS mechanics.",
+        "reason": "Keep credential issuance, owner requests and live verifier lookup separate: requester never issues Certificates; resolver rechecks the current credential/Identity; operator verifies tokens while callers authorize. Auth metadata and delegation remain distinct from TLS mechanics.",
+        "evidence_paths": [
+          "agentplane/identity/auth/BUILD.bazel",
+          "agentplane/identity/auth/auth.go",
+          "agentplane/identity/auth/delegation.go",
+          "agentplane/identity/auth/grpc/BUILD.bazel",
+          "agentplane/identity/auth/grpc/client.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/identity/auth",
+          "agentplane/identity/auth/grpc",
+          "agentplane/identity/auth/listener",
+          "agentplane/identity/auth/testing",
+          "agentplane/identity/credentials/api/v1alpha1",
+          "agentplane/identity/credentials/issuer",
+          "agentplane/identity/credentials/requester",
+          "agentplane/identity/credentials/resolver",
+          "agentplane/identity/credentials/testing",
+          "agentplane/identity/credentials/workloadid",
+          "agentplane/identity/operator"
+        ]
+      }
+    },
+    {
+      "id": "indexing",
+      "path": "agentplane/indexing",
+      "counts": {
+        "files": 0,
+        "directories": 0
+      },
+      "directories": [],
+      "context_paths": ["agentplane/indexing/"],
+      "pending_tracks": [],
+      "goal_note": "Keep the small vector type surface; the experimental indexing service is under x/. No tracked Go package is hidden by this context entry.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared vector type compatibility surface",
+        "goal_summary": "Keep the small vector type surface; the experimental indexing service is under x/. No tracked Go package is hidden by this context entry.",
+        "reason": "Keep the small vector type surface; the experimental indexing service is under x/. No tracked Go package is hidden by this context entry.",
+        "evidence_paths": ["agentplane/indexing/BUILD.bazel"],
+        "reviewed_package_paths": []
+      }
     },
     {
       "id": "kubeclient",
@@ -1970,7 +2349,18 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "One shared configuration loader selects kubeconfig or in-cluster configuration and adds transport tracing. Callers retain their own rate/content settings. Its eight non-test-filename callers span services; placing it under one would reverse the shared dependency.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared observed Kubernetes client configuration",
+        "goal_summary": "One shared configuration loader selects kubeconfig or in-cluster configuration and adds transport tracing. Callers retain their own rate/content settings. Its eight non-test-filename callers span services; placing it under one would reverse the shared dependency.",
+        "reason": "One shared configuration loader selects kubeconfig or in-cluster configuration and adds transport tracing. Callers retain their own rate/content settings. Its eight non-test-filename callers span services; placing it under one would reverse the shared dependency.",
+        "evidence_paths": [
+          "agentplane/kubeclient/BUILD.bazel",
+          "agentplane/kubeclient/config.go"
+        ],
+        "reviewed_package_paths": ["agentplane/kubeclient"]
+      }
     },
     {
       "id": "llm_ingress",
@@ -2002,7 +2392,20 @@
       ],
       "context_paths": ["agentplane/llm_ingress/v1/model_config.proto"],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep the small cohesive main package and v1 contract; server/catalog/model configuration are one command owner with no imported implementation API.",
+      "decision": {
+        "state": "KEEP",
+        "role": "One LLM proxy/catalog service and its protocol",
+        "goal_summary": "Keep the small cohesive main package and v1 contract; server/catalog/model configuration are one command owner with no imported implementation API.",
+        "reason": "The concrete package owners and production import graph remain sound; no ready filesystem move is supported by this component audit.",
+        "evidence_paths": [
+          "agentplane/llm_ingress/README.md",
+          "agentplane/llm_ingress/codex_catalog.go",
+          "agentplane/llm_ingress/config.go",
+          "agentplane/llm_ingress/main.go"
+        ],
+        "reviewed_package_paths": ["agentplane/llm_ingress"]
+      }
     },
     {
       "id": "mcp_edge",
@@ -2103,7 +2506,55 @@
         "agentplane/mcp_edge/api/connection/connection_service.proto"
       ],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep Connection/OAuth persistence and private authserver/admission owners separate from shared operator verification. Root service composition can remain one main package; no new API seam is needed.",
+      "decision": {
+        "state": "KEEP",
+        "role": "MCP connections/OAuth and Action admission edge",
+        "goal_summary": "Keep Connection/OAuth persistence and private authserver/admission owners separate from shared operator verification. Root service composition can remain one main package; no new API seam is needed.",
+        "reason": "The concrete package owners and production import graph remain sound; no ready filesystem move is supported by this component audit.",
+        "evidence_paths": [
+          "agentplane/mcp_edge/README.md",
+          "agentplane/mcp_edge/action_metadata.go",
+          "agentplane/mcp_edge/callers.go",
+          "agentplane/mcp_edge/config.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/mcp_edge",
+          "agentplane/mcp_edge/internal/admission",
+          "agentplane/mcp_edge/internal/authserver",
+          "agentplane/mcp_edge/internal/connections",
+          "agentplane/mcp_edge/internal/mcpserver",
+          "agentplane/mcp_edge/migrations"
+        ]
+      }
+    },
+    {
+      "id": "native",
+      "path": "agentplane/native",
+      "counts": {
+        "files": 0,
+        "directories": 0
+      },
+      "directories": [],
+      "context_paths": [
+        "agentplane/native/capture/",
+        "agentplane/native/claude/",
+        "agentplane/native/codex/",
+        "agentplane/native/testing/"
+      ],
+      "pending_tracks": [],
+      "goal_note": "Keep Claude/Codex driver and test vocabularies distinct, with shared capture/testing support. This Python source is runtime/test context and remains in scope for caller closure.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Harness-specific wire models, launch helpers and native tests",
+        "goal_summary": "Keep Claude/Codex driver and test vocabularies distinct, with shared capture/testing support. This Python source is runtime/test context and remains in scope for caller closure.",
+        "reason": "Keep Claude/Codex driver and test vocabularies distinct, with shared capture/testing support. This Python source is runtime/test context and remains in scope for caller closure.",
+        "evidence_paths": [
+          "agentplane/native/README.md",
+          "agentplane/native/BUILD.bazel"
+        ],
+        "reviewed_package_paths": []
+      }
     },
     {
       "id": "net",
@@ -2161,7 +2612,26 @@
       ],
       "context_paths": [],
       "pending_tracks": ["privileged-auth"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Peer TLS is used by 16 Agentplane areas; listener and CONNECT helpers have separate transport responsibilities. Keep net/peertls in net; a later privileged-auth design does not change its accepted destination. Test support is Bazel-testonly.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared peer TLS, TCP listeners and CONNECT tunnels",
+        "goal_summary": "Peer TLS is used by 16 Agentplane areas; listener and CONNECT helpers have separate transport responsibilities. Keep net/peertls in net; a later privileged-auth design does not change its accepted destination. Test support is Bazel-testonly.",
+        "reason": "Peer TLS is used by 16 Agentplane areas; listener and CONNECT helpers have separate transport responsibilities. Keep net/peertls in net; a later privileged-auth design does not change its accepted destination. Test support is Bazel-testonly.",
+        "evidence_paths": [
+          "agentplane/net/httpconnect/BUILD.bazel",
+          "agentplane/net/httpconnect/connect.go",
+          "agentplane/net/listener/BUILD.bazel",
+          "agentplane/net/listener/listen.go",
+          "agentplane/net/peertls/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/net/httpconnect",
+          "agentplane/net/listener",
+          "agentplane/net/peertls",
+          "agentplane/net/peertls/testing"
+        ]
+      }
     },
     {
       "id": "notification_service",
@@ -2463,7 +2933,39 @@
         "agentplane/notification_service/storage.proto"
       ],
       "pending_tracks": ["notification-transactions", "protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep sources/actions and sources/github apart from delivery workers and RPC. Store remains one transaction authority; only the explicitly gated GitHub-state query extraction is a candidate.",
+      "decision": {
+        "state": "DESIGN",
+        "role": "Inboxes, provider observations, workers and notification RPC",
+        "goal_summary": "Keep sources/actions and sources/github apart from delivery workers and RPC. Store remains one transaction authority; only the explicitly gated GitHub-state query extraction is a candidate.",
+        "reason": "The concrete package owners and production import graph remain sound. One query-family extraction is still design-required inside Store.",
+        "evidence_paths": [
+          "agentplane/notification_service/README.md",
+          "agentplane/notification_service/config.go",
+          "agentplane/notification_service/main.go",
+          "agentplane/notification_service/workers.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/notification_service",
+          "agentplane/notification_service/docs",
+          "agentplane/notification_service/internal/inboxaccess",
+          "agentplane/notification_service/internal/rpc",
+          "agentplane/notification_service/internal/sessionidentity",
+          "agentplane/notification_service/internal/sources/actions",
+          "agentplane/notification_service/internal/sources/github",
+          "agentplane/notification_service/internal/sources/github/client",
+          "agentplane/notification_service/internal/sources/github/settings",
+          "agentplane/notification_service/internal/sources/github/testing",
+          "agentplane/notification_service/internal/sources/github/webhook",
+          "agentplane/notification_service/internal/storagecodec",
+          "agentplane/notification_service/internal/store",
+          "agentplane/notification_service/internal/store/internal/entry",
+          "agentplane/notification_service/internal/worker",
+          "agentplane/notification_service/migrations",
+          "agentplane/notification_service/model",
+          "agentplane/notification_service/testing"
+        ]
+      }
     },
     {
       "id": "observability",
@@ -2486,7 +2988,39 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "The shared initializer configures process telemetry and privacy-sensitive transport hooks for many services. Splitting trace/metric files into more packages would create APIs inside one configured provider lifecycle.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared trace/metric initialization and RPC instrumentation",
+        "goal_summary": "The shared initializer configures process telemetry and privacy-sensitive transport hooks for many services. Splitting trace/metric files into more packages would create APIs inside one configured provider lifecycle.",
+        "reason": "The shared initializer configures process telemetry and privacy-sensitive transport hooks for many services. Splitting trace/metric files into more packages would create APIs inside one configured provider lifecycle.",
+        "evidence_paths": [
+          "agentplane/observability/BUILD.bazel",
+          "agentplane/observability/metrics.go",
+          "agentplane/observability/tracing.go"
+        ],
+        "reviewed_package_paths": ["agentplane/observability"]
+      }
+    },
+    {
+      "id": "plans",
+      "path": "agentplane/plans",
+      "counts": {
+        "files": 0,
+        "directories": 0
+      },
+      "directories": [],
+      "context_paths": ["agentplane/plans/"],
+      "pending_tracks": [],
+      "goal_note": "Keep future work and operator decisions separate from implemented contracts. Burn landed entries out; do not turn the reorganization plan into a competing product backlog.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Remaining project decisions and adoption gates",
+        "goal_summary": "Keep future work and operator decisions separate from implemented contracts. Burn landed entries out; do not turn the reorganization plan into a competing product backlog.",
+        "reason": "Keep future work and operator decisions separate from implemented contracts. Burn landed entries out; do not turn the reorganization plan into a competing product backlog.",
+        "evidence_paths": ["agentplane/plans/README.md"],
+        "reviewed_package_paths": []
+      }
     },
     {
       "id": "policy",
@@ -2548,7 +3082,26 @@
       ],
       "context_paths": ["agentplane/policy/v1/policy_service.proto"],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep policy semantics and shared API types with the policy domain, independently of the reconciling controller process.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Policy API types, client interpretation and informer health",
+        "goal_summary": "Keep policy semantics and shared API types with the policy domain, independently of the reconciling controller process.",
+        "reason": "The concrete package owners and production import graph remain sound; no ready filesystem move is supported by this component audit.",
+        "evidence_paths": [
+          "agentplane/policy/errors.go",
+          "agentplane/policy/BUILD.bazel",
+          "agentplane/policy/api/v1alpha1/conditions.go",
+          "agentplane/policy/api/v1alpha1/doc.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/policy",
+          "agentplane/policy/api/v1alpha1",
+          "agentplane/policy/api/v1alpha1/protogen",
+          "agentplane/policy/client/apply",
+          "agentplane/policy/reader"
+        ]
+      }
     },
     {
       "id": "policy_controller",
@@ -2595,7 +3148,24 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep cmd/ as composition and private controller/RPC implementations below internal/. API/resource schemas remain domain-owned and shared with their actual callers.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Policy, account, grant and credential reconciliation",
+        "goal_summary": "Keep cmd/ as composition and private controller/RPC implementations below internal/. API/resource schemas remain domain-owned and shared with their actual callers.",
+        "reason": "The concrete package owners and production import graph remain sound; no ready filesystem move is supported by this component audit.",
+        "evidence_paths": [
+          "agentplane/policy_controller/README.md",
+          "agentplane/policy_controller/SPEC.md",
+          "agentplane/policy_controller/cmd/config.go",
+          "agentplane/policy_controller/cmd/main.go"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/policy_controller/cmd",
+          "agentplane/policy_controller/internal/controller",
+          "agentplane/policy_controller/internal/rpc"
+        ]
+      }
     },
     {
       "id": "postgres",
@@ -2654,7 +3224,27 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Transaction execution, fenced leases, startup migration locking, readiness probes and LISTEN fan-out are shared database mechanisms. Services retain their own SQL/store transactions, schemas and logical cursor authority.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Transactions, leases, migrations, probes and wakeup fan-out",
+        "goal_summary": "Transaction execution, fenced leases, startup migration locking, readiness probes and LISTEN fan-out are shared database mechanisms. Services retain their own SQL/store transactions, schemas and logical cursor authority.",
+        "reason": "Transaction execution, fenced leases, startup migration locking, readiness probes and LISTEN fan-out are shared database mechanisms. Services retain their own SQL/store transactions, schemas and logical cursor authority.",
+        "evidence_paths": [
+          "agentplane/postgres/BUILD.bazel",
+          "agentplane/postgres/postgres.go",
+          "agentplane/postgres/lease/BUILD.bazel",
+          "agentplane/postgres/lease/lease.go",
+          "agentplane/postgres/migrate/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/postgres",
+          "agentplane/postgres/lease",
+          "agentplane/postgres/migrate",
+          "agentplane/postgres/probes",
+          "agentplane/postgres/wakeups"
+        ]
+      }
     },
     {
       "id": "proto",
@@ -2676,7 +3266,15 @@
         "agentplane/proto/session.proto"
       ],
       "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Protocol source context; Go bindings are generated by Bazel, not tracked .go files."
+      "goal_note": "Keep cross-service contracts distinct from service implementations. Plan package/go_package alignment through explicit full-name, Any URL and stored-payload compatibility work.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared Session, command, identity and event wire contracts",
+        "goal_summary": "Keep cross-service contracts distinct from service implementations. Plan package/go_package alignment through explicit full-name, Any URL and stored-payload compatibility work.",
+        "reason": "Keep cross-service contracts distinct from service implementations. Plan package/go_package alignment through explicit full-name, Any URL and stored-payload compatibility work.",
+        "evidence_paths": ["agentplane/proto/BUILD.bazel"],
+        "reviewed_package_paths": []
+      }
     },
     {
       "id": "runner_gateway",
@@ -2834,8 +3432,33 @@
         "agentplane/runner_gateway/dispatcher/api/session/session_dispatcher.proto",
         "agentplane/runner_gateway/dispatcher/internal/notification/dispatcher_notification.proto"
       ],
-      "pending_tracks": ["protobuf-alignment"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "pending_tracks": ["runner_gateway-command", "protobuf-alignment"],
+      "goal_note": "Keep dispatcher, environments, private gateway/sandbox inventory and migrations as concrete owners. Move only the root composition/config command package into cmd/.",
+      "decision": {
+        "state": "READY MOVE",
+        "role": "Session dispatch authority, Environment API and gateway adapters",
+        "goal_summary": "Keep dispatcher, environments, private gateway/sandbox inventory and migrations as concrete owners. Move only the root composition/config command package into cmd/.",
+        "reason": "The root Go package is package main, has only main.go and config.go plus config_test.go, and has no external production Go importers. Its private config and service composition belong in an explicit cmd package. Root BUILD also owns Python API/client/settings rules and the OCI image. Keep //agentplane/runner_gateway:image and the image name/entrypoint stable.",
+        "evidence_paths": [
+          "agentplane/runner_gateway/main.go",
+          "agentplane/runner_gateway/config.go",
+          "agentplane/runner_gateway/config_test.go",
+          "agentplane/runner_gateway/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/runner_gateway",
+          "agentplane/runner_gateway/dispatcher",
+          "agentplane/runner_gateway/dispatcher/internal/placement",
+          "agentplane/runner_gateway/dispatcher/internal/terminalnotice",
+          "agentplane/runner_gateway/environments",
+          "agentplane/runner_gateway/environments/internal/management",
+          "agentplane/runner_gateway/environments/internal/view",
+          "agentplane/runner_gateway/environments/lifecycle",
+          "agentplane/runner_gateway/internal/gateway",
+          "agentplane/runner_gateway/internal/sandboxinventory",
+          "agentplane/runner_gateway/migrations"
+        ]
+      }
     },
     {
       "id": "sandbox_controller",
@@ -2903,7 +3526,24 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep cmd/ composition and private controller/runnercontrol owners. Preserve resource incarnation, quiesce/suspend and credential-delivery ownership.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Sandbox Pod/VM/resource reconciliation",
+        "goal_summary": "Keep cmd/ composition and private controller/runnercontrol owners. Preserve resource incarnation, quiesce/suspend and credential-delivery ownership.",
+        "reason": "internal/runnercontrol is a dedicated Gateway adapter implementing the controller-owned Quiescer and RuntimeSuspender contracts. It is consumed by cmd only, but retains a clear transport adapter boundary and tests; merging it into the reconciler would couple Kubernetes reconciliation to per-RPC transport details. The adapter uses sandboxes/environmentruntimeclient and net/peertls. Preserve those shared owners and keep the auth mechanism decision deferred.",
+        "evidence_paths": [
+          "agentplane/sandbox_controller/README.md",
+          "agentplane/sandbox_controller/SPEC.md",
+          "agentplane/sandbox_controller/cmd/main.go",
+          "agentplane/sandbox_controller/internal/controller/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/sandbox_controller/cmd",
+          "agentplane/sandbox_controller/internal/controller",
+          "agentplane/sandbox_controller/internal/runnercontrol"
+        ]
+      }
     },
     {
       "id": "sandboxes",
@@ -2962,7 +3602,26 @@
       ],
       "context_paths": [],
       "pending_tracks": ["privileged-auth"],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep the SDK shared by its real callers; environmentruntimeclient does not belong to any single consumer. Runtime configuration remains a deployment-published contract.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared Sandbox API, clients, readers, lease and runtime configuration",
+        "goal_summary": "Keep the SDK shared by its real callers; environmentruntimeclient does not belong to any single consumer. Runtime configuration remains a deployment-published contract.",
+        "reason": "api is the shared Kubernetes Sandbox type/schema used by controllers and services. environmentruntimeclient is a per-RPC Runner Gateway transport used by App, Notification, Dispatcher and Sandbox Controller. It belongs with Sandbox identity metadata and uses shared net/peertls.",
+        "evidence_paths": [
+          "agentplane/sandboxes/README.md",
+          "agentplane/sandboxes/api/BUILD.bazel",
+          "agentplane/sandboxes/api/types.go",
+          "agentplane/sandboxes/environmentruntimeclient/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/sandboxes/api",
+          "agentplane/sandboxes/environmentruntimeclient",
+          "agentplane/sandboxes/lease",
+          "agentplane/sandboxes/runtimeconfig",
+          "agentplane/sandboxes/sandboxreader"
+        ]
+      }
     },
     {
       "id": "session_client",
@@ -2987,7 +3646,15 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Retain the reusable client at its current domain boundary; keep admission/result uncertainty and response handling with the client rather than a service implementation.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared Session client protocol",
+        "goal_summary": "Retain the reusable client at its current domain boundary; keep admission/result uncertainty and response handling with the client rather than a service implementation.",
+        "reason": "This has real production consumers in action_service orchestration/session delegation and the CLI, so it is correctly shared rather than owned by either consumer.",
+        "evidence_paths": ["agentplane/session_client/BUILD.bazel"],
+        "reviewed_package_paths": ["agentplane/session_client"]
+      }
     },
     {
       "id": "session_instructions",
@@ -3006,7 +3673,18 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep the instruction contract shared with its consumers; do not place it under a single runtime or serving binary.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared embedded Session instruction content",
+        "goal_summary": "Keep the instruction contract shared with its consumers; do not place it under a single runtime or serving binary.",
+        "reason": "Platform instructions are a shared contract consumed by runtime and session creation paths; the package is deliberately public within the repo and has one concrete responsibility.",
+        "evidence_paths": [
+          "agentplane/session_instructions/README.md",
+          "agentplane/session_instructions/BUILD.bazel"
+        ],
+        "reviewed_package_paths": ["agentplane/session_instructions"]
+      }
     },
     {
       "id": "system_tests",
@@ -3026,9 +3704,32 @@
           ]
         }
       ],
-      "context_paths": [],
+      "context_paths": [
+        "agentplane/system_tests/debug/",
+        "agentplane/system_tests/deployment/",
+        "agentplane/system_tests/driver/",
+        "agentplane/system_tests/firecracker/",
+        "agentplane/system_tests/k3s/",
+        "agentplane/system_tests/scenarios/",
+        "agentplane/system_tests/suites/",
+        "agentplane/system_tests/vm/",
+        "agentplane/system_tests/x/"
+      ],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep system acceptance outside production ownership packages, with its backend/cluster fixtures distinct from owner-local unit/integration tests.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Cross-component acceptance and fixture composition",
+        "goal_summary": "Keep system acceptance outside production ownership packages, with its backend/cluster fixtures distinct from owner-local unit/integration tests.",
+        "reason": "The only Go package is the node helper under the experimental shared-cluster harness; its BUILD visibility and Python harness ownership are local to that environment.",
+        "evidence_paths": [
+          "agentplane/system_tests/README.md",
+          "agentplane/system_tests/BUILD.bazel"
+        ],
+        "reviewed_package_paths": [
+          "agentplane/system_tests/x/shared_cluster/node"
+        ]
+      }
     },
     {
       "id": "testing",
@@ -3094,9 +3795,35 @@
           "files": ["agentplane/testing/yamltest/yamltest.go"]
         }
       ],
-      "context_paths": [],
+      "context_paths": [
+        "agentplane/testing/configtest/",
+        "agentplane/testing/envtest/",
+        "agentplane/testing/eventually/",
+        "agentplane/testing/grpcmethods/",
+        "agentplane/testing/httptransport/",
+        "agentplane/testing/kubeapiserver/",
+        "agentplane/testing/postgres/",
+        "agentplane/testing/yamltest/"
+      ],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep shared fixtures under testing/ with Bazel testonly restrictions. Service-specific fixtures remain beneath their owning component.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Shared test-only capabilities",
+        "goal_summary": "Keep shared fixtures under testing/ with Bazel testonly restrictions. Service-specific fixtures remain beneath their owning component.",
+        "reason": "These small utilities have test-only contracts and are intentionally shared among Agentplane components with package visibility constrained to Agentplane subpackages.",
+        "evidence_paths": ["agentplane/testing/BUILD.bazel"],
+        "reviewed_package_paths": [
+          "agentplane/testing/configtest",
+          "agentplane/testing/envtest",
+          "agentplane/testing/eventually",
+          "agentplane/testing/grpcmethods",
+          "agentplane/testing/httptransport",
+          "agentplane/testing/kubeapiserver",
+          "agentplane/testing/postgres",
+          "agentplane/testing/yamltest"
+        ]
+      }
     },
     {
       "id": "watchhealth",
@@ -3118,7 +3845,18 @@
       ],
       "context_paths": [],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "One cache-health owner records synchronization, draining and list/watch failures under a mutex and publishes change signals; ten non-test-filename callers span controllers/services. Keep this shared health contract separate from any one informer owner.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Informer synchronization and list/watch health",
+        "goal_summary": "One cache-health owner records synchronization, draining and list/watch failures under a mutex and publishes change signals; ten non-test-filename callers span controllers/services. Keep this shared health contract separate from any one informer owner.",
+        "reason": "One cache-health owner records synchronization, draining and list/watch failures under a mutex and publishes change signals; ten non-test-filename callers span controllers/services. Keep this shared health contract separate from any one informer owner.",
+        "evidence_paths": [
+          "agentplane/watchhealth/BUILD.bazel",
+          "agentplane/watchhealth/health.go"
+        ],
+        "reviewed_package_paths": ["agentplane/watchhealth"]
+      }
     },
     {
       "id": "x",
@@ -3138,12 +3876,177 @@
           ]
         }
       ],
-      "context_paths": [],
+      "context_paths": [
+        "agentplane/x/authored_conversation/",
+        "agentplane/x/firecracker_spike/",
+        "agentplane/x/indexing/",
+        "agentplane/x/provider_continuation/",
+        "agentplane/x/runner_layering/"
+      ],
       "pending_tracks": [],
-      "goal_note": "Keep existing concrete owners and colocated tests except for the explicitly marked design candidates."
+      "goal_note": "Keep experiments outside stable production contracts; evaluate real live callers before promoting or relocating them, rather than permanently exempting x/ from review.",
+      "decision": {
+        "state": "KEEP",
+        "role": "Explicitly experimental code",
+        "goal_summary": "Keep experiments outside stable production contracts; evaluate real live callers before promoting or relocating them, rather than permanently exempting x/ from review.",
+        "reason": "The only scoped Go package is the Runner layering probe; its experimental path and BUILD graph are already explicit.",
+        "evidence_paths": [
+          "agentplane/x/authored_conversation/BUILD.bazel",
+          "agentplane/x/authored_conversation/README.md"
+        ],
+        "reviewed_package_paths": ["agentplane/x/runner_layering"]
+      }
     }
   ],
   "remaining_work": [
+    {
+      "id": "runner_gateway-command",
+      "title": "Place Runner Gateway command under cmd/",
+      "status": "READY",
+      "components": ["runner_gateway"],
+      "kind": "whole-command placement; no new responsibility API",
+      "source_paths": [
+        "agentplane/runner_gateway/config.go",
+        "agentplane/runner_gateway/config_test.go",
+        "agentplane/runner_gateway/main.go"
+      ],
+      "source_owner": "agentplane/runner_gateway",
+      "target_path": "agentplane/runner_gateway/cmd",
+      "candidate_target": null,
+      "path_moves": [
+        {
+          "from": "agentplane/runner_gateway/config.go",
+          "to": "agentplane/runner_gateway/cmd/config.go"
+        },
+        {
+          "from": "agentplane/runner_gateway/config_test.go",
+          "to": "agentplane/runner_gateway/cmd/config_test.go"
+        },
+        {
+          "from": "agentplane/runner_gateway/main.go",
+          "to": "agentplane/runner_gateway/cmd/main.go"
+        }
+      ],
+      "summary": "Keep dispatcher, environments, private gateway/sandbox inventory and migrations as concrete owners. Move only the root composition/config command package into cmd/.",
+      "how": [
+        "Move the complete root Go package (main.go, config.go, config_test.go), including its config test, into cmd/. No new library or forwarding shim.",
+        "Move the Go library/binary/test rules into cmd/BUILD.bazel. Root image packaging and Python api/client/settings targets stay root-owned; point pkg_tar at the cmd binary while preserving image and /usr/local/bin contracts.",
+        "Update migrations/testing BUILD data targets and hardcoded Python runfile paths in migrations/test_migrations.py and testing/gateway_process.py to include cmd/. Update the README binary target; keep system-test image labels and devinfra image publication targets stable."
+      ],
+      "gate": "No design dependency. Keep the command package intact and close every binary target/runfile reference in the same change.",
+      "preserve": "Serving/maintenance command behavior, config validation, image labels, embedded migrations and deployed executable names.",
+      "validation": [
+        "//agentplane/runner_gateway/cmd:config_test",
+        "//agentplane/runner_gateway:test_grpc_native",
+        "//agentplane/runner_gateway/migrations:test_migrations",
+        "//agentplane/runner_gateway:image"
+      ],
+      "evidence_paths": [
+        "agentplane/runner_gateway/BUILD.bazel",
+        "agentplane/runner_gateway/main.go",
+        "agentplane/runner_gateway/config.go",
+        "agentplane/runner_gateway/testing/BUILD.bazel",
+        "agentplane/runner_gateway/testing/gateway_process.py",
+        "agentplane/runner_gateway/migrations/test_migrations.py",
+        "agentplane/runner_gateway/migrations/BUILD.bazel",
+        "agentplane/runner_gateway/README.md"
+      ],
+      "existing_validation": [
+        "//agentplane/runner_gateway:config_test",
+        "//agentplane/runner_gateway:test_grpc_native",
+        "//agentplane/runner_gateway/migrations:test_migrations"
+      ],
+      "validation_note": "Validation after placement; config_test currently lives at the service root."
+    },
+    {
+      "id": "history_service-command",
+      "title": "Place History service and maintenance commands under cmd/",
+      "status": "READY",
+      "components": ["history_service"],
+      "kind": "whole-command placement; no new responsibility API",
+      "source_paths": [
+        "agentplane/history_service/compact_history.go",
+        "agentplane/history_service/config.go",
+        "agentplane/history_service/config_test.go",
+        "agentplane/history_service/integration_testmain_test.go",
+        "agentplane/history_service/main.go",
+        "agentplane/history_service/main_test.go",
+        "agentplane/history_service/settle_history.go",
+        "agentplane/history_service/settle_history_test.go",
+        "agentplane/history_service/svid_test.go"
+      ],
+      "source_owner": "agentplane/history_service",
+      "target_path": "agentplane/history_service/cmd",
+      "candidate_target": null,
+      "path_moves": [
+        {
+          "from": "agentplane/history_service/compact_history.go",
+          "to": "agentplane/history_service/cmd/compact_history.go"
+        },
+        {
+          "from": "agentplane/history_service/config.go",
+          "to": "agentplane/history_service/cmd/config.go"
+        },
+        {
+          "from": "agentplane/history_service/config_test.go",
+          "to": "agentplane/history_service/cmd/config_test.go"
+        },
+        {
+          "from": "agentplane/history_service/integration_testmain_test.go",
+          "to": "agentplane/history_service/cmd/integration_testmain_test.go"
+        },
+        {
+          "from": "agentplane/history_service/main.go",
+          "to": "agentplane/history_service/cmd/main.go"
+        },
+        {
+          "from": "agentplane/history_service/main_test.go",
+          "to": "agentplane/history_service/cmd/main_test.go"
+        },
+        {
+          "from": "agentplane/history_service/settle_history.go",
+          "to": "agentplane/history_service/cmd/settle_history.go"
+        },
+        {
+          "from": "agentplane/history_service/settle_history_test.go",
+          "to": "agentplane/history_service/cmd/settle_history_test.go"
+        },
+        {
+          "from": "agentplane/history_service/svid_test.go",
+          "to": "agentplane/history_service/cmd/svid_test.go"
+        }
+      ],
+      "summary": "Keep private ingress, storage, projection, reads, RPC, threadfold and cursor semantics independent. Move only the composition/maintenance command package to cmd/; data ownership and wire contracts remain unchanged.",
+      "how": [
+        "Move the complete root Go command package and all five root Go test files into cmd/. Compact/settle orchestration stays with the service command; storage/backfill owners stay separate.",
+        "Move main_lib, the history-service binary and root Go test rules to cmd/BUILD.bazel. Root service_image/service_binary_layer keep their public labels and package the cmd binary.",
+        "Update history_service/testing/BUILD.bazel to the new binary target and the hardcoded _SERVICE path in testing/go_service.py to include cmd/. Preserve the executable basename, /usr/local/bin/history-service entrypoint, manual Job commands and migrate-only behavior."
+      ],
+      "gate": "No design dependency. Keep the command package intact and close every binary target/runfile reference in the same change.",
+      "preserve": "Serving/maintenance command behavior, config validation, image labels, embedded migrations and deployed executable names.",
+      "validation": [
+        "//agentplane/history_service/cmd:config_test",
+        "//agentplane/history_service/cmd:integration_test",
+        "//agentplane/history_service:service_image"
+      ],
+      "evidence_paths": [
+        "agentplane/history_service/main.go",
+        "agentplane/history_service/config.go",
+        "agentplane/history_service/compact_history.go",
+        "agentplane/history_service/settle_history.go",
+        "agentplane/history_service/BUILD.bazel",
+        "agentplane/history_service/testing/BUILD.bazel",
+        "agentplane/history_service/testing/go_service.py",
+        "agentplane/history_service/README.md",
+        "agentplane/history_service/ops/compact-history-job.yaml",
+        "agentplane/history_service/ops/settle-history-job.yaml"
+      ],
+      "existing_validation": [
+        "//agentplane/history_service:config_test",
+        "//agentplane/history_service:integration_test"
+      ],
+      "validation_note": "Validation targets after placement; config_test and integration_test currently live at the service root."
+    },
     {
       "id": "runtime-lifecycle",
       "title": "Separate runtime lifecycle coordination",
@@ -3352,32 +4255,75 @@
       ]
     }
   ],
-  "ready_filesystem_moves": [],
-  "remaining_work_note": "All previously dispatched ownership groups have merged and are removed from this plan. No ready filesystem move is asserted by this refresh; two candidate extractions require ownership contracts, and authentication/protobuf design remains deferred.",
+  "ready_filesystem_moves": [
+    "runner_gateway-command",
+    "history_service-command"
+  ],
+  "remaining_work_note": "All Agentplane areas have an explicit goal decision. Two whole-command placements (Runner Gateway and History) are ready without semantic fixes. Runtime lifecycle and Notification transaction extractions require ownership contracts; authentication and protobuf alignment remain deferred. Merged work is removed.",
   "adoption": [
     {
       "stage": 1,
+      "title": "Place the remaining service commands",
+      "work": ["runner_gateway-command", "history_service-command"],
+      "result": "Move each complete command/test package and update binary BUILD/runfile closure while preserving image and deployed executable names. These moves are independent of lifecycle or database redesign."
+    },
+    {
+      "stage": 2,
       "title": "Specify lifecycle ownership",
       "work": ["runtime-lifecycle"],
       "result": "One ownership map and one simplified race-tested path; exact lifecycle API and file split reviewed before extraction."
     },
     {
-      "stage": 2,
+      "stage": 3,
       "title": "Specify Notification transaction access",
       "work": ["notification-transactions"],
       "result": "An explicit typed transaction/fence contract and preserved lock order; then a concrete private query extraction."
     },
     {
-      "stage": 3,
+      "stage": 4,
       "title": "Dispatch each decided boundary",
-      "work": ["runtime-lifecycle", "notification-transactions"],
+      "work": [
+        "runner_gateway-command",
+        "history_service-command",
+        "runtime-lifecycle",
+        "notification-transactions"
+      ],
       "result": "Complete imports, BUILD labels, tests and docs in each owner-scoped PR. Use native GitHub Stacks for actual content dependencies; burn merged items out of this plan."
     },
     {
-      "stage": 4,
+      "stage": 5,
       "title": "Design the deferred contract migrations",
       "work": ["privileged-auth", "protobuf-alignment"],
       "result": "A separately reviewed mechanism/compatibility plan before changing authentication or wire names."
     }
-  ]
+  ],
+  "scope_coverage": {
+    "top_level_areas": 36,
+    "go_packages": 217,
+    "go_files": 1241,
+    "all_source_directories_accounted_for": true,
+    "review_source_sha": "8cadf53a8982f7ff5e14fc5410173de142d08235",
+    "review_slices": [
+      {
+        "slice": "service owners",
+        "packages": 73,
+        "go_files": 479
+      },
+      {
+        "slice": "App, data and tools",
+        "packages": 60,
+        "go_files": 344
+      },
+      {
+        "slice": "runtimes, controllers and clients",
+        "packages": 56,
+        "go_files": 341
+      },
+      {
+        "slice": "shared capabilities",
+        "packages": 28,
+        "go_files": 77
+      }
+    ]
+  }
 }
