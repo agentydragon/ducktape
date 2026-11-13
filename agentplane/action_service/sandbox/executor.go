@@ -8,8 +8,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox/contract"
-	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 )
 
 // Executor runs the sandbox Actions in this process for the Identity the request names. That Identity comes from

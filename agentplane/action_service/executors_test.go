@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/sandbox"
-	"github.com/agentydragon/ducktape/agentplane/action_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
