@@ -1962,7 +1962,7 @@ impl SourceMatchClaim {
             note: _,
         } = self;
         Self {
-            identifiers: identifiers.clone(),
+            identifiers: *identifiers,
             match_source: match_source.clone(),
             bindings: bindings.clone(),
             note: None,
