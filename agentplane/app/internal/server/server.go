@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 )
 
-// HTTPServer owns the standard-library router, Huma API and the readiness drain gate.
+// httpServer owns the standard-library router, Huma API and the readiness drain gate.
 // A single mux keeps API documentation, auth and health routes on one listener.
-type HTTPServer struct {
+type httpServer struct {
 	mux            *uuidMux
 	api            huma.API
 	authentication *auth.Auth
@@ -24,7 +24,7 @@ type HTTPServer struct {
 	drainOnce      sync.Once
 }
 
-func NewHTTPServer(authentication *auth.Auth) *HTTPServer {
+func newHTTPServer(authentication *auth.Auth) *httpServer {
 	mux := &uuidMux{ServeMux: http.NewServeMux()}
 	apiConfig := huma.DefaultConfig("Agentplane", "0")
 	// Keep Huma's generated OpenAPI document enabled; the custom docs pages below render it.
@@ -34,7 +34,7 @@ func NewHTTPServer(authentication *auth.Auth) *HTTPServer {
 	// the generated OpenAPI document.
 	apiConfig.CreateHooks = nil
 	api := humago.New(mux, apiConfig)
-	server := &HTTPServer{mux: mux, api: api, authentication: authentication, drainDone: make(chan struct{})}
+	server := &httpServer{mux: mux, api: api, authentication: authentication, drainDone: make(chan struct{})}
 	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(swaggerDocsHTML))
@@ -94,11 +94,11 @@ const redocDocsHTML = `<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/redoc@2/bundles/redoc.standalone.js"></script></body></html>`
 
 // API is the Huma registration point used by feature packages and the OpenAPI exporter.
-func (s *HTTPServer) API() huma.API { return s.api }
+func (s *httpServer) API() huma.API { return s.api }
 
 // ProtectedAPI groups the application routes that require either an operator session or an
 // audience-checked Kubernetes token, matching the Python app's router-wide caller dependency.
-func (s *HTTPServer) ProtectedAPI() *huma.Group {
+func (s *httpServer) ProtectedAPI() *huma.Group {
 	group := huma.NewGroup(s.api)
 	group.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		if s.authentication == nil {
@@ -122,7 +122,7 @@ func (s *HTTPServer) ProtectedAPI() *huma.Group {
 
 // OperatorAPI groups endpoints that additionally require the browser OIDC login, as opposed to
 // workload-token caller authentication.
-func (s *HTTPServer) OperatorAPI() *huma.Group {
+func (s *httpServer) OperatorAPI() *huma.Group {
 	group := huma.NewGroup(s.ProtectedAPI())
 	group.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		request, writer := humago.Unwrap(ctx)
@@ -138,7 +138,7 @@ func (s *HTTPServer) OperatorAPI() *huma.Group {
 
 // RegisterRawRoute mounts a non-JSON or streaming endpoint on the same mux as Huma. Caller routes
 // use the app's cookie-or-TokenReview boundary; operator routes additionally require an OIDC login.
-func (s *HTTPServer) RegisterRawRoute(pattern string, handler http.Handler, operatorOnly bool) {
+func (s *httpServer) RegisterRawRoute(pattern string, handler http.Handler, operatorOnly bool) {
 	if s.authentication == nil {
 		handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			writeDetailError(w, http.StatusUnauthorized, "no session and no accepted token")
@@ -167,7 +167,7 @@ func writeDetailError(w http.ResponseWriter, status int, message string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"detail": message})
 }
 
-func (s *HTTPServer) BeginDrain() {
+func (s *httpServer) BeginDrain() {
 	s.drainOnce.Do(func() {
 		s.drain.Store(true)
 		close(s.drainDone)
@@ -175,13 +175,13 @@ func (s *HTTPServer) BeginDrain() {
 }
 
 // DrainDone closes as soon as graceful shutdown begins so long-lived streams can end promptly.
-func (s *HTTPServer) DrainDone() <-chan struct{} { return s.drainDone }
+func (s *httpServer) DrainDone() <-chan struct{} { return s.drainDone }
 
-func (s *HTTPServer) Ready() bool { return !s.drain.Load() }
+func (s *httpServer) Ready() bool { return !s.drain.Load() }
 
 // Handler installs the session middleware outside the API router, matching the Python app's
 // request-wide browser-session behavior and ensuring session changes commit before SSE headers.
-func (s *HTTPServer) Handler(authentication *auth.Auth) http.Handler {
+func (s *httpServer) Handler(authentication *auth.Auth) http.Handler {
 	if authentication == nil {
 		return s.mux
 	}

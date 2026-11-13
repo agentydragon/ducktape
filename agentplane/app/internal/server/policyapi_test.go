@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -26,8 +26,8 @@ func TestPolicyRoutesArePublishedAndCallerProtected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
-	RegisterStreamingRoutes(server, StreamingDependencies{})
+	server := newHTTPServer(authentication)
+	registerStreamingRoutes(server, streamingDependencies{})
 	handler := server.Handler(authentication)
 
 	for _, request := range []struct{ method, path string }{

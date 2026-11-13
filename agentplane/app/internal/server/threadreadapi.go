@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -66,7 +66,7 @@ type threadPageToken struct {
 	ID        uuid.UUID     `json:"id"`
 }
 
-func registerThreadMetadataGateway(server *HTTPServer, service *appService) error {
+func registerThreadMetadataGateway(server *httpServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux(gatewayruntime.WithErrorHandler(sessionGatewayError))
 	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return fmt.Errorf("register generated Thread Metadata gateway: %w", err)

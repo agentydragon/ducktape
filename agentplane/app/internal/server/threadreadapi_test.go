@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bufio"
@@ -215,7 +215,7 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 			changes := &threadMetadataChangesFake{updates: make(chan struct{}, 1), unsubscribed: make(chan struct{})}
 			var connected atomic.Bool
 			connected.Store(true)
-			server := NewHTTPServer(authentication)
+			server := newHTTPServer(authentication)
 			if err := registerThreadMetadataGateway(server, &appService{threadReader: &threadReadStoreFake{}, updates: changes, updatesConnected: connected.Load, drainDone: server.DrainDone()}); err != nil {
 				t.Fatal(err)
 			}
@@ -450,7 +450,7 @@ func TestThreadMutationGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	if err := registerThreadMetadataGateway(server, &appService{threadReader: store, threadHistory: history, environments: inventory}); err != nil {
 		t.Fatal(err)
 	}

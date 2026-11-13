@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
-	server := NewHTTPServer(nil)
+	server := newHTTPServer(nil)
 	recorder := httptest.NewRecorder()
 	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest("GET", "/openapi.json", nil))
 	if recorder.Code != 200 {
@@ -23,7 +23,7 @@ func TestHTTPServerServesHumaOpenAPIDocument(t *testing.T) {
 
 func TestExportOpenAPIExcludesMigratedSystemStatusRoute(t *testing.T) {
 	var output bytes.Buffer
-	if err := exportOpenAPI(&output); err != nil {
+	if err := ExportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
@@ -34,7 +34,7 @@ func TestExportOpenAPIExcludesMigratedSystemStatusRoute(t *testing.T) {
 
 func TestPolicyMutationsArePublishedByGeneratedPolicyFacade(t *testing.T) {
 	var output bytes.Buffer
-	if err := exportOpenAPI(&output); err != nil {
+	if err := ExportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())

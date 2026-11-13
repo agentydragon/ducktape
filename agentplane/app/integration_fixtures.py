@@ -92,7 +92,7 @@ def app_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseT
     with PostgresDatabaseTemplate(postgres_admin_url, "agentplane_app_test_template") as template:
         migrated = subprocess.run(
             [
-                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/go/agentplane-app_/agentplane-app"),
+                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/cmd/agentplane-app_/agentplane-app"),
                 "--migrate-only",
             ],
             env={

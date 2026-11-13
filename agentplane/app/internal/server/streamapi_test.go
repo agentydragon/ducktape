@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -84,8 +84,8 @@ func newStreamTestAuth(t *testing.T) *auth.Auth {
 
 func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
-	RegisterStreamingRoutes(server, StreamingDependencies{})
+	server := newHTTPServer(authentication)
+	registerStreamingRoutes(server, streamingDependencies{})
 	ids := uuid.NewString()
 	for _, path := range []string{
 		"/upstream/notifications/v1/sessions/" + ids + "/inbox:watch",
@@ -124,7 +124,7 @@ func TestOperatorStreamsAndProxyRoutesRejectWorkloadTokens(t *testing.T) {
 
 func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	var gotPath, gotBearer string
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, path, bearer string) error {
 		gotPath, gotBearer = path, bearer
@@ -133,7 +133,7 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 		_, err := io.WriteString(w, `{"observations":[]}`)
 		return err
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{HistoryHTTP: upstream})
+	registerStreamingRoutes(server, streamingDependencies{HistoryHTTP: upstream})
 
 	path := "/upstream/history/v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594/observations"
 	unauthenticated := httptest.NewRecorder()
@@ -188,8 +188,8 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 		t.Fatal(err)
 	}
 	authentication := newStreamTestAuth(t)
-	app := NewHTTPServer(authentication)
-	RegisterStreamingRoutes(app, StreamingDependencies{HistoryHTTP: proxy.NewHandlerUpstream(generated, "")})
+	app := newHTTPServer(authentication)
+	registerStreamingRoutes(app, streamingDependencies{HistoryHTTP: proxy.NewHandlerUpstream(generated, "")})
 	const id = "9b6d568a-2253-43d7-a7d4-190e98359594"
 	body, err := protojson.Marshal(&historypb.ReadThreadEntitiesRequest{Window: &historypb.ReadThreadEntitiesRequest_Range{
 		Range: &historypb.EntityRange{StartEntityIndex: 2, Limit: 1},
@@ -238,14 +238,14 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 
 func TestDispatcherFacadeRejectsWorkloadCommandPOSTs(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	forwarded := 0
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, _ *http.Request, _ context.Context, _, _ string) error {
 		forwarded++
 		w.WriteHeader(http.StatusAccepted)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{DispatcherHTTP: upstream})
+	registerStreamingRoutes(server, streamingDependencies{DispatcherHTTP: upstream})
 	const prefix = "/upstream/dispatcher/v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594"
 	const body = `{"commandId":"stable","sandbox":"demo","sandboxUid":"uid-1"}`
 
@@ -509,8 +509,8 @@ func TestThreadEventStreamResumesFollowAtCoveredCursorAndDrains(t *testing.T) {
 			{ThroughCursor: largeCursor + 1, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}},
 		}},
 	)
-	server := NewHTTPServer(authentication)
-	RegisterStreamingRoutes(server, StreamingDependencies{
+	server := newHTTPServer(authentication)
+	registerStreamingRoutes(server, streamingDependencies{
 		Threads: &streamTestThreadStore{row: &threads.Thread{ID: threadID}},
 		History: history, HistoryFollower: follower, Updates: updates, ThreadHeartbeat: 20 * time.Millisecond,
 	})
@@ -614,8 +614,8 @@ func TestThreadEventStreamWaitsForCoveredTerminalFeedAndAwaitedAdmission(t *test
 	}
 	updates := &streamTestChanges{changes: make(chan struct{}, 1)}
 	follower := newThreadFollowClient(threadFollowScript{})
-	server := NewHTTPServer(authentication)
-	RegisterStreamingRoutes(server, StreamingDependencies{
+	server := newHTTPServer(authentication)
+	registerStreamingRoutes(server, streamingDependencies{
 		Threads: &streamTestThreadStore{row: &threads.Thread{ID: threadID}},
 		History: history, HistoryFollower: follower, Updates: updates,
 	})
@@ -683,8 +683,8 @@ func TestThreadEventStreamWaitsForCommittedCursorCoverage(t *testing.T) {
 				summaryRead: make(chan struct{}, 8),
 			}
 			follower := newThreadFollowClient(threadFollowScript{})
-			server := NewHTTPServer(authentication)
-			RegisterStreamingRoutes(server, StreamingDependencies{
+			server := newHTTPServer(authentication)
+			registerStreamingRoutes(server, streamingDependencies{
 				Threads: &streamTestThreadStore{row: &threads.Thread{ID: threadID}},
 				History: history, HistoryFollower: follower, Updates: &streamTestChanges{changes: make(chan struct{}, 1)},
 			})
@@ -918,7 +918,7 @@ func waitForStreamTextAfter(t *testing.T, response *streamingRecorder, before, a
 
 func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	var gotPath, gotMethod, gotQuery string
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
 		gotPath, gotMethod, gotQuery = path, request.Method, request.URL.RawQuery
@@ -928,7 +928,7 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
+	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments:watch"
 	unauthenticated := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
@@ -962,7 +962,7 @@ func TestEnvironmentFacadeRequiresAppCallerAndForwardsManagementAndWatch(t *test
 
 func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	var gotMethod, gotPath, gotQuery string
 	var calls int
 	upstream := &streamTestUpstream{forward: func(w http.ResponseWriter, request *http.Request, _ context.Context, path, bearer string) error {
@@ -974,7 +974,7 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		return nil
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
+	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstream})
 	path := "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=22222222-2222-4222-8222-222222222222"
 	unauthenticated := httptest.NewRecorder()
 	server.Handler(authentication).ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, path, nil))
@@ -997,12 +997,12 @@ func TestEnvironmentGetRequiresAppCallerAndForwardsOnlyTarget(t *testing.T) {
 
 func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	generated, err := facade.NewHandler(t.Context(), "127.0.0.1:1", time.Second, environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
-	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: proxy.NewHandlerUpstream(generated, "")})
+	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: proxy.NewHandlerUpstream(generated, "")})
 	handler := server.Handler(authentication)
 	for _, test := range []struct {
 		method, path string
@@ -1025,7 +1025,7 @@ func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.
 
 func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 	authentication := newStreamTestAuth(t)
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	started := make(chan context.Context, 1)
 	canceled := make(chan error, 1)
 	upstream := &streamTestUpstream{forward: func(_ http.ResponseWriter, _ *http.Request, ctx context.Context, _, _ string) error {
@@ -1034,7 +1034,7 @@ func TestEnvironmentGetCancelsUpstreamWithRequest(t *testing.T) {
 		canceled <- ctx.Err()
 		return ctx.Err()
 	}}
-	RegisterStreamingRoutes(server, StreamingDependencies{EnvironmentHTTP: upstream})
+	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstream})
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/upstream/environments/v1/environments/team-a/sandbox-1?target.uid=uid", nil).WithContext(ctx)
 	request.Header.Set("Authorization", "Bearer accepted")

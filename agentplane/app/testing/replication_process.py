@@ -296,7 +296,7 @@ async def spawn_go_app(
         process_env.update(env or {})
         with stderr.open("wb") as log:
             process = await asyncio.create_subprocess_exec(
-                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/go/agentplane-app_/agentplane-app"),
+                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/cmd/agentplane-app_/agentplane-app"),
                 pass_fds=(listener_fd,),
                 env=process_env,
                 stdout=log,

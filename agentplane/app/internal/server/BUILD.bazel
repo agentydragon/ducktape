@@ -1,13 +1,12 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
 go_library(
-    name = "main_lib",
+    name = "server",
     srcs = [
         "appconfigapi.go",
         "appservice.go",
-        "main.go",
         "operatorapi.go",
         "runnerapi.go",
         "runtime.go",
@@ -20,7 +19,7 @@ go_library(
         "threadreadapi.go",
         "trace_relay.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/app/go",
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/server",
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
@@ -61,7 +60,6 @@ go_library(
         "//agentplane/sandboxes/runtimeconfig",
         "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_danielgtaylor_huma_v2//adapters/humago",
-        "@com_github_go_logr_logr//:logr",
         "@com_github_google_uuid//:uuid",
         "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_lib_pq//:pq",
@@ -70,7 +68,6 @@ go_library(
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_client_go//kubernetes",
-        "@io_k8s_sigs_controller_runtime//pkg/log",
         "@io_k8s_utils//ptr",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
@@ -89,37 +86,23 @@ go_library(
     ],
 )
 
-go_binary(
-    name = "agentplane-app",
-    embed = [":main_lib"],
-    pure = "on",
-    visibility = ["//agentplane:__subpackages__"],
-)
-
-go_binary(
-    name = "export_schema_bin",
-    embed = [":main_lib"],
-    pure = "on",
-    visibility = ["//agentplane/app:__subpackages__"],
-)
-
 go_test(
     name = "server_test",
     srcs = ["server_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = ["//agentplane/app/internal/auth"],
 )
 
 go_test(
     name = "trace_relay_test",
     srcs = ["trace_relay_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
 )
 
 go_test(
     name = "action_facade_test",
     srcs = ["action_facade_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
@@ -142,7 +125,7 @@ go_test(
 go_test(
     name = "policy_facade_test",
     srcs = ["policy_facade_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app/internal/proxy",
         "//agentplane/egress/api/admin:egress_admin_go_proto",
@@ -161,13 +144,13 @@ go_test(
 go_test(
     name = "schema_export_test",
     srcs = ["schema_export_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
 )
 
 go_test(
     name = "runnerapi_test",
     srcs = ["runnerapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
         "//agentplane/proto:session_go_proto",
@@ -181,7 +164,7 @@ go_test(
 go_test(
     name = "appconfigapi_test",
     srcs = ["appconfigapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
         "//agentplane/app/internal/settings",
@@ -194,7 +177,7 @@ go_test(
 go_test(
     name = "statusapi_test",
     srcs = ["statusapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
         "//agentplane/app/internal/status",
@@ -206,7 +189,7 @@ go_test(
 go_test(
     name = "policyapi_test",
     srcs = ["policyapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "@io_k8s_api//authentication/v1:authentication",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
@@ -216,7 +199,7 @@ go_test(
 go_test(
     name = "sessionapi_test",
     srcs = ["sessionapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/auth",
@@ -250,7 +233,7 @@ go_test(
 go_test(
     name = "operatorapi_test",
     srcs = ["operatorapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/action_service/api/contracts:linkage_service_go_proto",
         "//agentplane/app/internal/auth",
@@ -271,7 +254,7 @@ go_test(
 go_test(
     name = "threadreadapi_test",
     srcs = ["threadreadapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/auth",
@@ -294,7 +277,7 @@ go_test(
 go_test(
     name = "streamapi_test",
     srcs = ["streamapi_test.go"],
-    embed = [":main_lib"],
+    embed = [":server"],
     deps = [
         "//agentplane/app/internal/auth",
         "//agentplane/app/internal/proxy",
@@ -327,8 +310,8 @@ go_test(
     name = "staging_config_test",
     srcs = ["staging_config_test.go"],
     data = ["//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml"],
-    embed = [":main_lib"],
-    x_defs = {"github.com/agentydragon/ducktape/agentplane/app/go.stagingConfigRlocation": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
+    embed = [":server"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/app/internal/server.stagingConfigRlocation": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
     deps = [
         "//agentplane/app/internal/settings",
         "@in_gopkg_yaml_v3//:yaml_v3",

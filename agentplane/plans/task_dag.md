@@ -3881,7 +3881,7 @@ workloads authenticated by SVID, and from a component's explicitly delegated eff
 The transport contract for those component calls is inconsistent: [workload authentication](../docs/workload_authentication.md)
 says backend bearers use verified TLS, while [gRPC services](../docs/grpc_services.md) prescribes
 `insecure_channel` for bearer clients. Source examples include App → Policy Service using
-`bearer.Dial(..., nil)` and a plaintext Policy listener (`app/go/runtime.go`,
+`bearer.Dial(..., nil)` and a plaintext Policy listener (`app/internal/server/runtime.go`,
 `policy_controller/cmd/main.go`), versus central sampler → History and Runner Gateway using
 target-pinned `ClientTLS` (`cluster/cdk8s/agentplane/central_sampler_workload.py`).
 

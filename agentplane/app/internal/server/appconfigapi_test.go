@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -53,9 +53,9 @@ func TestAppConfigRoutesUseGeneratedProtoJSONAndCallerAuthentication(t *testing.
 		},
 		NewSandboxDefaults: settings.NewSandboxDefaults{WakeOnSend: true, IdleSuspendAfterSeconds: appConfigInt64Pointer(900)},
 	}
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{names: []string{"alpha", "zeta"}}
-	if err := RegisterAppConfigRoutes(server, &appService{config: config, policySetNames: policySets}); err != nil {
+	if err := registerAppConfigRoutes(server, &appService{config: config, policySetNames: policySets}); err != nil {
 		t.Fatal(err)
 	}
 	handler := server.Handler(authentication)
@@ -141,9 +141,9 @@ func TestSandboxFormReturnsUnavailableWhenPolicyServiceFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewHTTPServer(authentication)
+	server := newHTTPServer(authentication)
 	policySets := &appConfigPolicySetNames{err: errors.New("policy backend unavailable")}
-	if err := RegisterAppConfigRoutes(server, &appService{policySetNames: policySets}); err != nil {
+	if err := registerAppConfigRoutes(server, &appService{policySetNames: policySets}); err != nil {
 		t.Fatal(err)
 	}
 	request := httptest.NewRequest(http.MethodGet, "/upstream/app-config/v1/sandbox-form", nil)

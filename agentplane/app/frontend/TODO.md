@@ -59,5 +59,5 @@ client can leave bodies past a size to be read when shown, and a memory budget a
 ## System page probes
 
 The System page does not probe the Kubernetes API, whose reachability the app has but does not probe
-(the live views show only the watch's freshness). Consider a Kubernetes API probe beside the others in `app/go/runtime.go` if an
+(the live views show only the watch's freshness). Consider a Kubernetes API probe beside the others in `app/internal/server/runtime.go` if an
 operator wants to see it there.

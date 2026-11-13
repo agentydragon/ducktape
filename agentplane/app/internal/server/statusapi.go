@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func RegisterStatusRoutes(server *HTTPServer, service *appService) error {
+func registerStatusRoutes(server *httpServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux()
 	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return err

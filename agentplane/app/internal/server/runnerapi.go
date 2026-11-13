@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -18,9 +18,9 @@ type runnerStatusReader interface {
 	EnvironmentRuntimeStatus(context.Context, string, string) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
-// RegisterRunnerRoutes exposes the generated AppService HTTP route through the app's
+// registerRunnerRoutes exposes the generated AppService HTTP route through the app's
 // authenticated caller boundary. Keep the existing ProtoJSON body for cached browser bundles.
-func RegisterRunnerRoutes(server *HTTPServer, service *appService) error {
+func registerRunnerRoutes(server *httpServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux(
 		gatewayruntime.WithErrorHandler(sessionGatewayError),
 		gatewayruntime.WithMarshalerOption(gatewayruntime.MIMEWildcard, &gatewayruntime.JSONPb{

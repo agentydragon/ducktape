@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	dbmigrate "github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/go-logr/logr"
@@ -18,7 +19,7 @@ import (
 func main() {
 	configureLogLevels(nil)
 	if len(os.Args) == 2 && os.Args[1] == "--export-openapi" {
-		if err := exportOpenAPI(os.Stdout); err != nil {
+		if err := server.ExportOpenAPI(os.Stdout); err != nil {
 			slog.Error("export Agentplane OpenAPI schema", "error", err)
 			os.Exit(1)
 		}
@@ -43,7 +44,7 @@ func main() {
 		os.Exit(1)
 	}
 	configureLogLevels(config.LogLevels)
-	if err := run(ctx, config); err != nil && ctx.Err() == nil {
+	if err := server.Run(ctx, config); err != nil && ctx.Err() == nil {
 		slog.Error("Agentplane app stopped", "error", err)
 		os.Exit(1)
 	}

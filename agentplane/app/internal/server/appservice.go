@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"

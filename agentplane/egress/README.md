@@ -59,7 +59,7 @@ Also here:
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each
   Sandbox template's shared listener and per-service route settings from. The process entry point and both forwarding
   paths live in Go; `platform_routes.py` does not serve traffic.
-- `../app/go/streamapi.go`: the integration app's authenticated Egress HTTP facade
+- `../app/internal/server/streamapi.go`: the integration app's authenticated Egress HTTP facade
   for the generated Egress API.
 - `testing/`: the throwaway CAs and process launchers `test_proxy.py` runs the built binaries with.
   It drives the real binaries against envtest API servers (<../testing/kubernetes_apiserver.py>) and
