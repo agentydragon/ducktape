@@ -64,8 +64,14 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   `UNAVAILABLE`, then the real journal returns the same receipt. One submission
   causes two handler calls and one History admission; fresh next input completes.
   Rejecting a valid identical-command journal replay fails the contract. This models a post-handler
-  error, not a raw socket reset. History crash recovery and the remaining
-  security/ownership matrix still need composed evidence before gate promotion.
+  error, not a raw socket reset. The existing Central Sampler native integration
+  now uses real TokenReview with wrong-audience and unauthorized-account
+  negatives that leave no session, then composes a real History process pause,
+  completion into the Sampler journal, exact contiguous backfill and next input.
+  It preserves its shell/patch/image, stale-incarnation and lease-release assertions.
+  This is an envtest-backed process contract; deployed controller, identity and
+  storage acceptance remains. The ownership inventory below identifies the
+  complete retained witnesses before any gate promotion.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -103,8 +109,7 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   cases passed unchanged across source-pinned control/concurrency/profile runs;
   configured graph queries prove the image edge is absent. Unused app Connection
   routes remain unavailable in this profile, so external connections retain their
-  separate MCP/app witnesses. Dispatcher/probe, default/MCP and Firecracker profiles
-  retain their previous image ownership.
+  separate MCP/app witnesses. Dispatcher/probe and default/MCP profiles retain their previous image ownership.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
   acceptance and existing controller fake-clock matrix. Trace producer/watch timing
@@ -142,6 +147,12 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   merge parents. It retains failed/cancelled heads and all 40 workflow attempts.
   This prepares replay inputs; the candidate/control graphs have not been run
   on those pairs. Current PR API bases are recorded separately from tested bases.
+  A separate synthetic MCP-edge-only selector probe at literal 91f compares full
+  Pod/VM/Firecracker ownership with the candidate, holding architecture constant
+  within each pair. Actual CI hashing selects 18 versus 15 tests; exactly those
+  three unrelated suites disappear and all MCP acceptance stays selected. This
+  proves the input cut, not a historical workload frequency or feedback saving.
+  The full 15-head historical MCP frame contains no isolated MCP-edge-only PR.
   Required CI at d717 also queued its Firecracker action for 310.328s while all
   three registered compatible workers were occupied at the configured maximum.
   Removing only that queue has 153.499s of conditional test-tail headroom before
@@ -162,6 +173,11 @@ The next implementation screen and its coverage/measurement limits are in
 [`system_tests/debug/test_architecture_iteration3.md`](../system_tests/debug/test_architecture_iteration3.md).
 Native recovery controls, MCP/VM image ownership and actual selection artifacts are in
 [`system_tests/debug/test_architecture_iteration4.md`](../system_tests/debug/test_architecture_iteration4.md).
+
+The case-level ownership index is in
+[`test_architecture_contract_ownership.md`](../system_tests/debug/test_architecture_contract_ownership.md).
+It distinguishes owner/native coverage from the real controller, issuer, App, storage
+and guest assertions that remain deployed acceptance.
 
 Four minutes is an intermediate budget, not a floor. After each measured change,
 rank the next probes by likely complete-feedback or reliability benefit against
