@@ -12,9 +12,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 )
 
 type AuthType string

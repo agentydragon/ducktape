@@ -12,10 +12,10 @@ import (
 	"time"
 
 	centralsampler "github.com/agentydragon/ducktape/agentplane/central_sampler"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/anthropic"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
