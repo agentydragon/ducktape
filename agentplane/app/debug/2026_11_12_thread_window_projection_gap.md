@@ -192,6 +192,7 @@ compare app/session admission and Electric delivery; if absent, retain Chromium
 request timing/interception evidence. Review the next seven days of target
 outcomes with cache and physical-execution counts kept separate. No scheduled
 monitor or failure-rate reduction is claimed.
+
 ## Keep interception active across the resumed entity request
 
 The fresh failure's final entity GET begins 2.298 ms after removal of the
