@@ -56,12 +56,12 @@ follows it; code that differs converges on it.
 - Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
-  `environment_runtime_transport` server credentials. `workload_auth/auth.SVIDResolver` resolves
+  `environment_runtime_transport` server credentials. `identity/auth/auth.SVIDResolver` resolves
   the verified peer against the live Sandbox and its accepted runner credential, yielding the
   Sandbox's own ServiceAccount. The sidecar or launcher relay holds the certificate and establishes
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
-  (`agentplane/workload_auth/auth`): `auth.Methods` maps every served method's full name to a
+  (`agentplane/identity/auth/auth`): `auth.Methods` maps every served method's full name to a
   `Rule` (`Accounts` for an allowlist, `AnySubject` for any workload subject a resolver authenticates,
   `SVIDOrAccounts` for workload SVIDs plus a bearer account allowlist, `ReviewedServiceAccount` when a
   handler needs a verified ServiceAccount UID with an optional Pod proof, `ReviewedServiceAccountOrIdentity`
@@ -84,7 +84,7 @@ adds that mode only to an authenticated `Rule` explicitly installed for the meth
 remains available. `Admitted` returns a typed direct or delegated admission, while
 `EffectiveCaller` returns only the SA identity handlers use for ordinary resource checks. The
 legacy `Caller` accessor stays Pod-bound and is not populated for delegated requests. The
-`workload_auth/grpc` client reads its destination token for each call and has no ordinary Bearer
+`identity/auth/grpc` client reads its destination token for each call and has no ordinary Bearer
 fallback. These shared primitives do not opt a production method or client into delegation by
 themselves. The Runner Gateway's explicitly configured method list includes the `EnvironmentService`
 list/get methods; `ResumeEnvironment` remains separately configured, and Action Service adapter

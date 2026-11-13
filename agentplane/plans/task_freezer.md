@@ -30,7 +30,7 @@ Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 ### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
 
 Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
-(`workload_auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
+(`identity/auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
 longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
 name stays relevant; any rename must coordinate those verifiers and their projected tokens.
 

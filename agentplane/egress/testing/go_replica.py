@@ -12,8 +12,8 @@ import grpc
 from python.runfiles import Runfiles
 
 from agentplane.egress.settings import Settings
+from agentplane.identity.auth.listener import SPIFFEAuth
 from agentplane.testing.go_process import GoProcess, go_process
-from agentplane.workload_auth.listener import SPIFFEAuth
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 

@@ -6,9 +6,9 @@ from typing import ClassVar
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.identity.auth.listener import Listener
 from agentplane.llm_ingress.models import AttributionConfig, ModelConfig, default_attribution
 from agentplane.log_levels import LogLevels
-from agentplane.workload_auth.listener import Listener
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 

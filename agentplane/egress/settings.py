@@ -13,8 +13,8 @@ from typing import ClassVar
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.identity.auth.listener import Listener
 from agentplane.log_levels import LogLevels
-from agentplane.workload_auth.listener import Listener
 
 
 class APIServer(BaseModel):

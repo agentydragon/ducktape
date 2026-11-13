@@ -15,9 +15,9 @@ from agentplane.action_service.orchestration_v1.binding import OrchestrationExec
 from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.environment_runtime_transport.config import ClientTLS
+from agentplane.identity.auth.listener import Listener
 from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.listener import Listener
 from util.yaml_file_settings import YamlFileSettings
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0

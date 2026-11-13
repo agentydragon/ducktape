@@ -32,9 +32,9 @@ from constructs import Construct
 
 from agentplane.crd_group import GROUP
 from agentplane.environment_runtime_transport.config import MTLS, SESSION_DISPATCHER_URI, TLS
+from agentplane.identity.auth import listener as workload_listener
 from agentplane.runner_gateway.settings import CentralSamplerTarget, Settings
 from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth import listener as workload_listener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
     actions,

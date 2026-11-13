@@ -155,7 +155,7 @@ precondition prevents deleting a binding edited or replaced after its read.
 ## Workload credentials
 
 With `workload_issuer` and `workload_namespaces` set, the controller hosts the
-[workload-identity issuer](../workload_identity/README.md) for the `WorkloadCredential`s of those
+[workload-identity issuer](../identity/credentials/README.md) for the `WorkloadCredential`s of those
 namespaces. It is their status's only writer, and the only creator of Certificates for
 three-segment workload URIs:
 

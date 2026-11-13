@@ -17,7 +17,7 @@ Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../r
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 Each incarnation runs with the Sandbox's `WorkloadCredential`, which the controller requests
-through [`workload_identity/requester`](../workload_identity/README.md) and the Policy Controller
+through [`identity/credentials/requester`](../identity/credentials/README.md) and the Policy Controller
 issues; the controller creates no Certificate. It starts a runner only once the record is issued,
 binds the record to the Pod or VMI it started, and publishes that incarnation once the record
 accepted it. See [authentication and cutover](../docs/runner_control.md#authentication-and-incarnation-binding).

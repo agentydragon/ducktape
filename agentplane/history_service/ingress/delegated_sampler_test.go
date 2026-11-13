@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
-	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/workload_auth/testing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

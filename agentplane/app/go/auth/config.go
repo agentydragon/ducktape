@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	workloadauth "github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )

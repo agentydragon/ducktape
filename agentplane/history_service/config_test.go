@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
-	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 )
 
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/history"
