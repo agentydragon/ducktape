@@ -155,7 +155,8 @@ Protocol-session ownership is separate from the active owner and executor bindin
 cell runs in a fresh V8 isolate/thread with no JavaScript globals shared across cells; provider
 continuation stays in the sampler. Interrupting one Session does not stop the
 shared process. A host failure fails pending work for every attached Session. Future opens can start
-a new host, but failed in-flight provider or executor work is never replayed.
+a new host. Uncertain executor effects are never replayed; unfinished provider sampling resumes
+through the bounded attempt chain described below.
 
 ### Session residency and work wakeups
 
@@ -165,7 +166,9 @@ heartbeat remain resident until drain or actual ownership loss; an idle turn doe
 move the lease. The lease token and generation fence owner writes and effects. The upstream
 protocol-session ID and recorded host instance stay stable across ordinary idle turns and are
 separate from lease generation. `max_live_sessions` limits concurrent active-execution slots; idle
-resident Sessions do not consume those slots. `store()` / `load()` values remain volatile and are not
+resident Sessions and provider backoff do not consume those slots. Backoff retains the owner
+heartbeat and any live host/handles; repeated work hints do not reserve capacity until the retry
+is due. `store()` / `load()` values remain volatile and are not
 restored after host loss.
 
 Any replica may authenticate and durably admit a command. In the same database transaction as a
@@ -397,8 +400,8 @@ the next replica can then claim the released Session and resume its committed co
 `shutdown_drain_seconds` defaults to 40 and `shutdown_budget_seconds` to 55;
 the latter must fit within the Pod's 60-second termination grace and leave at least 15 seconds
 after the drain deadline for cancellation and cleanup. At the drain deadline, the runtime cancels active work
-and retains any unresolved intent and partial evidence; the next owner blocks rather than
-replaying an uncertain provider or executor operation. Claim, release and every result write
+and retains any unresolved intent and partial evidence. The next owner reconciles provider attempts
+without replaying uncertain executor effects. Claim, release and every result write
 remain fenced, including late writes from the old generation. During shutdown, lease release has
 a five-second timeout; an unreleased owner remains fenced by lease expiry. Shutdown waits for
 ownership acquisition and release to finish.
@@ -410,14 +413,14 @@ opens. A host restart within one Pod rotates that generation. Before the next mo
 owner compares it under the lease fence. If it differs, or an older owner generation left an intent
 or live cell behind without blocking the Session (that generation is fenced and can never settle
 them), the sampler settles the lost work in one transaction and continues; it never blocks the
-Session on it. A block an owner recorded on the host still serving the Session is left alone until
-that host is replaced or an operator recovers it, until `SAMPLER_INTENT_LEASES` (DAG section 5)
-replaces such blocks with leased attempts and backoff. Every unresolved
+Session on it. A native-uncertainty block an owner recorded on the host still serving the Session
+is left alone until that host is replaced or an operator recovers it. Every unresolved
 intent is abandoned as an unknown remote outcome with no automatic replay: nested tool and executor
 intents, the cell intent of the running cell, and a pending provider sampling or compaction
 intent, whose partial stream is not committed as model output (`ConversationReconciled` marks its
-observed items `ABSENT`) and whose request is then sampled again, as that is not an external
-effect. Live cells and nonterminal process handles become `abandoned`, keeping each handle's last
+observed items `ABSENT`). Provider continuation uses fresh reset context within the same step's
+remaining attempt budget, as sampling is not an external mutation. Live cells and nonterminal
+process handles become `abandoned`, keeping each handle's last
 read cursor and retained output; no remote process is killed or reported exited. The model tool
 call of a lost cell receives a failed output naming the nested calls with unknown outcome; pending
 model tool calls proven undispatched receive the no-dispatch output; unrelated calls follow their
@@ -438,10 +441,25 @@ state and other live cells/processes. JavaScript syntax errors and exceptions li
 normal `Script failed` output. Internal store, host-protocol and transport failures are not
 classified as model input errors.
 
-Explicit provider rejections and terminal provider failures record a rejected intent.
-When no unresolved effects or live execution remain,
-the command and turn fail without blocking the Session; subsequent input may continue without replaying the failed
-operation. Accepted tool calls that were never dispatched receive truthful failure outputs.
+Provider sampling and compaction use at most three attempts per prepared step. HTTP 408, 429 and
+5xx, upstream transport/truncated-stream failures, and response-head/semantic-idle timeouts are
+transient. After the joined call ends, the owner abandons its exact intent, retains raw evidence,
+and records retry due time using PostgreSQL. Backoff starts at one second and doubles, honoring
+`Retry-After` up to 30 seconds. A retry has a fresh intent ID, the same accepted command and step,
+and the frozen prepared body; steering input and notifications wait until that step settles.
+Changed routing or parser profiles fail the command rather than silently rerouting its request.
+Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
+cannot apply a frozen summary to a different suffix.
+Other provider failures are permanent. Permanent failure or exhausted attempts atomically fails
+only the original command and turn, leaving the Session usable and known live cells/processes
+intact. Unresolved native effects still prevent this settlement. No partial response dispatches
+a model tool call. Explicit interruption suppresses the remaining retry chain.
+
+Evidence/progress persistence failures, lost ownership and caller cancellation retain durable
+recovery state rather than becoming upstream retry classifications. A fully validated response
+whose Finish reply is lost is read back under the exact intent and owner fence. If still open,
+only persistence of that in-memory response may be retried; a confirmed commit is never sampled
+again. A durable interrupt prevents a new provider result commit.
 The original driver error is retained in command and turn failure reasons and, for blocked sessions,
 in `GetSession.blocked_reason`.
 An explicit Code Mode `operation/response` with `status: "error"` is returned to the model as a failed
@@ -548,10 +566,9 @@ points operators to the linked boundary evidence. Ordinary executor connection o
 uncertainty is settled at its tool boundary and does not by itself block a Session. A blocked
 Session whose recorded JavaScript host is gone is selected by the next runtime's work scan,
 settled and unblocked as described above without an operator. A Session blocked on the host that
-still serves it (an uncommitted provider stream or compaction, an interrupt whose cleanup could not
-confirm every handle) waits: it settles the same way once that host is replaced, or an operator
-recovers it earlier, until `SAMPLER_INTENT_LEASES` (DAG section 5) replaces such blocks with leased
-attempts and backoff. An authenticated caller for the same account can
+still serves it after native cleanup could not confirm every handle waits: it settles the same
+way once that host is replaced, or an operator recovers it earlier. Provider-only failures use
+the attempt chain above and do not require this operator path. An authenticated caller for the same account can
 call `RecoverSession` with the current `attached.last_cursor` from `GetSession` and an operator note
 to abandon a blocked cell/runtime or provider-sampling failure. Its transaction locks the conversation
 before its session and requires an expired owner lease and an exact cursor match. It supports
@@ -572,8 +589,8 @@ It marks live cells and nonterminal processes `abandoned` without killing remote
 reporting them exited. It advances the owner generation and durable JavaScript session epoch in the
 same transaction, fencing late writes and forcing a new logical JavaScript session on any replica.
 The continuation cannot access prior `store()` / `load()` values or live-cell handles; old shared-host
-memory may remain inaccessible until that host exits. Recovery never retries an uncertain provider
-or executor operation. An optional operator-supplied `replacement_incarnation_uid` rebinds only the
+memory may remain inaccessible until that host exits. Operator recovery never retries an uncertain
+executor operation or the provider request it explicitly abandoned. An optional operator-supplied `replacement_incarnation_uid` rebinds only the
 incarnation of the same Sandbox, clears retained native-session identity, and records old/new UIDs
 after old handles are abandoned. Ordinary same-Sandbox incarnation changes can also rebind automatically at initialization as described
 above; this operator path remains for a blocked Session. See [blocked Session recovery](docs/blocked_session_recovery.md).
@@ -683,7 +700,8 @@ Bounded exporter scheduling quanta share exporter capacity between Sessions, ind
 active-execution slots. The shared PostgreSQL wakeups Hub dispatches `central_sampler_work` signals
 to resident Session drivers and `central_sampler_outbox` signals to the idle exporter. Listener
 reconnection triggers durable catch-up scans for both paths; periodic reconciliation also remains
-enabled for Session work. Only export failures incur retry backoff, per Session, exponential, and reset by progress. Caught-up
+enabled for Session work. Within exporter scheduling, only export failures incur retry backoff,
+per Session, exponential, and reset by progress. Caught-up
 archives retain no streams or tasks. History unavailability delays display while the sampler
 retains its outbox.
 
@@ -754,8 +772,12 @@ wire request rather than reconstructing from live transcript or JavaScript state
 frontier carries a named suppression reason and cannot reuse that frozen request; continuation
 after the model-visible reset uses a fresh prepared request in the runtime recovery path. Partial
 sampling evidence remains retained, while observed response items are reconciled `ABSENT`; no
-partial tool call is committed or dispatched before Finish. These are storage and API contracts:
-runtime backoff/retry scheduling and removal of the turn deadline are separate work.
+partial tool call is committed or dispatched before Finish. Semantic progress renews the attempt
+lease only after its event evidence is durable. Initial leases cover response-head and semantic-idle
+budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
+A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
+Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
+attempt count and budget. The elapsed turn deadline remains until its separate retirement.
 
 Before sampling, the first snapshot of model-visible execution handles and subsequent changes
 append as native notices, after the

@@ -200,8 +200,8 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 			return TurnNotification, nil
 		}
 		// TODO: Codex's InstantInterrupt also cuts an in-flight provider stream for new input. Steering
-		// input waits here for the sampling request to finish, because a cut stream leaves its intent
-		// uncertain and blocks the Session (SPEC.md deviation); cutting needs a way to settle that intent.
+		// input waits for the prepared provider step (including retries) to settle; cutting that
+		// step to prepare a new steering context remains a separate scheduling change.
 		steered, err := r.store.DrainSteeringInput(ctx, owner, session.ID)
 		if err != nil {
 			return "", err

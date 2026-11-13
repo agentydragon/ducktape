@@ -2,6 +2,7 @@ package centralsampler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -26,9 +27,9 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			message, err := responses.Message("assistant", "persisted once")
-			if err != nil {
-				t.Fatal(err)
+			message := responses.Item{
+				ID: "persisted-once", Type: responses.ItemMessage, Role: "assistant",
+				Content: json.RawMessage(`[{"type":"output_text","text":"persisted once"}]`),
 			}
 			records := nativeResponsesRecords(t, message)
 			ctx, cancel := context.WithCancel(t.Context())
@@ -63,7 +64,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 			}
 			count := 0
 			for _, item := range responsesItems(t, conversation.Transcript) {
-				if item.Type != responses.ItemMessage {
+				if item.ID != message.ID {
 					continue
 				}
 				text, err := responses.Text(item)

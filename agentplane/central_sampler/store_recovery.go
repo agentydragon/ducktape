@@ -124,10 +124,8 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 		if err != nil {
 			return err
 		}
-		// A block an owner recorded on the host that still serves the Session is a reviewed
-		// decision (an uncommitted provider stream, an interrupt with unconfirmed handles); only
-		// a lost host or lost owner settles it without an operator. See the
-		// TODO(SAMPLER_INTENT_LEASES) in settleFailure for the design that retires that block.
+		// Provider-only failures use the durable attempt path. Native cleanup blocks on
+		// the host still serving the Session require host replacement or operator recovery.
 		if !hostLost && session.Blocked {
 			return nil
 		}

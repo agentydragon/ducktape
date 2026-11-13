@@ -131,14 +131,12 @@ func (r *Runtime) providerFrontier(ctx context.Context, owner Owner, session *Se
 		expected.Method != stored.Method || expected.URL != stored.URL || !maps.Equal(expected.Headers, stored.Headers) {
 		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider route changed during recovery")
 	}
-	if frontier.Kind == PendingIntentSampling {
-		projection := anthropicProjectionKey
-		if config.API == protocol.APIStyleResponses {
-			projection = requestProjectionKey(responsesProjectionVersion + string(config.Responses.Dialect) + "/" + string(config.ExecEncoding))
-		}
-		if projection != stored.ProjectionKey {
-			return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider parser profile changed during recovery")
-		}
+	if providerProjectionKey(config) != stored.ProjectionKey {
+		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "provider parser profile changed during recovery")
+	}
+	if frontier.Kind == PendingIntentCompaction && ((expected.CompactionControl == nil) != (stored.CompactionControl == nil) ||
+		expected.CompactionControl != nil && *expected.CompactionControl != *stored.CompactionControl) {
+		return nil, r.failProviderFrontier(ctx, owner, session, frontier, "compaction suffix or effort policy changed during recovery")
 	}
 	return frontier, nil
 }
