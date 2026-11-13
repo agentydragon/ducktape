@@ -178,6 +178,8 @@ ducktapePkgs
     inherit self;
   };
   # Pre-built UEFI qcow2 VM images for Proxmox deployment.
+  # Minimal image for first-boot VM provisioning.
+  bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
   # Build: nix build .#wyrm2-image
   # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
   wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
