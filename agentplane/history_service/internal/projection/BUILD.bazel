@@ -13,11 +13,11 @@ go_library(
         "runner.go",
         "summary.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/projection",
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/internal/projection",
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/internal/settledcursors",
         "//agentplane/history_service/internal/storage",
-        "//agentplane/history_service/settledcursors",
         "//agentplane/history_service/threadfold",
         "//agentplane/postgres",
         "//agentplane/postgres/lease",

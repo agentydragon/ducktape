@@ -40,8 +40,8 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/history_service/internal/projection",
         "//agentplane/history_service/internal/storage",
-        "//agentplane/history_service/projection",
         "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
         "//agentplane/proto:event_go_proto",

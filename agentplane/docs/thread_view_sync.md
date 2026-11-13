@@ -2,7 +2,7 @@
 
 Status: **implemented; acceptance incomplete.** The server-side fold in
 `agentplane/history_service/threadfold/` is connected to PostgreSQL through the
-transactional writer (`projection/recording.go`). The integration uses Electric through its published TypeScript client:
+transactional writer (`history_service/internal/projection/recording.go`). The integration uses Electric through its published TypeScript client:
 one shape per thread and per payload field, with the browser's window loaded as subsets of them.
 See [app implementation notes](../app/README.md) for endpoints and storage details.
 The [conversation acceptance record](../debug/conversation_acceptance.md) lists the remaining
