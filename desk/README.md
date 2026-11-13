@@ -1,8 +1,8 @@
 # Desk wiring
 
-Working notes for the home desk: every peripheral hangs off a Thunderbolt KVM so one button
-swaps the desk between **atlas** (see <../README.md>) and a hot-plug laptop. Living doc for
-inventory, topology, cable plan, routing, mounting and open questions; chronological
+Working notes for the home desk: a Thunderbolt KVM switches shared peripherals between
+**atlas** (see <../README.md>) and a hot-plug laptop; the monitor also switches to wyrm2. This
+document tracks inventory, topology, cable plan, routing, mounting and open questions; chronological
 experiments and hypothesis updates live in <debug/build_log.md>.
 
 **North star — achieved 2026-07-01** (Plan A, § Target topology): one-button switching between
@@ -22,17 +22,10 @@ keyboard, camera and underdesk hub downstream of the KVM.
   host charges (see the North-Star experiment in the build log). Workaround: plug the docked
   laptop's own AC adapter alongside the KVM cable.
 
-### Future desiderata (not blocking Plan A)
+### Gaming
 
-- **Gaming on the RTX 5090s (wired 2026-07-05)**: RTX 5090 `01:00.0` DP-OUT → FV43U DP 1.4 in
-  (Ivanky 8K DP m-m); keyboard and camera via FV43U USB-B uplink → atlas rear USB-A (bus 3
-  port 2) → QEMU port-path passthrough to wyrm2 at `3-2.1` (keyboard) and `3-2.2` (camera).
-  Monitor dual-KVM OSD binds USB-B ↔ DP and USB-C ↔ USB-C, so one press switches video and hub
-  between the host/KVM path (USB-C) and wyrm2's local `seat0` (DP/USB-B). wyrm2 runs GNOME on
-  that seat; per-title `gamescope -f -- %command%` gives direct scanout. DP audio via `01:00.1`
-  passthrough (PipeWire → FV43U speakers). Sunshine/Moonlight available but software-encode
-  only. Open: session-teardown hardening. See
-  `nix/debug/wyrm2/direct_display_bringup/README.md`.
+The direct display and monitor hub path to wyrm2 is wired; see Gaming display path below.
+Session-teardown hardening remains open; see <../nix/debug/wyrm2/direct_display_bringup/README.md>.
 
 ## Devices on hand
 
@@ -78,7 +71,7 @@ At home now; storage-unit items are listed separately so plans don't count on th
 | 1   | USB-A → USB-C                       | —        | Untagged. Currently in use with the TEX Shura.                                                                |
 | 1   | USB-A → USB-C                       | —        | Spare.                                                                                                        |
 | 1   | DP ↔ USB-C                          | Ivanky   | Spare. Passive DP-Alt adapter cable.                                                                          |
-| 1   | Thunderbolt USB-C, ~2 ft            | Sabrent? | Spare. Tagged "4". Likely a TB4 cable bundled with the SB-TB4K. Verify the marking.                           |
+| 1   | Thunderbolt USB-C, ~2 ft            | Sabrent? | In use: atlas → KVM. Tagged "4"; likely bundled with the SB-TB4K. Verify the TB4 marking.                     |
 
 ## In storage (not available now)
 
@@ -88,17 +81,14 @@ At home now; storage-unit items are listed separately so plans don't count on th
 
 Plan A (wired): one USB-C monitor link carries DP-Alt video + hub data + PD, so the camera rides
 the FV43U hub back to the KVM-switched bus. Plan B (DP video + separate USB A→B hub uplink) is a
-fallback; its cables are on hand. Physical schematic (devices, ports, cables, grommets, colour
-map): <wiring_schematic.svg> (source <wiring_schematic.dot>).
+fallback; it would displace the gaming display path. Physical schematic (devices, ports, cables,
+grommets, colour map): <wiring_schematic.svg> (source <wiring_schematic.dot>).
 
 Free after Plan A: SB-TB4K downstream TB4 B and C, SB-TB4K USB-A 2/3/4, FV43U 2× HDMI 2.1. FV43U
 DP 1.4 and USB-B uplink are used by the gaming display path.
 
 ### Port-assignment caveats
 
-- **atlas RTX 5090 DP-OUT slot** — atlas has 2× RTX 5090. Which card
-  and which DP port feeds the internal DP m-m to the mobo isn't
-  recorded yet.
 - **SB-TB4K downstream port choice (A vs. B vs. C)** — they're
   symmetric; any one can carry the monitor video. Pick by cable reach.
 - **Which SB-TB4K USB-A number** each accessory ends up on is drawn
@@ -108,12 +98,9 @@ DP 1.4 and USB-B uplink are used by the gaming display path.
 
 One bullet per physical link: source → destination, cable, state.
 
-- **atlas internal video**: RTX 5090 DP-OUT (slot ?) → mobo DP-IN, DP m-m. Removed 2026-07-01;
-  display comes from the iGPU. Not needed for gaming (Sunshine streaming — see
-  `debug/atlas/gpu_strategy.md`).
-- **atlas → KVM**: mobo TB4-OUT (**middle** port) → SB-TB4K PC1, USB-C TB-class. Cabled —
-  Sabrent-looking 2 ft, tag "4". Atlas's top TB port carries BIOS video but not kernel DP-Alt;
-  the middle port works after kernel takeover, so the cable belongs there.
+- **atlas → KVM**: mobo TB4-OUT (**top** port) → SB-TB4K PC1, USB-C TB-class. Cabled —
+  Sabrent-looking 2 ft, tag "4". The earlier hypothesis that the top port did not carry kernel
+  video was superseded by the successful top-port test in <debug/build_log.md>.
 - **Laptop → KVM**: laptop TB4 (USB-C, right-drawer position) → SB-TB4K PC2. In use — 20 Gb/s
   USB 3.2 Gen 2×2 cable, plugged into rugged as laptop stand-in. Not TB4, but the SB-TB4K
   accepts it and switches cleanly.
@@ -132,18 +119,16 @@ the underdesk USB-A reach.
 
 ### Plan B — fallback if Plan A's USB-C link won't hold
 
-If the 20 Gb/s USB-C cable can't be made reliable (see
-<debug/build_log.md>), swap the "KVM → monitor (combined)" row for
-two links:
+If the combined USB-C monitor link fails, the earlier fallback replaces it with two links:
 
 | Link                  | Source port                    | Destination port   | Cable      | Have?                        |
 | --------------------- | ------------------------------ | ------------------ | ---------- | ---------------------------- |
 | KVM → monitor (video) | SB-TB4K downstream TB4 (USB-C) | FV43U DP 1.4 in    | USB-C ↔ DP | Yes — Ivanky DP/USB-C cable. |
-| KVM → monitor (hub)   | SB-TB4K USB-A                  | FV43U USB-B uplink | USB A → B  | Yes.                         |
+| KVM → monitor (hub)   | SB-TB4K USB-A                  | FV43U USB-B uplink | USB A → B  | Yes — in use by wyrm2.       |
 
-Camera stays on the FV43U USB-A downstream either way. Consequences of
-switching: burns one extra KVM USB-A port (the USB-B uplink); the
-20 Gb/s USB-C cable and the FV43U USB-C input become spare.
+The camera stays on the FV43U USB-A downstream. This uses one extra KVM USB-A port and frees the
+Silkland cable and FV43U USB-C input. However, the monitor DP input, USB-B uplink and USB A→B
+cable are now used by the gaming display path, so this fallback would displace that path.
 
 ### Gaming display path (Plan A rev 2 — wired 2026-07-05)
 
