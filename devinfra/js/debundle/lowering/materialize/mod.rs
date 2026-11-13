@@ -7,7 +7,9 @@ mod apply;
 mod outcome_sink;
 mod plan_builder;
 mod residual_atomic_report;
+mod residual_extractions_report;
 
+use analysis::diagnostics::progress::{Phase, State};
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
@@ -15,7 +17,6 @@ use source_identity::{ChunkId, StatementId};
 use staged_analysis::chunk_facts::{
     ChunkFacts, ChunkFactsContext, LogicalChunkFacts, compute_logical_chunk_facts,
 };
-use staged_analysis::progress::emit_debundle_progress;
 
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
@@ -73,7 +74,7 @@ use swc_ecma_ast::*;
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
 pub(super) struct ChunkContext<'a> {
-    pub(super) diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub(super) diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
     pub(super) ownership_subset: Option<&'a OwnershipSubset>,
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
@@ -87,6 +88,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) effect_conflicts_chunks: &'a BTreeSet<String>,
     pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
     pub(super) full_report_chunks: &'a BTreeSet<String>,
+    pub(super) residual_extraction_atoms: &'a BTreeSet<String>,
     pub(super) gate_rejection: GateRejectionPolicy,
     pub(super) assessment_only: bool,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
@@ -188,6 +190,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         artifact,
         artifact_indexes,
         chunk_id,
+        diagnostics,
         target_dir,
         keep_going,
         list_template_identifiers,
@@ -228,7 +231,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         chunk_id,
     )?;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
+    diagnostics.progress(chunk_id, Phase::MaterializeLogicalChunk, State::Start);
     let mut explicit_requests = explicit_requests;
 
     let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
@@ -385,6 +388,7 @@ pub(super) fn finish_logical_chunk(
         artifact,
         artifact_indexes,
         chunk_id,
+        diagnostics,
         target_dir,
         ownership_subset,
         report_emission,
@@ -393,6 +397,7 @@ pub(super) fn finish_logical_chunk(
         effect_conflicts_chunks,
         full_reports,
         full_report_chunks,
+        residual_extraction_atoms,
         gate_rejection: gate_rejection_policy,
         assessment_only,
         vendor_import_oracle,
@@ -426,7 +431,7 @@ pub(super) fn finish_logical_chunk(
     )?;
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::Start);
     let LogicalChunkFacts {
         facts: mut analysis,
         imported_callables,
@@ -543,7 +548,7 @@ pub(super) fn finish_logical_chunk(
             },
         )?;
     }
-    emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::End);
     let source_unit_layout = SourceUnitLayout::checked(
         &precomputed.dependency_graph,
         &ast_analysis.source_unit_syntax_locations,
@@ -760,6 +765,8 @@ pub(super) fn finish_logical_chunk(
             full_translation_validation: false,
             full_export_reentry: false,
             full_residual_atomic_groups: false,
+            full_residual_extractions: false,
+            residual_extraction_atoms,
         };
         let (evaluation, _) = evaluate_chunk_candidate(
             report_context,
@@ -791,6 +798,10 @@ pub(super) fn finish_logical_chunk(
         full_residual_atomic_groups: full_reports
             .contains(&super::FullReportKind::ResidualAtomicGroups)
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        full_residual_extractions: full_reports
+            .contains(&super::FullReportKind::ResidualExtractions)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        residual_extraction_atoms,
     };
     let (evaluation, report_out_dir) = evaluate_chunk_candidate(
         report_context,
@@ -1358,6 +1369,8 @@ struct ChunkReportContext<'a> {
     full_translation_validation: bool,
     full_export_reentry: bool,
     full_residual_atomic_groups: bool,
+    full_residual_extractions: bool,
+    residual_extraction_atoms: &'a BTreeSet<String>,
 }
 
 /// Exact counts over the canonical in-memory graph, with no node/edge table.
@@ -1393,6 +1406,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
         graph_reports,
         full_export_reentry,
         full_residual_atomic_groups,
+        full_residual_extractions,
         ..
     } = context;
     let report_out_dir = if preflight.is_rejected() {
@@ -1409,7 +1423,10 @@ fn evaluate_chunk_candidate<'a, 'b>(
         "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
     ensure!(
-        !(full_translation_validation || full_export_reentry || full_residual_atomic_groups)
+        !(full_translation_validation
+            || full_export_reentry
+            || full_residual_atomic_groups
+            || full_residual_extractions)
             || report_out_dir.is_some(),
         "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
@@ -1493,6 +1510,8 @@ fn emit_reports_and_resolve_gate<'a>(
         policy,
         full_export_reentry,
         full_residual_atomic_groups,
+        full_residual_extractions,
+        residual_extraction_atoms,
         ..
     } = context;
     let assignment_analysis = evaluation.assignment_analysis();
@@ -1509,6 +1528,20 @@ fn emit_reports_and_resolve_gate<'a>(
                 chunk_id,
                 output_layout::RESIDUAL_ATOMIC_GROUPS_REPORT,
                 &residual_atomic_report::build(assignment_analysis, ownership_subset, !rejected),
+            )?;
+        }
+        if full_residual_extractions {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                output_layout::RESIDUAL_EXTRACTIONS_REPORT,
+                &residual_extractions_report::build(
+                    assignment_analysis,
+                    ownership_subset,
+                    assignment_report,
+                    !rejected,
+                    residual_extraction_atoms,
+                )?,
             )?;
         }
         let graph = assignment_analysis.inputs().dependency_graph();

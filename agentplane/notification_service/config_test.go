@@ -4,12 +4,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const (
 	databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/notifications"
-	// webhookSecretEnv and privateKeyEnv are the Secrets the deployment supplies as environment variables.
+	// webhookSecretEnv and privateKeyEnv are the runtime Secrets the deployment supplies explicitly.
 	webhookSecretEnv = settingPrefix + "GITHUB__WEBHOOK_SECRET=never-print-this-test-webhook-secret"
 	privateKeyEnv    = settingPrefix + "GITHUB__PRIVATE_KEY=never-print-this-test-private-key"
 )
@@ -41,6 +42,11 @@ const deploymentFile = `rpc:
   auth:
     - mode: kubernetes_bearer
       audiences: [test-notifications]
+    - mode: spiffe
+      ca_file: /test/ca.pem
+  tls:
+    cert_file: /test/tls.crt
+    key_file: /test/tls.key
 namespace: test-agentplane
 token_audience: test-notifications
 operator_reader_account: test-app
@@ -51,17 +57,37 @@ notice_debounce:
 actions:
   url: http://test-actions.invalid:8080
   token_file: /test/tokens/actions
+  tls:
+    ca_file: /test/ca.pem
+    server_uri: spiffe://agentplane/actions
 runner_gateway:
   control_target: "{sandbox}-control.{namespace}.svc:8080"
   token_file: /test/tokens/gateway
+  tls:
+    ca_file: /test/ca.pem
+    server_uri: spiffe://agentplane/session-dispatcher
 history_service:
   target: test-history.invalid:8080
   token_file: /test/tokens/history
+  tls:
+    ca_file: /test/ca.pem
+    server_uri: spiffe://agentplane/history-ingress
 session_dispatcher:
   target: test-dispatcher.invalid:8080
   token_file: /test/tokens/dispatcher
+  tls:
+    ca_file: /test/ca.pem
+    server_uri: spiffe://agentplane/session-dispatcher
 github:
   app_id: 1234
+  api_url: https://api.github.com/
+  request_timeout_s: 5
+  api_version: "2022-11-28"
+  freshness_seconds: 600
+  max_body_bytes: 1048576
+  webhook_concurrency: 8
+request_timeout_s: 15
+message_body_limit_bytes: 32768
 `
 
 func loadTestConfig(t *testing.T, file string, environ ...string) (config, error) {
@@ -82,11 +108,17 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.RunnerGateway.ControlTarget != "{sandbox}-control.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
-		c.SessionDispatcher.Target != "test-dispatcher.invalid:8080" || c.SessionDispatcher.TokenFile != "/test/tokens/dispatcher" {
+		c.SessionDispatcher.Target != "test-dispatcher.invalid:8080" || c.SessionDispatcher.TokenFile != "/test/tokens/dispatcher" ||
+		c.RequestTimeoutSeconds != 15 || c.MessageBodyLimitBytes != 32768 || c.GitHub.APIVersion != "2022-11-28" {
 		t.Errorf("settings were not read: %+v", c)
 	}
 	if !c.githubEnabled() || c.GitHub.AppID != 1234 || c.GitHub.PrivateKey == "" || c.GitHub.WebhookSecret == "" {
 		t.Errorf("the GitHub App was not read from the file and the environment: %+v", c.GitHub)
+	}
+	if c.Actions.TLS == nil || c.Actions.TLS.ServerURI != "spiffe://agentplane/actions" ||
+		c.RunnerGateway.TLS == nil || c.HistoryService.TLS == nil || c.SessionDispatcher.TLS == nil ||
+		c.RPC.TLS == nil || !c.RPC.Has(listener.SPIFFE) {
+		t.Errorf("the peer or listener TLS and authentication settings were not read: %+v", c)
 	}
 }
 
@@ -113,16 +145,16 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	}
 }
 
-func TestAnEnvironmentVariableOverridesTheFileAtTopLevelAndNested(t *testing.T) {
+func TestStaticEnvironmentVariablesDoNotOverrideTheSettingsFile(t *testing.T) {
 	c, err := loadTestConfig(t, strings.Replace(requiredFile, "0.0.0.0:8080", "127.0.0.1:9000", 1)+"github_delivery_retention_days: 14\nquotas:\n  entries_per_inbox: 5\n",
 		settingPrefix+"RPC__LISTEN_ADDRESS=127.0.0.1:9001", settingPrefix+"NOTICE_DEBOUNCE__QUIET_SECONDS=7", settingPrefix+"ACTIONS__REQUEST_TIMEOUT_S=1.5",
 		settingPrefix+"UNAVAILABLE_DESTINATION_RETRY_S=9", settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS=3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.RPC.ListenAddress != "127.0.0.1:9001" || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 7 ||
-		c.Actions.RequestTimeoutSeconds != 1.5 || c.UnavailableDestinationRetrySeconds != 9 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 3) {
-		t.Errorf("file and environment overrides: %+v", c)
+	if c.RPC.ListenAddress != "127.0.0.1:9000" || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 2 ||
+		c.Actions.RequestTimeoutSeconds != 5 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 14) {
+		t.Errorf("static settings were affected by environment variables: %+v", c)
 	}
 }
 
@@ -157,7 +189,14 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		file    string
 		environ []string
 	}{
-		"unknown key":                 {file: requiredFile + "bogus: 1\n"},
+		"unknown key":                        {file: requiredFile + "bogus: 1\n"},
+		"database URL is not a file setting": {file: requiredFile + "database_url: postgres://test-user:never-print-this@test-database/notifications\n"},
+		"GitHub private key is not a file setting": {
+			file: requiredFile + "github:\n  app_id: 1234\n  private_key: never-print-me\n",
+		},
+		"GitHub webhook secret is not a file setting": {
+			file: requiredFile + "github:\n  app_id: 1234\n  webhook_secret: never-print-me\n",
+		},
 		"unknown nested key":          {file: strings.Replace(requiredFile, "  target: test-history.invalid:8080\n", "  target: test-history.invalid:8080\n  bogus: 1\n", 1)},
 		"no namespace":                {file: strings.Replace(requiredFile, "namespace: test-agentplane\n", "", 1)},
 		"no Actions URL":              {file: strings.Replace(requiredFile, "  url: http://test-actions.invalid:8080\n", "", 1)},
@@ -175,7 +214,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"request timeout of none":     {file: requiredFile + "history_service:\n  request_timeout_s: 0\n"},
 		"Action timeout of none":      {file: requiredFile + "actions:\n  request_timeout_s: 0\n"},
 		"GitHub App without secrets":  {file: requiredFile + "github:\n  app_id: 1234\n"},
-		"GitHub secrets without an App": {
+		"GitHub secrets without a static App setting": {
 			file: requiredFile, environ: []string{webhookSecretEnv, privateKeyEnv},
 		},
 		"short webhook secret": {
@@ -197,14 +236,35 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 }
 
+func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
+	t.Run("missing path", func(t *testing.T) {
+		_, err := configtest.Load(t, settingPrefix, loadConfig, []string{databaseURLEnv})
+		if err == nil {
+			t.Fatal("accepted without a settings file path")
+		}
+	})
+	t.Run("unreadable file", func(t *testing.T) {
+		_, err := configtest.Load(t, settingPrefix, loadConfig,
+			[]string{settingPrefix + "CONFIG_FILE=/this/path/does/not/exist/settings.yaml", databaseURLEnv})
+		if err == nil {
+			t.Fatal("accepted an unreadable settings file")
+		}
+	})
+	t.Run("multiple documents", func(t *testing.T) {
+		_, err := loadTestConfig(t, requiredFile+"---\nnamespace: second\n")
+		if err == nil {
+			t.Fatal("accepted multiple YAML documents")
+		}
+	})
+}
+
 func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
 	for _, tc := range []struct {
 		name, file, env string
 		want            *int
 	}{
 		{"YAML null", requiredFile + "github_delivery_retention_days: null\n", "", nil},
-		{"environment null", requiredFile + "github_delivery_retention_days: 14\n", settingPrefix + "GITHUB_DELIVERY_RETENTION_DAYS=null", nil},
-		{"environment finite over YAML null", requiredFile + "github_delivery_retention_days: null\n", settingPrefix + "GITHUB_DELIVERY_RETENTION_DAYS=3", new(3)},
+		{"environment ignored over YAML null", requiredFile + "github_delivery_retention_days: null\n", settingPrefix + "GITHUB_DELIVERY_RETENTION_DAYS=3", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := []string{}

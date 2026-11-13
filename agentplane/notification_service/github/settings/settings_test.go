@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/viper"
+	"github.com/go-viper/mapstructure/v2"
 )
 
 func validSettings() Settings {
@@ -83,50 +83,37 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	}
 }
 
-// A deployment sets `github` in the settings file and its secrets in the environment. The service config that
-// embeds Settings reads both, rejecting unknown keys.
-func TestSettingsDecodeFromAFileAndTheEnvironment(t *testing.T) {
-	t.Setenv("TEST_GITHUB__PRIVATE_KEY", "env-private-key")
-	t.Setenv("TEST_GITHUB__WEBHOOK_SECRET", "env-webhook-secret!")
-	file := `github:
-  app_id: 42
-  api_url: https://github.test/api/v3
-  request_timeout_s: 2.5
-  api_version: "2026-01-01"
-  freshness_seconds: 120
-  max_body_bytes: 2048
-  webhook_concurrency: 4
-`
-	decode := func(file string) (Settings, error) {
-		loaded := viper.NewWithOptions(viper.ExperimentalBindStruct(), viper.EnvKeyReplacer(strings.NewReplacer(".", "__")))
-		loaded.SetEnvPrefix("TEST")
-		loaded.AutomaticEnv()
-		loaded.SetConfigType("yaml")
-		if err := loaded.ReadConfig(strings.NewReader(file)); err != nil {
+// The containing service config decodes this struct from YAML and fills credentials explicitly from Secret inputs.
+func TestStaticSettingsDecodeAndSecretFieldsAreNotFileSettings(t *testing.T) {
+	file := map[string]any{
+		"api_url": "https://github.test/api/v3", "request_timeout_s": 2.5, "api_version": "2026-01-01",
+		"app_id": 42, "freshness_seconds": 120, "max_body_bytes": 2048, "webhook_concurrency": 4,
+	}
+	settings := DefaultSettings()
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result: &settings, TagName: "mapstructure", ErrorUnused: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := decoder.Decode(file); err != nil {
+		t.Fatal(err)
+	}
+	want := DefaultSettings()
+	want.APIURL, want.RequestTimeoutSeconds, want.APIVersion, want.AppID = "https://github.test/api/v3", 2.5, "2026-01-01", 42
+	want.FreshnessSeconds, want.MaxBodyBytes, want.WebhookConcurrency = 120, 2048, 4
+	if settings != want {
+		t.Errorf("settings = %+v, want %+v", settings, want)
+	}
+	for _, secretKey := range []string{"private_key", "webhook_secret"} {
+		decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+			Result: &settings, TagName: "mapstructure", ErrorUnused: true,
+		})
+		if err != nil {
 			t.Fatal(err)
 		}
-		config := struct {
-			GitHub Settings `mapstructure:"github"`
-		}{GitHub: DefaultSettings()}
-		err := loaded.UnmarshalExact(&config)
-		return config.GitHub, err
-	}
-
-	settings, err := decode(file)
-	want := Settings{
-		APIURL: "https://github.test/api/v3", RequestTimeoutSeconds: 2.5, APIVersion: "2026-01-01", AppID: 42,
-		PrivateKey: "env-private-key", WebhookSecret: "env-webhook-secret!",
-		FreshnessSeconds: 120, MaxBodyBytes: 2048, WebhookConcurrency: 4,
-	}
-	if err != nil || settings != want {
-		t.Errorf("settings = %+v, %v", settings, err)
-	}
-
-	settings, err = decode("github:\n  app_id: 42\n")
-	if err != nil || settings.APIURL != DefaultSettings().APIURL || settings.PrivateKey != "env-private-key" {
-		t.Errorf("settings with defaults = %+v, %v", settings, err)
-	}
-	if _, err = decode("github:\n  app_id: 42\n  unknown: 1\n"); err == nil {
-		t.Error("an unknown key was accepted")
+		if err := decoder.Decode(map[string]any{secretKey: "never-print-this"}); err == nil {
+			t.Errorf("accepted %s from static settings", secretKey)
+		}
 	}
 }

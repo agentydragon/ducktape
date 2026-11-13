@@ -884,14 +884,14 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 	})
 }
 
-func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
+func TestRealBinaryStartsWithSettingsFileAndExplicitSecret(t *testing.T) {
 	binary, err := runfiles.Rlocation(ingressServerRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The token is only good for the environment's audience, so the API server accepting it shows
 	// the environment overrode the YAML audience.
-	_, tokenA := workload(t, "test-sandbox-a", "test-environment-audience")
+	_, tokenA := workload(t, "test-sandbox-a", "settings-file-audience")
 	target, _, err := rest.DefaultServerUrlFor(api.Config)
 	if err != nil {
 		t.Fatal(err)
@@ -939,7 +939,9 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	settings := filepath.Join(directory, "settings.yaml")
 	settingsYAML := "allowed_service_account_namespaces: [" + testNamespace + "]\n" +
 		"policy_namespace: " + testPolicyNamespace + "\n" +
-		"token_audience: test-yaml-audience\n" +
+		"token_audience: settings-file-audience\n" +
+		"litellm_url: " + backendServer.URL + "\n" +
+		"kubeconfig: " + kubeconfig + "\n" +
 		"models:\n  - model: configured/model\n    total_context_budget_tokens: 8192\n" +
 		"log_levels:\n  root: INFO\n"
 	if err := os.WriteFile(settings, []byte(settingsYAML), 0o600); err != nil {
@@ -954,7 +956,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	_ = listener.Close()
 	ca := transporttesting.NewCA(t)
 	serverFiles := ca.Issue(t, environment_runtime_transport.LLMIngressURI)
-	rpcYAML := fmt.Sprintf("rpc: {listen_address: %q, tls: {cert_file: %q, key_file: %q}, auth: [{mode: kubernetes_bearer, audiences: [test-environment-audience]}]}\n", address, serverFiles.CertFile, serverFiles.KeyFile)
+	rpcYAML := fmt.Sprintf("rpc: {listen_address: %q, tls: {cert_file: %q, key_file: %q}, auth: [{mode: kubernetes_bearer, audiences: [settings-file-audience]}]}\n", address, serverFiles.CertFile, serverFiles.KeyFile)
 	if err := os.WriteFile(settings, []byte(settingsYAML+rpcYAML), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -964,10 +966,7 @@ func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
 	command.Env = []string{
 		"OTEL_SDK_DISABLED=true",
 		configFileEnv + "=" + settings,
-		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=" + testBackendKey,
-		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=" + kubeconfig,
-		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=test-environment-audience",
-		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=" + backendServer.URL,
+		liteLLMKeyEnv + "=" + testBackendKey,
 	}
 	command.Stdout = &logs
 	command.Stderr = &logs

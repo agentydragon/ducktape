@@ -13,7 +13,7 @@ struct Args {
 fn main() -> std::process::ExitCode {
     run_analysis(|| {
         match Args::parse().analysis.run(
-            &mut std::io::stderr().lock(),
+            &mut std::io::stderr(),
             analysis_identity::ANALYSIS_ENGINE_SHA256,
         ) {
             Ok(()) => std::process::ExitCode::SUCCESS,

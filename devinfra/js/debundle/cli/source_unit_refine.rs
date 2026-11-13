@@ -25,7 +25,7 @@ use crate::edit_gate::{
     post_edit_spec_from_docs, project_source_unit_claims, source_claim_sets_from_post_spec,
     source_unit_module_assignments_from_projection,
 };
-use crate::outcome::{GateOutcome, MutationOutcome};
+use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 /// One reviewed source unit reassignment. source units not listed keep their current
 /// destination. This command deliberately accepts only source units already claimed
@@ -95,7 +95,7 @@ struct PlannedSourceUnitMove {
 /// come from the canonical joint resolver; names, selector text, annotations,
 /// and anonymous-statement metadata are preserved from the original YAML.
 pub fn run_source_unit_refine(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     dependency_graph_path: &Path,
     source_root: &Path,
@@ -502,15 +502,15 @@ pub fn run_source_unit_refine(
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     let action = if files_written.is_empty() && files_deleted.is_empty() {
-        "unchanged"
+        MutationAction::Unchanged
     } else if dry_run {
-        "dry-run"
+        MutationAction::DryRun
     } else {
-        "applied"
+        MutationAction::Applied
     };
     Ok(SourceUnitRefineOutcome {
         outcome: MutationOutcome::ownership_edit(
-            "refine",
+            MutationVerb::Refine,
             action,
             GateOutcome::ClaimsChecked,
             effect_relocation_assessment.as_ref(),

@@ -369,12 +369,19 @@ pub(crate) struct RunArgs {
     #[arg(long = "effect-conflicts-chunk", requires = "effect_conflicts_jsonl", value_parser = artifact::paths::normalize_module_path)]
     pub(crate) effect_conflicts_chunks: Vec<String>,
     /// Emit diagnostic evidence independently of full graphs (repeatable):
-    /// translation_validation, export_reentry, or residual_atomic_groups.
+    /// translation_validation, export_reentry, residual_atomic_groups, or residual_extractions.
     #[arg(long = "full-report", value_name = "KIND")]
     pub(crate) full_reports: Vec<FullReportKind>,
     /// Select only these full-report sinks; all summaries and checks stay exact.
     #[arg(long = "full-report-chunk", requires = "full_reports", value_parser = artifact::paths::normalize_module_path)]
     pub(crate) full_report_chunks: Vec<String>,
+    /// Probe only these residual atoms (repeatable), e.g. atomic:3.
+    #[arg(
+        long = "residual-extraction-atom",
+        requires = "full_reports",
+        value_name = "ATOM"
+    )]
+    pub(crate) residual_extraction_atoms: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -471,8 +478,7 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
     let query_format = top_level_query_format(&args.command);
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
-    let stderr = io::stderr();
-    let mut stderr = stderr.lock();
+    let mut stderr = io::stderr();
     let result = (|| {
         let invocation = if args.invocation.requested() {
             Some(ResolvedInvocation::capture(
@@ -523,7 +529,7 @@ pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> Ex
 }
 
 fn run_debundle_cli(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: DebundleArgs,
     invocation: Option<ResolvedInvocation>,
     analysis_engine_sha256: &'static str,
@@ -580,6 +586,7 @@ fn run_debundle_cli(
             effect_conflicts_chunks,
             full_reports,
             full_report_chunks,
+            residual_extraction_atoms,
         }) => {
             if let Some(root) = &reports_only {
                 if let Some(out_root) = &args.context.auxiliary.out_root {
@@ -618,6 +625,7 @@ fn run_debundle_cli(
                         effect_conflicts_chunks: effect_conflicts_chunks.into_iter().collect(),
                         full_reports: full_reports.into_iter().collect(),
                         full_report_chunks: full_report_chunks.into_iter().collect(),
+                        residual_extraction_atoms: residual_extraction_atoms.into_iter().collect(),
                     },
                     analysis
                         .as_deref()

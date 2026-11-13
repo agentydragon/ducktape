@@ -108,7 +108,7 @@ impl ValidateReport {
 }
 
 pub fn run_validate_cmd(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ValidateArgs,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
@@ -155,7 +155,7 @@ pub(crate) struct CapturedPass {
 }
 
 pub(crate) fn run_captured_pass(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     transform: TransformArgs,
 ) -> Result<CapturedPass> {
     let keep_going = !transform.fail_fast;
@@ -179,6 +179,7 @@ pub(crate) fn run_captured_pass(
                 effect_conflicts_chunks: Default::default(),
                 full_reports: Default::default(),
                 full_report_chunks: Default::default(),
+                residual_extraction_atoms: Default::default(),
             },
             diagnostics,
         )
@@ -218,7 +219,7 @@ impl CapturedPass {
 }
 
 fn run_spec_validate(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ValidateArgs,
 ) -> Result<ValidateReport> {
     let keep_going = !args.transform.fail_fast;

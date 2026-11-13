@@ -308,7 +308,7 @@ impl CheckpointSession {
 }
 
 pub(super) fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: AuditContractsArgs,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {

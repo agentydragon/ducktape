@@ -20,6 +20,7 @@ use source_identity::SourceUnitId;
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::realizability::CrossRebindEdge;
+use crate::realizability::RealizabilityIndex;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
     EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
@@ -84,6 +85,56 @@ pub struct AssignmentAnalysis {
     /// Planning and final validation share this verdict for the immutable
     /// graph/assignment pair. A rebuilt assignment starts with an empty cache.
     realizability: OnceLock<RealizabilityVerdict>,
+}
+
+/// Reuses one indexed baseline for independent whole-atom probes. The index
+/// is constructed here, so its assignment cannot disagree with the analysis.
+pub struct AtomicMoveProbe<'a> {
+    analysis: &'a AssignmentAnalysis,
+    index: RealizabilityIndex,
+}
+
+impl AtomicMoveProbe<'_> {
+    pub fn validate_atom(
+        &self,
+        atom_index: usize,
+        to: ModuleId,
+        target_path: &spec::ModulePath,
+    ) -> AssignmentValidation {
+        let atom = &self.analysis.atomic_groups[atom_index];
+        let source_units: Vec<_> = atom.members.iter().copied().collect();
+        assert!(
+            source_units
+                .iter()
+                .all(|&unit| self.analysis.assignment.of(unit)
+                    == self.analysis.assignment.of(source_units[0])),
+            "whole-atom probe requires one current destination"
+        );
+        let graph = self.analysis.inputs.dependency_graph();
+        let mut moved = self.analysis.assignment.clone();
+        for &unit in &source_units {
+            moved.set(unit, to);
+        }
+        let verdict = self
+            .index
+            .verdict_after_moving_source_units(graph, &source_units, to);
+        let mut validation = validation_from_verdict(
+            graph,
+            &moved,
+            &|id| {
+                if id == to {
+                    target_path.clone()
+                } else {
+                    self.analysis.module_path(id)
+                }
+            },
+            verdict,
+        );
+        // A whole atom already sharing one current destination cannot repair
+        // a baseline split-atom conflict, including one in another atom.
+        validation.report.atomic_group_conflicts = self.analysis.assembly_conflicts.clone();
+        validation
+    }
 }
 
 /// An immutable assignment whose atomic-group, schedule, and rebinding checks
@@ -677,6 +728,17 @@ impl AssignmentAnalysis {
             .map(|id| self.module_path(*id))
             .collect();
         validation
+    }
+
+    /// Prepare repeated independent whole-atom probes against this assignment.
+    pub fn atomic_move_probe(&self) -> AtomicMoveProbe<'_> {
+        AtomicMoveProbe {
+            analysis: self,
+            index: RealizabilityIndex::from_assignment(
+                self.inputs.dependency_graph(),
+                self.assignment.clone(),
+            ),
+        }
     }
 
     /// Whether the emitted tree may not resolve a name the way the source

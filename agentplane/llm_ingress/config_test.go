@@ -8,51 +8,85 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
-func TestLoadConfigPrecedence(t *testing.T) {
-	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [yaml-namespace]
+const testLiteLLMKey = "test-provider-secret"
+
+const validSettings = `allowed_service_account_namespaces: [yaml-namespace]
 policy_namespace: test-policy
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
-litellm_key: yaml-secret
 log_llm_requests: true
-rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [yaml-audience, env-audience]}]}
+rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [yaml-audience]}]}
 codex_model_catalog_file: /yaml/codex_models.json
+kubeconfig: /yaml/kubeconfig
+central_sampler_accounts: [yaml-namespace/sampler]
+log_levels: {root: INFO}
 models:
   - model: test/model
     total_context_budget_tokens: 8192
-`)
-	c, err := configtest.Load(t, settingPrefix, loadConfig, []string{
-		configFileEnv + "=" + path,
+`
+
+func loadSettings(t *testing.T, contents string, extra ...string) (config, error) {
+	t.Helper()
+	path := configtest.WriteSettings(t, contents)
+	environ := append([]string{configFileEnv + "=" + path, liteLLMKeyEnv + "=" + testLiteLLMKey}, extra...)
+	return configtest.Load(t, "AGENTPLANE_LLM_INGRESS_", loadConfig, environ)
+}
+
+func TestStaticSettingsComeOnlyFromFileAndProviderKeyIsExplicit(t *testing.T) {
+	c, err := loadSettings(
+		t, validSettings,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
-		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
+		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=http://env.invalid",
 		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
-	})
+		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=/env/kubeconfig",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "env-audience" || c.RPC.ListenAddress != "127.0.0.1:6060" || c.LiteLLMKey != "env-secret" || c.LogLLMRequests ||
+	if c.TokenAudience != "yaml-audience" || c.RPC.ListenAddress != "127.0.0.1:6060" || c.LiteLLMKey != testLiteLLMKey || !c.LogLLMRequests ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
 		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
-		c.CodexModelCatalogFile != "/yaml/codex_models.json" {
-		t.Fatalf("unexpected merged config: %+v", c)
+		c.CodexModelCatalogFile != "/yaml/codex_models.json" || c.Kubeconfig != "/yaml/kubeconfig" ||
+		len(c.CentralSamplerAccounts) != 1 || c.CentralSamplerAccounts[0] != "yaml-namespace/sampler" || c.LogLevels["root"] != "INFO" {
+		t.Fatalf("unexpected file settings: %+v", c)
+	}
+}
+
+func TestSettingsFileIsRequiredReadableAndSingleDocument(t *testing.T) {
+	for name, environ := range map[string][]string{
+		"missing":    {liteLLMKeyEnv + "=" + testLiteLLMKey},
+		"blank":      {configFileEnv + "= ", liteLLMKeyEnv + "=" + testLiteLLMKey},
+		"unreadable": {configFileEnv + "=/missing/llm-ingress.yaml", liteLLMKeyEnv + "=" + testLiteLLMKey},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := configtest.Load(t, "AGENTPLANE_LLM_INGRESS_", loadConfig, environ); err == nil {
+				t.Fatal("loaded without a readable settings file")
+			}
+		})
+	}
+	if _, err := loadSettings(t, validSettings+"---\npolicy_namespace: second\n"); err == nil {
+		t.Fatal("accepted multiple YAML documents")
+	}
+	path := configtest.WriteSettings(t, validSettings)
+	if _, err := configtest.Load(t, "AGENTPLANE_LLM_INGRESS_", loadConfig, []string{configFileEnv + "=" + path}); err == nil {
+		t.Fatal("started without the explicit provider Secret input")
+	}
+}
+
+func TestProviderKeyIsNotDecodedFromTheSettingsFile(t *testing.T) {
+	settings := strings.Replace(validSettings, "log_llm_requests: true\n", "litellm_key: file-secret\nlog_llm_requests: true\n", 1)
+	if _, err := loadSettings(t, settings); err == nil {
+		t.Fatal("accepted the provider credential from the settings file")
 	}
 }
 
 func TestPolicyNamespaceIsRequired(t *testing.T) {
-	base := `allowed_service_account_namespaces: [test-namespace]
-policy_namespace: test-policy
-token_audience: test-audience
-rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
-litellm_url: http://127.0.0.1:8100
-litellm_key: test-secret
-`
 	for name, contents := range map[string]string{
-		"missing": strings.Replace(base, "policy_namespace: test-policy\n", "", 1),
-		"empty":   strings.Replace(base, "policy_namespace: test-policy", `policy_namespace: ""`, 1),
+		"missing": strings.Replace(validSettings, "policy_namespace: test-policy\n", "", 1),
+		"empty":   strings.Replace(validSettings, "policy_namespace: test-policy", `policy_namespace: ""`, 1),
 	} {
 		t.Run(name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, contents)
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path}); err == nil {
+			if _, err := loadSettings(t, contents); err == nil {
 				t.Fatal("accepted a missing policy_namespace")
 			}
 		})
@@ -60,31 +94,24 @@ litellm_key: test-secret
 }
 
 func TestAttributionConfig(t *testing.T) {
-	base := `allowed_service_account_namespaces: [test-namespace]
-policy_namespace: test-policy
-token_audience: test-audience
-rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
-litellm_url: http://127.0.0.1:8100
-litellm_key: test-secret
-`
 	for _, test := range []struct {
 		name  string
 		yaml  string
 		fails bool
 	}{
 		{name: "default"},
-		{name: "baggage only", yaml: "attribution:\n  baggage:\n    - key: Custom.PodUid\n      source: pod_uid\n    - key: Custom.Identity\n      source: identity\n"},
+		{name: "baggage only", yaml: "attribution:\n  json_headers: []\n  baggage:\n    - key: Custom.PodUid\n      source: pod_uid\n    - key: Custom.Identity\n      source: identity\n"},
 		{name: "mixed-case custom key", yaml: "attribution:\n  json_headers:\n    - name: X-Custom-Verified\n      fields:\n        - key: Agentplane.PodName\n          source: pod_name\n        - key: Agentplane.Identity\n          source: identity\n"},
-		{name: "empty", yaml: "attribution: {}\n", fails: true},
+		{name: "empty", yaml: "attribution: {json_headers: [], baggage: []}\n", fails: true},
 		{name: "empty JSON fields", yaml: "attribution:\n  json_headers:\n    - name: x-custom-verified\n      fields: []\n", fails: true},
-		{name: "duplicate key", yaml: "attribution:\n  baggage:\n    - key: same\n      source: pod_uid\n    - key: same\n      source: namespace\n", fails: true},
-		{name: "unknown source", yaml: "attribution:\n  baggage:\n    - key: claim\n      source: body_metadata\n", fails: true},
-		{name: "credential header", yaml: "attribution:\n  json_headers:\n    - name: X-Api-Key\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
-		{name: "routing header", yaml: "attribution:\n  json_headers:\n    - name: X-Forwarded-For\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
+		{name: "duplicate key", yaml: "attribution:\n  json_headers: []\n  baggage:\n    - key: same\n      source: pod_uid\n    - key: same\n      source: namespace\n", fails: true},
+		{name: "unknown source", yaml: "attribution:\n  json_headers: []\n  baggage:\n    - key: claim\n      source: body_metadata\n", fails: true},
+		{name: "credential header", yaml: "attribution:\n  baggage: []\n  json_headers:\n    - name: X-Api-Key\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
+		{name: "routing header", yaml: "attribution:\n  baggage: []\n  json_headers:\n    - name: X-Forwarded-For\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, base+test.yaml)
-			c, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
+			settings := strings.Replace(validSettings, "log_llm_requests: true\n", test.yaml+"log_llm_requests: true\n", 1)
+			c, err := loadSettings(t, settings)
 			if test.fails {
 				if err == nil {
 					t.Fatalf("invalid attribution accepted: %+v", c.Attribution)
@@ -113,67 +140,24 @@ litellm_key: test-secret
 	}
 }
 
-func TestPolicyNamespaceRequiresEveryAttributionOutputToNameTheIdentity(t *testing.T) {
-	base := `allowed_service_account_namespaces: [test-namespace]
-policy_namespace: test-policy
-token_audience: test-audience
-rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
-litellm_url: http://127.0.0.1:8100
-litellm_key: test-secret
-`
-	for _, test := range []struct {
-		name  string
-		yaml  string
-		fails bool
-	}{
-		{name: "default"},
-		{name: "every output names the identity", yaml: "attribution:\n  json_headers:\n    - name: x-custom\n      fields:\n        - key: a\n          source: identity\n  baggage:\n    - key: b\n      source: identity\n"},
-		{name: "baggage without identity", yaml: "attribution:\n  json_headers:\n    - name: x-custom\n      fields:\n        - key: a\n          source: identity\n  baggage:\n    - key: b\n      source: namespace\n", fails: true},
-		{name: "header with identity UID alone", yaml: "attribution:\n  json_headers:\n    - name: x-custom\n      fields:\n        - key: a\n          source: identity_uid\n", fails: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := configtest.WriteSettings(t, base+test.yaml)
-			c, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
-			if test.fails != (err != nil) {
-				t.Fatalf("load = %+v, %v; want failure %v", c.Attribution, err, test.fails)
-			}
-			if err == nil && c.PolicyNamespace != "test-policy" {
-				t.Fatalf("policy namespace = %q", c.PolicyNamespace)
-			}
-		})
-	}
-}
-
-func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
+func TestLoadConfigRejectsInvalidModelBudgetsAndUnknownKeys(t *testing.T) {
 	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
-			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [test-namespace]\npolicy_namespace: test-policy\n"+
-				"token_audience: test-audience\n"+`rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}`+"\n"+
-				"litellm_url: http://127.0.0.1:8100\n"+
-				"litellm_key: never-include-this-secret\n"+
-				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
-			_, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
-			if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
+			settings := strings.Replace(validSettings, "total_context_budget_tokens: 8192", "total_context_budget_tokens: "+value, 1)
+			if _, err := loadSettings(t, settings); err == nil || strings.Contains(err.Error(), testLiteLLMKey) {
 				t.Fatalf("got unsafe or missing config error: %v", err)
 			}
 		})
 	}
-}
-
-func TestLoadConfigRejectsUnknownFileSettingsWithoutEchoingValues(t *testing.T) {
-	base := `allowed_service_account_namespaces: [test-namespace]
-policy_namespace: test-policy
-token_audience: test-audience
-rpc: {listen_address: ":8080", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [test-audience]}]}
-litellm_url: http://127.0.0.1:8100
-litellm_key: never-include-this-secret
-models: []
-`
-	path := configtest.WriteSettings(t, base+`unknown_setting: never-include-this-secret
-`)
-	_, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
-	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
-		t.Fatalf("got unsafe or missing config error: %v", err)
+	for name, settings := range map[string]string{
+		"top level":       validSettings + "unknown_setting: secret-value\n",
+		"nested listener": strings.Replace(validSettings, "auth: [{mode: kubernetes_bearer, audiences: [yaml-audience]}]", "auth: [{mode: kubernetes_bearer, audiences: [yaml-audience], ignored: secret-value}]", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadSettings(t, settings); err == nil || strings.Contains(err.Error(), "secret-value") {
+				t.Fatalf("unknown setting accepted or echoed its value: %v", err)
+			}
+		})
 	}
 }
 
@@ -183,7 +167,7 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 		PolicyNamespace:                 "test-policy",
 		TokenAudience:                   testAudience,
 		LiteLLMURL:                      "http://127.0.0.1:8100",
-		LiteLLMKey:                      testBackendKey,
+		LiteLLMKey:                      testLiteLLMKey,
 		Attribution:                     defaultAttribution(),
 		RPC:                             listener.Config{ListenAddress: ":8080", Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}},
 	}

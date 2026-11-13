@@ -119,6 +119,7 @@ pub struct TransformRunOptions {
     pub effect_conflicts_chunks: BTreeSet<String>,
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
+    pub residual_extraction_atoms: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -544,6 +545,7 @@ fn audit_options() -> TransformRunOptions {
         effect_conflicts_chunks: BTreeSet::new(),
         full_reports: BTreeSet::new(),
         full_report_chunks: BTreeSet::new(),
+        residual_extraction_atoms: BTreeSet::new(),
     }
 }
 
@@ -684,6 +686,13 @@ fn run_prepared_transform(
         &options.full_report_chunks,
         &materialise_chunk_ids,
     )?;
+    anyhow::ensure!(
+        options.residual_extraction_atoms.is_empty()
+            || options
+                .full_reports
+                .contains(&FullReportKind::ResidualExtractions),
+        "--residual-extraction-atom requires --full-report residual_extractions"
+    );
     let write_program = !dry_run && options.artifacts.writes_program();
     if (options.effect_conflicts_jsonl
         || !options.full_reports.is_empty()
@@ -763,6 +772,7 @@ fn run_prepared_transform(
                 effect_conflicts_chunks: options.effect_conflicts_chunks.clone(),
                 full_reports: options.full_reports.clone(),
                 full_report_chunks: options.full_report_chunks.clone(),
+                residual_extraction_atoms: options.residual_extraction_atoms.clone(),
                 // Dry-run keeps the no-output contract on the
                 // accept path but still materializes rejection
                 // evidence at the same reports/tree/<chunk>/ location.
@@ -1057,6 +1067,9 @@ fn canonical_generation_command(
     for chunk in &options.full_report_chunks {
         argv.extend(["--full-report-chunk".to_string(), chunk.clone()]);
     }
+    for atom in &options.residual_extraction_atoms {
+        argv.extend(["--residual-extraction-atom".to_string(), atom.clone()]);
+    }
     Ok(argv)
 }
 
@@ -1246,6 +1259,7 @@ mod tests {
         effect_conflicts_chunks: BTreeSet::new(),
         full_reports: BTreeSet::new(),
         full_report_chunks: BTreeSet::new(),
+        residual_extraction_atoms: BTreeSet::new(),
     };
 
     // This real-pipeline boundary test changes files between preparation and
@@ -1620,6 +1634,7 @@ mod tests {
                     effect_conflicts_chunks: BTreeSet::new(),
                     full_reports: BTreeSet::new(),
                     full_report_chunks: BTreeSet::new(),
+                    residual_extraction_atoms: BTreeSet::new(),
                 },
                 &analysis::diagnostics::Diagnostics::default(),
             )?;

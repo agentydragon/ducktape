@@ -7,7 +7,7 @@ use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
-use crate::outcome::emit_gate_rejection_json;
+use crate::outcome::{MutationVerb, emit_gate_rejection_json};
 use crate::source_unit_refine::{
     SourceUnitAssignment, SourceUnitRefineOptions, run_source_unit_refine,
 };
@@ -588,7 +588,7 @@ fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mu
 }
 
 fn run_module_decompose(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModuleDecomposeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
@@ -646,7 +646,7 @@ fn run_module_decompose(
 
 fn run_modules_refine(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModulesRefineArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -697,7 +697,12 @@ fn run_modules_refine(
     ) {
         Ok(outcome) => outcome,
         Err(err) => {
-            return Err(emit_gate_rejection_json(output, "refine", args.format, err));
+            return Err(emit_gate_rejection_json(
+                output,
+                MutationVerb::Refine,
+                args.format,
+                err,
+            ));
         }
     };
     outcome.outcome.warn_if_unassessed_write(stderr)?;
@@ -754,7 +759,7 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
 }
 
 pub(super) fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: ModulesNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,

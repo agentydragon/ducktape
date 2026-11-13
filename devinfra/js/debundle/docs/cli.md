@@ -296,14 +296,15 @@ Description proposal fields and residual dependency names are defined in
 <../SPEC.md#authoring-reports>; truncation metadata uses the same section names.
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
-`bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
+`bindings rename`, `modules apply`, `modules refine`, `modules merge`,
+`modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
 | Field                   | Values                                                                                                                                                                                         |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                                                                                           |
+| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `refine` \| `merge` \| `delete`                                                                                                               |
 | `action`                | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                                                                                  |
 | `gate`                  | `passed` \| `claims_checked` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only; see "Ownership-edit assessment states" |
 | `needs_full_assessment` | `true` when an ownership edit passed only the graph-backed checks (no `--analysis`); omitted otherwise                                                                                         |
@@ -635,6 +636,31 @@ still needs its own gate verdict. Passing one ownership subset does not imply
 that adding or removing claims will pass, because that changes the destinations
 and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
 for structural atoms, conservative effects, and the accepted lazy-cycle case.
+
+### Residual extraction candidate report
+
+For an actual gate check of independent residual moves, request `debundle run
+--full-report residual_extractions`. The per-chunk `residual_extractions.json`
+records the current assignment's `baseline` gate result and one candidate for
+each wholly residual body atom. A candidate moves exactly that atom to its
+reported fresh destination; every other source unit keeps its current
+destination. Each probe starts from the same baseline. `candidate.gate_accepts`
+uses the complete shared gate, including Pass 2 and pre-existing structural
+conflicts. Rejected candidates retain typed `cycles` (cut, closed Pass-1 walk,
+and lazy closure), `atomic_group_conflicts`, cross-rebinds and source locations
+for blocking edge endpoints. Import/export scaffolding and already split atoms
+have `unprobed_reason` instead of a verdict. A fresh-destination gate pass is
+only an authoring hint: it does not establish acceptance in an existing owner,
+emission, translation validation or runtime behavior.
+
+Repeat `--residual-extraction-atom atomic:N` to probe only selected atoms;
+other residual body atoms remain listed with `unprobed_reason: not_selected`.
+IDs are chunk-local, so pair this flag with `--full-report-chunk <chunk-id>`
+when the spec materializes multiple chunks. An ID absent from a selected
+chunk's residual groups is an error. The report needs no `--graphs` and is
+independent of the cheaper `residual_atomic_groups` inventory. Bazel forwards
+`full_reports = ["residual_extractions"]`, `full_report_chunks`, and
+`residual_extraction_atoms` to the final Pipeline action.
 
 ### Other full reports
 
@@ -2056,7 +2082,8 @@ workflow are in <spec_editing.md> § Comments and notes. The CLI surface is
 `bindings comment` / `modules comment` — binding edits address
 `annotations.<name>.comment` for
 both member and source-match bindings; module edits address the top-level
-`comment:`. Non-emitting `note:` fields are YAML-authored metadata.
+`comment:`. JSON outcomes use `action` values `read`, `set`, `cleared`,
+`unchanged`, or `dry-run`. Non-emitting `note:` fields are YAML-authored metadata.
 
 ## Out of scope
 

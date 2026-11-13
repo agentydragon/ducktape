@@ -107,7 +107,7 @@ pub struct SourceClaimsContext<'a> {
     pub modules_root: &'a Path,
     pub source_root: Option<&'a Path>,
     pub source_context: Option<&'a VerifiedGraphSourceContext>,
-    pub diagnostics: &'a analysis::diagnostics::Diagnostics,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
 }
 
 pub fn resolve_source_claims(

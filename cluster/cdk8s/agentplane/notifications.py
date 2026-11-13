@@ -30,6 +30,7 @@ from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.notification_service.settings import (
     TOKEN_AUDIENCE,
     ActionsSettings,
+    GitHubSettings,
     HistoryServiceSettings,
     RunnerGatewaySettings,
     SessionDispatcherSettings,
@@ -47,7 +48,6 @@ from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
-from util.settings_contract import env_name, validate_settings_fragment
 
 NAME = "notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
@@ -117,34 +117,6 @@ class Notifications(Construct):
         )
         variables = {"AGENTPLANE_NOTIFICATIONS_DATABASE_URL": database_url, **(container_env or {})}
         github = env.notifications_github
-        content = {
-            "namespace": env.namespace,
-            "token_audience": TOKEN_AUDIENCE,
-            "operator_reader_account": "app",
-            "notice_debounce": env.notifications_debounce,
-            "actions": ActionsSettings(
-                url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
-                token_file=Path("/var/run/secrets/notifications/actions"),
-                tls=workload_tls.client_tls(ACTIONS_URI),
-            ),
-            "runner_gateway": RunnerGatewaySettings(
-                control_target=gateway_control_target,
-                token_file=Path("/var/run/secrets/notifications/gateway"),
-                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
-            ),
-            "history_service": HistoryServiceSettings(
-                target=f"{history.fqdn}:{history.pod_port}",
-                token_file=Path("/var/run/secrets/notifications/history"),
-                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
-            ),
-            "session_dispatcher": SessionDispatcherSettings(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                token_file=Path("/var/run/secrets/notifications/dispatcher"),
-                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
-            ),
-            "github": {"app_id": github.app_id} if github is not None else None,
-            "http_port": http.pod_port,
-        }
         readiness = tls_grpc_probe(
             port=endpoint.pod_port,
             ca_file=workload_tls.TRUST_BUNDLE_FILE,
@@ -195,20 +167,48 @@ class Notifications(Construct):
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
-        content["rpc"] = listener.Listener(
-            listen_address=f"0.0.0.0:{endpoint.pod_port}",
-            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[
-                listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE})),
-                listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-            ],
+        settings_model = Settings(
+            namespace=env.namespace,
+            token_audience=TOKEN_AUDIENCE,
+            operator_reader_account="app",
+            notice_debounce=env.notifications_debounce,
+            actions=ActionsSettings(
+                url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
+                token_file=Path("/var/run/secrets/notifications/actions"),
+                tls=workload_tls.client_tls(ACTIONS_URI),
+            ),
+            runner_gateway=RunnerGatewaySettings(
+                control_target=gateway_control_target,
+                token_file=Path("/var/run/secrets/notifications/gateway"),
+                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            ),
+            history_service=HistoryServiceSettings(
+                target=f"{history.fqdn}:{history.pod_port}",
+                token_file=Path("/var/run/secrets/notifications/history"),
+                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
+            ),
+            session_dispatcher=SessionDispatcherSettings(
+                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                token_file=Path("/var/run/secrets/notifications/dispatcher"),
+                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            ),
+            github=GitHubSettings(app_id=github.app_id) if github is not None else None,
+            http_port=http.pod_port,
+            rpc=listener.Listener(
+                listen_address=f"0.0.0.0:{endpoint.pod_port}",
+                tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
+                auth=[
+                    listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE})),
+                    listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
+                ],
+            ),
         )
-        settings = SettingsFile(
+        settings_file = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(validate_settings_fragment(Settings, content)),
+            content=yaml_config(settings_model, exclude_none=True),
         )
         role_name = NAME.removeprefix("agentplane-")
         Role(
@@ -240,11 +240,12 @@ class Notifications(Construct):
         ).add_subjects(workload.account)
         if github is not None:
             secret = SecretRef(namespace=env.namespace, name=github.secret_name)
-            for field, key in [("private_key", "private-key"), ("webhook_secret", "webhook-secret")]:
-                workload.container.env.add_variable(
-                    env_name(Settings, "github", field), secret.key(key).env_value(self, f"github-{key}")
-                )
-        settings.mount_into(workload.container, env=Settings.config_file_env)
+            for name, key in [
+                ("AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY", "private-key"),
+                ("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "webhook-secret"),
+            ]:
+                workload.container.env.add_variable(name, secret.key(key).env_value(self, f"github-{key}"))
+        settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload.project_tokens(
             "service-tokens",
             "/var/run/secrets/notifications",

@@ -145,6 +145,7 @@ py_test(
         "//agentplane/env/runtime:harness",
         "//agentplane/environment_runtime_transport:config",
         "//agentplane/identity/auth:audience",
+        "//agentplane/llm_ingress:settings",
         "//agentplane/mcp_edge:oauth_settings",
         "//agentplane/runner_gateway:settings",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",

@@ -170,7 +170,7 @@ impl ResolvedCandidateEffectAssessment<'_> {
     /// graph input and canonical staged analysis pipeline.
     pub fn assess(
         &self,
-        stderr: &mut dyn std::io::Write,
+        stderr: &mut (dyn std::io::Write + Send),
         edit_modules_root: &std::path::Path,
         candidate_modules: &BTreeMap<String, LogicalModule>,
         analysis_engine_sha256: &'static str,

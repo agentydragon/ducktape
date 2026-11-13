@@ -5,7 +5,7 @@ import {
   ListPushSubscriptionsResponseSchema,
   WatchPushSubscriptionsResponseSchema,
   type PushSubscription,
-} from "../../../action_service/web_push_service_pb";
+} from "../../../action_service/api/web_push/web_push_service_pb";
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { displayableError, fetchJson, HttpError } from "../client";

@@ -66,6 +66,12 @@ or harness container.
 The `rpc` setting uses the shared listener schema: `listen_address`, serving `tls`, and `auth`
 with `spiffe` roots and `kubernetes_bearer.audiences`.
 
+The complete non-secret service settings, including `log_levels`, come from the required YAML file
+named by `AGENTPLANE_LLM_INGRESS_CONFIG_FILE`. Static settings have no per-setting environment or
+CLI overrides, and unknown keys or additional YAML documents fail startup. The server-held LiteLLM
+virtual key is supplied separately through the Secret-backed `AGENTPLANE_LLM_INGRESS_LITELLM_KEY`
+environment input; it is not part of the settings file or ConfigMap.
+
 The required `policy_namespace` names the namespace holding Identities. An SVID whose
 `WorkloadCredential` (in an `allowed_service_account_namespaces` namespace) names an `Identity` is
 served only while that live Identity is the incarnation the credential names. Any Identity there may
@@ -124,8 +130,8 @@ route an entry only where a context window is configured. The pinned Codex must 
 (nixpkgs' `codex`, `agentplane/env/images/image.nix`). Codex behavior behind this endpoint, with source citations and test
 results: [`debug/codex_model_catalog.md`](../debug/codex_model_catalog.md).
 
-For targeted debugging, set `log_llm_requests: true` in the ingress settings (or
-`AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=true`). The ingress logs the first 1 MiB of each request body (with its
+For targeted debugging, set `log_llm_requests: true` in the ingress settings file and restart the
+ingress. The ingress logs the first 1 MiB of each request body (with its
 total size) and every raw response chunk with a per-request ID and chunk number, plus whether the stream completed. This can
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
@@ -148,9 +154,9 @@ The Go ingress tests exercise request filtering, TokenReview response policy, pr
 cancellation, and native gRPC authentication on the SVID TLS listener. A typed TokenReview fake is
 used for handler behavior;
 it checks ingress interpretation and does not establish Kubernetes token-validation or Pod-binding
-semantics. One smoke test starts the Bazel-built binary with YAML and environment settings against a
-narrow TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring and the real listener
-configuration path.
+semantics. One smoke test starts the Bazel-built binary with static YAML and the explicit provider
+Secret input against a small TokenReview HTTP fixture and fake LiteLLM, covering client-go wiring
+and the real listener configuration path.
 
 ```sh
 bbr test //agentplane/llm_ingress/...

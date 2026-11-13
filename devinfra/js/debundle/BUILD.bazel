@@ -670,6 +670,7 @@ rust_library(
         "atomic_groups.rs",
         "cross_module_purity.rs",
         "diagnostics.rs",
+        "diagnostics/progress.rs",
         "execution_evidence.rs",
         "facts/abstract_domain.rs",
         "facts/abstract_domain/builtins.rs",
@@ -1070,6 +1071,7 @@ rust_library(
         "@crates//:regex",
         "@crates//:serde",
         "@crates//:serde_yaml",
+        "@crates//:strum",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -1256,6 +1258,7 @@ rust_library(
         "lowering/materialize/outcome_sink.rs",
         "lowering/materialize/plan_builder.rs",
         "lowering/materialize/residual_atomic_report.rs",
+        "lowering/materialize/residual_extractions_report.rs",
         "lowering/mod.rs",
         "lowering/module_output.rs",
         "lowering/naturalize.rs",
@@ -1406,6 +1409,12 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:thiserror",
     ],
+)
+
+rust_test(
+    name = "command_diagnostics_test",
+    crate = ":command_diagnostics",
+    edition = "2024",
 )
 
 rust_library(

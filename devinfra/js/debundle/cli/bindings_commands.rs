@@ -9,7 +9,7 @@ use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
-use crate::outcome::emit_gate_rejection_json;
+use crate::outcome::{MutationVerb, emit_gate_rejection_json};
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
@@ -267,7 +267,7 @@ fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &
 
 fn run_bindings_rename_cmd(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: BindingsRenameArgs,
 ) -> Result<()> {
     if let Some(path) = &args.batch {
@@ -339,7 +339,7 @@ fn run_bindings_rename_cmd(
 
 fn run_bindings_assign_cmd(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: BindingsAssignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -389,7 +389,7 @@ fn run_bindings_assign_cmd(
         Err(err) => {
             return Err(emit_gate_rejection_json(
                 output,
-                "assign",
+                MutationVerb::Assign,
                 args.edit.format,
                 err,
             ));
@@ -401,7 +401,7 @@ fn run_bindings_assign_cmd(
 
 fn run_bindings_unassign_cmd(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: BindingsUnassignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
@@ -431,7 +431,7 @@ fn run_bindings_unassign_cmd(
         Err(err) => {
             return Err(emit_gate_rejection_json(
                 output,
-                "unassign",
+                MutationVerb::Unassign,
                 args.edit.format,
                 err,
             ));
@@ -443,7 +443,7 @@ fn run_bindings_unassign_cmd(
 
 fn print_unassign_outcome(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     out: &UnassignOutcome,
     format: OutputFormat,
 ) -> Result<()> {
@@ -470,7 +470,7 @@ fn print_unassign_outcome(
 
 fn print_assign_outcome(
     output: &mut dyn std::io::Write,
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     out: &AssignOutcome,
     format: OutputFormat,
 ) -> Result<()> {
@@ -496,7 +496,7 @@ fn print_assign_outcome(
 }
 
 pub(super) fn run(
-    stderr: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
     args: BindingsNs,
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,

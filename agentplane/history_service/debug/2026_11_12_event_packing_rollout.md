@@ -48,4 +48,55 @@ The resumed Job used a 50m CPU limit and an external maintenance guard, suspendi
 them. No PostgreSQL settings, replication slots, History watermarks, or projection state were reset.
 Each block transaction reads back and compares every moved event before commit.
 
-Final backfill totals and post-maintenance measurements will be added after the apply completes.
+The canary finished with exactly its dry-run totals. The all-session pass, using a 200m CPU limit
+and the same guard, completed at 04:34:04. A subsequent dry run scanned all 164 Sessions and reported
+zero further events, blocks or entries skipped inside blocks. There are 2,500 eligible-sized ordinary
+entries left as small tails. Oversized frames and other event kinds remain ordinary.
+
+Final storage contains 2,953,231 events in 18,938 blocks, including the probe's 140 events / two blocks.
+Thus the historical conversion moved 2,953,091 events into 18,936 blocks. The blocks represent
+1,841,875,264 protobuf bytes in 313,987,012 gzip bytes, excluding row/index/array metadata.
+All moved events passed the per-transaction production-reader equality check. SQL independently
+found zero overlapping per-kind block spans. The measured oversized reasoning span still has
+37,478 events at distinct original cursors 1,343,675–1,381,152.
+
+## Full vacuum and final checks
+
+The operator explicitly requested `VACUUM FULL` after compaction. The original 512 MB replication-slot
+limit was temporarily raised to 8 GB through the CNPG Cluster parameter; both instances reloaded it.
+The parent Flux reconciliation overwrites a child Kustomization's temporary `suspend: true`, so the
+maintenance hold was narrowed to the Postgres resource using
+[`kustomize.toolkit.fluxcd.io/reconcile: disabled`](https://fluxcd.io/flux/components/kustomize/kustomizations/#suspending-and-resuming).
+Other staging reconciliation continued. This leaves CNPG managing the database throughout.
+
+`VACUUM (FULL, ANALYZE, VERBOSE) session_event,session_event_block` ran from 04:35:49 to 04:36:42,
+finishing successfully in 52.95 seconds. The session used `wal_compression=on`, a five-second lock
+timeout and a 30-minute statement timeout. A separate monitor would cancel this named maintenance
+query above 6 GiB retained WAL, below 4 GiB free on either instance, or on a slot/retention failure.
+Observed retained WAL peaked at 2,711,953,544 bytes, demonstrating why the 512 MB limit was unsuitable
+for the rewrite. Neither slot was invalidated. Minimum observed free space was 11,762,204,672 bytes
+on the primary and 12,763,275,264 on the replica.
+
+| Allocated bytes, including indexes and TOAST | Before packing | After packing and full vacuum |
+| -------------------------------------------- | -------------: | ----------------------------: |
+| History database                             |  5,745,440,447 |                 4,316,198,591 |
+| `session_event`                              |  4,413,243,392 |                 2,607,546,368 |
+| `session_event_block`                        |         32,768 |                   376,471,552 |
+
+The database reclaimed 1,429,241,856 bytes (24.9%). Packing initially increased allocated files;
+the full vacuum returned the superseded ordinary-row space to the filesystem.
+
+After the full vacuum, every original Session's watermark was unchanged. Logical event counts,
+including packed entries, matched the baseline by kind plus exactly the probe's 162 events:
+4,173,159 original events and 4,173,321 final events. No original Session disappeared and the probe
+was the only new Session. The public ingress/readback probe also passed again after the rewrite
+([BuildBuddy](https://app.buildbuddy.io/invocation/27f2540f-4846-4dea-8b99-be46b7938037)), including
+the page beginning inside a block. Short-lived token files were deleted again. Both History replicas
+were available and Electric returned HTTP 200 with `{"status":"active"}`; physical replication was
+caught up and the logical slot was current. WAL archiving had no recorded failures. Once both slots
+were current, the original 512 MB retention limit was restored and verified on both instances with
+no pending restart. The Postgres maintenance annotation was removed; staging Flux was not suspended.
+The superseded suspended canary Job was deleted, with its committed work retained and verified.
+At 04:48:04, the final archive queue was empty, physical replay lag was zero, and both slots were
+active and reserved. After a checkpoint, the primary had 16,901,935,104 bytes free and the replica
+17,455,464,448 bytes free. Local port-forwards and probe credentials were removed.

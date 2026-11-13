@@ -74,8 +74,19 @@ analyzer emit the same hint and admission diagnostics as `run`, including
 Project-analysis performs selector resolution and reports its selector warnings,
 but does not compute purity-hint facts. Synchronous purity-completion
 disagreements remain in facts and reports and are recorded as typed chunk
-diagnostics at the shared fresh/loaded fact check. Progress telemetry has a
-separate instrumentation owner.
+diagnostics at the shared fresh/loaded fact check.
+
+Live phase markers use typed chunk, phase and state events in the same explicit
+invocation context. Observers run synchronously at each marker, including during
+parallel chunk work; events are not buffered until the operation finishes.
+Libraries default to no progress observer and never read progress configuration
+or select a process stream. Command adapters own marker formatting, output and
+`DUCKTAPE_DEBUNDLE_PROGRESS`: absent, empty, `0`, `false`, `off`, and `no` disable
+all phase markers (case insensitive); other values enable them. Enabled markers
+retain the `[debundle progress] chunk=… phase=… state=…` profiler format and flush
+at each event. The first marker write or flush failure is retained as a native
+stderr error, further writes stop, and the operation result retains both causes
+if analysis also fails.
 
 Command output is fallible through text rendering, JSON serialization, stdout
 and stderr writes, and each stream's explicit final flush. Text reports are
@@ -548,6 +559,18 @@ is written; any write/flush failure fails the run. Existing invalid-spec,
 accepted-dry-run, typed gate rejection and final-program checks remain intact.
 Bazel `full_reports` and `full_report_chunks` attrs forward the same selection
 only to the final Pipeline action; analysis artifacts/projections are unchanged.
+
+`run --full-report residual_extractions` writes a separate per-chunk
+`residual_extractions.json`. It records the current assignment's gate result,
+then independently moves each wholly residual body atomic group to a
+deterministic fresh module for a complete shared-gate check. The report
+retains cycle cuts and witnesses, structural conflicts, cross-rebinds, and
+blocking source locations. Split atoms and import/export scaffolding are
+explicitly unprobed. `--residual-extraction-atom atomic:N` selects probes by
+chunk-local atomic ID; `--full-report-chunk` scopes those IDs to configured
+chunks. This is an authoring gate diagnostic, not an emission or translation
+validation claim. The selection is independent of the residual inventory and
+full graph export. Bazel `residual_extraction_atoms` forwards the same filter.
 
 Every final candidate is assessed against its exact emitted order and structural
 placement, including runs that suppress reports. Report selection controls the
