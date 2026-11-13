@@ -8951,8 +8951,15 @@
         "pr": 16214,
         "failed_head": "b6383b2e7a2b6cc4323f199b56010f83e70e6046",
         "invocation": "14210264-6c40-56fa-8094-f162ac369b07",
-        "failure": "Pod suite: 20 passed, 1 idle-resume scenario timed out while Sandbox stayed Suspended/Idle with no Pod. ALREADY_EXISTS warning observed; causal relation unproven.",
-        "resolution": "Current rebased head passes full CI. No timeout/assertion/runtime change or targeted retry was made to clear this failure. Lifecycle investigation is separate from the package move."
+        "failure": "Pod suite: 20 passed, 1 idle-resume scenario timed out while Sandbox stayed Suspended/Idle with no Pod. Suite-level ALREADY_EXISTS warnings lack method, command ID and timestamp; they cannot be attributed to this case or outcome.",
+        "resolution": "Current rebased head passes full CI; test_pod is a remote-cache pass, which establishes current CI status rather than a fresh reproduction. No timeout/assertion/runtime change or targeted retry cleared this failure. The lifecycle cause remains unproven.",
+        "current_ci": {
+          "head": "c6f87560ab8bbb39eeb3a4a008c5b23af299b11d",
+          "invocation": "529d0a67-a92b-5ae5-a855-08c6f7ac385d",
+          "result": "PASSED",
+          "test_pod_remote_cache": true
+        },
+        "visibility_limit": "Failed artifacts lack sandbox-controller, runner-gateway and environment-runtime component logs. Reorganization diff preserves adapter RPC construction, arguments, identity metadata and command wiring. Keep lifecycle ownership/reconciliation follow-up open."
       }
     ]
   }
