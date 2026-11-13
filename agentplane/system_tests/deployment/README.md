@@ -55,6 +55,12 @@ releases/images/configuration. `stack.py` owns fresh workload orchestration and 
 Only VM suites load `vm/pytest_plugin.py`, which supplies the typed lifecycle extension; Pod/MCP
 runfiles omit VM runtime helpers.
 
+The experimental fixture sets kubelet `sync-frequency=5s` so same-Pod Secret rotation exercises
+real volume projection and Runtime certificate reload with a bounded periodic wait. Kubernetes'
+ordinary default is one minute; production node configuration is unchanged. These tests cover
+projection correctness under the shorter cadence, not its production-default delay. Changing this
+startup flag changes `baseline.py` and therefore invalidates an incompatible retained node.
+
 A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
 refreshed snapshot is saved, later actions can repeat the rebuild.
 
