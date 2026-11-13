@@ -2,8 +2,8 @@
 
 This standalone SSH MCP server is consumed by Agentplane's Action Service. It exposes two code-owned MCP tools:
 
-- `list_targets` — list every configured `(host, user)` tuple, whether its configured host-key
-  file exists, and whether its mounted identity is readable;
+- `list_targets` — list every configured `(host, user)` tuple with one aggregate availability flag:
+  a target is available only when its configured host-key file exists and its mounted identity is readable;
 - `exec` — run one non-interactive command over SSH with an optional timeout bounded by the
   server's configured maximum.
 
