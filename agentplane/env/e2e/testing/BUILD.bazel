@@ -111,6 +111,7 @@ py_library(
     deps = [
         ":config",
         ":gateway",
+        ":history_tunnel",
         ":process",
         "//agentplane/env:config",
         "//agentplane/env/runtime/control:environment_runtime_pb2",

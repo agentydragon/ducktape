@@ -7,7 +7,6 @@ import json
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
-from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -169,12 +168,12 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
             config = launches.config(
                 session_pb2.HARNESS_CODEX,
                 endpoint.origin,
+                sandbox=sandbox.identity,
                 state_dir=tmp_path / "runner-state",
                 home=tmp_path / "runner-home",
                 codex_executor_url=codex_exec_server_container.url,
                 codex_executor_socket=codex_exec_server_container.socket,
             )
-            config = replace(config, launch=replace(config.launch, sandbox=sandbox.identity))
             control = configuration.EnvironmentRuntimeControl(
                 listen_address="127.0.0.1:9090",
                 security=MTLS(
