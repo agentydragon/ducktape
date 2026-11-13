@@ -141,11 +141,13 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
 
 
 def test_openclaw_uses_relay_without_receiving_its_svid(app_objects: list[dict[str, Any]]) -> None:
+    assert _one(app_objects, "Deployment", "public-coder-agent")["spec"]["replicas"] == 0
     pod = _one(app_objects, "Deployment")["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == "openclaw"
     assert pod["automountServiceAccountToken"] is False
     account = _one(app_objects, "ServiceAccount", "openclaw")
     assert account["automountServiceAccountToken"] is False
+    assert "agentplane.allegedly.works/use-action-service" not in account["metadata"].get("labels", {})
     relay = one(c for c in pod["containers"] if c["name"] == "egress-sidecar")
     assert public_coder_egress.SVID_VOLUME in {v["name"] for v in relay["volumeMounts"]}
     for container in pod["initContainers"] + [c for c in pod["containers"] if c != relay]:

@@ -1,7 +1,7 @@
-"""Staging-only Action Service policy objects: caller ServiceAccounts, reviewed
-PolicySets, and their bindings; also what its sandboxes may reach (its egress PolicyBinding)
-and read (the Coinbase key). See cluster/k8s/agentplane-staging/README.md § Action policies --
-Sandbox-subject bindings are written by the integration app at runtime and are never checked in here.
+"""Staging-only Action Service policy objects: standing caller Identities, reviewed PolicySets,
+and their bindings; also what their boxes may reach (egress) and read (the Coinbase key). See
+cluster/k8s/agentplane-staging/README.md § Action policies -- Sandbox-subject bindings are written
+by the integration app at runtime and are never checked in here.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from agentplane.action_service.policies.resources import CALLER_LABEL, parse_action_rule
+from agentplane.action_service.policies.resources import parse_action_rule
 from agentplane.action_service.sandbox.contract.actions import Action
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
@@ -100,9 +100,8 @@ COMMON_GITHUB_READ_SET = "common-github-read"
 DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
 GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creation"
 
-# The reviewed Action reads and sandbox use bound to the claude-ai and haku-agent accounts. The
-# binding's existence is the grant: deleting it, or the label on the ServiceAccount, puts every
-# one of these Actions back on the human path.
+# The reviewed Action reads and sandbox use bound to the claude-ai and haku-agent Identities. The
+# binding's existence is the grant: deleting it puts every one of these Actions back on the human path.
 HAKU_SHARED_ACTION_SETS = (
     GITHUB_READS_SET,
     GITHUB_IDENTITY_READS_SET,
@@ -141,14 +140,26 @@ _HAKU_CLAUDE_BASE_POLICIES = (
 
 
 def caller_role_sets() -> list[str]:
-    """In the identity catalog, the role sets granted to `claude-ai`'s and `haku-agent`'s own Kubernetes
-    accounts: exactly those their bindings grant today, so the switch widens neither caller."""
+    """The exact role sets granted to `claude-ai`'s and `haku-agent`'s Kubernetes accounts."""
     return [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
 
 
-def _kubernetes_account_use(caller: StandingCaller, *, identity_catalog: bool) -> list[str]:
-    """In the identity catalog, the use set of `caller`'s own Kubernetes account, named after its identity."""
-    return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name] if identity_catalog else []
+def _identity_caller_policies(
+    policies: Sequence[str], *, identity_catalog: bool, identity_egress_set_names: set[str]
+) -> list[str]:
+    """Identity-compatible policies, replacing mixed Kubernetes sets with their pure-egress sibling."""
+    selected: list[str] = []
+    for name in policies:
+        if name not in access.POLICY_SETS:
+            selected.append(name)
+        elif name in identity_egress_set_names:
+            selected.append(name if identity_catalog else f"{name}-identity")
+    return selected
+
+
+def _kubernetes_account_use(caller: StandingCaller) -> list[str]:
+    """The use set of `caller`'s own Kubernetes account, named after its Identity."""
+    return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name]
 
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
@@ -377,22 +388,23 @@ _KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pod
 
 
 def add_staging_action_policies(
-    scope: Construct, *, identity_catalog: bool, haku_ui: Identity, haku_ci: Identity
+    scope: Construct,
+    *,
+    identity_catalog: bool,
+    identity_egress_set_names: set[str],
+    haku_ui: Identity,
+    haku_ci: Identity,
 ) -> None:
-    """`haku_ui` and `haku_ci` are the Identities Haku's standing workloads and haku-ci's egress relay act
-    as (haku/ui_egress.py, haku_ci/egress_gateway.py), rendered whether or not the catalog is."""
+    """Render Haku's standing workload Identities and caller grants independently of the optional catalog."""
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
-    # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
-    # makes it an Action caller, and removing the label or the object is how it is disabled.
-    # What it may do without an operator is a PolicyBinding naming it; its Kubernetes
-    # access is listed in cluster/docs/agent_rbac.md § 6.
+    # the operator at OAuth consent, and the Identity its boxes run as. The reviewed Identity
+    # binding grants auto-approval; this ServiceAccount has no Action-caller label.
     claude_ai = ServiceAccount(
         scope,
         "serviceaccount-claude-ai",
         metadata=ApiObjectMetadata(
             name=CLAUDE_AI.service_account.name,
             namespace=CLAUDE_AI.service_account.namespace,
-            labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for Connections enrolled from the Claude.ai MCP connector, selected at OAuth consent."
             },
@@ -415,7 +427,6 @@ def add_staging_action_policies(
         metadata=ApiObjectMetadata(
             name=HAKU_AGENT.service_account.name,
             namespace=HAKU_AGENT.service_account.namespace,
-            labels={CALLER_LABEL: "true"},
             annotations={
                 "description": "The principal for the 'haku' sandbox preset: agents that clone haku-state and work from it, the way Haku itself does."
             },
@@ -694,11 +705,8 @@ def add_staging_action_policies(
         ],
     )
 
-    # What a sandbox of claude-ai's may reach. The binding is on the account rather than on each
-    # box because that is what the account is entitled to: the proxy authenticates the Pod's
-    # ServiceAccount, and every sandbox stamped for this caller runs as exactly that. Nothing else
-    # runs as it -- claude-ai has no Pod of its own -- so this grants reach to its sandboxes and to
-    # nothing else.
+    # What a box of this Identity may reach. Egress and Action grants bind to the Identity;
+    # Kubernetes API rights stay behind its named account use set and exact ServiceAccountGrant.
     #
     # `forgejo-haku` is the widest of these by some distance: it substitutes the `haku` account's
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
@@ -714,7 +722,8 @@ def add_staging_action_policies(
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
     # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
     # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` combines the named
-    # key Secret grant with GET egress. `plaid-diagnostics` grants read-only control-plane metadata
+    # key Secret grant with GET egress; the Identity binding uses its pure-egress sibling alongside
+    # the caller's exact Kubernetes account grant. `plaid-diagnostics` grants read-only control-plane metadata
     # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
     # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
     # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
@@ -747,15 +756,19 @@ def add_staging_action_policies(
     _account_binding(
         scope,
         claude_ai,
-        subject=CLAUDE_AI.subject(identity_catalog=identity_catalog),
+        subject=CLAUDE_AI.identity_subject(),
         policies=[
-            *_HAKU_CLAUDE_BASE_POLICIES,
+            *_identity_caller_policies(
+                _HAKU_CLAUDE_BASE_POLICIES,
+                identity_catalog=identity_catalog,
+                identity_egress_set_names=identity_egress_set_names,
+            ),
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
             # claude-ai is the account that launches orchestration_v1 workers.
             ORCHESTRATION_PRESETS_SET,
             *HAKU_SHARED_ACTION_SETS,
-            *_kubernetes_account_use(CLAUDE_AI, identity_catalog=identity_catalog),
+            *_kubernetes_account_use(CLAUDE_AI),
         ],
     )
 
@@ -869,11 +882,15 @@ def add_staging_action_policies(
     _account_binding(
         scope,
         haku_agent,
-        subject=HAKU_AGENT.subject(identity_catalog=identity_catalog),
+        subject=HAKU_AGENT.identity_subject(),
         policies=[
-            *_HAKU_CLAUDE_BASE_POLICIES,
+            *_identity_caller_policies(
+                _HAKU_CLAUDE_BASE_POLICIES,
+                identity_catalog=identity_catalog,
+                identity_egress_set_names=identity_egress_set_names,
+            ),
             *HAKU_SHARED_ACTION_SETS,
-            *_kubernetes_account_use(HAKU_AGENT, identity_catalog=identity_catalog),
+            *_kubernetes_account_use(HAKU_AGENT),
         ],
     )
 
@@ -1020,18 +1037,16 @@ def add_staging_action_policies(
         rules=[AutoApproveIf.exact_actions(actions={"kubernetes_admin": _KUBERNETES_INSPECTION_READS_ACTIONS})],
     )
 
-    # The long-running OpenClaw Pod is hosted in its own namespace; keep its Action
-    # authorization here with the shared policy sets, addressed by the full SA identity.
+    # The OpenClaw Pod is hosted in its own namespace; keep its Action authorization here with
+    # the shared policy sets, addressed by its standing Identity.
     _binding(
         scope,
         "policybinding-public-coder-openclaw-actions",
         metadata=ApiObjectMetadata(
             name="public-coder-openclaw-actions",
             namespace=_NAMESPACE,
-            annotations={
-                "description": "Auto-approves the reviewed common GitHub reads for the OpenClaw ServiceAccount."
-            },
+            annotations={"description": "Auto-approves the reviewed common GitHub reads for the OpenClaw Identity."},
         ),
-        subject=OPENCLAW.subject(identity_catalog=identity_catalog),
+        subject=OPENCLAW.identity_subject(),
         policy_sets=[COMMON_GITHUB_READ_SET],
     )

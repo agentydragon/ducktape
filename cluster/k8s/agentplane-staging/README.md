@@ -35,12 +35,12 @@ existing Connection identity after operator confirmation.
 
 ## Action policies
 
-This environment's Git-managed Action policy sets and the `PolicyBinding`s for labeled caller
-ServiceAccounts such as `claude-ai`, `haku-agent`, and the cross-namespace
-`public-coder-agent/openclaw` are defined in
+This environment's Git-managed Action policy sets and standing `PolicyBinding`s for the
+`claude-ai`, `haku-agent`, and paused public-coder OpenClaw Identities are defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
-`agentplane-staging.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
-that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Each set is
+`agentplane-staging.k8s.yaml`. OpenClaw's separate egress `PolicyBinding` is defined in
+`cluster/cdk8s/public_coder/egress.py`. A new set or caller binding is a PR to its owning Python
+module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Each set is
 rendered as a `PolicySet` whose rules the egress proxy and the Action Service each read by
 type (`egress`, `action_auto_approve`), bound by `PolicyBinding`s. The generator parses every set with the Action Service's own models, so a
 spec the service would refuse fails generation (and CI's `//cluster/cdk8s:test_generate_manifests`)

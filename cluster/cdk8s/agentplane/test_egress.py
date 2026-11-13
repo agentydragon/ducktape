@@ -209,8 +209,7 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
         }
     ]
 
-    # Both direct ServiceAccount callers and Identity effective callers use the same reviewed
-    # Action approval policy.
+    # Standing Identity callers use the same reviewed Action approval policy in either catalog mode.
     for account in ("claude-ai", "haku-agent"):
         binding = _by_name(catalog_manifests, "PolicyBinding", account)
         assert BASIC_POLICY in binding["spec"]["policySets"]
@@ -232,10 +231,7 @@ def test_public_internet_is_available_but_never_implicitly_granted(catalog_manif
     for doc in catalog_manifests:
         if doc["kind"] == "PolicyBinding":
             if doc["metadata"]["name"] == "public-coder-openclaw":
-                assert doc["spec"]["subject"] in (
-                    {"namespace": "public-coder-agent", "name": "openclaw"},
-                    {"identity": {"name": "public-coder-openclaw"}},
-                )
+                assert doc["spec"]["subject"] == {"identity": {"name": "public-coder-openclaw"}}
                 assert doc["spec"]["policySets"] == [
                     "public-coder-openclaw",
                     INFERENCE_EXPERIMENTS_POLICY,
@@ -585,11 +581,11 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     assert "cluster-diagnostics" in haku
     assert f"{agent_access_profiles.COINBASE_POLICY}-identity" in haku_policy_sets
     assert (
-        agent_access_profiles.COINBASE_POLICY
+        f"{agent_access_profiles.COINBASE_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
     )
     assert (
-        agent_access_profiles.COINBASE_POLICY
+        f"{agent_access_profiles.COINBASE_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     )
     coinbase_rules = _by_name(staging_manifests, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"]["rules"]
@@ -610,11 +606,11 @@ def test_public_diagnostics_select_cluster_reader_and_share_haku_reads(
     assert coinbase_identity_rules == [egress_rule]
     assert f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity" in haku_policy_sets
     assert (
-        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY
+        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "claude-ai")["spec"]["policySets"]
     )
     assert (
-        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY
+        f"{agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}-identity"
         in _by_name(staging_manifests, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     )
     plaid_rules = _by_name(staging_manifests, "PolicySet", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY)["spec"][

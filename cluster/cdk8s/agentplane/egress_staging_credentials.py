@@ -80,9 +80,7 @@ GROCY_SF_READONLY_CREDENTIAL = "grocy-sf-readonly"
 HOME_ASSISTANT_READONLY_CREDENTIAL = "home-assistant-readonly"
 
 
-def add_staging_egress_credentials(
-    scope: Construct, *, namespace: str, credentials_namespace: str, identity_catalog: bool
-) -> None:
+def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
     construct = Construct(scope, "staging-egress-credentials")
     reader = ServiceAccount(
         construct, "reader", metadata=ApiObjectMetadata(name=EXTERNAL_CREDS_READER, namespace=credentials_namespace)
@@ -108,13 +106,7 @@ def add_staging_egress_credentials(
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
-    add_gateway_resources(
-        construct,
-        reader=reader,
-        namespace=namespace,
-        credentials_namespace=credentials_namespace,
-        identity_catalog=identity_catalog,
-    )
+    add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     # Keep these grants in sync with the egress PolicySets in the named functions below.
     # Local Gateways check the selected backend's identity/target port, even for a public hostname.
     NetworkPolicy(

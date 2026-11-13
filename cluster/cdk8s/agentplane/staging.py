@@ -764,9 +764,9 @@ def chart(app: App, env: Environment = ENV) -> Chart:
     egress_rules = staging_config.assignable_set_egress_rules()
     role_sets: dict[str, KubernetesRoleSet] = {}
     for name, grants in sorted(assignable_sets.items()):
-        # Sandboxes act as Identities and reach the API server only as accounts, which the role
-        # sets grant; in the ServiceAccount catalog the PolicySet keeps its Kubernetes rules for
-        # the ServiceAccount callers that remain until IDENTITY_CUTOVER.
+        # Sandboxes and standing callers act as Identities and reach the API server only as accounts,
+        # which the role sets grant. Mixed-mode PolicySets keep their Kubernetes rules for any
+        # remaining ServiceAccount-subject bindings; Identity bindings use pure-egress siblings.
         role_sets[name] = KubernetesRoleSet(
             chart,
             f"kubernetes-role-set-{name}",
@@ -795,8 +795,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
                 rules=egress_rules[name],
             )
     _add_launch_accounts(chart, env, role_sets=role_sets)
-    if env.identity_catalog:
-        _add_identity_catalog(chart, env, role_sets=role_sets)
+    _add_standing_identity_access(chart, env, role_sets=role_sets)
     for group in staging_config.INBOX_GROUPS:
         PolicySet(
             chart,
@@ -933,7 +932,13 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
     )
     _add_session_secret(chart)
-    add_staging_action_policies(chart, identity_catalog=env.identity_catalog, haku_ui=haku_ui, haku_ci=haku_ci)
+    add_staging_action_policies(
+        chart,
+        identity_catalog=env.identity_catalog,
+        identity_egress_set_names=set(egress_rules),
+        haku_ui=haku_ui,
+        haku_ci=haku_ci,
+    )
     EgressCredentials(
         chart, "egress-credentials", namespace=env.egress.credentials_namespace, proxy_namespace=env.namespace
     )
@@ -944,10 +949,7 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         proxy_namespace=env.namespace,
     )
     add_staging_egress_credentials(
-        chart,
-        namespace=env.namespace,
-        credentials_namespace=env.egress.credentials_namespace,
-        identity_catalog=env.identity_catalog,
+        chart, namespace=env.namespace, credentials_namespace=env.egress.credentials_namespace
     )
     return chart
 
@@ -975,12 +977,17 @@ def _add_launch_accounts(chart: Chart, env: Environment, *, role_sets: Mapping[s
         )
 
 
-def _add_identity_catalog(chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]) -> None:
-    """The standing callers' identities and their own Kubernetes accounts."""
+def _add_standing_identity_access(
+    chart: Chart, env: Environment, *, role_sets: Mapping[str, KubernetesRoleSet]
+) -> None:
+    """The standing Action callers' Identities and their exact Kubernetes accounts and grants."""
     for caller, description in (
         (CLAUDE_AI, "The agent behind Connections enrolled from the Claude.ai MCP connector."),
         (HAKU_AGENT, "Agents of the 'haku' preset, which clone haku-state and work from it the way Haku itself does."),
-        (public_coder_egress.OPENCLAW, "The long-running public-coder OpenClaw agent."),
+        (
+            public_coder_egress.OPENCLAW,
+            "The backend principal for the paused public-coder OpenClaw workload; rendering it does not start that workload.",
+        ),
     ):
         Identity(
             chart,

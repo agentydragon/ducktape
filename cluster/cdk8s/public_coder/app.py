@@ -20,7 +20,6 @@ from external_secrets_crds.io.external_secrets import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.clickhouse import client
@@ -288,9 +287,7 @@ def _deployment(scope: Construct) -> None:
     k8s.KubeServiceAccount(
         scope,
         "openclaw-service-account",
-        metadata=k8s.ObjectMeta(
-            name=public_coder_egress.SERVICE_ACCOUNT, namespace=NAMESPACE, labels={CALLER_LABEL: "true"}
-        ),
+        metadata=k8s.ObjectMeta(name=public_coder_egress.SERVICE_ACCOUNT, namespace=NAMESPACE),
         automount_service_account_token=False,
     )
     relay_settings = public_coder_egress.add_relay_settings(scope)

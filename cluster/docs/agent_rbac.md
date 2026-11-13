@@ -148,10 +148,13 @@ unchanged. Haku's full enforcement inventory: <../../haku/docs/security.md>.
 
 ### 5. claude-ai (OAuth Connections in agentplane-staging) — diagnostics, Coinbase key
 
-The `claude-ai` ServiceAccount in `agentplane-staging` is the principal for Connections
-enrolled from the Claude.ai MCP connector (`cluster/cdk8s/agentplane/actions_staging_policies.py`);
-every sandbox it stamps through the sandbox Action group runs as it
-(`agentplane/action_service/sandbox/README.md`). Its Kubernetes access includes:
+The `claude-ai` Identity in `agentplane-staging` is the standing principal for Connections
+enrolled from the Claude.ai MCP connector and the boxes they create
+(`cluster/cdk8s/agentplane/actions_staging_policies.py`). Its reviewed Identity binding owns
+Action approvals and egress. The same-named ServiceAccount remains in the namespace with its
+explicit RoleBindings, but it has no Action-caller label and is not the PolicyBinding subject.
+
+The retained ServiceAccount's direct Kubernetes access includes:
 
 - The secret-free `cluster-diagnostics-reader` binding and metadata/pod-log readers of
   the `agent-readable-*` namespaces (section 4).
@@ -165,14 +168,16 @@ every sandbox it stamps through the sandbox Action group runs as it
   No general Secret enumeration or staging login access.
 
 The `coinbase` PolicySet combines GET egress to `api.coinbase.com` with the `get` grant on
-the named Coinbase Secret. The static `claude-ai` and `haku-agent` PolicyBindings both select it;
-the Haku and finance-agent presets select it for managed sandboxes. Static Haku identities keep
-their explicit RoleBinding to the same named Secret. These grants do not make `claude-ai` an alias
-for Haku: it has no Haku sandbox write authority or staging operator access, and `haku-agent`
-has no Haku profile grants.
+the named Coinbase Secret for ServiceAccount subjects. The standing Identity bindings select
+`coinbase-identity` (pure GET egress) and `k8s-account-claude-ai` or `k8s-account-haku-agent`;
+each named account's `ServiceAccountGrant` carries exactly the `coinbase` and `plaid-diagnostics`
+role sets. Haku and finance-agent presets use their own account grants, while static Haku
+identities keep their explicit RoleBinding to the same named Secret. These grants do not make
+`claude-ai` an alias for Haku: it has no Haku sandbox write authority or staging operator access,
+and `haku-agent` has no Haku profile grants.
 
 The `kubernetes-inspection-reads` PolicySet auto-approves `kubernetes_admin`'s resource-usage reads
-(`nodes_stats_summary`, `nodes_top`, `pods_top`) for the static `claude-ai` and `haku-agent`
+(`nodes_stats_summary`, `nodes_top`, `pods_top`) for the `claude-ai` and `haku-agent` Identity
 bindings and the Haku preset. They run as the operator's cluster-admin passthrough identity but
 return only metrics; every other `kubernetes_admin` Action stays manual.
 
@@ -244,21 +249,22 @@ An agent reaches an account only through an `egress` rule naming the account's
 of `KubernetesRoleSet`s, or it is a temporary `ManagedServiceAccount`
 ([Policy Controller SPEC](../../agentplane/policy_controller/SPEC.md#serviceaccount-grants)).
 
-**The staging chart renders shared and per-preset accounts even while `identity_catalog` is off.**
-The new Sandbox Identity launch config explicitly selects the shared diagnostics use set and the
-preset's own `k8s-account-<preset>` use set; that preset account's `ServiceAccountGrant` holds the
-Kubernetes roles that launch grants used to carry directly. Its PolicySets include only
-Identity-supported rules. The single baseline keeps its existing `basic-identity` name so retained
-Identity grants continue to resolve; the older mixed `basic` policy and projected workload-token
-route are retired. Mixed Coinbase/Plaid PolicySets remain available to standing ServiceAccount
-callers pending the catalog cutover, while presets select pure-egress `*-identity` variants.
-Kubernetes API access uses the explicit account use sets above. The rendered contract does not by
-itself prove that the launch change has rolled out.
+**The staging chart always renders shared, per-preset, and standing caller accounts.** The new
+Sandbox Identity launch config selects the shared diagnostics use set and the preset's own
+`k8s-account-<preset>` use set; that preset account's `ServiceAccountGrant` holds the Kubernetes
+roles that launch grants used to carry directly. Its PolicySets include only Identity-supported
+rules. The `claude-ai` and `haku-agent` standing Identities and their `k8s-account-<name>` grants
+are also rendered while `identity_catalog` is off. Their PolicyBindings use pure-egress
+`coinbase-identity` and `plaid-diagnostics-identity` siblings plus the account use set; the exact
+role sets remain `coinbase` and `plaid-diagnostics`. The single baseline keeps its existing
+`basic-identity` name so retained Identity grants continue to resolve; the older mixed `basic`
+policy and projected workload-token route are retired. The rendered contract does not by itself
+prove that the launch change has rolled out.
 
 With the catalog switch on (`staging.environment(identity_catalog=True)`, which manifest and RBAC
 tests also render), every Flux `PolicyBinding` names an `Identity` (`claude-ai`, `haku-agent`,
 `public-coder-openclaw`; `haku-ui` and `haku-ci-egress` already do, catalog or not), and each
-assignable set's Kubernetes rules become a same-named `KubernetesRoleSet`. The chart emits a
+assignable set's Kubernetes rules become a same-named `KubernetesRoleSet`. The chart renders a
 ServiceAccount, Flux-owned grant, credential and one-rule use set `k8s-account-<name>` for each:
 
 - `shared-diagnostics`, with the `shared-diagnostics` role set. Its use set joins each launch's
@@ -266,14 +272,14 @@ ServiceAccount, Flux-owned grant, credential and one-rule use set `k8s-account-<
 - One per managed preset (`public-coder`, `finance-agent`, `haku`), holding the role sets that
   preset's launch grants plus cluster diagnostics, so each agent has one `kubectl` identity
   (operator, 2026-11-09). A launch binds the preset's use set and the egress halves of its sets.
-- One each for `claude-ai` and `haku-agent`, holding exactly the role sets their bindings grant
-  today.
+- One each for `claude-ai` and `haku-agent`, always rendered and holding exactly the `coinbase` and
+  `plaid-diagnostics` role sets their Identity bindings use.
 
-Sandbox Pods project no ServiceAccount token in either rendering: an agent reaches the API server
-only through the proxy as an account its use set names, and learns the `kubectl --server <host>
---token <placeholder>` invocation from that credential's description on the rules endpoint. A
-Sandbox with no use rule has no Kubernetes access. Only an Action command box, which runs as its
-caller's ServiceAccount, still carries a Kubernetes-audience token for `basic`'s API server rule.
+Sandbox Pods and Action command boxes project no Kubernetes-audience token: an agent reaches the
+API server only through the proxy as an account its use set names, and learns the
+`kubectl --server <host> --token <placeholder>` invocation from that credential's description on
+the rules endpoint. A Sandbox with no use rule has no Kubernetes access. Direct ServiceAccount
+authentication between Agentplane platform components remains supported independently.
 
 `cluster/cdk8s/test_agent_rbac.py` checks both renderings, including that the proxy impersonates
 only these accounts, that each holds only its grants, and that no Flux binding's holder gains
@@ -291,26 +297,30 @@ readers migrate to Flux-owned bindings as described below.
 
 The logical profiles are distinct from the transport identities:
 
-| Access path                        | Logical profile / contract                                                                          |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `oidc-ksbx-groups:haku` group      | Static Haku; checked independently                                                                  |
-| `haku:access-profile:haku` group   | Static Haku Console; checked independently                                                          |
-| `haku-sandbox/haku` ServiceAccount | Static Haku compute; checked independently                                                          |
-| Managed `haku` preset              | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
-| Managed `finance-agent` preset     | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
+| Access path                                         | Logical profile / contract                                                                          |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `oidc-ksbx-groups:haku` group                       | Static Haku; checked independently                                                                  |
+| `haku:access-profile:haku` group                    | Static Haku Console; checked independently                                                          |
+| `haku-sandbox/haku` ServiceAccount                  | Static Haku compute; checked independently                                                          |
+| `agentplane-staging/claude-ai` Identity             | Standing Claude.ai caller; Action PolicyBinding and Kubernetes account use set                      |
+| `agentplane-staging/haku-agent` Identity            | Standing Haku caller; Action PolicyBinding and Kubernetes account use set                           |
+| `agentplane-staging/public-coder-openclaw` Identity | Egress and reviewed Action principal for the paused OpenClaw workload                               |
+| Managed `haku` preset                               | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
+| Managed `finance-agent` preset                      | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
 
-| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, and Coinbase read |
-| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account, not the managed Haku preset |
-| `public-coder-agent/openclaw` ServiceAccount | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
+| `agentplane-staging/claude-ai` ServiceAccount | Retained with independent RoleBindings; no Action-caller label or standing PolicyBinding |
+| `agentplane-staging/haku-agent` ServiceAccount | Retained same-named account; no Action-caller label or PolicyBinding |
+| `public-coder-agent/openclaw` ServiceAccount | Pod account for the paused OpenClaw Deployment; no Action-caller label or PolicyBinding subject |
 
-The managed finance and Haku presets and the static `claude-ai` and `haku-agent` PolicyBindings
-select the `plaid-diagnostics` PolicySet. It combines the pgweb `plaid_ro` read-only egress path
-with a namespaced `plaid-mcp` RoleBinding for read-only control-plane metadata (Pods, Services,
+The managed finance and Haku presets and the standing `claude-ai` and `haku-agent` Identity
+bindings select `plaid-diagnostics-identity` for pgweb's `plaid_ro` read-only egress path, and
+their named Kubernetes accounts receive the `plaid-diagnostics` role set. The mixed
+`plaid-diagnostics` PolicySet combines that egress with a namespaced `plaid-mcp` RoleBinding for
+read-only control-plane metadata (Pods, Services,
 EndpointSlices, workloads, events, PVCs, and CNPG Cluster status). The Role excludes Secrets,
 ConfigMaps, Pod logs/exec and every mutation. This grant diagnoses sync and Postgres health without
 treating the sensitive `plaid-mcp` namespace as globally agent-readable. It is a new-sandbox preset
-grant for managed callers and a PolicyBinding grant for the static callers, not proof of current
-RBAC in an already-running sandbox.
+grant for managed callers; a caller's KSA grant is independent of an already-running box's RBAC.
 
 **Intended relationship between the Haku and finance-agent presets.** Haku is the executive
 agent that directs the finance agent (Rai's finances are the finance agent's, and Haku
@@ -320,11 +330,12 @@ its own Forgejo user, which owns `finance-agent/finance-agent` with Haku as a wr
 (`tf/gitops/finance-agent`). Any permission the finance preset has that Haku lacks is a gap to
 close or a named exception, not a design choice. Open work: [`haku/TODO.md`](../../haku/TODO.md).
 
-The `coinbase` PolicySet combines GET egress and **`get` on
+The mixed `coinbase` PolicySet combines GET egress and **`get` on
 `agentplane-staging/coinbase-api-credentials`**. Managed Haku and finance-agent presets and the
-static `claude-ai` and `haku-agent` PolicyBindings select it; static Haku identities retain their
-direct RoleBinding. Public coder does not receive this access. Tests name the Secret scope,
-resource, verb, and object literally, not by a Role whose rules could grow.
+standing `claude-ai` and `haku-agent` Identity bindings use the pure-egress `coinbase-identity`
+PolicySet with the `coinbase` role set on their named Kubernetes accounts; static Haku identities
+retain their direct RoleBinding. Public coder does not receive this access. Tests name the Secret
+scope, resource, verb, and object literally, not by a Role whose rules could grow.
 Static Haku retains redundant narrow inventory bindings; managed Haku's broader
 cluster reader covers those rules without selecting the same Role names.
 
@@ -458,11 +469,13 @@ target-owned delegation dependencies together.
 
 The Haku preset currently selects `cluster-diagnostics-reader` cluster-wide,
 `haku-sandbox-admin` within `haku-sandbox`, the common metadata and pod-log readers
-within `agentplane-staging`, and the combined `coinbase` PolicySet, which grants GET egress and
-`get` on exactly `agentplane-staging/coinbase-api-credentials` via the existing
+within `agentplane-staging`, and the pure-egress `coinbase-identity` PolicySet plus its own
+`coinbase` account grant, which supplies GET egress and `get` on exactly
+`agentplane-staging/coinbase-api-credentials` via the existing
 `claude-ai-coinbase-reader` Role. The latter Role's name predates managed grants; its rules are
 shared while its static RoleBinding (legacy `claude-ai` plus all three Haku identities) remains
-Flux-owned. The static `claude-ai` and `haku-agent` PolicyBindings also select the combined set.
+Flux-owned. The static `claude-ai` and `haku-agent` Identity bindings use the same pure-egress set
+and their own account grant.
 The preset also selects the existing Haku Console metadata and ClickHouse
 diagnostics Roles in their respective namespaces. Their managed binding
 delegation lives in separate Flux Kustomizations dependent on those services.
@@ -522,9 +535,10 @@ identity temporarily gains access to only the dummy value too.
 
 Finally, through the connected Agentplane MCP client, call `sandbox__create`, poll
 `sandbox__get` until Ready, then call `sandbox__exec` with `kubectl auth whoami` and the same
-metadata-only Coinbase read. Approve the Action if Agentplane requests approval. The expected
-principal is the Agentplane sandbox's static
-`system:serviceaccount:agentplane-staging:claude-ai`, not either managed Sandbox SA.
+metadata-only Coinbase read after the MCP Identity cutover and the standing-account policy rollout.
+Approve the Action if Agentplane requests approval. The expected principal is the named Kubernetes
+account in the accounts namespace, `system:serviceaccount:<accounts-namespace>:claude-ai`, not the
+standing caller Identity or a managed Sandbox's Pod ServiceAccount.
 Dispose of the sandbox with `sandbox__dispose`. Check that deleting the suspended
 managed Sandboxes removes their cross-namespace RoleBindings and ClusterRoleBindings;
 verify by the Sandbox UID annotation, without dumping Secret contents.

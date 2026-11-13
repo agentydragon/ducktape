@@ -198,7 +198,7 @@ def test_agent_permission_denials(rendering: Rendering) -> None:
     profiles = {name: rendering.launch(name) for name in ("public-coder", "finance-agent", "haku")}
     profiles.update(
         {
-            # Each standing caller's ServiceAccount keeps its own bindings in both renderings.
+            # Direct ServiceAccount RoleBindings remain independent of the standing Identity PolicyBinding.
             caller: rbac.identity("ServiceAccount", caller, _NAMESPACE) | rendering.binding(caller)
             for caller in ("claude-ai", "haku-agent")
         }
@@ -305,8 +305,8 @@ def test_no_holder_gains_access_on_the_switch(
         for preset in identity_rendering.launches
     }
     for name, before in serviceaccount_rendering.bindings.items():
-        # Today the subject is the caller's ServiceAccount, whose own bindings stay on the switch; a
-        # binding already on an Identity (the standing workloads') has no account of its own.
+        # Only public-coder's optional legacy binding is ServiceAccount-subject. Claude.ai and Haku
+        # are Identity-subject in both renderings and reach Kubernetes through their named accounts.
         subject = before["subject"]
         today = serviceaccount_rendering.binding(name)
         if "identity" not in subject:
