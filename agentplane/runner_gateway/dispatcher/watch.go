@@ -10,7 +10,7 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/notification"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
@@ -190,7 +190,7 @@ func (h *WatchHub) terminalPart(payload string) error {
 	if err != nil {
 		return fmt.Errorf("invalid terminal envelope: %w", err)
 	}
-	item := &notificationpb.TerminalNotificationPart{}
+	item := &notification.TerminalNotificationPart{}
 	if err := proto.Unmarshal(encoded, item); err != nil {
 		return err
 	}

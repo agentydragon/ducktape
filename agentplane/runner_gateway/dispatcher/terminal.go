@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/notification"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
@@ -48,7 +48,7 @@ func terminalPayloads(event TerminalEvent) ([]string, error) {
 		if end > len(serialized) {
 			end = len(serialized)
 		}
-		body, err := proto.Marshal(&notificationpb.TerminalNotificationPart{
+		body, err := proto.Marshal(&notification.TerminalNotificationPart{
 			EventId: event.ID, Part: uint32(i), PartCount: uint32(partCount), Data: serialized[start:end],
 			ExecutionIdentityName: event.OwnerIdentity.GetName(),
 			ExecutionIdentityUid:  event.OwnerIdentity.GetUid(),
