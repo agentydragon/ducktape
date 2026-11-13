@@ -90,7 +90,6 @@ func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	handler := server.Handler(authentication)
 	for _, test := range []struct {
 		method string
@@ -177,7 +176,6 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) http.Handler {
 	if err := RegisterSessionRoutes(server, &appService{config: config, environments: peer, bridge: peer, threadWriter: peer}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(server.Close)
 	return server.Handler(authentication)
 }
 
@@ -371,7 +369,6 @@ func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
 		Body legacyBody
 	}
 	server := NewHTTPServer(nil)
-	t.Cleanup(server.Close)
 	var received *legacyInput
 	huma.Register[legacyInput, struct{}](server.API(), huma.Operation{OperationID: "legacyOpen", Method: http.MethodPost, Path: "/sandboxes/{name}/sessions", DefaultStatus: http.StatusCreated}, func(_ context.Context, input *legacyInput) (*struct{}, error) {
 		received = input
