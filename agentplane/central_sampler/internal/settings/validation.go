@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultSetupTimeoutSeconds = 3600
+	defaultSetupTimeoutSeconds                  = 3600
 	defaultCodeModeObservationTimeoutSeconds    = 300
 	defaultExecutorInitializeTimeoutSeconds     = 30
 	defaultExecutorReconnectTimeoutSeconds      = 120
@@ -106,8 +106,8 @@ func (s Settings) Validate() error {
 		return errors.New("resource limits and timeouts must be positive; lease_seconds must exceed 30")
 	}
 	for name, seconds := range map[string]int{
-		"rpc_timeout_seconds":  s.RPCTimeoutSeconds,
-		"lease_seconds":        s.LeaseSeconds,
+		"rpc_timeout_seconds": s.RPCTimeoutSeconds,
+		"lease_seconds":       s.LeaseSeconds,
 	} {
 		if int64(seconds) > maxExecutorInitializeTimeoutSeconds {
 			return fmt.Errorf("%s must fit in time.Duration", name)

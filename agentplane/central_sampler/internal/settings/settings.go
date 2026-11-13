@@ -40,7 +40,7 @@ type Settings struct {
 	LeaseSeconds                         int                                      `json:"lease_seconds"`
 	AutoCompactTokens                    *int                                     `json:"auto_compact_tokens"`
 	Kubeconfig                           string                                   `json:"kubeconfig"`
-	SetupTimeoutSeconds *int `json:"setup_timeout_seconds,omitempty"`
+	SetupTimeoutSeconds                  *int                                     `json:"setup_timeout_seconds,omitempty"`
 }
 
 func LoadSettings(path string) (Settings, error) {

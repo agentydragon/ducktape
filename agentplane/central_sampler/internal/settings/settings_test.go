@@ -100,7 +100,6 @@ func TestProviderLeasesCoverConfiguredPhasesAndDatabaseSlack(t *testing.T) {
 	if got, want := settings.ProviderProgressLease(), 620*time.Second; got != want {
 		t.Fatalf("provider progress lease=%s, want idle + two RPC intervals %s", got, want)
 	}
-
 }
 
 func TestSettingsRejectProviderPhaseLeaseOverflow(t *testing.T) {

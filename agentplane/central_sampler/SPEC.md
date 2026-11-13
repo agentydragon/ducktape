@@ -100,7 +100,7 @@ recorded. Only a validated semantic event that is durably recorded resets it: no
 function-argument, and custom-tool-input deltas; first valid item-added/item-done transitions for a
 real item identity; and valid message start or finish transitions. SSE comments, keep-alives, ping
 events, empty deltas, duplicate item transitions and unknown event types do not. Sampling and
-compaction use the same budgets. These phase budgets do not replace the whole-turn timeout.
+compaction use the same budgets. A turn has no elapsed deadline while it keeps making progress.
 
 An attempted executor-session initialization or reconnect is recorded as its own intent. If it fails,
 the requested nested operation is returned as a catchable JavaScript tool error when it was not
