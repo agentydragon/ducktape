@@ -19,6 +19,16 @@ type EvidenceSink interface {
 	Record(context.Context, ProviderEvidence, ...*eventpb.Event) error
 }
 
+func RecordProviderEvidence(ctx context.Context, sink EvidenceSink, evidence ProviderEvidence, observations ...*eventpb.Event) error {
+	if sink == nil {
+		return nil
+	}
+	if err := sink.Record(ctx, evidence, observations...); err != nil {
+		return &ProviderEvidencePersistenceError{Cause: err}
+	}
+	return nil
+}
+
 // ProviderEvidence is a JSON evidence payload; its type determines its boundary.
 type ProviderEvidence interface {
 	Kind() eventpb.ExecutionProgress_Kind
@@ -54,8 +64,8 @@ type CaptureReader struct {
 
 func (r CaptureReader) Read(buffer []byte) (int, error) {
 	n, err := r.Reader.Read(buffer)
-	if n > 0 && r.Evidence != nil {
-		if e := r.Evidence.Record(r.Context, WireBytes{Bytes: buffer[:n]}); e != nil {
+	if n > 0 {
+		if e := RecordProviderEvidence(r.Context, r.Evidence, WireBytes{Bytes: buffer[:n]}); e != nil {
 			return 0, e
 		}
 	}

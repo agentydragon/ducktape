@@ -13,12 +13,14 @@ import (
 )
 
 const (
-	defaultCodeModeObservationTimeoutSeconds = 300
-	defaultExecutorInitializeTimeoutSeconds  = 30
-	defaultExecutorReconnectTimeoutSeconds   = 120
-	defaultShutdownDrainSeconds              = 40
-	defaultShutdownBudgetSeconds             = 55
-	maxExecutorInitializeTimeoutSeconds      = int64((1<<63 - 1) / int64(time.Second))
+	defaultCodeModeObservationTimeoutSeconds    = 300
+	defaultExecutorInitializeTimeoutSeconds     = 30
+	defaultExecutorReconnectTimeoutSeconds      = 120
+	defaultProviderResponseHeaderTimeoutSeconds = 120
+	defaultProviderIdleTimeoutSeconds           = 600
+	defaultShutdownDrainSeconds                 = 40
+	defaultShutdownBudgetSeconds                = 55
+	maxExecutorInitializeTimeoutSeconds         = int64((1<<63 - 1) / int64(time.Second))
 )
 
 func (s Settings) Validate() error {
@@ -121,6 +123,14 @@ func (s Settings) Validate() error {
 			return errors.New("executor_reconnect_timeout_seconds must be positive and fit in time.Duration")
 		}
 	}
+	for name, seconds := range map[string]*int{
+		"provider_response_header_timeout_seconds": s.ProviderResponseHeaderTimeoutSeconds,
+		"provider_idle_timeout_seconds":            s.ProviderIdleTimeoutSeconds,
+	} {
+		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
+			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
+		}
+	}
 	for name, seconds := range map[string]*int{"shutdown_drain_seconds": s.ShutdownDrainSeconds, "shutdown_budget_seconds": s.ShutdownBudgetSeconds} {
 		if seconds != nil && (*seconds <= 0 || int64(*seconds) > maxExecutorInitializeTimeoutSeconds) {
 			return fmt.Errorf("%s must be positive and fit in time.Duration", name)
@@ -167,6 +177,22 @@ func (s Settings) ExecutorReconnectTimeout() time.Duration {
 	seconds := defaultExecutorReconnectTimeoutSeconds
 	if s.ExecutorReconnectTimeoutSeconds != nil {
 		seconds = *s.ExecutorReconnectTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (s Settings) ProviderResponseHeaderTimeout() time.Duration {
+	seconds := defaultProviderResponseHeaderTimeoutSeconds
+	if s.ProviderResponseHeaderTimeoutSeconds != nil {
+		seconds = *s.ProviderResponseHeaderTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func (s Settings) ProviderIdleTimeout() time.Duration {
+	seconds := defaultProviderIdleTimeoutSeconds
+	if s.ProviderIdleTimeoutSeconds != nil {
+		seconds = *s.ProviderIdleTimeoutSeconds
 	}
 	return time.Duration(seconds) * time.Second
 }

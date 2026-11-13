@@ -77,7 +77,7 @@ type compactionPlan struct {
 type protocolAdapter interface {
 	API() protocol.APIStyle
 	Prepare(*Session, protocol.SessionAttribution) requestPreparation
-	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool) (*sampleResult, error)
+	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
 	AutoCompactTokens(*int) *int
 	PrepareCompaction(*Conversation, *Session, *ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
 }
@@ -156,12 +156,12 @@ func (a anthropicAdapter) Prepare(session *Session, _ protocol.SessionAttributio
 	}
 }
 
-func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool) (*sampleResult, error) {
+func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, attribution providerAttribution, compaction bool, hooks protocol.ProviderHooks) (*sampleResult, error) {
 	authorization, headers, err := providerAuthorization(connection, attribution)
 	if err != nil {
 		return nil, err
 	}
-	response, err := responses.Sample(ctx, client, connection.BaseURL, authorization, wire, a.config.Responses, evidence, headers, compaction)
+	response, err := responses.Sample(ctx, client, connection.BaseURL, authorization, wire, a.config.Responses, evidence, headers, compaction, hooks)
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +177,12 @@ func (a responsesAdapter) Sample(ctx context.Context, client *http.Client, conne
 }
 
 // The direct Anthropic API is called with its own key; it attributes nothing to the Session.
-func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, _ providerAttribution, compaction bool) (*sampleResult, error) {
+func (a anthropicAdapter) Sample(ctx context.Context, client *http.Client, connection samplersettings.ConnectionConfig, wire []byte, evidence protocol.EvidenceSink, _ providerAttribution, compaction bool, hooks protocol.ProviderHooks) (*sampleResult, error) {
 	credential, err := readProviderCredential(connection)
 	if err != nil {
 		return nil, err
 	}
-	response, err := anthropic.Sample(ctx, client, connection.BaseURL, credential, *a.config.AnthropicMessages, wire, evidence, compaction)
+	response, err := anthropic.Sample(ctx, client, connection.BaseURL, credential, *a.config.AnthropicMessages, wire, evidence, compaction, hooks)
 	if err != nil {
 		return nil, err
 	}

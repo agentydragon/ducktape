@@ -219,6 +219,18 @@ class Settings(BaseModel):
     direct_executor_insecure_localtest: bool = False
     max_live_sessions: int = Field(gt=0)
     turn_timeout_seconds: int = Field(gt=0)
+    provider_response_header_timeout_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Time allowed for provider request transmission through response headers.",
+    )
+    provider_idle_timeout_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Time allowed between durable semantic provider events after response headers.",
+    )
     rpc_timeout_seconds: int = Field(gt=0)
     code_mode_observation_timeout_seconds: int | None = Field(
         default=None,

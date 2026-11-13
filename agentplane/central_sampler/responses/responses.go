@@ -26,12 +26,14 @@ const (
 type EventType string
 
 const (
-	EventOutputItemAdded EventType = "response.output_item.added"
-	EventOutputItemDone  EventType = "response.output_item.done"
-	EventCompleted       EventType = "response.completed"
-	EventFailed          EventType = "response.failed"
-	EventIncomplete      EventType = "response.incomplete"
-	EventError           EventType = "error"
+	EventOutputItemAdded            EventType = "response.output_item.added"
+	EventOutputItemDone             EventType = "response.output_item.done"
+	EventFunctionCallArgumentsDelta EventType = "response.function_call_arguments.delta"
+	EventCustomToolCallInputDelta   EventType = "response.custom_tool_call_input.delta"
+	EventCompleted                  EventType = "response.completed"
+	EventFailed                     EventType = "response.failed"
+	EventIncomplete                 EventType = "response.incomplete"
+	EventError                      EventType = "error"
 )
 
 // Item is a native Responses record. Raw retains provider-owned fields and numeric precision

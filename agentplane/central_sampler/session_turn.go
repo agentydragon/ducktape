@@ -230,6 +230,7 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
+	client = protocol.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
 	if connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
@@ -244,7 +245,9 @@ func (r *Runtime) advance(ctx context.Context, owner Owner, live *liveHost, clie
 	if err != nil {
 		return "", err
 	}
-	response, err := adapter.Sample(ctx, client, connection, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false)
+	providerCtx, providerHooks, stopProviderIdle := protocol.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), nil)
+	defer stopProviderIdle()
+	response, err := adapter.Sample(providerCtx, client, connection, wire, evidence, providerAttribution{SessionID: metadata.SessionID, Identity: identity}, false, providerHooks)
 	if err != nil {
 		var known *protocol.KnownFailureError
 		if errors.As(err, &known) {
