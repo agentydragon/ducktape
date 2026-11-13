@@ -1,13 +1,11 @@
-"""haku-console's in-process `google_calendar` MCP server.
+"""Google Calendar tool definitions for the bearer-protected Google MCP server.
 
-Google Calendar event reads and creation behind haku-console's approval policy. Built as a
-real `FastMCP` server attached via an in-memory transport (see `gmail.py` for the pattern),
-so the application service's approval/audit lifecycle and the HTTP adapter's Origin/reflection
-behavior run unchanged.
-Registered as MCP server id `google_calendar` with an `in_process` backend in
-`cluster/cdk8s/haku/console_config.py`. Executes as the acting Operator's own Google account via the
-config-bound `google_calendar` operator connection in `provider_connection.py`. See
-`haku/docs/security.md` for the credential/consent model.
+The standalone service in `server.py` exposes these tools at `/calendar/mcp` using the
+Airlock-minted access token it reads at startup. Haku's schema exporter also builds this server
+with an inert credential to validate and render stored tool calls; Haku no longer mounts it for
+execution.
+
+The tools provide shaped event reads and mutations against the Google Calendar API.
 """
 
 from __future__ import annotations
@@ -32,10 +30,10 @@ from x.google_mcp_server.google_calendar_client import (
 )
 from x.google_mcp_server.google_service import build_google_api_service
 
-# Wire-frozen id: named by cluster/cdk8s/haku/console_config.py and persisted in
-# ledger `server_id` rows — renaming is a config + data migration.
+# Wire-frozen server id used by caller policy and persisted tool-call rows; renaming requires
+# coordinated configuration and data handling.
 GOOGLE_CALENDAR_SERVER_ID = "google_calendar"
-# Reads only fetch; advertise read-only so clients (claude.ai) skip per-call approval prompts.
+# Reads only fetch; advertise their read-only semantics to MCP clients.
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 
 
@@ -251,5 +249,5 @@ def build_mcp(calendar: CalendarToolsClient) -> FastMCP:
 
 
 def build_calendar_client_from_token(access_token: str | None) -> CalendarToolsClient:
-    """Build the Calendar client for one call from the acting Operator's access token."""
+    """Build the Calendar client from the server's access token or an inert schema-only credential."""
     return CalendarToolsClient(build_google_api_service("calendar", "v3", access_token))

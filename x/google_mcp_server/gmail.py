@@ -1,22 +1,13 @@
-"""haku-console's in-process `gmail` MCP server.
+"""Gmail tool definitions for the bearer-protected Google MCP server.
 
-Gmail read + write tools behind haku-console's operator-approval queue. The **reads are generated
-from Google's discovery doc** (`google_discovery.py`): they expose Google's native param names and
-return its REST resource shapes verbatim. The **writes** stay hand-authored (shaped bodies / label
-policy): create drafts, change thread labels, and manage labels/filters. Every call travels through
-the console's approval and audit pipeline; reviewed policy may auto-approve reads + `haku/`-label
-mutations.
+The standalone service in `server.py` exposes these tools at `/gmail/mcp` using the
+Airlock-minted access token it reads at startup. Haku's schema exporter also builds this server
+with an inert credential to validate and render stored tool calls; Haku no longer mounts it for
+execution.
 
-Built as a real `FastMCP` server and attached to `McpServerClient`
-as an **in-process** transport (`fastmcp.client.Client` accepts a `FastMCP` instance
-directly), so the application service's approval/audit lifecycle and the HTTP adapter's
-Origin/reflection behavior run unchanged; only the transport differs from a remote server's. Registered
-as MCP server id `gmail` with an `in_process` backend in
-`cluster/cdk8s/haku/console_config.py`. Executes as the acting Operator's own Google account,
-resolving the config-bound `google_mail` operator connection from the console's connection store
-(`provider_connection.py`). See
-`haku/docs/security.md` for the credential/consent model, and `haku/console/TODO.md` for Gmail API
-affordances not yet exposed.
+Read tools are generated from Google's Discovery document and retain its parameter names and
+resource shapes. Write tools use shaped request bodies for drafts, thread labels, labels, and
+filters.
 """
 
 from __future__ import annotations
@@ -59,13 +50,11 @@ _RemoveLabelsAnn = Annotated[
 ]
 
 # Read tools are generated from Google's discovery doc (schema + generic executor): they expose
-# Google's native params/result shapes verbatim, pinning only `userId=me` (each call runs as the
-# acting Operator's own account). Writes below stay hand-authored (shaped bodies / label policy).
-# Auto-approval keys on these exact names (auto_approval.py).
+# Google's native params/result shapes verbatim, pinning only `userId=me`. Writes below stay
+# hand-authored (shaped bodies / label policy). Keep tool names stable for caller catalogs and
+# persisted tool-call records.
 _ME = {"userId": "me"}
-# Reads only fetch. Advertise read-only so clients (claude.ai) group them as reads and skip
-# per-call approval prompts. openWorldHint stays default (true): they reach the Operator's
-# external Gmail mailbox — open world, unlike the console's own closed catalog.
+# Reads only fetch. Advertise their read-only and external-world semantics to MCP clients.
 _READ_ONLY = ToolAnnotations(readOnlyHint=True)
 _GMAIL_READ_TOOLS: list[GenTool] = [
     GenTool("gmail.users.threads.list", "threads_list", "gmail.v1", pin=_ME, annotations=_READ_ONLY),
@@ -192,5 +181,5 @@ def build_mcp(gmail: GmailToolsClient) -> FastMCP:
 
 
 def build_gmail_client_from_token(access_token: str | None) -> GmailToolsClient:
-    """Build the Gmail client for one call from the acting Operator's access token."""
+    """Build the Gmail client from the server's access token or an inert schema-only credential."""
     return GmailToolsClient(build_google_api_service("gmail", "v1", access_token))

@@ -1,11 +1,8 @@
-"""Gmail operations behind haku-console's `gmail` MCP server.
+"""Hand-authored Gmail operations used by the Google MCP server.
 
-The hand-authored **write** surface (draft create/update/delete, thread-label changes, label CRUD,
-filter create/delete) plus the `labels_get` id→name helper the approval carve-out needs
-(`auto_approval.py`). These take shaped inputs / do batching / resolve label names, so they stay
-hand-written. The **read** tools are generated from Google's discovery doc in `google_discovery.py`
-and are not here. All mediated by haku-console's manual-or-policy approval pipeline. See
-`haku/docs/security.md`.
+This client handles shaped write requests such as draft mutations, thread-label changes, and
+label/filter management. The server builds read tools separately from Google's Discovery document
+in `google_discovery.py`.
 """
 
 from __future__ import annotations
@@ -21,8 +18,8 @@ from gmail_api.filters import FilterAction, FilterCriteria, GmailFilter
 from gmail_api.labels import CreateLabelRequest, GmailLabel, LabelType, PatchLabelRequest
 from gmail_api.messages import Draft
 
-# Wire-frozen id: named by cluster/cdk8s/haku/console_config.py and persisted in
-# ledger `server_id` rows — renaming is a config + data migration.
+# Wire-frozen server id used by caller policy and persisted tool-call rows; renaming requires
+# coordinated configuration and data handling.
 GMAIL_SERVER_ID = "gmail"
 # Gmail's batch-request guide recommends capping requests-per-batch at 100. Used for
 # `threads.modify` calls.
@@ -86,8 +83,6 @@ class GmailToolsClient:
         labels = [GmailLabel.model_validate(label) for label in response.get("labels", [])]
         return [label for label in labels if label.type == LabelType.USER]
 
-    # labels_get resolves a label id -> name for the approval carve-out (auto_approval.py); the
-    # read *tools* are generated in google_discovery.py, not here.
     def labels_get(self, label_id: str) -> GmailLabel:
         return GmailLabel.model_validate(self.service.users().labels().get(userId="me", id=label_id).execute())
 

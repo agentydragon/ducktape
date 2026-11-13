@@ -1,4 +1,4 @@
-"""Focused Google Calendar event reads and creation for haku-console."""
+"""Google Calendar event operations used by the Google MCP server."""
 
 from __future__ import annotations
 
