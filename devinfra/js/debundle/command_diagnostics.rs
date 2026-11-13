@@ -188,7 +188,7 @@ fn run_with_progress<T>(
         stderr,
         error: None,
     });
-    let observer = |event| emit_progress(&output, event);
+    let observer = |event: progress::Event<'_>| emit_progress(&output, event);
     let diagnostics = if progress {
         Diagnostics::with_progress(&observer)
     } else {
@@ -259,6 +259,41 @@ mod tests {
                 );
             }
         }
+    }
+
+    struct FlushingOutput {
+        bytes: Vec<u8>,
+        flushed: std::sync::mpsc::Sender<Vec<u8>>,
+    }
+
+    impl Write for FlushingOutput {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.bytes.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flushed.send(self.bytes.clone()).unwrap();
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn start_is_written_and_flushed_inside_the_operation_without_synthetic_end_on_failure() {
+        let (sender, flushed) = std::sync::mpsc::channel();
+        let mut output = FlushingOutput {
+            bytes: Vec::new(),
+            flushed: sender,
+        };
+        let expected = b"[debundle progress] chunk=a phase=compute_chunk_analysis state=start\n";
+        let result: Result<()> = run_with_progress(&mut output, true, |diagnostics| {
+            diagnostics.progress("a", Phase::ComputeChunkAnalysis, State::Start);
+            assert_eq!(flushed.try_recv().unwrap(), expected);
+            Err(OperationFailure.into())
+        });
+        assert!(result.unwrap_err().is::<OperationFailure>());
+        assert_eq!(output.bytes, expected);
+        assert!(flushed.try_recv().is_err());
     }
 
     struct FailingOutput {
