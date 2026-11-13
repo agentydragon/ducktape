@@ -12,9 +12,9 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/cmd",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
-        "//agentplane/egress:egress_admin_go_proto",
-        "//agentplane/egress:egress_rules_go_proto",
         "//agentplane/egress/admin",
+        "//agentplane/egress/api/admin:egress_admin_go_proto",
+        "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/history",
         "//agentplane/egress/history_migrations",
         "//agentplane/egress/identity",
@@ -58,9 +58,9 @@ go_test(
     ],
     embed = [":cmd"],
     deps = [
-        "//agentplane/egress:egress_admin_go_proto",
-        "//agentplane/egress:egress_rules_go_proto",
         "//agentplane/egress/admin",
+        "//agentplane/egress/api/admin:egress_admin_go_proto",
+        "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/decision",
         "//agentplane/egress/history",
         "//agentplane/egress/identity",

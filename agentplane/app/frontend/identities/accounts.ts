@@ -1,4 +1,4 @@
-import type { Credential } from "../../../egress/egress_rules_pb";
+import type { Credential } from "../../../egress/api/rules/egress_rules_pb";
 import type { PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 
 /**

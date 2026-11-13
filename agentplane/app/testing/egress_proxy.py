@@ -10,7 +10,7 @@ from typing import override
 import grpc
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from agentplane.egress import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
+from agentplane.egress.api.admin import egress_admin_pb2 as pb, egress_admin_pb2_grpc as rpc
 
 
 class FakeEgressAdmin(rpc.EgressAdminServicer):

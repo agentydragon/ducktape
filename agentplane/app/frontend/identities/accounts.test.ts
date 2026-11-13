@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { expect, it } from "vitest";
 
-import { CredentialSchema, type Credential } from "../../../egress/egress_rules_pb";
+import { CredentialSchema, type Credential } from "../../../egress/api/rules/egress_rules_pb";
 import { PolicyBindingSchema, PolicySetSchema, type PolicySet } from "../../../policy/v1/policy_service_pb";
 import { kubernetesAccounts } from "./accounts";
 

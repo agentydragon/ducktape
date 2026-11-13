@@ -1,6 +1,6 @@
 import { toJson } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
-import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/egress_admin_pb";
+import { Decision_Outcome, Decision_Reason, type Decision } from "../../../egress/api/admin/egress_admin_pb";
 
 /** An unrecognized outcome is neither an admission nor a refusal. */
 export function decisionOutcome(decision: Decision): "allow" | "deny" | "unknown" {

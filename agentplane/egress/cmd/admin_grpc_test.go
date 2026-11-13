@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
+	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/decision"
-	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/history"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
+	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/auth"

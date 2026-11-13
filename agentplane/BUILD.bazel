@@ -2,10 +2,10 @@ load("//devinfra/python:defs.bzl", "py_library")
 
 # Generated Python modules are emitted outside their proto source package.
 # gazelle:proto file
-# gazelle:resolve py agentplane.egress.egress_admin_pb2 //agentplane/egress:egress_admin_pb2
-# gazelle:resolve py agentplane.egress.egress_admin_pb2_grpc //agentplane/egress:egress_admin_pb2_grpc
-# gazelle:resolve py agentplane.egress.egress_rules_pb2 //agentplane/egress:egress_rules_pb2
-# gazelle:resolve py agentplane.egress.egress_rules_pb2_grpc //agentplane/egress:egress_rules_pb2_grpc
+# gazelle:resolve py agentplane.egress.api.admin.egress_admin_pb2 //agentplane/egress/api/admin:egress_admin_pb2
+# gazelle:resolve py agentplane.egress.api.admin.egress_admin_pb2_grpc //agentplane/egress/api/admin:egress_admin_pb2_grpc
+# gazelle:resolve py agentplane.egress.api.rules.egress_rules_pb2 //agentplane/egress/api/rules:egress_rules_pb2
+# gazelle:resolve py agentplane.egress.api.rules.egress_rules_pb2_grpc //agentplane/egress/api/rules:egress_rules_pb2_grpc
 # gazelle:resolve py agentplane.env.runtime.execution.executor_pb2 //agentplane/env/runtime/execution:executor_pb2
 # gazelle:resolve py agentplane.env.runtime.execution.executor_pb2_grpc //agentplane/env/runtime/execution:executor_pb2_grpc
 # gazelle:resolve py agentplane.env.runtime.execution.companion.control.control_pb2 //agentplane/env/runtime/execution/companion/control:control_pb2

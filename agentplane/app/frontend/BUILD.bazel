@@ -968,7 +968,7 @@ ts_library(
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/app/frontend/threads/testing:electric_entity",
-        "//agentplane/egress:egress_admin_pb",
+        "//agentplane/egress/api/admin:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/mcp_edge:connection_service_pb",

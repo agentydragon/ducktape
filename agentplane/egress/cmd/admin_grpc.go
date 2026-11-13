@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/admin"
-	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/egress_adminpb"
-	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
+	egressadminpb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
+	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/rules"

@@ -4,7 +4,7 @@ import { Badge, Box, Button, Group, Stack, Table, Text, Tooltip } from "@mantine
 import type { JSX } from "react";
 import { useSearchParams } from "react-router";
 
-import { TargetSchema, type Credential, type Target } from "../../../egress/egress_rules_pb";
+import { TargetSchema, type Credential, type Target } from "../../../egress/api/rules/egress_rules_pb";
 import { RuleSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
 import type { PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 import { CodeBlock } from "../../../../util/frontend/code_block";
