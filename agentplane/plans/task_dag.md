@@ -1214,9 +1214,9 @@ evidence accessible through a debug view. Keep the ability to retain harness evi
 OTel/Langfuse as a possible destination, including fidelity and retention; do not assume ordinary
 telemetry replaces durable evidence or continuation state.
 
-**TODO (operator, 2026-11-12):** Consider deduplicating representations between central sampler's
-request/response and stream logs and History's retained events
-([measured duplication](../central_sampler/debug/2026_11_12_native_storage_cutover.md#remaining-duplication)).
+**TODO (operator, 2026-11-12):** Follow the
+[storage representation and compression plan](storage_representations.md), including shared content
+across sampler request/response logs, History's native/semantic events and projected bodies.
 Co-sequence this storage work with the authored-conversation design: keep divergent harness activity
 as less user-visible diagnostic logs rather than forcing it into one conversation representation,
 and consider an explicit thread with the user that the agent communicates through. Decide content
