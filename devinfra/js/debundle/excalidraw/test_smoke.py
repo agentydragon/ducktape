@@ -212,6 +212,49 @@ async def test_element_type_checks(playwright_driver: Playwright, origin: str) -
         }
 
 
+async def test_group_selection_and_membership(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const groups = await import('./editor/packages/excalidraw/groups.js');
+                const appState = {
+                    editingGroupId: 'inner',
+                    selectedGroupIds: {outer: true, inner: true, inactive: false},
+                };
+                const element = {id: 'element', groupIds: ['outer', 'inner', 'other']};
+                const editingOnly = {
+                    editingGroupId: 'inner', selectedGroupIds: {inner: true},
+                };
+                const edited = groups.editGroupForSelectedElement(appState,
+                    {id: 'child', groupIds: ['parent', 'child-group']});
+                return {
+                    selection: [groups.isSelectedViaGroup(appState, element),
+                                groups.getSelectedGroupForElement(appState, element),
+                                groups.getSelectedGroupIds(appState),
+                                groups.getSelectedGroupForElement(editingOnly, element)],
+                    membership: [groups.getSelectedGroupIdForElement(element, appState.selectedGroupIds),
+                                 groups.isInGroup(element), groups.isInGroup({groupIds: []})],
+                    edit: [edited.editingGroupId, edited.selectedGroupIds, edited.selectedElementIds],
+                    updates: [groups.addToGroup(['outer', 'inner'], 'new', 'inner'),
+                              groups.addToGroup(['outer'], 'new', null),
+                              groups.removeFromSelectedGroups(['outer', 'inner', 'other'],
+                                  {inner: true, other: false})],
+                };
+            }"""
+        )
+        assert result == {
+            "selection": [True, "outer", ["outer", "inner"], None],
+            "membership": ["outer", True, False],
+            "edit": ["parent", {}, {"child": True}],
+            "updates": [["outer", "new", "inner"], ["outer", "new"], ["outer", "other"]],
+        }
+
+
 async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None

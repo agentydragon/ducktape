@@ -1,0 +1,72 @@
+# Original home: packages/excalidraw/groups.ts
+source_matches:
+  - match: |
+      var selected = (appState, element) => EXPR(appState, element) != null;
+    bindings:
+      - local: selected
+        name: isSelectedViaGroup
+
+  - match: |
+      var selected = (appState, element) =>
+        element.groupIds
+          .filter((groupId) => groupId !== appState.editingGroupId)
+          .find((groupId) => appState.selectedGroupIds[groupId]);
+    bindings:
+      - local: selected
+        name: getSelectedGroupForElement
+
+  - match: |
+      var selected = (appState) =>
+        Object.entries(appState.selectedGroupIds)
+          .filter(([groupId, isSelected]) => isSelected)
+          .map(([groupId, isSelected]) => groupId);
+    bindings:
+      - local: selected
+        name: getSelectedGroupIds
+
+  - match: |
+      var selected = (appState, element) => ({
+        ...appState,
+        editingGroupId: element.groupIds.length ? element.groupIds[0] : null,
+        selectedGroupIds: {},
+        selectedElementIds: { [element.id]: !0 },
+      });
+    bindings:
+      - local: selected
+        name: editGroupForSelectedElement
+
+  - match: |
+      var selected = (element, selectedGroupIds) =>
+        element.groupIds.find((groupId) => selectedGroupIds[groupId]);
+    bindings:
+      - local: selected
+        name: getSelectedGroupIdForElement
+
+  - match: |
+      var selected = (prevGroupIds, newGroupId, editingGroupId) => {
+        let groupIds = [...prevGroupIds],
+          positionOfEditingGroupId = editingGroupId
+            ? groupIds.indexOf(editingGroupId)
+            : -1,
+          positionToInsert =
+            positionOfEditingGroupId > -1
+              ? positionOfEditingGroupId
+              : groupIds.length;
+        return groupIds.splice(positionToInsert, 0, newGroupId), groupIds;
+      };
+    bindings:
+      - local: selected
+        name: addToGroup
+
+  - match: |
+      var selected = (groupIds, selectedGroupIds) =>
+        groupIds.filter((groupId) => !selectedGroupIds[groupId]);
+    bindings:
+      - local: selected
+        name: removeFromSelectedGroups
+
+  - match: |
+      var selected = (element) => element.groupIds.length > 0;
+    bindings:
+      - local: selected
+        name: isInGroup
