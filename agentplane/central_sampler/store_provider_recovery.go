@@ -60,7 +60,7 @@ func (s *Store) ReadProviderFinish(ctx context.Context, owner Owner, intentID st
 }
 
 func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, sessionID, previousIntentID string,
-	request IntentRequest, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy,
+	request IntentPayload, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy,
 ) (string, []byte, error) {
 	kind := request.Kind
 	if request.ProviderRequest == nil || prepare == nil || policy.validate() != nil ||
@@ -162,7 +162,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 }
 
 func (s *Store) BeginSamplingAfterHostLoss(ctx context.Context, owner Owner, sessionID, previousIntentID string,
-	request IntentRequest, prepare requestPreparation, policy ProviderAttemptPolicy,
+	request IntentPayload, prepare requestPreparation, policy ProviderAttemptPolicy,
 ) (string, []byte, error) {
 	if request.Kind != PendingIntentSampling {
 		return "", nil, protocol.ErrInvalid
@@ -171,7 +171,7 @@ func (s *Store) BeginSamplingAfterHostLoss(ctx context.Context, owner Owner, ses
 }
 
 func (s *Store) BeginCompactionAfterHostLoss(ctx context.Context, owner Owner, sessionID, previousIntentID string,
-	request IntentRequest, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy,
+	request IntentPayload, original protocol.Context, prepare requestPreparation, policy ProviderAttemptPolicy,
 ) (string, []byte, error) {
 	if request.Kind != PendingIntentCompaction {
 		return "", nil, protocol.ErrInvalid

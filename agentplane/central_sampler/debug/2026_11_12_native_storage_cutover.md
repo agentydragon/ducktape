@@ -76,7 +76,7 @@ After 15 turns per provider, the largest sampler relations were `sampler_event` 
 bytes), `sampler_intent` (1,474,560), and `sampler_content` (262,144), including their indexes
 and TOAST. The replica's database size was 15,775,423 bytes.
 
-The new intent requests contain content/context/profile references rather than inline request
+The new intent payloads contain content/context/profile references rather than inline request
 bodies. Intent **results** still retain provider responses and stream events. Summing sizes of
 individually extracted JSONB fields across the 34 provider results gave 1,860,680 bytes for
 `events` and 695,018 for `response`. Within responses, the 17 OpenAI results retained 370,243

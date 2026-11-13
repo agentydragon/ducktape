@@ -124,7 +124,7 @@ func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 	attempt.Kind, attempt.FailureClass, attempt.Number, attempt.Budget = PendingIntentKind(kind), ProviderAttemptFailureClass(failureClass), number, budget
 	attempt.RetrySuppressed = ProviderRetrySuppression(retrySuppressed)
 	attempt.RetryIn = time.Duration(retryInSeconds * float64(time.Second))
-	var request IntentRequest
+	var request IntentPayload
 	if err := json.Unmarshal(requestWire, &request); err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 			}
 			return err
 		}
-		var request IntentRequest
+		var request IntentPayload
 		if err := json.Unmarshal(requestWire, &request); err != nil {
 			return err
 		}
@@ -408,7 +408,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		if err := tx.QueryRowContext(ctx, `SELECT request FROM sampler_intent WHERE id=$1`, previousIntentID).Scan(&requestWire); err != nil {
 			return err
 		}
-		var request IntentRequest
+		var request IntentPayload
 		if err := json.Unmarshal(requestWire, &request); err != nil {
 			return err
 		}

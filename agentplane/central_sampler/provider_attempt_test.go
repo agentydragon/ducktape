@@ -33,7 +33,7 @@ func providerAttemptTestPolicyForKind(kind PendingIntentKind) *ProviderAttemptPo
 	return nil
 }
 
-func providerAttemptTestRequest(kind PendingIntentKind) (IntentRequest, requestPreparation) {
+func providerAttemptTestRequest(kind PendingIntentKind) (IntentPayload, requestPreparation) {
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	model := samplersettings.ModelConfig{
 		Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
@@ -99,7 +99,7 @@ func TestProviderAttemptLeaseAndOwnerFences(t *testing.T) {
 		t.Fatal(err)
 	}
 	policy := ProviderAttemptPolicy{Budget: 2, Lease: time.Minute}
-	intentID, _, err := store.Begin(t.Context(), owner, IntentRequest{Kind: PendingIntentSampling}, nil, &policy)
+	intentID, _, err := store.Begin(t.Context(), owner, IntentPayload{Kind: PendingIntentSampling}, nil, &policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestCheckRecoveryAllowsOldProviderIntentButBlocksOldNativeIntent(t *testing
 		t.Fatal(err)
 	}
 	admitProviderCommand(t, store, nativeOwner, nativeSession.ID, "old-native-command", false)
-	nativeIntent, _, err := store.Begin(t.Context(), nativeOwner, IntentRequest{Kind: PendingIntentCell}, nil, nil)
+	nativeIntent, _, err := store.Begin(t.Context(), nativeOwner, IntentPayload{Kind: PendingIntentCell}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

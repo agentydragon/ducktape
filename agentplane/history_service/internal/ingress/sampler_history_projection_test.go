@@ -58,7 +58,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 					t.Fatal(err)
 				}
-				priorIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{Kind: centralsampler.PendingIntentSampling}, nil,
+				priorIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{Kind: centralsampler.PendingIntentSampling}, nil,
 					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
 				if err != nil {
 					t.Fatal(err)
@@ -86,7 +86,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 					t.Fatalf("prior calls=%v err=%v", calls, err)
 				}
 				call := calls[0]
-				cellIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{
+				cellIntent, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{
 					Kind: centralsampler.PendingIntentCell, Call: &call,
 				}, nil, nil)
 				if err != nil {
@@ -105,7 +105,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
-				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{Kind: centralsampler.PendingIntentSampling}, nil,
+				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{Kind: centralsampler.PendingIntentSampling}, nil,
 					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
 				if err != nil {
 					t.Fatal(err)
@@ -517,7 +517,7 @@ func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing
 				localCommandID = &active.ID
 			}
 			if test.providerFailure {
-				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentRequest{Kind: centralsampler.PendingIntentSampling}, nil,
+				intentID, _, err := store.Begin(t.Context(), owner, centralsampler.IntentPayload{Kind: centralsampler.PendingIntentSampling}, nil,
 					&centralsampler.ProviderAttemptPolicy{Budget: 3, Lease: time.Minute})
 				if err != nil {
 					t.Fatal(err)

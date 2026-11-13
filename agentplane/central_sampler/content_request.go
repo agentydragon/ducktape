@@ -87,7 +87,7 @@ func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, accountUID, 
 			}
 			return err
 		}
-		var intent IntentRequest
+		var intent IntentPayload
 		if err := json.Unmarshal(raw, &intent); err != nil {
 			return err
 		}

@@ -55,7 +55,7 @@ func lostIntents(ctx context.Context, tx *sql.Tx, conversationID string) ([]lost
 		if err := rows.Scan(&intent.ID, &intent.Generation, &requestWire, &toolName, &method); err != nil {
 			return nil, err
 		}
-		request, err := decodeIntentRequest(requestWire)
+		request, err := decodeIntentPayload(requestWire)
 		if err != nil {
 			return nil, err
 		}
@@ -402,7 +402,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 				rows.Close()
 				return err
 			}
-			request, err := decodeIntentRequest(requestWire)
+			request, err := decodeIntentPayload(requestWire)
 			if err != nil {
 				rows.Close()
 				return err
