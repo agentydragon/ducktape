@@ -156,12 +156,30 @@ class RdJob:
     rects: list[RdRect] = field(default_factory=list)
 
     def to_bytes(self) -> bytes:
-        """Serialize to a complete scrambled .rd binary file."""
+        """Serialize to a complete scrambled .rd binary file.
+
+        Ruida serialization currently supports one pass and no layer Z motion.
+        Reject other values rather than silently writing a physically different job.
+        """
         indices = [layer.index for layer in self.layers]
         if any(index < 0 or index >= MAX_LAYERS for index in indices):
             raise ValueError(f"Ruida layer indices must be between 0 and {MAX_LAYERS - 1}")
         if len(set(indices)) != len(indices):
             raise ValueError("Ruida layer indices must be unique")
+
+        for layer in self.layers:
+            unsupported = (
+                ("num_passes", layer.num_passes, 1),
+                ("z_offset_mm", layer.z_offset_mm, 0.0),
+                ("z_per_pass_mm", layer.z_per_pass_mm, 0.0),
+            )
+            for name, value, default in unsupported:
+                if value != default:
+                    raise ValueError(
+                        f"Ruida .rd serialization does not support layer {layer.index} "
+                        f"{name}={value!r}; expected {default}"
+                    )
+
         raw = self._header() + self._body() + self._trailer()
         return scramble_bytes(raw)
 

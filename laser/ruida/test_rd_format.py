@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 import pytest_bazel
 
@@ -94,6 +96,30 @@ def test_unscrambled_structure():
     # Should contain the move opcode 0x88 and cut opcode 0xA8
     assert 0x88 in raw
     assert 0xA8 in raw
+
+
+def test_default_layer_parameters_preserve_supported_wire_bytes():
+    """Default parameters retain the pre-validation binary encoding."""
+    job = RdJob(
+        layers=[RdLayer(index=0, min_power_pct=50, max_power_pct=80, speed_mm_s=30)],
+        rects=[RdRect(layer_index=0, x_mm=5, y_mm=5, width_mm=20, height_mm=20)],
+    )
+    data = job.to_bytes()
+    assert len(data) == 532
+    assert hashlib.sha256(data).hexdigest() == "408665a748ff1191723fc8c5370d6d259a1718f4839668a9e45df40766d93d0e"
+
+
+@pytest.mark.parametrize(
+    ("layer", "field_name"),
+    [
+        (RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, num_passes=2), "num_passes"),
+        (RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, z_offset_mm=0.1), "z_offset_mm"),
+        (RdLayer(index=3, min_power_pct=50, max_power_pct=80, speed_mm_s=30, z_per_pass_mm=-0.1), "z_per_pass_mm"),
+    ],
+)
+def test_to_bytes_rejects_unsupported_layer_parameters(layer: RdLayer, field_name: str):
+    with pytest.raises(ValueError, match=field_name):
+        RdJob(layers=[layer]).to_bytes()
 
 
 def test_60_layers():
