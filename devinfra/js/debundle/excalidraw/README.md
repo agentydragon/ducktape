@@ -34,7 +34,8 @@ module it bundles. Every other chunk is `inline_in_entry`.
     including package boundaries and case. Chunk directories describe the input
     bundle; paths inside them describe the upstream source homes.
   - `editor`: `packages/excalidraw/appState` (`getDefaultAppState`),
-    `packages/excalidraw/data/blob` (`blobToArrayBuffer`), and
+    `packages/excalidraw/data/blob` (21 file/blob helpers for scene/library loading,
+    data URLs, image conversion, MIME normalization and binary reads), and
     `packages/excalidraw/element/textWrapping` (the complete wrapping/tokenizing
     implementation, Unicode regex builders and caches, and its internal helpers).
   - `main`: `packages/excalidraw/components/Card` (`Card`) and separate
@@ -55,8 +56,8 @@ module it bundles. Every other chunk is `inline_in_entry`.
 every input chunk has an accepting gate and translation-validation summary and,
 unless fully swapped, a non-empty emitted entry, and every static chunk import
 names an input chunk. `spec_output_test` asserts the spec's effects through the
-e2e helpers: claimed modules' export specifiers, `blobToArrayBuffer` reading a
-`Blob` under Node, the clsx import rewrite and strip, and the swap report.
+e2e helpers: claimed modules' export specifiers, geometry and scalar math under
+Node, the clsx import rewrite and strip, and the swap report.
 `test_smoke` loads the accepted tree's browser harness in headless Chromium
 from a test-owned server. The server serves `app/`, Excalidraw's fonts from
 the package (`app/index.html` sets `EXCALIDRAW_ASSET_PATH`), and the swapped
@@ -67,7 +68,8 @@ console or page errors, harness-recorded errors, or failed requests. It
 exercises only what startup and drawing load: no lazy locale, font-subsetting
 or file-system chunk. It also imports `textWrapping` through its original source
 path and exercises word wrapping, Unicode normalization, joined emojis and CJK
-detection.
+detection. Separate browser probes exercise element predicates, UTF-8 data URL
+round trips, binary blob reads, image MIME normalization and library loading.
 
 Candidates the gate or vendor strip rejected, kept out of the spec:
 `APP_STATE_STORAGE_CONF` and `KEYS`/`isDarwin` (impure initializers on the

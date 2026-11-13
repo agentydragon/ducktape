@@ -204,5 +204,51 @@ async def test_element_type_checks(playwright_driver: Playwright, origin: str) -
         }
 
 
+async def test_blob_and_file_helpers(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        result = await page.evaluate(
+            """async () => {
+                const files = await import('./editor/packages/excalidraw/data/blob.js');
+                const url = files.getDataURL_sync('hello 界', 'text/plain');
+                const file = files.dataURLToFile(url, 'hello.txt');
+                const png = await files.normalizeFile(new File([
+                    new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+                ], 'image.png', {type: 'image/jpeg'}));
+                const libraryJSON = JSON.stringify({type: 'excalidrawlib', version: 2, libraryItems: []});
+                const library = new File([libraryJSON], 'empty.excalidrawlib');
+                const normalizedLibrary = await files.normalizeFile(library);
+                const sceneOrLibrary = await files.loadSceneOrLibraryFromBlob(library, null, null);
+                let invalidLibrary;
+                try {
+                    files.parseLibraryJSON('{}');
+                } catch (error) {
+                    invalidLibrary = error.message;
+                }
+                return {
+                    roundTrip: [file.name, file.type, await file.text(), files.dataURLToString(url)],
+                    asyncURL: await files.getDataURL(file),
+                    bytes: [...new Uint8Array(await files.blobToArrayBuffer(new Blob(['abc'])))],
+                    png: [png.name, png.type, png.size, files.isSupportedImageFile(png)],
+                    library: [normalizedLibrary.type, await files.loadLibraryFromBlob(library),
+                              sceneOrLibrary.type, files.parseLibraryJSON(libraryJSON)],
+                    invalidLibrary,
+                };
+            }"""
+        )
+        assert result == {
+            "roundTrip": ["hello.txt", "text/plain", "hello 界", "hello 界"],
+            "asyncURL": "data:text/plain;base64,aGVsbG8g55WM",
+            "bytes": [97, 98, 99],
+            "png": ["image.png", "image/png", 8, True],
+            "library": ["application/vnd.excalidrawlib+json", [], "application/vnd.excalidrawlib+json", []],
+            "invalidLibrary": "Invalid library",
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
