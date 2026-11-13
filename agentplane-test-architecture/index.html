@@ -136,27 +136,27 @@
       };
       const lanes = [
         [
-          "P1 · Recovery pilot · this branch",
-          "Run the new manual native-contract target without K3s or the app. Real Gateway and History processes, real Runtime PID1 and PostgreSQL containers, envtest API. Prove first turn, outage, retained History, same-journal restart, receipt replay and a new turn. The seeded lost-journal control was rejected at retained Session inventory; receipt assertions were not reached in that control. This is a feasibility spike; the ordinary merge gate stays intact.",
+          "P1 · Initial native recovery feasibility · historical",
+          "The original manual native-contract pilot used real Gateway and History processes, Runtime PID1 and PostgreSQL containers, with envtest for Kubernetes API behavior. It established fixture feasibility and its reported fault-control result; it did not measure a matched candidate gate. Treat the measurements below as historical evidence for that initial source state.",
         ],
         [
-          "P2 · Owned contract fixtures",
-          "Extract narrow process/auth/database helpers from app-owned test support and avoid the inherited system_tests conftest dependency. Give each target explicit service binaries and external-model scripting. Split the reused launch helper by harness: this Claude-only pilot still declares both Claude and Codex bundles. Add Gateway fencing/reconnect, History outage/cursor settlement and Runtime crash/journal contracts with positive controls. PRs for independent contracts can run in parallel; no generic fixture framework first.",
+          "P2 · Owned contract fixtures · partial",
+          "The native helper no longer pulls Codex into the Claude-only pilot: the unique Codex input path count fell from 86 to 0 while Claude inputs remain. This counts declared input paths, not transferred bytes. The actual four central K3s cases and Pod-bound credentials are unchanged. Gateway fencing/reconnect, History cursor settlement and additional Runtime crash/journal contracts with positive controls remain follow-up work; keep the helpers owned by their contracts rather than starting a generic fixture framework.",
         ],
         [
-          "P3 · Deployment slices and image ownership",
-          "Replace the unconditional common image map with explicit backend, app, MCP and platform stack compositions. Split reusable backend fixtures from app client fixtures. First candidate: a central-only profile for Gateway crash, retry-budget, sampler-roll and History-outage tests; retain all four distinct Kubernetes faults and omit Dex/MCP OAuth workloads only after their rendered object/image closure proves them unused. For each removed dependency, map the actual assertion and inspect the configured Bazel closure; run the retained deployment acceptance using the real packaged image. This is different work from held image split #15214, which still needs its own measured saving.",
+          "P3 · Deployment slices and image ownership · partial",
+          "The central profile is implemented for the same four cases: Gateway crash, retry-budget, sampler roll and History outage. It removes only the Dex/MCP Everything/OAuth fixture: rendered objects fall from 175 to 162 and Deployments from 15 to 12. Real app, Actions, MCP-edge, Gateway, History, sampler, controllers and PostgreSQL remain. The four cases and Pod-bound credentials are unchanged. This is a focused profile experiment, not a devel selector or a complete image-ownership split; compare the exact published candidate to the control and retain the real deployment acceptance. Held image split #15214 still needs its own measured saving.",
         ],
         [
-          "P4 · Shorten compound scenarios",
-          "Split the Pod idle case's authorization, failed-turn retention, timer, operator resume and identity assertions into owner contracts plus one real idle/resume acceptance. Keep the one-minute production timer where it is the guarantee; controller fake-clock tests already exist. Investigate the wrong-issuer → valid mounted Secret case using producer/watch traces before changing its wait. Evaluate action grouping after reducing work: amortize setup without one 21-case action becoming the long pole.",
+          "P4 · Shorten compound scenarios · partial",
+          "The budget case now configures a 45-second reconnect deadline against the 120-second production default. A 5-second trial failed real recovery while dialing the old Gateway address and was rejected. The 45-second trial passed the unchanged scenario, exercising its existing definitive-session-loss and fresh-session branch. The production default and Pod-bound credentials remain unchanged. The Secret-projection annotation trial was withdrawn: one pair changed the case from 23.4s to 25.5s, showing no observed saving. Continue by splitting owner contracts from real idle/resume acceptance while preserving the lifecycle, identity and recovery assertions.",
         ],
         [
-          "P5 · Shadow the entire candidate gate",
+          "P5 · Shadow the entire candidate gate · pending",
           "Replay at least 30 pinned base/head pairs spanning Runtime, app, MCP and platform changes, plus three busy windows and a four-PR burst. Accumulate at least 100 fresh contract executions. Counterbalance control/candidate order and separate warm/cold fixtures, source/CAS, queues, CPU, retries, cancellations and missing results. Include the remaining required pre-commit and artifact/import gates; a faster isolated test is insufficient.",
         ],
         [
-          "P6 · Adopt one proven boundary",
+          "P6 · Adopt one proven boundary · not started",
           "Review every unique assertion and fault witness, then change one selection/fixture boundary per PR. Initial screen: at least 25% lower median complete required feedback, p90 no more than 5% worse, no escaped reviewed fault, no new unexplained failure or cleanup signature. Publish all outcomes and sample intervals. Keep full current coverage for unknown mappings and revert that selection change on an escape. Only then evaluate larger architecture, resource and frequency changes.",
         ],
       ];
@@ -185,6 +185,59 @@
           return () => controller.abort();
         }, []);
         const choice = classes[selected];
+        const comparison = data?.iteration2_comparison;
+        const nativeIteration = data?.iteration2_native;
+        const centralTargets = [
+          "//agentplane/system_tests/suites/mcp:test_gateway_crash",
+          "//agentplane/system_tests/suites/mcp:test_gateway_budget",
+          "//agentplane/system_tests/suites/mcp:test_sampler_roll",
+          "//agentplane/system_tests/suites/mcp:test_history_outage",
+        ];
+        const seconds = (value) =>
+          Number.isFinite(value) ? `${value.toFixed(3)}s` : "Pending";
+        const comparisonRows = centralTargets.map((target) => {
+          const targetName = target.split(":").pop();
+          const row = comparison?.targets?.find(
+            (candidate) =>
+              candidate.label === target ||
+              candidate.label?.endsWith(targetName),
+          );
+          return [
+            row?.label || target,
+            seconds(row?.control_process_seconds),
+            seconds(row?.candidate_process_seconds),
+            seconds(row?.control_setup_seconds),
+            seconds(row?.candidate_setup_seconds),
+            seconds(row?.control_case_seconds),
+            seconds(row?.candidate_case_seconds),
+            row?.outcome ||
+              "Pending final source-qualified candidate comparison",
+          ];
+        });
+        const nativeRows = nativeIteration?.observations?.length
+          ? nativeIteration.observations.map((run, index) => [
+              index + 1,
+              run.arm,
+              run.invocation
+                ? html`<${Anchor}
+                    href=${`https://app.buildbuddy.io/invocation/${run.invocation}`}
+                    >${run.invocation}<//
+                  >`
+                : "Pending",
+              seconds(run.test_seconds),
+              seconds(run.process_seconds),
+              seconds(run.cpu_seconds),
+            ])
+          : [
+              [
+                "Pending",
+                "Native ABBA",
+                "Final ordered observations pending",
+                "Pending",
+                "Pending",
+                "Pending",
+              ],
+            ];
         return html`<${Container}
           component="main"
           size="74rem"
@@ -197,15 +250,16 @@
           >
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
-            ><${Badge} color="blue">Concrete proposal + native pilot<//
-            ><${Badge} color="orange">Merge gate unchanged<//
-            ><${Badge} color="gray">Speedup not yet established<//><//
+            ><${Badge} color="blue">Iteration 2 implementation + experiments<//
+            ><${Badge} color="orange">devel merge gate unchanged<//
+            ><${Badge} color="gray">Complete CI saving not established<//><//
           >
           <${Text} size="sm" c="dimmed"
             >${manifest ? `Source audit ${source} · reviewed ${manifest.audited_at_utc} · published ${manifest.published_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
+              ["progress", "Progress"],
               ["architecture", "Architecture"],
               ["change-selector", "PR selection"],
               ["coverage", "Coverage"],
@@ -217,12 +271,88 @@
                 html`<${Anchor} key=${id} href=${`#${id}`}>${label}<//>`,
             )}
           <//>
-          <${Alert} color="blue" title="Decision to make">
-            Start with narrow production-service contracts and explicit
-            deployment slices. Keep the current gate while shadowing. The
-            long-term target is routine backend required-feedback mean below 4
-            minutes and p90 below 8 minutes, including reruns; these are design
-            targets, not results.
+          <${Alert} color="blue" title="Current state">
+            PR #16102 on the existing experimental source branch is testing
+            partial P2/P3 work and P4 scenario work. The devel merge gate and
+            test frequency remain unchanged. The long-term target is routine
+            backend required-feedback mean below 4 minutes and p90 below 8
+            minutes, including reruns; these are design targets, not results.
+          <//>
+          <${Section} id="progress" title="Iteration 2 implementation status">
+            <${Alert}
+              color="orange"
+              title="Experimental source; initial pilot is historical"
+            >
+              The original native recovery pilot below describes its initial
+              source state. Iteration 2 keeps the same source PR and has not
+              changed the required devel gate. No complete CI saving is claimed.
+            <//>
+            <${Rows}
+              headers=${["Step", "Current evidence", "Next work"]}
+              rows=${[
+                [
+                  "P1 · Native recovery",
+                  "Initial feasibility and fault-control evidence remain historical.",
+                  "Keep the original result separate from iteration 2 timing and coverage claims.",
+                ],
+                [
+                  "P2 · Contract fixtures",
+                  "Claude-only native helper has 0 unique Codex input paths, down from 86; Claude inputs remain. This is path count, not transferred bytes.",
+                  "Add and positively control the remaining owned Gateway, History and Runtime contracts.",
+                ],
+                [
+                  "P3 · Deployment profile",
+                  "Same four K3s cases; 175 → 162 rendered objects and 15 → 12 Deployments. Dex/MCP Everything/OAuth fixture removed; real app, Actions, MCP-edge, Gateway, History, sampler, controllers and PostgreSQL stay.",
+                  "Finish source-qualified matched target comparison, then map profile ownership to the real selector and preserve required deployment acceptance.",
+                ],
+                [
+                  "P4 · Scenario duration",
+                  "45-second reconnect candidate passed vs the 120-second production default. Its existing definitive-loss/fresh-session branch ran; the alternative original-session resume branch did not run in that trial. The 5-second trial failed real recovery while dialing the old Gateway address and was rejected. Secret-projection annotation trial withdrawn after one pair showed 23.4s → 25.5s.",
+                  "Retain full-default-duration exposure in other profiles and default/configuration unit checks. Split owner contracts from real lifecycle acceptance without weakening assertions or changing Pod-bound credentials.",
+                ],
+                [
+                  "P5 · Whole-PR shadow",
+                  "Pending; the four-target experiment is not a whole-PR shadow.",
+                  "At least 30 pinned base/head pairs, 100 fresh contract executions, three busy windows and a four-PR burst, including remaining required gates.",
+                ],
+                [
+                  "P6 · Adoption",
+                  "Not started; no selection or frequency policy change.",
+                  "Apply the stated coverage, reliability and feedback thresholds only after P5 evidence.",
+                ],
+              ]}
+            />
+            ${p("Coverage boundary: the central profile supplies operator login through the existing pinned Ed25519 test issuer instead of Dex. These four scenarios do not use operator login: their native clients retain app/Gateway Pod-bound Kubernetes tokens. OAuth/browser acceptance stays in other targets. Only the budget profile changes the reconnect deadline; that shortens full-default-duration exposure, while the scenario assertions remain unchanged.")}
+            ${p(data?.iteration2_status?.source_note || "Current candidate source and exact-head check state will be recorded with the completed comparison.")}
+            <${Title} order=${3} mt="xl" mb="sm"
+              >Matched comparison: four central K3s targets<//
+            >
+            ${p(comparison?.scope_note || "The control is one warm invocation with four passing targets (447.970s invocation time). Final exact-published-head candidate results are pending. This table will show process, setup and case time separately; one sequence will not establish complete CI savings.")}
+            <${Rows}
+              headers=${["Target", "Control process", "Candidate process", "Control setup", "Candidate setup", "Control case", "Candidate case", "Outcome"]}
+              rows=${comparisonRows}
+            />
+            <${Group} gap="md" mt="sm">
+              <${Anchor}
+                href=${comparison?.control_url || "https://app.buildbuddy.io/invocation/aac4b20f-b5c2-4bd6-9000-315d8a7b9808"}
+                >${comparison?.control_link_text || "Initial control · warm four-target run · 447.970s"}<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16102"
+                >Experimental source PR #16102<//
+              >
+            <//>
+            <${Text} size="sm" c="dimmed" mt="sm">
+              Process, setup and test-case durations are separate observations;
+              they are not additive. A single sequence is not a population
+              result, whole-PR shadow or complete CI saving.
+            <//>
+            <${Title} order=${3} mt="xl" mb="sm">Native helper ABBA timing<//>
+            ${p(nativeIteration?.scope_note || "The ordered native ABBA observations are still pending final evidence. Any eventual timing is a small fixture comparison, not whole-CI or whole-PR savings.")}
+            <${Rows}
+              headers=${["Order", "Arm", "Invocation", "Test", "Process", "CPU"]}
+              rows=${nativeRows}
+            />
           <//>
           <${Section} id="why" title="The remaining opportunity is structural">
             ${p("The latest published baseline has 124 successful production-backend heads: mean 13m36s, median 11m27s, p90 23m38s. Window: 10 November 00:00 to 13 November 03:03:35 UTC. Four failed and one cancelled head are outside those successful percentiles. All 24 repeated successful heads had earlier failed Bazel checks and account for 43.1% of summed head feedback; this is not an all-push flake rate.")}
@@ -414,7 +544,7 @@
             ${p("There is no valid subtraction between this small pilot's action time and the earlier 21-case Pod suite. The candidate gate still needs its other contracts and real acceptance. Complete feedback savings remain unmeasured until the shadow/replay phase.")}
           <//>
           <${Section} id="rollout" title="Six concrete implementation steps">
-            ${p("P1 exists on the pivot branch. P2, P3 and the diagnosis portion of P4 can proceed independently as small PRs. P5 composes their candidate graph. P6 is an explicit coverage and gate-policy decision after that evidence; waiting for unrelated seven-day recurrence windows does not block the architecture work.")}
+            ${p("P1 is historical feasibility evidence. P2, P3 and P4 are partial; their current implementation details and bounded comparison slots are summarized above. The devel gate stays unchanged while P5 runs the entire candidate graph. P6 is an explicit coverage and gate-policy decision after that evidence; no adoption or frequency change is active.")}
             <${Accordion} multiple variant="separated"
               >${lanes.map(([title, detail], i) => html`<${Accordion.Item} key=${i} value=${`p${i + 1}`}><${Accordion.Control}>${title}<//><${Accordion.Panel}>${p(detail)}<//><//>`)}<//
             >
