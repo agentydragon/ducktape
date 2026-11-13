@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "source_base": "21962292287e585ef3415eeaa66e9cc621913e1c",
+  "selected_source_patch_sha256": "464e9e76950e3e745cc0f9f29e431ef76e4da93c84f809fcf625e0b736df7e8b",
+  "selected_source_sha256": {
+    "agentplane/system_tests/vm/BUILD.bazel": "e0249979512bde55965db9d20a3a1485c9a28a9a0d6aa717a9a92979b86d4dc8",
+    "agentplane/system_tests/vm/guest_setup_probe.py": "a790ac3e3cd06841d6f7269e1edd2b7d018b139a8b07c4e4bc9b9310593d653e",
+    "agentplane/system_tests/vm/supervision.py": "4565f65b74d75d427eea7b5022bc9227906592a39a5162053c4df2f38c08da4d",
+    "agentplane/x/direct_vm_boot/BUILD.bazel": "7f020bc178bc77abf9c8b1cd0423046eb12fde2fc22e7e9f7e4c46245b8ab61d",
+    "agentplane/x/direct_vm_boot/session_helpers.py": "bbc69c30d8886696cb6f5d010092c0e358095e95dd00052c5e8d20d0eadb90e0",
+    "agentplane/x/direct_vm_boot/test_runtime_codex_session.py": "9ba0d4e76f27909d3cceb39db6dd5a8f4a887c6df8c5b2c459b58a5ace12e4f1",
+    "agentplane/x/direct_vm_boot/test_runtime_session.py": "0491840b88c8d0801a270d395c3b2dc080bbf41d5441201f71fcd3566d83a18a"
+  },
+  "positive": {
+    "invocation_id": "e75b5d2d-0710-45fc-949b-1ad456bf3f08",
+    "invocation_url": "https://app.buildbuddy.io/invocation/e75b5d2d-0710-45fc-949b-1ad456bf3f08",
+    "unique_fresh_test_actions": 3,
+    "junit_cases": 3,
+    "junit_failures": 0,
+    "junit_errors": 0,
+    "junit_skips": 0,
+    "retries": 0,
+    "merged_actions": 0,
+    "executions": [
+      {
+        "label": "//agentplane/x/direct_vm_boot:test_runtime_codex_session",
+        "physical_execution_id": "/uploads/73185e8b-b659-4cb2-bccd-7fc7c580c6d3/blobs/1edbd1d45798d6a018348ccfd537916987bf53de6ed064e5f88aae0821ce89f2/581",
+        "action_digest": {
+          "hash": "1edbd1d45798d6a018348ccfd537916987bf53de6ed064e5f88aae0821ce89f2",
+          "sizeBytes": "581"
+        },
+        "execution_started_at": "2026-11-13T20:43:36.143767Z",
+        "execution_completed_at": "2026-11-13T20:45:41.216127Z",
+        "execution_seconds": 125.07236,
+        "worker_cpu_seconds": 273.265593,
+        "worker_id": "82281834-2615-43ae-bdbf-6f880c743926",
+        "junit_cases": 1,
+        "junit_failures": 0,
+        "junit_errors": 0,
+        "junit_skips": 0
+      },
+      {
+        "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+        "physical_execution_id": "/uploads/146b0ccb-7644-4b4a-bbf5-e61168bfa1d9/blobs/d92ecf775e79d4c32c26b49d836a9b713504a4115b9a23b2c386772dd8bddeb5/581",
+        "action_digest": {
+          "hash": "d92ecf775e79d4c32c26b49d836a9b713504a4115b9a23b2c386772dd8bddeb5",
+          "sizeBytes": "581"
+        },
+        "execution_started_at": "2026-11-13T20:43:36.162243Z",
+        "execution_completed_at": "2026-11-13T20:46:16.504717Z",
+        "execution_seconds": 160.342474,
+        "worker_cpu_seconds": 329.003441,
+        "worker_id": "25340ffb-5850-46a6-8479-8990400e1dfb",
+        "junit_cases": 1,
+        "junit_failures": 0,
+        "junit_errors": 0,
+        "junit_skips": 0
+      },
+      {
+        "label": "//agentplane/system_tests/suites:test_vm",
+        "physical_execution_id": "/uploads/54a830c6-77f7-4d12-993b-0ba3dd66e4a2/blobs/4675b7bc32ee360111169077b0930e70ecf1bf224a7be44a5148359c22d8fc08/1852",
+        "action_digest": {
+          "hash": "4675b7bc32ee360111169077b0930e70ecf1bf224a7be44a5148359c22d8fc08",
+          "sizeBytes": "1852"
+        },
+        "execution_started_at": "2026-11-13T20:43:41.690882Z",
+        "execution_completed_at": "2026-11-13T20:48:35.900631Z",
+        "execution_seconds": 294.209749,
+        "worker_cpu_seconds": 1018.028041,
+        "worker_id": "90e7dac0-e87b-4ef4-9c4d-b64bd335846c",
+        "junit_cases": 1,
+        "junit_failures": 0,
+        "junit_errors": 0,
+        "junit_skips": 0
+      }
+    ]
+  },
+  "negative_control": {
+    "invocation_id": "ad13dcbd-b4f3-4942-90c1-9591507657a9",
+    "invocation_url": "https://app.buildbuddy.io/invocation/ad13dcbd-b4f3-4942-90c1-9591507657a9",
+    "flag": "DIRECT_VM_SETUP_WRONG_PROCESS_LIMIT_CONTROL=1",
+    "unique_fresh_test_actions": 1,
+    "expected_failures": 1,
+    "retries": 0,
+    "merged_actions": 0,
+    "observed_failure": "Shared setup assertion rejects systemd TasksMax 96; required value remains 512. The captured kernel native pids.max is also 96. Both original Shell turns finish before this setup probe.",
+    "executions": [
+      {
+        "label": "//agentplane/x/direct_vm_boot:test_runtime_session",
+        "physical_execution_id": "/uploads/77f692c5-7b3f-429b-a70e-4f342879c7f3/blobs/85c3fb0bc0e682eee29a054f6788d5c83d58b9d7f25c436ebafd3a8304937fd9/581",
+        "action_digest": {
+          "hash": "85c3fb0bc0e682eee29a054f6788d5c83d58b9d7f25c436ebafd3a8304937fd9",
+          "sizeBytes": "581"
+        },
+        "execution_started_at": "2026-11-13T20:49:50.583006Z",
+        "execution_completed_at": "2026-11-13T20:51:26.662263Z",
+        "execution_seconds": 96.079257,
+        "worker_cpu_seconds": 165.151463,
+        "worker_id": "25340ffb-5850-46a6-8479-8990400e1dfb"
+      }
+    ]
+  },
+  "coverage": [
+    "Existing deployed VM setup script and assertion AST preserved in shared probe.",
+    "Both packaged guests run the full setup probe, then a second fresh Session independently observes detached descendant and cgroup cleanup.",
+    "Fresh nested workspace and HOME ownership, UID/GID107, PID1 systemd, no capabilities/NoNewPrivs, process/aggregate/service kernel budgets.",
+    "Existing full deployed VM scenario remains required and passed unchanged assertions."
+  ],
+  "limits": [
+    "Manual direct contracts remain nonrequired.",
+    "This validates assertion transfer; it does not establish CI latency savings or a reliability rate.",
+    "Actual OOM enforcement, private guest kernel fault matrix, deployed issuer/controller/KubeVirt/PVC and real egress/Notification CLI composition remain separate obligations.",
+    "Negative control is deliberate failure exposure and excluded from healthy-run reliability denominators."
+  ]
+}

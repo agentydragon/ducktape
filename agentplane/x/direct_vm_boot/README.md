@@ -5,6 +5,10 @@ filesystem and Runtime disk with the pinned KubeVirt launcher image's QEMU and
 virtiofsd. It runs through Docker on managed RBE, using software emulation rather
 than KVM. No K3s cluster or service-image stack is started.
 
+The Runtime contracts bind those four image runfiles into Docker read-only;
+they remain required Bazel inputs. The observed A/B/B/A action timings, CPU and
+cache limits are in [the mount investigation](../../system_tests/debug/2026_11_13_guest_mounts.md).
+
 ```sh
 bbr test //agentplane/x/direct_vm_boot:test_guest_boot --nocache_test_results
 ```
@@ -51,6 +55,10 @@ The fixture assigns the Pod address before Gateway starts observing it.
 State belongs to this case. Its exported ownership matches the guest's 107:107
 home-setup identity; launcher cleanup restores host ownership, stops QEMU and
 virtiofsd, removes the named container and checks that the listener is gone.
+The existing 120-second QEMU lifetime bounds Linux/systemd boot. The separate
+30-second authenticated-RPC deadline starts after the packaged Runtime emits a
+serial record; Docker loading and guest mounts cannot consume that RPC budget.
+
 This target does not assert orderly guest poweroff; the boot-only target above
 owns that behavior.
 
@@ -68,4 +76,71 @@ fail it after the packaged Runtime starts:
 bbr test //agentplane/x/direct_vm_boot:test_runtime_gateway --nocache_test_results \
   --runs_per_test=1 --flaky_test_attempts=1 \
   --test_env=DIRECT_VM_BOOT_WRONG_GATEWAY_CLIENT_CA_CONTROL=1
+```
+
+## Packaged Claude Session
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results
+```
+
+This manual contract starts the real Dispatcher, Gateway and Go History Service against the
+fixture Kubernetes API, then starts the packaged Runtime under the guest's production systemd units.
+The guest launches the root image's pinned Claude CLI. Two Dispatcher inputs drive two real
+Claude Shell calls: the first writes a nonce to the workspace and the next reads that same file.
+The test checks both requested command IDs in contiguous, sourced History events and requires two
+completed turns under one Runtime boot ID.
+The first turn also runs the shared unprivileged guest probe: UID 107, systemd as PID 1, the Claude
+service cgroup under `agentplane-workloads.slice`, and denial of a `systemctl restart` request.
+
+The guest reaches the fixture model-config endpoint and History through the slirp host address;
+both are real local services. Runtime presents its fixture-issued client SVID, and validates History's
+fixture-issued server SVID against the configured History identity. This target does not create a K3s
+cluster, controller, issued Secret, KubeVirt VM or PVC, and it disables
+the executor resource budget. Those deployment and executor acceptance boundaries remain with the
+existing system tests.
+
+The opt-in History identity control adds a test-only TLS relay with the same CA and localhost DNS
+but a different valid service URI. Before the guest starts, a real read-only Health.Check through
+both authenticated TLS legs must return SERVING from the healthy History process. Runtime still
+requires the canonical History URI. Its rejection must prevent the ordinary History-backed
+Session contract from completing; inspect the Runtime TLS rejection and preflight logs when
+qualifying the expected failure:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_session --nocache_test_results \
+  --test_env=DIRECT_VM_SESSION_WRONG_HISTORY_SERVER_IDENTITY_CONTROL=1
+```
+
+## Packaged Codex Session and executor
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test_results
+```
+
+The Codex companion uses the same packaged guest and real Dispatcher, Gateway and History
+composition. The pinned Codex CLI handles two inputs against a scripted Responses endpoint. Its
+production VM executor writes a fresh nonce to the workspace, then reads that file on the next
+input. Assertions require the requested command and tool-call identities, completed native command
+frames with exit zero, two completed History turns, contiguous sourced events and the same Runtime
+boot ID.
+
+The first command checks UID 107, systemd as PID 1, denial of a privileged unit restart and membership
+in `agentplane-executors.slice`. It reads its actual leaf cgroup limits: 256 MiB memory and CPU quota
+200000/100000. These are configuration and placement checks; the deployed `test_vm_oom` acceptance
+still owns actual tool-OOM enforcement. The ordinary VM suite remains required.
+
+The state virtiofs daemon runs as 107:107, matching production's unprivileged daemon. Guest-root
+creation of private Codex state must therefore remain accessible to the native harness. The launcher
+keeps guest exits observable throughout both Session contracts and restores host ownership at
+cleanup. Failed contracts retain model-request, History, guest serial and container diagnostics in
+undeclared outputs.
+
+The opt-in executor control removes the executor configuration and its budget while retaining the
+ordinary executor slice and cgroup assertions:
+
+```sh
+bbr test //agentplane/x/direct_vm_boot:test_runtime_codex_session --nocache_test_results \
+  --runs_per_test=1 --flaky_test_attempts=1 \
+  --test_env=DIRECT_VM_CODEX_BYPASS_EXECUTOR_CONTROL=1
 ```

@@ -85,6 +85,21 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   composition and keep their restart, recovery and next-input assertions. Prove
   both removed and retained graph edges; removing an unused input is not evidence
   of a complete-feedback saving.
+  Generic ASGI serving also no longer imports MCP support: the MCP-specific
+  helper and existing endpoint case move to their owning test module. All 14
+  focused ASGI/MCP cases pass, including a real client cancellation/retry. One
+  CPython profile collects the same 24 Bridge cases with no MCP imports;
+  collection-only runs are not contract exposures or complete-feedback timings.
+  A source-pinned 4/8/8/4 Bridge probe passes the same 24 cases in all four runs.
+  Eight shards lower mean selected-target elapsed by 24.9% while using 62.8% more
+  measured worker CPU. The branch uses eight as a scheduling candidate; assess
+  its mixed workload and busy-window cost before a devel backport.
+  A full-body bytecode A/B/B/A passes all 24 Bridge cases in every arm, with 32
+  NEW shard actions. Mean selected-target elapsed falls 9.840s and TestRunner CPU
+  14.2%, but cache/action states differ and the earlier cold compile required
+  4,202.992 CPU seconds. Keep bytecode collection unchanged until full-workload
+  exposure justifies that cost; preserve the screen in
+  `app/debug/2026_11_13_bridge_bytecode.md`.
 - **P3, deployment slices:** replace the common 12-service-image map applied to
   all 13 ordinary CI-eligible K3s suites with explicit backend/app/MCP/platform
   compositions. Inventory each unique assertion before removing a dependency.
@@ -126,6 +141,45 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   No Session or supervised executor is created. This adds a
   packaged Runtime transport witness; controller-issued credentials, KubeVirt,
   PVC, executor operations and App acceptance remain separate.
+  A separate manual `test_runtime_session` now drives the packaged Claude CLI
+  through two real Shell turns, retaining a workspace nonce, original command IDs,
+  contiguous sourced History and one Runtime boot. Its first turn also shares the
+  VM shell probe for UID, PID1, the Claude service cgroup and systemd denial. The
+  shared probe passes in a fresh direct Session, and the full deployed VM scenario
+  passes with the extracted assertions. Both healthy targets retain separate
+  guest-boot and authenticated-RPC readiness. The wrong-URI
+  History control first proves a healthy service through a real mTLS Health.Check,
+  then reaches the ordinary History assertion after Runtime rejects the SPIFFE URI.
+  The fixture disables executor resource enforcement; the cgroup probe establishes
+  placement only, not an executor budget. The target does not establish Codex,
+  controller-issued credentials, KubeVirt, storage or App acceptance. Physical
+  attempts, startup failures and the invalid first control are preserved in
+  `system_tests/debug/test_architecture_guest_session.md`; this is feasibility,
+  not an end-to-end CI saving or gate promotion. The latest full VM validation
+  preserves a managed action-VM kernel panic and automatic retry in #16222.
+  Read-only image binds replace eager copies in this manual launcher. A/B/B/A
+  passes both unchanged targets in all four arms; candidate action times and CPU
+  are lower, but first-arm input warming confounds transfer/command comparisons.
+  Inputs and deployment coverage are unchanged. Details and limits are in
+  `system_tests/debug/2026_11_13_guest_mounts.md`.
+  The separate manual Codex guest contract now completes two real commands through
+  the packaged VM executor, checking its actual memory/CPU limits and executor
+  slice. Removing the executor fails the unchanged slice assertion. Gateway,
+  Claude and Codex passed together in three fresh actions at the `2196229`
+  milestone; actual OOM enforcement remains a deployed acceptance boundary.
+  Session setup is a further obligation: fresh nested workspace and HOME ownership,
+  process/aggregate/service budgets, privilege restrictions and detached-descendant
+  fencing. Both direct guests and the full deployed VM passed with the same probe
+  and assertions. A wrong-process-limit control fails the shared assertion after
+  both original Shell turns. The deployed probe and the wrong-History control's
+  original failure boundary remain intact. This proves assertion transfer, not a
+  required-CI saving.
+  Egress already has a real subprocess seam with caller-owned settings/API/CA;
+  its own-SVID and credential-revocation case passes. The Notification subprocess
+  driver passes with the caller's API/CA/database: it returns a seeded owned
+  subscription and rejects an unrecorded trusted SVID. Same-workload credential
+  revocation and real sidecar/packaged CLI composition remain before replacing
+  deployed assertions. An empty subscription list is insufficient.
   Pod scenarios now have their own profile omitting only the MCP edge construct
   and image input. Actions remains required by command-box acceptance. All 21 Pod
   cases passed unchanged across source-pinned control/concurrency/profile runs;
@@ -135,8 +189,8 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   the same existing composition without MCP Edge; App, Actions, notification,
   controller and storage services remain. Deletion keeps its dedicated runner
   disk. Configured closure checks retain all 11 common service images and both
-  required runner disks. Required real-deployment CI must validate this extension;
-  the input cut is not a latency measurement. Probe and default/MCP profiles
+  required runner disks. Required CI at a69 passes both fresh deployment actions
+  and all five unchanged cases; the input cut is not a latency measurement. Probe and default/MCP profiles
   retain their previous image ownership.
 - **P4, compound scenarios:** separate idle authorization, failed-turn retention,
   timer, resume and identity contracts. Preserve the real >=60-second idle/resume
@@ -200,8 +254,57 @@ explicit compatibility keys. Setup failure and injected-fault cleanup have owner
   Change a gate boundary only after the evidence below supports that boundary.
   Revert that selection change on an escaped contract or reliability regression.
 
+The next complete-graph screen combines both critical tails: the existing two
+manual balanced Pod slices retain all 21 cases; a smaller deployed VM witness must
+retain issued identity, real launcher/mount/relay configuration and post-operation
+identity checks, while the packaged guest contracts own setup/tool/supervision
+assertions. The current full VM stays required until that ownership and its
+controls are proved. Run the candidate graph with all other selected required
+tests, counterbalanced against the unchanged graph, before expanding to the full
+30-pair cohort. Measure the last gate and added setup/CPU, not a sum of isolated
+contract gains. At the `bedb9a5` checkpoint Pod ended only 9.412 seconds after VM;
+improving only one cannot establish a large full-feedback saving.
+
+The later 542e615 checkpoint has 13 K3s target summaries, with Pod finishing
+51.265 seconds after VM. This is still a two-tail problem; these summary clocks
+do not cover the complete gate or qualify physical execution. The next guest
+composition adds actual CLI routes through Egress/sidecar/Notification and
+same-credential revocation, while the deployed candidate retains both real
+guest boots, issued identity, private supervision, workspace work and unchanged
+trace assertions. Both packaged guest compositions pass after repairing the
+fixture's nested Go test-wrapper lifetime. The deployed candidate also passes
+Egress Identity and Notification CLI checks inside its existing tool turn. The
+wrong Notification peer-URI control fails the owned-data contract. These are
+focused positive/negative proofs, without a matched complete-CI saving. Their
+implementation failures and remaining controls are in
+[`test_architecture_iteration6.md`](../system_tests/debug/test_architecture_iteration6.md).
+
 P2, P3 and P4 diagnosis can proceed independently. P5 depends on their candidate
 graph. Seven-day recurrence follow-ups in #16034 continue alongside this work.
+
+The first historical-population A/B/B/A screen at `376f8ae` now passes all four
+arms: 562 fresh physical test launches, exact retained Pod/unchanged-case
+identities and no failures, errors, skips or retries. Native invocation elapsed
+averages 442.484s for the full Pod/VM composition and 365.475s for the candidate
+(17.4% lower), with 5.4% more reported CPU and one unknown CPU record per arm.
+This is not complete required feedback or a branch-versus-devel saving.
+Importantly, the smaller VM body does not shorten measured case work: 171.775s
+full versus 173.669s candidate. Both full baselines were cold while both candidate
+VM baselines were warm, dominating the apparent VM process reduction. Do not
+promote that witness as a speed optimization.
+
+The next architecture spike separates a single real deployed VM platform witness
+from duplicate model turns. It must retain issuer/Pod binding, authenticated
+Runtime readiness, workspace execution and real CLI routing; both packaged guest
+contracts retain harness setup/fence, two-turn and History ownership. Private
+kernel, launcher, mounts and supervision need explicit ownership and seeded
+controls before any gate changes. The deployed witness and MCP Services nearly
+tie in the warm candidate, with Pod next; measure the combined graph rather than
+extrapolating an isolated improvement. The existing importer draft #15126 remains
+unproven and should be revisited only through a repaired matched benchmark.
+See [`test_architecture_iteration7.md`](../system_tests/debug/test_architecture_iteration7.md)
+for the complete screen, cache limits and next experiment.
+
 Iteration evidence and the remaining coverage boundaries are recorded in
 [`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).
 The next implementation screen and its coverage/measurement limits are in

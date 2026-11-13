@@ -26,7 +26,7 @@ from agentplane.history_service.api.ingress import session_ingress_pb2, session_
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settings import IngressSettings, Settings
 from agentplane.identity.auth import listener as workload_listener
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import HISTORY_SERVICE_URI, ClientTLS
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
@@ -234,13 +234,11 @@ async def go_history_service(
             tls_directory = directory / "history-tls"
             tls_directory.mkdir()
             ca_file, _ = write_ca(svid_ca, tls_directory, "ca")
-            cert_file, key_file = issue_workload_leaf(
-                svid_ca, "spiffe://agentplane/history-ingress", tls_directory, dns_name="localhost"
-            )
+            cert_file, key_file = issue_workload_leaf(svid_ca, HISTORY_SERVICE_URI, tls_directory, dns_name="localhost")
             rpc.tls = workload_listener.TLS(cert_file=cert_file, key_file=key_file)
             rpc.auth.append(workload_listener.SPIFFEAuth(ca_file=ca_file))
             channel_credentials = grpc.ssl_channel_credentials(root_certificates=svid_ca.cert_pem)
-            history_tls = ClientTLS(ca_file=ca_file, server_uri="spiffe://agentplane/history-ingress")
+            history_tls = ClientTLS(ca_file=ca_file, server_uri=HISTORY_SERVICE_URI)
         settings = Settings(
             reader_accounts=frozenset((READER,)),
             token_audience=READER_AUDIENCE,

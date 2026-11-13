@@ -1,0 +1,665 @@
+{
+  "arms": [
+    {
+      "arm": "A1",
+      "bazel_build": {
+        "bazel_critical_path_seconds": 200.12,
+        "bazel_elapsed_seconds": 225.495,
+        "client_log": "A1-9f5ba4c3-1431-4578-9389-741cde894218.log",
+        "process_summary": {
+          "action_cache_hit": 101,
+          "internal": 16,
+          "remote": 2,
+          "remote_cache_hit": 7,
+          "total": 25
+        }
+      },
+      "cleanup": [
+        {
+          "artifact": "abba-artifacts/A1/agentplane_x_direct_vm_boot_test_runtime_gateway__runtime-guest-docker.log",
+          "artifact_sha256": "0aa5e0edd05f9fa3db85ad86b71b104d9d3c7f198df3992c7a1e832cc76063fa",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway"
+        },
+        {
+          "artifact": "abba-artifacts/A1/agentplane_x_direct_vm_boot_test_runtime_session__runtime-guest-docker.log",
+          "artifact_sha256": "db228b61d0ec64924e9b484068f40c9979d89c43c5ec7dac8b733bf8f06dcd99",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session"
+        }
+      ],
+      "junit": {
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway": {
+          "artifact": "abba-artifacts/A1/agentplane_x_direct_vm_boot_test_runtime_gateway__test.xml",
+          "artifact_sha256": "efbdb93b4c502163b4034d003ac0f6634ac1f521a174d33f2fd0178cca0736ed",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_runtime_uses_authenticated_gateway_transport",
+              "seconds": 80.726
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "//agentplane/x/direct_vm_boot:test_runtime_session": {
+          "artifact": "abba-artifacts/A1/agentplane_x_direct_vm_boot_test_runtime_session__test.xml",
+          "artifact_sha256": "5e6aa06b8ca416406ef8557cf6d831c123b13458304ea602d825ce0f72fe4b32",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_claude_session_runs_shell_and_accepts_next_input",
+              "seconds": 167.196
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        }
+      },
+      "native_invocation_id": "9f5ba4c3-1431-4578-9389-741cde894218",
+      "source": "baseline",
+      "targets_passed": [
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+        "//agentplane/x/direct_vm_boot:test_runtime_session"
+      ],
+      "test_runner_action_count": 2,
+      "test_runner_actions": [
+        {
+          "action_wall_seconds": 98.258045,
+          "cpu_seconds": 163.667686,
+          "do_not_cache": true,
+          "download_bytes": null,
+          "download_count": null,
+          "download_duration_usec_field_uninterpreted": 98308706,
+          "input_fetch_timestamp_interval_seconds": 0.282485,
+          "peak_memory_bytes": 1439727616,
+          "queue_seconds": 0.063486,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:39:09.318740Z",
+            "execution_start": "2026-11-13T18:37:31.060695Z",
+            "input_fetch_complete": "2026-11-13T18:37:31.060695Z",
+            "input_fetch_start": "2026-11-13T18:37:30.778210Z",
+            "queued": "2026-11-13T18:37:30.368833Z",
+            "worker_start": "2026-11-13T18:37:30.432319Z"
+          },
+          "upload_bytes": 178495,
+          "upload_count": 16,
+          "upload_duration_usec": 809673,
+          "worker_span_seconds": 99.696603
+        },
+        {
+          "action_wall_seconds": 196.139504,
+          "cpu_seconds": 421.500045,
+          "do_not_cache": true,
+          "download_bytes": 1354547213,
+          "download_count": 40,
+          "download_duration_usec_field_uninterpreted": 197733436,
+          "input_fetch_timestamp_interval_seconds": 1.861021,
+          "peak_memory_bytes": 2048344064,
+          "queue_seconds": 0.060947,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:40:48.983992Z",
+            "execution_start": "2026-11-13T18:37:32.844488Z",
+            "input_fetch_complete": "2026-11-13T18:37:32.844488Z",
+            "input_fetch_start": "2026-11-13T18:37:30.983467Z",
+            "queued": "2026-11-13T18:37:30.400071Z",
+            "worker_start": "2026-11-13T18:37:30.461018Z"
+          },
+          "upload_bytes": 237467,
+          "upload_count": 17,
+          "upload_duration_usec": 391242,
+          "worker_span_seconds": 198.914428
+        }
+      ],
+      "worker_metadata_unique_values_in_arm": 2
+    },
+    {
+      "arm": "B1",
+      "bazel_build": {
+        "bazel_critical_path_seconds": 119.3,
+        "bazel_elapsed_seconds": 143.939,
+        "client_log": "B1-83eb8dd8-b65d-45df-a61e-147abbd67902.log",
+        "process_summary": {
+          "action_cache_hit": 101,
+          "internal": 16,
+          "remote": 5,
+          "remote_cache_hit": 4,
+          "total": 25
+        }
+      },
+      "cleanup": [
+        {
+          "artifact": "abba-artifacts/B1/agentplane_x_direct_vm_boot_test_runtime_gateway__runtime-guest-docker.log",
+          "artifact_sha256": "9181236633da4e28505e525d5ab18abe8f4d28fac9dc12546da91c1b283f696f",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway"
+        },
+        {
+          "artifact": "abba-artifacts/B1/agentplane_x_direct_vm_boot_test_runtime_session__runtime-guest-docker.log",
+          "artifact_sha256": "68d901774c63b5c0d573086ea9c2030ef59cbfe479f75f494a0ea2c2ee2f36fb",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session"
+        }
+      ],
+      "junit": {
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway": {
+          "artifact": "abba-artifacts/B1/agentplane_x_direct_vm_boot_test_runtime_gateway__test.xml",
+          "artifact_sha256": "f1874817846b5da85f2378e5e5929b5a237ad827708a6d7eb41afd253a28f162",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_runtime_uses_authenticated_gateway_transport",
+              "seconds": 62.446
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "//agentplane/x/direct_vm_boot:test_runtime_session": {
+          "artifact": "abba-artifacts/B1/agentplane_x_direct_vm_boot_test_runtime_session__test.xml",
+          "artifact_sha256": "f9d8938514c962898173de54dea42b16333b3b66f527d60e116b977100fecf5e",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_claude_session_runs_shell_and_accepts_next_input",
+              "seconds": 83.534
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        }
+      },
+      "native_invocation_id": "83eb8dd8-b65d-45df-a61e-147abbd67902",
+      "source": "candidate",
+      "targets_passed": [
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+        "//agentplane/x/direct_vm_boot:test_runtime_session"
+      ],
+      "test_runner_action_count": 2,
+      "test_runner_actions": [
+        {
+          "action_wall_seconds": 80.254273,
+          "cpu_seconds": 125.084538,
+          "do_not_cache": true,
+          "download_bytes": null,
+          "download_count": null,
+          "download_duration_usec_field_uninterpreted": 80306112,
+          "input_fetch_timestamp_interval_seconds": 0.702844,
+          "peak_memory_bytes": 1465872384,
+          "queue_seconds": 0.061804,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:42:48.205497Z",
+            "execution_start": "2026-11-13T18:41:27.951224Z",
+            "input_fetch_complete": "2026-11-13T18:41:27.951224Z",
+            "input_fetch_start": "2026-11-13T18:41:27.248380Z",
+            "queued": "2026-11-13T18:41:26.991812Z",
+            "worker_start": "2026-11-13T18:41:27.053616Z"
+          },
+          "upload_bytes": 170931,
+          "upload_count": 16,
+          "upload_duration_usec": 170348,
+          "worker_span_seconds": 81.323101
+        },
+        {
+          "action_wall_seconds": 116.434182,
+          "cpu_seconds": 167.152933,
+          "do_not_cache": true,
+          "download_bytes": 40036,
+          "download_count": 2,
+          "download_duration_usec_field_uninterpreted": 116537540,
+          "input_fetch_timestamp_interval_seconds": 0.541265,
+          "peak_memory_bytes": 2014949376,
+          "queue_seconds": 0.06769,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:43:25.007712Z",
+            "execution_start": "2026-11-13T18:41:28.573530Z",
+            "input_fetch_complete": "2026-11-13T18:41:28.573530Z",
+            "input_fetch_start": "2026-11-13T18:41:28.032265Z",
+            "queued": "2026-11-13T18:41:27.799883Z",
+            "worker_start": "2026-11-13T18:41:27.867573Z"
+          },
+          "upload_bytes": 197782,
+          "upload_count": 15,
+          "upload_duration_usec": 175113,
+          "worker_span_seconds": 117.315455
+        }
+      ],
+      "worker_metadata_unique_values_in_arm": 2
+    },
+    {
+      "arm": "B2",
+      "bazel_build": {
+        "bazel_critical_path_seconds": 124.93,
+        "bazel_elapsed_seconds": 150.409,
+        "client_log": "B2-43d832f9-78e4-419a-aa0e-d5982a2a6f8a.log",
+        "process_summary": {
+          "action_cache_hit": 101,
+          "internal": 16,
+          "remote": 2,
+          "remote_cache_hit": 7,
+          "total": 25
+        }
+      },
+      "cleanup": [
+        {
+          "artifact": "abba-artifacts/B2/agentplane_x_direct_vm_boot_test_runtime_gateway__runtime-guest-docker.log",
+          "artifact_sha256": "8aa6c9e18751f0551e4b25de701ef98d6c581098bb7a9a6d5d7f19db432d8f29",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway"
+        },
+        {
+          "artifact": "abba-artifacts/B2/agentplane_x_direct_vm_boot_test_runtime_session__runtime-guest-docker.log",
+          "artifact_sha256": "38e9d3083ba1e0e42bb1fab5cda0e08a5ae1f5a8e10d041207a9cf86502b21ce",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session"
+        }
+      ],
+      "junit": {
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway": {
+          "artifact": "abba-artifacts/B2/agentplane_x_direct_vm_boot_test_runtime_gateway__test.xml",
+          "artifact_sha256": "07c8c41d621e32e5a4a58a642bb524425db919348e9a5a25f9570f6f9e96a17c",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_runtime_uses_authenticated_gateway_transport",
+              "seconds": 62.474
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "//agentplane/x/direct_vm_boot:test_runtime_session": {
+          "artifact": "abba-artifacts/B2/agentplane_x_direct_vm_boot_test_runtime_session__test.xml",
+          "artifact_sha256": "5f89ed80c6aeb1b50a01fa25e6e0864b06b6faba5c9f46a46937d190a0159d19",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_claude_session_runs_shell_and_accepts_next_input",
+              "seconds": 97.181
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        }
+      },
+      "native_invocation_id": "43d832f9-78e4-419a-aa0e-d5982a2a6f8a",
+      "source": "candidate",
+      "targets_passed": [
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+        "//agentplane/x/direct_vm_boot:test_runtime_session"
+      ],
+      "test_runner_action_count": 2,
+      "test_runner_actions": [
+        {
+          "action_wall_seconds": 76.734714,
+          "cpu_seconds": 128.433753,
+          "do_not_cache": true,
+          "download_bytes": null,
+          "download_count": null,
+          "download_duration_usec_field_uninterpreted": 76794941,
+          "input_fetch_timestamp_interval_seconds": 0.230752,
+          "peak_memory_bytes": 1438281728,
+          "queue_seconds": 0.062596,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:45:19.337Z",
+            "execution_start": "2026-11-13T18:44:02.602286Z",
+            "input_fetch_complete": "2026-11-13T18:44:02.602286Z",
+            "input_fetch_start": "2026-11-13T18:44:02.371534Z",
+            "queued": "2026-11-13T18:44:02.209150Z",
+            "worker_start": "2026-11-13T18:44:02.271746Z"
+          },
+          "upload_bytes": 174137,
+          "upload_count": 17,
+          "upload_duration_usec": 242687,
+          "worker_span_seconds": 77.308379
+        },
+        {
+          "action_wall_seconds": 123.034808,
+          "cpu_seconds": 209.562765,
+          "do_not_cache": true,
+          "download_bytes": null,
+          "download_count": null,
+          "download_duration_usec_field_uninterpreted": 123099468,
+          "input_fetch_timestamp_interval_seconds": 0.213127,
+          "peak_memory_bytes": 2045153280,
+          "queue_seconds": 0.061262,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:46:05.657405Z",
+            "execution_start": "2026-11-13T18:44:02.622597Z",
+            "input_fetch_complete": "2026-11-13T18:44:02.622597Z",
+            "input_fetch_start": "2026-11-13T18:44:02.409470Z",
+            "queued": "2026-11-13T18:44:02.253742Z",
+            "worker_start": "2026-11-13T18:44:02.315004Z"
+          },
+          "upload_bytes": 198583,
+          "upload_count": 17,
+          "upload_duration_usec": 421877,
+          "worker_span_seconds": 123.764691
+        }
+      ],
+      "worker_metadata_unique_values_in_arm": 2
+    },
+    {
+      "arm": "A2",
+      "bazel_build": {
+        "bazel_critical_path_seconds": 160.49,
+        "bazel_elapsed_seconds": 187.284,
+        "client_log": "A2-0f3264ef-3872-4d71-b3d1-54796df55cf4.log",
+        "process_summary": {
+          "action_cache_hit": 101,
+          "internal": 16,
+          "remote": 2,
+          "remote_cache_hit": 7,
+          "total": 25
+        }
+      },
+      "cleanup": [
+        {
+          "artifact": "abba-artifacts/A2/agentplane_x_direct_vm_boot_test_runtime_gateway__runtime-guest-docker.log",
+          "artifact_sha256": "d828ddffc1081e5d3591cc37e9c58d0bba56e6dca7f1693808d81624c7de81da",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway"
+        },
+        {
+          "artifact": "abba-artifacts/A2/agentplane_x_direct_vm_boot_test_runtime_session__runtime-guest-docker.log",
+          "artifact_sha256": "c9599992d0215d46a526ba4461703a618b09b04070d3e9b188257ab940c6fb29",
+          "docker_exit_after_intentional_stop": 143,
+          "docker_remove_exit": 0,
+          "state_owner_restore_marker": "state_owner_restore=complete uid=1000 gid=1000",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session"
+        }
+      ],
+      "junit": {
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway": {
+          "artifact": "abba-artifacts/A2/agentplane_x_direct_vm_boot_test_runtime_gateway__test.xml",
+          "artifact_sha256": "893766e133c7fef64104b4ffb7fd7ff002095be3a287d55791c5c0aff8050adc",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_runtime_uses_authenticated_gateway_transport",
+              "seconds": 72.021
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        },
+        "//agentplane/x/direct_vm_boot:test_runtime_session": {
+          "artifact": "abba-artifacts/A2/agentplane_x_direct_vm_boot_test_runtime_session__test.xml",
+          "artifact_sha256": "1407a34dab7275ab96cc62ad8b078f6c2b63d24448e1fb7caac1a93d0dbf6f8b",
+          "attempt": 1,
+          "cases": [
+            {
+              "id": "test_packaged_claude_session_runs_shell_and_accepts_next_input",
+              "seconds": 128.868
+            }
+          ],
+          "configuration_id": "f2fa50c3cd14e84ea5ac8956f1186a94957d509ef1bc5b1c8dd64a3fbc0a6d91",
+          "errors": 0,
+          "failures": 0,
+          "run": 1,
+          "shard": 1,
+          "skipped": 0,
+          "tests": 1
+        }
+      },
+      "native_invocation_id": "0f3264ef-3872-4d71-b3d1-54796df55cf4",
+      "source": "baseline",
+      "targets_passed": [
+        "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+        "//agentplane/x/direct_vm_boot:test_runtime_session"
+      ],
+      "test_runner_action_count": 2,
+      "test_runner_actions": [
+        {
+          "action_wall_seconds": 86.692428,
+          "cpu_seconds": 144.487039,
+          "do_not_cache": true,
+          "download_bytes": null,
+          "download_count": null,
+          "download_duration_usec_field_uninterpreted": 86752415,
+          "input_fetch_timestamp_interval_seconds": 0.488298,
+          "peak_memory_bytes": 1436815360,
+          "queue_seconds": 0.061021,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:48:10.117458Z",
+            "execution_start": "2026-11-13T18:46:43.425030Z",
+            "input_fetch_complete": "2026-11-13T18:46:43.425029Z",
+            "input_fetch_start": "2026-11-13T18:46:42.936731Z",
+            "queued": "2026-11-13T18:46:42.772775Z",
+            "worker_start": "2026-11-13T18:46:42.833796Z"
+          },
+          "upload_bytes": 178433,
+          "upload_count": 17,
+          "upload_duration_usec": 641217,
+          "worker_span_seconds": 87.925035
+        },
+        {
+          "action_wall_seconds": 158.871903,
+          "cpu_seconds": 252.821763,
+          "do_not_cache": true,
+          "download_bytes": null,
+          "download_count": null,
+          "download_duration_usec_field_uninterpreted": 158963139,
+          "input_fetch_timestamp_interval_seconds": 0.29096,
+          "peak_memory_bytes": 2061713408,
+          "queue_seconds": 0.059439,
+          "stage": "COMPLETED",
+          "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+          "timestamps_utc": {
+            "execution_complete": "2026-11-13T18:49:22.191803Z",
+            "execution_start": "2026-11-13T18:46:43.319900Z",
+            "input_fetch_complete": "2026-11-13T18:46:43.319900Z",
+            "input_fetch_start": "2026-11-13T18:46:43.028940Z",
+            "queued": "2026-11-13T18:46:42.777956Z",
+            "worker_start": "2026-11-13T18:46:42.837395Z"
+          },
+          "upload_bytes": 203165,
+          "upload_count": 16,
+          "upload_duration_usec": 496858,
+          "worker_span_seconds": 159.851435
+        }
+      ],
+      "worker_metadata_unique_values_in_arm": 2
+    }
+  ],
+  "case_identity": {
+    "//agentplane/x/direct_vm_boot:test_runtime_gateway": "test_packaged_runtime_uses_authenticated_gateway_transport",
+    "//agentplane/x/direct_vm_boot:test_runtime_session": "test_packaged_claude_session_runs_shell_and_accepts_next_input",
+    "all_arms": "same two case IDs; one JUnit testcase per target, run=1, shard=1, attempt=1, 0 failures/errors/skips"
+  },
+  "derived_comparison": {
+    "cache": {
+      "action_cache_hit_counts_by_arm": {
+        "A1": 101,
+        "A2": 101,
+        "B1": 101,
+        "B2": 101
+      },
+      "distinct_worker_metadata_values_total": 2,
+      "remote_cache_hit_counts_by_arm": {
+        "A1": 7,
+        "A2": 7,
+        "B1": 4,
+        "B2": 7
+      },
+      "remote_process_counts_by_arm": {
+        "A1": 2,
+        "A2": 2,
+        "B1": 5,
+        "B2": 2
+      },
+      "same_test_action_worker_metadata_set_across_arms": true,
+      "same_worker_metadata_value_for_each_target_across_arms": true,
+      "worker_ids_retained": false
+    },
+    "mean_bazel_critical_path_seconds": {
+      "baseline": 180.305,
+      "candidate": 122.115,
+      "change_percent_candidate_vs_baseline": -32.27
+    },
+    "mean_bazel_elapsed_seconds": {
+      "baseline": 206.3895,
+      "candidate": 147.174,
+      "change_percent_candidate_vs_baseline": -28.69
+    },
+    "mean_sum_of_two_test_runner_cpu_seconds_per_arm": {
+      "baseline": 491.238267,
+      "candidate": 315.116995,
+      "change_percent_candidate_vs_baseline": -35.85
+    },
+    "mean_test_runner_action_critical_path_seconds": {
+      "baseline": 177.505703,
+      "candidate": 119.734495,
+      "change_percent_candidate_vs_baseline": -32.55
+    },
+    "sample_size": "2 arms/source; 2 physical TestRunner actions per arm"
+  },
+  "evidence_class": "single matched four-arm hosted RBE measurement; selected manual tests only",
+  "limits": [
+    "This compares only the two manual direct-guest targets, not the required full system-VM suite or whole CI.",
+    "Only two arms per source; action-cache state remained warm/normal and the order was A/B/B/A. Candidate B1 and B2 had different remote-cache/process counts, so build-level elapsed differences are not a cache-isolated estimate.",
+    "Each target action remained a real physical TestRunner action; no test result was reused. BuildBuddy omitted download count/bytes on some action records, so absent values remain null. A1 Session reported 40 files / 1,354,547,213 bytes and B1 Session 2 / 40,036 bytes; the same target worker-metadata value appeared across arms, so order and worker-local warming confound attribution. This is not evidence that the unchanged Bazel input closure or CAS transfer was reduced.",
+    "Do not reinterpret ioStats.fileDownloadDurationUsec as the timestamp-based input-fetch interval: that field is kept separately because in these records it spans most of action wall.",
+    "The test action still declares the four guest image runfiles. This candidate avoids an additional host-side copy into the temporary inputs directory; it does not remove those artifacts from Bazel input closure.",
+    "No test attempted to write to an image mount. The successful runs exercised Docker mounts explicitly marked readonly and read the image files in QEMU.",
+    "The tests force-stop QEMU after their assertions; exit 143 is expected and is not an orderly guest powerdown assertion. State-owner restoration and Docker removal are separately asserted and recorded.",
+    "Worker metadata identifiers are excluded. Same target worker metadata across these runs does not establish equal host contention or capacity."
+  ],
+  "method": {
+    "action_cache": "normal remote/local cache behavior retained; no cache disabling",
+    "candidate_scope": "replaces temporary copies of four declared immutable guest images with per-file read-only Docker bind mounts; BUILD/data, image artifacts, QEMU flags, test assertion code, and VM profiles unchanged",
+    "command_target_labels": [
+      "//agentplane/x/direct_vm_boot:test_runtime_gateway",
+      "//agentplane/x/direct_vm_boot:test_runtime_session"
+    ],
+    "order": ["A1 baseline", "B1 candidate", "B2 candidate", "A2 baseline"],
+    "retry_and_repeat": "outer --disable_retry=true, --flaky_test_attempts=1, --runs_per_test=1",
+    "source_pin": "candidate is the exact patch applied to baseline commit for B1/B2; patch reversed before A2 and final tree verified baseline",
+    "test_result_cache": "bypassed with --nocache_test_results; physical actions independently show doNotCache=true"
+  },
+  "raw_evidence_private": [
+    "abba-A1-executions.raw.json",
+    "abba-B1-executions-final.raw.json",
+    "abba-B2-executions.raw.json",
+    "abba-A2-executions-final.raw.json",
+    "abba-A1-targets.raw.txt",
+    "abba-B1-targets.raw.txt",
+    "abba-B2-targets.raw.txt",
+    "abba-A2-targets.raw.txt",
+    "abba-A1-artifacts.raw.json",
+    "abba-B1-artifacts.raw.json",
+    "abba-B2-artifacts.raw.json",
+    "abba-A2-artifacts.raw.json",
+    "abba-client-logs/ (local bbr output; not a public artifact)"
+  ],
+  "schema": "agentplane.direct-guest-readonly-mount-abba.v1",
+  "source": {
+    "baseline_commit": "8a555b21141fded2166fcc17cd14096187e22842",
+    "candidate_patch_sha256": "11d5b1ca5cf2346235da8279229def6087567297678f3b6b3bda5bbf9d96d0be",
+    "changed_file_hashes": [
+      {
+        "baseline_blob": "baa86138fa5dd9ca23ff3b807d5c3302103f9e4b",
+        "baseline_sha256": "bd6c88832b77557b21271419424b406592f2d6b003c1ac773b12953107a27d74",
+        "candidate_blob": "6b4c91cff5024ba42ecb01114e496c9cf5d856a8",
+        "candidate_sha256": "c9dffa62c7aaa3e5b8eb0ac28b489a90ad717facb1027cca350639cc74c760da",
+        "changed": true,
+        "path": "agentplane/x/direct_vm_boot/runtime_guest.py"
+      },
+      {
+        "baseline_blob": "0899577d021a98fed3192417b0bcb261a560ac6b",
+        "baseline_sha256": "9a9a761365002ce783a43b1b664d9d8349bf5d0be4ac2862b7f75a4b29826d29",
+        "candidate_blob": "7d3139263761f1f26f2c0896b9db33d84156a0c6",
+        "candidate_sha256": "c8a646a2f4767f13301d3cbf9d106384bdef448ecddcfe5b08c94cfe0c843f34",
+        "changed": true,
+        "path": "agentplane/x/direct_vm_boot/test_runtime_gateway.py"
+      },
+      {
+        "baseline_blob": "861ef689964841b9ac2927f1ad4fbb376db70cbc",
+        "baseline_sha256": "0aa2b3c8ae43edd31ddabade2f89ee7551ab53a911cad163f68016c8e58e9b19",
+        "candidate_blob": "6f406c6cb82a64a04a239c83a7c68f429e8d1fe8",
+        "candidate_sha256": "5b91720790a7cc4b39f8f57c5f6f0701dd63c8dcb343af33a060dc03371dcf2a",
+        "changed": true,
+        "path": "agentplane/x/direct_vm_boot/test_runtime_session.py"
+      },
+      {
+        "baseline_blob": "dbd3262f6f180e1cbf234bc40024577a119892bf",
+        "baseline_sha256": "263435184e158f5234ed89c8be7e6b83fea652354b5e947ce32db7f476af2239",
+        "candidate_blob": "unchanged",
+        "candidate_sha256": "263435184e158f5234ed89c8be7e6b83fea652354b5e947ce32db7f476af2239",
+        "changed": false,
+        "path": "agentplane/x/direct_vm_boot/BUILD.bazel"
+      }
+    ],
+    "restore_marker": "GUEST_RO_ABBA_RESTORE baseline_rc=0",
+    "script_sha256": "757ceeb36afdb3e81a4148d67d109c6853db6692999b1c65aa792f5b98d9298b",
+    "worktree_at_restore_check": {
+      "head": "8a555b21141fded2166fcc17cd14096187e22842",
+      "staged_diff_empty": true,
+      "tracked_diff_empty": true,
+      "untracked_files_empty": true
+    }
+  }
+}

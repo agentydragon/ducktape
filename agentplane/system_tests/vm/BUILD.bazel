@@ -31,10 +31,21 @@ py_library(
 )
 
 py_library(
+    name = "guest_supervision_probe",
+    srcs = ["guest_supervision_probe.py"],
+)
+
+py_library(
+    name = "guest_setup_probe",
+    srcs = ["guest_setup_probe.py"],
+    deps = [":configuration"],
+)
+
+py_library(
     name = "supervision",
     srcs = ["supervision.py"],
     deps = [
-        ":configuration",
+        ":guest_setup_probe",
         "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",

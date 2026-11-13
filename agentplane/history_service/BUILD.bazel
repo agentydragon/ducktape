@@ -21,6 +21,7 @@ py_library(
         "//agentplane/env/e2e/testing:__pkg__",
         "//agentplane/history_service:__subpackages__",
         "//agentplane/system_tests:__subpackages__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
         "//agentplane/x/native_contracts:__pkg__",
     ],
     deps = [
