@@ -98,7 +98,7 @@ func postSignedGitHubDelivery(t *testing.T, service running, event string, paylo
 
 func githubSubscription(t *testing.T, service running, id string) map[string]any {
 	t.Helper()
-	code, result := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	code, result := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.GetSubscription(ctx, &notificationspb.GetSubscriptionRequest{SubscriptionId: id})
 	})
 	if code != codes.OK {
@@ -110,7 +110,7 @@ func githubSubscription(t *testing.T, service running, id string) map[string]any
 func inboxEntries(t *testing.T, service running) []any {
 	t.Helper()
 	limit := int32(128)
-	code, page := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	code, page := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, Limit: &limit})
 	})
 	if code != codes.OK {
@@ -217,7 +217,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 			}},
 		}}},
 	}
-	code, created := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	code, created := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.CreateSubscription(ctx, request)
 	})
 	if code != codes.OK {
@@ -312,7 +312,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	var confirmed map[string]any
 	eventually(t, "History confirmation of the notice", func() bool {
 		limit := int32(128)
-		code, page := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+		code, page := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, Limit: &limit})
 		})
 		if code != codes.OK {
@@ -332,7 +332,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, acknowledged := agentGRPC(t, sandboxToken, func(ctx context.Context) (proto.Message, error) {
+	code, acknowledged := agentGRPC(t, identityToken, func(ctx context.Context) (proto.Message, error) {
 		return service.notifications.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: throughCursor})
 	})
 	if code != codes.OK || at(t, acknowledged, "inbox", "acknowledged") != lastCursor {

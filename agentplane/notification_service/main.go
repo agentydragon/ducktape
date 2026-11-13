@@ -38,6 +38,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/webhook"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
@@ -92,8 +93,10 @@ func inClusterDeps() (kubeDeps, error) {
 		return kubeDeps{}, err
 	}
 	scheme := runtime.NewScheme()
-	if err := sandboxapi.AddToScheme(scheme); err != nil {
-		return kubeDeps{}, err
+	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			return kubeDeps{}, err
+		}
 	}
 	sandboxes, err := client.New(kubeConfig, client.Options{Scheme: scheme})
 	if err != nil {
