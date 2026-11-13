@@ -1856,6 +1856,7 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
+        cert_manager_environment_kustomization,
     )
     forgejo_token_rotation_artifact = artifact(
         "forgejo-token-rotation", forgejo_token_rotation.OUTPUT_DIR, forgejo_token_rotation.PINS_DIR
