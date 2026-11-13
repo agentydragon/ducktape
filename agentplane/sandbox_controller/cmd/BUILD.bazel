@@ -15,6 +15,7 @@ go_library(
         "//agentplane/observability",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandbox_controller/internal/controller",
+        "//agentplane/sandbox_controller/internal/runnercontrol",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@in_gopkg_yaml_v3//:yaml_v3",
