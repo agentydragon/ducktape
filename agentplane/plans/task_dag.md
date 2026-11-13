@@ -2880,7 +2880,7 @@ effect. The operator selected a Dispatcher Session record as a prerequisite for 
 Session-targeted command, including privileged calls and interrupts. Dispatcher now enforces
 that prerequisite for queued commands and interrupts; the Gateway limits direct Runtime Session mutations
 to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#method-scope)
-and [Gateway proxy contract](../runner_gateway/gateway/SPEC.md). On deletion, fail commands known not to
+and [Gateway proxy contract](../runner_gateway/internal/gateway/SPEC.md). On deletion, fail commands known not to
 have left Dispatcher, report unknown when in-flight admission or effects cannot be established, and never
 redirect accepted work. `SESSION_DELETION_FENCE` tracks the remaining bounded outcome-evidence
 boundary; central-Session authority remains separate. The
@@ -3968,7 +3968,7 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
   of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
   route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
 - **`Accounts` and `ReviewedServiceAccount` after the cutover:** the Gateway's caller, dispatcher,
-  executor and controller allowlists (`runner_gateway/gateway/gateway.go`), the Policy Service's
+  executor and controller allowlists (`runner_gateway/internal/gateway/gateway.go`), the Policy Service's
   writers and the egress admin callers are platform components and stay on bearers by decision;
   whether they later move to service-class SVIDs is explicitly open in the
   [identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)

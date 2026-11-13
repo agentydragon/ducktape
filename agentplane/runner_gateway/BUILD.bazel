@@ -171,7 +171,7 @@ go_library(
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",
-        "//agentplane/runner_gateway/gateway",
+        "//agentplane/runner_gateway/internal/gateway",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/runtimeconfig",

@@ -12,8 +12,8 @@ go_library(
         "runner_observer.go",
         "sandboxes.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/gateway",
-    visibility = ["//agentplane:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway",
+    visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/execution:executor_go_proto",

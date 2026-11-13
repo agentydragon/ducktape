@@ -12,7 +12,7 @@ Only the Pod-bound Gateway/Dispatcher workload can proxy Runtime Session creatio
 `gateway_callers` grants read-only diagnostics. Startup reviews `runner_token_file` with the Gateway
 audience and verifies its Pod name, current UID and ServiceAccount against Kubernetes before serving.
 The Kubernetes API must answer that TokenReview and Pod read; failure prevents startup.
-See the [proxy contract](gateway/SPEC.md). The Sandbox
+See the [proxy contract](internal/gateway/SPEC.md). The Sandbox
 Controller owns `Sandbox.status`.
 
 The required `rpc` settings block configures this shared TLS listener. It enables SPIFFE and
@@ -75,7 +75,7 @@ conversation and from Runner admission.
   `environment_launchers` grants Action brokers create-only authority with required caller origin.
   `CreateEnvironment` names the Identity the Sandbox acts as and binds no PolicySets: a launch
   creates the Identity and grants it, including the default sets, before calling it.
-- `gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
+- `internal/gateway/`: Runner connections, authenticated proxy, Sandbox/Pod validation and connection ownership.
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `migrations/`: Goose migrations for the Dispatcher database.
 - `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and

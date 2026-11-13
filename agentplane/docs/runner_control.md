@@ -64,7 +64,7 @@ unary calls over the runner gRPC connection and returns the runner's status and 
   grants only `ListSessions` and `GetStatus`. Runtime Session creation and commands admit only the
   verified combined Gateway/Dispatcher workload; clients use SessionDispatcher with their existing
   direct or delegated authority. Only `sandbox_controller_account` may `Quiesce`; unset, nobody may.
-  Executor permissions stay separate. See the [proxy contract](../runner_gateway/gateway/SPEC.md).
+  Executor permissions stay separate. See the [proxy contract](../runner_gateway/internal/gateway/SPEC.md).
 - **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
   before acting, and the caller dials the control Service again.
 - **Deadline.** The proxy propagates the caller's remaining gRPC deadline; a call without one waits until
