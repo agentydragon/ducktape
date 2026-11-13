@@ -14,6 +14,7 @@ from uuid import uuid4
 from kubernetes_asyncio import client as k8s
 
 from agentplane.app.testing.client import Client
+from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
@@ -255,17 +256,31 @@ async def _probe(
     )
     # Runner admission precedes History's Thread projection, which owns the event stream.
     await client.wait_for_thread_projection(session, timeout_s=BOUND_SECONDS)
-    stdout, stderr = bytearray(), bytearray()
+    reader = SessionEventReader(client, session, after_cursor=0)
     async with asyncio.timeout(BOUND_SECONDS):
-        async for entry in client.events(session, after=0, read_seconds=BOUND_SECONDS):
-            if entry.event.HasField("setup_output"):
-                stdout.extend(entry.event.setup_output.stdout)
-                stderr.extend(entry.event.setup_output.stderr)
-            if entry.event.HasField("setup_finished"):
-                assert entry.event.setup_finished.exit_code == 0, stderr.decode()
+        while True:
+            await reader.read_page()
+            terminal = next(
+                (
+                    entry
+                    for entry in reader.entries
+                    if entry.event.HasField("setup_finished") or entry.event.HasField("setup_interrupted")
+                ),
+                None,
+            )
+            if terminal is not None:
+                stdout, stderr = bytearray(), bytearray()
+                for entry in reader.entries:
+                    if entry.cursor > terminal.cursor:
+                        break
+                    if entry.event.HasField("setup_output"):
+                        stdout.extend(entry.event.setup_output.stdout)
+                        stderr.extend(entry.event.setup_output.stderr)
+                assert not terminal.event.HasField("setup_interrupted"), "storage probe setup was interrupted"
+                assert terminal.event.setup_finished.exit_code == 0, stderr.decode()
                 assert "STORAGE_PROBE_OK" in stdout.decode()
                 return {"session": str(session), "stdout": stdout.decode(), "setup_exit_code": 0}
-            assert not entry.event.HasField("setup_interrupted"), "storage probe setup was interrupted"
+            await reader.wait_for_next_page()
     raise AssertionError("storage probe ended without its setup result")
 
 

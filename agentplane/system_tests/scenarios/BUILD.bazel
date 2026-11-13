@@ -252,6 +252,7 @@ py_library(
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:history_reads",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
@@ -268,6 +269,7 @@ py_library(
     srcs = ["suspend_resume.py"],
     deps = [
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:history_reads",
         "//agentplane/env/runtime:harness",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/native/codex/testing:responses_sse",

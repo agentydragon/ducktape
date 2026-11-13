@@ -15,7 +15,9 @@ py_library(
     deps = [
         ":tracing",
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:history_reads",
         "//agentplane/app/testing:models",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
@@ -104,6 +106,7 @@ py_test(
         ":agent",
         "//:conftest",
         "//agentplane/app/testing:client",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
@@ -231,6 +234,7 @@ py_library(
     srcs = ["native_artifacts.py"],
     deps = [
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:history_reads",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
     ],
@@ -348,6 +352,7 @@ py_library(
     deps = [
         ":tracing",
         "//agentplane/app/testing:client",
+        "//agentplane/app/testing:history_reads",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "@pypi//protobuf",
