@@ -3175,6 +3175,7 @@ flowchart LR
     CENTRAL_SESSION_ACTING_DESIGN --> SESSION_SUBAGENT_DELEGATION
     IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Dispatched: finish workload Identity authority]
     STANDING_WORKLOAD_IDENTITY --> IDENTITY_CUTOVER
+    IDENTITY_CUTOVER --> PRIVILEGED_BACKEND_AUTH_DESIGN[Future: standardize privileged service authentication and transport]
     SESSION_IDENTITY_AUTHZ[Design: Session reads and inboxes authorized by identity]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
     ENVIRONMENT_RULE_TYPE_DESIGN --> ENVIRONMENT_RUNTIME_NATIVE_SURFACE[Deferred: a runtime surface unmistakably about native Sessions]
@@ -3872,6 +3873,48 @@ clients, persisted or queued payloads, descriptors, reflection, authorization ru
 rollouts; define compatibility, data handling and rollback, with tests for old/new interoperability.
 Dispatch reviewed migrations separately, rather than coupling them to package-directory moves.
 
+#### `PRIVILEGED_BACKEND_AUTH_DESIGN` — review privileged service authentication and transport
+
+**Future; after the `IDENTITY_CUTOVER` source lanes.** The operator decided to keep backend
+components authenticated as their own ServiceAccounts for now ([workload identity lifecycle, rows
+6–8](workload_identity_lifecycle.md#remaining-paths)); this is distinct from Sandbox and standing
+workloads authenticated by SVID, and from a component's explicitly delegated effective Identity.
+The transport contract for those component calls is inconsistent: [workload authentication](../docs/workload_authentication.md)
+says backend bearers use verified TLS, while [gRPC services](../docs/grpc_services.md) prescribes
+`insecure_channel` for bearer clients. Source examples include App → Policy Service using
+`bearer.Dial(..., nil)` and a plaintext Policy listener (`app/go/runtime.go`,
+`policy_controller/cmd/main.go`), versus central sampler → History and Runner Gateway using
+target-pinned `ClientTLS` (`cluster/cdk8s/agentplane/central_sampler_workload.py`).
+
+**Decision; operator, 2026-11-13.** Compare (1) retaining destination-audience Kubernetes
+TokenReview for privileged component actors while standardizing verified, pinned server TLS; (2)
+standardizing first-party service calls on service SPIFFE identities with issuance and trust that do
+not depend on Kubernetes, so callers can authenticate without Kubernetes; or (3) explicit
+per-target configuration selecting an authentication mode where deployments have distinct needs.
+This DAG task does not select a mechanism. **Recommendation:** preserve the current
+ServiceAccount/TokenReview paths until this review chooses a migration; evaluate Kubernetes-independent
+SPIFFE first, and choose configurability only if the caller matrix shows concrete targets that need
+different modes. Name and justify any plaintext or legacy exception. **Question for review:** which
+caller-identity model meets the Kubernetes-independence need, and what target transport/configuration
+contract should privileged backend clients follow?
+
+| Actor role                               | Current proof and decision boundary                                                                                                                                                                                                                      | Authorization to preserve                                                                         |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Backend component calling as itself      | Today: projected ServiceAccount token, reviewed for the destination audience. Decide between that actor proof plus pinned server TLS, a service SPIFFE client identity with Kubernetes-independent issuance/trust, or explicit per-target configuration. | Receiver's method and account allowlists, with UID/Pod proof only where its Rule requires it.     |
+| Backend component acting for an Identity | The same component actor proof chosen above plus a typed, method-scoped delegation envelope naming the live Identity UID and provenance.                                                                                                                 | Receiver's explicit delegation grant; never infer effective authority from the actor token alone. |
+| Sandbox or standing workload             | Current `WorkloadCredential` SVID, resolved to the exact credential and bound subject.                                                                                                                                                                   | Destination's workload/resource policy; no bearer fallback for an absent or invalid SVID.         |
+| Runner ↔ Gateway control                 | Mutual SVID TLS with exact peer URIs and expiry-aware credentials.                                                                                                                                                                                       | Existing runner/Sandbox authorization remains separate from TLS identity.                         |
+| Operator or MCP client                   | App operator OIDC/session, or OAuth token bound to the durable MCP Connection and grant.                                                                                                                                                                 | Existing operator and Connection policies; neither is a backend component identity.               |
+
+**Decision exit:** inventory each privileged component → receiver/method path with token source and
+rotation, audience and admitted ServiceAccount scope/proof, service SPIFFE URI and issuer/trust
+source if present, listener methods, transport credentials and expected peer, and whether the call is
+direct or delegated. Decide the default plus explicit exceptions and reconcile the contradictory
+transport guidance. Any configurable mode must be explicit per target, validate compatible settings,
+and fail closed without fallback. Selected runtime changes land in separate scoped PRs with checks
+for peer and actor verification, rotation, caller denial and delegation without an ordinary Bearer
+fallback. This design does not block the active identity cutover.
+
 #### Decisions and tracks
 
 - **`APP_AGENT_TOKEN_DECISION` (test-fixture conversion merged in
@@ -3926,9 +3969,8 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
 - **`Accounts` and `ReviewedServiceAccount` after the cutover:** the Gateway's caller, dispatcher,
   executor and controller allowlists (`runner_gateway/internal/gateway/gateway.go`), the Policy Service's
   writers and the egress admin callers are platform components and stay on bearers by decision;
-  whether they later move to service-class SVIDs is explicitly open in the
-  [identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)
-  ("stay open for later; nothing now needs them") and has no node.
+  a later review of their credential and transport baseline is
+  [`PRIVILEGED_BACKEND_AUTH_DESIGN`](#privileged_backend_auth_design--review-privileged-service-authentication-and-transport).
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
