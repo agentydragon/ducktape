@@ -172,6 +172,7 @@ go_library(
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/runner_gateway/internal/gateway",
+        "//agentplane/runner_gateway/internal/sandboxinventory",
         "//agentplane/runner_gateway/migrations",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/runtimeconfig",
