@@ -30,12 +30,14 @@ instructions point to the guide reader, while detailed workflows stay out of sta
 ## Authority
 
 The MCP edge's admission gate protects the nine `ConnectionService` methods with the configured
-operator OIDC issuer. It accepts one valid bearer from that issuer, rejects workload and delegated
-credentials and SVID peers on protected calls, and binds the verified issuer and subject to the
-request. A client certificate cannot be combined with a bearer or delegation header on any RPC.
-`Health.Check`, `Health.List` and `Health.Watch` remain public; every other registered RPC is denied.
-The gate re-verifies the bearer for a watch and requires the same operator. Its drain context ends
-active watches and refuses new protected calls. Each MCP request resolves its issued bearer through
+operator OIDC issuer. The existing plaintext gRPC listener accepts one valid operator bearer and
+remains the target of the HTTP facade. An optional `rpc_tls` listener adds mutual TLS; its
+`operator_services` allowlist admits exact service SVIDs as an additional peer check. Calls on that
+listener still require a valid operator bearer, which supplies the operator authority. Certificate-only
+calls, other service SVIDs and all delegation metadata are refused. `Health.Check`, `Health.List` and
+`Health.Watch` remain public on the plaintext listener; every other registered RPC is denied. The gate
+re-verifies the bearer for a watch and requires the same operator. Its drain context ends active watches
+and refuses new protected calls. Each MCP request resolves its issued bearer through
 the current grant and Connection binding. Consent and operator rebind choose a live Identity in the
 Action policy namespace and pin its exact Kubernetes UID. Resolution checks that UID directly; an
 unavailable, deleted or replaced Identity refuses the request. The operator-facing picker also
@@ -79,7 +81,11 @@ are absent, the Connection API remains available and external protocol routes ar
 provider settings' `upstream_client_secret_file` names the separately mounted OAuth client Secret
 file. The gRPC listener
 (`port`) defaults to `0.0.0.0:8080`; the HTTP listener (`http_port`: the facade, `/mcp`, OAuth and metrics) to
-`0.0.0.0:8081`. gRPC health uses the empty service for readiness and `livez` for liveness. Readiness
+`0.0.0.0:8081`. An optional `rpc_tls` object starts another gRPC listener using its configured `listen`,
+`cert_file` and `key_file`. Setting `operator_services` requires `rpc_tls.client_ca_file`; those exact service
+SVIDs are checked in addition to the operator OIDC bearer. A configured client CA also requires a nonempty
+`operator_services` allowlist. The HTTP facade continues to dial the plaintext gRPC listener. gRPC health uses
+the empty service for readiness and `livez` for liveness. Readiness
 requires PostgreSQL, its notification listener and a synchronized live Identity view.
 
 The published image is `agentplane-mcp-edge`, built from `//agentplane/mcp_edge:service_image`.
