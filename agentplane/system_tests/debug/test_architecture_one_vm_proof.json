@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "invocation": "2e5581f3-348d-4b3b-a75f-398cf5780f5a",
+  "base_commit": "ff39339c927c94a26c028cc69f4a5b55efc977c6",
+  "candidate_patch_sha256": "9f28f6ea91b07a0862620903058940ffc203a9326e25d0ae3b4e1fc1911f5ce2",
+  "target": "//agentplane/system_tests/suites:test_vm_platform_candidate",
+  "physical_execution_id_sha256": "e5e048d2bcad59c7cbb04a762575a0c4d4b4a46893c41328ed4b47a206027778",
+  "new_physical_tests": 1,
+  "junit_passes": 1,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "test_retries": 0,
+  "upstream_model_requests": 0,
+  "native_elapsed_seconds": 403.285,
+  "physical_execution_seconds": 356.510044,
+  "reported_cpu_seconds": 1099.554186,
+  "case_seconds": 152.462122,
+  "setup_seconds": 109.098151,
+  "readiness_seconds": 112.454066,
+  "stack_cleanup_seconds": 30.831,
+  "persistence_outcome": "cold",
+  "persistence_fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+  "non_skipped_imports": 7,
+  "import_seconds": 74.05353000000001,
+  "cleanup_complete": true,
+  "workspace_loop_devices_released": 1,
+  "claims": ["One real KubeVirt platform composition passes without model turns."],
+  "limits": [
+    "One execution; different source and cache exposure from previous VM measurements.",
+    "No demonstrated speed saving, coverage equivalence, p90 or reliability rate.",
+    "Current full VM gate, frequency, packaged-harness contracts and OOM acceptance remain."
+  ],
+  "artifact_sha256": {
+    "vm-platform-test.xml": "8ad9038ac37ec9d1d145b40fbf892f9b9c87e50429aa90365d68300aa8c9ce4b",
+    "vm-platform-test-spans.jsonl": "c41e96df171e909dd5ca76c1242dee6b3f04d233df4e55a752963c931cad3210",
+    "vm-platform-vm-platform.json": "2e5d4908943c18ed060cf8f43dd2cfc17e328dad43af385368b57c5c7be523d0",
+    "vm-platform-persistence-suite.json": "bd14bf451111e204b1ce8a53040c6e3adda4f725ae6e90ad5eae30cc6b3d82e5"
+  }
+}

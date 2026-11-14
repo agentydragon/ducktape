@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -159,3 +160,24 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
             and _trace_id(operation) == _trace_id(span)
             for operation in environment_runtime_creates
         ), f"session.create trace for {name} did not reach its Environment Runtime operation span"
+
+
+async def wait_for_vm_process_trace_contract(output_dir: Path) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 30
+    artifacts = [output_dir / "test-spans.jsonl", output_dir / "process-spans.jsonl"]
+    last_sizes: tuple[int, ...] = ()
+    error: AssertionError | None = None
+    while True:
+        current_sizes = tuple(path.stat().st_size if path.exists() else 0 for path in artifacts)
+        if current_sizes != last_sizes:
+            try:
+                assert_vm_process_trace_contract(output_dir)
+            except AssertionError as caught:
+                error = caught
+            else:
+                return
+            last_sizes = current_sizes
+        if loop.time() >= deadline:
+            raise AssertionError(f"VM process trace contract failed: {error}") from error
+        await asyncio.sleep(0.5)

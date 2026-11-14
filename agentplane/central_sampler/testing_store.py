@@ -30,6 +30,7 @@ class ProcessSnapshot:
     id: str
     conversation_id: str
     status: str
+    after_sequence: int | None
     buffered_output: bytes
     conversation_owner: str | None
 
@@ -320,7 +321,7 @@ class Store:
             row = (
                 await connection.execute(
                     text(
-                        "SELECT p.id, p.conversation_id::text, p.status, p.buffered_output, c.owner::text "
+                        "SELECT p.id, p.conversation_id::text, p.status, p.after_seq, p.buffered_output, c.owner::text "
                         "FROM sampler_process p JOIN sampler_conversation c ON c.id=p.conversation_id "
                         "WHERE p.model_session_id=:session_id"
                     ),
@@ -333,6 +334,31 @@ class Store:
             id=row.id,
             conversation_id=row.conversation_id,
             status=row.status,
+            after_sequence=row.after_seq,
+            buffered_output=row.buffered_output,
+            conversation_owner=row.owner,
+        )
+
+    async def process_by_id(self, process_id: str) -> ProcessSnapshot | None:
+        """Inspect a process by the durable executor process ID in its nested request."""
+        async with self.engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT p.id, p.conversation_id::text, p.status, p.after_seq, p.buffered_output, c.owner::text "
+                        "FROM sampler_process p JOIN sampler_conversation c ON c.id=p.conversation_id "
+                        "WHERE p.id=:process_id"
+                    ),
+                    {"process_id": process_id},
+                )
+            ).one_or_none()
+        if row is None:
+            return None
+        return ProcessSnapshot(
+            id=row.id,
+            conversation_id=row.conversation_id,
+            status=row.status,
+            after_sequence=row.after_seq,
             buffered_output=row.buffered_output,
             conversation_owner=row.owner,
         )

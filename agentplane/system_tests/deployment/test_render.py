@@ -102,8 +102,8 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     assert ("Role", "mcp-edge") in removed
     assert ("RoleBinding", "mcp-edge") in removed
     assert all(name.startswith("mcp-edge") for _, name in removed)
-    # Retained resources are identical, including the app, Actions' command-box executor,
-    # notifications, policy, certificates and storage.
+    # Every retained resource is unchanged, including app presets, runtime configuration,
+    # Actions' command-box executor, notifications, policy, certificates and storage.
     assert pod_objects == {key: value for key, value in ordinary_objects.items() if key not in removed}
     assert not any(
         "agentplane-mcp-edge:" in container["image"]
@@ -113,7 +113,8 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     )
     _resource(pod.objects, "Deployment", "actions")
     _resource(pod.objects, "Deployment", "notifications")
-    # The app keeps its unused Connection routes; external Connections are out of scope here.
+    # This profile intentionally retains the app's unused Connection routes and health
+    # probe. It does not cover external connections; system status reports them unavailable.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
 
@@ -146,6 +147,8 @@ def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(run
     assert ("Deployment", "mcp-edge") in removed
     assert all(name.startswith("mcp-edge") for _, name in removed)
     assert candidate == {key: value for key, value in control.items() if key not in removed}
+    # App, Actions, credentials, storage, Runtime config and every retained object
+    # are unchanged. Neither virtualized suite exercises external Connections.
     _resource(fixture.objects, "Deployment", "actions")
     template = environment_firecracker.NAME if fixture.firecracker_sandboxes else SUPERVISION_TEMPLATE
     _resource(fixture.objects, "SandboxTemplate", template)
@@ -834,6 +837,20 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
             assert _resource(central.objects, kind, component) == _resource(mcp.objects, kind, component)
     for config in ("central-sampler-settings", "runner-gateway-settings", "history-service-config"):
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
+
+
+def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(runfiles: Runfiles) -> None:
+    central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
+    services = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION")
+    assert services.central_sampler
+    assert services.mcp_fixtures is None
+    central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
+    service_deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
+    assert service_deployments == central_deployments - {"mcp-edge"}
+    for component in ("app", "actions", "central-sampler", "runner-gateway", "history-service"):
+        assert _resource(services.objects, "Deployment", component) == _resource(
+            central.objects, "Deployment", component
+        )
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:

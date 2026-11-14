@@ -15,6 +15,7 @@ _TEST_VISIBILITY = [
     "//agentplane/runner_gateway:__subpackages__",
     "//agentplane/sandboxes:__subpackages__",
     "//agentplane/system_tests:__subpackages__",
+    "//agentplane/x/native_contracts:__pkg__",
     "//agentplane/x/runner_layering:__pkg__",
     "//cluster/cdk8s/agentplane:__pkg__",
     "//cluster/providers/buildbuddy/apis/v1alpha1:__pkg__",
@@ -63,7 +64,10 @@ py_library(
         "//agentplane/testing/envtest:server",  # keep: fixture subprocess
         "@envtest_kubernetes_linux_amd64//:assets",  # keep: pinned control-plane executables
     ],
-    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
+    visibility = _TEST_VISIBILITY + [
+        "//agentplane/notification_service/testing/process_fixture:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = [
         "//agentplane:subjects",
         "//devinfra/testing:undeclared_outputs",
@@ -87,6 +91,7 @@ py_library(
 py_library(
     name = "claude_model",
     srcs = ["claude_model.py"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":scripted_model",
         "//agentplane/native/claude:blocks",
@@ -101,6 +106,7 @@ py_library(
 py_library(
     name = "codex_model",
     srcs = ["codex_model.py"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = [
         ":scripted_model",
         "//agentplane/native/codex/testing:model",
@@ -114,14 +120,76 @@ py_library(
 py_library(
     name = "scripted_model",
     srcs = ["scripted_model.py"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
     deps = ["//agentplane/native/testing:model_endpoint"],
 )
 
 py_library(
     name = "tls",
     srcs = ["tls.py"],
-    visibility = _TEST_VISIBILITY + ["//agentplane/notification_service/testing/process_fixture:__pkg__"],
+    visibility = _TEST_VISIBILITY + [
+        "//agentplane/notification_service/testing/process_fixture:__pkg__",
+        "//agentplane/x/direct_vm_boot:__pkg__",
+    ],
     deps = ["@pypi//cryptography"],
+)
+
+py_library(
+    name = "sandbox_fixtures",
+    testonly = True,
+    srcs = ["sandbox_fixtures.py"],
+    deps = [
+        ":kubernetes_apiserver",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "native_gateway_fixtures",
+    testonly = True,
+    srcs = ["native_gateway_fixtures.py"],
+    visibility = _TEST_VISIBILITY + ["//agentplane/x/direct_vm_boot:__pkg__"],
+    deps = [
+        ":kubernetes_apiserver",
+        ":kubernetes_apiserver_fixtures",
+        ":sandbox_fixtures",
+        "//agentplane:subjects",
+        "//agentplane/env:config",
+        "//agentplane/net/peertls:config",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util/testing:postgres",
+        "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "native_service_fixtures",
+    testonly = True,
+    srcs = ["native_service_fixtures.py"],
+    visibility = _TEST_VISIBILITY,
+    deps = [
+        ":kubernetes_apiserver",
+        ":native_gateway_fixtures",
+        "//agentplane/env:config",
+        "//agentplane/env/e2e/testing:config",
+        "//agentplane/env/e2e/testing:fixtures",
+        "//agentplane/env/e2e/testing:gateway",
+        "//agentplane/env/e2e/testing:history_tunnel",
+        "//agentplane/env/e2e/testing:launches",
+        "//agentplane/env/e2e/testing:model_config",
+        "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/history_service/testing:fixtures",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/runner_gateway/testing:gateway_process",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 py_library(
@@ -135,6 +203,7 @@ py_library(
         "//agentplane/runner_gateway:__pkg__",
         "//agentplane/sandboxes:__pkg__",
         "//agentplane/sandboxes/testing:__pkg__",
+        "//agentplane/x/native_contracts:__pkg__",
         "//agentplane/x/runner_layering:__pkg__",
     ],
     deps = [

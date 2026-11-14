@@ -1,0 +1,204 @@
+# Test architecture contract ownership
+
+This index distinguishes owner, native-process and deployed acceptance coverage.
+The inventory was audited at source revision
+`91f72591a1eb45b848a707277623d6b491d4b537`. Commit `91b48eea67` subsequently
+added native Sampler authorization and History-outage witnesses. At literal source
+`66320ca9960967305b7683dbfbacae6456c46a1a`, six focused targets passed in fresh
+actions, including the native Sampler integration, recovery, admission-reply-loss,
+guest boot, render and Go startup targets. Python JUnit reported 25 cases with no
+failures, errors or skips; the Go target passed without case-level JUnit records.
+This is focused validation, not qualification of a smaller required gate.
+
+Keep three proof layers distinct. Go owner tests are the fastest place for state
+machine, authorization and cursor rules. Manual native contracts use production
+Gateway, Runtime and History processes with real databases, gRPC and mTLS, but
+their envtest API objects and reported controller state are fixture-authored.
+K3s acceptance owns packaged images, real controllers, cert-manager and Secret
+projection, scheduling, storage, the integration app and guest lifecycle. Model
+responses are scripted in these tests; they do not prove external-provider
+behavior. The existing longer explanations and run evidence remain in
+[`test_architecture_iteration4.md`](test_architecture_iteration4.md),
+[`system_tests/README.md`](../README.md).
+
+## Required K3s ownership
+
+`//agentplane/system_tests/suites:test_pod` collects 21 cases from
+[`pod_cases.py`](../suites/pod_cases.py#L77) and batches them in
+[`test_pod.py`](../suites/test_pod.py#L23). Each name below is a parametrized
+JUnit case, not an independent process or stack.
+
+| Cases                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Assertions owned by the deployed app/services and controllers                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `an_agent_messages_another_which_reads_and_acknowledges_it` (L77); `a_policy_granted_after_the_sandbox_is_running_takes_effect` (L88); `the_model_call_itself_goes_through_the_proxy` (L99); `sandbox_cli_reaches_the_dispatcher_with_its_workload_svid` (L115); `a_preset_launches_an_initialized_editable_codex_thread` (L128)                                                                                                                                                                                                                                                                      | Cross-Sandbox messaging/acknowledgment; live policy propagation and real proxy path; workload-SVID authorization to Dispatcher; app preset creates an initialized editable Codex thread.                                                                                                                             |
+| `cert_manager_reissues_a_deleted_tls_secret` (L135); `pod_mtls_session_survives_replacement_and_keeps_history` (L139); `a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes` (L260); `two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it` (L266)                                                                                                                                                                                                                                                                                                                            | Issuer reconciliation and projected Secret rotation; Pod replacement reconnects while retained History survives; standing credential grant/revocation; distinct Sandbox identities sharing a Kubernetes account do not retain access after one loses the binding.                                                    |
+| `the_standing_instruction_reaches_the_model_and_only_in_its_own_session` (L153); `fresh_workspace_storage_survives_replacement` (L165); `codex_standing_instructions_after_suspend_and_compact` (L176); `two_harness_threads_keep_their_context_after_sandbox_suspend_resume` (L183); `operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control` (L195); `an_unknown_thread_is_not_found` (L202); `every_tab_follows_one_log_and_a_reconnect_resumes_after_its_last_event` (L207); `turns_nobody_watches_are_archived_and_a_failed_one_leaves_the_next_input_its_own_turn` (L217) | App/session instruction scoping; PVC-backed workspace persistence; suspend/compact/resume state; independent harness contexts; operator resume versus identity lifecycle authority; typed missing-session behavior; shared event log and cursor reconnect; unobserved/failed turn archival and next-input isolation. |
+| `a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused` (L231); `a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner` (L236); `a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway` (L243); `a_command_box_presents_its_own_svid` (L250)                                                                                                                                                                                                                                                                                                                                         | Positive own-credential path plus negative issuer controls at the Egress, Runtime and Gateway TLS verifiers; Command Box presents its distinct SVID.                                                                                                                                                                 |
+
+The case bodies are in `pod_cases.py`; called scenario owners are in
+`agentplane/system_tests/scenarios/`. The current `pod_scenarios` rendered
+profile removes the unused MCP-edge deployment/image only. Actions remains in
+the profile for command-box coverage. This profile change does not transfer any
+app, controller or credential assertion to a native test.
+
+`//agentplane/system_tests/suites/mcp:test_services` retains all seven cases in
+[`test_services.py`](../suites/mcp/test_services.py#L27):
+
+| Case                                                                 | Assertions and owner                                                                                                                                                                                                               |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_deployed_discovery_and_registration`                           | Deployed MCP edge discovery/registration and its DCR manifest; [`dcr.py`](../scenarios/dcr.py).                                                                                                                                    |
+| `test_external_mcp_connection_uses_its_consented_identity`           | Operator OAuth consent, external MCP TLS session and identity-scoped policy response; real app/connection fixtures remain.                                                                                                         |
+| `test_policy_binding_auto_approves_the_bound_sandbox`                | MCP policy binding is checked against the live Sandbox identity and auto-approval path.                                                                                                                                            |
+| `test_dispatcher_central_setup_tool_and_retained_answer`             | Dispatcher admission, setup output, actual executor tool result and retained/folded History; [`central_sampler.py`](../scenarios/central_sampler.py#L1438).                                                                        |
+| `test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume` | Central exec/session rebind after real Sandbox suspend/resume; [`central_sampler.py`](../scenarios/central_sampler.py#L1724).                                                                                                      |
+| `test_gateway_roll_keeps_live_central_read_and_turn`                 | Real Gateway rollout during live `process/read`, resumes the original native executor session, verifies the process side effect is once, then accepts another input; [`central_sampler.py`](../scenarios/central_sampler.py#L880). |
+| `test_gateway_exec_server_loss_notifies_active_central_turn`         | Gateway/exec-server loss is surfaced to the active central turn and the next input can proceed; [`central_sampler.py`](../scenarios/central_sampler.py#L1276).                                                                     |
+
+The two slices `:test_services_mcp_candidate` (3 cases) and
+`:test_services_central_candidate` (4) reuse those exact bodies. They are
+selection/profile probes; the required seven-case target remains the acceptance
+owner.
+
+| Required target and cases                                                                                                                                                                                                                                                                                | Acceptance boundary retained                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `//agentplane/system_tests/suites:test_firecracker`: `test_firecracker_preserves_live_guest` and `test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_guest_runner` in [`test_firecracker.py`](../suites/test_firecracker.py#L17)                                                                | Two real hardware-backed guest cases: systemd and the real mount layout; controller-issued/rotated WorkloadCredential and served certificate; idle suspend/checkpoint/resume preserves boot, native session and process; guest egress and own identity; cluster-CA impostor is refused. This target owns KVM/Firecracker and packaged guest acceptance.                                                                                                                                                                                                                                                                                                      |
+| `//agentplane/system_tests/suites:test_vm`: `test_vm_scenarios` in [`test_vm.py`](../suites/test_vm.py#L52)                                                                                                                                                                                              | One JUnit case starts two owned guest turns concurrently (Claude supervisor template and Codex ordinary template). [`vm_sandbox.py`](../scenarios/vm_sandbox.py#L167) asserts real guest PID1/cgroup, harness session, systemd denial, egress identity, Notification RPC and unchanged issued runner identity. Manual `//agentplane/x/direct_vm_boot:test_runtime_session` passes the same Claude shell probe under `agentplane-workloads.slice`; the full deployed VM also passes after extraction, with its managed-kernel failure and automatic retry retained separately. The required VM acceptance retains its deployed and post-operation boundaries. |
+| `//agentplane/system_tests/suites:test_dispatcher`: `test_deployed_dispatcher_waits_for_ready_then_records_runner_admission[queue]`, `[replicas]`, and `test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends` in [`test_dispatcher.py`](../suites/test_dispatcher.py#L18) | Deployed queue/ready/admission flow; peer-replica recovery after removing the Lease owner; wake-generation attribution shared by opted-in App and Notification sends. Separate stack mutates Gateway replicas/controller Pods.                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `//agentplane/system_tests/suites/mcp:test_actions`: 5 executions from [`test_actions.py`](../suites/mcp/test_actions.py#L196)                                                                                                                                                                           | Action execution, BFF/operator decision, launcher scoped to its Sandbox, and OAuth linkage for both Claude and Codex. Real Actions/app/MCP components and operator credentials are the acceptance boundary; scripted provider/model behavior is not live-provider proof.                                                                                                                                                                                                                                                                                                                                                                                     |
+| `//agentplane/system_tests/suites/mcp:test_delegation`: `test_external_connection_cannot_control_an_identity_sandbox` in [`test_delegation.py`](../suites/mcp/test_delegation.py#L106)                                                                                                                   | After operator consent, an external identity caller has only list/get/create tools; with App scaled to zero it cannot discover the identity Sandbox or create its Session. App restoration followed by Dispatcher `NOT_FOUND` proves no Session was created.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation`: `test_parent_session_delegates_through_the_action_cli` in [`test_parent_delegation.py`](../suites/mcp/test_parent_delegation.py#L171)                                                                                                     | Parent Identity uses Action CLI; unauthorized Session creation is a definite backend refusal and follow-up reads remain `not_observed`; then the operator-created child can be verified.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+The four isolated required fault targets are in
+[`mcp/BUILD.bazel`](../suites/mcp/BUILD.bazel#L151). Each keeps real K3s,
+controllers, PostgreSQL, deployed services and a scripted model, and owns a
+separate stack because its disruption is part of the assertion.
+
+| Target and case                                                                                                                                                                         | Fault and required outcome                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `//agentplane/system_tests/suites/mcp:test_gateway_crash` — `test_gateway_crash_settles_live_central_read_and_accepts_next_input` ([scenario](../scenarios/central_sampler.py#L1029))   | Abruptly kills the captured Gateway process during live executor read; requires exact lease/endpoint lifecycle, honest completion or definitive loss, marker `once`, no mutation replay, History fold and next input.  |
+| `//agentplane/system_tests/suites/mcp:test_gateway_budget` — `test_gateway_retry_exhaustion_reports_unknown_and_accepts_next_input` ([scenario](../scenarios/central_sampler.py#L1144)) | Holds Gateway beyond resume budget. Read reports unknown effect and no replay; command remains settleable and a distinct next input completes.                                                                         |
+| `//agentplane/system_tests/suites/mcp:test_sampler_roll` — `test_sampler_roll_retains_active_turn_and_history_accepts_next_input` ([scenario](../scenarios/central_sampler.py#L1910))   | Force-replaces the sampler while a cell/process is live and executor remains. Abandon/reconcile ordering, retained prefix, one settlement, same executor side-effect marker and next input are asserted.               |
+| `//agentplane/system_tests/suites/mcp:test_history_outage` — `test_history_outage_backfills_completed_turn` ([scenario](../scenarios/central_sampler.py#L2233))                         | Scales only History to zero during active turn; verifies other Pods and runner endpoint stay fixed, sampler cursor advances, then History committed/folded cursors catch up contiguously and the next input completes. |
+
+## App integration fixture ownership
+
+The shared [`app/integration_fixtures.py`](../../app/integration_fixtures.py)
+composes the real App, History, Gateway, PostgreSQL and Kubernetes API server.
+Its [`gateway_fixtures.py`](../../app/testing/gateway_fixtures.py) support does
+not start Runtime. Tests that author History directly keep these real services
+without inheriting the production Runtime executable or harness inputs.
+
+The six `test_bridge` functions and three `test_history_gateway` functions additionally
+load [`runtime_fixtures.py`](../../app/testing/runtime_fixtures.py). They retain
+the actual Runtime, Dispatcher admission, harness/model exchange, restart and
+History recovery paths, including their native failure diagnostics. The split
+changes fixture and input ownership; it removes no App assertion or test case.
+
+The candidate graph leaves a Runtime executable path for exactly those two App
+test targets; the other 13 App tests have no such path. Twelve are ordinary
+CI-eligible targets; the thirteenth is the manual Electric traffic experiment.
+The focused [RBE run](https://app.buildbuddy.io/invocation/8efca746-a5cf-48d4-b215-cc62ab34a73e)
+passed all 42 cases: 24 bridge cases across four shards, six history-gateway
+cases, eight API cases and four action-API cases. This is fixture/graph
+validation, not a measured CI feedback reduction. Actual selector hashing and
+the full required workflow still have to qualify the new source.
+
+## Native and owner proofs for the recovery matrix
+
+`//agentplane/x/native_contracts:test_recovery` is a manual four-case target;
+`//agentplane/x/native_contracts:test_admission_reply_loss` is a separate
+manual case. Their fixture composition is
+[`native_service_fixtures.py`](../../testing/native_service_fixtures.py), reusing
+[`native_gateway_fixtures.py`](../../testing/native_gateway_fixtures.py):
+production Gateway/Dispatcher and History processes, PostgreSQL, production
+Runtime PID1 container and native RPCs. Tokens and SVIDs come from the fixture's
+Kubernetes API server and test CA; Sandbox/controller facts are authored, not
+reconciled by Agentplane controllers.
+
+| Guarantee                                                      | Existing narrow witness and what it proves                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Uncovered layer / smallest faithful next proof                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime direct duplicate admission vs Dispatcher receipt dedup | [`journal_test.go`](../../env/runtime/journal/journal_test.go#L20) `TestAdmissionDeduplicatesFullCommandAndRejectsConflicts` owns journal replay/collision. In `test_recovery.py`, `test_runtime_admission_is_idempotent_after_restart_without_dispatcher_replay` calls the Runtime RPC directly twice and across restart, checks equal receipt, payload/operation conflicts, one History admission and next input ([L130]). `test_runtime_transport_outage_retains_history_and_accepts_next_input` separately repeats through Dispatcher after Runtime restart ([L54]). `test_admission_reply_loss.py::test_dispatcher_retries_after_real_runtime_admission_reply_is_lost` records two real handler calls after one Dispatcher submit, equal full responses, one journal admission, no third handler call for receipt replay, then next input ([L109]).                                                                                                                                                                                                                                                                                                                                                           | The actual post-handler `UNAVAILABLE` is injected by a test-only Runtime interceptor; it is not a raw HTTP/2 reset. Owner and native cases already distinguish the two idempotency layers. Do not add another ordinary duplicate test; only expand fault type if a transport defect specifically requires socket-reset behavior.                                                                                                                                                           |
+| Active work interrupted by Runtime restart                     | `test_recovery.py::test_active_runtime_crash_preserves_history_and_does_not_resubmit_the_turn` SIGKILLs the Runtime container while the harness turn is held, verifies the retained History prefix, starts a fresh Runtime on the same journal, requires `harness_lost` reconciliation and a new input, and checks the exact admissions/completions and request count ([L193]). Runtime journal/session recovery owners remain in `env/runtime/{journal,internal/coordinator,session}`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | It proves Runtime-process restart with fixture-owned state; it does not prove Kubernetes controller restart policy, production Secret mount, PVC or packaged-image wiring. Those stay in Pod/VM K3s acceptance.                                                                                                                                                                                                                                                                            |
+| Gateway incarnation fencing / transport reconnect              | Owner tests include `runner_gateway/internal/gateway/runner_observer_test.go::TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot` and `TestLocalConnectionsRejectStaleObserverEpochs`; `env/runtime/internal/coordinator/execution_forward_test.go::TestStaleExecutionIncarnationReportsVerifiedIdentity`; native `central_sampler:test_gateway_integration` rejects a stale expected Runtime incarnation ([source](../../central_sampler/test_gateway_integration.py#L323)). Deployed `test_services` Gateway roll and `test_gateway_crash` prove the end-to-end deployed path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | The native central integration is one case, not a dedicated process-roll/reconnect matrix. If a reproduced defect crosses these owners, extend the native composition with its actual old/new Gateway or Runtime incarnation and assert stale work is fenced before mutation plus a valid successor reconnect. Reuse `GatewayProcess`, `SandboxControlClient`, and actual `FollowEvents`/History clients; do not restate the existing successful K3s roll without a distinct failure mode. |
+| History cursor gap / outage                                    | `test_recovery.py::test_history_outage_replays_the_runtime_journal_and_resumes_the_reader_cursor` pauses the real History process, completes the turn while History cannot read/ack, then requires `prefix + resumed == complete`, contiguous cursors and exactly two completions ([L274]). The committed native central integration independently stops the real History process during a live Sampler turn, verifies completion and contiguous journal cursors while History is unavailable, resumes and redials History, checks exact prefix-plus-suffix catch-up, then completes fresh input and compares full Sampler/History contents ([source](../../central_sampler/test_gateway_integration.py#L346)). Owner coverage includes `history_service/internal/rpc/follow_test.go::TestFollowSessionFilteredCursorReconnectHasNoGapOrDuplicate`, `history_service/internal/projection/recording_integration_test.go::TestAPageSkippingACursorIsRefused`, and `internal/storage/store_integration_test.go::TestAppendReplaysDuplicatesAndReadsPages`. The K3s `test_history_outage` separately proves deployed sampler-journal backfill and folding.                                                             | These native tests stop/resume a process; they do not prove Kubernetes scale/reconciliation, database failover, or a cold History process/database restore. The K3s outage remains the controller/service proof; add cold-start/failover only for a concrete recovery contract absent from these existing owners.                                                                                                                                                                          |
+| Wrong issuer / unauthorized delegation                         | Wrong-issuer K3s cases in `test_pod` and Firecracker create a valid cluster-CA-signed leaf with the exact peer URI, assert the forged credential is rejected, and check the real workload certificate succeeds (`workload_trust.py`); real rotation/reissue is covered by Pod and Firecracker. Auth owners include `identity/auth/auth/methods_test.go::TestDelegatedIdentityIsAdmittedOnlyAsItsLiveIncarnation`, `runner_gateway/environments/service_test.go::TestDelegatedDiscoveryRequiresOneValidEnvelopeAndAnOptedInMethod`, and `runner_gateway/dispatcher/delegated_identity_integration_test.go::TestDelegatedIdentityActsOnlyOnItsIdentitysSessions`. Deployed external delegation and parent-Action cases prove caller-visible least privilege through real App/MCP routing. The native central integration now also checks that the real API-server TokenReview rejects the configured Sampler service account with a wrong audience (`UNAUTHENTICATED`) and an unauthorized account with the configured audience (`PERMISSION_DENIED`), with no event rows and `GetSession NOT_FOUND`; the allowed token then creates the session ([source](../../central_sampler/test_gateway_integration.py#L247)). | This native check covers token audience/account admission and its no-side-effect boundary; it does not mint an impostor TLS leaf, exercise cert-manager or projected Secret rotation, or exercise delegated App/MCP consent. Those remain owned by the Go auth tests and K3s wrong-issuer/delegation cases; do not add a duplicate native credential test without a specific missing behavior.                                                                                             |
+
+The existing `//agentplane/central_sampler:test_gateway_integration` is a useful
+middle layer, not a K3s replacement. Its expanded contract passed in the literal
+`66320ca9960967305b7683dbfbacae6456c46a1a` validation above. The test in
+[`test_gateway_integration.py`](../../central_sampler/test_gateway_integration.py#L112)
+composes the real central sampler, Gateway, Runtime, History and PostgreSQL
+against an API-server fixture. It checks executor loss, shell patch/read,
+large-output relay, stale incarnation rejection, History fold and retained
+events. The later commit adds real API-server TokenReview negatives with no
+session side effects, a real History-process outage while Sampler completes, exact
+cursor-contiguous History catch-up, and a fresh input after recovery ([auth
+assertions](../../central_sampler/test_gateway_integration.py#L247), [outage
+assertions](../../central_sampler/test_gateway_integration.py#L346)). The API
+server, service-account objects and test CA are fixture-owned; Gateway, Runtime,
+History, Sampler and PostgreSQL are real processes/services. It avoids
+chart/controller/App deployment, cert-manager issuer reconciliation and
+projected Secret rotation. `//agentplane/x/direct_vm_boot:test_guest_boot` similarly
+owns only current guest package boot: real kernel/initramfs/root/Runtime disk,
+seven mounts, host nonce over virtiofs and orderly shutdown; its empty config
+ISOs intentionally do not configure or authenticate Runtime. It cannot replace
+the VM or Firecracker acceptance above.
+
+The separate manual `//agentplane/x/direct_vm_boot:test_runtime_gateway` configures
+that fixture guest with the packaged Runtime, fixture-issued TLS and Sandbox launch
+identity. Its healthy working-tree probe passed authenticated Gateway status,
+running lifecycle, exact Sandbox/Pod/boot identity and a positive Lease transition
+epoch. It uses the narrow Gateway/envtest/PostgreSQL fixtures and creates no Session;
+the ingress endpoint is configured but unused. It covers packaged Runtime startup
+and transport without claiming real issuer, controller, KubeVirt, PVC, executor
+operation or App coverage. The opt-in wrong-client-CA control fails at the same
+readiness assertion after a real TLS rejection; both paths verify container removal,
+listener closure and restored state ownership. The working-tree witnesses are
+[`5dbc7412`](https://app.buildbuddy.io/invocation/5dbc7412-7db7-4922-a5a5-cba7d90d6d47)
+(positive) and [`9a028ac2`](https://app.buildbuddy.io/invocation/9a028ac2-095e-4fb3-85ca-29fe5047b702)
+(expected red), each one uncached physical action. This target remains manual.
+
+## Promotion boundary
+
+The manual `//agentplane/system_tests/suites:test_vm_platform_candidate` adds a
+single deployed KubeVirt guest with no model turns. It retains issued identity,
+private systemd supervision, actual setup kernel limits and ownership, a unique
+workspace round-trip, real CLI routes, detached-descendant fencing and same-boot
+identity. Its first physical action passes, but seeded controls against this new
+composition and a matched complete graph are pending. It does not replace the
+full VM gate, its trace contract, either packaged harness contract or separate
+OOM acceptance. See [the platform proof](test_architecture_iteration8.md).
+
+The opt-in `VM_PLATFORM_PRIVATE_SUPERVISION_OWNER=direct-guest` experiment assigns
+only the private systemd fixture to the existing direct Claude guest. The deployed
+platform witness selects the ordinary VM template, checks the actual admitted
+VMI's kernel arguments and requires no private receipt. It retains its setup
+kernel budgets, detached-descendant fencing, issuer/Pod binding, launcher/mount
+acceptance, workspace and real CLI assertions. The default remains `deployed`;
+unknown owner values fail. Every experimental graph using this mode must include
+`//agentplane/x/direct_vm_boot:test_runtime_session`, whose existing receipt,
+11 private subtests, two turns and cleanup remain unchanged. Both targets run
+fresh in each comparison arm. This is a manual candidate assignment, not a
+required-gate owner transfer. The controls and measurement boundaries are in
+[iteration 9](test_architecture_iteration9.md).
+
+The manual `test_firecracker_shared_guest_candidate` composes the existing
+Gateway-issuer trust helper and live-state acceptance on one fresh guest. Trust
+runs before Session creation, credential rotation and autosuspend. Both owners'
+assertions and the real one-minute idle interval remain; the required two-guest
+control stays unchanged. The explicit tradeoff is losing a separately clean
+second guest fixture. This is not a selector change or an equivalence claim;
+see [the experiment contract](test_architecture_firecracker_guest_reuse.md).
+
+The smallest faithful future contracts are the existing Go owner tests for pure
+state transitions, the current native process fixtures for Runtime/History
+restart semantics, and K3s tests for controller-produced identities, issuer and
+Secret behavior, App/MCP authorization and guest lifecycle. The current tests
+already cover the requested recovery matrix at those layers; the remaining
+evidence is not an untested assertion that can be moved wholesale into a faster
+target. Keep current required cases and frequency until matched replay and
+qualification show that each proposed selector still runs its assigned witness.
+Only after that, a case may move to a faster owner target if its complete
+assertion is retained and the deployment acceptance for the real issuer,
+controller, storage, App or guest boundary remains. A lower frequency is a
+separate post-qualification change, not a consequence of passing native tests.

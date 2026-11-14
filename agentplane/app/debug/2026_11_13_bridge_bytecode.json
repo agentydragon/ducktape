@@ -1,0 +1,804 @@
+{
+  "title": "Target-only Bridge pyc_collection A/B/B/A screen",
+  "source_commit": "8a555b21141fded2166fcc17cd14096187e22842",
+  "outer_invocation_id": "61cb80be-25d9-4378-996b-e2c8dcf8b24e",
+  "payload_sha256": "b8f72bd1d6aa6cc8a33afbbd6238d40ab2df55809568b13e0a504002a3ad29af",
+  "baseline_build_file_sha256": "f10f81d292c4ce93aed74456b2d4aee222d5d6424b6fd3181bc06cd68212464a",
+  "candidate_build_file_sha256": "9da41d854a0c9fd675a5103b098a4527b7d871b4f0e177e79bf317f6e0b8bab2",
+  "probe_payload_candidate_change": "agentplane/app/BUILD.bazel: pyc_collection = \"include_pyc\" in test_bridge",
+  "target": "//agentplane/app:test_bridge",
+  "candidate_change": "only test_bridge adds pyc_collection = \"include_pyc\"",
+  "test_flags": {
+    "shards_per_arm": 8,
+    "nocache_test_results": true,
+    "flaky_test_attempts": 1,
+    "runs_per_test": 1,
+    "remote_cache": "enabled"
+  },
+  "expected_case_set": {
+    "count": 24,
+    "sha256_sorted_newline_terminated": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+    "names": [
+      "agentplane.app.test_bridge::test_history_openings_give_a_session_the_app_did_not_start_a_thread[claude]",
+      "agentplane.app.test_bridge::test_history_openings_give_a_session_the_app_did_not_start_a_thread[codex]",
+      "agentplane.app.test_bridge::test_open_and_inputs_reach_the_runner_while_history_lags[claude]",
+      "agentplane.app.test_bridge::test_open_and_inputs_reach_the_runner_while_history_lags[codex]",
+      "agentplane.app.test_bridge::test_replica_commands_and_database_stream_survive_owner_replica_exit[claude]",
+      "agentplane.app.test_bridge::test_replica_commands_and_database_stream_survive_owner_replica_exit[codex]",
+      "agentplane.app.test_bridge::test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it[claude-interrupt]",
+      "agentplane.app.test_bridge::test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it[claude-kill]",
+      "agentplane.app.test_bridge::test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it[claude-shutdown]",
+      "agentplane.app.test_bridge::test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it[codex-interrupt]",
+      "agentplane.app.test_bridge::test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it[codex-kill]",
+      "agentplane.app.test_bridge::test_resume_after_tool_completion_preserves_the_result_and_does_not_repeat_it[codex-shutdown]",
+      "agentplane.app.test_bridge::test_stream_recovery_reports_the_content_the_model_receives[claude-interrupt]",
+      "agentplane.app.test_bridge::test_stream_recovery_reports_the_content_the_model_receives[claude-kill]",
+      "agentplane.app.test_bridge::test_stream_recovery_reports_the_content_the_model_receives[claude-shutdown]",
+      "agentplane.app.test_bridge::test_stream_recovery_reports_the_content_the_model_receives[codex-interrupt]",
+      "agentplane.app.test_bridge::test_stream_recovery_reports_the_content_the_model_receives[codex-kill]",
+      "agentplane.app.test_bridge::test_stream_recovery_reports_the_content_the_model_receives[codex-shutdown]",
+      "agentplane.app.test_bridge::test_tool_recovery_reports_context_without_repeating_side_effects[claude-interrupt]",
+      "agentplane.app.test_bridge::test_tool_recovery_reports_context_without_repeating_side_effects[claude-kill]",
+      "agentplane.app.test_bridge::test_tool_recovery_reports_context_without_repeating_side_effects[claude-shutdown]",
+      "agentplane.app.test_bridge::test_tool_recovery_reports_context_without_repeating_side_effects[codex-interrupt]",
+      "agentplane.app.test_bridge::test_tool_recovery_reports_context_without_repeating_side_effects[codex-kill]",
+      "agentplane.app.test_bridge::test_tool_recovery_reports_context_without_repeating_side_effects[codex-shutdown]"
+    ],
+    "all_four_arms_match": true,
+    "all_four_arms_passed_no_skips": true
+  },
+  "variant_means_and_deltas": {
+    "elapsed_seconds": {
+      "A_mean": 88.063,
+      "B_mean": 78.223,
+      "B_minus_A": -9.84,
+      "B_minus_A_percent_of_A": -11.174
+    },
+    "critical_path_seconds": {
+      "A_mean": 84.705,
+      "B_mean": 75.94,
+      "B_minus_A": -8.765,
+      "B_minus_A_percent_of_A": -10.348
+    },
+    "buildmetrics_cpu_seconds": {
+      "A_mean": 17.915,
+      "B_mean": 27.03,
+      "B_minus_A": 9.115,
+      "B_minus_A_percent_of_A": 50.879
+    },
+    "test_runner_action_cpu_seconds": {
+      "A_mean": 785.029735,
+      "B_mean": 673.234242,
+      "B_minus_A": -111.795493,
+      "B_minus_A_percent_of_A": -14.241
+    },
+    "pycompile_action_cpu_seconds": {
+      "A_mean": 0.0,
+      "B_mean": 1.922349,
+      "B_minus_A": 1.922349,
+      "B_minus_A_percent_of_A": null
+    }
+  },
+  "worker_comparability": {
+    "same_test_runner_worker_identity_set_in_all_arms": true,
+    "test_runner_worker_identity_count_per_arm": [8, 8, 8, 8],
+    "identity_values_are_not_emitted": true,
+    "requested_platform_or_resource_contract_in_execution_records": false
+  },
+  "outer_result": {
+    "returncode": 0,
+    "script_status": "completed-four-arm-screen",
+    "baseline_restored": true,
+    "private_raw_artifacts_removed_before_upload": true,
+    "sanitized_archive_uploaded": true,
+    "arm_order": ["A", "B", "B", "A"]
+  },
+  "arms": [
+    {
+      "arm": "arm1_A",
+      "variant": "A",
+      "invocation_id": "8c005b28-55fb-4788-8de6-c3ed66c36bf6",
+      "bazel_returncode": 0,
+      "junit": {
+        "test_result_count": 8,
+        "shard_statuses": ["PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED"],
+        "case_count": 24,
+        "unique_case_count": 24,
+        "case_names_match_expected": true,
+        "case_names_sha256_sorted_newline_terminated": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+        "outcomes": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0
+        },
+        "suite_totals": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "all_cases_passed_no_skips": true,
+        "junit_testcase_time_seconds_sum_over_cases": 455.11,
+        "junit_testcase_time_seconds_max_case": 45.234,
+        "junit_time_note": "sum of per-case durations overlaps across eight shards; not invocation wall time"
+      },
+      "build_metrics": {
+        "timing_metrics": {
+          "wallTimeInMs": 95553,
+          "analysisPhaseTimeInMs": 4165,
+          "executionPhaseTimeInMs": 89814,
+          "actionsExecutionStartInMs": 5685,
+          "cpuTimeInMs": 29730,
+          "criticalPathTime_as_reported": "89.568662236s"
+        },
+        "actions_created_as_reported": 1130,
+        "actions_executed_as_reported": 364,
+        "action_cache_statistics_as_reported": {
+          "hits": 64,
+          "misses": 364,
+          "sizeInBytes": 4308895,
+          "saveTimeInMs": 16
+        },
+        "runner_counts_as_reported": {
+          "total": 364,
+          "remote cache hit": 329,
+          "internal": 27,
+          "remote": 8
+        },
+        "selected_action_mnemonics": {
+          "TestRunner": {
+            "actions_created_as_reported": 33,
+            "actions_executed_as_reported": 8
+          }
+        }
+      },
+      "remote_execution": {
+        "returned_rows": 8,
+        "unique_execution_ids": 8,
+        "test_runner_worker_identity_count": 8,
+        "action_mnemonic_counts": {
+          "TestRunner": 8
+        },
+        "invocation_link_type_counts": {
+          "1": 8
+        },
+        "stage_counts": {
+          "COMPLETED": 8
+        },
+        "link_type_legend": {
+          "1": "NEW",
+          "2": "MERGED"
+        },
+        "metrics_by_mnemonic": {
+          "TestRunner": {
+            "unique_execution_rows": 8,
+            "cpu_seconds_sum": 858.043457,
+            "peak_memory_bytes_max": 1199046656,
+            "execution_process_wall_seconds": {
+              "count": 8,
+              "median": 76.104989,
+              "p95_nearest_rank": 86.155886,
+              "max": 86.155886
+            },
+            "queue_wait_seconds": {
+              "count": 8,
+              "median": 0.066876,
+              "p95_nearest_rank": 0.099032,
+              "max": 0.099032
+            },
+            "input_fetch_seconds": {
+              "count": 8,
+              "median": 0.223488,
+              "p95_nearest_rank": 2.258285,
+              "max": 2.258285
+            },
+            "io_stats": {
+              "file_download_duration_usec": {
+                "sum_over_reported_actions": 611202227,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_download_size_bytes": {
+                "sum_over_reported_actions": 3704510232,
+                "reported_action_count": 3,
+                "missing_action_count": 5
+              },
+              "file_upload_duration_usec": {
+                "sum_over_reported_actions": 3839137,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_upload_size_bytes": {
+                "sum_over_reported_actions": 1930106,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              }
+            }
+          }
+        },
+        "timing_sums_note": "per-action queue/fetch/process durations overlap; they are distributions, not invocation wall time"
+      },
+      "native_profile": {
+        "profile_sha256": "a0dfe62477244c6ebc488a4a711f34fc4324dc1ed9d6306f70677b2c6fe9ea3a",
+        "compressed_bytes": 92828,
+        "decompressed_bytes": 1049942,
+        "trace_event_count": 7673,
+        "profile_metadata_keys_only": ["bazel_version", "build_id", "date", "output_base", "profile_start_ts"],
+        "selected_event_category_counts": {
+          "remote action cache check": 337,
+          "complete action execution": 364,
+          "action processing": 364,
+          "remote action execution": 16,
+          "Remote execution queuing time": 7,
+          "Remote execution file fetching": 8,
+          "Remote execution process wall time": 8,
+          "critical path component": 13,
+          "Fetching repository": 97
+        },
+        "sensitive_marker_occurrences_in_decompressed_profile": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      },
+      "native_tool_logs": {
+        "elapsed_seconds_native_tool_log": 95.568,
+        "critical_path_seconds_native_tool_log": 89.57,
+        "process_stats_tool_log_bytes": 80,
+        "process_stats_sensitive_marker_occurrences": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      }
+    },
+    {
+      "arm": "arm2_B",
+      "variant": "B",
+      "invocation_id": "76d2f524-2e46-4ca6-9abb-c1084afac90b",
+      "bazel_returncode": 0,
+      "junit": {
+        "test_result_count": 8,
+        "shard_statuses": ["PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED"],
+        "case_count": 24,
+        "unique_case_count": 24,
+        "case_names_match_expected": true,
+        "case_names_sha256_sorted_newline_terminated": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+        "outcomes": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0
+        },
+        "suite_totals": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "all_cases_passed_no_skips": true,
+        "junit_testcase_time_seconds_sum_over_cases": 415.545,
+        "junit_testcase_time_seconds_max_case": 36.788,
+        "junit_time_note": "sum of per-case durations overlaps across eight shards; not invocation wall time"
+      },
+      "build_metrics": {
+        "timing_metrics": {
+          "wallTimeInMs": 85262,
+          "analysisPhaseTimeInMs": 710,
+          "executionPhaseTimeInMs": 83304,
+          "actionsExecutionStartInMs": 1922,
+          "cpuTimeInMs": 48000,
+          "criticalPathTime_as_reported": "81.620053678s"
+        },
+        "actions_created_as_reported": 54,
+        "actions_executed_as_reported": 3471,
+        "action_cache_statistics_as_reported": {
+          "hits": 51,
+          "misses": 3471,
+          "sizeInBytes": 5336352,
+          "saveTimeInMs": 18
+        },
+        "runner_counts_as_reported": {
+          "total": 3471,
+          "remote cache hit": 3452,
+          "internal": 8,
+          "remote": 11
+        },
+        "selected_action_mnemonics": {
+          "PyCompile": {
+            "actions_created_as_reported": 17133,
+            "actions_executed_as_reported": 3455
+          },
+          "TestRunner": {
+            "actions_created_as_reported": 41,
+            "actions_executed_as_reported": 8
+          }
+        }
+      },
+      "remote_execution": {
+        "returned_rows": 11,
+        "unique_execution_ids": 11,
+        "test_runner_worker_identity_count": 8,
+        "action_mnemonic_counts": {
+          "PyCompile": 3,
+          "TestRunner": 8
+        },
+        "invocation_link_type_counts": {
+          "1": 11
+        },
+        "stage_counts": {
+          "COMPLETED": 11
+        },
+        "link_type_legend": {
+          "1": "NEW",
+          "2": "MERGED"
+        },
+        "metrics_by_mnemonic": {
+          "PyCompile": {
+            "unique_execution_rows": 3,
+            "cpu_seconds_sum": 3.844697,
+            "peak_memory_bytes_max": 403820544,
+            "execution_process_wall_seconds": {
+              "count": 3,
+              "median": 2.764233,
+              "p95_nearest_rank": 2.839211,
+              "max": 2.839211
+            },
+            "queue_wait_seconds": {
+              "count": 3,
+              "median": 0.061146,
+              "p95_nearest_rank": 0.06478,
+              "max": 0.06478
+            },
+            "input_fetch_seconds": {
+              "count": 3,
+              "median": 0.262146,
+              "p95_nearest_rank": 0.279394,
+              "max": 0.279394
+            },
+            "io_stats": {
+              "file_download_duration_usec": {
+                "sum_over_reported_actions": 8170553,
+                "reported_action_count": 3,
+                "missing_action_count": 0
+              },
+              "file_download_size_bytes": {
+                "sum_over_reported_actions": 17333,
+                "reported_action_count": 3,
+                "missing_action_count": 0
+              },
+              "file_upload_duration_usec": {
+                "sum_over_reported_actions": 368819,
+                "reported_action_count": 3,
+                "missing_action_count": 0
+              },
+              "file_upload_size_bytes": {
+                "sum_over_reported_actions": 56582,
+                "reported_action_count": 3,
+                "missing_action_count": 0
+              }
+            }
+          },
+          "TestRunner": {
+            "unique_execution_rows": 8,
+            "cpu_seconds_sum": 684.271195,
+            "peak_memory_bytes_max": 1178812416,
+            "execution_process_wall_seconds": {
+              "count": 8,
+              "median": 67.77787,
+              "p95_nearest_rank": 73.65096,
+              "max": 73.65096
+            },
+            "queue_wait_seconds": {
+              "count": 8,
+              "median": 0.061823,
+              "p95_nearest_rank": 0.123293,
+              "max": 0.123293
+            },
+            "input_fetch_seconds": {
+              "count": 8,
+              "median": 1.196922,
+              "p95_nearest_rank": 2.297363,
+              "max": 2.297363
+            },
+            "io_stats": {
+              "file_download_duration_usec": {
+                "sum_over_reported_actions": 525282768,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_download_size_bytes": {
+                "sum_over_reported_actions": 522497560,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_upload_duration_usec": {
+                "sum_over_reported_actions": 2127433,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_upload_size_bytes": {
+                "sum_over_reported_actions": 1870751,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              }
+            }
+          }
+        },
+        "timing_sums_note": "per-action queue/fetch/process durations overlap; they are distributions, not invocation wall time"
+      },
+      "native_profile": {
+        "profile_sha256": "5ff3df3a28ec5189cc259094ac1fe9aa2aa8af71f232dd76b5e0d396e3ab4088",
+        "compressed_bytes": 603411,
+        "decompressed_bytes": 7670375,
+        "trace_event_count": 50041,
+        "profile_metadata_keys_only": ["bazel_version", "build_id", "date", "output_base", "profile_start_ts"],
+        "selected_event_category_counts": {
+          "remote action cache check": 3463,
+          "complete action execution": 3471,
+          "action processing": 3471,
+          "remote action execution": 22,
+          "Remote execution queuing time": 10,
+          "Remote execution file fetching": 11,
+          "Remote execution process wall time": 11,
+          "critical path component": 5,
+          "Fetching repository": 0
+        },
+        "sensitive_marker_occurrences_in_decompressed_profile": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      },
+      "native_tool_logs": {
+        "elapsed_seconds_native_tool_log": 85.256,
+        "critical_path_seconds_native_tool_log": 81.62,
+        "process_stats_tool_log_bytes": 82,
+        "process_stats_sensitive_marker_occurrences": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      }
+    },
+    {
+      "arm": "arm3_B",
+      "variant": "B",
+      "invocation_id": "b0c7bbd1-396d-4450-af30-8f5aea817dce",
+      "bazel_returncode": 0,
+      "junit": {
+        "test_result_count": 8,
+        "shard_statuses": ["PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED"],
+        "case_count": 24,
+        "unique_case_count": 24,
+        "case_names_match_expected": true,
+        "case_names_sha256_sorted_newline_terminated": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+        "outcomes": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0
+        },
+        "suite_totals": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "all_cases_passed_no_skips": true,
+        "junit_testcase_time_seconds_sum_over_cases": 410.727,
+        "junit_testcase_time_seconds_max_case": 31.187,
+        "junit_time_note": "sum of per-case durations overlaps across eight shards; not invocation wall time"
+      },
+      "build_metrics": {
+        "timing_metrics": {
+          "wallTimeInMs": 71192,
+          "analysisPhaseTimeInMs": 262,
+          "executionPhaseTimeInMs": 70373,
+          "actionsExecutionStartInMs": 792,
+          "cpuTimeInMs": 6060,
+          "criticalPathTime_as_reported": "70.257944684s"
+        },
+        "actions_created_as_reported": 54,
+        "actions_executed_as_reported": 9,
+        "action_cache_statistics_as_reported": {
+          "hits": 59,
+          "misses": 9,
+          "sizeInBytes": 5338085,
+          "saveTimeInMs": 16
+        },
+        "runner_counts_as_reported": {
+          "total": 9,
+          "internal": 1,
+          "remote": 8
+        },
+        "selected_action_mnemonics": {
+          "TestRunner": {
+            "actions_created_as_reported": 49,
+            "actions_executed_as_reported": 8
+          }
+        }
+      },
+      "remote_execution": {
+        "returned_rows": 8,
+        "unique_execution_ids": 8,
+        "test_runner_worker_identity_count": 8,
+        "action_mnemonic_counts": {
+          "TestRunner": 8
+        },
+        "invocation_link_type_counts": {
+          "1": 8
+        },
+        "stage_counts": {
+          "COMPLETED": 8
+        },
+        "link_type_legend": {
+          "1": "NEW",
+          "2": "MERGED"
+        },
+        "metrics_by_mnemonic": {
+          "TestRunner": {
+            "unique_execution_rows": 8,
+            "cpu_seconds_sum": 662.197289,
+            "peak_memory_bytes_max": 1181278208,
+            "execution_process_wall_seconds": {
+              "count": 8,
+              "median": 63.396523,
+              "p95_nearest_rank": 68.899254,
+              "max": 68.899254
+            },
+            "queue_wait_seconds": {
+              "count": 8,
+              "median": 0.061827,
+              "p95_nearest_rank": 0.063105,
+              "max": 0.063105
+            },
+            "input_fetch_seconds": {
+              "count": 8,
+              "median": 0.275169,
+              "p95_nearest_rank": 0.360746,
+              "max": 0.360746
+            },
+            "io_stats": {
+              "file_download_duration_usec": {
+                "sum_over_reported_actions": 508994088,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_download_size_bytes": {
+                "sum_over_reported_actions": null,
+                "reported_action_count": 0,
+                "missing_action_count": 8
+              },
+              "file_upload_duration_usec": {
+                "sum_over_reported_actions": 2775995,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_upload_size_bytes": {
+                "sum_over_reported_actions": 1862631,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              }
+            }
+          }
+        },
+        "timing_sums_note": "per-action queue/fetch/process durations overlap; they are distributions, not invocation wall time"
+      },
+      "native_profile": {
+        "profile_sha256": "feeec125c7d749e30c7531494a7f0f20fc9c664fd021fc3017e73ade018b08df",
+        "compressed_bytes": 19101,
+        "decompressed_bytes": 244958,
+        "trace_event_count": 1967,
+        "profile_metadata_keys_only": ["bazel_version", "build_id", "date", "output_base", "profile_start_ts"],
+        "selected_event_category_counts": {
+          "remote action cache check": 8,
+          "complete action execution": 9,
+          "action processing": 9,
+          "remote action execution": 16,
+          "Remote execution queuing time": 7,
+          "Remote execution file fetching": 8,
+          "Remote execution process wall time": 8,
+          "critical path component": 4,
+          "Fetching repository": 0
+        },
+        "sensitive_marker_occurrences_in_decompressed_profile": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      },
+      "native_tool_logs": {
+        "elapsed_seconds_native_tool_log": 71.19,
+        "critical_path_seconds_native_tool_log": 70.26,
+        "process_stats_tool_log_bytes": 55,
+        "process_stats_sensitive_marker_occurrences": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      }
+    },
+    {
+      "arm": "arm4_A",
+      "variant": "A",
+      "invocation_id": "e5fea4c9-a342-4d0e-a0b9-743011246fa7",
+      "bazel_returncode": 0,
+      "junit": {
+        "test_result_count": 8,
+        "shard_statuses": ["PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED", "PASSED"],
+        "case_count": 24,
+        "unique_case_count": 24,
+        "case_names_match_expected": true,
+        "case_names_sha256_sorted_newline_terminated": "aa9356035cfba9ca4795c4305f6a422d365d00c41884106aa10369171c4d0720",
+        "outcomes": {
+          "errors": 0,
+          "failures": 0,
+          "passed": 24,
+          "skipped": 0
+        },
+        "suite_totals": {
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0
+        },
+        "all_cases_passed_no_skips": true,
+        "junit_testcase_time_seconds_sum_over_cases": 422.33,
+        "junit_testcase_time_seconds_max_case": 32.712,
+        "junit_time_note": "sum of per-case durations overlaps across eight shards; not invocation wall time"
+      },
+      "build_metrics": {
+        "timing_metrics": {
+          "wallTimeInMs": 80560,
+          "analysisPhaseTimeInMs": 360,
+          "executionPhaseTimeInMs": 79877,
+          "actionsExecutionStartInMs": 651,
+          "cpuTimeInMs": 6100,
+          "criticalPathTime_as_reported": "79.836196035s"
+        },
+        "actions_created_as_reported": 54,
+        "actions_executed_as_reported": 12,
+        "action_cache_statistics_as_reported": {
+          "hits": 51,
+          "misses": 12,
+          "sizeInBytes": 5338429,
+          "saveTimeInMs": 20
+        },
+        "runner_counts_as_reported": {
+          "total": 12,
+          "internal": 4,
+          "remote": 8
+        },
+        "selected_action_mnemonics": {
+          "TestRunner": {
+            "actions_created_as_reported": 57,
+            "actions_executed_as_reported": 8
+          }
+        }
+      },
+      "remote_execution": {
+        "returned_rows": 8,
+        "unique_execution_ids": 8,
+        "test_runner_worker_identity_count": 8,
+        "action_mnemonic_counts": {
+          "TestRunner": 8
+        },
+        "invocation_link_type_counts": {
+          "1": 8
+        },
+        "stage_counts": {
+          "COMPLETED": 8
+        },
+        "link_type_legend": {
+          "1": "NEW",
+          "2": "MERGED"
+        },
+        "metrics_by_mnemonic": {
+          "TestRunner": {
+            "unique_execution_rows": 8,
+            "cpu_seconds_sum": 712.016012,
+            "peak_memory_bytes_max": 1194033152,
+            "execution_process_wall_seconds": {
+              "count": 8,
+              "median": 72.184135,
+              "p95_nearest_rank": 78.239788,
+              "max": 78.239788
+            },
+            "queue_wait_seconds": {
+              "count": 8,
+              "median": 0.06158,
+              "p95_nearest_rank": 0.363866,
+              "max": 0.363866
+            },
+            "input_fetch_seconds": {
+              "count": 8,
+              "median": 0.179835,
+              "p95_nearest_rank": 0.485951,
+              "max": 0.485951
+            },
+            "io_stats": {
+              "file_download_duration_usec": {
+                "sum_over_reported_actions": 556719614,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_download_size_bytes": {
+                "sum_over_reported_actions": null,
+                "reported_action_count": 0,
+                "missing_action_count": 8
+              },
+              "file_upload_duration_usec": {
+                "sum_over_reported_actions": 4616524,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              },
+              "file_upload_size_bytes": {
+                "sum_over_reported_actions": 1865753,
+                "reported_action_count": 8,
+                "missing_action_count": 0
+              }
+            }
+          }
+        },
+        "timing_sums_note": "per-action queue/fetch/process durations overlap; they are distributions, not invocation wall time"
+      },
+      "native_profile": {
+        "profile_sha256": "16c26db9e75c6ccbd9fcb8fce2368a33124e2d0c8b9e1fdb652872e1995eaf20",
+        "compressed_bytes": 21094,
+        "decompressed_bytes": 272641,
+        "trace_event_count": 2188,
+        "profile_metadata_keys_only": ["bazel_version", "build_id", "date", "output_base", "profile_start_ts"],
+        "selected_event_category_counts": {
+          "remote action cache check": 8,
+          "complete action execution": 12,
+          "action processing": 12,
+          "remote action execution": 16,
+          "Remote execution queuing time": 7,
+          "Remote execution file fetching": 8,
+          "Remote execution process wall time": 8,
+          "critical path component": 4,
+          "Fetching repository": 0
+        },
+        "sensitive_marker_occurrences_in_decompressed_profile": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      },
+      "native_tool_logs": {
+        "elapsed_seconds_native_tool_log": 80.558,
+        "critical_path_seconds_native_tool_log": 79.84,
+        "process_stats_tool_log_bytes": 56,
+        "process_stats_sensitive_marker_occurrences": {
+          "x-buildbuddy-api-key": 0,
+          "x-buildbuddy-client-identity": 0,
+          "remote_header": 0,
+          "BUILDBUDDY_API_KEY": 0,
+          "DUCKTAPE_OTEL_BEARER_TOKEN": 0
+        }
+      }
+    }
+  ],
+  "interpretation_limits": [
+    "This is one target-only four-arm screen, not full CI or a complete feedback-time result.",
+    "The arms shared a hosted workspace/output base and normal remote cache; later arms were warm and order effects remain.",
+    "Per-action process, queue, fetch, CPU and JUnit case durations overlap across shards; do not sum them as wall time.",
+    "BuildMetrics cpuTimeInMs is reported separately from summed remote action cpuNanos; neither is a wall-time measure.",
+    "Requested platform/resources were not established from the available invocation and execution records; peak memory is observed usage, not a resource request.",
+    "Some per-action IO size fields are absent. Missing values remain null and are counted separately; zero is not inferred from absent metadata.",
+    "BuildMetrics action-cache counters and runner counts are retained as separately reported fields; they are not forced into a single denominator.",
+    "The sanitized upload contains normalized JUnit summaries, not raw BEP, command logs, profiles, XML or test logs. Native profile artifacts were fetched through tool-log APIs and summarized locally."
+  ]
+}

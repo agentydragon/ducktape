@@ -1,5 +1,11 @@
-load("//agentplane/system_tests/k3s:defs.bzl", "k3s_suite")
-load("//devinfra/python:defs.bzl", "py_library")
+load(
+    "//agentplane/system_tests/k3s:defs.bzl",
+    "K3S_BINARY",
+    "K3S_EXEC_PROPERTIES",
+    "K3S_TAGS",
+    "k3s_suite",
+)
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # gazelle:map_kind py_test k3s_suite //agentplane/system_tests/k3s:defs.bzl
 
@@ -54,6 +60,74 @@ k3s_suite(
     ],
 )
 
+# Manual current-source comparison of the production serial importer and a bounded batch candidate.
+# The probe consumes the exact narrowed Pod suite image manifest and owns its K3s lifecycle.
+# gazelle:ignore
+py_test(
+    name = "test_import_batch_benchmark",
+    size = "enormous",
+    srcs = ["test_import_batch_benchmark.py"],
+    data = [
+        ":test_pod_image_manifest",
+        K3S_BINARY,
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_IMPORT_BENCHMARK_GROUPS": "pki,fixture",
+        "K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY": "1",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_pod_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | {"test.recycle-runner": "false"},
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/k3s:baseline",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Same importer comparison on the required VM suite's full image manifest and disk-backed store.
+# It starts no guests or workload Pods, so this import-only probe needs no KVM device.
+# gazelle:ignore
+py_test(
+    name = "test_vm_import_batch_benchmark",
+    size = "enormous",
+    srcs = ["test_import_batch_benchmark.py"],
+    data = [
+        ":test_vm_image_manifest",
+        K3S_BINARY,
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
+        "K3S_IMPORT_BENCHMARK_GROUPS": "vm,pki,fixture,guest",
+        "K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY": "0",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :test_vm_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | {
+        "EstimatedComputeUnits": "8",
+        "test.recycle-runner": "false",
+    },
+    main = "test_import_batch_benchmark.py",
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/k3s:baseline",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 # Bazel-built Debian guest and production launcher on the dedicated KVM worker.
 k3s_suite(
     name = "test_firecracker",
@@ -81,6 +155,34 @@ k3s_suite(
     },
     require_kvm = True,
     stack = "firecracker",
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:firecracker",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Keep the required two-guest control above; compare the same assertions on one fresh guest.
+k3s_suite(
+    name = "test_firecracker_shared_guest_candidate",
+    srcs = ["test_firecracker_shared_guest.py"],
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+    },
+    main = "test_firecracker_shared_guest.py",
+    require_kvm = True,
+    stack = "firecracker",
+    tags = ["manual"],
     deps = [
         "//:conftest",
         "//agentplane/app/testing:client",
@@ -230,6 +332,108 @@ k3s_suite(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+# Two real guests retain the deployed boot/artifact path, per-Pod WorkloadCredential certificate
+# binding, and authenticated Runtime/Gateway readiness. Claude also requires the private guest
+# supervision receipt; both harnesses run supervised setup and one workspace write/read operation.
+# The required test_vm target still owns its full tool, egress, notification, and supervision probes.
+k3s_suite(
+    name = "test_vm_boot_contract_candidate",
+    srcs = ["test_vm_boot_contract.py"],
+    main = "test_vm_boot_contract.py",
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:supervision",
+        "//agentplane/system_tests/vm:trace_contract",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# Manual next-generation platform witness: one real guest retains the kernel,
+# issuer, workspace and CLI routes; packaged guest contracts own model turns.
+k3s_suite(
+    name = "test_vm_platform_candidate",
+    srcs = ["test_vm_platform.py"],
+    main = "test_vm_platform.py",
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:guest_setup_probe",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+# Same platform assertions, without unused Claude. Codex supplies embedded Execution.
+k3s_suite(
+    name = "test_vm_platform_light_guest_candidate",
+    srcs = ["test_vm_platform.py"],
+    main = "test_vm_platform.py",
+    platform_guest = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:guest_setup_probe",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 

@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+_CI_EXCLUDED_TEST_TAGS = "(^|[^a-zA-Z0-9_-])(manual|live_openai_api)($|[^a-zA-Z0-9_-])"
+_AGENTPLANE_CONTRACT_POLICY = Path("agentplane/system_tests/ci_contracts.json")
 
 
 def _read_json_lockfile(path: Path, *, description: str) -> bytes | None:
@@ -117,6 +119,7 @@ def graph_wide_change_reason(paths: list[str]) -> str | None:
         "WORKSPACE.bazel",
         "WORKSPACE.bzlmod",
         "WORKSPACE.bzlmod.lock",
+        "agentplane/system_tests/ci_contracts.json",
         "devinfra/ci/bazel_ci.py",
         "devinfra/ci/bazel_ci.sh",
         "go.mod",
@@ -324,14 +327,13 @@ def _select_targets(temp_dir: Path) -> TargetSelection:
     target_count = len(affected.read_text().splitlines())
     print(f"affected targets: {target_count}")
     if target_count == 0:
-        print("No targets affected by this PR — skipping test/build.")
-        raise SystemExit(0)
+        print("No ordinary affected targets; checking declared test contracts before skipping test/build.")
 
     labels = _quote_labels(affected)
     test_query.write_text(f"tests(set({labels}))\n")
     return TargetSelection(
         full_sweep=False,
-        targets=[f"--target_pattern_file={affected}"],
+        targets=[f"--target_pattern_file={affected}"] if target_count else [],
         test_query=test_query,
         source_sha=head_sha,
         base_sha=base,
@@ -341,7 +343,13 @@ def _select_targets(temp_dir: Path) -> TargetSelection:
     )
 
 
-def _write_selected_test_labels(path: Path, labels: list[str], selection: TargetSelection) -> None:
+def _write_selected_test_labels(
+    path: Path,
+    labels: list[str],
+    selection: TargetSelection,
+    contract_graph: dict[str, object] | None = None,
+    submitted_tests: list[str] | None = None,
+) -> None:
     """Write only selected labels and source/workflow identity; never dump runner environment."""
     record = {
         "schema": "ducktape.bazel_ci_selected_test_labels.v1",
@@ -364,7 +372,75 @@ def _write_selected_test_labels(path: Path, labels: list[str], selection: Target
             "build_invocation_id": os.environ.get("BUILD_INVOCATION_ID"),
         },
     }
+    if contract_graph is not None:
+        record["contract_graph"] = contract_graph
+    if submitted_tests is not None:
+        record["submission"] = {"stage": "test-label-file-after-ci-tag-filter", "labels": submitted_tests}
     path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n")
+
+
+def _contract_test_graph(
+    temp_dir: Path, labels: list[str], selection: TargetSelection
+) -> tuple[list[str], dict[str, object] | None]:
+    if selection.full_sweep or not _AGENTPLANE_CONTRACT_POLICY.exists():
+        return labels, None
+    policy = json.loads(_AGENTPLANE_CONTRACT_POLICY.read_text())
+    if set(policy) != {"schema", "mode", "implementations", "replaces", "requires"}:
+        raise ValueError("Unexpected Agentplane test contract policy fields")
+    if policy["schema"] != "ducktape.agentplane_test_contracts.v1" or policy["mode"] not in {"shadow", "required"}:
+        raise ValueError("Unsupported Agentplane test contract policy")
+    for field in ("implementations", "replaces", "requires"):
+        if (
+            not isinstance(policy[field], list)
+            or not policy[field]
+            or any(not isinstance(label, str) or not label.startswith("//") for label in policy[field])
+        ):
+            raise ValueError(f"Invalid Agentplane test contract policy {field}")
+    record: dict[str, object] = {"mode": policy["mode"], "eligible": False, "candidate_labels": labels}
+    changed_paths = (temp_dir / "changed-files.txt").read_text().splitlines()
+    owners = " ".join(json.dumps(label) for label in policy["implementations"])
+    sources_query = temp_dir / "contract-sources-query.txt"
+    sources_query.write_text(f'kind("source file", labels("srcs", set({owners})))\n')
+    sources = _capture(["bazel", "query", f"--query_file={sources_query}"]).splitlines()
+    source_paths = {label[2:].replace(":", "/", 1): label for label in sources if label.startswith("//")}
+    if not changed_paths or not set(changed_paths) <= source_paths.keys():
+        record["reason"] = "change includes inputs outside the declared implementation owners"
+        return labels, record
+    changed_labels = " ".join(json.dumps(source_paths[path]) for path in changed_paths)
+    owners_query = temp_dir / "contract-owners-query.txt"
+    owners_query.write_text(f'kind(".* rule", rdeps(//..., set({changed_labels}), 1))\n')
+    changed_owners = _capture(["bazel", "query", f"--query_file={owners_query}"]).splitlines()
+    if not changed_owners or not set(changed_owners) <= set(policy["implementations"]):
+        record["reason"] = "change has an unaccounted direct source owner"
+        return labels, record
+    required = " ".join(json.dumps(label) for label in policy["requires"])
+    required_query = temp_dir / "contract-required-query.txt"
+    required_query.write_text(
+        f'let required = tests(set({required})) in $required except attr("tags", '
+        f"{json.dumps(_CI_EXCLUDED_TEST_TAGS)}, $required)\n"
+    )
+    required_tests = _capture(["bazel", "query", f"--query_file={required_query}"]).splitlines()
+    if set(required_tests) != set(policy["requires"]):
+        raise ValueError("Every Agentplane replacement must be an ordinary, runnable test target")
+    removed = sorted(set(labels) & set(policy["replaces"]))
+    candidate = sorted((set(labels) - set(removed)) | set(required_tests))
+    record.update(eligible=True, owners=sorted(changed_owners), replaced_labels=removed, candidate_labels=candidate)
+    return (candidate if policy["mode"] == "required" else labels), record
+
+
+def _test_targets(temp_dir: Path, labels: list[str]) -> tuple[list[str], list[str]]:
+    if not labels:
+        return [], []
+    # Explicit test labels bypass wildcard expansion. Remove the CI-excluded
+    # tags here too so materializing a test_suite cannot opt into live/manual tests.
+    query = temp_dir / "runnable-tests-query.txt"
+    quoted = " ".join(json.dumps(label) for label in labels)
+    excluded = json.dumps(_CI_EXCLUDED_TEST_TAGS)
+    query.write_text(f'let selected = set({quoted}) in $selected except attr("tags", {excluded}, $selected)\n')
+    targets = temp_dir / "runnable-tests.txt"
+    runnable = _capture(["bazel", "query", f"--query_file={query}"]).splitlines()
+    targets.write_text("".join(f"{label}\n" for label in runnable))
+    return [f"--target_pattern_file={targets}"], runnable
 
 
 def main() -> int:
@@ -375,10 +451,16 @@ def main() -> int:
         try:
             selection = _select_targets(temp_dir)
             test_labels = _capture(["bazel", "query", f"--query_file={selection.test_query}"]).splitlines()
-            test_target_count = len(test_labels)
+            selected_tests, contract_graph = _contract_test_graph(temp_dir, test_labels, selection)
+            submitted_tests: list[str] | None = None
+            if selection.full_sweep:
+                test_targets, test_target_count = selection.targets, len(test_labels)
+            else:
+                test_targets, submitted_tests = _test_targets(temp_dir, selected_tests)
+                test_target_count = len(submitted_tests)
             selection_snapshot = temp_dir / "selected-test-labels.json"
             try:
-                _write_selected_test_labels(selection_snapshot, test_labels, selection)
+                _write_selected_test_labels(selection_snapshot, test_labels, selection, contract_graph, submitted_tests)
             except OSError as exc:
                 logger.warning("Could not write selected-test label snapshot; continuing without it: %s", exc)
                 selection_snapshot = None
@@ -388,16 +470,20 @@ def main() -> int:
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
             else:
-                test_rc = _run_bazel("test", role="test", targets=selection.targets, check=False).returncode
-                if test_rc == 4 and not selection.full_sweep:
+                test_rc = _run_bazel("test", role="test", targets=test_targets, check=False).returncode
+                required_contracts = (
+                    contract_graph is not None and contract_graph["eligible"] and contract_graph["mode"] == "required"
+                )
+                if test_rc == 4 and not selection.full_sweep and not required_contracts:
                     print("No runnable tests after tag filtering in the affected set; continuing to build.")
                     test_rc = 0
                 if test_rc != 0:
                     return test_rc
                 _probe("after-test")
 
-            _run_bazel("build", role="build", targets=selection.targets)
-            _probe("after-build")
+            if selection.targets:
+                _run_bazel("build", role="build", targets=selection.targets)
+                _probe("after-build")
             return 0
         finally:
             _finalize_probe(selection_snapshot)

@@ -8,7 +8,9 @@ from contextlib import asynccontextmanager, suppress
 
 
 @asynccontextmanager
-async def history_tunnel(target: str) -> AsyncIterator[str]:
+async def history_tunnel(
+    target: str, *, listen_host: str = "127.0.0.1", advertised_host: str | None = None
+) -> AsyncIterator[str]:
     """Forward one exact CONNECT authority to History while leaving TLS end to end."""
     tasks: set[asyncio.Task[None]] = set()
     host, port = target.rsplit(":", 1)
@@ -52,9 +54,9 @@ async def history_tunnel(target: str) -> AsyncIterator[str]:
         tasks.add(task)
         task.add_done_callback(tasks.discard)
 
-    server = await asyncio.start_server(accept, "127.0.0.1", 0)
+    server = await asyncio.start_server(accept, listen_host, 0)
     try:
-        yield f"127.0.0.1:{server.sockets[0].getsockname()[1]}"
+        yield f"{advertised_host or listen_host}:{server.sockets[0].getsockname()[1]}"
     finally:
         server.close()
         await server.wait_closed()

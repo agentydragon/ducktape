@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "source_revision": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+  "base_revision": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+  "provenance": {
+    "current_required_query": {
+      "source_revision": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+      "base_revision": "6c5f5362e1d261f93c8a1c22a254c3f1c3e2c0ca",
+      "identifier": "bdd13729-c69a-4197-888a-9e5ab1fb3d0a"
+    },
+    "candidate_query": {
+      "source_revision": "220e6a5a732656f6359234b99d92ae8635f77a6b",
+      "identifier": "bdd13729-c69a-4197-888a-9e5ab1fb3d0a"
+    }
+  },
+  "current_required_test_targets": [
+    "//agentplane/system_tests/suites:test_pod",
+    "//agentplane/system_tests/suites:test_vm",
+    "//agentplane/system_tests/suites/mcp:test_services"
+  ],
+  "original_target": "//agentplane/system_tests/suites/mcp:test_services",
+  "candidate_targets": [
+    "//agentplane/system_tests/suites/mcp:test_services_mcp_candidate",
+    "//agentplane/system_tests/suites/mcp:test_services_central_candidate"
+  ],
+  "selection_scope": "explicit MCP/Pod/VM graph probe, not diff-selected PR gate"
+}

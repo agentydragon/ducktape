@@ -1,0 +1,13 @@
+[Unit]
+Description=Verify the VM fixture's guest boot contract
+Requires=local-fs.target
+After=local-fs.target systemd-user-sessions.service agentplane-home-prepare.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/agentplane-direct-vm-boot-probe
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

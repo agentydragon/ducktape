@@ -8,6 +8,11 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
+exports_files(
+    ["ci_contracts.json"],
+    visibility = ["//devinfra/ci:__pkg__"],
+)
+
 py_library(
     name = "conftest",
     testonly = True,

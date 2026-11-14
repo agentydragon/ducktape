@@ -74,6 +74,7 @@ K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _CENTRAL_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central.json"
+_CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
@@ -133,6 +134,10 @@ _VM_GUEST_ROOT_IMAGE = {
 _VM_GUEST_ROOT_PROFILE_IMAGE = {
     "//agentplane/system_tests/vm/guest:root_profile_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset",
 }
+_VM_GUEST_ROOT_PLATFORM_IMAGE = {
+    # Keep the rendered containerDisk reference; only this manual action's image bytes differ.
+    "//agentplane/system_tests/vm/guest:root_platform_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+}
 _RUNNER_DISK_IMAGE = {
     "//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
@@ -167,9 +172,10 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 _STACKS = {
     "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_services": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
     "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
     "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
@@ -201,7 +207,7 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
@@ -211,6 +217,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("unknown k3s stack: " + stack)
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
+    if platform_guest and (stack != "vm" or profile_guest):
+        fail("platform_guest requires the VM stack and cannot use the profile guest")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
     if shutdown_diagnostic and stack != "vm":
@@ -242,7 +250,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         properties["EstimatedComputeUnits"] = "8"
         if config.vm:
             images["vm"] = _VM_IMAGES
-            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
+            guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_PLATFORM_IMAGE if platform_guest else _VM_GUEST_ROOT_IMAGE
             images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
         else:
             images["guest"] = _FIRECRACKER_GUEST_IMAGES
