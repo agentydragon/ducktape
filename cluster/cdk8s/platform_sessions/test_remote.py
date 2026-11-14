@@ -48,6 +48,16 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
         provider = resource("Deployment", instance)["spec"]
         assert provider["strategy"]["type"] == "Recreate"
         provider_pod = provider["template"]["spec"]
+        container = provider_pod["containers"][0]
+        if instance == "myquest":
+            assert container["resources"]["limits"]["memory"] == "2Gi"
+            assert any(
+                mount["name"] == "shm" and mount["mountPath"] == "/dev/shm" for mount in container["volumeMounts"]
+            )
+            assert next(volume for volume in provider_pod["volumes"] if volume["name"] == "shm")["emptyDir"] == {
+                "medium": "Memory",
+                "sizeLimit": "256Mi",
+            }
         expected_image = remote._provider_image(instance)
         assert provider_pod["containers"][0]["image"] == f"{remote.REGISTRY}/{expected_image}:unset"
         args = provider_pod["containers"][0]["args"]

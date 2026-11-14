@@ -2346,7 +2346,7 @@ spec:
           resources:
             limits:
               cpu: "1"
-              memory: 1Gi
+              memory: 2Gi
             requests:
               cpu: 50m
               memory: 128Mi
@@ -2371,6 +2371,8 @@ spec:
               subPath: state
             - mountPath: /tmp
               name: tmp
+            - mountPath: /dev/shm
+              name: shm
             - mountPath: /var/run/session-recorder-ca
               name: recorder-ca-public
               readOnly: true
@@ -2485,6 +2487,10 @@ spec:
             claimName: platform-sessions-myquest-piraeus
         - emptyDir: {}
           name: tmp
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+          name: shm
         - name: captures
           persistentVolumeClaim:
             claimName: platform-sessions-myquest-captures
