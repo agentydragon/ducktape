@@ -121,7 +121,13 @@ physical executions count. Known managed CPU and requested-CU execution ratios, 
 exposure. Keep these arrangements manual. Next identify the retained namespace deletion holder,
 qualify reliable VM execution/capacity and test prepared disposable infrastructure. The ordinary
 source-plus-BUILD selection and complete-feedback qualification remain required; no roster
-promotion follows from component correctness.
+promotion follows from component correctness. The cleanup observer subsequently identifies a
+branch-introduced idle PID 1 that ignores TERM and consumes its full 30-second Pod grace. The
+corrected client exits promptly on normal TERM; one retained fixture's cleanup falls from
+65.057s to 26.884s with unchanged cleanup/grace assertions. Three ordinary recovery scenarios
+pass on App-free fixtures. Keep the History-outage suite App-backed: its attempted migration
+exposes an explicit App-Pod-stability assertion. Measure these implemented changes as one
+complete graph before deciding on further environment work or promotion.
 [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
 Do not expand a global replacement list just to make more historical PRs
 eligible. Implementation-plus-owner-test changes must be accounted
