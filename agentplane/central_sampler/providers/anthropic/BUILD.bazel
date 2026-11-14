@@ -25,6 +25,7 @@ go_library(
     ],
     deps = [
         "//agentplane/central_sampler/internal/content",
+        "//agentplane/central_sampler/internal/providerio",
         "//agentplane/central_sampler/protocol",
         "//agentplane/proto:event_go_proto",
     ],
@@ -41,6 +42,7 @@ go_test(
     race = "on",
     deps = [
         "//agentplane/central_sampler/internal/content",
+        "//agentplane/central_sampler/internal/providerio",
         "//agentplane/central_sampler/protocol",
         "//agentplane/proto:event_go_proto",
     ],

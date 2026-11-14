@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
@@ -514,13 +515,13 @@ func TestAnthropicSemanticProgressResetsIdleBudget(t *testing.T) {
 	defer server.Close()
 
 	var progress atomic.Int32
-	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 70*time.Millisecond, func(context.Context) error {
 		progress.Add(1)
 		return nil
 	})
 	defer stop()
 	recorder := &anthropicEvidenceRecorder{}
-	response, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
+	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), 250*time.Millisecond), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -558,13 +559,13 @@ func TestAnthropicPingsAndEmptyDeltasDoNotResetIdleBudget(t *testing.T) {
 	defer server.Close()
 
 	var progress atomic.Int32
-	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 45*time.Millisecond, func(context.Context) error {
 		progress.Add(1)
 		return nil
 	})
 	defer stop()
 	recorder := &anthropicEvidenceRecorder{}
-	_, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
+	_, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, false, hooks)
 	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 		t.Fatalf("ping-only stream error=%v, want semantic-idle timeout", err)
@@ -591,10 +592,10 @@ func TestAnthropicCompactionUsesProviderPhaseHooks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	ctx, hooks, stop := protocol.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond, nil)
+	ctx, hooks, stop := providerio.WithProviderIdleTimeout(t.Context(), 120*time.Millisecond, nil)
 	defer stop()
 	recorder := &anthropicEvidenceRecorder{}
-	response, err := Sample(ctx, protocol.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
+	response, err := Sample(ctx, providerio.WithProviderResponseHeaderTimeout(server.Client(), time.Second), server.URL, "fixture-key", testConfig(), []byte(`{}`), recorder, true, hooks)
 	if err != nil {
 		t.Fatal(err)
 	}

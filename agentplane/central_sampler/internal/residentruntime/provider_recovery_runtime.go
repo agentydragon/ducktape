@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -235,11 +236,11 @@ func (r *Runtime) sampleProvider(ctx context.Context, owner sessionstore.Owner, 
 	if err != nil {
 		return nil, r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	client = protocol.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
+	client = providerio.WithProviderResponseHeaderTimeout(client, r.settings.ProviderResponseHeaderTimeout())
 	if compact || connection.TLS != nil {
 		defer client.CloseIdleConnections()
 	}
-	providerCtx, hooks, stop := protocol.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), r.providerProgress(owner, intentID))
+	providerCtx, hooks, stop := providerio.WithProviderIdleTimeout(ctx, r.settings.ProviderIdleTimeout(), r.providerProgress(owner, intentID))
 	defer stop()
 	result, err := adapter.Sample(providerCtx, client, connection, wire, &sessionstore.ResponseEvidence{Store: r.store, Owner: owner, IntentID: intentID},
 		providerAttribution{SessionID: metadata.SessionID, Identity: identity}, compact, hooks)

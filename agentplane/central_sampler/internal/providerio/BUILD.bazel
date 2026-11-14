@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
+
+go_library(
+    name = "providerio",
+    srcs = [
+        "errors.go",
+        "timeouts.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio",
+    deps = [
+        "//agentplane/central_sampler/protocol",
+    ],
+)
+
+go_test(
+    name = "providerio_test",
+    srcs = ["providerio_test.go"],
+    embed = [":providerio"],
+    deps = [
+        "//agentplane/central_sampler/protocol",
+    ],
+)

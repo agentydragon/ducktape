@@ -1,4 +1,4 @@
-package protocol
+package providerio
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 func TestProviderResponseHeaderTimeoutCoversHeaderWait(t *testing.T) {
@@ -26,8 +28,8 @@ func TestProviderResponseHeaderTimeoutCoversHeaderWait(t *testing.T) {
 		_ = response.Body.Close()
 		t.Fatal("received response headers from a stalled provider")
 	}
-	var timeout *ProviderPhaseTimeoutError
-	if !errors.As(err, &timeout) || timeout.Phase != ProviderTimeoutResponseHeader {
+	var timeout *protocol.ProviderPhaseTimeoutError
+	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutResponseHeader {
 		t.Fatalf("response-header error=%v, want typed response-header timeout", err)
 	}
 	select {
@@ -54,8 +56,8 @@ func TestProviderResponseHeaderTimeoutBoundsBlockedRequestBody(t *testing.T) {
 		_ = response.Body.Close()
 		t.Fatal("received response headers while the request body was blocked")
 	}
-	var timeout *ProviderPhaseTimeoutError
-	if !errors.As(err, &timeout) || timeout.Phase != ProviderTimeoutResponseHeader {
+	var timeout *protocol.ProviderPhaseTimeoutError
+	if !errors.As(err, &timeout) || timeout.Phase != protocol.ProviderTimeoutResponseHeader {
 		t.Fatalf("blocked request-body error=%v, want typed response-header timeout", err)
 	}
 	select {
@@ -143,7 +145,7 @@ func TestProviderTransportErrorsBeforeRequestWriteAreNotHeaderTimeouts(t *testin
 	want := errors.New("fixture connection failure")
 	client := &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) { return nil, want })}
 	_, err := WithProviderResponseHeaderTimeout(client, time.Second).Get("https://fixture.invalid")
-	var timeout *ProviderPhaseTimeoutError
+	var timeout *protocol.ProviderPhaseTimeoutError
 	if !errors.Is(err, want) || errors.As(err, &timeout) {
 		t.Fatalf("pre-write transport error=%v, want original connection failure", err)
 	}
@@ -175,7 +177,7 @@ func TestProviderResponseHeaderTimeoutPreservesCallerCancellationCause(t *testin
 	cancel(want)
 	select {
 	case err := <-responseErr:
-		var timeout *ProviderPhaseTimeoutError
+		var timeout *protocol.ProviderPhaseTimeoutError
 		if !errors.Is(err, want) || errors.As(err, &timeout) {
 			t.Fatalf("caller cancellation error=%v, want original cause without phase timeout", err)
 		}
@@ -196,8 +198,8 @@ func TestProviderIdleTimeoutStartsAtDurableHeadAndResetsOnProgress(t *testing.T)
 		hooks.ResponseHeadRecorded()
 		select {
 		case <-ctx.Done():
-			var timeout *ProviderPhaseTimeoutError
-			if !errors.As(context.Cause(ctx), &timeout) || timeout.Phase != ProviderTimeoutSemanticIdle {
+			var timeout *protocol.ProviderPhaseTimeoutError
+			if !errors.As(context.Cause(ctx), &timeout) || timeout.Phase != protocol.ProviderTimeoutSemanticIdle {
 				t.Fatalf("idle cancellation cause=%v, want typed semantic-idle timeout", context.Cause(ctx))
 			}
 		case <-time.After(time.Second):
@@ -231,7 +233,7 @@ func TestProviderProgressCallbackFailureHasDistinctType(t *testing.T) {
 	defer stop()
 	hooks.ResponseHeadRecorded()
 	err := hooks.Progress(ctx)
-	var progressErr *ProviderProgressError
+	var progressErr *protocol.ProviderProgressError
 	if !errors.As(err, &progressErr) || !errors.Is(err, want) {
 		t.Fatalf("progress callback error=%v, want distinct wrapped journal failure", err)
 	}
@@ -240,7 +242,7 @@ func TestProviderProgressCallbackFailureHasDistinctType(t *testing.T) {
 func TestProviderTransportClassificationAndRetryAfter(t *testing.T) {
 	want := errors.New("fixture connection reset")
 	classified := ProviderTransportError(context.Background(), want)
-	var transient *ProviderTransientError
+	var transient *protocol.ProviderTransientError
 	if !errors.As(classified, &transient) || !errors.Is(classified, want) {
 		t.Fatalf("transport error=%v, want typed transient wrapping the cause", classified)
 	}
@@ -262,7 +264,7 @@ func TestProviderTransportClassificationAndRetryAfter(t *testing.T) {
 }
 
 func TestProviderEvidenceAndCallerCancellationAreNotTransient(t *testing.T) {
-	persistence := &ProviderEvidencePersistenceError{Cause: errors.New("database unavailable")}
+	persistence := &protocol.ProviderEvidencePersistenceError{Cause: errors.New("database unavailable")}
 	if got := ProviderTransportError(context.Background(), persistence); got != persistence {
 		t.Fatalf("evidence persistence failure was classified as transport: %v", got)
 	}
@@ -272,7 +274,7 @@ func TestProviderEvidenceAndCallerCancellationAreNotTransient(t *testing.T) {
 	if got := ProviderTransportError(ctx, cause); !errors.Is(got, context.Canceled) {
 		t.Fatalf("caller cancellation changed classification: %v", got)
 	} else {
-		var transient *ProviderTransientError
+		var transient *protocol.ProviderTransientError
 		if errors.As(got, &transient) {
 			t.Fatalf("caller cancellation became provider-transient: %v", got)
 		}
