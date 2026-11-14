@@ -1,7 +1,7 @@
 {
   "nov12_later_followup": {
     "observed_through_utc": "2026-11-12T22:55:00Z",
-    "scope": "Selected post-window investigations. Original 5\u201312 November populations, denominators, rates and source pin were not recollected.",
+    "scope": "Selected post-window investigations. Original 5–12 November populations, denominators, rates and source pin were not recollected.",
     "oom": {
       "implementation_pr": "https://github.com/agentydragon/ducktape/pull/15897",
       "status": "merged",
@@ -236,7 +236,7 @@
   "pr_head_checks_final_24h": {
     "window_utc": ["2026-11-11T07:20:00Z", "2026-11-12T07:20:00Z"],
     "collected_at_utc": "2026-11-12T07:46:51Z",
-    "method": "159 observed distinct exact PR heads in the final 24-hour Actions snapshot after trusted-fork workflow linkage, including heads superseded later; each row records that observed head\u2019s latest visible required-gate outcome.",
+    "method": "159 observed distinct exact PR heads in the final 24-hour Actions snapshot after trusted-fork workflow linkage, including heads superseded later; each row records that observed head’s latest visible required-gate outcome.",
     "required_gates": [
       "bazel-ci / Test & Build",
       "Pre-commit checks",
@@ -724,12 +724,12 @@
       "target": "//agentplane/app:test_thread_window_browser",
       "invocation": "https://app.buildbuddy.io/invocation/b48eb4c8-d3bc-54cb-be56-3b66759cc62c",
       "source_assertion": "agentplane/app/test_thread_window_browser.py:193",
-      "observation": "After appending items 130\u2013164, projection cursor 334 remained absent after 30 seconds (63 zero-result polls); three runner-connection UNAVAILABLE warnings named a Gateway replica.",
+      "observation": "After appending items 130–164, projection cursor 334 remained absent after 30 seconds (63 zero-result polls); three runner-connection UNAVAILABLE warnings named a Gateway replica.",
       "limit": "The observations do not prove the Gateway warnings caused the missing projection cursor, and do not unite this failure with a separate thread-browser scenario."
     }
   },
   "prior_inventory_dispositions": {
-    "older_vm_and_application_failures": "The 30 Oct\u20131 Nov 5/45 VM failures and 3\u201310 Nov #15493 observations keep their original windows. #15741 confirms a shared-cgroup server-loss mechanism for that incident only; it does not reclassify older guest stalls, TSC restore errors, supervision proof timeouts, or outer test deadlines.",
+    "older_vm_and_application_failures": "The 30 Oct–1 Nov 5/45 VM failures and 3–10 Nov #15493 observations keep their original windows. #15741 confirms a shared-cgroup server-loss mechanism for that incident only; it does not reclassify older guest stalls, TSC restore errors, supervision proof timeouts, or outer test deadlines.",
     "landed_fixes_unmeasured": [
       "#12702 SQLite journal repair",
       "#12896 bounded Bazel action retry",
@@ -1986,9 +1986,9 @@
         "issue_number": 16032,
         "issue_url": "https://github.com/agentydragon/ducktape/issues/16032",
         "status": "Controlled auth timeout localized; natural cause open",
-        "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+        "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
         "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-        "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+        "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
         "prs": [
           {
             "label": "PR #16053: merged; all three required checks green",
@@ -2153,7 +2153,7 @@
             "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
           },
           {
-            "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
+            "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
             "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
           }
         ]
@@ -4306,7 +4306,7 @@
       "Pre-commit checks",
       "Build artifacts + imports check"
     ],
-    "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records.",
+    "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records.",
     "limits": [
       "All 766 search records were paginated below the 1000-result cap, and files/head metadata were fetched in 39 batches; all six >100-file PRs were paginated completely. Filtering baseRefName=devel leaves a 719-PR frame. Five eligible backend candidates lacked an in-window first workflow clock; see exclusions.",
       "One latest observed head per PR: superseded earlier heads are absent. This cannot estimate all-push success, cancellation or flake rates. Later mutations can change current GitHub state.",
@@ -4320,7 +4320,7 @@
   },
   "architecture_followup": {
     "observed_at_utc": "2026-11-13T15:58:33Z",
-    "scope": "Selected observer-recovery, listener-race and post-merge measurement follow-up. The retained 5\u201312 November population, source pin, denominators and rates are unchanged.",
+    "scope": "Selected observer-recovery, listener-race and post-merge measurement follow-up. The retained 5–12 November population, source pin, denominators and rates are unchanged.",
     "outer_log_observer": {
       "tracking_issue": "https://github.com/agentydragon/ducktape/issues/13270",
       "related_inner_execution_issue": "https://github.com/agentydragon/ducktape/issues/16025",
@@ -4422,5 +4422,13 @@
     "observed_at_utc": "2026-11-14T00:31:06Z",
     "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
     "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
+  },
+  "architecture_iteration12": {
+    "evidence_file": "../agentplane-test-architecture/iteration12.json",
+    "evidence_sha256": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
+    "observed_at_utc": "2026-11-14T02:32:12.581846+00:00",
+    "source_head": "417b6428baeae93116fb293a782120664a754697",
+    "source_base": "61fff5940585974df89ad1b2f4222c403814925d",
+    "scope": "Supplemental image screen, direct private-systemd controls and merged-port status. Original fleet populations, windows, source pins, rates and denominators unchanged."
   }
 }

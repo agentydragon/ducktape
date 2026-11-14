@@ -196,6 +196,7 @@
         const iteration9 = data?.iteration9;
         const iteration10 = data?.iteration10;
         const iteration11 = data?.iteration11;
+        const iteration12 = data?.iteration12;
         const iteration8 = data?.iteration8;
         const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
@@ -839,12 +840,12 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
-              >Iteration 11 · 4bfabd5: all three required checks passed<//
+              >Iteration 12 · 417b6428: all three required checks passed<//
             ><${Badge} color="orange">devel merge gate unchanged<//
             ><${Badge} color="gray">Iterations 2–8 retained below<//><//
           >
           <${Text} size="sm"
-            >${iteration11 ? "Current PR #16102 head 4bfabd5 passed all three required checks, but its 139.276s selected/cached Bazel invocation (tested merge c5a0272, devel parent 0479dfc9) is not a matched saving and no current-head full physical/JUnit cohort is curated. A fixed-source historical graph replay reduced native invocation mean by 17.4% with known CPU up 5.4%; this does not establish complete feedback or gate qualification. One real one-VM platform proof passes without a speed or equivalence claim. The storage-readiness controls preserve the full case. The required devel gate remains unchanged." : "Current source evidence is loading; no result is inferred while it is unavailable."}<//
+            >${iteration12 ? "The smaller platform root removes 26.2% of EROFS bytes, with a 4.0% physical reduction in one serial pair. The direct guest now owns an additional private-systemd proof and rejects an omitted fixture. Both independent diagnostic/coverage ports have landed. All three final-head required checks passed; promotion and complete-feedback qualification remain open." : "Current source evidence is loading; no result is inferred."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -854,7 +855,8 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration11", "Iteration 11 current evidence"],
+              ["iteration12", "Iteration 12 current evidence"],
+              ["iteration11", "Iteration 11 historical evidence"],
               ["iteration10", "Iteration 10 history"],
               ["iteration9", "Iteration 9 snapshot · 8a555"],
               ["iteration8", "Iteration 8 snapshot · 0a9"],
@@ -876,16 +878,54 @@
             )}
           <//>
           <${Alert} color="yellow" title="Current architecture evidence">
-            PR #16102 head 4bfabd5 is still a draft and is not merged. All three
-            required checks completed SUCCESS; its selected/cached Bazel run is
-            not a matched speed result, and no current-head full physical/JUnit
-            cohort is curated. The manual one-VM proof has separate source and
-            patch provenance. Existing devel gates and test frequency remain
-            unchanged.
+            Draft PR #16102 is rebased at 417b6428. All three required checks
+            passed at this exact head. The native invocation completed in
+            402.905s; it is not a matched savings measurement. Manual
+            replacement targets have not replaced a required owner. No
+            complete-feedback or reliability-rate improvement is claimed.
+          <//>
+          <${Section}
+            id="iteration12"
+            title="Iteration 12: smaller guest, private systemd proof and landed ports"
+          >
+            ${p("Reviewed source 417b6428baeae93116fb293a782120664a754697 is rebased onto devel 61fff5940585974df89ad1b2f4222c403814925d. All three required checks passed at pre-rebase fa9094; all three final-head required checks have passed. No required owner or test frequency moved. This selected update leaves the historical fleet windows and denominators unchanged.")}
+            <${Rows}
+              headers=${["Same-source image screen", "Full root A", "Codex-only root B"]}
+              rows=${[
+                ["EROFS bytes", "553,885,696", "408,961,024 (26.2% less)"],
+                ["Guest image import", "43.766s", "20.116s"],
+                ["Physical test execution", "277.495s", "266.409s (4.0% less)"],
+                ["Sandbox readiness", "99.747s", "136.646s"],
+              ]}
+            />
+            ${p("One serial B/A pair at literal cdad46e756 passes one NEW physical action and one nonempty JUnit case per arm. Both import the changed root over a warm compatible baseline. The 23.650s import reduction coincides with slower readiness, leaving only 11.086s less physical execution. Different workers and one pair establish neither whole-CI savings, p90 nor a causal CPU reduction. The ordinary roots retain both CLIs. A rejected root without either CLI cannot start embedded Execution, which still needs Codex; its 75.4% byte reduction is unusable.")}
+            <${Title} order=${3}>Private proof in the existing direct guest<//>
+            ${p("The direct Claude guest now runs the same real private systemd fixture before authenticated readiness, within its unchanged 120s QEMU lifetime. It checks the exact serial receipt, Go parent pass, and result file after teardown restores host ownership. The first host read failed on intentional guest-state privacy; no permissions were relaxed to repair it. Both Session turns, exact History, setup budgets and descendant fencing, real CLI routes, credential revocation and cleanup remain.")}
+            ${p("At literal fa9094, a fresh healthy run passes one JUnit case and all 11 private Go children (parent 12.15s). Omitting only the fixture kernel argument starts Runtime but produces no receipt or parent pass. The unchanged receipt wait is rejected by the existing guest bound; container removal, ownership restoration and listener cleanup succeed on both paths. This proves omission sensitivity, not a mutation of an individual private invariant, a performance comparison or a reliability rate.")}
+            <${Title} order=${3}>Independent changes have landed<//>
+            ${p("PR #16316 archives the existing pre-tag query labels and source/workflow identity without changing selection or verdicts. Its required checks passed with 2,032 cached test runs and zero fresh runs. PR #16317 adds real Sampler TokenReview negatives, History outage, contiguous backfill and next input; its required checks include one NEW physical integration action (31.900s; pytest run 19.46s). Both merged into devel at 02:15 UTC on November 14. Neither claims a latency reduction.")}
+            <${Title} order=${3}>Next implementation and stopping criteria<//>
+            ${p("Assign private-systemd ownership to the candidate graph, then measure removing its duplicate from the manual deployed readiness path. Seed remaining launcher/mount and issuer/Pod-binding defects before promotion. Measure the combined graph with both packaged guests, Pod, MCP Services and every selected target: those other tails can erase an isolated VM gain. Keep the full VM and OOM gates until qualification. The 45s exhaustion budget changes duration coverage; Bridge eight shards cost more CPU; concurrency, kubelet cadence and smaller-root composition remain experiments. Thirty qualified pairs, 100 fresh contract executions, three busy windows and a four-PR burst remain outstanding; diminishing returns have not been established.")}
+            <${Group} gap="md">
+              <${Anchor} href="iteration12.json"
+                >Reviewed measurements and provenance<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/blob/417b6428baeae93116fb293a782120664a754697/agentplane/plans/fast_ci.md"
+                >Concrete source plan<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >Follow-up tracker<//
+              >
+              <${Anchor} href="visual-validation.json"
+                >Separate presentation proof<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration11"
-            title="Iteration 11: fixed-source graph evidence and one-VM readiness"
+            title="Historical iteration 11: fixed-source graph evidence and one-VM readiness"
           >
             ${p("PR #16102 head 4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2 is a draft, not merged. All three required checks are SUCCESS; native invocation 83623e77-87b6-5ebb-a2e9-3bc5a9215589 completed in 139.276s. This selected/cached CI result is not a matched saving, and no full physical/JUnit cohort is curated for this exact head. The devel required gate and test frequency remain unchanged.")}
             ${p("The fixed-source 376f8ae A/B/B/A replay covers the historical 2196229 label population. Four native invocations average 442.484s for baseline and 365.475s for candidate: 77.009s (17.4%) lower native elapsed, with known test CPU 5.4% higher. All 562 unique NEW physical tests have nonempty JUnit (4,118 case exposures), zero failures/errors/skips/retries, and matching unchanged case identities; the Pod partition is the exact disjoint 5+16 union of 21 cases. Only 14 new candidate contract launches were observed. One Firecracker CPU and its queue clock are unknown in each arm.")}

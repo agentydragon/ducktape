@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-14T02:32:12.581846+00:00",
+  "scope": "Supplemental architecture, private-supervision control, and independent port status. Historical latency and reliability populations, source pins, windows, rates, and denominators are unchanged.",
+  "source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "pull_request": 16102,
+    "pull_request_url": "https://github.com/agentydragon/ducktape/pull/16102",
+    "source_base": "61fff5940585974df89ad1b2f4222c403814925d",
+    "reviewed_source": "417b6428baeae93116fb293a782120664a754697",
+    "current_experiment_source": "fa9094cd8ad82ec9ac4f7496ab864e50cf9767f3",
+    "required_checks": {
+      "tested_source": "fa9094cd8ad82ec9ac4f7496ab864e50cf9767f3",
+      "status": "All three required checks passed on fa9094 before rebase.",
+      "current_source": "417b6428baeae93116fb293a782120664a754697",
+      "current_source_status": "All three required checks SUCCESS at exact head 417b6428.",
+      "limit": "Final required CI passed; these are correctness checks, not a matched savings comparison or a curated full physical/JUnit cohort.",
+      "current_test_invocation_id": "33f8206d-c7d5-53cd-8593-dd322ac96463",
+      "current_tested_merge_sha": "176f617bc958387fb23008b59fc47102c1f88908",
+      "current_native_elapsed_seconds": 402.905
+    },
+    "rebase_audit": {
+      "previous_head": "e5849f1926e81a29817d7444d1b4fef5e821dd57",
+      "new_base": "61fff5940585974df89ad1b2f4222c403814925d",
+      "new_head": "417b6428baeae93116fb293a782120664a754697",
+      "upstream_changed_paths": 69,
+      "merged_port_overlap_paths": 8,
+      "overlap_paths_byte_identical_to_merged_ports": true,
+      "unexpected_branch_changes": [],
+      "upstream_drift": []
+    },
+    "source_note": "https://github.com/agentydragon/ducktape/blob/417b6428baeae93116fb293a782120664a754697/agentplane/system_tests/debug/test_architecture_iteration8.md",
+    "source_artifacts": {
+      "platform_image_screen": {
+        "url": "https://github.com/agentydragon/ducktape/blob/417b6428baeae93116fb293a782120664a754697/agentplane/system_tests/debug/test_architecture_platform_image_screen.json",
+        "sha256": "2a6c99da1db7734a7e3d13c697d840c2c0b9cd6b387b5028d0e68c70554131ed"
+      },
+      "direct_private_systemd": {
+        "url": "https://github.com/agentydragon/ducktape/blob/417b6428baeae93116fb293a782120664a754697/agentplane/system_tests/debug/test_architecture_direct_private_systemd.json",
+        "sha256": "d42030b68ffe30646f12df4bd0468ff3ea3327fc13320cd821c7078c377f9ff8"
+      },
+      "iteration8_note_sha256": "fff9b7db9ff1a18cdac005ee7c0c4207ce046e8aa4692d2abf3a75a518e2a2d1"
+    }
+  },
+  "rejected_no_harness_root": {
+    "source": "1279151f658f3047ac6969065b746f391ba5d442",
+    "invocation_id": "77131353-d653-42c5-ae07-7fc064d0dc53",
+    "url": "https://app.buildbuddy.io/invocation/77131353-d653-42c5-ae07-7fc064d0dc53",
+    "outcome": "TESTS_FAILED",
+    "native_elapsed_seconds": 612.107,
+    "physical_execution_seconds": 495.851285,
+    "junit": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "failure": "Removing both Codex and Claude fails readiness: embedded Execution still starts Codex, and systemd exits with status 203.",
+    "disposition": "Rejected; the large root reduction is unusable."
+  },
+  "codex_only_platform_root": {
+    "source": "cdad46e75623a058c9bb19aaac7147c840542cca",
+    "same_test_body_and_rendered_reference": true,
+    "arm_order": ["reduced-root B", "full-root A"],
+    "root_artifacts": {
+      "full_root_bytes": 553885696,
+      "codex_only_root_bytes": 408961024,
+      "bytes_removed": 144924672,
+      "percent_removed": 26.165086595773,
+      "scope": "EROFS artifact size; the reduced root retains Codex and omits Claude only."
+    },
+    "full_root_A": {
+      "invocation_id": "c0214fb8-fdc9-4a6b-aded-90e1d95a7f1e",
+      "url": "https://app.buildbuddy.io/invocation/c0214fb8-fdc9-4a6b-aded-90e1d95a7f1e",
+      "outcome": "SUCCESS",
+      "native_elapsed_seconds": 439.855,
+      "physical_execution_seconds": 277.495317,
+      "reported_test_cpu_seconds": 798.615295,
+      "guest_image_import_seconds": 43.765721,
+      "sandbox_readiness_seconds": 99.746666,
+      "nonempty_junit_cases": 1,
+      "failures_errors_skips_retries": 0
+    },
+    "codex_only_root_B": {
+      "invocation_id": "1d9fe58a-84bb-4867-94dd-904407c843ed",
+      "url": "https://app.buildbuddy.io/invocation/1d9fe58a-84bb-4867-94dd-904407c843ed",
+      "outcome": "SUCCESS",
+      "native_elapsed_seconds": 411.886,
+      "physical_execution_seconds": 266.409347,
+      "reported_test_cpu_seconds": 538.15723,
+      "guest_image_import_seconds": 20.115867,
+      "sandbox_readiness_seconds": 136.645956,
+      "nonempty_junit_cases": 1,
+      "failures_errors_skips_retries": 0
+    },
+    "observed_deltas": {
+      "physical_execution_seconds": -11.08597,
+      "physical_execution_percent": -3.99508,
+      "image_import_seconds": -23.649854,
+      "sandbox_readiness_seconds": 36.89929
+    },
+    "controls_and_limits": [
+      "One serial pair on different workers; both arms used a warm compatible baseline, imported the changed root, had layers_in_memory=false, and completed cleanup.",
+      "The 23.650s import reduction coincided with 36.899s slower readiness in B. The observed 11.086s physical reduction is not a causal CPU estimate or whole-CI saving.",
+      "One nonempty JUnit case per arm does not establish p90, reliability, full-gate coverage, branch-versus-devel feedback, or test-graph qualification."
+    ]
+  },
+  "direct_private_systemd_proof": {
+    "source_before_rebase": "4ff7cf51e6d4eea7c20c8e02f1e3871c5aa7945c",
+    "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+    "invocation_id": "6112d945-2813-4f3c-8a38-86b72a0d561e",
+    "url": "https://app.buildbuddy.io/invocation/6112d945-2813-4f3c-8a38-86b72a0d561e",
+    "outcome": "SUCCESS",
+    "new_physical_actions": 1,
+    "physical_execution_seconds": 188.694214,
+    "native_elapsed_seconds": 224.093,
+    "reported_test_cpu_seconds": 309.78432,
+    "nonempty_junit_cases": 1,
+    "private_go_parent": "TestSystemdKernelFixture",
+    "private_go_parent_pass_seconds": 17.35,
+    "private_go_child_passes": 11,
+    "exact_private_serial_receipt": true,
+    "result_file_verified_after_host_owner_restoration": true,
+    "qemu_lifetime_bound_seconds": 120,
+    "retained_assertions": [
+      "Authenticated Runtime and same boot identity.",
+      "Two real packaged Claude turns with exact command IDs and contiguous sourced History.",
+      "Workspace marker round-trip, native supervision, and setup-descendant fencing.",
+      "Real Egress and Notification CLI routes and credential revocation.",
+      "Container removal, listener closure, and state ownership restoration."
+    ],
+    "failed_host_assertion_attempt": {
+      "source": "cf571675141cd5880039c0c436415a914d081fe0",
+      "invocation_id": "cd86c86f-275a-4908-a88c-b24099e9bfa6",
+      "outcome": "TESTS_FAILED",
+      "failure": "Guest private checks passed, but a host-side result-file read raised PermissionError while the guest owned the state.",
+      "repair": "Require the exact serial receipt and Go parent pass before readiness; read the result after teardown restores host ownership. No permissions or lifetime were relaxed."
+    },
+    "limit": "One manual direct-guest correctness proof; it does not prove KubeVirt scheduling, PVC lifecycle, performance, coverage transfer, or a reliability rate. No required owner moved."
+  },
+  "same_source_private_receipt_control": {
+    "source": "fa9094cd8ad82ec9ac4f7496ab864e50cf9767f3",
+    "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+    "environment_control": "DIRECT_VM_OMIT_PRIVATE_SUPERVISION_CONTROL=1",
+    "change_under_test": "Omit only the guest kernel argument that starts the private supervision fixture; keep the receipt and parent-pass assertions unchanged.",
+    "omitted_control": {
+      "invocation_id": "8c097f7b-302a-4fc8-b5ca-6ac9b8b7e6c0",
+      "url": "https://app.buildbuddy.io/invocation/8c097f7b-302a-4fc8-b5ca-6ac9b8b7e6c0",
+      "outcome": "TESTS_FAILED",
+      "native_elapsed_seconds": 207.436,
+      "new_physical_actions": 1,
+      "physical_execution_seconds": 176.572867,
+      "inner_queue_seconds": 0.059147,
+      "reported_test_cpu_seconds": 124.583857,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "junit_suite_seconds": 147.422,
+        "junit_testcase_seconds": 146.471,
+        "suite_seconds_including_fixtures": 147.422,
+        "testcase_seconds": 146.471
+      },
+      "private_pass_or_fail_marker": false,
+      "private_go_parent_ran": false,
+      "qemu_exit_code": 124,
+      "cleanup": "Container removal succeeded; owner restored to 1000:1000; listener closed without cleanup error."
+    },
+    "healthy_control": {
+      "invocation_id": "6cb56451-51b4-4719-ac77-9f1b4e00ba91",
+      "url": "https://app.buildbuddy.io/invocation/6cb56451-51b4-4719-ac77-9f1b4e00ba91",
+      "outcome": "SUCCESS",
+      "native_elapsed_seconds": 168.422,
+      "new_physical_actions": 1,
+      "physical_execution_seconds": 138.218478,
+      "inner_queue_seconds": 0.058728,
+      "reported_test_cpu_seconds": 235.913499,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "junit_suite_seconds": 114.696,
+        "junit_testcase_seconds": 113.755,
+        "suite_seconds_including_fixtures": 114.696,
+        "testcase_seconds": 113.755
+      },
+      "exact_private_serial_receipt": true,
+      "private_go_parent_pass_seconds": 12.15,
+      "private_go_child_passes": 11,
+      "original_two_turn_history_setup_fence_cli_revocation_assertions": true,
+      "cleanup": "Docker stop returned 143 normally; container removal succeeded; owner restored to 1000:1000; listener closed without cleanup error."
+    },
+    "interpretation": "This same-source positive/omission pair shows the unchanged test rejects absence of the private supervision receipt. The omitted case reaches the existing 120s QEMU bound because the private fixture does not run; this is not an injected defect inside the fixture, a speed comparison, or a reliability-frequency sample.",
+    "same_source_pair_not_timing_comparison": true
+  },
+  "independent_ports": {
+    "selection_archive": {
+      "pull_request": 16316,
+      "url": "https://github.com/agentydragon/ducktape/pull/16316",
+      "head": "04047411b12c8994224a77c5a7534175317e4272",
+      "merge_commit": "99d9c2e30abac3b128abd0d55a0552c251e4cae0",
+      "merged_at_utc": "2026-11-14T02:15:17Z",
+      "required_checks": "All three SUCCESS.",
+      "test_results": "2,032 test runs across 1,988 targets; all cached, zero fresh physical test runs.",
+      "scope": "Pre-tag query-label and provenance diagnostics only; no test-selection policy change and no performance result."
+    },
+    "sampler_auth_history": {
+      "pull_request": 16317,
+      "url": "https://github.com/agentydragon/ducktape/pull/16317",
+      "head": "4f0a12fc1fd89e8756627437bf721e7444622264",
+      "base": "f745226a86dc27ceb84c2aec5fe081ca5ae7739f",
+      "merge_commit": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
+      "merged_at_utc": "2026-11-14T02:15:20Z",
+      "required_checks": "All three SUCCESS.",
+      "focused_target": {
+        "invocation_id": "a5766091-1a83-564f-8e51-b3f1ecc78bdd",
+        "outcome": "SUCCESS",
+        "nonempty_junit_cases": 1,
+        "physical_provenance": "One fresh focused test execution; not a whole-CI latency result.",
+        "pytest_elapsed_seconds": 19.46,
+        "junit": {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "suite_seconds_including_fixtures": 19.468,
+          "testcase_seconds": 19.353
+        }
+      },
+      "execution_seconds": 31.900084,
+      "queue_seconds": 0.011225,
+      "reported_cpu_seconds": 53.168931,
+      "scope": "Two-file Central Sampler authentication and History-outage coverage port; assertions retained."
+    },
+    "other_clear_ports_merged": [
+      16233, 16235, 16241, 16247, 16251, 16252, 16264, 16299
+    ],
+    "limitation": "Merged ports and their focused checks do not change the original fleet rates or establish a test-frequency/pipeline optimization."
+  },
+  "current_limits_and_next_steps": [
+    "No required owner or devel test frequency moved.",
+    "The historical 17.4% graph screen remains a fixed-source historical label replay, not current branch-versus-devel feedback or qualified savings.",
+    "Keep 30 qualified source pairs, 100 fresh contract executions, three busy windows, and a four-PR burst as outstanding qualification work.",
+    "Seed the remaining launcher/mount, issuer/Pod-binding, and kernel-limit controls before transferring any relevant ownership; retain the existing full VM gate.",
+    "Keep the storage-readiness follow-up exposure window 2026-11-14T00:50:49Z through 2026-11-21T00:50:49Z. The test repair does not explain the original controller exit; its cause remains unknown.",
+    "The 45-second budget, Bridge sharding, concurrency, and kubelet options remain experimental tradeoffs, not new clear ports."
+  ],
+  "sources": {
+    "platform_image_screen": "https://github.com/agentydragon/ducktape/blob/417b6428baeae93116fb293a782120664a754697/agentplane/system_tests/debug/test_architecture_platform_image_screen.json",
+    "direct_private_systemd": "https://github.com/agentydragon/ducktape/blob/417b6428baeae93116fb293a782120664a754697/agentplane/system_tests/debug/test_architecture_direct_private_systemd.json",
+    "omitted_receipt_source": "https://github.com/agentydragon/ducktape/commit/fa9094cd8ad82ec9ac4f7496ab864e50cf9767f3",
+    "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+    "privacy": "Only reviewed aggregate results and public provenance are included; raw private logs, identities, and guest artifacts remain private."
+  },
+  "visual_validation": {
+    "evidence_file": "visual-validation.json",
+    "scope": "Separate presentation proof must match the captured HTML, evidence and manifests; it does not establish source coverage, speed or fleet reliability."
+  }
+}
