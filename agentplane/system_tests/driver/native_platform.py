@@ -18,7 +18,6 @@ from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.environment_transport import (
-    GATEWAY_AUDIENCE,
     GATEWAY_PORT,
     GATEWAY_SERVICE,
     GATEWAY_TLS_SERVICE,
@@ -33,6 +32,7 @@ from agentplane.system_tests.driver.tls import service_credentials
 
 DISPATCHER_SERVICE = "session-dispatcher"
 DISPATCHER_AUDIENCE = "session-dispatcher"
+GATEWAY_AUDIENCE = "agentplane-runner-gateway"
 HISTORY_SERVICE = "history-service"
 HISTORY_AUDIENCE = "agentplane-history-service"
 SERVICE_PORT = 8080
@@ -100,8 +100,8 @@ async def native_platform_clients(cluster: Cluster, directory: Path) -> AsyncIte
     dispatcher_token = directory / "dispatcher-token"
     history_token = directory / "history-token"
 
-    # All credentials are bound to the same fixture Pod UID. The gateway token also authorizes
-    # Environment mutations and SandboxControl reads; the other tokens have narrower audiences.
+    # All credentials are bound to the same fixture Pod UID. EnvironmentService shares the
+    # Dispatcher's method audience; the gateway token is only for SandboxControl reads.
     principal = await write_bound_fixture_token(cluster, gateway_token, audience=GATEWAY_AUDIENCE)
     dispatcher_principal = await write_bound_fixture_token(cluster, dispatcher_token, audience=DISPATCHER_AUDIENCE)
     history_principal = await write_bound_fixture_token(cluster, history_token, audience=HISTORY_AUDIENCE)
@@ -114,7 +114,7 @@ async def native_platform_clients(cluster: Cluster, directory: Path) -> AsyncIte
         environment = await opened.enter_async_context(
             EnvironmentServiceClient.connect(
                 gateway_target,
-                token_file=gateway_token,
+                token_file=dispatcher_token,
                 channel_credentials=credentials,
                 server_name=f"{GATEWAY_TLS_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
