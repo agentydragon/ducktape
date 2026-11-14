@@ -36,30 +36,32 @@ def test_controller_settings_are_mounted_and_gateway_token_is_projected(
     settings = yaml.safe_load(config_map["data"][config_path.name])
     Settings.model_validate(settings)
     assert "runner_gateway_token_file" not in settings
+    certificate = _resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
+    certificate_uris = certificate["spec"]["uris"]
+    assert certificate_uris == [SANDBOX_CONTROLLER_URI]
+    cert_mount = one(
+        mount
+        for mount in container["volumeMounts"]
+        if mount["name"] == f"{sandbox_controller.NAME}-client-workload-tls"
+    )
+    cert_path = PurePosixPath(cert_mount["mountPath"])
     assert settings["runner_gateway_tls"] == {
-        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "ca_file": settings["runner_security"]["tls"]["ca_file"],
         "server_uri": SESSION_DISPATCHER_URI,
-        "cert_file": "/run/agentplane/sandbox-controller-client-tls/tls.crt",
-        "key_file": "/run/agentplane/sandbox-controller-client-tls/tls.key",
-        "client_uri": SANDBOX_CONTROLLER_URI,
+        "cert_file": str(cert_path / "tls.crt"),
+        "key_file": str(cert_path / "tls.key"),
+        "client_uri": certificate_uris[0],
     }
     assert settings["runner_security"] == {
         "mode": "mtls",
         "tls": {
-            "cert_file": "/run/agentplane/sandbox-controller-client-tls/tls.crt",
-            "key_file": "/run/agentplane/sandbox-controller-client-tls/tls.key",
+            "cert_file": str(cert_path / "tls.crt"),
+            "key_file": str(cert_path / "tls.key"),
             "ca_file": workload_tls.TRUST_BUNDLE_FILE,
         },
     }
 
-    certificate = _resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
-    assert certificate["spec"]["uris"] == [SANDBOX_CONTROLLER_URI]
     assert certificate["spec"]["usages"] == ["digital signature", "client auth", "server auth"]
-    cert_mount = one(
-        mount
-        for mount in container["volumeMounts"]
-        if mount["mountPath"] == "/run/agentplane/sandbox-controller-client-tls"
-    )
     cert_volume = one(volume for volume in pod["volumes"] if volume["name"] == cert_mount["name"])
     assert cert_mount["readOnly"] is True
     assert cert_volume["secret"]["secretName"] == f"{sandbox_controller.NAME}-client-workload-tls"
