@@ -1,6 +1,9 @@
+import json
 import os
+import shlex
 import subprocess
 import sys
+import tarfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -27,7 +30,33 @@ def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedPro
     runfiles_root = Runfiles.CreateOrRaise().root()
     for command, asset in (("git", "fake_git.py"), ("bazel-diff", "fake_bazel_diff.py"), ("bazel", "fake_bazel.py")):
         _write_executable(bin_dir / command, (runfiles_root / f"ducktape/devinfra/ci/testing/{asset}").read_text())
-    _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
+    runner_probe = REPO_ROOT / "devinfra/buildbuddy/ci/runner_probe.py"
+    _write_executable(
+        bin_dir / "python3",
+        "\n".join(
+            [
+                "#!/bin/sh",
+                'test "$FAKE_REAL_RUNNER_PROBE" = "1" || exit 0',
+                '[ "$1" = "devinfra/buildbuddy/ci/runner_probe.py" ] || exit 2',
+                "shift",
+                f'exec {shlex.quote(sys.executable)} {shlex.quote(str(runner_probe))} "$@"',
+                "",
+            ]
+        ),
+    )
+    upload_digest = "a" * 64
+    _write_executable(
+        bin_dir / "bb",
+        "\n".join(
+            [
+                "#!/bin/sh",
+                'if [ "$FAKE_BB_UPLOAD_EXIT" != "0" ]; then echo "upload failed" >&2; exit "$FAKE_BB_UPLOAD_EXIT"; fi',
+                'cp "$2" "$CI_TEST_LOG_DIR/probe-upload.tgz"',
+                f'echo "uploaded /compressed-blobs/zstd/{upload_digest}/123"',
+                "",
+            ]
+        ),
+    )
 
     def run(overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
@@ -38,8 +67,10 @@ def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedPro
                 "PR_HEAD_SHA": "",
                 "PR_BASE_SHA": "",
                 "CI_TEST_LOG_DIR": str(tmp_path),
+                "CI_VM_PROBE_DIR": str(tmp_path / "probe"),
                 "XDG_CACHE_HOME": str(cache_root),
                 "RBE_CONTAINER_IMAGE": "test-image",
+                "FAKE_BB_UPLOAD_EXIT": "0",
                 "TEST_INVOCATION_ID": "11111111-1111-1111-1111-111111111111",
                 "BUILD_INVOCATION_ID": "22222222-2222-2222-2222-222222222222",
                 "FAKE_TESTS": "//ci:normal_test",
@@ -230,6 +261,109 @@ def test_module_lockfile_cache_failure_preserves_test_status(
     assert result.returncode == 1, result.stderr + result.stdout
     assert "Could not save Bazel module lockfile cache" in result.stderr
     assert (tmp_path / "phases.log").read_text().splitlines() == ["test"]
+
+
+def test_selected_test_labels_are_archived_with_source_and_invocation_identity(
+    tmp_path: Path, run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]]
+) -> None:
+    result = run_ci(
+        {
+            "FAKE_REAL_RUNNER_PROBE": "1",
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "PR_BASE_SHA": "base",
+            "CHANGED_FILE": "devinfra/ci/test_bazel_ci.py",
+            "FAKE_TESTS": "//ci:first_test\n//ci:second_test",
+            "BUILDBUDDY_API_KEY": "test-secret-not-for-snapshot",
+        }
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    archive_path = tmp_path / "probe-upload.tgz"
+    assert archive_path.is_file()
+    with tarfile.open(archive_path) as archive:
+        snapshot_file = archive.extractfile("selected-test-labels.json")
+        assert snapshot_file is not None
+        snapshot = json.load(snapshot_file)
+
+    assert snapshot == {
+        "schema": "ducktape.bazel_ci_selected_test_labels.v1",
+        "selection": {
+            "stage": "bazel-query-before-runtime-tag-filter",
+            "full_sweep": False,
+            "labels": ["//ci:first_test", "//ci:second_test"],
+        },
+        "source": {
+            "commit_sha": "merge",
+            "base_sha": "base",
+            "merge_sha": "merge",
+            "pr_head_sha": "pr-head",
+            "event_base_sha": "base",
+        },
+        "workflow": {
+            "name": "Bazel CI",
+            "event_name": "pull_request",
+            "test_invocation_id": "11111111-1111-1111-1111-111111111111",
+            "build_invocation_id": "22222222-2222-2222-2222-222222222222",
+        },
+    }
+    assert "test-secret-not-for-snapshot" not in json.dumps(snapshot)
+    assert "CI_VM_PROBE_CAS digest=/compressed-blobs/zstd/" + "a" * 64 + "/123" in result.stdout
+    assert "CI_VM_PROBE_CAS_DOWNLOAD=bb download /compressed-blobs/zstd/" + "a" * 64 + "/123" in result.stdout
+
+
+@pytest.mark.parametrize(("test_exit", "expected", "phases"), [("0", 0, ["test", "build"]), ("1", 1, ["test"])])
+def test_runner_probe_upload_failure_preserves_test_verdict(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    test_exit: str,
+    expected: int,
+    phases: list[str],
+) -> None:
+    result = run_ci(
+        {
+            "FAKE_REAL_RUNNER_PROBE": "1",
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "PR_BASE_SHA": "base",
+            "CHANGED_FILE": "devinfra/ci/test_bazel_ci.py",
+            "FAKE_TEST_EXIT": test_exit,
+            "FAKE_BB_UPLOAD_EXIT": "1",
+        }
+    )
+
+    assert result.returncode == expected, result.stderr + result.stdout
+    assert (tmp_path / "phases.log").read_text().splitlines() == phases
+    assert "CI_VM_PROBE_CAS unavailable=" in result.stdout
+
+
+@pytest.mark.parametrize(("test_exit", "expected", "phases"), [("0", 0, ["test", "build"]), ("1", 1, ["test"])])
+def test_snapshot_write_failure_preserves_gate_verdict(
+    tmp_path: Path,
+    run_ci: Callable[[dict[str, str]], subprocess.CompletedProcess[str]],
+    test_exit: str,
+    expected: int,
+    phases: list[str],
+) -> None:
+    result = run_ci(
+        {
+            "FAKE_REAL_RUNNER_PROBE": "1",
+            "GITHUB_EVENT_NAME": "pull_request",
+            "PR_HEAD_SHA": "pr-head",
+            "PR_BASE_SHA": "base",
+            "CHANGED_FILE": "devinfra/ci/test_bazel_ci.py",
+            "FAKE_SELECTION_SNAPSHOT_WRITE_FAIL": "1",
+            "FAKE_TEST_EXIT": test_exit,
+        }
+    )
+
+    assert result.returncode == expected, result.stderr + result.stdout
+    assert (tmp_path / "phases.log").read_text().splitlines() == phases
+    assert "Could not write selected-test label snapshot" in result.stderr
+    archive_path = tmp_path / "probe-upload.tgz"
+    assert archive_path.is_file()
+    with tarfile.open(archive_path) as archive:
+        assert "selected-test-labels.json" not in archive.getnames()
 
 
 if __name__ == "__main__":

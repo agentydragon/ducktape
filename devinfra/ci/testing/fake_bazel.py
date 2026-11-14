@@ -27,6 +27,8 @@ def main() -> None:
             ]
             print("\n".join(sorted(labels)))
         elif query_arg.endswith("test-query.txt"):
+            if os.environ.get("FAKE_SELECTION_SNAPSHOT_WRITE_FAIL") == "1":
+                Path(query_arg.split("=", 1)[1]).with_name("selected-test-labels.json").mkdir()
             tests = os.environ.get("FAKE_TESTS", "//ci:normal_test")
             if tests:
                 print(tests)

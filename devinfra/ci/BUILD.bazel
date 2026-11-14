@@ -283,6 +283,7 @@ py_test(
     srcs = ["test_bazel_ci.py"],
     data = [
         "bazel_ci.py",
+        "//devinfra/buildbuddy/ci:runner_probe",
         "//devinfra/ci/testing:fake_bazel",
         "//devinfra/ci/testing:fake_bazel_diff",
         "//devinfra/ci/testing:fake_git",

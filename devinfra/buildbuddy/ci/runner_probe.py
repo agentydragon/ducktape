@@ -475,7 +475,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
-def make_archive(paths: ProbePaths) -> dict[str, Any]:
+def make_archive(paths: ProbePaths, *, selected_test_labels: Path | None = None) -> dict[str, Any]:
     paths.current.mkdir(parents=True, exist_ok=True)
     manifest = {
         "schema": SCHEMA,
@@ -483,6 +483,7 @@ def make_archive(paths: ProbePaths) -> dict[str, Any]:
         "probe_dir": str(paths.root),
         "probes_jsonl": str(paths.probes_jsonl),
         "probes_jsonl_exists": paths.probes_jsonl.exists(),
+        "selected_test_labels_included": selected_test_labels is not None and selected_test_labels.is_file(),
     }
     manifest_path = paths.current / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, sort_keys=True, indent=2) + "\n")
@@ -497,6 +498,8 @@ def make_archive(paths: ProbePaths) -> dict[str, Any]:
         previous_proc_dir = paths.latest / "proc"
         if previous_proc_dir.exists():
             tar.add(previous_proc_dir, arcname="previous/proc")
+        if selected_test_labels is not None and selected_test_labels.is_file():
+            tar.add(selected_test_labels, arcname="selected-test-labels.json")
         tar.add(manifest_path, arcname="manifest.json")
     return {"path": str(paths.archive), "size": paths.archive.stat().st_size, "sha256": sha256_file(paths.archive)}
 
@@ -532,7 +535,7 @@ def output_tail(text: str, *, max_bytes: int = 500) -> str:
 
 def cmd_finalize(args: argparse.Namespace) -> int:
     paths = probe_paths(Path(args.dir))
-    archive_info = make_archive(paths)
+    archive_info = make_archive(paths, selected_test_labels=args.selected_test_labels)
     persist_latest(paths)
     print(
         f"CI_VM_PROBE_ARCHIVE path={archive_info['path']} size={archive_info['size']} sha256={archive_info['sha256']}"
@@ -542,6 +545,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         if upload.get("attempted") and upload["result"]["returncode"] == 0 and upload.get("digest"):
             digest = upload["digest"]
             print(f"CI_VM_PROBE_CAS digest={digest}")
+            print(f"CI_VM_PROBE_CAS_DOWNLOAD=bb download {digest}")
         elif upload.get("attempted") and upload["result"]["returncode"] == 0:
             result = upload["result"]
             print(
@@ -573,6 +577,7 @@ def parser() -> argparse.ArgumentParser:
 
     final = sub.add_parser("finalize")
     final.add_argument("--dir", default=str(DEFAULT_DIR))
+    final.add_argument("--selected-test-labels", type=Path)
     final.add_argument("--upload", action="store_true")
     final.set_defaults(func=cmd_finalize)
     return p

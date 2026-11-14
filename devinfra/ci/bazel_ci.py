@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -171,8 +172,11 @@ def _probe(stage: str) -> None:
     _run(["python3", "devinfra/buildbuddy/ci/runner_probe.py", "snapshot", stage], check=False)
 
 
-def _finalize_probe() -> None:
-    _run(["python3", "devinfra/buildbuddy/ci/runner_probe.py", "finalize", "--upload"], check=False)
+def _finalize_probe(selection_snapshot: Path | None = None) -> None:
+    args = ["python3", "devinfra/buildbuddy/ci/runner_probe.py", "finalize", "--upload"]
+    if selection_snapshot is not None:
+        args.extend(["--selected-test-labels", str(selection_snapshot)])
+    _run(args, check=False)
 
 
 def _announce_bazel_command(role: str) -> None:
@@ -209,13 +213,27 @@ def _run_bazel(
     )
 
 
-def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
+@dataclass(frozen=True)
+class TargetSelection:
+    full_sweep: bool
+    targets: list[str]
+    test_query: Path
+    source_sha: str
+    base_sha: str | None = None
+    pr_head_sha: str | None = None
+    event_base_sha: str | None = None
+    merge_sha: str | None = None
+
+
+def _select_targets(temp_dir: Path) -> TargetSelection:
     """Select full or bazel-diff affected targets and write the test query."""
     test_query = temp_dir / "test-query.txt"
     pr_head_sha = os.environ.get("PR_HEAD_SHA", "")
     if not pr_head_sha:
         test_query.write_text("tests(//...)\n")
-        return True, ["//..."], test_query
+        return TargetSelection(
+            full_sweep=True, targets=["//..."], test_query=test_query, source_sha=_git_output("rev-parse", "HEAD")
+        )
 
     head_sha = _git_output("rev-parse", "HEAD")
     _run(["git", "fetch", "--depth=2", "--no-tags", "origin", head_sha])
@@ -245,7 +263,16 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     if reason is not None:
         print(f"graph-wide change: {reason}")
         test_query.write_text("tests(//...)\n")
-        return True, ["//..."], test_query
+        return TargetSelection(
+            full_sweep=True,
+            targets=["//..."],
+            test_query=test_query,
+            source_sha=head_sha,
+            base_sha=base,
+            pr_head_sha=pr_head,
+            event_base_sha=event_base or None,
+            merge_sha=head_sha,
+        )
 
     cache_dir = temp_dir / "bd-cache"
     cache_dir.mkdir()
@@ -302,35 +329,78 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
 
     labels = _quote_labels(affected)
     test_query.write_text(f"tests(set({labels}))\n")
-    return False, [f"--target_pattern_file={affected}"], test_query
+    return TargetSelection(
+        full_sweep=False,
+        targets=[f"--target_pattern_file={affected}"],
+        test_query=test_query,
+        source_sha=head_sha,
+        base_sha=base,
+        pr_head_sha=pr_head,
+        event_base_sha=event_base or None,
+        merge_sha=head_sha,
+    )
+
+
+def _write_selected_test_labels(path: Path, labels: list[str], selection: TargetSelection) -> None:
+    """Write only selected labels and source/workflow identity; never dump runner environment."""
+    record = {
+        "schema": "ducktape.bazel_ci_selected_test_labels.v1",
+        "selection": {
+            "stage": "bazel-query-before-runtime-tag-filter",
+            "full_sweep": selection.full_sweep,
+            "labels": labels,
+        },
+        "source": {
+            "commit_sha": selection.source_sha,
+            "base_sha": selection.base_sha,
+            "merge_sha": selection.merge_sha,
+            "pr_head_sha": selection.pr_head_sha,
+            "event_base_sha": selection.event_base_sha,
+        },
+        "workflow": {
+            "name": "Bazel CI",
+            "event_name": os.environ.get("GITHUB_EVENT_NAME"),
+            "test_invocation_id": os.environ.get("TEST_INVOCATION_ID"),
+            "build_invocation_id": os.environ.get("BUILD_INVOCATION_ID"),
+        },
+    }
+    path.write_text(json.dumps(record, sort_keys=True, indent=2) + "\n")
 
 
 def main() -> int:
     """Run selection, race-enabled tests and normal builds, then finalize runner diagnostics."""
     with _module_lockfile_cache(), tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
         temp_dir = Path(temp_path)
+        selection_snapshot: Path | None = None
         try:
-            full_sweep, targets, test_query = _select_targets(temp_dir)
-            test_target_count = len(_capture(["bazel", "query", f"--query_file={test_query}"]).splitlines())
+            selection = _select_targets(temp_dir)
+            test_labels = _capture(["bazel", "query", f"--query_file={selection.test_query}"]).splitlines()
+            test_target_count = len(test_labels)
+            selection_snapshot = temp_dir / "selected-test-labels.json"
+            try:
+                _write_selected_test_labels(selection_snapshot, test_labels, selection)
+            except OSError as exc:
+                logger.warning("Could not write selected-test label snapshot; continuing without it: %s", exc)
+                selection_snapshot = None
             print(f"test targets in scope: {test_target_count}")
 
             _probe("before-test")
             if test_target_count == 0:
                 print("No test targets in scope -- skipping bazel test.")
             else:
-                test_rc = _run_bazel("test", role="test", targets=targets, check=False).returncode
-                if test_rc == 4 and not full_sweep:
+                test_rc = _run_bazel("test", role="test", targets=selection.targets, check=False).returncode
+                if test_rc == 4 and not selection.full_sweep:
                     print("No runnable tests after tag filtering in the affected set; continuing to build.")
                     test_rc = 0
                 if test_rc != 0:
                     return test_rc
                 _probe("after-test")
 
-            _run_bazel("build", role="build", targets=targets)
+            _run_bazel("build", role="build", targets=selection.targets)
             _probe("after-build")
             return 0
         finally:
-            _finalize_probe()
+            _finalize_probe(selection_snapshot)
 
 
 if __name__ == "__main__":

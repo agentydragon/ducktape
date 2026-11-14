@@ -1,3 +1,4 @@
+import json
 import tarfile
 from pathlib import Path
 
@@ -48,6 +49,8 @@ def test_summarize_jsonl(tmp_path: Path) -> None:
 
 def test_make_archive(tmp_path: Path) -> None:
     paths = runner_probe.probe_paths(tmp_path / "probe")
+    selected_test_labels = tmp_path / "selected-test-labels.json"
+    selected_test_labels.write_text('{"selection":{"labels":["//ci:test"]}}\n')
     paths.current.mkdir(parents=True)
     paths.probes_jsonl.write_text('{"phase": "before-test"}\n')
     (paths.current / "proc" / "before-test" / "global").mkdir(parents=True)
@@ -57,17 +60,25 @@ def test_make_archive(tmp_path: Path) -> None:
     paths.latest_jsonl.parent.mkdir(parents=True, exist_ok=True)
     paths.latest_jsonl.write_text('{"phase": "after-build"}\n')
 
-    info = runner_probe.make_archive(paths)
+    info = runner_probe.make_archive(paths, selected_test_labels=selected_test_labels)
 
     assert info["path"] == str(paths.archive)
     assert info["size"] > 0
     assert len(info["sha256"]) == 64
     with tarfile.open(paths.archive) as tar:
         names = set(tar.getnames())
+        manifest_file = tar.extractfile("manifest.json")
+        selection_file = tar.extractfile("selected-test-labels.json")
+        assert manifest_file is not None
+        assert selection_file is not None
+        manifest = json.load(manifest_file)
+        selection_bytes = selection_file.read()
     assert "probes.jsonl" in names
     assert "proc/before-test/global/boot_id" in names
     assert "previous/probes.jsonl" in names
     assert "previous/proc/after-build/global/boot_id" in names
+    assert selection_bytes == selected_test_labels.read_bytes()
+    assert manifest["selected_test_labels_included"] is True
 
 
 def test_capture_bytes_records_truncation_without_stat_size(tmp_path: Path) -> None:
