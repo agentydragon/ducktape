@@ -2325,6 +2325,8 @@ flowchart TD
     JOURNAL_REPRESENTATION_DESIGN[Decision, unscheduled: History as stored journals]
     THREAD_SYNC_WITHOUT_ELECTRIC[Decision, unscheduled: replace Electric with our own thread stream]
     JOURNAL_REPRESENTATION_DESIGN -. what the stream follows .-> THREAD_SYNC_WITHOUT_ELECTRIC
+    NATIVE_HARNESS_INTERFACES_DESIGN[Decision, unscheduled: native harness interfaces past the Runtime]
+    JOURNAL_REPRESENTATION_DESIGN -. journal view before the Runtime drops content Events .-> NATIVE_HARNESS_INTERFACES_DESIGN
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
@@ -2354,6 +2356,18 @@ Two separate problems:
 journal view per kind at read time; the common surface keeps only what every source has (inputs,
 turn boundaries, status, usage). **Question for review:** retire the fold and its tables for
 per-kind rendering on read, and with what common surface?
+
+### `NATIVE_HARNESS_INTERFACES_DESIGN` — expose native harness interfaces past the Runtime
+
+**Decision, unscheduled; operator, 2026-11-14 20:34 UTC:** considering whether the Environment Runtime
+should expose Codex's and Claude's interfaces, input and output, more directly instead of translating
+to neutral projections and from generic commands. [`native_harness_interfaces.md`](native_harness_interfaces.md)
+maps today's translations and their consumers. **Recommendation:** keep a neutral control floor
+(command outcomes, input confirmation, turn boundaries, applied settings, lifecycle, native frames);
+add per-kind typed commands that `session_dispatcher` checks against the Session's harness and the
+Runtime frames; leave content native for readers to render. The output half lands after
+[`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals)'s
+journal view. **Question for review:** adopt that split?
 
 ### `THREAD_SYNC_WITHOUT_ELECTRIC` — replace Electric with our own thread stream
 

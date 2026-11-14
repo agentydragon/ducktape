@@ -41,6 +41,9 @@ improvements alongside. Component TODOs and research plans do not set a competin
 - [Sampling outside Sandboxes](sampling_outside_sandboxes.md) — research on running Codex's agent loop in the
   control plane with only exec servers in Sandboxes: what Codex already routes to an environment, code mode,
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
+- [Native harness interfaces](native_harness_interfaces.md) — what the Runtime translates between
+  Claude/Codex and the neutral Commands and Events, who reads each form, and a proposed split into a
+  neutral control floor, per-kind commands and natively rendered content; no direction chosen
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;
