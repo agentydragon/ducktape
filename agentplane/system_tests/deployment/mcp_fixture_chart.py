@@ -117,6 +117,7 @@ def objects(
         subject=caller.binding_subject(),
         policy_sets=[_MCP_EDGE_TEST_POLICY],
     )
+    assert fixture.mcp_edge is not None
     _add_mcp_fixtures(
         fixture.chart,
         mcp,
