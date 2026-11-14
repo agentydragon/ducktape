@@ -22,7 +22,7 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
@@ -778,7 +778,8 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm_config["allowed_service_account_namespaces"] == [NAMESPACE]
     assert llm_config["policy_namespace"] == NAMESPACE
-    assert llm_config["central_sampler_identity_callers"] is False
+    assert llm_config["central_sampler_identity_callers"] is True
+    assert llm_config["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert llm_config["token_audience"] == WORKLOAD_TOKEN_AUDIENCE
     assert AnyHttpUrl(llm_config["litellm_url"]) == AnyHttpUrl(_TEST_LOCAL_MODEL.url)
     assert llm_config["log_levels"] == {}

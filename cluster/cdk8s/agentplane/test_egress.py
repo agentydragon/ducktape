@@ -15,11 +15,18 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import Settings as EgressSettings
-from agentplane.net.peertls.config import APP_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
+    central_sampler,
     environment_sandbox,
     history_service,
     kubernetes_account_ref,
@@ -314,6 +321,9 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
+    assert llm_settings["central_sampler_accounts"] == [f"{staging.ENV.namespace}/{central_sampler.NAME}"]
+    assert llm_settings["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
+    assert llm_settings["central_sampler_identity_callers"] is True
 
     certificate = _by_name(catalog_manifests, "Certificate", "llm-ingress-workload")
     assert certificate["spec"]["uris"] == [LLM_INGRESS_URI]

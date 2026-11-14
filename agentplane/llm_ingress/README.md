@@ -194,7 +194,8 @@ The actor's certificate proves the sampler; the envelope and a fresh Identity UI
 effective caller. Service delegation records no fabricated ServiceAccount or Pod claims. Duplicate,
 malformed, stale or absent delegation proof, unlisted actors and combined bearer credentials fail closed.
 
-These optional allowlists default empty. Staging currently uses the sampler's projected bearer and
-Session header. Its later caller cutover must select the existing `agentplane_ingress` provider mode
-and enable typed delegation after receiver images are pinned. Existing bearer admission stays until
-all caller images are pinned; there is no certificate failure fallback to it.
+These optional allowlists default empty. Staging now allowlists the exact
+`spiffe://agentplane/central-sampler` service identity and enables typed delegation while retaining
+the sampler's projected bearer account. The sampler still uses its bearer and Session header; its
+later caller cutover must select the existing `agentplane_ingress` provider mode. Existing bearer
+admission stays until all caller images are pinned; there is no certificate failure fallback to it.
