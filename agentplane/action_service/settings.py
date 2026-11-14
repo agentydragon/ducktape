@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Set
-from typing import ClassVar, Literal
+from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
@@ -14,7 +14,7 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.identity.auth.listener import Listener
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import ClientTLS, ServiceSPIFFEID
+from agentplane.net.peertls.config import ACTIONS_URI, ClientTLS, ServiceSPIFFEID
 from agentplane.subjects import ServiceAccountRef
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
@@ -26,13 +26,19 @@ class ServicePeer(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     target: str = Field(min_length=1, description="gRPC host:port.")
-    token_file: str = Field(
-        min_length=1, description="The rotating projected ServiceAccount token for the peer's audience."
-    )
+    token_file: str = Field(default="", description="Projected token path; empty when the peer uses a service SVID.")
     request_timeout_s: float = Field(gt=0, allow_inf_nan=False)
     tls: ClientTLS | None = Field(
-        default=None, description="Verify the peer service SVID without presenting this service's client certificate."
+        default=None, description="Verify the peer SVID, optionally presenting the Action Service SVID."
     )
+
+    @model_validator(mode="after")
+    def caller_authentication(self) -> Self:
+        if self.tls is not None:
+            self.tls.validate_caller(self.token_file, ACTIONS_URI)
+        elif not self.token_file:
+            raise ValueError("a bearer token file or service SVID is required")
+        return self
 
 
 class Settings(BaseModel):
