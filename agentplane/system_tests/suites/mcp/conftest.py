@@ -21,11 +21,8 @@ from agentplane.system_tests.scenarios.policy_objects import PolicyObjects
 
 @pytest.fixture
 async def policy_objects(cluster: Cluster) -> AsyncIterator[PolicyObjects]:
-    objects = PolicyObjects(cluster=cluster)
-    try:
+    async with PolicyObjects(cluster=cluster) as objects:
         yield objects
-    finally:
-        await objects.delete_all()
 
 
 @pytest.fixture

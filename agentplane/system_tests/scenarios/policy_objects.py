@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from uuid import uuid4
 
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
@@ -30,11 +32,24 @@ class PolicyBindingPresentError(Exception):
 
 @dataclass
 class PolicyObjects:
-    """PolicySets and PolicyBindings this test writes with the caller's kubeconfig, deleted whatever
-    the test did. RBAC on the two kinds in the namespace is what gates this."""
+    """Own the PolicySets and PolicyBindings this test writes with the caller's kubeconfig."""
 
     cluster: Cluster
     created: list[tuple[str, str]] = field(default_factory=list)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, _exc_type: type[BaseException] | None, _exc: BaseException | None, _traceback: TracebackType | None
+    ) -> bool:
+        closing = asyncio.create_task(self._delete_all())
+        try:
+            await asyncio.shield(closing)
+        except asyncio.CancelledError:
+            await closing
+            raise
+        return False
 
     async def _create(self, kind: str, plural: str, name: str, spec: dict[str, Any]) -> str:
         body = {"apiVersion": f"{GROUP}/{VERSION}", "kind": kind, "metadata": {"name": name}, "spec": spec}
@@ -122,7 +137,7 @@ class PolicyObjects:
                             f"{POLICY_BINDINGS_PLURAL}/{name} generation {generation}: {ready}"
                         )
 
-    async def delete_all(self) -> None:
+    async def _delete_all(self) -> None:
         with tracer.start_as_current_span("system_test.mcp.policy_cleanup"):
             for plural, name in reversed(self.created):
                 await self.cluster.kubectl("delete", plural, name, "--ignore-not-found")

@@ -67,24 +67,10 @@ class ActionResources:
             yield client, dispatcher, sandboxes
 
 
-@asynccontextmanager
-async def _policy_objects(cluster: Cluster) -> AsyncIterator[PolicyObjects]:
-    objects = PolicyObjects(cluster=cluster)
-    try:
-        yield objects
-    finally:
-        closing = asyncio.create_task(objects.delete_all())
-        try:
-            await asyncio.shield(closing)
-        except asyncio.CancelledError:
-            await closing
-            raise
-
-
 async def _executes_action(resources: ActionResources) -> None:
     async with (
         resources.open_case("executes") as (client, dispatcher, _),
-        _policy_objects(resources.cluster) as policies,
+        PolicyObjects(cluster=resources.cluster) as policies,
     ):
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
@@ -128,7 +114,7 @@ async def _launcher_ownership(resources: ActionResources, credentials: OperatorC
     async with (
         resources.open_case("launcher") as (client, dispatcher, _),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
-        _policy_objects(resources.cluster) as policies,
+        PolicyObjects(cluster=resources.cluster) as policies,
     ):
         await run_harness_pair_in_own_sandboxes(
             resources.cluster,
@@ -158,7 +144,7 @@ async def _oauth_linkage(
     async with (
         resources.open_case(server_id) as (client, dispatcher, sandboxes),
         operator_bff_client(resources.base_url, credentials) as operator_bff,
-        _policy_objects(resources.cluster) as policies,
+        PolicyObjects(cluster=resources.cluster) as policies,
     ):
         models = await models_offered_for(client, [harness])
         await mcp.operator_links_oauth_mcp_server(

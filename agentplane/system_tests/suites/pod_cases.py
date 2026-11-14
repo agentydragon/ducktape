@@ -262,13 +262,9 @@ async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(resour
 
 
 async def a_command_box_presents_its_own_svid(resources: Resources) -> None:
-    policy_objects = PolicyObjects(cluster=resources.cluster)
-    try:
-        async with resources.open() as (_, sandboxes):
-            caller = await sandboxes("systest-box-caller")
-            await egress_native.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
-    finally:
-        await policy_objects.delete_all()
+    async with PolicyObjects(cluster=resources.cluster) as policy_objects, resources.open() as (_, sandboxes):
+        caller = await sandboxes("systest-box-caller")
+        await egress_native.a_command_box_presents_its_own_svid(resources.cluster, caller, policy_objects)
 
 
 async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(resources: Resources) -> None:
