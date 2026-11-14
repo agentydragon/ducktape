@@ -301,6 +301,46 @@ func TestPatchConflictRetriesAndRechecksUID(t *testing.T) {
 	}
 }
 
+func TestIdentityPatchRetriesWithCurrentResourceVersion(t *testing.T) {
+	resource := testSandbox("rebind", "sandbox-uid", sandboxapi.OperatingModeSuspended)
+	resource.Status.StopStage = sandboxapi.StopStageStopped
+	identity := testAgent()
+	identity.UID = "identity-uid"
+	base := clientfake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(resource, identity).Build()
+	objects := &concurrentPolicyClient{Client: base}
+	access, err := New(namespace, objects, &identitypb.ServiceAccount{Namespace: namespace, Name: "app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := access.SetIdentity(t.Context(), resource.Name, string(resource.UID), &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}); err != nil {
+		t.Fatal(err)
+	}
+	stored := readSandbox(t, base, resource.Name)
+	if objects.patches != 2 || stored.Spec.Identity == nil || stored.Spec.Identity.Name != identity.Name || !stored.Spec.WakeOnSend {
+		t.Fatalf("concurrent policy update: patches=%d spec=%+v", objects.patches, stored.Spec)
+	}
+}
+
+type concurrentPolicyClient struct {
+	client.Client
+	patches int
+}
+
+func (c *concurrentPolicyClient) Patch(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+	c.patches++
+	if c.patches == 1 {
+		current := &sandboxapi.Sandbox{}
+		if err := c.Client.Get(ctx, client.ObjectKeyFromObject(object), current); err != nil {
+			return err
+		}
+		current.Spec.WakeOnSend = true
+		if err := c.Client.Update(ctx, current); err != nil {
+			return err
+		}
+	}
+	return c.Client.Patch(ctx, object, patch, options...)
+}
+
 type conflictOnceClient struct {
 	client.Client
 	patches int

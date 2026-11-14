@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"maps"
-	"strings"
 	"testing"
 	"time"
 
@@ -135,7 +134,7 @@ func serveDiscoveryWithDelegation(
 	catalog runtimeconfig.Catalog,
 	delegatedMethods []string,
 ) environmentpb.EnvironmentServiceClient {
-	return serveDiscoveryWithOptions(t, objects, catalog, delegatedMethods, nil, nil)
+	return serveDiscoveryWithOptions(t, objects, catalog, delegatedMethods, nil)
 }
 
 func serveDiscoveryWithOptions(
@@ -144,13 +143,11 @@ func serveDiscoveryWithOptions(
 	catalog runtimeconfig.Catalog,
 	delegatedMethods []string,
 	wakeCallers []auth.Account,
-	identityChanges IdentityChangeGuard,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
 	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), nil, ManagementOptions{
-		Managers:        sets.New(auth.Account{Namespace: discoveryNamespace, Name: "actions"}),
-		Launchers:       sets.New(auth.Account{Namespace: discoveryNamespace, Name: "launcher"}),
-		IdentityChanges: identityChanges,
+		Managers:  sets.New(auth.Account{Namespace: discoveryNamespace, Name: "actions"}),
+		Launchers: sets.New(auth.Account{Namespace: discoveryNamespace, Name: "launcher"}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -289,35 +286,14 @@ func baseReader(t *testing.T) client.WithWatch {
 	return readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID))
 }
 
-type identityChangeGuardFake struct {
-	identity *identitypb.Identity
-	err      error
-}
-
-func (g *identityChangeGuardFake) ChangeSandboxIdentity(_ context.Context, _ string, identity *identitypb.Identity, patch func() error) error {
-	g.identity = identity
-	if g.err != nil {
-		return g.err
-	}
-	return patch()
-}
-
-type sessionConflictFake struct{}
-
-func (sessionConflictFake) Error() string {
-	return "environment identity is still named by Session test-session"
-}
-func (sessionConflictFake) ConflictingSessionIDs() []string { return []string{"test-session"} }
-
-func TestIdentityChangeRequiresManagerStoppedSandboxAndSessionGuard(t *testing.T) {
+func TestIdentityChangeRequiresManagerAndCurrentSandbox(t *testing.T) {
 	resource := sandboxObject(sandboxUID)
 	resource.Spec.Running = false
 	resource.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	resource.Status.StopStage = sandboxapi.StopStageStopped
 	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "test-agent", UID: "identity-uid"}}
 	objects := readerWithObjects(t, resource, executionAccountObject(sandboxUID), identity)
-	guard := &identityChangeGuardFake{}
-	rpc := serveDiscoveryWithOptions(t, objects, runtimeconfig.Catalog{}, nil, nil, guard)
+	rpc := serveDiscoveryWithOptions(t, objects, runtimeconfig.Catalog{}, nil, nil)
 	request := &environmentpb.SetEnvironmentIdentityRequest{
 		Target: &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}, IdentityName: "test-agent",
 	}
@@ -329,11 +305,6 @@ func TestIdentityChangeRequiresManagerStoppedSandboxAndSessionGuard(t *testing.T
 	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), stale); status.Code(err) != codes.NotFound {
 		t.Fatalf("stale target = %v", err)
 	}
-	guard.err = sessionConflictFake{}
-	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != guard.err.Error() {
-		t.Fatalf("Session refusal = %v", err)
-	}
-	guard.err = nil
 	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); err != nil {
 		t.Fatal(err)
 	}
@@ -341,8 +312,8 @@ func TestIdentityChangeRequiresManagerStoppedSandboxAndSessionGuard(t *testing.T
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, stored); err != nil {
 		t.Fatal(err)
 	}
-	if stored.Spec.Identity == nil || stored.Spec.Identity.Name != "test-agent" || guard.identity.GetUid() != "identity-uid" {
-		t.Fatalf("saved identity = %v, pinned guard identity = %v", stored.Spec.Identity, guard.identity)
+	if stored.Spec.Identity == nil || stored.Spec.Identity.Name != "test-agent" {
+		t.Fatalf("saved identity = %v", stored.Spec.Identity)
 	}
 	request.IdentityName = ""
 	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); err != nil {
@@ -350,16 +321,6 @@ func TestIdentityChangeRequiresManagerStoppedSandboxAndSessionGuard(t *testing.T
 	}
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, stored); err != nil || stored.Spec.Identity != nil {
 		t.Fatalf("clear identity = %v, %v", stored.Spec.Identity, err)
-	}
-	stored.Spec.Running = true
-	stored.Status.OperatingMode = sandboxapi.OperatingModeRunning
-	stored.Status.StopStage = sandboxapi.StopStageQuiescing
-	if err := objects.Update(t.Context(), stored); err != nil {
-		t.Fatal(err)
-	}
-	request.IdentityName = "test-agent"
-	if _, err := rpc.SetEnvironmentIdentity(bearing(t, actionsToken), request); status.Code(err) != codes.FailedPrecondition || !strings.Contains(status.Convert(err).Message(), "spec.identity changes only while nothing runs") {
-		t.Fatalf("running Sandbox mutation = %v", err)
 	}
 }
 
