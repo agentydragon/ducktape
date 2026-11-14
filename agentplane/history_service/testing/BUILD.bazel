@@ -116,6 +116,7 @@ py_library(
     srcs = ["go_service.py"],
     data = ["//agentplane/history_service/cmd:history-service"],
     deps = [
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
@@ -134,6 +135,7 @@ py_library(
         "//util:net",
         "//util/testing:postgres",
         "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",

@@ -18,8 +18,10 @@ from uuid import UUID
 
 import grpc
 import yaml
+from kubernetes_asyncio import client as k8s_client
 from python.runfiles import Runfiles
 
+from agentplane import sandbox_resource
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.api.ingress import session_ingress_pb2, session_ingress_pb2_grpc
@@ -52,6 +54,7 @@ READER_AUDIENCE = "test-app-history-service"
 READER = ServiceAccountRef(namespace="test-history-namespace", name="test-history-reader")
 WRITER_AUDIENCE = "test-runner-ingress"
 WRITER = ServiceAccountRef(namespace="test-sandbox-namespace", name="test-sandbox-runner")
+TEST_SANDBOX_UID = "history-test-sandbox-uid"
 
 
 def _go_database_url(database_url: str) -> str:
@@ -107,9 +110,22 @@ class GoHistoryService:
     _writer_tokens: dict[ServiceAccountRef, str] = field(default_factory=dict, init=False)
 
     async def writer_token(self, writer: ServiceAccountRef, *, pod_name: str | None = None) -> str:
-        """A token the ingress accepts as `writer`, issued once per writer: a push waits on nothing else of the API."""
+        """A test runner token bound to a test Sandbox UID, issued once per writer."""
         if writer not in self._writer_tokens:
-            self._writer_tokens[writer] = await self.api.workload_token(writer, [WRITER_AUDIENCE], pod_name=pod_name)
+            token = await self.api.workload_token(writer, [WRITER_AUDIENCE], pod_name=pod_name)
+            core = k8s_client.CoreV1Api(self.api.api)
+            account = await core.read_namespaced_service_account(writer.name, writer.namespace)
+            account.metadata.owner_references = [
+                k8s_client.V1OwnerReference(
+                    api_version=sandbox_resource.SANDBOX_API_VERSION,
+                    kind=sandbox_resource.SANDBOX_KIND,
+                    name="history-test-sandbox",
+                    uid=TEST_SANDBOX_UID,
+                    controller=True,
+                )
+            ]
+            await core.replace_namespaced_service_account(writer.name, writer.namespace, account)
+            self._writer_tokens[writer] = token
         return self._writer_tokens[writer]
 
     async def push(
