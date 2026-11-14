@@ -549,21 +549,29 @@ image or persistent resource. Reassess that diagnostic overhead during final qua
 
 ### Ordinary native recovery fixtures
 
-Four ordinary required targets now select the existing App-free central fixture:
-`mcp:test_gateway_crash`, `mcp:test_gateway_budget`, `mcp:test_sampler_roll` and
-`mcp:test_history_outage`. Their test modules, shared scenario bodies and real platform
+Three ordinary required targets now select the existing App-free central fixture:
+`mcp:test_gateway_crash`, `mcp:test_gateway_budget` and `mcp:test_sampler_roll`.
+Their test modules, shared scenario bodies and real platform
 assertions are unchanged. They already admit Sessions through Dispatcher, inspect retained
 History and drive real Pod executors through the native fixture principal; App HTTP and MCP edge
-are not assertion owners in these four scenarios. The ordinary Gateway budget remains 120s.
+are not assertion owners in these three scenarios. The ordinary Gateway budget remains 120s.
 The separate 45-second experiment remains manual.
 
 The [dependency query](https://app.buildbuddy.io/invocation/5f2b7062-74dc-4351-b7c8-90a5bb65a88c)
 contains no App executable/image, App HTTP testing client, ancestor App-backed conftest or
 MCP edge service image for those targets. It retains five App and two MCP settings modules
 used by shared rendering. This is an ordinary dependency cut, not a path-filter exception or
-replacement-policy expansion. Physical qualification is still pending; no elapsed saving is
-credited yet. App routes, projection, OAuth, delegation and MCP assertions stay with their
-existing required witnesses.
+replacement-policy expansion. In the [physical run](https://app.buildbuddy.io/invocation/07a05dc6-c5df-45c6-b745-adde0381c625),
+the three unchanged scenarios pass in 182.7s, 277.6s and 184.1s respectively. These are component
+results, not a successful aggregate invocation or elapsed-saving comparison.
+
+The fourth attempted migration, `mcp:test_history_outage`, fails its explicit assertion that
+the App Pod exists and remains unchanged while History is unavailable. Keep that suite's
+original App-backed fixture and all its assertions; its original fixture passes in the
+fixed-command run above. This failed attempt changes the ownership decision rather than
+justifying deletion of that guard. App routes, projection, OAuth, delegation and MCP assertions
+also stay with their existing required witnesses. Exact-head hosted CI and ordinary-cache
+selection still need qualification; no complete-feedback saving is credited yet.
 
 ### Pod partition and capacity screen
 
