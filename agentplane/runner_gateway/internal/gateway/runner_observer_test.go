@@ -52,9 +52,10 @@ type observedRunner struct {
 
 type statusOnlyRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	calls     atomic.Int32
-	changes   chan struct{}
-	changesMu sync.Mutex
+	calls         atomic.Int32
+	changes       chan struct{}
+	changesMu     sync.Mutex
+	setupsRunning atomic.Bool
 }
 
 func (r *statusOnlyRuntime) GetStatus(context.Context, *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
@@ -69,6 +70,7 @@ func (r *statusOnlyRuntime) currentChanges() <-chan struct{} {
 }
 
 func (r *statusOnlyRuntime) notify() {
+	r.setupsRunning.Store(true)
 	r.changesMu.Lock()
 	defer r.changesMu.Unlock()
 	close(r.changes)
@@ -324,7 +326,8 @@ func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Gateway) (runner
 		Security: opened, IsClosing: func() bool { return false }, AdoptIncarnation: func(context.Context, string) error { return nil },
 		Facts: func() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 			return &environmentruntimestatepb.EnvironmentRuntimeFacts{
-				Bootstrap: environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
+				Bootstrap:     environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
+				SetupsRunning: backend.setupsRunning.Load(),
 			}, nil
 		},
 		Changes: backend.currentChanges,
