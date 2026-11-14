@@ -92,7 +92,7 @@ scopes remain open; replacing the broader authorization machinery is a separate 
 
 **App auth scope agreed:** the app's existing auth path may remain a special case for v1.
 Reducing that special handling is an optional follow-up within the
-[broader auth review](external_access.md#compatibility-evaluation-github-kubernetes-http), rather
+[broader auth review](task_freezer.md#access--delegated-versus-brokered-external-access), rather
 than a multiagent prerequisite; no replacement app-auth path is selected.
 
 ### Target collections and launch enrollment
@@ -132,36 +132,11 @@ rule direction below builds on this storage preference.
 
 ## Live permission bundles
 
-**Agreed with the operator, 2026-10-16.** Assignment to a named permission bundle and the bundle's
-definition are separate. Existing `PolicyBinding`s enroll SAs into shared, mutable `PolicySet`s;
-editing a set changes the grants for every currently bound SA as the readers reconcile. This live
-indirection is a requirement for any replacement authorization model. Expanding a bundle once at
-launch or assignment into a fixed snapshot loses that capability.
-
-For example, ten SAs can each receive thirty RoleBindings/ClusterRoleBindings from one set. Editing
-the set to require twenty-five per SA causes the Policy Controller to remove the five obsolete
-bindings for each SA. The same shared definition can also carry egress and Action rules. An
-authorized runtime or GitOps edit adding an egress rule to `github` applies to every current
-recipient of that bundle without editing their assignments. Removing the rule removes its grant
-from all of them; independent overlapping grants still apply. The name `github` has only the
-meaning its configured rules give it.
-
-“Give every current recipient of `github` this extra egress rule for the next hour” is a temporary
-change to the shared definition, followed by centrally removing that addition. This is distinct
-from expiring an SA's whole binding. Automatic scheduling or rule-level expiry is not selected or
-claimed to exist by this requirement; the chosen design must explain how the temporary change ends.
-
-## Current identity and policy wiring
-
-Implemented wiring: [policy sets and bindings](../docs/adr_policy_sets.md) (live edits, readers,
-write authority), the Sandbox Controller's [identity](../sandbox_controller/SPEC.md#identity), and
-MCP Connections acting as an operator-selected labeled SA ([MCP edge](../mcp_edge/README.md)), an
-explicit Connection-to-SA mapping rather than one SA per OAuth client. Human/operator
-authentication stays separate from the caller SA. Presets are defaults, not identities or
-authority; changing a preset's selections does not rewrite existing Sandboxes' bindings. The
-[scoped-read plan](scoped_session_reads.md) applies the agreed Sandbox minimum and tags to retained
-history. The [external-access evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
-calls for comparing reusable authorization systems rather than inventing a universal broker.
+The live indirection between a bundle's assignment and its definition is an agreed requirement for
+any replacement model, recorded with the implemented [policy sets](../docs/adr_policy_sets.md#decisions).
+Still open: “give every current recipient of `github` this extra egress rule for the next hour” is a
+temporary change to the shared definition, distinct from expiring a whole binding. Rule-level expiry
+is not selected or implemented; the chosen design must explain how such a temporary change ends.
 
 ## Identity, role, address and isolation
 
@@ -346,7 +321,7 @@ Preserve the current native-binding ownership, pruning and constrained `bind` au
 projection is used. A common evaluator does not eliminate enforcement in each resource-owning
 backend. Action request authorization, operator approval and execution evidence remain distinct.
 
-The [broader authorization-system evaluation](external_access.md#compatibility-evaluation-github-kubernetes-http)
+The [broader authorization-system evaluation](task_freezer.md#access--delegated-versus-brokered-external-access)
 is separate, deferred work. A concrete multiagent limitation can motivate a bounded extension or a
 separately reviewed auth proposal; it does not automatically make an engine migration a multiagent
 prerequisite. Compare the incremental option first, and identify the benefit and migration cost of
@@ -522,7 +497,7 @@ Define that grant authority, further delegation, expiry and parent-termination b
   prior art for correspondence versus controls and receipts, without selecting a workflow platform.
 - **Native harness delegation** can remain useful inside a Sandbox. It does not by itself supply
   Agentplane's cross-Sandbox identity and authority; exposing native children as independent
-  Agentplane Sessions remains a separate [discovery design](native_session_discovery.md). V1
+  Agentplane Sessions remains a separate [discovery design](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads). V1
   excludes native children from the messaging and access model.
 
 ## Information transfer and v1 scope

@@ -29,7 +29,7 @@ Standing under it:
   runner-session inbox and machine notices from the [notification service](../notification_service/README.md).
   Replacing the source's idle Action-history polling remains
   [`NOTIFICATION_ACTION_FEED`](task_freezer.md#notification_action_feed--remove-idle-action-history-polling).
-- [`external_access.md`](external_access.md): delegated identity where the target's RBAC can
+- [External access](task_freezer.md#access--delegated-versus-brokered-external-access) (deferred): delegated identity where the target's RBAC can
   express the boundary, brokered credential where it cannot, agent-requested grants, and the
   revocation gate (placeholder token, substitution only while the ledger and the apiserver agree).
 - Credentialless egress, running on staging: per-Pod sidecar, central proxy holding the

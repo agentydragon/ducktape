@@ -7,11 +7,8 @@ The implemented surface is the [`session_delegation` Action group](../action_ser
 (`environments__{list,get,resume}` and seven `sessions__*` tools), the [Session CLI](../docs/agent_cli.md)
 and the maintained [Session delegation guide](../action_service/docs/agents/session_delegation.md),
 over [Dispatcher authorization](../runner_gateway/dispatcher/SPEC.md), [retained History
-access](../history_service/README.md) and the [delegated authorization contract](../docs/delegated_authorization.md).
-Scripted acceptance is `//agentplane/system_tests/suites/mcp:test_delegation` (external MCP, real
-Connection consent, integration app scaled to zero) and
-`//agentplane/system_tests/suites/mcp:test_parent_delegation` (parent CLI). Both prescribe model
-calls; they do not establish unaided natural-agent usability.
+access](../history_service/README.md) and the [delegated authorization contract](../docs/delegated_authorization.md),
+with scripted [acceptance](../action_service/session_delegation/README.md#acceptance).
 
 ## Remaining usability capstone
 

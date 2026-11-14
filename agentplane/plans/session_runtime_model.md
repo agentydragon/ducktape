@@ -92,7 +92,7 @@ Environment services, combining Environment responsibilities with Sandbox Contro
 arrangement. Review authority and failure boundaries rather than assuming a package determines them.
 Names such as `agentplane-session-dispatcher` and
 `agentplane-environment-gateway` are available if standalone entrypoints are selected. The earlier
-[combined-service proposal](dispatcher_gateway_merge.md) is an option awaiting review, not the
+[combined-service proposal](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/dispatcher_gateway_merge.md) is an option awaiting review, not the
 selected topology. That decision is independent of the environment process layout.
 
 The intended routing distinction is:

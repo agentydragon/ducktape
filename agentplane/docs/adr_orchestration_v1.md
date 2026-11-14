@@ -48,6 +48,26 @@ Each lasts until the backend rule for its operation lands.
   Dispatcher queue.
 - OAuth callers, who otherwise send from an Action box as ordinary workloads, gain Actions for what no box can do.
 
+### Why shape matching is a stopgap
+
+The operator, 2026-10-27: auto-approving "by their shape" is "a little ugly, it would be nice if we had specific
+rbac-style permissions for the involved actions". An `argument_schema` rule permits what its author predicted the
+JSON would look like, so a new target argument or addressing a worker by `session_id` falls outside it or slips past
+it unnoticed. It sees literals only, so it cannot map a Session to its Sandbox, follow a tag or check a UID against
+the live object. It skips a gate rather than granting a permission: the authority stays the executor's service
+identity, and the same operation entering through the Dispatcher or the CLI needs a second, differently shaped
+rule. The Policies tab shows a JSON Schema rather than "`claude-ai` may submit input to Sessions in `worker-3f2a`".
+
+The target is a permission check: each Action declares the verb and resource it acts on, and one typed family of
+verb-over-target rules, as `session_inbox_access` already is for `send_message`, is checked by the backend owning the
+operation (operator, 2026-10-27: "send message, interrupt, open session might end up looking like rbac checked on the
+runner gateway side"): Session commands in the Runner Gateway, History reads in History, inbox messages in
+Notifications. A launcher grant becomes that one rule; an Action approval stays an optional human gate on top. The
+rule's subject and target for Environment-independent Sessions are open (`SESSION_ACCESS_GROUPING_DESIGN`).
+
+The operator would also prefer one preset owner that the app and the group both read at run time over two rendered
+copies (2026-10-27).
+
 ## Rejected
 
 - **Backend caller grants first.** The end state, but building them first holds everything on the held read and

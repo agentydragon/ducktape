@@ -50,9 +50,9 @@ naming the `Identity` as effective caller. Service-class SVIDs (a SPIFFE path re
 an agent `Identity`) stay open for later; nothing now needs them.
 
 Other bearer forms are not planned and no task depends on them; if we wanted, we could later accept
-bearer tokens resolving to the same `Identity`. The paths that do not meet this yet, with the
-bucket each falls in, are the
-[workload identity lifecycle's inventory](workload_identity_lifecycle.md#remaining-paths).
+bearer tokens resolving to the same `Identity`. The one agent path that does not meet this yet is
+the app's `agentplane-agent` TokenReview bearer
+([`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target)).
 
 ## Where the migration stands
 
