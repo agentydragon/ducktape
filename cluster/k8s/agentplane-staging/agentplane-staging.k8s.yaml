@@ -4333,7 +4333,6 @@ data:
     egress_admin_token_file: /var/run/secrets/agentplane-egress-admin/token
     egress_admin_timeout: 5
     shutdown_timeout: 5
-    token_audience: agentplane
     oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging/
       public_base_url: https://agentplane-staging.allegedly.works
