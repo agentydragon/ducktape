@@ -158,8 +158,8 @@ func (c config) validate() error {
 	if c.OAuth == nil {
 		return nil
 	}
-	if strings.TrimSpace(c.ActionsTokenFile) == "" {
-		return errors.New("actions_token_file is required when oauth is enabled")
+	if err := c.ActionsTLS.ValidateCaller(c.ActionsTokenFile, peertls.MCPEdgeURI); err != nil {
+		return fmt.Errorf("Actions caller authentication: %w", err)
 	}
 	o := c.OAuth
 	for _, value := range []string{o.UpstreamClientID, o.UpstreamClientSecretFile, o.UpstreamSubject, o.ApprovingOperator.Issuer, o.ApprovingOperator.Subject} {

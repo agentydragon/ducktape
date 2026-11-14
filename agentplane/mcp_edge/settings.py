@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.net.peertls.config import ClientTLS, ServerTLSListener, ServiceSPIFFEID
+from agentplane.net.peertls.config import MCP_EDGE_URI, ClientTLS, ServerTLSListener, ServiceSPIFFEID
 
 
 class Settings(BaseModel):
@@ -63,4 +63,10 @@ class Settings(BaseModel):
             raise ValueError("rpc_tls.client_ca_file requires operator_services")
         if self.oauth_file is not None and self.oauth is not None:
             raise ValueError("oauth_file and inline oauth settings are mutually exclusive")
+        if self.oauth_file is not None or self.oauth is not None:
+            if self.actions_tls is None:
+                if self.actions_token_file is None or not self.actions_token_file.strip():
+                    raise ValueError("OAuth requires an Action caller credential")
+            else:
+                self.actions_tls.validate_caller(self.actions_token_file, MCP_EDGE_URI)
         return self
