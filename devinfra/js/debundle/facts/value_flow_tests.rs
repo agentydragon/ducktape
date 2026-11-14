@@ -130,6 +130,47 @@ const rooted = return_cycle();
 }
 
 #[test]
+fn candidate_value_union_visits_each_requested_root_once() {
+    let mut source = String::new();
+    for index in 0..129 {
+        source.push_str(&format!("const array{index} = [];\n"));
+    }
+    for (name, range) in [("left", 0..97), ("right", 32..129)] {
+        source.push_str(&format!("const {name} = {{"));
+        for index in range {
+            source.push_str(&format!("field{index}: array{index},"));
+        }
+        source.push_str("};\n");
+    }
+    source.push_str("const escaped = condition ? left : right;\n");
+    let module = raw_js_test_support::parse(&source);
+    let body = top_level_item_views(&module.body);
+    let initial = ChunkValueFlow::analyze(&body);
+    let candidates: BTreeSet<_> = (0..129)
+        .flat_map(|index| initial.values_of_binding(&id(&format!("array{index}"))))
+        .collect();
+    let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidates);
+    let values = flow.values_of_binding(&id("escaped"));
+    assert_eq!(values.iter().count(), 2);
+    // Include a sparse requested mask spanning multiple bitmap words.
+    for requested in [
+        candidates.clone(),
+        candidates.iter().step_by(3).copied().collect(),
+        BTreeSet::new(),
+    ] {
+        let reference = flow.candidate_object_index_reference_for_test(&requested).0;
+        let expected: BTreeSet<_> = values
+            .iter()
+            .flat_map(|value| reference.get(&value).into_iter().flatten().copied())
+            .collect();
+        let mut visited = Vec::new();
+        flow.candidate_object_index(&requested)
+            .for_values(&values, |root| visited.push(root));
+        assert_eq!(visited, expected.into_iter().collect::<Vec<_>>());
+    }
+}
+
+#[test]
 fn candidate_reachability_tracks_late_values_and_call_aliases() {
     let source = r#"
 const leaf = {};
