@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net"
 	"slices"
@@ -20,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -32,6 +34,15 @@ func (c *config) adminGRPCEnabled() bool { return c.AdminGRPCAudience != "" }
 func (c *config) validateAdminGRPC() error {
 	if c.adminGRPCEnabled() != (len(c.AdminGRPCCallers) != 0) {
 		return errors.New("admin_grpc_audience and admin_grpc_callers are set together or not at all")
+	}
+	if err := auth.ValidateServiceCallers(c.AdminGRPCServiceCallers); err != nil {
+		return fmt.Errorf("invalid admin_grpc_service_callers: %w", err)
+	}
+	if len(c.AdminGRPCServiceCallers) > 0 && !c.adminGRPCEnabled() {
+		return errors.New("admin_grpc_service_callers requires admin_grpc_audience and admin_grpc_callers")
+	}
+	if len(c.AdminGRPCServiceCallers) > 0 && !c.Forward.Has(listener.SPIFFE) {
+		return errors.New("admin_grpc_service_callers requires the forward SPIFFE client CA")
 	}
 	_, err := c.adminGRPCCallers()
 	return err
@@ -74,11 +85,17 @@ func newAdminServer(
 	// Rules and Admin retain their separate per-method authentication policies.
 	var serverOptions []grpc.ServerOption
 	if rpc.TLS != nil {
-		credentials, err := rpc.ServerCredentials(peertls.EgressProxyURI)
+		var transportCredentials credentials.TransportCredentials
+		var err error
+		if len(c.AdminGRPCServiceCallers) > 0 {
+			transportCredentials, err = rpc.ServerCredentialsWithServices(peertls.EgressProxyURI)
+		} else {
+			transportCredentials, err = rpc.ServerCredentials(peertls.EgressProxyURI)
+		}
 		if err != nil {
 			return nil, err
 		}
-		serverOptions = append(serverOptions, grpc.Creds(credentials))
+		serverOptions = append(serverOptions, grpc.Creds(transportCredentials))
 	}
 	var service *admin.Service
 	if c.adminGRPCEnabled() {
@@ -106,7 +123,11 @@ func newAdminServer(
 				return nil, err
 			}
 		}
-		maps.Copy(methods, admin.Methods(resolver, callers))
+		adminMethods, err := admin.Methods(resolver, callers, c.AdminGRPCServiceCallers)
+		if err != nil {
+			return nil, err
+		}
+		maps.Copy(methods, adminMethods)
 		service = admin.NewService(options)
 	}
 	serverOptions = append(serverOptions, methods.ServerOptions(0)...)

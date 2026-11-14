@@ -32,25 +32,61 @@ type Service struct {
 	sandboxes          *sandboxreader.Reader
 	readers            sets.Set[auth.Account]
 	writers            []auth.Account
+	readerServiceIDs   []string
+	readerServices     map[string]struct{}
+	writerServices     []string
 }
 
-func New(namespace string, workloadNamespaces []string, objects client.WithWatch, readers, writers []auth.Account) (*Service, error) {
+func New(
+	namespace string,
+	workloadNamespaces []string,
+	objects client.WithWatch,
+	readers, writers []auth.Account,
+	readerServices, writerServices []string,
+) (*Service, error) {
 	if namespace == "" || objects == nil {
 		return nil, errors.New("policy namespace and Kubernetes watch client are required")
+	}
+	if err := auth.ValidateServiceCallers(readerServices); err != nil {
+		return nil, errors.New("invalid PolicyService reader service allowlist")
+	}
+	if err := auth.ValidateServiceCallers(writerServices); err != nil {
+		return nil, errors.New("invalid PolicyService writer service allowlist")
 	}
 	sandboxes, err := sandboxreader.New(namespace, objects)
 	if err != nil {
 		return nil, err
 	}
+	readerServiceSet := make(map[string]struct{}, len(readerServices))
+	for _, caller := range readerServices {
+		readerServiceSet[caller] = struct{}{}
+	}
 	return &Service{
 		namespace: namespace, workloadNamespaces: slices.Sorted(slices.Values(workloadNamespaces)), objects: objects,
 		sandboxes: sandboxes, readers: sets.New(readers...), writers: slices.Clone(writers),
+		readerServiceIDs: slices.Clone(readerServices), readerServices: readerServiceSet, writerServices: slices.Clone(writerServices),
 	}, nil
 }
 
-func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Methods {
+var (
+	readerServiceMethods = []string{
+		policypb.PolicyService_WatchPolicyBindings_FullMethodName,
+		policypb.PolicyService_WatchPolicySets_FullMethodName,
+		policypb.PolicyService_ListPolicySetNames_FullMethodName,
+		policypb.PolicyService_WatchIdentities_FullMethodName,
+	}
+	writerServiceMethods = []string{
+		policypb.PolicyService_GrantSandboxPolicyBinding_FullMethodName,
+		policypb.PolicyService_RevokeSandboxPolicyBinding_FullMethodName,
+		policypb.PolicyService_DeleteIdentity_FullMethodName,
+		policypb.PolicyService_CreateIdentity_FullMethodName,
+		policypb.PolicyService_GrantIdentityPolicyBinding_FullMethodName,
+	}
+)
+
+func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) (auth.Methods, error) {
 	rule := auth.ReviewedServiceAccount(readResolver)
-	return auth.Methods{
+	methods := auth.Methods{
 		policypb.PolicyService_GrantSandboxPolicyBinding_FullMethodName:  auth.Accounts(writeResolver, s.writers),
 		policypb.PolicyService_RevokeSandboxPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
 		policypb.PolicyService_WatchPolicyBindings_FullMethodName:        rule,
@@ -61,9 +97,24 @@ func (s *Service) Methods(readResolver, writeResolver *auth.Resolver) auth.Metho
 		policypb.PolicyService_CreateIdentity_FullMethodName:             auth.Accounts(writeResolver, s.writers),
 		policypb.PolicyService_GrantIdentityPolicyBinding_FullMethodName: auth.Accounts(writeResolver, s.writers),
 	}
+	methods, err := methods.WithServiceCallers(readerServiceMethods, s.readerServiceIDs)
+	if err != nil {
+		return nil, err
+	}
+	return methods.WithServiceCallers(writerServiceMethods, s.writerServices)
 }
 
 func (s *Service) caller(ctx context.Context) (auth.Account, bool, error) {
+	admitted, err := auth.Admitted(ctx)
+	if err != nil {
+		return auth.Account{}, false, err
+	}
+	if service, ok := admitted.(auth.ServiceAdmission); ok {
+		if _, allowed := s.readerServices[service.Caller.SPIFFEID]; !allowed {
+			return auth.Account{}, false, status.Error(codes.PermissionDenied, "service cannot read policy resources")
+		}
+		return auth.Account{}, true, nil
+	}
 	identity, err := auth.EffectiveCaller(ctx)
 	if err != nil {
 		return auth.Account{}, false, err

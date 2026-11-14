@@ -188,7 +188,7 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 }
 
 func TestAdminGRPCSettingsComeFromTheFileAndAreAllOrNothing(t *testing.T) {
-	contents := validSettings + "admin_grpc_audience: file-audience\nadmin_grpc_callers: [test-ns/test-app, test-ns/test-other]\n"
+	contents := validSettings + "admin_grpc_audience: file-audience\nadmin_grpc_callers: [test-ns/test-app, test-ns/test-other]\nadmin_grpc_service_callers: [spiffe://agentplane/actions]\n"
 	c, err := configtest.Load(
 		t,
 		"AGENTPLANE_EGRESS_",
@@ -203,18 +203,21 @@ func TestAdminGRPCSettingsComeFromTheFileAndAreAllOrNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "file-audience" ||
-		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) {
+		!slices.Equal(callers, []auth.Account{{Namespace: "test-ns", Name: "test-app"}, {Namespace: "test-ns", Name: "test-other"}}) ||
+		!slices.Equal(c.AdminGRPCServiceCallers, []string{"spiffe://agentplane/actions"}) {
 		t.Fatalf("unexpected file settings: %+v", c)
 	}
 	const audience = "admin_grpc_audience: test-audience\n"
 	const callersList = "admin_grpc_callers: [test-ns/test-app]\n"
 	for name, extra := range map[string]string{
-		"audience without callers": audience,
-		"callers without audience": callersList,
-		"caller without a slash":   audience + "admin_grpc_callers: [test-ns]\n",
-		"caller without namespace": audience + "admin_grpc_callers: [/test-app]\n",
-		"caller without a name":    audience + "admin_grpc_callers: [test-ns/]\n",
-		"caller with a deep path":  audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
+		"audience without callers":                     audience,
+		"callers without audience":                     callersList,
+		"caller without a slash":                       audience + "admin_grpc_callers: [test-ns]\n",
+		"caller without namespace":                     audience + "admin_grpc_callers: [/test-app]\n",
+		"caller without a name":                        audience + "admin_grpc_callers: [test-ns/]\n",
+		"caller with a deep path":                      audience + "admin_grpc_callers: [test-ns/test-app/extra]\n",
+		"service caller without admin bearer settings": "admin_grpc_service_callers: [spiffe://agentplane/actions]\n",
+		"invalid service caller":                       audience + callersList + "admin_grpc_service_callers: [spiffe://agentplane/agents/worker]\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+extra)); err == nil {

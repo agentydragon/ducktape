@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -30,6 +31,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -98,6 +100,11 @@ func (idleHistory) Health() history.Health { return history.Health{} }
 func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 	t.Helper()
 	ca := environmentruntimetransporttesting.NewCA(t)
+	return testRulesAuthWithCA(t, ca)
+}
+
+func testRulesAuthWithCA(t *testing.T, ca *environmentruntimetransporttesting.CA) (*identity.Authenticator, *policy.Index) {
+	t.Helper()
 	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
 	forward := listener.Config{
 		ListenAddress: "127.0.0.1:0",
@@ -109,6 +116,94 @@ func testRulesAuth(t *testing.T) (*identity.Authenticator, *policy.Index) {
 		t.Fatal(err)
 	}
 	return authentication, policy.NewIndex()
+}
+
+func TestAdminServicePeerTLSIsMethodScopedAndPreservesBearerAccess(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	proxySVID := ca.Issue(t, peertls.EgressProxyURI)
+	forward := listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		TLS:           &listener.TLS{CertFile: proxySVID.CertFile, KeyFile: proxySVID.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}},
+	}
+	authentication, index := testRulesAuthWithCA(t, ca)
+	server, err := newAdminServer(config{
+		AdminGRPCAudience:       testAudience,
+		AdminGRPCCallers:        []string{"test-ns/test-app"},
+		AdminGRPCServiceCallers: []string{peertls.ActionsURI},
+		Forward:                 forward,
+	}, api.TokenReviews(), admin.ServiceOptions{
+		Decisions: noDecisions{}, Changes: quietChanges{}, HistoryHealth: idleHistory{}, Index: readyIndex{},
+	}, authentication, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Shutdown(context.Background()) })
+
+	dial := func(t *testing.T, tlsConfig *tls.Config) *grpc.ClientConn {
+		t.Helper()
+		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return connection
+	}
+	serviceTLS := func(serviceID string) *tls.Config {
+		clientSVID := ca.Issue(t, serviceID)
+		config, err := clientSVID.ClientTLSConfig(peertls.EgressProxyURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return config
+	}
+
+	allowed := dial(t, serviceTLS(peertls.ActionsURI))
+	if _, err := egressadminpb.NewEgressAdminClient(allowed).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{}); err != nil {
+		t.Fatalf("allowlisted service caller: %v", err)
+	}
+	if _, err := egressrulespb.NewEgressRulesClient(allowed).GetRules(context.Background(), &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("EgressRules admitted an EgressAdmin service caller: %v", err)
+	}
+	if _, err := egressadminpb.NewEgressAdminClient(allowed).GetHealth(
+		metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken),
+		&egressadminpb.GetHealthRequest{},
+	); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("service certificate was combined with a bearer: %v", err)
+	}
+
+	unlisted := dial(t, serviceTLS(peertls.NotificationsURI))
+	if _, err := egressadminpb.NewEgressAdminClient(unlisted).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unlisted service peer called EgressAdmin: %v", err)
+	}
+
+	bearerTLS, err := (peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.EgressProxyURI}).TLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bearer := dial(t, bearerTLS)
+	if _, err := egressadminpb.NewEgressAdminClient(bearer).GetHealth(
+		metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+testToken),
+		&egressadminpb.GetHealthRequest{},
+	); err != nil {
+		t.Fatalf("legacy admin bearer over TLS: %v", err)
+	}
+
+	untrustedCA := environmentruntimetransporttesting.NewCA(t)
+	untrustedSVID := untrustedCA.Issue(t, peertls.ActionsURI)
+	untrustedTLS, err := untrustedSVID.ClientTLSConfig(peertls.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	untrusted := dial(t, untrustedTLS)
+	if _, err := egressadminpb.NewEgressAdminClient(untrusted).GetHealth(context.Background(), &egressadminpb.GetHealthRequest{}); err == nil {
+		t.Fatal("service certificate from an untrusted CA was admitted")
+	}
 }
 
 func TestAdminListenerServesGRPCAndShutsDownWithAnOpenWatch(t *testing.T) {

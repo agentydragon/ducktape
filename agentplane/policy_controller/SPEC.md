@@ -62,7 +62,11 @@ controller checks this instead. Such an object reports `KubernetesReady` `False`
 
 `PolicyService.GrantSandboxPolicyBinding` and `RevokeSandboxPolicyBinding` are the operator write
 boundary. Their Pod-bound writer allowlist is configured independently from the workload read/watch
-resolver; an empty `writer_accounts` list denies both methods. Grant requires the exact live Sandbox
+resolver; an empty `writer_accounts` list denies both methods. `writer_services` may separately list
+exact service SPIFFE IDs for these write methods. `reader_services` lists exact service SPIFFE IDs
+for the policy read methods. Neither role implies the other, and both require the gRPC listener to
+verify clients with `grpc_tls.client_ca_file`. A service certificate proves only its listed service
+identity; it does not prove a Kubernetes account, UID, or Pod. Grant requires the exact live Sandbox
 UID, its controller-owned ServiceAccount, and existing unique PolicySet names. It stores the Sandbox
 UID in a non-controller owner reference. Revoke requires the caller's Sandbox UID and observed
 PolicyBinding UID, refuses Flux and Sandbox-controller ownership, and deletes with both Kubernetes

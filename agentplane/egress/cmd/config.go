@@ -39,6 +39,7 @@ type config struct {
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
+	AdminGRPCServiceCallers         []string          `mapstructure:"admin_grpc_service_callers"`
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`

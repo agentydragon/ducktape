@@ -28,6 +28,8 @@ type config struct {
 	GRPCAudience           string                     `yaml:"grpc_audience"`
 	ReaderAccounts         []string                   `yaml:"reader_accounts"`
 	WriterAccounts         []string                   `yaml:"writer_accounts"`
+	ReaderServices         []string                   `yaml:"reader_services"`
+	WriterServices         []string                   `yaml:"writer_services"`
 	WorkloadIssuer         string                     `yaml:"workload_issuer"`
 	WorkloadNamespaces     []string                   `yaml:"workload_namespaces"`
 }
@@ -98,6 +100,14 @@ func (c config) validate() error {
 		if err := account.UnmarshalText([]byte(name)); err != nil {
 			return fmt.Errorf("invalid PolicyService account allowlist")
 		}
+	}
+	for _, callers := range [][]string{c.ReaderServices, c.WriterServices} {
+		if err := auth.ValidateServiceCallers(callers); err != nil {
+			return fmt.Errorf("invalid PolicyService service allowlist")
+		}
+	}
+	if (len(c.ReaderServices) > 0 || len(c.WriterServices) > 0) && (c.GRPCTLS == nil || c.GRPCTLS.ClientCAFile == "") {
+		return errors.New("PolicyService service allowlists require grpc_tls.client_ca_file")
 	}
 	return nil
 }
