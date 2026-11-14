@@ -1,25 +1,25 @@
 {
-  "source_devel_commit": "61fff5940585974df89ad1b2f4222c403814925d",
-  "audited_at_utc": "2026-11-14T02:32:12.581846+00:00",
+  "source_devel_commit": "a4785875d139241007d18377a9c2d70a9881ae1f",
+  "audited_at_utc": "2026-11-14T03:39:26.838681+00:00",
   "published_at_utc": null,
-  "scope": "Iteration 12 architecture: reduced-root screen, direct private-systemd receipt controls, integrated rebase and merged independent ports. Fleet measurement windows and required gates unchanged.",
-  "report_sha256": "ba22b13dc521177257f18a063bed6bd5a96b2e4635bf81005ccb64d4659b8ec6",
-  "evidence_sha256": "3590092332cacd726b4d7729e4ca69a9d1b8353418b660a1d76b4141d54466fa",
-  "previous_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
+  "scope": "Supplemental architecture experiment, rebase validation, and selected critical-tail diagnosis. Original fleet populations, windows, source pins, denominators and rates unchanged.",
+  "report_sha256": "2304f4d18d391a7bf7278fae119cbe75f98aa72930851907f0afd50684b652bb",
+  "evidence_sha256": "991e62c926284b3b7aa74657de6fe23c91fe36b837db64e06ba8547f7ce73a48",
+  "previous_gh_pages_commit": "beb020013fd5fed19fd0b44b3cc9bfef14835abf",
   "pilot_branch": "agent/test-architecture-pivot",
-  "pilot_head_commit": "417b6428baeae93116fb293a782120664a754697",
-  "pilot_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
+  "pilot_head_commit": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+  "pilot_base_commit": "a4785875d139241007d18377a9c2d70a9881ae1f",
   "visual_validation": "visual-validation.json",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-  "attribution": "No matched complete-CI saving measured. Exact head417b passed required checks; manual control and image runs retain separate sources and physical/JUnit provenance. Independent ports16316/16317 and storage16299 are merged. Fleet rates and qualification remain unchanged.",
+  "attribution": "All ff06 required checks pass; one fresh manifest test, remaining tests cached. Manual A/B/B/A has eight fresh passing cases but no convincing warm wall-time saving. Selected KVM saturation and proposed shared-guest probe do not establish representative complete-CI improvement.",
   "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
   "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
   "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-  "ci_synthetic_merge_commit": "176f617bc958387fb23008b59fc47102c1f88908",
-  "ci_synthetic_merge_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
-  "implementation_head_commit": "417b6428baeae93116fb293a782120664a754697",
+  "ci_synthetic_merge_commit": "059587fef2b67a4c68ce19c4be9158c414d6b17b",
+  "ci_synthetic_merge_base_commit": "227eff4c0b2a30f0a0fb996e984785ef65b44882",
+  "implementation_head_commit": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
   "previous_published_at_utc": null,
-  "prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
+  "prepared_at_utc": "2026-11-14T03:39:26.838681+00:00",
   "publication_status": "Reviewed supplemental snapshot; separate presentation proof required before publication.",
   "reproduction_artifact_sha256": {
     "selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2"
@@ -62,10 +62,11 @@
     "iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7",
     "required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69",
-    "iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee"
+    "iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
+    "iteration13.json": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
-  "visual_validation_status": "Presentation proof is recorded separately in visual-validation.json and must match the captured HTML, evidence and manifests.",
+  "visual_validation_status": "Separate new presentation proof must match this snapshot. Previous proof does not validate iteration 13.",
   "previous_snapshot_source": {
     "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
     "pilot_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
@@ -124,9 +125,9 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "source_devel_commit_scope": "Latest integrated source only; historical measurements retain their own exact tested revisions and original windows.",
-  "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
-  "root_navigation_sha256": "16e72d0e69a454a63563b6c80afbc1c55dde76a1b96658e143bddf65175effad",
-  "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
+  "publication_base_gh_pages_commit": "beb020013fd5fed19fd0b44b3cc9bfef14835abf",
+  "root_navigation_sha256": "9dbce1c0db929fcf99e93aed71a1baa9ee6e3bd13fff8c9060f70666d1ae6938",
+  "draft_prepared_at_utc": "2026-11-14T03:39:26.838681+00:00",
   "iteration11": {
     "evidence_file": "iteration11.json",
     "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
@@ -179,5 +180,24 @@
     "scope": "Iteration 11 architecture, fixed-source graph replay, one-VM candidate proof and storage-readiness test repair. The existing latency/reliability populations and gates are unchanged.",
     "attribution": "Draft PR #16102 head 4bfabd5 passed all three required checks. Tested merge c5a0272 has devel parent 0479dfc9; native invocation 83623e77 completed in 139.276s. No full current-head physical/JUnit cohort is curated and this selected/cached run is not a matched saving. Manual VM proof has separate ff39339 plus patch provenance. PR #16299 remains open and unmerged despite green required checks. No gate or fleet rate changed.",
     "previous_gh_pages_commit": "b03106b455d64b2aa154ab68fbf6df83a64e15fd"
+  },
+  "iteration13": {
+    "evidence_file": "iteration13.json",
+    "evidence_sha256": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
+    "observed_at_utc": "2026-11-14T03:39:26.838681+00:00",
+    "source_head": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+    "source_base": "a4785875d139241007d18377a9c2d70a9881ae1f",
+    "scope": "Supplemental architecture experiment, rebase validation, and selected critical-tail diagnosis. Original fleet populations, windows, source pins, denominators and rates unchanged."
+  },
+  "historical_iteration12_provenance": {
+    "source_devel_commit": "61fff5940585974df89ad1b2f4222c403814925d",
+    "pilot_head_commit": "417b6428baeae93116fb293a782120664a754697",
+    "pilot_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
+    "ci_synthetic_merge_commit": "176f617bc958387fb23008b59fc47102c1f88908",
+    "ci_synthetic_merge_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
+    "implementation_head_commit": "417b6428baeae93116fb293a782120664a754697",
+    "prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
+    "scope": "Iteration 12 architecture: reduced-root screen, direct private-systemd receipt controls, integrated rebase and merged independent ports. Fleet measurement windows and required gates unchanged.",
+    "attribution": "No matched complete-CI saving measured. Exact head417b passed required checks; manual control and image runs retain separate sources and physical/JUnit provenance. Independent ports16316/16317 and storage16299 are merged. Fleet rates and qualification remain unchanged."
   }
 }

@@ -55,6 +55,7 @@
         Anchor,
         Badge,
         Box,
+        Code,
         Container,
         Group,
         Paper,
@@ -378,7 +379,8 @@
             >
               <${Stack} gap="sm">
                 <${Title} order=${2}
-                  >Iteration 9 source update and retained Bridge evidence<//
+                  >Historical iteration 9 source update and retained Bridge
+                  evidence<//
                 >
                 <${Text} size="sm" c="dimmed">
                   Supplemental selected evidence, observed
@@ -537,13 +539,207 @@
             <//>
             <${Paper}
               component="section"
+              id="architecture-followup-iteration13"
+              withBorder
+              p="lg"
+              my="xl"
+            >
+              <${Stack} gap="sm">
+                <${Title} order=${2}
+                  >Iteration 13 architecture follow-up: measured setup and
+                  required tail<//
+                >
+                <${Text} size="sm" c="dimmed">
+                  Current experiment source
+                  ff06b22d196eca2bd3c477e94e62b3e141336f1a passed all three
+                  required checks. Required invocation 08e0386c was SUCCESS in
+                  142.499s; its only NEW physical action was test manifest
+                  generation, with 1,993 passing results, mostly cached. The
+                  earlier rebase checkpoint
+                  a49291d92b9f831a33423ef17327ccb7603e2a55 passed all three
+                  required checks; its native invocation was SUCCESS in 530.543s
+                  against tested merge 06f3f7138a73446a543a88c0cc47b24d3fb0fe04.
+                <//>
+                <${Text}>
+                  Manual opt-in
+                  <${Code}
+                    >VM_PLATFORM_PRIVATE_SUPERVISION_OWNER=direct-guest<//
+                  >
+                  assigns the unchanged real private Go fixture to the existing
+                  direct Claude guest and omits its deployed VM duplicate. The
+                  default deployed owner remains enabled. All four arms ran the
+                  same two targets with warm compatible infrastructure ac4:
+                  <${Code}
+                    >//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate<//
+                  >
+                  and
+                  <${Code}>//agentplane/x/direct_vm_boot:test_runtime_session<//
+                  >.
+                <//>
+                ${table(
+                  [
+                    "Run",
+                    "BuildBuddy invocation",
+                    "Native",
+                    "VM execution / CPU",
+                    "Direct execution / CPU",
+                    "Setup",
+                    "Readiness",
+                    "Case",
+                    "Cleanup",
+                  ],
+                  [
+                    [
+                      "A1",
+                      html`<${Anchor}
+                        href=${inv("a9a3b28d-a822-41da-b0a3-9f914150dae5")}
+                        >a9a3b28d<//
+                      >`,
+                      "289.701s",
+                      "224.880343s / 603.803123s",
+                      "148.126195s / 263.555310s",
+                      "70.183159s",
+                      "65.711302s",
+                      "100.409309s",
+                      "28.912327s",
+                    ],
+                    [
+                      "B1",
+                      html`<${Anchor}
+                        href=${inv("c5567381-85be-44de-bd09-bf256fe7a4b4")}
+                        >c5567381<//
+                      >`,
+                      "192.106s",
+                      "157.093140s / 381.071583s",
+                      "153.932405s / 277.286120s",
+                      "25.231895s",
+                      "53.817551s",
+                      "83.830489s",
+                      "28.690877s",
+                    ],
+                    [
+                      "B2",
+                      html`<${Anchor}
+                        href=${inv("29f33135-0dae-433f-a992-e11b0e5d58aa")}
+                        >29f33135<//
+                      >`,
+                      "209.431s",
+                      "173.389017s / 408.751466s",
+                      "160.310297s / 318.798760s",
+                      "26.388514s",
+                      "70.848107s",
+                      "99.711063s",
+                      "27.439968s",
+                    ],
+                    [
+                      "A2",
+                      html`<${Anchor}
+                        href=${inv("26742449-a8e5-4bfb-bb72-4a0285e6c544")}
+                        >26742449<//
+                      >`,
+                      "202.192s",
+                      "166.923732s / 392.254133s",
+                      "146.120944s / 271.761249s",
+                      "25.586051s",
+                      "65.904350s",
+                      "95.787735s",
+                      "28.452377s",
+                    ],
+                  ],
+                  1220,
+                )}
+                <${Text}>
+                  All four reviewed arms succeeded. Each has two NEW physical
+                  actions and two nonempty passing JUnit cases, with no
+                  failures, errors, skips or retries. A1 performed 12 image
+                  imports spanning 51.891588s; B1, B2 and A2 skipped every image
+                  import. Exclude A1 from warm timing comparisons. Warm A2
+                  native time (202.192s), VM execution (166.924s), readiness
+                  (65.904s) and case time (95.788s) fall between B1 and B2. Warm
+                  B1/B2 native time averages 200.769s versus A2 at 202.192s.
+                  B1/B2 readiness varies by 17.031s, so the screen does not
+                  isolate a causal saving. No speed promotion or 67.8s causal
+                  saving follows.
+                <//>
+                <${Text} size="sm" c="dimmed">
+                  The direct private parent passed all 11 children and one
+                  receipt in each arm (A1 15.13s, B1 13.24s, B2 23.6s, A2
+                  12.2s). Deployed A1/A2 also passed 11 children and one receipt
+                  (12.48s / 11.15s); deployed B1/B2 intentionally had no kernel
+                  argument, parent pass or receipt. The default deployed owner
+                  remains enabled. These runs confirm selected ownership and
+                  duplicate omission; the separate omission- negative remains
+                  the prior direct-private control. These selected runs do not
+                  refresh the latency cohort, denominator or feedback window.
+                <//>
+                <${Title} order=${3}
+                  >Earlier rebase-checkpoint invocation tail<//
+                >
+                <${Text}>
+                  At invocation ${" "}
+                  <${Anchor}
+                    href="https://app.buildbuddy.io/invocation/acbad609-9135-5b68-9fa5-30709c4690d4"
+                    >acbad609-9135-5b68-9fa5-30709c4690d4<//
+                  >, required Firecracker on kvm-vm queued 206.046s, then
+                  executed 223.095s with CPU unknown, ending 03:09:49.831Z. The
+                  next Pod ended at 03:08:19.785Z after 340.188s execution and
+                  894.170s CPU. Removing Firecracker queue alone can save at
+                  most 90.046s under fixed other clocks; VM or Services alone
+                  save zero in this observed graph. This is one invocation, not
+                  a fleet distribution or current-devel matched saving. This
+                  earlier rebase-checkpoint invocation is separate from current
+                  ff06 required invocation 08e0386c.
+                <//>
+                <${Text}>
+                  Read-only Mimir 15s samples over 03:02:30–03:06:15Z show all
+                  3/3 registered KVM workers scraped, with all three tasks
+                  executing through the 206s wait. Desired replicas were fixed
+                  at 3 and assigned/assignable CPU was 12,000m. All three
+                  workers were busy/capped throughout the wait. A fourth worker
+                  appears feasible within one host's request headroom, but
+                  strict spread is intentional and no capacity trial has run.
+                  Prioritize the shared-guest probe.
+                <//>
+                <${Text}>
+                  A separate trust case took 33.782s: about 18.387s for
+                  second-guest create/readiness and 13.782s cleanup; the helper
+                  took about 1.35s. A proposed combined first fresh guest before
+                  live/session mutations could remove about 32.2s, but it is
+                  untested and loses the separate clean-fixture witness. Treat
+                  this as a probe, not a measured saving.
+                <//>
+                <${Anchor}
+                  href="../agentplane-test-architecture/iteration13.json"
+                  >Reviewed measurements and exact provenance<//
+                >
+                >
+                <${Anchor} href="../agentplane-test-architecture/#iteration13"
+                  >Architecture details and retained guarantees<//
+                >
+                >
+                <${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/16102"
+                  >Source PR #16102<//
+                >
+                >
+                <${Anchor}
+                  href="https://github.com/agentydragon/ducktape/issues/16099"
+                  >Tracker #16099<//
+                >
+                >
+              <//>
+            <//>
+            <${Paper}
+              component="section"
               id="architecture-followup-iteration12"
               withBorder
               p="lg"
               my="xl"
             >
               <${Stack} gap="sm">
-                <${Title} order=${2}>Iteration 12 architecture follow-up<//>
+                <${Title} order=${2}
+                  >Historical iteration 12 architecture follow-up<//
+                >
                 <${Text} size="sm" c="dimmed"
                   >Reviewed source 417b6428; original fleet populations,
                   windows, source pins, rates and denominators remain unchanged.
@@ -604,7 +800,9 @@
               my="xl"
             >
               <${Stack} gap="sm">
-                <${Title} order=${2}>Iteration 11 architecture follow-up<//>
+                <${Title} order=${2}
+                  >Historical iteration 11 architecture follow-up<//
+                >
                 <${Text} size="sm" c="dimmed"
                   >Observed 2026-11-14T00:31:06Z from PR #16102 source 4bfabd5.
                   The latency cohorts, source pins, original window, rates and
@@ -660,7 +858,9 @@
               my="xl"
             >
               <${Stack} gap="sm">
-                <${Title} order=${2}>Iteration 10 architecture follow-up<//>
+                <${Title} order=${2}
+                  >Historical iteration 10 architecture follow-up<//
+                >
                 <${Text} size="sm" c="dimmed">
                   Selected evidence observed 2026-11-13T22:27:42Z. The latency
                   cohorts, source pins, windows and denominators above are

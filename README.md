@@ -6,11 +6,11 @@ report snapshots. The CI reports are:
 
 - **Agentplane test architecture:** [fast-CI plan, implementation progress and recovery measurements](agentplane-test-architecture/index.html),
   [evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). Iteration 12 records rebased draft head 417b6428, a smaller-root screen and same-source private-systemd positive/omission controls. Independent diagnostic and Sampler coverage ports are merged. All three final-head required checks passed; complete feedback and gate qualification remain open.
+  [source manifest](agentplane-test-architecture/manifest.json). Iteration 13 records rebased draft head ff06b22d with all three required checks green. Eight fresh manual ownership cases pass, but warm runs show no convincing speedup. The recovery-prefix race is repaired; the selected KVM tail and a proposed shared-guest Firecracker check guide the next probe. Required gates and qualification remain unchanged.
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
-  [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 12 adds a smaller-root screen and direct private-systemd controls without a whole-CI saving claim.
+  [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 13 adds a completed ownership screen and KVM saturation evidence without a whole-CI saving claim.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
-  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Iteration 12 adds direct private-systemd controls and merged independent ports; original rates and denominators remain unchanged. PR #16299 is merged, with its seven-day fresh-exposure follow-up and original controller exit cause still open.
+  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Iteration 13 adds the recovery-prefix repair and eight fresh passing ownership cases; original rates and denominators remain unchanged. PR #16299 is merged, with its seven-day fresh-exposure follow-up and original controller exit cause still open.
 
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),

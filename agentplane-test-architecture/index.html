@@ -840,12 +840,19 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
-              >Iteration 12 · 417b6428: all three required checks passed<//
+              >Iteration 13 · ff06b22: all three required checks green<//
             ><${Badge} color="orange">devel merge gate unchanged<//
-            ><${Badge} color="gray">Iterations 2–8 retained below<//><//
+            ><${Badge} color="gray">Earlier evidence retained as history<//><//
           >
           <${Text} size="sm"
-            >${iteration12 ? "The smaller platform root removes 26.2% of EROFS bytes, with a 4.0% physical reduction in one serial pair. The direct guest now owns an additional private-systemd proof and rejects an omitted fixture. Both independent diagnostic/coverage ports have landed. All three final-head required checks passed; promotion and complete-feedback qualification remain open." : "Current source evidence is loading; no result is inferred."}<//
+            >Current source ff06b22d196eca2bd3c477e94e62b3e141336f1a passed all
+            three required checks. Required invocation 08e0386c was SUCCESS in
+            142.499s, with exactly one NEW physical action for test manifest
+            generation and 1,993 passing results, mostly cached. Its tested
+            merge base was 227eff4c0b2a30f0a0fb996e984785ef65b44882, distinct
+            from integrated devel base a4785875d139241007d18377a9c2d70a9881ae1f.
+            The opt-in private-fixture owner experiment keeps the default
+            deployed path; A/B/B/A arms are reviewed below.<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -855,16 +862,17 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration12", "Iteration 12 current evidence"],
+              ["iteration13", "Iteration 13 current evidence"],
+              ["iteration12", "Historical iteration 12"],
               ["iteration11", "Iteration 11 historical evidence"],
-              ["iteration10", "Iteration 10 history"],
-              ["iteration9", "Iteration 9 snapshot · 8a555"],
-              ["iteration8", "Iteration 8 snapshot · 0a9"],
-              ["iteration7", "Iteration 7 snapshot · 5699"],
-              ["iteration6", "Iteration 6 evidence · 663"],
-              ["iteration5", "Iteration 5 history"],
-              ["iteration4", "Iteration 4 history"],
-              ["iteration3", "Iteration 3 history"],
+              ["iteration10", "Historical iteration 10"],
+              ["iteration9", "Historical iteration 9 · 8a555"],
+              ["iteration8", "Historical iteration 8 · 0a9"],
+              ["iteration7", "Historical iteration 7 · 5699"],
+              ["iteration6", "Historical iteration 6 · 663"],
+              ["iteration5", "Historical iteration 5"],
+              ["iteration4", "Historical iteration 4"],
+              ["iteration3", "Historical iteration 3"],
               ["progress", "Progress"],
               ["architecture", "Architecture"],
               ["change-selector", "PR selection"],
@@ -878,15 +886,114 @@
             )}
           <//>
           <${Alert} color="yellow" title="Current architecture evidence">
-            Draft PR #16102 is rebased at 417b6428. All three required checks
-            passed at this exact head. The native invocation completed in
-            402.905s; it is not a matched savings measurement. Manual
-            replacement targets have not replaced a required owner. No
-            complete-feedback or reliability-rate improvement is claimed.
+            Source PR #16102 is at experiment source ff06b22. All three required
+            checks are green. Required invocation 08e0386c completed SUCCESS in
+            142.499s; its only NEW physical action was test manifest generation,
+            and 1,993 passing results were mostly cached. The default deployed
+            VM owner remains in place. This selected experiment makes no
+            complete-feedback or fleet-rate claim.
+          <//>
+          <${Section}
+            id="iteration13"
+            title="Iteration 13: opt-in private supervision ownership experiment"
+          >
+            ${p("The previous rebase checkpoint a49291d92b9f831a33423ef17327ccb7603e2a55 on devel a4785875d139241007d18377a9c2d70a9881ae1f passed all three required checks. Native invocation acbad609-9135-5b68-9fa5-30709c4690d4 was SUCCESS in 530.543s against tested merge 06f3f7138a73446a543a88c0cc47b24d3fb0fe04. The current ff06b22 source also passed all three required checks: invocation 08e0386c was SUCCESS in 142.499s with one NEW physical manifest-generation action and 1,993 passing results, mostly cached. Its tested merge base 227eff4c0b2a30f0a0fb996e984785ef65b44882 is distinct from integrated devel base a4785875d139241007d18377a9c2d70a9881ae1f.")}
+            <${Title} order=${3}>Opt-in ownership and unchanged contracts<//>
+            ${p(html`The manual opt-in <${Code}>VM_PLATFORM_PRIVATE_SUPERVISION_OWNER=direct-guest<//> assigns the unchanged real private Go fixture to the existing direct Claude guest and omits its duplicate from the deployed VM path. The default deployed owner remains enabled.`)}
+            ${p("The test now adds exact launcher and VMI UID checks plus actual-kernel-argument assertions. Issuer and Pod identity, setup budgets, workspace, CLI, descendant fence, same-boot behavior and cleanup assertions remain unchanged.")}
+            ${p(html`All four arms ran <${Code}>//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate<//> and <${Code}>//agentplane/x/direct_vm_boot:test_runtime_session<//>.`)}
+            <${Rows}
+              headers=${["Run", "BuildBuddy invocation", "Native", "VM execution / CPU", "Direct execution / CPU"]}
+              rows=${[
+                [
+                  "A1",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/a9a3b28d-a822-41da-b0a3-9f914150dae5"
+                    >a9a3b28d<//
+                  >`,
+                  "289.701s",
+                  "224.880343s / 603.803123s",
+                  "148.126195s / 263.555310s",
+                ],
+                [
+                  "B1",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/c5567381-85be-44de-bd09-bf256fe7a4b4"
+                    >c5567381<//
+                  >`,
+                  "192.106s",
+                  "157.093140s / 381.071583s",
+                  "153.932405s / 277.286120s",
+                ],
+                [
+                  "B2",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/29f33135-0dae-433f-a992-e11b0e5d58aa"
+                    >29f33135<//
+                  >`,
+                  "209.431s",
+                  "173.389017s / 408.751466s",
+                  "160.310297s / 318.798760s",
+                ],
+                [
+                  "A2",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/26742449-a8e5-4bfb-bb72-4a0285e6c544"
+                    >26742449<//
+                  >`,
+                  "202.192s",
+                  "166.923732s / 392.254133s",
+                  "146.120944s / 271.761249s",
+                ],
+              ]}
+              minWidth=${920}
+            />
+            <${Rows}
+              headers=${["Run", "Setup", "Readiness", "Case", "Cleanup"]}
+              rows=${[
+                ["A1", "70.183159s", "65.711302s", "100.409309s", "28.912327s"],
+                ["B1", "25.231895s", "53.817551s", "83.830489s", "28.690877s"],
+                ["B2", "26.388514s", "70.848107s", "99.711063s", "27.439968s"],
+                ["A2", "25.586051s", "65.904350s", "95.787735s", "28.452377s"],
+              ]}
+            />
+            ${p("All four same-source arms used the warm compatible infrastructure fingerprint ac4cf986. Each arm has two NEW physical actions and two nonempty passing JUnit cases, with no failures, errors, skips or retries. A1 performed 12 image imports spanning 51.891588s; B1, B2 and A2 skipped every image import. For that reason A1 is cache-confounded and is excluded from warm timing comparisons; do not infer a 67.8s causal saving. Among the warm B1/B2/A2 runs, A2 native time (202.192s), VM execution (166.924s), readiness (65.904s) and case time (95.788s) fall between B1 and B2. Warm B1/B2 native time averages 200.769s versus A2 at 202.192s. B1/B2 readiness itself varies by 17.031s, so the ordered screen does not isolate a causal saving. Keep this option manual.")}
+            ${p("The direct private parent passed all 11 children and one receipt in every arm (A1 15.13s, B1 13.24s, B2 23.6s, A2 12.2s). Deployed A1 and A2 each passed 11 children and one receipt (12.48s and 11.15s); deployed B1/B2 intentionally had no kernel argument, parent pass or receipt. These runs confirm the selected ownership and duplicate omission while leaving the default deployed owner intact; the separate omission-negative remains the prior direct-private control.")}
+            <${Title} order=${3}
+              >Earlier required-invocation tail and pool boundary<//
+            >
+            ${p("At the previous rebase-checkpoint invocation acbad609-9135-5b68-9fa5-30709c4690d4, required Firecracker on kvm-vm queued 206.046s, then executed 223.095s; CPU is unknown. It ended at 03:09:49.831Z. The next Pod ended at 03:08:19.785Z after 340.188s execution and 894.170s CPU. Removing Firecracker queue alone can save at most 90.046s with other clocks fixed; VM or Services alone save zero in that observed graph. This one invocation is not a fleet distribution or current-devel matched saving, and it is separate from current ff06 invocation 08e0386c.")}
+            ${p("Read-only Mimir 15s samples for 03:02:30–03:06:15Z show 3/3 KVM workers scraped and registered, with all three tasks executing throughout the 206s wait. Desired replicas were fixed at 3, with 12,000m assigned/assignable CPU. Pool saturation is confirmed for that window. A fourth worker appears feasible within one host's request headroom, but strict spread is intentional; no capacity trial has run. Prioritize the shared-guest probe.")}
+            ${p("The separate trust case took 33.782s: about 18.387s for second-guest create/readiness and 13.782s for cleanup; the helper took about 1.35s. A proposed combined first fresh guest before live/session mutations could remove about 32.2s, but this ordering is untested and would lose the separate clean-fixture witness. Treat it as the next probe, not a measured saving.")}
+            <${Group} gap="md">
+              <${Anchor} href="iteration13.json"
+                >Reviewed iteration 13 evidence and provenance<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/commit/a49291d92b9f831a33423ef17327ccb7603e2a55"
+                >Previous rebase checkpoint<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/commit/ff06b22d196eca2bd3c477e94e62b3e141336f1a"
+                >Current experiment source<//
+              >
+              <${Anchor}
+                href="https://app.buildbuddy.io/invocation/acbad609-9135-5b68-9fa5-30709c4690d4"
+                >Required native invocation<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16102"
+                >Source PR #16102<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >Tracker #16099<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration12"
-            title="Iteration 12: smaller guest, private systemd proof and landed ports"
+            title="Historical iteration 12: smaller guest, private systemd proof and landed ports"
           >
             ${p("Reviewed source 417b6428baeae93116fb293a782120664a754697 is rebased onto devel 61fff5940585974df89ad1b2f4222c403814925d. All three required checks passed at pre-rebase fa9094; all three final-head required checks have passed. No required owner or test frequency moved. This selected update leaves the historical fleet windows and denominators unchanged.")}
             <${Rows}
@@ -977,7 +1084,7 @@
           <//>
           <${Section}
             id="iteration10"
-            title="Iteration 10: exact-head checks, packaged guest proof, and port disposition"
+            title="Historical iteration 10: exact-head checks, packaged guest proof, and port disposition"
           >
             ${p(
               "PR #16102 exact head 194810646c5122f5574ae7d6ad9fe02044cc7113 passed all three required checks by 22:10:16Z. No current-head physical/JUnit cohort is curated. The earlier fully curated checkpoint 2196229 remains historical and is not a matched saving. Separately, 13 selected K3s target summaries passed: the Pod target ended 51.265s after VM within those summary clocks, while targets outside this selected-summary set are not represented. Three real-CLI runs executed both guests and all failed; six NEW physical TestRunner records are audited. The first run failed on an array-parser assumption; the second had one contaminated host-reminder parse and one 10s shutdown failure. Both tests in the third run failed during teardown at the unchanged 10s Notification shutdown deadline; a later wrapper-disabled packaged run passed. Their bodies passed CLI, setup, History, sameBootId, host identity, old-SVID revocation and fixed WorkloadCredential/same-Pod-UID assertions before teardown. The shell delimiter and stdout drain did not fix shutdown. A Python-only fixture then reproduced the 10s TERM failure without Gateway, Runtime, Egress or guest; its child GO_TEST_WRAP=0 control passed, supporting but not proving the rules_go XML-wrapper hypothesis. The subsequent uncommitted full packaged guest run d68330b6 passed 2/2 NEW actions in 239.693s (Codex 140.3s; Claude 198.4s). This is not covered by current-head CI, a fleet reliability rate or a speed comparison. The independent wrong-server-URI negative then returned an error object instead of the seeded subscription; teardown completed normally, and the exact TLS error payload was not inspected.",
@@ -1288,7 +1395,7 @@
           <//>
           <${Section}
             id="iteration9"
-            title="Iteration 9: source 8a555, current checks, and measured follow-ups"
+            title="Historical iteration 9: source 8a555, checks at that snapshot, and measured follow-ups"
           >
             ${p("Source 8a555b2 passed all three required checks. This checkpoint adds a fresh native CI result, a manual packaged guest contract, a live accepted-run observer proof, and bounded import/selector measurements. It does not establish a whole-CI speedup or change the required gate.")}
             <${Rows}
@@ -1464,7 +1571,7 @@
           <//>
           <${Section}
             id="iteration7"
-            title="Iteration 7 snapshot: fixture ownership, reproduced reliability repair and guest transport"
+            title="Historical iteration 7 snapshot: fixture ownership, reproduced reliability repair and guest transport"
           >
             <${Title} order=${3}>Source5699 and required-check snapshot<//>
             ${p(iteration7?.source_summary || "Loading current source and required-check status…")}
@@ -1565,7 +1672,7 @@
           <//>
           <${Section}
             id="iteration6"
-            title="Iteration 6 evidence checkpoint: authenticated recovery and measured limits"
+            title="Historical iteration 6 evidence checkpoint: authenticated recovery and measured limits"
           >
             <${Title} order=${3}>Literal source-663 validation checkpoint<//>
             ${p("At literal 66320ca996, six test targets and the shared native-fixture library passed in a fresh selected run: four recovery cases, admission reply loss, direct guest boot, native Sampler integration, 18 renderer cases and the Go startup target. There are 25 observed Python JUnit cases with zero failures, errors or skips; the Go target reports PASS but its XML has no testcase elements. The selected command took 214.289s, separate from full PR feedback.")}
@@ -1639,7 +1746,7 @@
           <//>
           <${Section}
             id="iteration5"
-            title="Iteration 5 history: admission recovery, guest boot and replay preparation"
+            title="Historical iteration 5: admission recovery, guest boot and replay preparation"
           >
             <${Alert}
               color="orange"
@@ -1808,7 +1915,7 @@
           <//>
           <${Section}
             id="iteration4"
-            title="Iteration 4 history: native outages and physical execution evidence"
+            title="Historical iteration 4: native outages and physical execution evidence"
           >
             <${Alert}
               color="teal"
@@ -2050,7 +2157,7 @@
           <//>
           <${Section}
             id="iteration3"
-            title="Iteration 3: concurrent cases and MCP-edge profile"
+            title="Historical iteration 3: concurrent cases and MCP-edge profile"
           >
             <${Alert}
               color=${iteration3?.status === "COMPLETE" ? "blue" : "orange"}
@@ -2255,7 +2362,10 @@
             ${p(iteration3?.next_step || "Next: review every 21-case run, including failures, retries and cleanup outcomes, against its recorded source commit; then use matched repeats only if the combined profile merits them. Whole-PR shadowing remains separate: at least 30 pinned base/head pairs and 100 fresh contract executions are still required. Do not change devel selection or infer complete-CI savings from this suite experiment.")}
             ${p("This does not complete P5: at least 30 pinned base/head pairs and 100 fresh contract executions, plus busy-window and four-PR-burst observation, remain before considering any selection change.")}
           <//>
-          <${Section} id="progress" title="Iteration 2 implementation status">
+          <${Section}
+            id="progress"
+            title="Historical iteration 2 implementation status"
+          >
             <${Alert}
               color="orange"
               title="Experimental source; initial pilot is historical"

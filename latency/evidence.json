@@ -63438,7 +63438,7 @@
                 "allocatable_cpu_millicores": 7000,
                 "worst_requested_cpu_millicores": 8240,
                 "resource_trial_native_compute_units": "4",
-                "corrected_trial": "Frozen source plus one rule-property edit4→8. First corrected attempt failed dependency loading; identical retry passed and capacity exceeds the intended request envelope.",
+                "corrected_trial": "Frozen source plus one rule-property edit4\u21928. First corrected attempt failed dependency loading; identical retry passed and capacity exceeds the intended request envelope.",
                 "corrected_trial_patch_sha256": "25f8581bca2c5bf01a93df1080da15359c7292e30863fc1177bfe05604759083",
                 "corrected_trial_invocation": "32024606-3f48-4754-a486-137cb15be2b2",
                 "corrected_trial_status": "No TestRunner: external Go proxy INTERNAL_ERROR during dependency loading; not a resource measurement.",
@@ -63453,7 +63453,7 @@
               "native_session_uri": "bytestream://remote.buildbuddy.io/blobs/e82bf67fb95431f00ccbac5e4ca8b28695567301cf3bad86bda5e0382f1a80a2/120838",
               "containerd_lifecycle_uri": "bytestream://remote.buildbuddy.io/blobs/5fcf5607985259e2a757da47cccb8c51581b6e3028631f8c8ad0c6d0211933bd/224305",
               "health_loss_followup": {
-                "conclusion": "The directly evidenced boundary is a shared K3s/Kine API and kubelet/containerd responsiveness stall at approximately 18:30:23-18:30:34Z. API handlers and lease requests time out while Kine reports 1.79-2.05s SQL operations; a kubelet ExecSync probe exceeds its 5s deadline and kubelet housekeeping takes 12.342s. The codex-executor is then killed after a liveness failure, and the ShellCall loses its exec-server WebSocket session. Three controller containers exit with status 1 amid lease request timeouts and are restarted. Sampled CPU, memory and I/O pressure are zero after the event, with several GiB available; retained evidence does not support OOM or sustained resource exhaustion. The underlying reason for the API/runtime stall, and the controllers’ exact status-1 exit paths, is not captured.",
+                "conclusion": "The directly evidenced boundary is a shared K3s/Kine API and kubelet/containerd responsiveness stall at approximately 18:30:23-18:30:34Z. API handlers and lease requests time out while Kine reports 1.79-2.05s SQL operations; a kubelet ExecSync probe exceeds its 5s deadline and kubelet housekeeping takes 12.342s. The codex-executor is then killed after a liveness failure, and the ShellCall loses its exec-server WebSocket session. Three controller containers exit with status 1 amid lease request timeouts and are restarted. Sampled CPU, memory and I/O pressure are zero after the event, with several GiB available; retained evidence does not support OOM or sustained resource exhaustion. The underlying reason for the API/runtime stall, and the controllers\u2019 exact status-1 exit paths, is not captured.",
                 "event_timeline_utc": [
                   {
                     "time": "18:30:23.872-18:30:24.459",
@@ -63538,7 +63538,7 @@
                     "exit_status": 1,
                     "nearby_api_evidence": "trust-manager Lease GET/PUT timed out in K3s at 18:30:29.058-29.378Z; the restarted process reacquired the lease at 18:30:34.571Z"
                   },
-                  "limit": "The artifacts do not include the old containers’ stdout/stderr or termination reasons. The shared API/lease outage is temporally supported as the common failure context, but status 1 alone does not prove each process exited specifically because of lease loss rather than another application failure."
+                  "limit": "The artifacts do not include the old containers\u2019 stdout/stderr or termination reasons. The shared API/lease outage is temporally supported as the common failure context, but status 1 alone does not prove each process exited specifically because of lease loss rather than another application failure."
                 },
                 "native_artifacts": [
                   {
@@ -74877,8 +74877,8 @@
     "reanalysis_completed_at_utc": "2026-11-13T03:09:05.011996+00:00",
     "source_devel_commit": "4415ac2544aef190cce5596d5ee2e73ba627b56f",
     "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-    "population_description": "159 latest observed PR heads targeting devel: 129 production backend (124 green, four failed, one cancelled), 25 backend tests/helpers and five BUILD-only. Selection began with 766 recently updated PRs across all bases, then restricted to 719 devel-base PRs. The first exact-head PR workflow must fall in 10 November 00:00–13 November 03:03:35 UTC. Superseded earlier heads are excluded.",
-    "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context’s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records.",
+    "population_description": "159 latest observed PR heads targeting devel: 129 production backend (124 green, four failed, one cancelled), 25 backend tests/helpers and five BUILD-only. Selection began with 766 recently updated PRs across all bases, then restricted to 719 devel-base PRs. The first exact-head PR workflow must fall in 10 November 00:00\u201313 November 03:03:35 UTC. Superseded earlier heads are excluded.",
+    "method": "Nearest-rank percentiles among successful exact heads. Start: earliest observed pull_request workflow creation for that head. End: latest visible successful completion of all three currently required contexts. Latest check IDs determine each context\u2019s outcome. Same-head repeated attempts can use different synthetic merge trees; they are not automatically same-source test recoveries or flakes. The non-atomic API observation completed 13 November 03:04:30 UTC; a subsequent analysis restricted base branches without refetching those records.",
     "limits": [
       "All 766 search records were paginated below the 1000-result cap, and files/head metadata were fetched in 39 batches; all six >100-file PRs were paginated completely. Filtering baseRefName=devel leaves a 719-PR frame. Five eligible backend candidates lacked an in-window first workflow clock; see exclusions.",
       "One latest observed head per PR: superseded earlier heads are absent. This cannot estimate all-push success, cancellation or flake rates. Later mutations can change current GitHub state.",
@@ -76368,9 +76368,9 @@
         "issue_number": 16032,
         "issue_url": "https://github.com/agentydragon/ducktape/issues/16032",
         "status": "Controlled auth timeout localized; natural cause open",
-        "observed": "Three fresh browser cases passed with six successful auth exchanges (40–131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
+        "observed": "Three fresh browser cases passed with six successful auth exchanges (40\u2013131ms). Holding actual TLS OIDC discovery for 5.25s caused AppProcess.authenticate to time out after 5.002s before page interaction, with client, Go and provider phases retained. This faithful hop control does not reproduce the unknown natural cause or show a lower failure rate.",
         "measurement": "Next natural failure: join client trace ID to Go phases and provider path/port to locate first missing hop; seven-day count of non-cached physical setup outcomes, separate cached rows.",
-        "acceptance": "Correlate current failure artifacts client → Go app → provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
+        "acceptance": "Correlate current failure artifacts client \u2192 Go app \u2192 provider and find the first missing phase; use a bounded targeted reproduction and repair the responsible boundary. Reuse existing logging, preserve real session issuance/OIDC behavior and token/cookie redaction, without generic retries or timeout bumps.",
         "prs": [
           {
             "label": "PR #16053: merged; all three required checks green",
@@ -76535,7 +76535,7 @@
             "url": "https://agentydragon.github.io/ducktape/latency/evidence.json"
           },
           {
-            "label": "Pre-dispatch window: 10 Nov 00:00–13 Nov 03:03:35 UTC",
+            "label": "Pre-dispatch window: 10 Nov 00:00\u201313 Nov 03:03:35 UTC",
             "url": "https://agentydragon.github.io/ducktape/latency/#backend-current"
           }
         ]
@@ -78540,7 +78540,7 @@
         "summed_cpu_increase_percent": 62.82
       },
       "decision": "Eight shards are enabled on the architecture branch as a scheduling candidate; no devel backport. Source 0a9acbf620a8aac16fee074812d58c8d63e603e1 passed all three required checks in 264s from earliest required workflow creation to last required result.",
-      "limits": "One target-only four-run ABBA, not a whole-CI saving. Eight shards used twice the concurrent workers and PostgreSQL starts; per-worker requests estimate 3 vCPU/7.5 GiB/10 GiB, giving estimated concurrent requests of 24 vCPU/60 GiB at eight versus 12 vCPU/30 GiB at four, not observed aggregate use. Observed per-action peak memory was about 1.20–1.25 GiB with queue around 0.06s; per-action peaks do not establish host saturation. Both shard settings sped up between their two observations. Later 0a9 required CI passed with eight fresh Bridge actions while other tests were cached, so it does not establish whole-CI saving.",
+      "limits": "One target-only four-run ABBA, not a whole-CI saving. Eight shards used twice the concurrent workers and PostgreSQL starts; per-worker requests estimate 3 vCPU/7.5 GiB/10 GiB, giving estimated concurrent requests of 24 vCPU/60 GiB at eight versus 12 vCPU/30 GiB at four, not observed aggregate use. Observed per-action peak memory was about 1.20\u20131.25 GiB with queue around 0.06s; per-action peaks do not establish host saturation. Both shard settings sped up between their two observations. Later 0a9 required CI passed with eight fresh Bridge actions while other tests were cached, so it does not establish whole-CI saving.",
       "artifact": "bridge-sharding-probe.json",
       "platform_and_capacity": {
         "same_linux_amd64_firecracker_platform_hash": true,
@@ -78635,7 +78635,7 @@
     "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
     "observed_at_utc": "2026-11-14T00:31:06Z",
     "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
-    "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
+    "scope": "Supplemental architecture and readiness evidence only; the report\u2019s original population, window, source pin, rates and denominators are unchanged."
   },
   "architecture_iteration12": {
     "evidence_file": "../agentplane-test-architecture/iteration12.json",
@@ -78644,5 +78644,13 @@
     "source_head": "417b6428baeae93116fb293a782120664a754697",
     "source_base": "61fff5940585974df89ad1b2f4222c403814925d",
     "scope": "Supplemental image screen, direct private-systemd controls and merged-port status. Original fleet populations, windows, source pins, rates and denominators unchanged."
+  },
+  "architecture_iteration13": {
+    "evidence_file": "../agentplane-test-architecture/iteration13.json",
+    "evidence_sha256": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
+    "observed_at_utc": "2026-11-14T03:39:26.838681+00:00",
+    "source_head": "ff06b22d196eca2bd3c477e94e62b3e141336f1a",
+    "source_base": "a4785875d139241007d18377a9c2d70a9881ae1f",
+    "scope": "Supplemental architecture experiment, rebase validation, and selected critical-tail diagnosis. Original fleet populations, windows, source pins, denominators and rates unchanged."
   }
 }
