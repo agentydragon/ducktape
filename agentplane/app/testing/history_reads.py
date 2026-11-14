@@ -103,6 +103,7 @@ class SessionEventReader:
             self.more_available = False
             return []
 
+        next_cursor = covered_cursor(self.cursor, self.limit, page)
         for first, last in unstored_ranges(page):
             for cursor in tuple(self._entries):
                 if first <= cursor <= last:
@@ -111,7 +112,6 @@ class SessionEventReader:
         for entry in newly_read:
             self._entries[entry.cursor] = entry
 
-        next_cursor = covered_cursor(self.cursor, self.limit, page)
         self.cursor = next_cursor
         self.more_available = len(page.entries) == self.limit and self.cursor < page.last_cursor
         return newly_read

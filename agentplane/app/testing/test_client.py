@@ -383,6 +383,28 @@ async def test_history_reader_applies_settlement_and_removal_corrections() -> No
     assert [entry.cursor for entry in reader.entries] == [3]
 
 
+async def test_history_reader_rejects_page_without_mutating_reader_state() -> None:
+    client = create_autospec(Client, instance=True)
+    first = history_service_pb2.ReadSessionEventsResponse(last_cursor=4)
+    first.entries.extend([_entry(1), _entry(2)])
+    invalid = history_service_pb2.ReadSessionEventsResponse(last_cursor=4)
+    invalid.entries.append(_entry(4))
+    invalid.removed.add(first=1, last=1)
+    client.read_session_events.side_effect = [first, invalid]
+    reader = SessionEventReader(client, uuid4(), limit=2)
+
+    assert [entry.cursor for entry in await reader.read_page()] == [1, 2]
+    assert reader.cursor == 2
+    assert reader.more_available
+
+    with pytest.raises(ValueError, match="did not account for cursor 3"):
+        await reader.read_page()
+
+    assert [entry.cursor for entry in reader.entries] == [1, 2]
+    assert reader.cursor == 2
+    assert reader.more_available
+
+
 async def test_history_reader_returns_one_page_so_callers_can_evaluate_predicates() -> None:
     client = create_autospec(Client, instance=True)
     first = history_service_pb2.ReadSessionEventsResponse(last_cursor=3)
