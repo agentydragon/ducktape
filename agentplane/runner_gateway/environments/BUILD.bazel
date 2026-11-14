@@ -16,7 +16,6 @@ go_library(
         "//agentplane/grpc/streaming",
         "//agentplane/identity/auth",
         "//agentplane/identity/credentials/api/v1alpha1",
-        "//agentplane/policy",
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/runner_gateway/environments/internal/management",

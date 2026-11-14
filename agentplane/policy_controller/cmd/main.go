@@ -30,7 +30,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/controller"
-	policyservice "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/rpc"
+	policyrpc "github.com/agentydragon/ducktape/agentplane/policy_controller/internal/rpc"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
@@ -158,7 +158,7 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	api, err := policyservice.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, readers, writers)
+	api, err := policyrpc.New(c.PolicyNamespace, c.WorkloadNamespaces, objects, readers, writers)
 	if err != nil {
 		return err
 	}

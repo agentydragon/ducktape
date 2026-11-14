@@ -17,7 +17,7 @@ go_library(
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/policy_controller/internal/controller",
-        "//agentplane/policy_controller/internal/rpc:service",
+        "//agentplane/policy_controller/internal/rpc:rpc",
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@in_gopkg_yaml_v3//:yaml_v3",
