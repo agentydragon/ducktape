@@ -180,19 +180,19 @@ its old ordering does not give it precedence over the selected tracks.
 ### Released 2026-11-14
 
 The operator released these tracks on 2026-11-14; Codex workers build them, and the PR numbers are
-their state at 07:40 UTC. Each row's node owns its gates; the Go reorganization behind several of them
+their state at 20:50 UTC. Each row's node owns its gates; the Go reorganization behind several of them
 is [section 17](#17-two-binaries-and-the-go-layout).
 
-| Track                                    | Operator release (UTC)                                         | Node                                                                | State                                                                                                                                                              |
-| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pre-cutover leftovers                    | 01:41, "dispatch 1, 2"                                         | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)                                                     |
-| TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                                                                         |
-| Any Gateway replica                      | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Route and stable-Service cutover merged through #16365; final receiver/RBAC/settings cleanup is prepared with image and config rollout gates in the component plan |
-| One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                                                                   |
-| Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                                                                        |
-| Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                                                                                 |
+| Track                           | Operator release (UTC)              | Node                                                                | State                                                                                                                                                              |
+| ------------------------------- | ----------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pre-cutover leftovers           | 01:41, "dispatch 1, 2"              | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)                                                     |
+| TLS on the two plaintext hops   | 01:41, same release                 | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                                                                         |
+| Any Gateway replica             | 02:36, card "Any replica, no epoch" | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Route and stable-Service cutover merged through #16365; final receiver/RBAC/settings cleanup is prepared with image and config rollout gates in the component plan |
+| One service authentication mode | 04:56, "One auth mode can fire off" | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 and stage 3 receivers merged (last: #16354, #16357, #16358, #16364, #16371)                                                                             |
 
-Not released: the stage 3 moves of section 17, retiring `orchestration_v1` and launcher auto-grants.
+Finished since and deleted: the environment rule slices (`resume` #16346, `bind_session` #16351) and
+Sessions re-checking the live Identity (#16373). Not released: the stage 3 moves of section 17,
+retiring `orchestration_v1` and launcher auto-grants.
 Decided since: explicit resume reserves no wake budget (07:41, card "No budget for explicit resume");
 its behavior PR is `EXPLICIT_RESUME_BUDGET_REMOVAL` in section 17.
 
@@ -201,14 +201,9 @@ flowchart LR
     subgraph AUTH_TRACK[One service authentication mode]
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
     end
-    subgraph RULE_TRACK[Environment rule slices]
-        ENVIRONMENT_IDENTITY_BIND_SESSION[In review: native bind_session grants]
-    end
     subgraph SPLIT_TRACK[Two-binary split, section 17]
-        SANDBOX_IDENTITY_RECHECK[In review: Sessions re-check the live Identity]
         EXPLICIT_RESUME_BUDGET_REMOVAL[Decided: explicit resume reserves no wake budget]
         ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Not released: EnvironmentService into Environments]
-        SANDBOX_IDENTITY_RECHECK --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
         EXPLICIT_RESUME_BUDGET_REMOVAL --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     end
     REFACTOR_COHERENCE_AUDIT[Candidate: leftovers and coherence sweep]
@@ -274,13 +269,13 @@ cutover nodes from the dispatch map. Remaining independent work is limited to th
 gates below; the standing-workload proxy decision-log observation remains open as deployment evidence,
 not as a claim that rollout is currently blocked.
 
-| Remaining lane                    | Current outcome                                                                         | Remaining boundary                                                                                                                                    |
-| --------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Standing workload observation     | Identity subjects are in source                                                         | Confirm the staging proxy decision log names the expected Identity; no source work is implied.                                                        |
-| Environment lifecycle authority   | Explicit Identity `resume` grants landed (#16346); `bind_session` is in review (#16351) | The rule's rollout order is in [environment policy rollout](../docs/environment_policy_rollout.md); no PolicySet uses the rule yet.                   |
-| Session inbox cross-Identity send | Inbox owner and History workload reads use recorded Identity                            | Current send rule remains Sandbox/tag-targeted; target/group model and launcher-grant lifetime are unresolved under `SESSION_ACCESS_GROUPING_DESIGN`. |
-| Sub-Session entry                 | Identity `CreateSession` remains separate                                               | `SESSION_SUBAGENT_DELEGATION`; it does not reopen the workload cutover.                                                                               |
-| Central code-mode tools           | Delegated sampler foundation is landed                                                  | Finish the remaining tools-as-Actions slice without reopening attribution or service identity.                                                        |
+| Remaining lane                    | Current outcome                                                               | Remaining boundary                                                                                                                                    |
+| --------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Standing workload observation     | Identity subjects are in source                                               | Confirm the staging proxy decision log names the expected Identity; no source work is implied.                                                        |
+| Environment lifecycle authority   | Explicit Identity `resume` (#16346) and `bind_session` (#16351) grants landed | The rule's rollout order is in [environment policy rollout](../docs/environment_policy_rollout.md); no PolicySet uses the rule yet.                   |
+| Session inbox cross-Identity send | Inbox owner and History workload reads use recorded Identity                  | Current send rule remains Sandbox/tag-targeted; target/group model and launcher-grant lifetime are unresolved under `SESSION_ACCESS_GROUPING_DESIGN`. |
+| Sub-Session entry                 | Identity `CreateSession` remains separate                                     | `SESSION_SUBAGENT_DELEGATION`; it does not reopen the workload cutover.                                                                               |
+| Central code-mode tools           | Delegated sampler foundation is landed                                        | Finish the remaining tools-as-Actions slice without reopening attribution or service identity.                                                        |
 
 The environment-free central Session has its own track:
 [Sandbox-free central Sessions](#sandbox-free-central-sessions).
@@ -289,7 +284,6 @@ The environment-free central Session has its own track:
 flowchart LR
     subgraph IDENTITY_TRACK[Identity and Sessions follow-up]
         STANDING_WORKLOAD_IDENTITY[Standing workload proxy evidence]
-        ENVIRONMENT_LIFECYCLE_RULES[Resume landed; bind_session in review] --> ENVIRONMENT_IDENTITY_BIND_SESSION
         SESSION_ACCESS_GROUPING_DESIGN[Review Session access grouping] --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox send target]
         SESSION_SUBAGENT_DELEGATION[Identity CreateSession design]
         CENTRAL_SESSION_DELEGATED_ACTING[Remaining central code-mode tools-as-Actions]
@@ -582,7 +576,6 @@ flowchart TD
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN[Direction agreed; interface review open]
     SESSION_TOOL_SURFACE_CONSOLIDATION[Blocked: retire orchestration_v1 onto the backend APIs]
     SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN --> SESSION_TOOL_SURFACE_CONSOLIDATION
-    ENVIRONMENT_IDENTITY_BIND_SESSION[In review: native bind_session grants, section 14] --> SESSION_TOOL_SURFACE_CONSOLIDATION
     ACTION_PROTO_CONTRACT_DESIGN[Later decision: protobuf wrapper Actions and generated schemas]
     ENVIRONMENT_SHARED_IDENTITY[Blocked: environments sharing an Identity]
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN[Later decision: catalogue ownership and location]
@@ -769,7 +762,7 @@ the decision does not block current receiver or tool work.
 ### `SESSION_TOOL_SURFACE_CONSOLIDATION` — consolidate orchestration and Session delegation
 
 **Operator-requested follow-up, 2026-11-11; blocked on `SESSION_TOOL_SURFACE_CONVERGENCE_DESIGN`'s
-remaining review and on Identity native `CreateSession` (`ENVIRONMENT_IDENTITY_BIND_SESSION`).**
+remaining review.** Identity native `CreateSession` binding landed in #16351.
 Consolidate the overlapping `orchestration_v1` and `session_delegation` executors and published
 Action/MCP tools under the reviewed capability and authority map. Prefer retiring the older
 `orchestration_v1` group once its required workflows have replacements. Its operator-broker
@@ -3303,10 +3296,12 @@ SVIDs over mTLS, the MCP edge's OAuth tokens, and Kubernetes' own authentication
 API alone. The app rejects Kubernetes bearers; component TokenReview is being replaced by service SVIDs under
 `PRIVILEGED_BACKEND_AUTH_DESIGN` (operator, 2026-11-14).
 
-**Remaining work.** The standing-workload proxy decision-log observation remains open. Explicit
-environment lifecycle grants, cross-Identity inbox target semantics, Identity `CreateSession`, and the central code-mode tools-as-Actions slice remain separate items.
-Identity inventory reads already work; explicit lifecycle mutations remain behind the reviewed
-environment-rule design. The full transition rollout is not a current blocker.
+**Remaining work.** The standing-workload proxy decision-log observation remains open.
+Cross-Identity inbox target semantics, Identity `CreateSession`, and the central code-mode
+tools-as-Actions slice remain separate items. Identity inventory reads work, and explicit `resume`
+and `bind_session` grants landed (#16346, #16351); the rule's rollout order is in
+[environment policy rollout](../docs/environment_policy_rollout.md). The full transition rollout is
+not a current blocker.
 
 ```mermaid
 flowchart LR
@@ -3314,17 +3309,14 @@ flowchart LR
     CENTRAL_SESSION_DELEGATED_ACTING[Remaining code-mode tools-as-Actions slice]
     CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
     STANDING_WORKLOAD_IDENTITY[Standing workloads run as Identities; proxy observation remains]
-    ENVIRONMENT_LIFECYCLE_RULES[In flight: explicit resume landed, bind_session in review]
-    ENVIRONMENT_IDENTITY_BIND_SESSION[In review: native CreateSession bind_session]
-    ENVIRONMENT_LIFECYCLE_RULES --> ENVIRONMENT_IDENTITY_BIND_SESSION
     APP_IDENTITIES_UI[Paused: remaining identity slices in the app]
     IDENTITY_CLEANUP_REFERENCE_DECISION[Decision: Identity cleanup reference guarantees]
     SESSION_SUBAGENT_DELEGATION[Design: a Session creates and messages a sub-Session]
     CENTRAL_SESSION_ACTING_DESIGN --> SESSION_SUBAGENT_DELEGATION
     SESSION_ACCESS_GROUPING_DESIGN --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox target, grant and migration]
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
-    ENVIRONMENT_LIFECYCLE_RULES --> ENVIRONMENT_RUNTIME_NATIVE_SURFACE[Deferred: a runtime surface unmistakably about native Sessions]
-    ENVIRONMENT_IDENTITY_BIND_SESSION --> CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
+    ENVIRONMENT_RUNTIME_NATIVE_SURFACE[Deferred: a runtime surface unmistakably about native Sessions]
+    CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
     IDENTITY_SYSTEM_TESTS[Remaining automated identity-boundary acceptance]
     SANDBOX_IDENTITY_CHANGE_CHECKPOINT[Deferred: restart after Identity change]
 ```
@@ -3412,28 +3404,6 @@ Identity is the subject of the expected egress decision remains open. This is an
 not a claim that rollout is blocked or that the source migration remains unfinished. **Exit:** the
 existing staging decision log records the expected Identity decision, or the operator records an
 explicit waiver.
-
-### `ENVIRONMENT_LIFECYCLE_RULES` — explicit Identity lifecycle authority
-
-**Selected by the operator, 2026-11-14 04:58 UTC:** "Okay this sounds good to me (these environment
-rules)". The [`environment` rule design](environment_rules.md) ships as two ordered source slices.
-Explicit `resume` merged in [#16346](https://github.com/agentydragon/ducktape/pull/16346); native
-`bind_session` is `ENVIRONMENT_IDENTITY_BIND_SESSION` below. Grants are explicit, add no implied
-capability, and include no parent-over-child grant. Identity inventory self-reads already work;
-automatic Identity wake remains under the existing target `resumePolicy`. The rollout order is in
-[environment policy rollout](../docs/environment_policy_rollout.md); no PolicySet uses the rule yet.
-`ORCHESTRATION_V1_BACKEND_GRANTS` (a launch writing a grant) and retiring `orchestration_v1` are not
-released, and the Action Service launcher admission policy is unchanged. **Exit:** both slices
-merged; this node then goes, since the design's home is the rule's documentation.
-
-### `ENVIRONMENT_IDENTITY_BIND_SESSION` — grant native `bind_session`
-
-**In review, [#16351](https://github.com/agentydragon/ducktape/pull/16351) (coding agent, 2026-11-14); second implementation slice, after explicit `resume` (#16346).** Add the reviewed
-`bind_session` operation as the target grant for native `CreateSession` on an exact Environment,
-including environment-hosted child use. This grants the Session–Environment relation; it does not
-authorize environment-free Session creation or other Session management. Keep the Sandbox's exact
-Identity and UID checks. **Exit:** a matching grant admits the reviewed native
-Session–Environment binding; absent or mismatched grants fail closed.
 
 ### `IDENTITY_CLEANUP_REFERENCE_DECISION` — decide cleanup reference guarantees
 
@@ -3701,13 +3671,14 @@ confirmation of image pins.
 **Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
 verification, rotation, caller denial and delegation without a bearer fallback.
 
-State at 07:40 UTC: the path inventory is [service SVID authentication](service_svid_authentication.md);
+State at 20:50 UTC: the path inventory is [service SVID authentication](service_svid_authentication.md);
 service SVIDs are issued and mounted ([#16359](https://github.com/agentydragon/ducktape/pull/16359));
 exact service SVID admission and certificate-backed delegation landed in
 [#16350](https://github.com/agentydragon/ducktape/pull/16350); Policy and Egress Admin admit service
-SVIDs ([#16355](https://github.com/agentydragon/ducktape/pull/16355)), and so does History
-([#16369](https://github.com/agentydragon/ducktape/pull/16369)); Actions (#16354), the sampler
-(#16357), LLM ingress (#16358), the Gateway (#16364) and the MCP edge (#16371) are in review.
+SVIDs ([#16355](https://github.com/agentydragon/ducktape/pull/16355)), and so do History
+([#16369](https://github.com/agentydragon/ducktape/pull/16369)), Actions (#16354), the sampler
+(#16357), LLM ingress (#16358), the Gateway (#16364) and the MCP edge (#16371), all merged. #16333
+and #16334 (TLS) remain in review.
 
 #### Authentication: dead or stale today
 
@@ -3933,25 +3904,24 @@ Directory names: 05:49 UTC, card "session_dispatcher + environments"; deployed n
 Identity (07:20 UTC, "okay, sounds good to me, sessions can re-check"), and explicit resume reserves
 no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 [Go reorganization plan](https://agentydragon.github.io/ducktape/agentplane-organization/) holds the
-evidence and line-level steps for every track below; its stages are ordered by certainty.
+evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
+(pre-cutover leftovers) is done and left the plan; the other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                                                                                                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1. Pre-cutover leftovers        | Leftovers landed (`REFACTOR_COHERENCE_AUDIT`); Gateway routing cleanup is complete in merged #16365                                                                                                                                                                |
-| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                                                                  |
-| 3. The two-binary moves         | `ENVIRONMENTS_DIRECTORY`, `SANDBOX_IDENTITY_RECHECK`, `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                                                                             |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                                                                   |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                                                                       |
+| Plan stage                      | DAG node                                                                                                                                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                                      |
+| 3. The two-binary moves         | `ENVIRONMENTS_DIRECTORY`, `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                                                 |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                                       |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                                           |
 
-The stage 3 moves are not released; `SANDBOX_IDENTITY_RECHECK` is.
+The stage 3 moves are not released. Sessions re-checking the live Identity landed in #16373.
 
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
     GO_LAYOUT_FIXES[Candidate: stage 2 layout fixes]
     ENVIRONMENTS_DIRECTORY[Ready: Sandbox Controller moves to environments/]
-    SANDBOX_IDENTITY_RECHECK[In review: Sessions re-check the live Identity]
     EXPLICIT_RESUME_BUDGET_REMOVAL[Decided: explicit resume reserves no wake budget]
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Agreed: EnvironmentService into Environments]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
@@ -3960,7 +3930,6 @@ flowchart LR
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
     ENVIRONMENTS_DIRECTORY --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
-    SANDBOX_IDENTITY_RECHECK --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     EXPLICIT_RESUME_BUDGET_REMOVAL --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     ENVIRONMENTS_DIRECTORY --> RUNTIME_PROXY_TO_ENVIRONMENTS
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
@@ -3974,9 +3943,10 @@ flowchart LR
 ### `GO_LAYOUT_FIXES` — stage 2 layout fixes
 
 **Candidate; not released.** The Go plan tracks that hold whatever the service map becomes:
-`env-execution-package-names`, `runner-era-names`, `sampler-json-contract`, `app-session-client-name`,
-`egress-sidecar-runtime`, `llm-ingress-server-boundary` and `firecracker-host-guest`. Each is its own
-small PR; `ENVIRONMENTS_DIRECTORY` absorbs `runner-era-names`' `runnercontrol` → `runtimecontrol`
+`env-execution-package-names`, `runner-era-names` (the app's share landed in #16394),
+`sampler-json-contract`, `egress-sidecar-runtime`, `llm-ingress-server-boundary` and
+`firecracker-host-guest`; `app-session-client-name` landed in #16394. Each is its own small PR;
+`ENVIRONMENTS_DIRECTORY` absorbs `runner-era-names`' `runnercontrol` → `runtimecontrol`
 rename so those files move once. **Exit:** each track's plan exit met on devel.
 
 ### `ENVIRONMENTS_DIRECTORY` — the Sandbox Controller becomes the Environments binary
@@ -3986,18 +3956,6 @@ EnvironmentService API at `environments/v1`, before EnvironmentService and the R
 their files land once. A pure move: the generated manifests must not change, so it needs no rollout.
 Update every Bazel label (`devinfra/ci/image_targets.json`, `system_tests/k3s/defs.bzl`,
 `cluster/cdk8s/agentplane/BUILD.bazel`) and doc reference in the same PR.
-
-### `SANDBOX_IDENTITY_RECHECK` — Sessions re-check the live Identity instead of refusing a change
-
-**In review, [#16373](https://github.com/agentydragon/ducktape/pull/16373); operator, 2026-11-14
-07:20 UTC: "okay, sounds good to me, sessions can re-check".** Drop `dispatcher.Store.ChangeSandboxIdentity`
-and its refusal while retained Sessions name another Identity: Session rows are never deleted, so the
-refusal blocked every rebind once a Session had existed. EnvironmentService patches `spec.identity`
-under optimistic locking; the Sandbox CRD already admits the change only before the first status
-report or at `stopStage: Stopped`. Admission, placement and every delivery keep re-checking the live
-Identity, so commands of Sessions recorded under the old Identity fail `execution_identity_changed`.
-This removes the last call EnvironmentService would need into Sessions. **Exit:** a stopped Sandbox
-with retained Sessions changes Identity, and its old Sessions' commands fail without being delivered.
 
 ### `EXPLICIT_RESUME_BUDGET_REMOVAL` — explicit resume reserves no wake budget
 
@@ -4013,7 +3971,7 @@ automatic wake's limit is unchanged.
 
 **Agreed direction; not released.** Operator, 2026-11-14 01:10 UTC: "merging environment service
 into sandbox controller sounds good to me". Blocked on `ENVIRONMENTS_DIRECTORY`,
-`SANDBOX_IDENTITY_RECHECK` and `EXPLICIT_RESUME_BUDGET_REMOVAL`. Still to write: the every-replica
+and `EXPLICIT_RESUME_BUDGET_REMOVAL`. Still to write: the every-replica
 serving contract, since the Sandbox Controller is a leader-elected manager with no listener
 (listener lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate
 identity and retargeted callers). Then move `runner_gateway/environments` with `lifecycle`,
