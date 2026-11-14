@@ -208,7 +208,26 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 		_, err := client.CreateSession(t.Context(), request)
 		createDone <- err
 	}()
-	waitForAdvisoryWaiter(t, store)
+	// Observe the CreateSession transaction blocked by this fixture's lock before changing the target.
+	var gatePID int
+	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var blocked bool
+		if err := store.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, gatePID).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("CreateSession did not wait on the fixture's Sandbox lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 
 	inventory.mu.Lock()
 	inventory.identity = &identitypb.Identity{Name: "rebound-identity", Uid: uuid.NewString()}
@@ -264,7 +283,26 @@ func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T
 		_, err := client.CreateSession(t.Context(), request)
 		createDone <- err
 	}()
-	waitForAdvisoryWaiter(t, store)
+	// Observe the CreateSession transaction blocked by this fixture's lock before changing the target.
+	var gatePID int
+	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var blocked bool
+		if err := store.DB.QueryRowContext(t.Context(), `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))`, gatePID).Scan(&blocked); err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("CreateSession did not wait on the fixture's Sandbox lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if _, err := gate.ExecContext(t.Context(), "INSERT INTO deleted_sandbox (sandbox_uid) VALUES ($1)", sandbox.UID); err != nil {
 		t.Fatal(err)
 	}
