@@ -64,6 +64,11 @@ def tls_service(namespace: str) -> ServiceRef:
     )
 
 
+def tls_target(namespace: str) -> str:
+    endpoint = tls_service(namespace)
+    return f"{endpoint.fqdn}:{endpoint.port.number}"
+
+
 class PolicyController(Construct):
     """The controller's workload and service; fleet policy and monitoring are added separately."""
 

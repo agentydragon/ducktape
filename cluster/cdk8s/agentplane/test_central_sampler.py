@@ -14,11 +14,12 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,
     llm_ingress,
+    policy_controller,
     runner_gateway,
     staging,
     workload_tls,
@@ -171,10 +172,18 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     )
     target = gateway["central_sampler"]
     assert target == {
-        "target": central_sampler.target(namespace),
+        "target": central_sampler.tls_target(namespace),
         "token_file": "/var/run/secrets/agentplane-runner-gateway/central-sampler",
+        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": CENTRAL_SAMPLER_URI},
     }
     assert gateway["executor_callers"] == [f"{namespace}/{central_sampler.NAME}"]
+
+    app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
+    assert app_config["policy_service_tls"] == {
+        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "server_uri": POLICY_CONTROLLER_URI,
+    }
 
     history = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]

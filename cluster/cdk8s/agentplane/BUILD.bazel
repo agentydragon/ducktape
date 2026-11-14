@@ -1109,6 +1109,7 @@ py_test(
         ":conftest",
         ":history_service",
         ":llm_ingress",
+        ":policy_controller",
         ":runner_gateway",
         ":session_dispatcher",
         ":staging",
