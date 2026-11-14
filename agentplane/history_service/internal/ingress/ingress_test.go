@@ -30,8 +30,9 @@ import (
 )
 
 const (
-	testAudience  = "test-runner-ingress"
-	testNamespace = "test-sandbox-namespace"
+	testAudience   = "test-runner-ingress"
+	testNamespace  = "test-sandbox-namespace"
+	testSandboxUID = "test-sandbox-uid"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 )
@@ -60,6 +61,12 @@ func workloadToken(t *testing.T, account auth.Account) string {
 
 // testTiming is short enough to wait out, long enough that a loaded runner does not end a live call.
 var testTiming = Timing{IdleAck: 100 * time.Millisecond, SilenceLimit: time.Second}
+
+type testSandboxUIDResolver struct{}
+
+func (testSandboxUIDResolver) Resolve(context.Context, storage.ServiceAccountWriter) (string, error) {
+	return testSandboxUID, nil
+}
 
 type testIngress struct {
 	history *storage.Store
@@ -116,7 +123,11 @@ func serveIngressAdmitting(t *testing.T, service *Service, pushRule func(*auth.R
 func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
-	return &Service{History: storage.NewStore(db, storage.Options{SettleDeltas: true}), Timing: timing}, db
+	return &Service{
+		SandboxUIDs: testSandboxUIDResolver{},
+		History:     storage.NewStore(db, storage.Options{SettleDeltas: true}),
+		Timing:      timing,
+	}, db
 }
 
 // call is a runner's Push call: frames go out as the test sends them, and acknowledgements are read back.
