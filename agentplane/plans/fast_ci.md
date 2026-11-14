@@ -322,11 +322,24 @@ See [`test_architecture_iteration7.md`](../system_tests/debug/test_architecture_
 for the complete screen, cache limits and next experiment.
 The implemented platform composition and first proof are in
 [`test_architecture_iteration8.md`](../system_tests/debug/test_architecture_iteration8.md).
-The next manual comparison explicitly assigns private supervision to the direct
-Claude guest, checks the admitted VMI arguments and runs both retained targets
-fresh in each arm. Default deployed supervision and every required owner remain.
+The completed manual ownership comparison explicitly assigns private supervision
+to the direct Claude guest, checks admitted VMI arguments and runs both targets
+fresh in each arm. Eight fresh actions/cases pass, but warm candidate mean
+200.769s versus warm control 202.192s is below readiness variation; the initial
+control also has unmatched image imports. Keep the option manual. Default
+deployed supervision and every required owner remain.
 The experiment and bounded graph hypothesis are in
 [`test_architecture_iteration9.md`](../system_tests/debug/test_architecture_iteration9.md).
+
+Next, compare the existing two-guest Firecracker acceptance with a manual
+one-guest composition. Run the unchanged trust helper before any live-state
+mutation, then the same Session/certificate/suspend/resume scenario. This could
+remove about 32.2 seconds of repeated guest setup and cleanup from an observed
+required tail. It trades a separately clean second fixture for two scenario
+owners on one fresh guest; retain every assertion and the real one-minute idle
+interval. First compare physical action and phase costs, then the full selected
+graph if the result warrants it. The experiment contract is in
+[`test_architecture_firecracker_guest_reuse.md`](../system_tests/debug/test_architecture_firecracker_guest_reuse.md).
 
 The storage startup race found in subsequent required CI is repaired on this
 branch with a bounded readiness wait; both real-cluster recovery/non-recovery
