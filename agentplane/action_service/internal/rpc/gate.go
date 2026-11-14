@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	operatoroidc "github.com/agentydragon/ducktape/agentplane/identity/operator" // The API package has an operator projection helper.
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -41,6 +42,8 @@ var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
 
 // GateOptions are whom a Gate admits.
 type GateOptions struct {
+	ServiceReaders   []string
+	OperatorServices []string
 	// Workloads reviews a workload's bearer; it admits only the namespaces whose ServiceAccounts may call.
 	Workloads *auth.Resolver
 	// SVID resolves verified workload certificates on the shared TLS listener; operator tokens still use OIDC.
@@ -58,6 +61,8 @@ type GateOptions struct {
 // Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
 // bearer to the principal the call acts as, and answers a failed call with the status code that names its failure.
 type Gate struct {
+	serviceReaders       sets.Set[string]
+	operatorServices     sets.Set[string]
 	workloads            *auth.Resolver
 	svid                 *auth.SVIDResolver
 	callers              Callers
@@ -73,6 +78,7 @@ type Gate struct {
 func NewGate(options GateOptions) *Gate {
 	draining, drain := context.WithCancel(context.Background())
 	g := &Gate{
+		serviceReaders: sets.New(options.ServiceReaders...), operatorServices: sets.New(options.OperatorServices...),
 		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: sets.New(options.ReaderAccounts...), operators: options.Operators,
 		connectionDelegation: options.ConnectionDelegation,
 		draining:             draining, drain: drain,
@@ -140,6 +146,23 @@ func bearer(ctx context.Context) (string, error) {
 // Each path verifies the token in full, so the claim only picks the verifier.
 func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if hasSVIDPeer(ctx) {
+		id, err := peertls.PeerIdentity(ctx)
+		if err != nil {
+			return admission{}, unauthenticated
+		}
+		if peertls.IsServiceURI(id) {
+			md, _ := metadata.FromIncomingContext(ctx)
+			if len(md.Get(auth.DelegationMetadataKey)) > 0 {
+				return admission{}, unauthenticated
+			}
+			if len(md.Get("authorization")) > 0 {
+				return g.authenticateOperator(ctx)
+			}
+			if !g.serviceReaders.Has(id) {
+				return admission{}, unauthenticated
+			}
+			return admission{principal: store.ServiceSVIDReaderPrincipal{SPIFFEID: id}}, nil
+		}
 		md, _ := metadata.FromIncomingContext(ctx)
 		if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 || g.svid == nil {
 			return admission{}, unauthenticated
@@ -222,11 +245,12 @@ func (g *Gate) Recheck(ctx context.Context) error {
 		if err != nil {
 			return unauthenticated
 		}
-		delegated, ok := verified.(auth.DelegatedIdentityAdmission)
-		if !ok || !g.callers.Admits(delegated.Actor.Account) || !g.callers.AdmitsIdentity(delegated.EffectiveCaller) {
-			return unauthenticated
+		identityCaller, err := g.connectionIdentity(verified)
+		if err != nil {
+			return err
 		}
-		identity := store.IdentityPrincipal{Identity: store.Identity{Name: delegated.EffectiveCaller.Name, UID: delegated.EffectiveCaller.UID}}
+
+		identity := store.IdentityPrincipal{Identity: store.Identity{Name: identityCaller.Name, UID: identityCaller.UID}}
 		if identity != admitted(ctx).principal {
 			return unauthenticated
 		}
@@ -252,7 +276,14 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 			delegated = delegated || strings.HasPrefix(value, auth.DelegatedScheme+" ")
 		}
 		if !delegated {
-			return g.authenticate(ctx)
+			result, err := g.authenticate(ctx)
+			if err != nil {
+				return admission{}, err
+			}
+			if _, service := result.principal.(store.ServiceSVIDReaderPrincipal); service && !serviceReadMethod(method) {
+				return admission{}, status.Error(codes.PermissionDenied, "service is not admitted on this method")
+			}
+			return result, nil
 		}
 		if _, configured := g.connectionDelegation[method]; !configured {
 			return admission{}, unauthenticated
@@ -265,14 +296,14 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 		if err != nil {
 			return admission{}, unauthenticated
 		}
-		delegatedAdmission, ok := verified.(auth.DelegatedIdentityAdmission)
-		if !ok || delegatedAdmission.Provenance.GetConnection() == nil ||
-			!g.callers.Admits(delegatedAdmission.Actor.Account) || !g.callers.AdmitsIdentity(delegatedAdmission.EffectiveCaller) {
-			return admission{}, unauthenticated
+		effective, err := g.connectionIdentity(verified)
+		if err != nil {
+			return admission{}, err
 		}
+
 		return admission{
 			principal: store.IdentityPrincipal{Identity: store.Identity{
-				Name: delegatedAdmission.EffectiveCaller.Name, UID: delegatedAdmission.EffectiveCaller.UID,
+				Name: effective.Name, UID: effective.UID,
 			}},
 			connectionDelegated: true,
 			authContext:         admittedContext,
@@ -284,8 +315,14 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 // reviewed.
 func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	if hasSVIDPeer(ctx) || len(md.Get(auth.DelegationMetadataKey)) > 0 {
+	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return admission{}, unauthenticated
+	}
+	if hasSVIDPeer(ctx) {
+		id, err := peertls.PeerIdentity(ctx)
+		if err != nil || !g.operatorServices.Has(id) {
+			return admission{}, unauthenticated
+		}
 	}
 	token, err := bearer(ctx)
 	if err != nil {
@@ -308,11 +345,21 @@ func hasSVIDPeer(ctx context.Context) bool {
 
 // rejectMixedCredentials applies to public and protected methods alike: a client certificate cannot be paired with
 // a bearer or delegated actor to select a different authorization path.
-func rejectMixedCredentials(ctx context.Context) error {
+func (g *Gate) rejectMixedCredentials(ctx context.Context) error {
 	if !hasSVIDPeer(ctx) {
 		return nil
 	}
 	md, _ := metadata.FromIncomingContext(ctx)
+	id, err := peertls.PeerIdentity(ctx)
+	if err != nil {
+		return unauthenticated
+	}
+	if peertls.IsServiceURI(id) {
+		if len(md.Get("authorization")) > 0 && (len(md.Get(auth.DelegationMetadataKey)) > 0 || !g.operatorServices.Has(id)) {
+			return unauthenticated
+		}
+		return nil
+	}
 	if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 {
 		return unauthenticated
 	}
@@ -350,7 +397,7 @@ func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (ad
 
 // UnaryInterceptor admits a unary call and answers its failure.
 func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-	if err := rejectMixedCredentials(ctx); err != nil {
+	if err := g.rejectMixedCredentials(ctx); err != nil {
 		return nil, err
 	}
 	authenticate, ok := g.authenticator(info.FullMethod)
@@ -373,7 +420,7 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 
 // StreamInterceptor admits a streaming call and answers its failure.
 func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	if err := rejectMixedCredentials(stream.Context()); err != nil {
+	if err := g.rejectMixedCredentials(stream.Context()); err != nil {
 		return err
 	}
 	authenticate, ok := g.authenticator(info.FullMethod)
@@ -397,3 +444,44 @@ type admittedStream struct {
 }
 
 func (s admittedStream) Context() context.Context { return s.ctx }
+
+// connectionIdentity authorizes only the effective Identity. The service actor's
+// method grant comes from the certificate Rule, never from Identity bindings.
+func (g *Gate) connectionIdentity(proof auth.Admission) (auth.Identity, error) {
+	var effective auth.Identity
+	switch delegated := proof.(type) {
+	case auth.DelegatedIdentityAdmission:
+		if delegated.Provenance.GetConnection() == nil || !g.callers.Admits(delegated.Actor.Account) {
+			return effective, unauthenticated
+		}
+		effective = delegated.EffectiveCaller
+	case auth.DelegatedServiceIdentityAdmission:
+		if delegated.Provenance.GetConnection() == nil {
+			return effective, unauthenticated
+		}
+		effective = delegated.EffectiveCaller
+	default:
+		return effective, unauthenticated
+	}
+	if !g.callers.AdmitsIdentity(effective) {
+		return auth.Identity{}, unauthenticated
+	}
+	return effective, nil
+}
+
+func serviceReadMethod(method string) bool {
+	switch method {
+	case action_servicepb.ActionService_ListActionRequests_FullMethodName,
+		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName,
+		action_servicepb.ActionService_GetActionRequest_FullMethodName,
+		action_servicepb.ActionService_WatchActionRequest_FullMethodName,
+		action_servicepb.ActionService_WatchActionRequests_FullMethodName,
+		action_servicepb.ActionService_ListActionRequestEvents_FullMethodName,
+		action_servicepb.ActionService_ListActionGroups_FullMethodName,
+		action_servicepb.ActionService_WatchActionGroups_FullMethodName,
+		action_servicepb.ActionService_GetAction_FullMethodName:
+		return true
+	default:
+		return false
+	}
+}

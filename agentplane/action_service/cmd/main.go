@@ -337,8 +337,8 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 	if err != nil {
 		return nil, err
 	}
-	options := rpc.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts}
-	if c.ConnectionDelegationActor != nil {
+	options := rpc.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
+	if c.ConnectionDelegationActor != nil || c.ConnectionDelegationService != "" {
 		scheme := runtime.NewScheme()
 		if err := policyapi.AddToScheme(scheme); err != nil {
 			return nil, fmt.Errorf("register Policy API for delegated Identity checks: %w", err)
@@ -351,7 +351,7 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
 		}
-		options.ConnectionDelegation, err = actionConnectionDelegation(workloads, *c.ConnectionDelegationActor, identities)
+		options.ConnectionDelegation, err = actionConnectionDelegation(workloads, c.ConnectionDelegationActor, c.ConnectionDelegationService, identities)
 		if err != nil {
 			return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
 		}
@@ -374,7 +374,7 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 // actionConnectionDelegation grants the MCP edge only the Action calls needed to serve a Connection. The actor's
 // own Action-audience token is still reviewed; this does not make it a privileged backend caller.
 func actionConnectionDelegation(
-	workloads *auth.Resolver, actor auth.Account, identities auth.IdentityUIDReader,
+	workloads *auth.Resolver, actor *auth.Account, serviceActor string, identities auth.IdentityUIDReader,
 ) (auth.Methods, error) {
 	methods := []string{
 		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
@@ -395,9 +395,17 @@ func actionConnectionDelegation(
 	for _, method := range methods {
 		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
 	}
-	return rules.WithDelegation(methods, []auth.Delegator{{
-		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
-	}}, identities)
+	var err error
+	if actor != nil {
+		rules, err = rules.WithDelegation(methods, []auth.Delegator{{Account: *actor, IdentityCallers: true, ConnectionProvenance: true}}, identities)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if serviceActor != "" {
+		rules, err = rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: serviceActor, ConnectionProvenance: true}}, identities)
+	}
+	return rules, err
 }
 
 // serve answers gRPC on listener, runs the dispatch worker, supervises the MCP groups' sessions, refreshes the linked
@@ -549,7 +557,7 @@ func serve(ctx context.Context, c config, d deps, listener net.Listener) error {
 		observability.GRPCServerOption(),
 		grpc.ChainUnaryInterceptor(admission.UnaryInterceptor), grpc.ChainStreamInterceptor(admission.StreamInterceptor),
 	}
-	transport, err := c.RPC.ServerCredentials(peertls.ActionsURI)
+	transport, err := c.RPC.ServerCredentialsWithServices(peertls.ActionsURI)
 	if err != nil {
 		return fmt.Errorf("Action Service RPC TLS: %w", err)
 	}

@@ -72,6 +72,11 @@ type ServiceReaderPrincipal struct {
 	Account ServiceAccount
 }
 
+// ServiceSVIDReaderPrincipal is an exact service peer with read-only component authority.
+type ServiceSVIDReaderPrincipal struct{ SPIFFEID string }
+
+func (ServiceSVIDReaderPrincipal) isReadPrincipal() {}
+
 func (CallerPrincipal) isReadPrincipal()        {}
 func (IdentityPrincipal) isReadPrincipal()      {}
 func (OperatorPrincipal) isReadPrincipal()      {}

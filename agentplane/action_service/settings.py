@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Set
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
@@ -14,7 +14,7 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.identity.auth.listener import Listener
 from agentplane.identity.operator.settings import OperatorOidcSettings
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import ClientTLS, ServiceSPIFFEID
 from agentplane.subjects import ServiceAccountRef
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
@@ -44,6 +44,21 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     rpc: Listener = Field(description="The single gRPC listener and its explicitly enabled authentication methods.")
+    service_readers: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs granted read-only request access.",
+    )
+    operator_services: list[ServiceSPIFFEID] = Field(
+        exclude_if=lambda value: not value,
+        default_factory=list,
+        description="Exact service SPIFFE IDs allowed to carry separately verified operator ID tokens.",
+    )
+    connection_delegation_service: ServiceSPIFFEID | Literal[""] = Field(
+        exclude_if=lambda value: not value,
+        default="",
+        description="Exact MCP edge service SPIFFE ID allowed to delegate Connection operations.",
+    )
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     connection_delegation_actor: ServiceAccountRef | None = Field(
         default=None, description="Action Service workload allowed to receive MCP Connection delegations."
@@ -91,6 +106,14 @@ class Settings(BaseModel):
     @field_serializer("reader_accounts")
     def serialize_reader_accounts(self, accounts: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
         return sorted(accounts, key=lambda account: (account.namespace, account.name))
+
+    @model_validator(mode="after")
+    def validate_service_trust(self) -> Settings:
+        if (self.service_readers or self.operator_services or self.connection_delegation_service) and not any(
+            auth.mode == "spiffe" for auth in self.rpc.auth
+        ):
+            raise ValueError("service callers require rpc spiffe client trust")
+        return self
 
     @model_validator(mode="after")
     def shared_mcp_client_metadata(self) -> Settings:

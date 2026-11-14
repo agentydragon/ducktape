@@ -685,6 +685,21 @@ Staging's external MCP/OAuth routes terminate there too, preserving the public i
 Actions retains upstream MCP linkage and its public client metadata. The edge verifies operator OIDC separately from
 external MCP bearers and forwards workload calls under the bound ServiceAccount's token.
 
+## Staged Action Service certificate admission
+
+The receiver can admit configured service SVIDs while existing bearer callers continue to work.
+These edges become active only after receiver image pins and the separate caller cutover.
+Operator authority still requires independently verified OIDC; MCP delegation uses the effective
+Identity's grants and live UID.
+
+```mermaid
+flowchart LR
+    app[App service SVID] -->|mTLS plus operator OIDC| actions[Action Service]
+    notifications[Notifications service SVID] -->|mTLS: explicit read methods| actions
+    mcp[MCP edge service SVID] -->|mTLS plus typed Connection delegation| actions
+    actions -->|effective Identity grants| policy[Policy bindings]
+```
+
 ## Service definitions
 
 - gRPC: [Actions](../action_service/api/contracts/action_service.proto), [operator Actions](../action_service/api/contracts/operator_action_service.proto), [Connections](../mcp_edge/api/connection/connection_service.proto), [Web Push](../action_service/api/web_push/web_push_service.proto), [Environment Service](../environments/v1/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/api/ingress/session_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/api/session/session_dispatcher.proto), [History Service](../history_service/api/history/history_service.proto), and the [Notification Service](../notification_service/api/notifications/notifications.proto) API (whose HTTP annotations generate the App browser facade; the service itself serves workload calls over gRPC). The Runner Gateway also serves standard gRPC health and proxies the Environment Runtime and Executor services over a direct mTLS connection to each runner.
