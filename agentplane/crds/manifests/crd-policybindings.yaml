@@ -24,6 +24,9 @@ spec:
     - jsonPath: .status.conditions[?(@.type=="EgressReady")].status
       name: Egress
       type: string
+    - jsonPath: .status.conditions[?(@.type=="EnvironmentReady")].status
+      name: Environment
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date

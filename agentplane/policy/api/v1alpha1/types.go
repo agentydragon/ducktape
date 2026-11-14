@@ -21,11 +21,11 @@ type RoleRef struct {
 
 // Rule is shared by policy consumers; each consumer handles its own Type.
 // +kubebuilder:validation:XValidation:rule="!has(self.hosts) || !self.hosts.exists(h, h == '*') || (!has(self.credentialRef) && (!has(self.clusterInternal) || !self.clusterInternal))",message="A blanket host rule cannot set clusterInternal or credentialRef."
-// +kubebuilder:validation:XValidation:rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy)) : self.type == 'session_inbox_access' ? (!has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef)",message="Rule fields must match type."
-// +kubebuilder:validation:XValidation:rule="self.type == 'session_inbox_access' ? (has(self.operations) && has(self.targets)) : (!has(self.operations) && !has(self.targets))",message="Rule fields must match type."
+// +kubebuilder:validation:XValidation:rule="self.type == 'kubernetes_role_binding' ? (has(self.role) && has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy) && !has(self.targets) && !has(self.environments)) : self.type == 'kubernetes_cluster_role_binding' ? (has(self.clusterRole) && !has(self.role) && !has(self.namespaces) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy) && !has(self.targets) && !has(self.environments)) : self.type == 'egress' ? (has(self.hosts) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.policy) && !has(self.targets) && !has(self.environments)) : (self.type == 'session_inbox_access' || self.type == 'environment') ? (!has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.policy)) : has(self.policy) && !has(self.role) && !has(self.namespaces) && !has(self.clusterRole) && !has(self.hosts) && !has(self.methods) && !has(self.paths) && !has(self.clusterInternal) && !has(self.credentialRef) && !has(self.targets) && !has(self.environments)",message="Rule fields must match type."
+// +kubebuilder:validation:XValidation:rule="self.type == 'session_inbox_access' ? (has(self.operations) && has(self.targets) && !has(self.environments) && self.operations.all(o, o == 'send_message')) : self.type == 'environment' ? (has(self.operations) && has(self.environments) && !has(self.targets) && self.operations.all(o, o == 'resume')) : (!has(self.operations) && !has(self.targets) && !has(self.environments))",message="Rule fields must match type."
 type Rule struct {
 	// Type selects the consumer that handles this rule.
-	// +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve;session_inbox_access
+	// +kubebuilder:validation:Enum=kubernetes_role_binding;kubernetes_cluster_role_binding;egress;action_auto_approve;session_inbox_access;environment
 	Type string `json:"type" proto:"1"`
 	// Role names the Role or ClusterRole to bind; the named object must already exist.
 	Role *RoleRef `json:"role,omitempty" proto:"2"`
@@ -58,13 +58,19 @@ type Rule struct {
 	ClusterInternal bool `json:"clusterInternal,omitempty" proto:"9"`
 	// Policy configures the Action evaluator for an action_auto_approve rule.
 	Policy *ActionPolicy `json:"policy,omitempty" proto:"10"`
-	// Operations lists what a session_inbox_access rule allows on its targets' Session inboxes.
+	// Operations lists what a session_inbox_access or environment rule allows on its targets.
 	// +listType=set
 	// +kubebuilder:validation:MinItems=1
-	// +kubebuilder:validation:items:Enum=send_message
+	// +kubebuilder:validation:MaxItems=1
+	// +kubebuilder:validation:items:Enum=send_message;resume
 	Operations []string `json:"operations,omitempty" proto:"11"`
 	// Targets names the Sandboxes whose Session inboxes a session_inbox_access rule covers.
 	Targets *SandboxTargets `json:"targets,omitempty" proto:"12"`
+	// Environments lists what an environment rule covers: a Sandbox matching every field of at least
+	// one selector.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=256
+	Environments []EnvironmentSelector `json:"environments,omitempty" proto:"13"`
 }
 
 // SandboxTargets names Sandboxes in the PolicySet's namespace by name, by inbox tag, or all of them. The fields
@@ -95,6 +101,26 @@ type SandboxTarget struct {
 	// UID pins the target to one incarnation of the Sandbox.
 	// +kubebuilder:validation:Format=uuid
 	UID types.UID `json:"uid,omitempty" proto:"2"`
+}
+
+// EnvironmentSelector matches a Sandbox when every field it names matches. Rules match when any
+// one of their selectors matches.
+// +kubebuilder:validation:XValidation:rule="has(self.sandbox) || has(self.boundIdentity)",message="Name a Sandbox or a bound Identity."
+type EnvironmentSelector struct {
+	// Sandbox matches one Sandbox by name, optionally pinned to one incarnation by UID.
+	Sandbox *SandboxTarget `json:"sandbox,omitempty" proto:"1"`
+	// BoundIdentity matches a Sandbox whose spec.identity names this Identity when the rule is checked.
+	BoundIdentity *BoundIdentitySelector `json:"boundIdentity,omitempty" proto:"2"`
+}
+
+// BoundIdentitySelector matches a Sandbox bound to one named Identity or to the rule's subject.
+// +kubebuilder:validation:XValidation:rule="has(self.name) != (has(self.self) && self.self)",message="Set exactly one of name or self."
+type BoundIdentitySelector struct {
+	// Name is the exact name of the Sandbox's bound Identity.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name,omitempty" proto:"1"`
+	// Self names the Identity of the binding's subject, resolved for each lookup.
+	Self bool `json:"self,omitempty" proto:"2"`
 }
 
 // CredentialRef names an EgressCredential in the PolicySet's namespace.
@@ -225,6 +251,7 @@ type PolicyBindingSpec struct {
 // +kubebuilder:printcolumn:name="Expires",type=string,JSONPath=".spec.expiresAt"
 // +kubebuilder:printcolumn:name="Kubernetes",type=string,JSONPath=".status.conditions[?(@.type==\"KubernetesReady\")].status"
 // +kubebuilder:printcolumn:name="Egress",type=string,JSONPath=".status.conditions[?(@.type==\"EgressReady\")].status"
+// +kubebuilder:printcolumn:name="Environment",type=string,JSONPath=".status.conditions[?(@.type==\"EnvironmentReady\")].status"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"
 type PolicyBinding struct {
 	metav1.TypeMeta   `json:",inline"`

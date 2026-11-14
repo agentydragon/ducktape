@@ -402,16 +402,19 @@ class RunnerGateway(Construct):
                     resources=[custom_resource(GROUP, "sandboxes")],
                     verbs=["get", "list", "watch", "create", "patch", "delete"],
                 ),
-                RolePolicyRule(
-                    resources=[custom_resource(GROUP, "sandboxtemplates"), custom_resource(GROUP, "policysets")],
-                    verbs=["get", "list"],
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list"]),
                 # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
                 RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 # One Role covers both reads because the Sandbox namespace is the policy namespace: a
                 # dispatcher caller's SVID names its Identity (policy namespace), and a Sandbox's
                 # `spec.identity` names one beside it (Sandbox namespace).
-                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(GROUP, resource) for resource in ("identities", "policysets", "policybindings")
+                    ],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],

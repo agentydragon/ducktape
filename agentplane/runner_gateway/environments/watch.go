@@ -85,8 +85,9 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 		}
 		podName = currentPodName
 
-		// Keep consuming unrelated Pod events and periodic authorization checks without
-		// rebuilding the descriptor. Only a relevant object change needs a fresh read.
+		// Ignore unrelated Pod events. Relevant object changes and periodic authorization
+		// checks rebuild the descriptor, including its current grant-backed resume facts.
+	waitForChange:
 		for {
 			var event watch.Event
 			var open bool
@@ -98,10 +99,7 @@ func (s *Service) WatchEnvironment(request *environmentpb.WatchEnvironmentReques
 				if err := auth.RevalidateStream(ctx); err != nil {
 					return err
 				}
-				if _, _, err := s.getEnvironment(ctx, get, identity); err != nil {
-					return err
-				}
-				continue
+				break waitForChange
 			case event, open = <-sandboxes.ResultChan():
 			case event, open = <-accountEvents:
 			case event, open = <-pods.ResultChan():

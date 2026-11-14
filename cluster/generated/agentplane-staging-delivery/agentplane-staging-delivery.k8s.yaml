@@ -550,13 +550,6 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - policysets
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
       - workloadcredentials
     verbs:
       - get
@@ -566,6 +559,30 @@ rules:
       - identities
     verbs:
       - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings/status
+    verbs:
+      - patch
   - apiGroups:
       - coordination.k8s.io
     resources:

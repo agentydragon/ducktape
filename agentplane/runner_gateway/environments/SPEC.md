@@ -32,7 +32,8 @@ diagnostics while suspended.
 - List, get, and both watches admit a direct TokenReview-verified ServiceAccount or workload
   credential naming an Identity. The composition root may add Actions delegation to selected
   methods through the Runner Gateway's existing Dispatcher audience and served namespace set.
-  Mutations retain their existing direct ServiceAccount gates. `ResumeEnvironment` is separately
+  Management mutations retain their direct ServiceAccount gates. `ResumeEnvironment` also admits
+  Identity callers and is separately
   authorized through the lifecycle manager; read permission grants no Dispatcher write or Gateway
   proxy access.
 - Handlers read typed workload authentication. A broad reader ServiceAccount requires its exact live
@@ -45,9 +46,12 @@ diagnostics while suspended.
 - A directly authenticated ServiceAccount explicitly listed in `environment_readers` may read the entire configured
   Sandbox namespace. This grant does not confer mutation or wake authority and never passes through
   delegation, including delegation to an Identity.
-- Resume independently checks the exact target, `resumePolicy`, and direct operator authority
-  through the lifecycle manager. Read permission alone does not authorize resume. Ordinary
-  ServiceAccount self-resume has been retired; Identity callers have no explicit-resume grant.
+- Resume independently checks the exact target and explicit authority through the lifecycle manager.
+  An Identity needs a matching `environment` rule with `resume`; it cannot override an operator stop.
+  Direct Pod-bound configured operators keep requested-stop resume. Read permission alone does not
+  authorize resume. Ordinary ServiceAccount self-resume remains retired. Missing grants are hidden
+  as `NOT_FOUND` when the Identity cannot read the target, otherwise `PERMISSION_DENIED`. A matching
+  grant can authorize a resume without granting inventory access.
 - Management methods require a direct Pod-bound ServiceAccount explicitly listed as a manager.
   The Action Service may be listed separately as a launcher, which permits only Create with a
   complete Action caller and group origin. Delegation, a read grant, and a launcher grant never
@@ -75,7 +79,8 @@ diagnostics while suspended.
   Their list is empty and get/watch hide targets as `NOT_FOUND`. Identity list filters the configured
   namespace to current Sandboxes bound to that Identity and uses the last visible Sandbox name as a
   lexical cursor; the cursor only skips entries and cannot widen visibility.
-  Identity descriptors omit execution-account and lifecycle authority facts. Broad direct readers
+  Identity descriptors omit execution-account and automatic-wake authority facts. Resume eligibility,
+  generation and token are exposed only while an explicit grant currently authorizes resume. Broad direct readers
   may continue a page using the Kubernetes continuation token because their grant covers that
   namespace.
 
@@ -146,11 +151,12 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
   readers. Identity callers do not receive this component-owned fact.
 - Readiness and operating state come from the current Sandbox status; `observed_at` records when the
   descriptor was assembled.
-- Explicit-resume eligibility includes a denial reason and is evaluated for a direct ServiceAccount
-  against its exact live UID and configured operator authority. Ordinary ServiceAccount self-resume
-  and Identity explicit resume are denied. Identity callers receive no resume eligibility, wake
-  generation, token, or automatic-wake eligibility. Deleting environments remain visible to broad
-  readers without explicit-resume eligibility or a resume token.
+- Explicit-resume eligibility checks a direct ServiceAccount's live UID and configured operator
+  authority, or an Identity's live UID and current explicit grant. Identity descriptors expose
+  `ALLOWED_IDENTITY_GRANT`, wake generation and token only while authorized. A policy-reader outage
+  omits those optional facts without denying implied self-reads; explicit resume fails closed as
+  `UNAVAILABLE`. Deleting environments remain visible to broad readers without resume eligibility
+  or a token. Idle watches refresh caller-specific facts at the credential recheck interval.
 - Automatic wake eligibility remains a separate assessment using `wakeOnSend` and the configured
   wake-caller policy.
 - The descriptor's wake generation and opaque resume token bind an ordinary resume precondition to

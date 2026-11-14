@@ -24,10 +24,12 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environmentaccess"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
@@ -233,9 +235,26 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	defer db.Close()
 	store := dispatcher.NewStore(db, c.QueueCap)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	environmentRules := environmentaccess.NewIndex()
+	policyHealth := watchhealth.New()
+	policyWatches := reader.NewWatches(config, policyHealth)
+	if err := reader.WatchRules(policyWatches, environmentRules, c.PolicyNamespace, environmentaccess.Ready); err != nil {
+		return fmt.Errorf("configure environment policy watches: %w", err)
+	}
+	go policyWatches.Run(ctx)
+	defer policyHealth.MarkDraining()
+	policyReady := func() error {
+		if !policyHealth.Available() {
+			return errors.New("environment policy state is unavailable")
+		}
+		return nil
+	}
 	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
 		Namespace: c.Namespace, Objects: objects, WakeBudget: lifecycleWakeBudget{store: store},
 		WakeCallers: c.WakeCallers, OperatorCallers: c.OperatorCallers,
+		EnvironmentRules: environmentRules, PolicyReady: policyReady,
 	})
 	if err != nil {
 		return err
@@ -302,8 +321,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			return err
 		}
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	failed := make(chan error, 8)
 	go func() {
 		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))

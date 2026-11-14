@@ -14,7 +14,7 @@ Its discovery and resume method paths are:
 
 Methods retain direct TokenReview-verified ServiceAccount credentials. List/get and both watches
 also admit workload credentials naming an Identity and explicitly configured Actions delegation.
-Mutations keep their existing ServiceAccount gates; management requires its own direct Pod-bound
+Explicit resume also admits an Identity with a matching environment grant; management requires its own direct Pod-bound
 manager or launcher grant. Delegated calls use the existing Dispatcher audience and are opted into
 by exact full RPC method name. Broad ServiceAccount readers are checked by namespace, name, and
 immutable UID. Identity callers can list/get/watch only Sandboxes whose current
@@ -42,9 +42,9 @@ callers page through their visible Sandboxes with a lexical Sandbox-name cursor;
 entries and cannot widen access. Broad direct readers may page over the namespace using a Kubernetes
 continuation token.
 
-`ResumeEnvironment` separately checks the exact target, resume opt-in policy, and direct operator
-authority through the shared [lifecycle manager](lifecycle/README.md). Ordinary ServiceAccount
-self-resume and Identity explicit resume are denied. Listing or reading a target does not authorize
+`ResumeEnvironment` separately checks the exact target and either an explicit Identity `resume`
+rule or direct operator authority through the shared [lifecycle manager](lifecycle/README.md).
+Identity grants cannot override operator stops. Ordinary ServiceAccount self-resume remains denied. Listing or reading a target does not authorize
 changing it. The observed wake generation and opaque resume precondition bind an ordinary request to
 that Sandbox UID and generation; the backend rechecks current identity, policy and state when the
 token is used.
@@ -59,8 +59,8 @@ not treated as instructions. Platform guidance is a separate source.
 
 Readiness, operating mode, stop stage, automatic wake-on-send status and explicit-resume eligibility
 are separate current facts. Explicit-resume eligibility includes a denial reason and is evaluated
-for a direct ServiceAccount against its live UID and configured operator grant; it does not depend
-on `wakeOnSend`. Automatic Identity wake has its own assessment
+against the caller's live UID and its explicit Identity rule or configured direct operator grant;
+it does not depend on `wakeOnSend`. Automatic Identity wake has its own assessment
 and uses the shared lifecycle manager under the `wakeOnSend` and existing
 `resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_callers` remains an automatic-only
 ServiceAccount broker grant.
@@ -93,7 +93,7 @@ intermediate changes may be coalesced. Direct ServiceAccounts named by the Gatew
 `environment_readers` setting can read all Sandboxes; the grant does not authorize writes and is
 not inherited by delegated callers. Ordinary ServiceAccount callers no longer receive workload
 self-discovery. Identity callers see only Sandboxes bound to that Identity; their descriptors
-omit the execution ServiceAccount, resume eligibility, wake generation, resume token, and
-automatic-wake eligibility. A delegated Action's component reader grant is never inherited by the
+omit the execution ServiceAccount and automatic-wake eligibility. They expose resume eligibility,
+wake generation and a token only while an explicit rule authorizes resume. A delegated Action's component reader grant is never inherited by the
 effective Identity.
 An idle stream stays open while its credential remains valid and closes when revalidation fails.

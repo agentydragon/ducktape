@@ -195,8 +195,9 @@ Before exposing the delegated path, demonstrate:
 
 - Direct and delegated calls by the same effective caller receive the same ordinary access checks;
   an actor's privileged membership cannot widen delegated access.
-- Delegated EnvironmentService exposes only its exact list/get/watch methods and returns the same target
-  facts as direct access for the same Identity UID; foreign targets remain hidden as `NOT_FOUND`.
+- Delegated EnvironmentService returns the same inventory facts as direct access for the same Identity
+  UID. Explicit resume checks the effective Identity's current `environment` grant, independently of
+  the actor. Refused targets the caller cannot read remain hidden as `NOT_FOUND`.
 - Forged callers from ordinary accounts, disallowed methods/namespaces, UID replacement,
   malformed/duplicate metadata and direct/delegated mode confusion are refused before effects.
 - Missing required identity/policy state fails closed; watch rechecks and reconnects preserve the
