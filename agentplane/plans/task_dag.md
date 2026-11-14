@@ -3637,6 +3637,13 @@ Current Dispatcher writers supply the execution Identity, which Central Sampler 
 retains. History's direct probe ingress remains. Runner Gateway's retained rows and reader cleanup
 are tracked separately.
 
+History's current sampler and manual-probe writers send a validated nonempty Sandbox UID. A separate
+History data PR removes rows whose `sandbox_uid` is NULL or empty, together with their event,
+settlement, range, block, lease, fold-queue and Thread projection state. Staging counts could not be
+obtained because this Identity cannot exec or port-forward to the History database Pod; no system
+test covers this one-off cleanup. Its stacked code PR removes the empty-UID `BindWriter` tolerance
+while preserving the current Identity fence and historical writer attribution.
+
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
 **Unscheduled; operator, 2026-10-11 PDT: a later TODO.** Rename what calls an Action Service box a
