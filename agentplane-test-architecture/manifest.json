@@ -1,17 +1,17 @@
 {
   "source_devel_commit": "bb7c716f5a97fe4946acb10f0dafa3d69ff76d76",
-  "audited_at_utc": "2026-11-14T11:21:15Z",
+  "audited_at_utc": "2026-11-14T18:01:04Z",
   "published_at_utc": null,
-  "scope": "Reviewed supplemental synthetic changed-label graph screen and focused selector/contract probes. Existing required gate, fleet populations, windows, denominators, and rates are unchanged.",
-  "report_sha256": "e8cca2f64524a397e14ee8369ac86a5a1893b83d4c4e0aa60e9338b10954cc91",
-  "evidence_sha256": "682d6273d1fc56d2d279f537e07d78a2e86c859b7b5b8dbd932047f62be89f54",
-  "previous_gh_pages_commit": "6222ccfefa3c621d79871437c64953e54f6e12b8",
+  "scope": "Supplemental exact-source platform evidence, manual screens, and per-action coverage for the 9b330689 candidate slices. Seven recovered TestRunner ActionResults pass 59 JUnit case results across seven targets, with overlapping logical coverage; a separate complete same-source invocation repeats the MCP3/Pod 20-case subset and builds eight named libraries plus six aspects. The direct 12cdf qualification aggregate is provider-disconnected, while separate same-source invocation b741 completed successfully. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification is unmet. Fleet populations, rates, and denominators unchanged.",
+  "report_sha256": "f15f1296c4c562b18d40dcebfb3f4faf64cddc16a9abd22096c3e71809abc9f0",
+  "evidence_sha256": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
+  "previous_gh_pages_commit": "895a488df402554bf680083d340019d7d95091f5",
   "pilot_branch": "agent/test-architecture-pivot",
   "pilot_head_commit": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
   "pilot_base_commit": "8b0021e740dea43cfc0a660a7beaaa4a8a2b078c",
   "visual_validation": "visual-validation.json",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-  "attribution": "Four-arm synthetic journal-only screen is 29.3% lower at the two-run midpoint, below the 30% goal and not complete PR feedback. Four target substitutions remain semantically unproven; the literal policy matched 0/30 historical changesets; baseline CPU, cache state, pool load, and disk accounting are incomplete. Dispatcher sharding and the shorter Gateway timeout are not promoted. Prepared-KVM cold/warm timing is lower on the same manual candidate, but v1 shares data across containers; automatic approval review rejected proposed cleanup because it mutates the shared CRI store, no cleanup ran, and owner approval is pending. v2 is unmeasured; focused build evidence does not execute cleanup. Required gate and fleet populations remain unchanged.",
+  "attribution": "At exact 8c097bae the complete seven-target A2/B2 graph passed the same 40 logical JUnit identities; native elapsed was 23.786% lower once, below 30%, and managed requested-CU\u00d7execution ratio 1.103485 exceeded the unchanged 1.10 cap, so six slots remain manual. At exact 9b330689, seven recovered TestRunner ActionResults pass 59 clean JUnit case results across seven targets with matching test.xml digests; the existing and candidate slices have overlapping logical coverage and exact Services/Pod identity unions. A separate complete same-source invocation passes a second exposure of the MCP3/Pod 20-case subset and builds eight named libraries plus six aspects. The direct 12cdf aggregate remains provider-disconnected; separate same-source b741 completed successfully; GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Internal RBE retries are unknown. Complete-feedback speed, median/p90/flake, and savings qualification remain unmet; gate and selector unchanged. Independent Actions PR #16386 merged at 17:22:30 UTC with recorded checks green.",
   "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
   "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
   "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
@@ -19,8 +19,8 @@
   "ci_synthetic_merge_base_commit": null,
   "implementation_head_commit": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
   "previous_published_at_utc": null,
-  "prepared_at_utc": "2026-11-14T11:21:15Z",
-  "publication_status": "Reviewed draft snapshot; current four-case real-CDN RBE proof passed and representative screenshots were inspected. Publication remains pending.",
+  "prepared_at_utc": "2026-11-14T18:10:20Z",
+  "publication_status": "Draft report16 includes 59 passing JUnit case results across seven targets with overlapping logical coverage, exact Services/Pod identity unions, and a separate successful 20-case same-source repeat with eight named library builds and six aspects. The direct 12cdf aggregate remains provider-disconnected; separate same-source b741 completed. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification, root review, visual rendering, and publication remain pending.",
   "reproduction_artifact_sha256": {
     "selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2"
   },
@@ -66,10 +66,11 @@
     "iteration13.json": "a48ad005e894b52a6192bf816be29172fb41f461e5003485572c6edd2a58acae",
     "iteration14.json": "0d8761ce9542009990b8443174598fefb6b6ffd53e028462a593333a36728c16",
     "iteration15.json": "0e5f99643ef17a6f0044e733de13747aedd2eb1ef67dffdee023e2dad90b0316",
-    "evidence.json": "682d6273d1fc56d2d279f537e07d78a2e86c859b7b5b8dbd932047f62be89f54"
+    "evidence.json": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
+    "iteration16.json": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
-  "visual_validation_status": "Four real-CDN RBE cases passed at desktop/mobile widths in light/dark themes; ten representative screenshots inspected. Raw images and browser diagnostics remain private; the public proof records reviewed image hashes.",
+  "visual_validation_status": "Report16 visual validation pending; prior screenshot evidence applies only to the previous snapshot.",
   "previous_snapshot_source": {
     "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
     "pilot_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
@@ -127,10 +128,10 @@
     "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
-  "source_devel_commit_scope": "Integrated devel base for this source is recorded separately from the live PR baseRefOid; historical measurements retain their own exact tested revisions and windows.",
-  "publication_base_gh_pages_commit": "6222ccfefa3c621d79871437c64953e54f6e12b8",
+  "source_devel_commit_scope": "No new devel fleet cohort or latency distribution was collected for iteration16. Supplemental evidence is pinned to the exact source revisions recorded under iteration16; historical windows and bases remain unchanged.",
+  "publication_base_gh_pages_commit": "895a488df402554bf680083d340019d7d95091f5",
   "root_navigation_sha256": "aa8615d9532daf5d593a5627ef53e90557cff49e6af405857244a949d9833614",
-  "draft_prepared_at_utc": "2026-11-14T11:21:15Z",
+  "draft_prepared_at_utc": "2026-11-14T18:01:04Z",
   "iteration11": {
     "evidence_file": "iteration11.json",
     "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
@@ -237,5 +238,290 @@
     "required_gate": "Unchanged; all three required checks succeeded at observed head.",
     "prepared_kvm_build": "Invocation 0e774569 passed explicit changed-library and baseline/runtime/cleanup-target build checks; it did not execute cleanup.",
     "goal": "At least 30% lower median complete required-feedback time including reruns on representative changed-label graphs, with no worse p90 or flake rate, preserved important behavior/security/platform contracts, and documented resource costs."
-  }
+  },
+  "iteration16": {
+    "evidence_file": "iteration16.json",
+    "observed_at_utc": "2026-11-14T18:10:20Z",
+    "source_head": "6c31cfb9f7412506338a069fda13100fc291f993",
+    "current_services_candidate_source": "f919e2ed22f4245446f5bdd6e4b0b03480da8ffc",
+    "render_determinism_repair_source": "a915738a26075f2b0126f5df65599008fe7d0524",
+    "six_slot_implementation_source": "8c097bae2b14fb158910958917f236c69d54c9c7",
+    "scope": "Supplemental exact-source platform evidence, manual screens, and per-action coverage for the 9b330689 candidate slices. Seven recovered TestRunner ActionResults pass 59 JUnit case results across seven targets, with overlapping logical coverage; a separate complete same-source invocation repeats the MCP3/Pod 20-case subset and builds eight named libraries plus six aspects. The direct 12cdf qualification aggregate is provider-disconnected, while separate same-source invocation b741 completed successfully. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification is unmet. Fleet populations, rates, and denominators unchanged.",
+    "source_exact_platform": "Five fresh test targets and 11 cases passed with no overlay; 3 named library/aspect targets also passed.",
+    "ordinary_pr_ci": "At 6c31cfb9 invocation b215237c passed 2,005 targets, with 15 fresh test targets and 19 fresh physical TestRunner actions across 81 execution rows; native Bazel wall 627.656s.",
+    "central_services": "Invocation fd790fe6 passed exact-source render, original Services, and four-case central-native candidate targets; the original/candidate case sets are unequal (7 vs 4).",
+    "pod_screen": "B2 invocation 58a5cb3f and A2 invocation 358bfd56 passed and retained XML case identities. B2 was 13.4% lower native, but Pod CPU rose 35.8% and known whole TestRunner CPU excluding unknown Firecracker rose 13.8%; two extra build actions, warmth, and pool load confound it. Do not promote the current partition.",
+    "render_determinism_followup": "The confirmed missing expected filename for the new fixture variant at f919e2ed is fixed at a915738a while preserving independent-render and byte-equality assertions; all three required checks (Bazel, pre-commit, artifacts/imports) pass at a915738a.",
+    "four_slot_capacity_candidate": "Invocation 7b26a47a at exact a915738a passed 21 Pod cases with reference-matching names plus one render-determinism case across two fresh targets, one attempt, no overlay. The 8-compute-unit request observed node allocatable 11 CPU and 20012876Ki memory. Against the unmatched 6c31cfb9 reference, CPU ratio 1.613 and requested-compute-unit-times-execution ratio 1.958 fail their 1.5 caps; memory ratio 1.034 passes its 2.0 cap. Keep manual.",
+    "six_slot_followup": "At exact source 8c097bae, the selected-target B1/A1 pair passed 21 matching cases and all selected-target caps. The completed whole-graph A2/B2 pair then passed the same 40 logical identities with seven fresh TestRunner actions per arm; native elapsed was 23.786% lower once, below 30%. Known CPU cap passed, managed requested-CU\u00d7execution ratio 1.103484855 failed the 1.10 cap, and peak concurrent requested-CU cap passed. Node allocatable CPU differed (7 vs 11). Keep six slots manual.",
+    "decision": "not qualified; retain current required gate and selector",
+    "limitations": [
+      "All measurements are one exposure per target or one pair; no causal treatment effect, complete-feedback median, p90, or flake rate is established.",
+      "The whole-graph A2/B2 native elapsed reduction was 23.786% in one ordered pair, below the 30% goal.",
+      "Known CPU excludes Firecracker; managed requested-CU\u00d7execution ratio 1.103484855 exceeded the 1.10 cap while peak concurrent requested-CU ratio 1.142857143 passed 1.20.",
+      "Node allocatable CPU differed (7 vs 11); the same runner-address cluster-CA leaf refusal remained the final Pod case, and its measured span was longer in B2.",
+      "No required selector or gate changed.",
+      "The 9b330689 direct no-overlay BuildBuddy run has seven recovered passing TestRunner ActionResults and 59 clean JUnit case results across seven targets with matching test.xml output digests; the direct 12cdf aggregate and outer 53504013 remain provider-disconnected, not an overall CI pass.",
+      "Case coverage is exact by logical identity: Services 7 = MCP3 3 + native-central 4; Pod frozen 21 = remaining 17 + native-trust 4. The Pod control is a distinct source/invocation; this is not a timing comparison.",
+      "TestRunner attempt count is one per action; internal RBE retries are unknown. No complete-feedback speed, performance, median/p90/flake, or adoption qualification is established.",
+      "A separate complete same-source invocation repeated the MCP3 and remaining-Pod 20-case subset with all cases passing and built eight named library targets plus six named aspect outputs. This is a second exposure of those cases, not 20 additional unique identities, a flake-rate sample, or a timing/savings comparison."
+    ],
+    "evidence_sha256": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93",
+    "summary": "At exact source 9b330689 with no overlay, all seven recovered TestRunner ActionResults passed: 59 JUnit case results across seven targets, zero failures/errors/skips, matching test.xml digests, and one TestRunner attempt per target; logical coverage overlaps between existing and candidate targets, and the overall logical identity count is not asserted. Internal RBE retries are unknown. A separate complete same-source invocation passed a second exposure of the 20 MCP3/Pod cases and built eight named library targets with six named aspect outputs. Services identities match 7 = 3 MCP + 4 native-central; Pod identities match the frozen 21-case set = 17 + 4 native-trust. The direct 12cdf aggregate and associated outer invocation 53504013 remain provider-disconnected. The separate same-source b741 invocation completed successfully. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, whose parents are devel ff801c85 and source 9b330689; this does not test the direct source head. This is per-action coverage, not overall direct-source CI success, complete-feedback speed, median/p90/flake, or savings. Keep the gate and selector unchanged.",
+    "required_checks_8c097bae": "All three required checks passed at exact source 8c097bae: Bazel CI, pre-commit, and artifacts/imports (Actions run 43616795278). Separate ordinary BuildBuddy invocation 2553cd46 also passed at that exact source.",
+    "whole_graph_resource_budget_plan": "Measured A2/B2 managed requested-CU envelope: ordinary 28, candidate 32 (+14.3%). Known CPU ratio 0.989518 passes the 1.10 cap; managed requested-CU\u00d7execution ratio 1.103485 fails the 1.10 cap; peak concurrent requested-CU ratio 1.142857 passes the 1.20 cap. Firecracker CPU/memory remain separate and unknown; no actual monetary cost claim.",
+    "independent_actions_pr_status": "PR #16386 merged at 2026-11-14T17:22:30Z; all three required checks green.",
+    "whole_graph_screen": "At exact 8c097bae, A2 then B2 succeeded with seven fresh TestRunner actions and 40 matching logical JUnit cases per arm. Native 23.786% lower once (<30% goal); known CPU cap passed, requested-CU\u00d7execution ratio 1.103484855 failed the 1.10 cap, and peak concurrent requested-CU cap passed. Keep six slots manual.",
+    "new_candidate_source": "9b330689a24042259393a713b5f271b42bd7e669",
+    "new_candidate_qualification_invocation": "12cdf1bb-c0de-400c-821e-8f79dcb4b275",
+    "new_candidate_qualification_status": "Seven per-action TestRunner ActionResults pass 59 JUnit case results across seven targets with overlapping logical coverage, verified XML digests, and exact Services/Pod identity unions; no overall logical identity count is asserted. A separate complete same-source invocation repeats the MCP3/Pod 20-case subset and builds eight libraries plus six aspects. The direct 12cdf aggregate is provider-disconnected; separate same-source b741 completed. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source. Complete-feedback/performance adoption remains unqualified.",
+    "new_candidate_dependency_queries": {
+      "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+      "pod_native_invocation": "c4577721-8573-4e72-b99b-be0cd4ae8176",
+      "central_native_invocation": "76b9f4af-d1b1-4548-8ed8-617a0cc3e22c",
+      "mcp_invocation": "8af9a101-68ae-41e6-8f08-8344a8eedbed",
+      "result": "all three passed",
+      "pod_and_central_selection": "Each selected five shared App configuration modules and their five .py targets; neither selected App serving, client, or conftest targets.",
+      "mcp_selection": "No CentralSampler image, binary, or scenario target selected."
+    },
+    "new_candidate_provider_outcome": "Exact-source direct BuildBuddy invocation 12cdf and its outer/parent-hosted invocation 53504013 are provider-disconnected; seven per-action ActionResults were recovered and verified passing. Separate same-source b741 completed successfully. Internal RBE retries are unknown.",
+    "new_candidate_required_ci": {
+      "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+      "synthetic_merge_commit": "2aec7a80cb38d483634e9236616168ba5e9a9a06",
+      "synthetic_merge_parents": [
+        "ff801c85c732b368a67f0d6ada3bb487146abca8",
+        "9b330689a24042259393a713b5f271b42bd7e669"
+      ],
+      "attempts_observed": 2,
+      "latest_bazel_ci": "passed",
+      "pre-commit": "passed",
+      "artifacts/imports": "passed",
+      "interpretation": "Both recorded GitHub Actions attempts tested the synthetic merge commit, not direct source head 9b330689. Latest attempt 2 (run 43621238434; Bazel job 132532089993) passed Bazel CI, pre-commit, and artifacts/imports. The direct source was not tested by this workflow.",
+      "latest_attempt": 2,
+      "required_checks_passed": 3,
+      "actions_run_id": 43621238434,
+      "bazel_job_id": 132532089993
+    },
+    "candidate_slices_qualification": {
+      "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+      "source_overlay": false,
+      "direct_buildbuddy_invocation": "12cdf1bb-c0de-400c-821e-8f79dcb4b275",
+      "action_result_summary": {
+        "test_runner_actions": 7,
+        "completed_action_results": 7,
+        "all_action_results_passed": true,
+        "action_status": "default status 0",
+        "exit_code": "default exit code 0",
+        "junit_cases": 59,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "test_runner_attempts_per_target": 1,
+        "matching_test_xml_output_digests": 7,
+        "rbe_internal_retry_count": "unknown",
+        "additional_same_source_case_exposures_in_b741": 20,
+        "case_count_basis": "Counts passing JUnit result rows from seven TestRunner actions. Logical coverage overlaps across existing and candidate targets; only the Services and Pod identity unions below are asserted exactly, and no overall deduplicated logical count is claimed."
+      },
+      "case_groups": [
+        {
+          "slice": "existing required Services",
+          "junit_case_results": 7
+        },
+        {
+          "slice": "MCP3 no-Sampler",
+          "junit_case_results": 3
+        },
+        {
+          "slice": "native central Services",
+          "junit_case_results": 4
+        },
+        {
+          "slice": "App-free native Pod trust",
+          "junit_case_results": 4
+        },
+        {
+          "slice": "remaining Pod cases",
+          "junit_case_results": 17
+        },
+        {
+          "slice": "render",
+          "junit_case_results": 23
+        },
+        {
+          "slice": "render determinism",
+          "junit_case_results": 1
+        }
+      ],
+      "case_identity_unions": {
+        "services": {
+          "existing_target_cases": 7,
+          "split_candidate_cases": [3, 4],
+          "identities_match_exactly": true,
+          "interpretation": "The MCP3 and native-central slices cover the existing seven logical Services case identities."
+        },
+        "pod": {
+          "frozen_control_cases": 21,
+          "frozen_control_source": "8c097bae2b14fb158910958917f236c69d54c9c7",
+          "frozen_control_invocation": "88db0989-55ba-40f8-8a9a-94e87fb95a54",
+          "split_candidate_cases": [17, 4],
+          "identities_match_exactly": true,
+          "interpretation": "The 17 remaining Pod cases plus four native-trust cases cover the frozen 21-case logical identity set; the control is a different source/invocation, so this is coverage identity evidence, not a timing comparison."
+        }
+      },
+      "aggregate_provider_status": {
+        "qualification_invocation_status": "DISCONNECTED_INVOCATION_STATUS",
+        "outer_remote_bazel_run": "53504013-aa71-49c2-9f45-e5aa1cc6e284",
+        "provider_error": "stream closed with task still claimed",
+        "interpretation": "The direct exact-source qualification 12cdf and its outer/parent-hosted invocation 53504013 are provider-disconnected. This does not negate the seven recovered passing per-action results. A separate same-source invocation b741 completed successfully; it is recorded independently.",
+        "outer_status": "DISCONNECTED_INVOCATION_STATUS"
+      },
+      "github_actions_status_at_snapshot": {
+        "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+        "synthetic_merge_commit": "2aec7a80cb38d483634e9236616168ba5e9a9a06",
+        "synthetic_merge_parents": [
+          "ff801c85c732b368a67f0d6ada3bb487146abca8",
+          "9b330689a24042259393a713b5f271b42bd7e669"
+        ],
+        "attempts_observed": 2,
+        "latest_attempt": 2,
+        "latest_bazel_ci": "passed",
+        "pre_commit": "passed",
+        "artifacts_imports": "passed",
+        "interpretation": "Both recorded GitHub Actions attempts tested the synthetic merge commit, not direct source head 9b330689. Latest attempt 2 (run 43621238434; Bazel job 132532089993) passed Bazel CI, pre-commit, and artifacts/imports. The direct source was not tested by this workflow.",
+        "required_checks_passed": 3,
+        "actions_run_id": 43621238434,
+        "bazel_job_id": 132532089993
+      },
+      "separate_20_case_repeat": {
+        "invocation": "b741d170-3bb3-4980-946b-c1f5f1c55030",
+        "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+        "terminal_status": "complete; successful bbr test",
+        "cli_exit_code": 0,
+        "completed_at_utc": "2026-11-14T17:55:17Z",
+        "junit_cases": 20,
+        "case_groups": {
+          "MCP3_no_sampler": 3,
+          "remaining_Pod": 17
+        },
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "target_verdicts": [
+          "MCP3 target passed 3 cases, one TestRunner attempt",
+          "Pod target passed 17 cases, one TestRunner attempt"
+        ],
+        "same_source_action_digest_as_12cdf": true,
+        "distinct_execution_ids": true,
+        "internal_rbe_retry_or_reschedule_count": "unknown; not inferred from distinct execution IDs",
+        "eight_named_library_targets_built": [
+          "//agentplane/system_tests/scenarios:external_connection",
+          "//agentplane/system_tests/scenarios:cert_manager_reissue",
+          "//agentplane/system_tests/scenarios:runner_credentials",
+          "//agentplane/system_tests/suites:pod_cases",
+          "//agentplane/system_tests/deployment:render_fixture",
+          "//agentplane/system_tests/deployment:mcp_fixture_chart",
+          "//agentplane/system_tests/deployment:render_mcp_fixture",
+          "//agentplane/system_tests/deployment:render_fixture_variants_driver"
+        ],
+        "six_named_aspects_accepted": [
+          "//devinfra/lint:linters.bzl%ruff",
+          "//devinfra/lint:linters.bzl%mypy_aspect",
+          "//devinfra/lint:linters.bzl%eslint",
+          "//devinfra/lint:pytest_main.bzl%pytest_main_aspect",
+          "@rules_rust//rust:defs.bzl%rust_clippy_aspect",
+          "@rules_rust//rust:defs.bzl%rustfmt_aspect"
+        ],
+        "output_groups": "+rules_lint_report,+mypy,+pytest_main_checks,+clippy_checks,+rustfmt_checks",
+        "interpretation": "This independently repeats the MCP3/Pod case identities already represented among the seven-target passing JUnit results; it adds executions, not logical coverage, and establishes no flake rate, performance result, or savings.",
+        "case_count_basis": "Counts 20 passing JUnit case results in the repeat; the MCP3/Pod identities are already represented among the initial seven-target results, so this adds executions rather than logical coverage."
+      },
+      "dependency_queries": {
+        "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+        "pod_native": {
+          "invocation": "c4577721-8573-4e72-b99b-be0cd4ae8176",
+          "status": "passed",
+          "selected_labels": 10,
+          "selected_shared_app_configuration_modules": 5,
+          "selected_python_file_targets": 5,
+          "selected_app_serving_client_or_conftest": false
+        },
+        "central_native": {
+          "invocation": "76b9f4af-d1b1-4548-8ed8-617a0cc3e22c",
+          "status": "passed",
+          "selected_labels": 10,
+          "selected_shared_app_configuration_modules": 5,
+          "selected_python_file_targets": 5,
+          "selected_app_serving_client_or_conftest": false
+        },
+        "mcp": {
+          "invocation": "8af9a101-68ae-41e6-8f08-8344a8eedbed",
+          "status": "passed",
+          "selected_central_sampler_image_binary_or_scenario": false
+        }
+      },
+      "decision": "The MCP3, native-central and native-Pod slices have passing per-action case evidence. The direct-source BuildBuddy aggregate remains provider-disconnected; GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Complete-feedback, performance, median/p90/flake, and adoption qualification remain unmet. No new savings claim.",
+      "separate_hosted_ci_provider_provenance": {
+        "outer_remote_bazel_run": "085885e6-f11b-4e78-812b-896219dd3296",
+        "outer_status_code": 13,
+        "outer_action_result_or_exit_code_present": false,
+        "child_invocation": "7c7bf823-ac99-5fdd-a3fe-098a837df1b6",
+        "child_status": "DISCONNECTED",
+        "interpretation": "This is a separate hosted-CI lineage: outer RemoteBazelRun 085885e6 ended status 13 without an aggregate ActionResult or exit code; child 7c7bf823 was disconnected. Do not attribute this outer/child pair to direct qualification 12cdf."
+      }
+    },
+    "separate_20_case_repeat": {
+      "invocation": "b741d170-3bb3-4980-946b-c1f5f1c55030",
+      "source_head": "9b330689a24042259393a713b5f271b42bd7e669",
+      "terminal_status": "complete; successful bbr test",
+      "cli_exit_code": 0,
+      "completed_at_utc": "2026-11-14T17:55:17Z",
+      "junit_cases": 20,
+      "case_groups": {
+        "MCP3_no_sampler": 3,
+        "remaining_Pod": 17
+      },
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "target_verdicts": [
+        "MCP3 target passed 3 cases, one TestRunner attempt",
+        "Pod target passed 17 cases, one TestRunner attempt"
+      ],
+      "same_source_action_digest_as_12cdf": true,
+      "distinct_execution_ids": true,
+      "internal_rbe_retry_or_reschedule_count": "unknown; not inferred from distinct execution IDs",
+      "eight_named_library_targets_built": [
+        "//agentplane/system_tests/scenarios:external_connection",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
+        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/suites:pod_cases",
+        "//agentplane/system_tests/deployment:render_fixture",
+        "//agentplane/system_tests/deployment:mcp_fixture_chart",
+        "//agentplane/system_tests/deployment:render_mcp_fixture",
+        "//agentplane/system_tests/deployment:render_fixture_variants_driver"
+      ],
+      "six_named_aspects_accepted": [
+        "//devinfra/lint:linters.bzl%ruff",
+        "//devinfra/lint:linters.bzl%mypy_aspect",
+        "//devinfra/lint:linters.bzl%eslint",
+        "//devinfra/lint:pytest_main.bzl%pytest_main_aspect",
+        "@rules_rust//rust:defs.bzl%rust_clippy_aspect",
+        "@rules_rust//rust:defs.bzl%rustfmt_aspect"
+      ],
+      "output_groups": "+rules_lint_report,+mypy,+pytest_main_checks,+clippy_checks,+rustfmt_checks",
+      "interpretation": "This is a repeated exposure of case identities already represented among the seven-target passing JUnit results; it adds executions, not logical coverage, and establishes no flake rate, performance result, or savings.",
+      "case_count_basis": "Counts 20 passing JUnit case results in the repeat; the MCP3/Pod identities are already represented among the initial seven-target results, so this adds executions rather than logical coverage."
+    },
+    "sources": [
+      {
+        "label": "Separate hosted-CI child invocation metadata",
+        "url": "https://app.buildbuddy.io/invocation/7c7bf823-ac99-5fdd-a3fe-098a837df1b6"
+      }
+    ]
+  },
+  "new_unqualified_candidates": [
+    "MCP3 no-Sampler candidate (per-action cases pass; full-feedback/adoption qualification pending)",
+    "App-free Pod trust4 case (per-action cases pass; full-feedback/adoption qualification pending)"
+  ],
+  "observed_at_utc": "2026-11-14T18:10:20Z"
 }

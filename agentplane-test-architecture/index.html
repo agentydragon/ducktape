@@ -840,43 +840,45 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
-              >Iteration 15 · journal graph screen reviewed<//
-            ><${Badge} color="orange">devel merge gate unchanged<//
-            ><${Badge} color="red">no selector promotion<//
+              >Iteration 16 · exact-source platform proof passed<//
+            ><${Badge} color="orange">Four-slot run passed · cost caps failed<//
+            ><${Badge} color="teal"
+              >Whole graph · 23.8% lower once · CU-time cap missed<//
             ><${Badge} color="gray">Earlier evidence retained as history<//><//
           >
-          ${p("Iteration 15: a synthetic one-file journal graph had a 29.3% lower midpoint, not complete PR feedback. Four target substitutions lack coverage proof; literal selection matched 0/30 reviewed changesets. Keep the gate. Qualification still requires at least 30% lower median complete required feedback including reruns, no worse p90 or flake rate, preserved behavior/security/platform contracts, and documented costs.")}
+          ${p("Iteration 16 adds an exact-source native platform proof and ordinary PR CI pass at 6c31cfb9. Five fresh targets passed 11 cases with no overlay. At exact 8c097bae, the seven-target A2/B2 graph passed all 40 identical JUnit cases with seven fresh TestRunner actions per arm. Candidate native time was 23.8% lower in this single pair, below the 30% goal; requested-CU×execution was 1.1035× and missed its 1.10 cap. Keep six slots manual and the required gate and selector unchanged; no complete-feedback median, p90, or flake qualification is established.")}
           <${SimpleGrid} cols=${{ base: 1, sm: 2, lg: 4 }} spacing="sm" my="md">
             <${Node}
-              label="29.3% lower · n=2/arm"
+              label="5 fresh targets · 11 cases"
+              color="teal"
+              detail="Exact pushed source 6c31cfb9, no overlay; all passed once with zero failures, errors, skips, or retries."
+            />
+            <${Node}
+              label="2,005 CI targets · 15 fresh test targets · 19 fresh actions"
               color="blue"
-              detail="412.876s baseline vs 291.913s candidate midpoint on the selected synthetic graph; below the 30% goal and not p90 or whole-PR feedback."
+              detail="Ordinary PR CI invocation b215237c at the same source; native Bazel wall 627.656s. One run, not a treatment comparison."
             />
             <${Node}
-              label="33 / 36 identities agree"
+              label="Whole graph · 23.8% lower once"
               color="orange"
-              detail="Three shared Go targets have no testcase rows; four baseline/candidate target substitutions still need a semantic witness map."
+              detail="A2 489.497s vs B2 373.066s; below the 30% goal and one pair, not a treatment estimate."
             />
             <${Node}
-              label="0 / 30 historical changesets"
+              label="CU-time cap missed · gate unchanged"
               color="red"
-              detail="The literal journal-only shadow selector did not match the reviewed historical frame. Old paths are not remapped."
-            />
-            <${Node}
-              label="Gate unchanged"
-              color="gray"
-              detail="Main PR #16102 has three green required checks at observed head 38f6c8e; the graph screen does not qualify routine adoption, p90, or flake behavior."
+              detail="Known CPU ratio 0.9895 and peak concurrent requested-CU ratio 1.1429 pass; requested-CU×execution ratio 1.1035 exceeds the 1.10 cap. No median, p90, or flake qualification."
             />
           <//>
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} (tested merge base is recorded separately) · source head ${manifest.pilot_head_commit?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · historical integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · exact proof source ${manifest.iteration16?.source_head?.slice(0, 10) || manifest.pilot_head_commit?.slice(0, 10) || "pending"} · Services candidate source ${manifest.iteration16?.current_services_candidate_source?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration15", "Iteration 15 current evidence"],
+              ["iteration16", "Iteration 16 current evidence"],
+              ["iteration15", "Historical iteration 15"],
               ["iteration14", "Historical iteration 14"],
               ["iteration13", "Historical iteration 13"],
               ["iteration12", "Historical iteration 12"],
@@ -902,16 +904,308 @@
             )}
           <//>
           <${Alert} color="yellow" title="Current architecture decision">
-            The measured reduction is bounded to a synthetic changed-label
-            screen with two runs per arm, unequal cache state, shared-pool load,
-            incomplete baseline CPU accounting, and unresolved target
-            substitutions. It does not establish a whole-PR saving or broad
-            selector applicability. Keep today’s required gate and contract
-            coverage in place.
+            The new exact-source tests and ordinary CI pass are implementation
+            evidence. The Services run compares unequal case sets. Pod B2 was
+            13.4% lower in one native-time pair but used 35.8% more Pod CPU;
+            build-action and warmth/pool differences confound the result. The
+            four-slot candidate passed its cases but exceeded CPU and requested
+            compute-unit-time caps. The render-determinism expected-file defect
+            from f919e2ed was corrected at a915738a; all three required checks
+            passed there. At exact 8c097bae, the seven-target A2/B2 graph passed
+            40 identical cases and was 23.8% lower once, below the 30% goal.
+            Managed requested-CU×execution was 1.1035 against its 1.10 cap, so
+            six slots remain manual. This is one pair, not a complete-feedback
+            median, p90, or flake result. The synthetic 29.3% screen remains
+            historical. Keep the required gate and contract coverage in place.
+          <//>
+          <${Section}
+            id="iteration16"
+            title="Iteration 16: source-exact platform proof and manual candidate screens"
+          >
+            ${p("The focused native validation used exact pushed source 6c31cfb9f7412506338a069fda13100fc291f993 with no working-tree overlay. Five physical test targets passed once, covering 11 cases, with zero failures, errors, skips, or retries. Three named libraries/aspects were also built in the same invocation. The unchanged VM process-trace contract passed with native driver identity and propagated W3C trace context.")}
+            <${Rows}
+              headers=${["Fresh test target", "Cases", "Physical action", "CPU"]}
+              rows=${[
+                [
+                  "//agentplane/runner_gateway/dispatcher:test_testing_client",
+                  "4",
+                  "15.051s",
+                  "12.773s",
+                ],
+                [
+                  "//agentplane/x/native_contracts:test_session_driver",
+                  "1",
+                  "46.592s",
+                  "56.719s",
+                ],
+                [
+                  "//agentplane/system_tests/suites:test_firecracker",
+                  "2",
+                  "241.044s",
+                  "Unknown",
+                ],
+                [
+                  "//agentplane/system_tests/suites:test_dispatcher",
+                  "3",
+                  "258.982s",
+                  "300.706s",
+                ],
+                [
+                  "//agentplane/system_tests/suites:test_vm",
+                  "1",
+                  "274.889s",
+                  "849.883s",
+                ],
+              ]}
+              minWidth=${900}
+            />
+            ${p("All five actions were fresh. The rows are parallel action durations; do not sum them as wall time. The invocation native Bazel wall was 347.022s and its reported critical path was 278.780s. KVM usage and disk consumption remain unknown.")}
+            <${Title} order=${3}>Exact-source command and ordinary PR CI<//>
+            ${p(html`The focused command used <${Code}>//agentplane/system_tests/suites:test_vm<//>, <${Code}>//agentplane/system_tests/suites:test_firecracker<//>, <${Code}>//agentplane/system_tests/suites:test_dispatcher<//>, and <${Code}>//agentplane/runner_gateway/dispatcher:test_testing_client<//> plus <${Code}>//agentplane/x/native_contracts:test_session_driver<//>. Its three named non-test targets were <${Code}>//agentplane/runner_gateway/dispatcher:testing_client<//>, <${Code}>//agentplane/system_tests/driver:session<//>, and <${Code}>//agentplane/system_tests/scenarios:dispatcher<//>.`)}
+            <${Rows}
+              headers=${["Run", "Source", "Targets", "Fresh test targets", "Fresh physical TestRunner actions", "Native Bazel", "Pod / VM / Services"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/b31ff206-af86-4808-95ff-776a15f0905c"
+                    >Focused platform proof · b31ff206<//
+                  >`,
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/commit/6c31cfb9f7412506338a069fda13100fc291f993"
+                    >6c31cfb9<//
+                  >`,
+                  "5 tests + 3 library/aspect targets",
+                  "5",
+                  "5",
+                  "347.022s; critical path 278.780s",
+                  "Not applicable",
+                ],
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/b215237c-b0a9-5800-bbb5-6a15b278171f"
+                    >Ordinary PR CI · b215237c<//
+                  >`,
+                  html`<${Anchor}
+                    href="https://github.com/agentydragon/ducktape/commit/6c31cfb9f7412506338a069fda13100fc291f993"
+                    >6c31cfb9<//
+                  >`,
+                  "2,005",
+                  "15",
+                  "19",
+                  "627.656s",
+                  "532s / 286.5s / 285.3s",
+                ],
+              ]}
+              minWidth=${1150}
+            />
+            ${p("The ordinary CI run is one observation at the same source. Pod, VM and Services clocks are reported phase durations and overlap in the graph; they are not additive savings or a matched baseline/candidate comparison. This validates the observed run, not a median, p90, flake rate, or 30% complete-feedback reduction.")}
+            <${Title} order=${3}
+              >Manual Services candidate passed; selection remains
+              unqualified<//
+            >
+            ${p("Source f919e2ed adds a manual four-case central-Services candidate that avoids App process/image/client and App-backed conftest dependencies. The previous seven required cases remain; three App/MCP witnesses are retained. The reviewed dependency query passed at a5029663 and found no App executable, image, testing client, or App-backed conftest. Five shared rendering configuration modules remain, so this query does not establish a base/head affected-selection change.")}
+            ${p(html`The exact-source physical qualification <${Anchor} href="https://app.buildbuddy.io/invocation/fd790fe6-da40-460f-a3c6-df0324de6d4f">fd790fe6<//> passed the render target's 21 cases, the original Services target's seven cases, and the candidate target's four cases, with all three test targets fresh and one attempt each. Four named library/aspect targets also passed.`)}
+            ${p(html`Those four targets were <${Code}>//agentplane/system_tests/driver:central_sampler<//>, <${Code}>//agentplane/system_tests/scenarios:central_sampler<//>, <${Code}>//agentplane/system_tests/deployment:fixture_chart<//>, and <${Code}>//agentplane/system_tests/deployment:render_fixture<//>.`)}
+            <${Rows}
+              headers=${["Fresh target", "Cases", "Action execution", "CPU", "Peak memory"]}
+              rows=${[
+                [
+                  "//agentplane/system_tests/deployment:test_render",
+                  "21",
+                  "21.160s",
+                  "25.528s",
+                  "1.05 GB",
+                ],
+                [
+                  "//agentplane/system_tests/suites/mcp:test_services",
+                  "7",
+                  "308.526s",
+                  "599.724s",
+                  "5.84 GB",
+                ],
+                [
+                  "//agentplane/system_tests/suites/mcp:test_services_central_native_candidate",
+                  "4",
+                  "271.860s",
+                  "481.926s",
+                  "4.69 GB",
+                ],
+              ]}
+              minWidth=${900}
+            />
+            ${p("The candidate's 271.860s action versus 308.526s for the original seven-case action is an unequal-workload comparison, not a saving. Native Bazel wall was 379.430s. The render action ran in 21.160s. No required selector or gate changed.")}
+            <${Title} order=${3}>Frozen-source Pod screen accounting<//>
+            ${p("A new B/A screen freezes source 6c31cfb9 and gives the two manual balanced Pod targets the same 21-case union while retaining two case slots and storage isolation. Candidate B2 invocation 58a5cb3f passed eight target executions and 40 JUnit records; control A2 also passed. Reviewed XML retained all 40 case identity records across the planned 21-case union, with no failures, errors, skips, or retries. Native invocation wall was 429.315s for B2 and 495.738s for A2, a 13.4% lower candidate observation in this one pair. But known whole TestRunner CPU, excluding the unknown Firecracker amount, rose from 3,660.154s to 4,165.295s (+13.8%), including Pod CPU from 1,037.989s to 1,410.055s (+35.8%). This is not causal evidence: the original Pod was 452.0s versus 384.8s for the slowest split action, the split incurred two extra build actions where the original had none, and warmth/shared-pool load differed.")}
+            ${p("Within B2, the 5-case A action took 257.920s and the 16-case B action 384.800s. The old balance weights are stale: the B-side last bad-gateway-leaf case took 72.362s. Case-batch OTEL span totals were 232.907s for A and 363.362s for B. JUnit duration includes fixture phases, so keep those measurements separate. Do not promote the current partition or infer p90/fleet performance from one pair.")}
+            ${p(html`Control A2 invocation <${Anchor} href="https://app.buildbuddy.io/invocation/358bfd56-dcde-4480-8ebd-d34c6194a883">358bfd56<//> passed. The exact-source pair is complete; its exposure, build-action, and pool differences limit interpretation.`)}
+            ${p("The earlier B1 ID 98c5a4c0 was refused by bbr's source guard before submission because its measurement branch was not present remotely. It executed no work and is not a failure or exposure. The corrected plan pins the remote branch to the exact source and uses a detached measurement checkout.")}
+            <${Title} order=${3}>Render repair and four-slot capacity result<//>
+            ${p(html`Full CI at <${Anchor} href="https://github.com/agentydragon/ducktape/commit/f919e2ed22f4245446f5bdd6e4b0b03480da8ffc">f919e2ed<//> reported one failure in <${Code}>//agentplane/system_tests/deployment:test_render_determinism<//>: a new fixture variant was absent from the expected-filename list. The follow-up source <${Anchor} href="https://github.com/agentydragon/ducktape/commit/a915738a26075f2b0126f5df65599008fe7d0524">a915738a<//> adds that expected variant and retains the independent-render and byte-equality assertions. All three required checks—Bazel, pre-commit, and artifacts/imports—pass at a915738a. The earlier failure is a repaired test expectation, not a flake.`)}
+            ${p(html`The four-slot candidate <${Anchor} href="https://app.buildbuddy.io/invocation/7b26a47a-b973-4eed-b5c0-f318e51e37f7">7b26a47a<//> passed 21 Pod cases with the same names as its reference, plus one independent render-determinism case, with both targets fresh in one attempt and no failures, errors, or skips. It ran at exact source <${Anchor} href="https://github.com/agentydragon/ducktape/commit/a915738a26075f2b0126f5df65599008fe7d0524">a915738a<//> with no overlay. It selected two targets and is not the same graph as the prior seven-target Pod screen. Native Bazel time was 539.360s; physical action execution was 442.477s versus an unmatched 452.003s reference. The case envelope was 220.225s versus 321.105s, while setup was 130.737s versus 33.305s and cleanup was 62.533s versus 64.601s. Candidate cold tool import took 59.544s; it also imported cold images while the reference skipped usable image imports. Source and warmth differ, so the component and elapsed differences are descriptive, not causal savings or a 30% complete-feedback result.`)}
+            <${Rows}
+              headers=${["Four-slot measurement", "Candidate", "Reference", "Predeclared cap and result"]}
+              rows=${[
+                ["CPU", "1,674.522s", "1,037.989s", "1.613× vs ≤1.5× · failed"],
+                [
+                  "Requested compute units × physical execution",
+                  "8 × 442.477s",
+                  "4 × 452.003s",
+                  "1.958× vs ≤1.5× · failed",
+                ],
+                [
+                  "Peak memory",
+                  "5,721,894,912 B",
+                  "5,535,584,256 B",
+                  "1.034× vs ≤2× · passed",
+                ],
+              ]}
+              minWidth=${900}
+            />
+            ${p("The action requested 8 compute units; the selected Kubernetes node reported 11 CPU and 20,012,876 Ki of allocatable memory. Requested compute units and Kubernetes CPU capacity are different resource fields. The predeclared CPU and compute-unit-time caps failed, so keep four slots manual and do not adopt this arrangement.")}
+            ${p(html`A six-slot manual variant was implemented and pushed at <${Anchor} href="https://github.com/agentydragon/ducktape/commit/8c097bae2b14fb158910958917f236c69d54c9c7">8c097bae<//>; scoped hooks passed. The shared fixture removes the copied module and preserves the original 21-case set and fixture AST. All three required checks passed on this exact head in <${Anchor} href="https://github.com/agentydragon/ducktape/actions/runs/43616795278">Actions run 43616795278<//> (Bazel CI, pre-commit, and artifacts/imports), and ordinary BuildBuddy CI invocation <${Anchor} href="https://app.buildbuddy.io/invocation/2553cd46-3434-5734-8f95-5e0c4b04824d">2553cd46<//> succeeded. The candidate-specific fixture writes node JSON only to private undeclared output, excluded from this report.`)}
+            <${Title} order=${3}>Six-slot same-source capacity screen<//>
+            ${p(html`Candidate B1 <${Anchor} href="https://app.buildbuddy.io/invocation/f87c7963-0e50-4d47-9fac-1a6e2dd0311d">f87c7963<//> ran first; ordinary two-slot control A1 <${Anchor} href="https://app.buildbuddy.io/invocation/9cae6b36-68c0-47fd-9e79-2847e5ff2be6">9cae6b36<//> ran second. Both used exact source 8c097bae with no overlay, passed all 21 identical unique JUnit case identities in one attempt, and had no failures, errors, skips, or retries.`)}
+            <${Rows}
+              headers=${["Measurement", "Six slots · B1 · 8 CU", "Two slots · A1 · 4 CU", "B1 / A1"]}
+              rows=${[
+                [
+                  "TestRunner physical wall",
+                  "313.609s",
+                  "513.545s",
+                  "0.611×; descriptive",
+                ],
+                [
+                  "CPU",
+                  "1,012.582s",
+                  "1,093.896s",
+                  "0.926× / ≤1.5× cap passed",
+                ],
+                [
+                  "Requested CU × execution",
+                  "8 × 313.609s",
+                  "4 × 513.545s",
+                  "1.221× / ≤1.5× cap passed",
+                ],
+                [
+                  "Peak memory",
+                  "5,968,359,424 B",
+                  "5,540,950,016 B",
+                  "1.077× / ≤2× cap passed",
+                ],
+                [
+                  "Case-span union",
+                  "198.133s",
+                  "377.337s",
+                  "Trace union, not summed test time",
+                ],
+                [
+                  "Fixture setup / cleanup",
+                  "27.137s / 62.427s",
+                  "34.407s / 64.197s",
+                  "Observed phase spans",
+                ],
+                [
+                  "Longest case span",
+                  "107.808s",
+                  "131.857s",
+                  "Different slowest cases",
+                ],
+              ]}
+              minWidth=${1000}
+            />
+            ${p(html`The predeclared candidate/control ratios passed: CPU 0.926 (cap 1.5), requested-CU×execution 1.221 (cap 1.5), and peak memory 1.077 (cap 2.0). These are one-pair screen thresholds, not cost or speed qualification. Actual node allocatable was 11 CPU / 20,012,876 Ki for B1 and 7 CPU / 9,957,952 Ki for A1; requested CU is a separate field from Kubernetes CPU. Both persistence records reported warm, both had all 13 image-import spans skipped, and both recorded cleanup complete. Broader cache, selected-worker, and shared-load equivalence is not established.`)}
+            ${p("This is a configured-capacity screen with different requested-CU and observed node shapes, run in B1→A1 order. The lower B1 physical wall and case-span union are descriptive, not a slot-only causal comparison. It demonstrates one passing six-slot execution on its observed node, not general fit, cost neutrality, p90, flake rate, fleet performance, or a 30% complete-feedback reduction. The complete competing-graph result follows; keep the candidate manual.")}
+            <${Title} order=${3}>Six-slot complete competing-graph screen<//>
+            ${p(html`At exact source <${Anchor} href="https://github.com/agentydragon/ducktape/commit/8c097bae2b14fb158910958917f236c69d54c9c7">8c097bae<//>, ordinary control A2 <${Anchor} href="https://app.buildbuddy.io/invocation/88db0989-55ba-40f8-8a9a-94e87fb95a54">88db0989<//> ran before six-slot candidate B2 <${Anchor} href="https://app.buildbuddy.io/invocation/1d268405-f1e7-4a68-9649-12a174d5b62f">1d268405<//>. Both succeeded in one attempt with seven fresh TestRunner actions, the same 40 logical JUnit identities, and no failures, errors, or skips.`)}
+            <${Rows}
+              headers=${["Whole-graph measurement", "A2 · ordinary control", "B2 · six-slot candidate", "B2 / A2 and cap"]}
+              rows=${[
+                [
+                  "Native graph elapsed",
+                  "489.497s",
+                  "373.066s",
+                  "0.762× · 23.8% lower once; below 30% goal",
+                ],
+                [
+                  "Last-finishing Pod",
+                  "443.020s",
+                  "330.949s",
+                  "One-pair phase observation",
+                ],
+                [
+                  "Next-finishing target · Services",
+                  "289.893s",
+                  "291.709s",
+                  "Both arms; Pod finishes last",
+                ],
+                [
+                  "Known CPU, excluding unknown Firecracker",
+                  "3,736.954s",
+                  "3,697.784s",
+                  "0.9895× / ≤1.10 cap passed",
+                ],
+                [
+                  "Managed requested-CU × execution",
+                  "8,065.575 CU·s",
+                  "8,900.240 CU·s",
+                  "1.1035× / ≤1.10 cap failed",
+                ],
+                [
+                  "Peak concurrent requested-CU",
+                  "28",
+                  "32",
+                  "1.1429× / ≤1.20 cap passed",
+                ],
+                [
+                  "Observed node allocatable CPU",
+                  "7 CPU",
+                  "11 CPU",
+                  "Different node capacity",
+                ],
+              ]}
+              minWidth=${1050}
+            />
+            ${p("The final Pod case remained the runner-address cluster-CA leaf refusal in both arms (71.387s A2, 102.056s B2); six slots did not change the tail owner. B2's Pod mTLS case finished 57.6s before that final case. The native Pod4 slice targets the same tail; its 9b330689 per-action pass is summarized below, not part of this 8c097bae timing pair.")}
+            ${p("The whole-graph candidate's 23.8% lower native elapsed time is one ordered pair, not a treatment estimate or a complete-required-feedback result. The CPU total excludes unknown Firecracker CPU. Managed requested-CU×execution increased 10.35%, exceeding the predeclared 10% cap; the managed requested-CU envelope rose 28→32 (+14.3%), which is not a money measurement. Actual peak concurrent requested-CU rose 14.29%, within its 20% cap. Both Pod runs reported warm state and complete cleanup. Keep the six-slot arrangement manual; this result establishes neither cost neutrality nor a 30% median, p90, or flake qualification.")}
+            ${p(html`At exact source <${Anchor} href="https://github.com/agentydragon/ducktape/commit/9b330689a24042259393a713b5f271b42bd7e669">9b330689<//> with no overlay, the direct BuildBuddy qualification <${Anchor} href="https://app.buildbuddy.io/invocation/12cdf1bb-c0de-400c-821e-8f79dcb4b275">12cdf1bb<//> has a provider-disconnected aggregate: “stream closed with task still claimed.” Its outer/parent-hosted invocation <${Anchor} href="https://app.buildbuddy.io/invocation/53504013-aa71-49c2-9f45-e5aa1cc6e284">53504013<//> is also provider-disconnected. The separate hosted-CI outer/child lineage is recorded separately in the evidence manifest. Independently recovered action metadata contains seven completed TestRunner ActionResults, all default status/exit code 0, with matching test.xml output digests.`)}
+            <${Rows}
+              headers=${["Per-action case slice", "Passing JUnit case results", "Result"]}
+              rows=${[
+                ["Existing required Services", "7", "PASS"],
+                ["MCP3 no-Sampler", "3", "PASS"],
+                ["Native central Services", "4", "PASS"],
+                ["App-free native Pod trust", "4", "PASS"],
+                ["Remaining Pod cases", "17", "PASS"],
+                ["Render", "23", "PASS"],
+                ["Render determinism", "1", "PASS"],
+              ]}
+              minWidth=${700}
+            />
+            ${p("Together, the seven actions returned 59 passing JUnit case results with zero failures, errors, or skips; each had one TestRunner attempt. These are result rows, not 59 deduplicated logical cases: existing and candidate slices overlap, with the exact Services and Pod identity unions recorded below. Internal RBE retry counts are unknown. This is per-action coverage, not an aggregate Bazel or hosted CI pass.")}
+            ${p(html`The Services logical identity set is exact: seven existing cases = three MCP3 cases + four native-central cases. The Pod set is also exact: the frozen 21-case control at <${Anchor} href="https://app.buildbuddy.io/invocation/88db0989-55ba-40f8-8a9a-94e87fb95a54">88db0989<//> (source 8c097bae) matches 17 remaining Pod + four native-trust cases. The Pod control is a different source/invocation, so this establishes coverage identity only, not timing.`)}
+            ${p(html`The exact-source dependency queries passed: Pod-native <${Anchor} href="https://app.buildbuddy.io/invocation/c4577721-8573-4e72-b99b-be0cd4ae8176">c4577721<//> and central-native <${Anchor} href="https://app.buildbuddy.io/invocation/76b9f4af-d1b1-4548-8ed8-617a0cc3e22c">76b9f4af<//> each selected five shared App configuration modules and their .py targets, with no App serving, client, or conftest targets. MCP <${Anchor} href="https://app.buildbuddy.io/invocation/8af9a101-68ae-41e6-8f08-8344a8eedbed">8af9a101<//> selected no CentralSampler image, binary, or scenario.`)}
+            ${p(html`Both GitHub Actions attempts tested synthetic merge <${Anchor} href="https://github.com/agentydragon/ducktape/commit/2aec7a80cb38d483634e9236616168ba5e9a9a06">2aec7a80<//> (parents devel ff801c85 and source 9b330689), not the direct source. Latest attempt 2 passed all three required checks: <${Anchor} href="https://github.com/agentydragon/ducktape/actions/runs/43621238434">Bazel CI run 43621238434<//> (job 132532089993), pre-commit, and artifacts/imports. This validates the synthetic merge, not direct source head 9b330689. A separate complete same-source <${Anchor} href="https://app.buildbuddy.io/invocation/b741d170-3bb3-4980-946b-c1f5f1c55030">b741d170<//> run passed the same 20 MCP3/Pod cases (3 + 17) and built eight named libraries plus six aspects. Those repeat existing case identities already represented among the seven-target results; they add executions, not logical coverage or a flake-rate sample. No new savings claim; complete-feedback performance, median, p90, and flake qualification remain open.`)}
+            <${Title} order=${3}>Independent Actions validation and decision<//>
+            ${p(html`Independent Actions PR <${Anchor} href="https://github.com/agentydragon/ducktape/pull/16386">#16386<//> merged at 2026-11-14 17:22:30 UTC from head <${Anchor} href="https://github.com/agentydragon/ducktape/commit/d34c757904">d34c757904<//>. Its 14 Actions and 25 manifest cases passed with no staging drift; all three required checks were green. This workflow validation is separate from the source-exact platform proof.`)}
+            ${p("The architecture qualification remains unmet. The previous 29.3% journal-graph midpoint and 17.4% unequal-warm observation remain historical, with their original limitations; neither is a complete-feedback treatment result. This whole-graph pair was 23.8% lower, below the 30% goal, and exceeded the managed requested-CU×execution cap (1.1035 vs 1.10); no median, no-worse p90, or flake rate is established. The four-slot candidate fails two predeclared resource caps, and six slots remain manual. MCP3 no-Sampler and App-free Pod trust4 now have passing per-action case evidence; direct-source aggregate CI, complete-feedback performance, median, p90, and flake qualification remain open. Keep PR #16102's required gate and current selector.")}
+            <${Group} gap="md" wrap="wrap">
+              <${Anchor} href="iteration16.json"
+                >Curated Iteration 16 evidence<//
+              >
+              <${Anchor} href="manifest.json">Source and artifact manifest<//>
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16102"
+                >Architecture source PR #16102<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >Qualification tracker #16099<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration15"
-            title="Iteration 15: journal graph screen and applicability"
+            title="Historical iteration 15: journal graph screen and applicability"
           >
             ${p("The A/B/B/A screen ran 40 labels and 46 physical actions in each arm. All four invocations succeeded with zero failures, errors, skips, or retries. The baseline two-run midpoint is 412.876s; the candidate midpoint is 291.913s, 29.3% lower. The sample is two runs per arm and below the 30% median goal. It is a synthetic one-file journal graph, not routine PR feedback, the full three-required-context gate, p90, or a flake qualification.")}
             <${Rows}
@@ -974,7 +1268,7 @@
             >
             ${p("Of 36 targets shared by baseline and candidate, 33 have matching testcase identity sets. Three shared Go targets emit XML without testcase rows, so their identities remain unknown. Four baseline-only targets are replaced by four candidate-only targets; no semantic-coverage proof yet shows that the new targets retain the displaced deployment witnesses.")}
             ${p(html`Baseline-only: ${code("//agentplane/system_tests/suites/mcp:test_services · //agentplane/system_tests/suites:test_firecracker · //agentplane/system_tests/suites:test_pod · //agentplane/system_tests/suites:test_vm")}. Candidate-only: ${code("//agentplane/x/direct_vm_boot:test_runtime_codex_session · //agentplane/x/direct_vm_boot:test_runtime_session · //agentplane/x/native_contracts:test_admission_reply_loss · //agentplane/x/native_contracts:test_recovery")}.`)}
-            ${p("The current shadow policy is literal journal-only. It matched 0 of the 30 reviewed historical changesets. Earlier paths are not remapped to journal paths, so this experiment does not show that routine PRs would use the candidate graph. The selector query was sourced from 4bf33d0e while all four experiment arms executed at 38f6c8e; the query and run revisions differ.")}
+            ${p("At iteration 15, the shadow policy under review was literal journal-only. It matched 0 of the 30 reviewed historical changesets. Earlier paths are not remapped to journal paths, so this experiment does not show that routine PRs would use the candidate graph. The selector query was sourced from 4bf33d0e while all four experiment arms executed at 38f6c8e; the query and run revisions differ.")}
             <${Title} order=${3}
               >Follow-up candidates do not qualify a gate change<//
             >
@@ -2887,9 +3181,9 @@
             ${p("Keep the usable-image import candidate as a separate setup improvement: its warm same-worker ABBA result was 14.776s shorter setup, without a proved complete-CI saving. Keep browser/VM/auth and execution-stream recurrence tracking in #16034. Those investigations complement this pivot and do not need to finish before its fixtures can be built.")}
             ${p("MCP overlap shortened a case envelope but increased whole-action time; harness mounts barely changed declared bytes. The KVM burst exhausted three registered slots and Pod remained the long pole. These results reject those particular arrangements as established CI wins; they do not rule out a smaller graph, different grouping or adequately provisioned capacity. Infrastructure snapshots and Pod runner pooling already exist. The parked persistent shared-cluster spike is not an operational fixture to assume.")}
             <${Group} gap="md"
-              ><${Anchor} href="../latency/#ten-lane-followups"
+              ><${Anchor} href="../latency/#nov12-followups"
                 >Latency experiments<//
-              ><${Anchor} href="../reliability/#ten-lane-followups"
+              ><${Anchor} href="../reliability/#followups"
                 >Reliability follow-ups<//
               ><${Anchor} href=${`${repo}/issues/16034`}
                 >Existing exposure tracker<//
