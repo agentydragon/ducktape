@@ -3,8 +3,14 @@ package gateway
 import (
 	"context"
 	"maps"
+	"net"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"google.golang.org/grpc/credentials"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -63,7 +69,7 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			methods := test.gateway.Methods()
+			methods := gatewayMethods(t, test.gateway)
 			connection := grpcmethods.Serve(t, methods, registerStandIns)
 			for _, desc := range []struct {
 				service grpc.ServiceDesc
@@ -131,7 +137,7 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 		t.Fatal(err)
 	}
 	g := f.newGateway(t, "test-runner-gateway", "192.0.2.30", executorAccount)
-	connection := grpcmethods.Serve(t, g.Methods(), func(server *grpc.Server) {
+	connection := grpcmethods.Serve(t, gatewayMethods(t, g), func(server *grpc.Server) {
 		executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
 	})
 	stream, err := executorpb.NewExecutorClient(connection).OpenSession(bearing(t, ""), &executorpb.OpenSessionRequest{
@@ -162,5 +168,67 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "launcher", UID: "pod-uid"}
 	if phase := sandboxPhase(sandbox); phase != modeSuspended {
 		t.Fatalf("checkpointed launcher phase = %s, want Suspended", phase)
+	}
+}
+
+func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t, "test-service-proxy", "192.0.2.44", executorAccount)
+	g.config.RuntimeReaders = []string{peertls.AppURI}
+	g.config.SessionServices = []string{peertls.SessionsURI}
+	g.config.ControllerServices = []string{peertls.SandboxControllerURI}
+	g.config.ExecutorServices = []string{peertls.CentralSamplerURI}
+	ca := transporttesting.NewCA(t)
+	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(gatewayMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	registerStandIns(server)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	for _, actor := range []string{peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI, peertls.SessionDispatcherURI} {
+		t.Run(actor, func(t *testing.T) {
+			clientTLS, err := ca.Issue(t, actor).ClientTLSConfig(peertls.SessionDispatcherURI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
+				for _, method := range grpcmethods.Of(desc) {
+					allowed := ""
+					switch method.Name {
+					case environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName, environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:
+						allowed = peertls.AppURI
+					case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName, environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName, environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName, environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName, environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
+						allowed = peertls.SessionsURI
+					case environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName, environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName, environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:
+						allowed = peertls.SandboxControllerURI
+					default:
+						if strings.HasPrefix(method.Name, "/"+executorpb.Executor_ServiceDesc.ServiceName+"/") {
+							allowed = peertls.CentralSamplerURI
+						}
+					}
+					want := codes.PermissionDenied
+					if allowed == actor {
+						want = codes.Unimplemented
+					}
+					ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+					err = method.Call(ctx, conn)
+					cancel()
+					if status.Code(err) != want {
+						t.Fatalf("%s actor=%s: %v,want=%s", method.Name, actor, err, want)
+					}
+				}
+			}
+		})
 	}
 }

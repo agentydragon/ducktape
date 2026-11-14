@@ -39,6 +39,15 @@ var (
 	controllerAccount = auth.Account{Namespace: "test-system", Name: "test-sandbox-controller"}
 )
 
+func gatewayMethods(t *testing.T, g *Gateway) auth.Methods {
+	t.Helper()
+	methods, err := g.Methods()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return methods
+}
+
 func useAPIServer(server *kubeapiserver.Server) error {
 	api = server
 	return nil

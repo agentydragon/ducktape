@@ -189,7 +189,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proxyServer := grpc.NewServer(gateway.Methods().ServerOptions(0)...)
+	proxyServer := grpc.NewServer(gatewayMethods(t, gateway).ServerOptions(0)...)
 	gateway.RegisterProxy(proxyServer)
 	go func() { _ = proxyServer.Serve(proxyListener) }()
 	defer proxyServer.Stop()

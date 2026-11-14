@@ -15,6 +15,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	corev1 "k8s.io/api/core/v1"
@@ -124,6 +125,51 @@ func TestCreateNamesTheIdentityAndCallerIntentAndIsIdempotent(t *testing.T) {
 	}
 	if _, err := otherCaller.Create(context.Background(), request); !isConflict(err) {
 		t.Fatalf("different caller adopted name: %v", err)
+	}
+}
+
+func TestCreateIntentKeepsTypedServiceActorsAndLegacyAccountRetries(t *testing.T) {
+	request := &environmentpb.CreateEnvironmentRequest{Name: "created-sandbox", Template: "pod", Identity: "agent"}
+	serviceActor := Actor{ServiceSPIFFEID: "spiffe://agentplane/actions"}
+	receipt, err := encodeCreateIntent(request, serviceActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameIntent(receipt, request, serviceActor) {
+		t.Fatal("typed service actor could not retry its create")
+	}
+	if sameIntent(receipt, request, Actor{ServiceSPIFFEID: "spiffe://agentplane/notifications"}) ||
+		sameIntent(receipt, request, Actor{ServiceAccount: &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}}) {
+		t.Fatal("typed service receipt was adopted by a different principal")
+	}
+
+	accountActor := Actor{ServiceAccount: &identitypb.ServiceAccount{Namespace: namespace, Name: "app"}}
+	requestJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := json.Marshal(createIntent{
+		Caller: &intentCaller{Namespace: namespace, Name: "app"}, Request: requestJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameIntent(string(legacy), request, accountActor) {
+		t.Fatal("legacy ServiceAccount create receipt no longer supports retry")
+	}
+	if sameIntent(string(legacy), request, serviceActor) {
+		t.Fatal("legacy ServiceAccount receipt was adopted by a service actor")
+	}
+	accountReceipt, err := encodeCreateIntent(request, accountActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded createIntent
+	if err := json.Unmarshal([]byte(accountReceipt), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Actor != nil || decoded.Caller == nil || *decoded.Caller != (intentCaller{Namespace: namespace, Name: "app"}) {
+		t.Fatal("new account receipt is unreadable by old receivers")
 	}
 }
 

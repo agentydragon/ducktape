@@ -62,3 +62,13 @@ must still pass Runtime's admission gate. Runtime's initial lameduck permits exa
 its final Session cutoff refuses new command IDs, including interrupts. Existing command IDs retain
 journal reconciliation. Removing finalizers or using foreground deletion bypasses this managed
 protocol and supplies no such proof.
+
+## Service certificate callers during the cutover
+
+The Runtime proxy has independent exact-service allowlists for diagnostics readers, Sessions
+operations, and Controller lifecycle operations. Executor has its own service allowlist. No shared
+Gateway service identity grants all four roles. The existing combined serving identity remains the
+server pin; Sessions, runtime-proxy and Environments client identities follow those roles across
+the planned binary split. Verified service certificates carry neither Kubernetes account nor Pod
+proof, and method denial never falls back to bearer verification. All new lists default empty;
+manifest settings and caller switches follow receiver image pins.

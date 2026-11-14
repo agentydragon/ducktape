@@ -168,7 +168,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return err
 	}
-	rpcCredentials, err := c.RPC.ServerCredentials(peertls.SessionDispatcherURI)
+	rpcCredentials, err := c.RPC.ServerCredentialsWithServices(peertls.SessionDispatcherURI)
 	if err != nil {
 		return fmt.Errorf("Gateway RPC listener TLS: %w", err)
 	}
@@ -253,7 +253,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
 		Namespace: c.Namespace, Objects: objects, WakeBudget: lifecycleWakeBudget{store: store},
-		WakeCallers: c.WakeCallers, OperatorCallers: c.OperatorCallers,
+		WakeCallers: c.WakeCallers, WakeServiceCallers: c.WakeServiceCallers,
+		OperatorCallers: c.OperatorCallers, OperatorServiceCallers: c.EnvironmentServiceOperators,
 		EnvironmentRules: environmentRules, PolicyReady: policyReady,
 	})
 	if err != nil {
@@ -265,7 +266,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
 		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...),
-		IdentityChanges: store,
+		ServiceReaders: sets.New(c.EnvironmentServiceReaders...), ServiceManagers: sets.New(c.EnvironmentServiceManagers...),
+		ServiceLaunchers: sets.New(c.EnvironmentServiceLaunchers...),
+		IdentityChanges:  store,
 	})
 	if err != nil {
 		return err
@@ -304,7 +307,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	}
 	g, err := gateway.New(gateway.Config{
 		RunnerSecurity: c.RunnerSecurity,
-		Namespace:      c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
+		RuntimeReaders: c.RuntimeProxyReaders, SessionServices: c.RuntimeProxySessionCallers, ControllerServices: c.RuntimeProxyControllerCallers, ExecutorServices: c.ExecutorServiceCallers,
+		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		DispatcherAccount:        deliveryAccount,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
@@ -359,14 +363,33 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return ctx.Err()
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherCallers: sets.New(c.DispatcherCallers...),
+		Store: store, DispatcherCallers: sets.New(c.DispatcherCallers...), DispatcherServices: sets.New(c.DispatcherServiceCallers...),
 		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	dispatcherMethods := dispatcher.Methods(auth.ReviewedServiceAccountOrIdentity(dispatcherAuth))
+	dispatcherRule, err := auth.ReviewedServiceAccountOrIdentity(dispatcherAuth).AllowServiceCallers(c.DispatcherServiceCallers)
+	if err != nil {
+		return err
+	}
+	dispatcherMethods := dispatcher.Methods(dispatcherRule)
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
-	maps.Copy(methods, environments.Methods(dispatcherAuth))
+	environmentMethods, err := environments.WithServiceCallers(environments.Methods(dispatcherAuth),
+		c.EnvironmentServiceReaders, c.EnvironmentServiceManagers, c.EnvironmentServiceLaunchers, c.EnvironmentServiceOperators)
+	if err != nil {
+		return fmt.Errorf("configure EnvironmentService service roles: %w", err)
+	}
+	if c.EnvironmentServiceDelegation != nil {
+		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+		if err != nil {
+			return err
+		}
+		environmentMethods, err = environmentMethods.WithServiceDelegation(c.EnvironmentServiceDelegation.Methods, c.EnvironmentServiceDelegation.Actors, identityReader)
+		if err != nil {
+			return fmt.Errorf("configure EnvironmentService service delegation: %w", err)
+		}
+	}
+	maps.Copy(methods, environmentMethods)
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
 			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
@@ -380,9 +403,24 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}
 	}
+
+	if c.DispatcherServiceDelegation != nil {
+		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
+		if err != nil {
+			return err
+		}
+		methods, err = methods.WithServiceDelegation(c.DispatcherServiceDelegation.Methods, c.DispatcherServiceDelegation.Actors, identityReader)
+		if err != nil {
+			return fmt.Errorf("configure service delegation: %w", err)
+		}
+	}
 	// Delegation remains scoped to the configured Dispatcher and Environment methods. The Gateway proxy and Executor
-	// continue using only their separate Gateway-audience bearer resolver.
-	maps.Copy(methods, g.Methods())
+	// retain their separate method-scoped grants.
+	proxyMethods, err := g.Methods()
+	if err != nil {
+		return fmt.Errorf("configure Runtime proxy service admission: %w", err)
+	}
+	maps.Copy(methods, proxyMethods)
 	serverOptions := methods.ServerOptions(0)
 	if rpcCredentials != nil {
 		serverOptions = append(serverOptions, grpc.Creds(rpcCredentials))

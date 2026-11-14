@@ -25,6 +25,22 @@ It scopes existing Sessions and existing environments; it does not create enviro
   Pod-bound identity.
 - Creator/broker identity is retained for provenance only. It is never Session authority.
 
+## Service certificate callers during the cutover
+
+`dispatcher_service_callers` grants exact service SPIFFE IDs the component Dispatcher role.
+These callers have their own typed principal and attribution; no account UID or Pod is fabricated.
+`dispatcher_service_delegation` independently grants exact certificate actors and exact Dispatcher
+RPCs typed Identity delegation. It requires Action provenance and a fresh effective Identity UID.
+Delegated actors never inherit the direct component role, cannot create Sessions, and spend only
+the effective Identity's wake authority. Direct services require a separate service wake grant.
+Both allowlists default empty and are configured only after receiver image pins.
+
+Additive migration 18 retains service actor, optional effective Identity and Action correlation in
+separate service attribution columns. Existing account and Identity evidence is unchanged, and a
+retry never rewrites it. Service wake attempts use their own budget table keyed by SPIFFE ID, never
+an account-shaped synthetic key. Old binaries see new actor attribution as absent, so rollback to
+an old receiver must precede caller enablement or explicitly assess pending service-attributed work.
+
 ## Delegated callers
 
 - An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,

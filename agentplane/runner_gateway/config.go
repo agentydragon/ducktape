@@ -35,38 +35,56 @@ const (
 // The database URL is a Secret and the Pod IP comes from the Downward API, so both are environment
 // values. Kubernetes sets the Pod hostname to its name unless an explicit hostname is configured.
 type config struct {
-	RunnerSecurity peertls.Security `mapstructure:"runner_security"`
-	Namespace      string           `mapstructure:"sandbox_namespace"`
+	RuntimeProxyReaders           []string         `mapstructure:"runtime_proxy_readers"`
+	RuntimeProxySessionCallers    []string         `mapstructure:"runtime_proxy_session_callers"`
+	RuntimeProxyControllerCallers []string         `mapstructure:"runtime_proxy_controller_callers"`
+	ExecutorServiceCallers        []string         `mapstructure:"executor_service_callers"`
+	RunnerSecurity                peertls.Security `mapstructure:"runner_security"`
+	Namespace                     string           `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace             string             `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL       string             `mapstructure:"-"`
-	PodName                     string             `mapstructure:"-"`
-	PodIP                       string             `mapstructure:"-"`
-	RunnerTokenFile             string             `mapstructure:"runner_token_file"`
-	Kubeconfig                  string             `mapstructure:"kubeconfig"`
-	KubernetesClientQPS         float32            `mapstructure:"kubernetes_client_qps"`
-	RPC                         listener.Config    `mapstructure:"rpc"`
-	GatewayTLS                  *peertls.ClientTLS `mapstructure:"gateway_tls"`
-	ProxyPort                   int                `mapstructure:"proxy_port"`
-	RunnerControlTargetTemplate string             `mapstructure:"runner_control_target_template"`
-	DispatcherAudience          string             `mapstructure:"dispatcher_audience"`
-	GatewayAudience             string             `mapstructure:"gateway_audience"`
-	EnvironmentReaders          []auth.Account     `mapstructure:"environment_readers"`
-	EnvironmentManagers         []auth.Account     `mapstructure:"environment_managers"`
-	EnvironmentLaunchers        []auth.Account     `mapstructure:"environment_launchers"`
-	DispatcherCallers           []auth.Account     `mapstructure:"dispatcher_callers"`
-	Delegation                  *delegationConfig  `mapstructure:"delegation"`
-	GatewayCallers              []auth.Account     `mapstructure:"gateway_callers"`
-	WakeCallers                 []auth.Account     `mapstructure:"wake_callers"`
-	OperatorCallers             []auth.Account     `mapstructure:"operator_callers"`
-	ControllerAccount           *auth.Account      `mapstructure:"sandbox_controller_account"`
-	QueueCap                    int                `mapstructure:"max_queued_per_session"`
-	WatchLeaseSeconds           int                `mapstructure:"dispatcher_watch_lease_seconds"`
-	RunnerTimeoutSeconds        int                `mapstructure:"runner_request_timeout_seconds"`
+	PolicyNamespace              string                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL        string                   `mapstructure:"-"`
+	PodName                      string                   `mapstructure:"-"`
+	PodIP                        string                   `mapstructure:"-"`
+	RunnerTokenFile              string                   `mapstructure:"runner_token_file"`
+	Kubeconfig                   string                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS          float32                  `mapstructure:"kubernetes_client_qps"`
+	RPC                          listener.Config          `mapstructure:"rpc"`
+	GatewayTLS                   *peertls.ClientTLS       `mapstructure:"gateway_tls"`
+	ProxyPort                    int                      `mapstructure:"proxy_port"`
+	RunnerControlTargetTemplate  string                   `mapstructure:"runner_control_target_template"`
+	DispatcherAudience           string                   `mapstructure:"dispatcher_audience"`
+	GatewayAudience              string                   `mapstructure:"gateway_audience"`
+	EnvironmentReaders           []auth.Account           `mapstructure:"environment_readers"`
+	EnvironmentManagers          []auth.Account           `mapstructure:"environment_managers"`
+	EnvironmentLaunchers         []auth.Account           `mapstructure:"environment_launchers"`
+	EnvironmentServiceReaders    []string                 `mapstructure:"environment_service_readers"`
+	EnvironmentServiceManagers   []string                 `mapstructure:"environment_service_managers"`
+	EnvironmentServiceLaunchers  []string                 `mapstructure:"environment_service_launchers"`
+	EnvironmentServiceOperators  []string                 `mapstructure:"environment_service_operators"`
+	WakeServiceCallers           []string                 `mapstructure:"wake_service_callers"`
+	DispatcherServiceCallers     []string                 `mapstructure:"dispatcher_service_callers"`
+	DispatcherCallers            []auth.Account           `mapstructure:"dispatcher_callers"`
+	DispatcherServiceDelegation  *serviceDelegationConfig `mapstructure:"dispatcher_service_delegation"`
+	EnvironmentServiceDelegation *serviceDelegationConfig `mapstructure:"environment_service_delegation"`
+	Delegation                   *delegationConfig        `mapstructure:"delegation"`
+	GatewayCallers               []auth.Account           `mapstructure:"gateway_callers"`
+	WakeCallers                  []auth.Account           `mapstructure:"wake_callers"`
+	OperatorCallers              []auth.Account           `mapstructure:"operator_callers"`
+	ControllerAccount            *auth.Account            `mapstructure:"sandbox_controller_account"`
+	QueueCap                     int                      `mapstructure:"max_queued_per_session"`
+	WatchLeaseSeconds            int                      `mapstructure:"dispatcher_watch_lease_seconds"`
+	RunnerTimeoutSeconds         int                      `mapstructure:"runner_request_timeout_seconds"`
 
 	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
 	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
 	RuntimeCatalog  runtimeconfig.Catalog     `mapstructure:"runtime_catalog"`
+}
+
+// serviceDelegationConfig is a separate certificate actor grant scoped to exact methods.
+type serviceDelegationConfig struct {
+	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
+	Methods []string                `mapstructure:"methods"`
 }
 
 // delegationConfig is an independent trust grant. It does not inherit the direct caller or wake
@@ -139,6 +157,76 @@ func loadConfig() (config, error) {
 }
 
 func (c *config) validate() error {
+	serviceCallers := map[string][]string{
+		"dispatcher_service_callers":       c.DispatcherServiceCallers,
+		"runtime_proxy_readers":            c.RuntimeProxyReaders,
+		"runtime_proxy_session_callers":    c.RuntimeProxySessionCallers,
+		"runtime_proxy_controller_callers": c.RuntimeProxyControllerCallers,
+		"executor_service_callers":         c.ExecutorServiceCallers,
+		"environment_service_readers":      c.EnvironmentServiceReaders,
+		"environment_service_managers":     c.EnvironmentServiceManagers,
+		"environment_service_launchers":    c.EnvironmentServiceLaunchers,
+		"environment_service_operators":    c.EnvironmentServiceOperators,
+		"wake_service_callers":             c.WakeServiceCallers,
+	}
+	for name, callers := range serviceCallers {
+		if err := auth.ValidateServiceCallers(callers); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	if hasServiceCallers(serviceCallers) || c.DispatcherServiceDelegation != nil || c.EnvironmentServiceDelegation != nil {
+		if !c.RPC.Has(listener.SPIFFE) {
+			return errors.New("service caller settings require rpc.auth to include spiffe")
+		}
+	}
+	if c.DispatcherServiceDelegation != nil {
+		if len(c.DispatcherServiceDelegation.Actors) == 0 || len(c.DispatcherServiceDelegation.Methods) == 0 {
+			return errors.New("dispatcher_service_delegation requires actors and methods")
+		}
+		dispatcherMethods := dispatcher.Methods(auth.Rule{})
+		for _, method := range c.DispatcherServiceDelegation.Methods {
+			if _, ok := dispatcherMethods[method]; !ok {
+				return fmt.Errorf("dispatcher_service_delegation method %q must belong to SessionDispatcher", method)
+			}
+		}
+		var actors []string
+		for _, actor := range c.DispatcherServiceDelegation.Actors {
+			if actor.ConnectionProvenance {
+				return errors.New("Dispatcher service delegation requires Action provenance")
+			}
+			actors = append(actors, actor.SPIFFEID)
+		}
+		if err := auth.ValidateServiceCallers(actors); err != nil {
+			return err
+		}
+	}
+
+	if c.EnvironmentServiceDelegation != nil {
+		if len(c.EnvironmentServiceDelegation.Actors) == 0 || len(c.EnvironmentServiceDelegation.Methods) == 0 {
+			return errors.New("environment_service_delegation requires actors and methods")
+		}
+		allowed := map[string]struct{}{
+			"/agentplane.environments.v1.EnvironmentService/ListEnvironments":  {},
+			"/agentplane.environments.v1.EnvironmentService/WatchEnvironments": {},
+			"/agentplane.environments.v1.EnvironmentService/GetEnvironment":    {},
+			"/agentplane.environments.v1.EnvironmentService/WatchEnvironment":  {},
+		}
+		for _, method := range c.EnvironmentServiceDelegation.Methods {
+			if _, ok := allowed[method]; !ok {
+				return fmt.Errorf("environment_service_delegation method %q is not a read-only EnvironmentService method", method)
+			}
+		}
+		var actors []string
+		for _, actor := range c.EnvironmentServiceDelegation.Actors {
+			if actor.ConnectionProvenance {
+				return errors.New("EnvironmentService delegation does not admit Connection provenance")
+			}
+			actors = append(actors, actor.SPIFFEID)
+		}
+		if err := auth.ValidateServiceCallers(actors); err != nil {
+			return err
+		}
+	}
 	for _, required := range []struct{ name, value string }{
 		{"sandbox_namespace", c.Namespace},
 		{"policy_namespace", c.PolicyNamespace},
@@ -229,6 +317,11 @@ func (c *config) validate() error {
 			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
+	for _, service := range c.WakeServiceCallers {
+		if !slices.Contains(c.DispatcherServiceCallers, service) {
+			return fmt.Errorf("wake service caller %s is not a Dispatcher service caller", service)
+		}
+	}
 	for _, account := range c.OperatorCallers {
 		if !slices.Contains(c.DispatcherCallers, account) {
 			return fmt.Errorf("operator caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
@@ -247,6 +340,15 @@ func (c *config) validate() error {
 	}
 
 	return nil
+}
+
+func hasServiceCallers(callers map[string][]string) bool {
+	for _, values := range callers {
+		if len(values) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (c config) rpcBearerAudiences() []string {

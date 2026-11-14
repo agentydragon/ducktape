@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	_ "github.com/lib/pq"
 )
@@ -26,7 +29,29 @@ func TestBaselineCreatesFinalSchema(t *testing.T) {
 
 func TestCutoverRemovesPreIdentityAndUnattributedRows(t *testing.T) {
 	db := openMigrationDatabase(t)
-	if err := Up(t.Context(), db); err != nil {
+	// Start from the actual pre-cutover schema so later migrations remain unapplied.
+	prior := fstest.MapFS{}
+	names, err := fs.Glob(scripts, "dispatcher/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		version, err := strconv.Atoi(strings.Split(strings.TrimPrefix(name, "dispatcher/"), "_")[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if version >= 18 {
+			continue
+		}
+		data, err := scripts.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prior[name] = &fstest.MapFile{Data: data}
+	}
+	previous := schema
+	previous.Files = prior
+	if err := previous.Up(t.Context(), db); err != nil {
 		t.Fatal("create final schema:", err)
 	}
 	const sandboxUID = "00000000-0000-0000-0000-000000000018"
@@ -136,7 +161,7 @@ func TestCutoverRemovesPreIdentityAndUnattributedRows(t *testing.T) {
 	insertSession("identity-attributed-session", "execution", executionIdentityUID, "identity")
 	insertDispatch("identity-attributed-command", "identity-attributed-session", "identity")
 	insertSession("effective-caller-session", "execution", executionIdentityUID, "none")
-	_, err := db.ExecContext(t.Context(), `UPDATE session
+	_, err = db.ExecContext(t.Context(), `UPDATE session
 		SET effective_caller_account_namespace='test',effective_caller_account_name='effective',effective_caller_account_uid='effective-uid'
 		WHERE session_id='effective-caller-session'`)
 	if err != nil {
@@ -151,9 +176,6 @@ func TestCutoverRemovesPreIdentityAndUnattributedRows(t *testing.T) {
 	insertDispatch("standalone-action-command", "missing-session", "action")
 	insertDispatch("standalone-wake-caller-command", "missing-session", "wake_caller")
 
-	if _, err := db.ExecContext(t.Context(), "DELETE FROM "+gooseTable+" WHERE version_id=18"); err != nil {
-		t.Fatal("reset migration 18 version:", err)
-	}
 	if err := Up(t.Context(), db); err != nil {
 		t.Fatal("apply cutover migration:", err)
 	}

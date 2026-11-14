@@ -355,6 +355,11 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 // unattributed row.
 func wakeCaller(attribution Attribution) lifecycle.WakeCaller {
 	switch attribution := attribution.(type) {
+	case *ServiceAttribution:
+		if attribution.Identity != nil {
+			return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
+		}
+		return lifecycle.ServiceWakeCaller{SPIFFEID: attribution.ActorSPIFFEID}
 	case *AdmissionAttribution:
 		return lifecycle.AccountWakeCaller{Account: attribution.EffectiveCaller}
 	case *IdentityAttribution:
