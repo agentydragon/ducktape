@@ -98,10 +98,10 @@ py_library(
     name = "external_connection",
     srcs = ["external_connection.py"],
     deps = [
-        "//agentplane/action_service/api/contracts:action_service_pb2",
-        "//agentplane/system_tests/deployment:mcp_servers",
         ":mcp",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
         "//agentplane/mcp_edge/api/connection:connection_service_pb2",
+        "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:mcp_connection",
         "//agentplane/system_tests/driver:operator_login",

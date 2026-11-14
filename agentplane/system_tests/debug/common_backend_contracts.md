@@ -897,3 +897,19 @@ checks pass; integrated full-module validation remains pending at this checkpoin
 The module still inherits App-owned _test fixtures_, without starting App; this is not
 an App dependency cut or an issuer/controller/Kubernetes rollout witness. These coverage
 facts must precede any proposal to replace deployed Gateway acceptance.
+
+At exact published `8d6678010707992cc5dc485549c3f43e179812a4`, the
+[integrated full Gateway module](https://app.buildbuddy.io/invocation/9a92ad39-8f59-465b-899e-f2c5a2a69210)
+passes fresh in 97.9s (106.581s native), with the final module-local fixture registration
+and both explicitly named fixture libraries/aspects. This qualifies the final registration
+change without narrowing the module to its new case. It is not whole-PR proof.
+
+GitHub subsequently reports the branch conflicting with devel and does not submit ordinary
+PR workflows. Rebase onto devel `0506d9fa7b` retains the upstream test that exercises both
+generic and structured resume refusal, exact read intent/cursor and zero process-start replay.
+It also preserves devel's expanded external-MCP receipt/actor/grant provenance case: all
+thirty assertion ASTs and the complete function body move unchanged into the extracted
+`external_connection` helper used by both ordinary and candidate Services wrappers. No
+deployed assertion is dropped to resolve the conflict. Merged #16405 and #16411 are now
+inherited directly rather than duplicated cherry-picks. Earlier source-pinned timing and
+focused results remain historical; ordinary CI must qualify the rebased source separately.
