@@ -608,7 +608,7 @@ func TestSettingsAcceptCentralSamplerSVIDForHistoryAndGateway(t *testing.T) {
 	}
 	settings.GatewayTarget = "gateway.invalid:8080"
 	settings.GatewayTLS = &peertls.ClientTLS{
-		CAFile: "/run/agentplane/ca.pem", ServerURI: peertls.GatewayURI,
+		CAFile: "/run/agentplane/ca.pem", ServerURI: peertls.SessionDispatcherURI,
 		CertFile: "/run/agentplane/svid/tls.crt", KeyFile: "/run/agentplane/svid/tls.key", ClientURI: peertls.CentralSamplerURI,
 	}
 	settings.DirectExecutorTarget = ""
@@ -623,7 +623,7 @@ func TestSettingsAcceptCentralSamplerSVIDForHistoryAndGateway(t *testing.T) {
 		"history wrong server":      func(s *Settings) { s.HistoryTLS.ServerURI = peertls.GatewayURI },
 		"gateway mixed credentials": func(s *Settings) { s.GatewayTokenFile = "/run/agentplane/gateway-token" },
 		"gateway wrong caller":      func(s *Settings) { s.GatewayTLS.ClientURI = peertls.AppURI },
-		"gateway wrong server":      func(s *Settings) { s.GatewayTLS.ServerURI = peertls.HistoryIngressURI },
+		"gateway wrong server":      func(s *Settings) { s.GatewayTLS.ServerURI = peertls.GatewayURI },
 	} {
 		t.Run(name, func(t *testing.T) {
 			invalid := settings
@@ -634,6 +634,21 @@ func TestSettingsAcceptCentralSamplerSVIDForHistoryAndGateway(t *testing.T) {
 				t.Fatal("accepted invalid service SVID settings")
 			}
 		})
+	}
+}
+
+func TestSettingsAcceptsRenderedRunnerGatewayBearerTLSConfiguration(t *testing.T) {
+	settings := fixtureSettings()
+	settings.GatewayTarget = "runner-gateway.agentplane-staging.svc.cluster.local:8080"
+	settings.GatewayTokenFile = "/var/run/secrets/central-sampler/gateway"
+	settings.GatewayTLS = &peertls.ClientTLS{
+		CAFile:    "/var/run/agentplane/workload-trust/ca-certificates.crt",
+		ServerURI: peertls.SessionDispatcherURI,
+	}
+	settings.DirectExecutorTarget = ""
+	settings.DirectExecutorInsecureLocaltest = false
+	if err := settings.Validate(); err != nil {
+		t.Fatalf("rendered bearer plus server-only TLS settings rejected: %v", err)
 	}
 }
 
