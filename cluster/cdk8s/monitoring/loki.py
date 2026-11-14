@@ -23,7 +23,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPorts,
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
-from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
@@ -47,11 +46,6 @@ PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
 _TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
-# `maxUnavailable` must exceed the roaming-node count: an offline pod can hold the
-# rollout budget indefinitely. `//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity`
-# derives that count from `nebula-mesh.json`; see
-# `cluster/docs/lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md`.
-_ROAMING_SAFE_UPDATE_STRATEGY = {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}}
 
 
 def _storage(chart: Chart) -> None:
@@ -225,7 +219,6 @@ def _loki_values() -> dict[str, object]:
 
 def _promtail_values() -> dict[str, object]:
     return {
-        "updateStrategy": _ROAMING_SAFE_UPDATE_STRATEGY,
         "config": {
             "clients": [
                 # SimpleScalable writes through loki-write; the old single-binary
@@ -262,9 +255,6 @@ def _promtail_journal_values() -> dict[str, object]:
         # Restrict to systemd/journald nodes; label set in nix/nixos/hosts/*/default.nix.
         "nodeSelector": {"node-vendor": "nixos"},
         "tolerations": _TOLERATE_NO_SCHEDULE,
-        # The NixOS-only selector includes offline roaming laptops; the shared
-        # rollout budget must exceed their count so they cannot block an update.
-        "updateStrategy": _ROAMING_SAFE_UPDATE_STRATEGY,
         "config": {
             "clients": [{"url": PUSH_URL}],
             "snippets": {
@@ -317,11 +307,6 @@ def _helm_releases(chart: Chart) -> None:
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
-        upgrade=HelmReleaseSpecUpgrade(
-            # Helm otherwise waits on Pending/Terminating pods at offline roaming nodes;
-            # this is separate from the DaemonSet rollout budget above.
-            disable_wait=True
-        ),
         values=_promtail_values(),
     )
     # Journal-only deviation: keep NixOS kernel events (including GPU Xid 79) in
@@ -337,10 +322,6 @@ def _helm_releases(chart: Chart) -> None:
         interval="30m",
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
-        upgrade=HelmReleaseSpecUpgrade(
-            # Same Helm-wait issue as pod-log Promtail above.
-            disable_wait=True
-        ),
         values=_promtail_journal_values(),
     )
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
-from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecInstall, HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 from python.runfiles import Runfiles
 
@@ -118,9 +117,6 @@ def chart(app: App) -> Chart:
         version="1.x",
         interval="30m",
         chart_interval="12h",
-        # Roaming nodes may be offline; alert separately for online nodes instead.
-        install=HelmReleaseSpecInstall(disable_wait=True),
-        upgrade=HelmReleaseSpecUpgrade(disable_wait=True),
         values={
             # Its own name label, so neither the central release's selectors nor the OTLP
             # NetworkPolicy below match these pods.
@@ -141,8 +137,6 @@ def chart(app: App) -> Chart:
                     "extra": [{"name": "wal", "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"}}]
                 },
                 "tolerations": [node_scheduling.CONTROL_PLANE_TOLERATION, node_scheduling.ROAMING_TOLERATION],
-                # Two roaming nodes may be offline; leave room to update another pod.
-                "updateStrategy": {"type": "RollingUpdate", "rollingUpdate": {"maxUnavailable": 3}},
             },
             "serviceMonitor": {"enabled": True},
         },

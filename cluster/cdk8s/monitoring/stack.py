@@ -480,19 +480,10 @@ def chart(app: App) -> Chart:
             # Kept as CreateReplace so any chart that does ship a crds/ directory is
             # updated rather than skipped.
             crds=HelmReleaseSpecInstallCrds.CREATE_REPLACE,
-            # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
-            # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
-            # for all pods to be ready, causing timeout. disableWait is a blunt
-            # workaround — need a general solution for every HelmRelease with a
-            # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
-            # that should run there, or use nodeAffinity to exclude roaming entirely.
-            disable_wait=True,
             remediation=HelmReleaseSpecInstallRemediation(retries=3),
         ),
         upgrade=HelmReleaseSpecUpgrade(
-            crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE,
-            disable_wait=True,
-            remediation=HelmReleaseSpecUpgradeRemediation(retries=3),
+            crds=HelmReleaseSpecUpgradeCrds.CREATE_REPLACE, remediation=HelmReleaseSpecUpgradeRemediation(retries=3)
         ),
         values=_values(),
     )

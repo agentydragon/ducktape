@@ -24,14 +24,12 @@ spec:
       version: 91.3.0
   install:
     crds: CreateReplace
-    disableWait: true
     remediation:
       retries: 3
   interval: 30m
   timeout: 10m
   upgrade:
     crds: CreateReplace
-    disableWait: true
     remediation:
       retries: 3
   values:

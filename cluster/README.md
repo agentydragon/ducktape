@@ -35,10 +35,9 @@ Inventory: [nodes](docs/topology.md#nodes).
 Region is `topology.kubernetes.io/region`. Never schedule workloads needing persistent
 availability on roaming nodes; the laptops are tainted
 `node-role.kubernetes.io/roaming=true:NoSchedule`, and marked out of service while offline
-(<roaming_node_controller/README.md>). Changing the roaming-node count
-requires raising `maxUnavailable` on DaemonSets scheduling onto them
-(`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` fails otherwise;
-<docs/mesh_membership.md> § Roaming k8s nodes).
+(<roaming_node_controller/README.md>), so DaemonSets need no roaming-specific rollout
+budget or Helm `disableWait`. A DaemonSet that tolerates every taint still counts an
+offline laptop.
 
 GPU: wyrm2 provides `nvidia.com/gpu`; GPU pods need `runtimeClassName: nvidia`
 (<docs/gpu.md>).

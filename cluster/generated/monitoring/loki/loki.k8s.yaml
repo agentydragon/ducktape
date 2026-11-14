@@ -290,8 +290,6 @@ spec:
     remediation:
       retries: 3
   interval: 30m
-  upgrade:
-    disableWait: true
   values:
     config:
       clients:
@@ -311,10 +309,6 @@ spec:
     tolerations:
       - effect: NoSchedule
         operator: Exists
-    updateStrategy:
-      rollingUpdate:
-        maxUnavailable: 3
-      type: RollingUpdate
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
@@ -335,8 +329,6 @@ spec:
     remediation:
       retries: 3
   interval: 30m
-  upgrade:
-    disableWait: true
   values:
     config:
       clients:
@@ -383,10 +375,6 @@ spec:
     tolerations:
       - effect: NoSchedule
         operator: Exists
-    updateStrategy:
-      rollingUpdate:
-        maxUnavailable: 3
-      type: RollingUpdate
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

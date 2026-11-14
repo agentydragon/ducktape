@@ -38,42 +38,14 @@ pod anywhere is running the new config.
 
 ## Fix
 
-`maxUnavailable` = _roaming node count + 1_ (currently 3) on both promtail
-DaemonSets. The stuck pods still consume budget, but the ceiling is high enough
-that the controller can proceed on the healthy nodes.
+`maxUnavailable` = _roaming node count + 1_ (then 3) on both promtail
+DaemonSets, pinned to the mesh roster by a test.
 
-Cost: up to 3 nodes briefly without log shipping during a rollout. Promtail
-resumes from its positions file, so that is a freshness gap, not lost logs.
+## Resolution
 
-`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` enforces the relation,
-deriving the roaming count from `nebula-mesh.json` (`role: "laptop"`) rather than
-trusting a comment. Its one remaining gap is coverage: a new roaming DaemonSet
-must be added to that test's list, or it is unprotected.
-
-## Generalization
-
-Any DaemonSet scheduled onto roaming nodes has this exposure, not just promtail.
-When adding one, either set `maxUnavailable` above the roaming count or exclude
-roaming nodes via `nodeAffinity`. `cdk8s/monitoring/stack.py` carries
-a standing `TODO(roaming-nodes)` proposing exactly that choice cluster-wide;
-this incident is the concrete argument for resolving it.
-
-`promtail-journal` was fixed at the same time despite not being stuck — its
-nodeSelector is NixOS-only and two of its three candidate nodes are the roaming
-laptops, so it is _more_ exposed. It had simply not rolled while one was down.
-
-## Detection
-
-The failure is silent. What surfaced it was checking `rollout status` before
-trusting a change, rather than inferring rollout from "the PR merged".
-
-```bash
-kubectl -n loki rollout status ds/promtail --timeout=10s
-kubectl -n loki get ds     # UP-TO-DATE well below DESIRED is the signal
-```
-
-Worth generalizing: after any DaemonSet change, verify `UP-TO-DATE == DESIRED`
-before concluding the change is live — and before testing anything downstream of
-it. A downstream test run against a non-rolled DaemonSet reports the _old_
-behavior, which reads as "the fix didn't work" and sends you debugging correct
-config.
+Superseded on 2026-11-14 by the
+[roaming node controller](../../roaming_node_controller/README.md): an offline laptop
+is tainted `node.kubernetes.io/out-of-service`, so DaemonSets stop counting it and pod
+GC force-deletes its stuck pods. The `maxUnavailable` floors, their test and Helm
+`disableWait` were removed. **Still exposed:** a DaemonSet that tolerates every taint
+(`- operator: Exists`) keeps counting an offline laptop and can deadlock the same way.

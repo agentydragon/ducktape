@@ -119,7 +119,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:telemetry",
-        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -145,7 +144,6 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
-        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
@@ -316,28 +314,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
-    ],
-)
-
-py_test(
-    name = "test_roaming_daemonset_capacity",
-    srcs = ["test_roaming_daemonset_capacity.py"],
-    data = [
-        "//:nebula-mesh.json",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":alloy",
-        ":loki",
-        "//:conftest",
-        "//cluster/cdk8s:conftest",
-        "//cluster/cdk8s:node_feature_discovery",
-        "//cluster/scripts:nebula_mesh",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
