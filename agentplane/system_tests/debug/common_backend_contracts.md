@@ -227,12 +227,12 @@ improvement. The manual preflight adds diagnostic maintenance but no ordinary CI
 execution. The native driver reuses shared pagination and turn interpretation
 rather than maintaining a second parser.
 
-### Next actual dependency cut and qualification
+### Dependency cut and remaining qualification
 
-- Migrate VM/Firecracker lifecycle operations and diagnostics to native
+- Qualify the implemented VM/Firecracker lifecycle operations and diagnostics through native
   EnvironmentService/SandboxControl/History clients, with an explicitly authorized
   fixture principal that does not require an App process or App-issued identity.
-- Give those suites separate rendered profiles and image maps without App. Audit
+- Verify the separate rendered profiles and image maps without App. Audit
   inherited conftest dependencies as well as direct imports; removing Python calls
   alone leaves `app:image` in the graph.
 - Retain real App route/composition/fold assertions in ordinary App integration
@@ -267,6 +267,14 @@ contains no App executable, image, internal server, HTTP testing client or App-b
 either ordinary target. Shared rendering still imports App configuration types; this is not an
 empty-App-prefix claim.
 
+At exact published source `04cbff477648804d7f905aef148065e1ad55f353`, the
+[four-platform reverse-dependency query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
+returns only Pod and MCP Services as consumers of `//agentplane/app:image`. VM and Firecracker
+are absent. This establishes a real graph boundary for App executable inputs; shared App config
+types still affect their renderers. It does not establish historical base/head hash selection or
+fresh test avoidance under ordinary caching. The two remaining App-dependent platform tails must
+be accounted for before converting this cut into a complete-feedback prediction.
+
 The [14-target caller build](https://app.buildbuddy.io/invocation/f0f076a4-82fa-45b5-a7d5-673c5e2bcfe2)
 passes with lint/type aspects, including the migrated ordinary and manual VM/Firecracker variants
 and MCP callers. Earlier combined validation exposed required config values, missing direct
@@ -275,10 +283,49 @@ stopped before K3s because the removed conftest had owned `k3s_binary`. That fix
 App-free plugin, and native plugins load before collection. These are implementation failures,
 not samples of production CI flakiness.
 
-The next frozen validation uses base `38f6c8e723` plus the complete source overlay (manifest SHA256
-`edb05fd902079a4ccfc75bbfee03f8ccee69b93068382a9391225a49726fa98b`). Combined unit/render
-[df45e49f](https://app.buildbuddy.io/invocation/df45e49f-68e0-4d5c-a7dc-6097cc3bf224),
-the actual dependency graph
-and unchanged physical acceptance are being checked; no passing physical native result or complete
-feedback saving is claimed yet. Remote metadata's `devel` commit identifies the checkout before
-source patches, not the exact tested tree. Keep that distinction through rebasing and full CI.
+After rebasing onto observed devel `bed6eb470b807ba85dee2a4822500d7f0617d833`, the exact
+published source `fc38753823252f883714445993f0ae8d9211aa2a` passes
+[all nine unit/render targets and 36 explicitly named libraries](https://app.buildbuddy.io/invocation/949f8ca6-9550-4718-8e3b-537c473d0931),
+including their lint/type aspects. That check has no source overlay. Earlier frozen validation
+failures included plugin visibility and nested-conftest plugin registration, both corrected before
+this pass. Remote metadata for the earlier overlay experiments identifies the initial checkout,
+not the exact tested tree.
+
+The [first real native platform deployment](https://app.buildbuddy.io/invocation/5ffe5074-1533-4b35-8374-593359d10499)
+used frozen source manifest `5d97bed218a1127c6793e4d0385c2c47fcf701ed81e46ff0142130fc0a2fa182`.
+Both VM and Firecracker stopped during stack setup: Actions could not read its settings file.
+`ServiceWorkload.project_tokens()` ran before the settings/TLS mounts. With no earlier optional
+Secret mounts, its JSON patches replaced the volume arrays and discarded those later mounts.
+Moving token projection last repairs the generator; the independent regression exercises the
+normal Actions construct without optional Secret mounts. On devel, the corrected regression
+[fails on the old generator](https://app.buildbuddy.io/invocation/60032484-6fef-4f34-af7d-5181f087d685)
+at the missing settings mount and the
+[complete Actions target passes with the repair](https://app.buildbuddy.io/invocation/093dd080-7668-40f2-8131-64ab2ed7d687).
+
+The first full CI check after that repair exposed a client audience error in the migrated MCP
+Actions cases: EnvironmentService uses the Dispatcher's method audience, while SandboxControl
+uses the Gateway audience. The native clients now route those separate Pod-bound credentials to
+their actual methods; no production authentication rule is widened. Published source
+`04cbff477648804d7f905aef148065e1ad55f353` completed the
+[focused physical and owner checks](https://app.buildbuddy.io/invocation/c1ace771-db7b-4c7c-91e3-75080abdf2f0).
+The check includes ordinary VM, Firecracker, MCP Actions, Actions rendering and native-client
+targets. Five targets pass in one attempt: both original Firecracker cases, all five MCP Actions
+cases, 14 Actions rendering cases, three Environment transport cases and four native-platform
+cases. Firecracker TestRunner execution is 254.256s; its cases report 202.485s and 42.391s.
+Those durations do not establish a speedup against the earlier App-dependent run, whose source,
+imports and concurrent workload differ. The benefit currently proved is the dependency boundary.
+
+The VM case completes both harness scenarios, then fails the retained process-trace contract:
+the native Session driver's `system_test.session.create` span omits `sandbox.name`. Its added
+span now carries the exact Sandbox name/UID and harness from the validated placement. The real
+trace assertions remain unchanged and require another physical pass. The full CI check also
+exposes an old Dispatcher assertion equating all admitted callers with wake callers; it now
+accounts for the explicitly authorized native fixture principal while keeping the wake allowlist
+exactly App, Notification and Actions. These are implementation failures, not measurements of
+devel's flake rate or evidence of a speedup.
+
+The independent Actions repair is [PR #16386](https://github.com/agentydragon/ducktape/pull/16386),
+open and unmerged at `d34c757904475f262cce517503a21d863e466684`. All three required hosted checks
+pass, as do 25 generated-manifest cases with no staging snapshot drift. Its
+[ordinary CI invocation](https://app.buildbuddy.io/invocation/786681d0-1e2e-5bdc-bff1-d58089c715ef)
+passes. That narrow port does not depend on adopting this architecture.

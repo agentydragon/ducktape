@@ -32,6 +32,7 @@ from agentplane.system_tests.driver.dispatcher_transport import (
     forward as _forward,
 )
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
@@ -760,7 +761,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         {"namespace": cluster.namespace, "name": "actions"},
     ]
     accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
-    assert set(gateway_settings["dispatcher_callers"]) == accounts
+    assert set(gateway_settings["dispatcher_callers"]) == accounts | {f"{cluster.namespace}/{NATIVE_CLIENT_NAME}"}
     assert set(gateway_settings["wake_callers"]) == accounts
 
     policies = list(LAUNCH_DEFAULT_POLICY_SETS)
