@@ -3685,12 +3685,13 @@ Central Sampler ServiceAccount to `Push`, and a plain account announcement resol
 `ServiceAccountSandboxUIDResolver`, which returned an empty UID for an account without a Sandbox
 owner; `BindWriter` stored that row. Current sampler exports and the manual packing probe use
 `SamplerAnnouncement` with an explicit executor Sandbox UID, while Sandbox runners use an Identity
-SVID tied to their Sandbox. #16356 makes the ownerless account path fail closed, requires a UID in
-`BindWriter`, and refuses to repair retained rows without one. The separate History data drop in
-[#16336](https://github.com/agentydragon/ducktape/pull/16336) is held until the code image is pinned
-in staging and needs explicit operator approval. Its rolled-back selector found 95 of 168 Sessions,
-with 250,962 events, 9,029 event blocks, 89 Thread checkpoints and 111,085 Thread entities; counts
-for other dependent tables were not supplied.
+SVID tied to their Sandbox. This code cleanup makes the ownerless account path fail closed, requires
+a UID in `BindWriter`, and refuses to repair retained rows without one. It is in review in
+[#16356](https://github.com/agentydragon/ducktape/pull/16356). The separate data drop in
+[#16336](https://github.com/agentydragon/ducktape/pull/16336) is held until #16356 is merged and its
+code image is pinned in staging; explicit operator approval is required. Its rolled-back selector
+found 95 of 168 Sessions, with 250,962 events, 9,029 event blocks, 89 Thread checkpoints and 111,085
+Thread entities; counts for other dependent tables were not supplied.
 
 Runner Gateway migration 18 deletes Sessions without an execution Identity, including any stored
 creator attribution, and Sessions with no stored actor or caller attribution; all dispatch receipts
