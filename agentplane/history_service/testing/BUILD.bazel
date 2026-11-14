@@ -114,6 +114,17 @@ py_library(
 )
 
 py_library(
+    name = "session_events",
+    srcs = ["session_events.py"],
+    deps = [
+        ":unstored_ranges",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "go_service",
     srcs = ["go_service.py"],
     data = ["//agentplane/history_service/cmd:history-service"],

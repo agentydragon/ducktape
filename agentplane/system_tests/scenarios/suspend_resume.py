@@ -20,18 +20,13 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import (
-    TURN_SECONDS,
-    WORKING_DIRECTORY,
-    Agent,
-    Turn,
-    environment_runtime_startup_retries,
-)
+from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent, environment_runtime_startup_retries
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.driver.turn import TURN_SECONDS, Turn
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
