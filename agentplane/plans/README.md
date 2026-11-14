@@ -44,6 +44,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;
   the Sandbox switch is accepted on staging, and question 11 is settled
+- [Service SVID authentication inventory](service_svid_authentication.md) — caller-to-receiver
+  paths, current credential and transport gaps, and the approved component-authentication rollout
 - [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
   worked examples for explicit environment lifecycle grants to Identities, with the operator's
   remaining questions
