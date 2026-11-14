@@ -88,14 +88,27 @@ Its [`gateway_fixtures.py`](../../app/testing/gateway_fixtures.py) support does
 not start Runtime. Tests that author History directly keep these real services
 without inheriting the production Runtime executable or harness inputs.
 
-The six `test_bridge` functions and three `test_history_gateway` functions additionally
-load [`runtime_fixtures.py`](../../app/testing/runtime_fixtures.py). They retain
+The five `test_bridge` recovery functions, two `test_thread_routes` functions and
+three `test_history_gateway` functions additionally load
+[`runtime_fixtures.py`](../../app/testing/runtime_fixtures.py). They retain
 the actual Runtime, Dispatcher admission, harness/model exchange, restart and
 History recovery paths, including their native failure diagnostics. The split
 changes fixture and input ownership; it removes no App assertion or test case.
 
-The candidate graph leaves a Runtime executable path for exactly those two App
-test targets; the other 13 App tests have no such path. Twelve are ordinary
+The focused [`test_thread_routes.py`](../../app/test_thread_routes.py) preserves
+the former bridge History-opening case and adds real App HTTP Session creation,
+Dispatcher acceptance and exact Thread/History reads. Both cases run for Claude
+and Codex. The unchanged moved function and all 19 remaining bridge helpers/cases
+have identical ASTs to their previous versions. Its
+[four-case RBE pass](https://app.buildbuddy.io/invocation/9d64351b-500f-4da8-8786-6f8260b5bbc4)
+used 76.885s TestRunner execution and 142.520 CPU-s. A
+[harness-only wrong-Thread response](https://app.buildbuddy.io/invocation/d80323d4-0491-44a5-9cc5-5d7b8f6bb26e)
+failed all four cases at exact Thread identity after HTTP 200. This proves the
+real route witness detects that fault, not a whole-PR saving.
+
+The earlier fixture-cut graph left a Runtime path for two App test targets;
+the focused Thread route partition adds a third. The other 13 App tests in that
+earlier inventory had no such path. Twelve are ordinary
 CI-eligible targets; the thirteenth is the manual Electric traffic experiment.
 The focused [RBE run](https://app.buildbuddy.io/invocation/8efca746-a5cf-48d4-b215-cc62ab34a73e)
 passed all 42 cases: 24 bridge cases across four shards, six history-gateway
@@ -105,9 +118,9 @@ the full required workflow still have to qualify the new source.
 
 ## Native and owner proofs for the recovery matrix
 
-`//agentplane/x/native_contracts:test_recovery` is a manual four-case target;
+`//agentplane/x/native_contracts:test_recovery` is an ordinary four-case target;
 `//agentplane/x/native_contracts:test_admission_reply_loss` is a separate
-manual case. Their fixture composition is
+ordinary case. Their fixture composition is
 [`native_service_fixtures.py`](../../testing/native_service_fixtures.py), reusing
 [`native_gateway_fixtures.py`](../../testing/native_gateway_fixtures.py):
 production Gateway/Dispatcher and History processes, PostgreSQL, production

@@ -175,7 +175,28 @@ k3s_suite(
 k3s_suite(
     name = "test_gateway_budget",
     srcs = ["test_gateway_budget.py"],
+    stack = "central",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Same exhaustion assertions with a 45s configured budget; full 120s coverage stays required.
+k3s_suite(
+    name = "test_gateway_budget_short_candidate",
+    srcs = ["test_gateway_budget.py"],
+    main = "test_gateway_budget.py",
     stack = "central_budget",
+    tags = ["manual"],
     deps = [
         ":conftest",
         "//:conftest",

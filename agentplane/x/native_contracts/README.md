@@ -1,11 +1,12 @@
 # Native service contracts
 
-Docker-backed tests composing the production Go Gateway/Dispatcher and History binaries,
+Ordinary CI contracts composing the production Go Gateway/Dispatcher and History binaries,
 Runtime in its PID1 container, PostgreSQL, and the existing envtest Kubernetes API:
 
 ```sh
 bbr test //agentplane/x/native_contracts:test_recovery --nocache_test_results
 bbr test //agentplane/x/native_contracts:test_admission_reply_loss --nocache_test_results
+bbr test //agentplane/x/native_contracts:test_quiesce_cutoff --nocache_test_results
 ```
 
 The four Claude cases exercise:
@@ -21,7 +22,8 @@ The four Claude cases exercise:
   through Dispatcher without duplicate admission or confirmation.
 - History outage: suspend the actual serving process while Runtime completes a turn, observe
   reader unavailability, then resume and verify journal catch-up and a contiguous cursor-resumed
-  stream containing exactly the retained prefix and new entries.
+  stream containing exactly the retained prefix and new entries. A distinct next input then
+  completes with three admissions, model requests and completions and the original prefix intact.
 
 These complement owner tests, including Runtime journal/admission, the native adapter restart
 matrix, Gateway incarnation fencing, History ingress ordering and service authorization. Direct
@@ -33,6 +35,18 @@ handler commits. The four recovery cases retain the production executable. The f
 discarded admission response, not a socket reset. A later Dispatcher receipt replay must cause
 no third Runtime call. Rejecting a valid journal replay as a conflict makes this contract fail.
 
+The Quiesce cutoff contract holds an authenticated interrupt after real Gateway
+routing, then waits for Runtime Quiesce and History's durable seal acknowledgement.
+Releasing the interrupt calls the production handler, which must refuse it without
+changing sealed History. A new API-server-issued Pod UID and Controller binding
+then restore the same native Session as dormant with no process. Fresh Dispatcher
+input reopens its journal under the successor UID and completes with the sealed
+prefix unchanged and no delayed-command admission. Readiness verifies both the
+expected incarnation UID and Runtime boot ID. The test-only Runtime executable
+adds an interceptor gate; the production handler, journal, lifecycle and transport
+remain real. The fixture authors Pod, credential-binding and Sandbox status;
+this is not a Kubernetes-controller or certificate-rotation witness.
+
 Suspending History tests unavailability; it does not establish a History process restart,
 database failover or packaged Deployment rollout.
 
@@ -43,9 +57,9 @@ scheduler, Cilium, browser or app runs. PostgreSQL, Runtime's Debian base and Ry
 inputs; the service OCI graph and K3s are absent. Fresh case-owned databases, API namespaces,
 credentials, homes and journals isolate tests; only intentional in-case restarts reuse a journal.
 
-The package lives outside `system_tests/` to avoid its inherited app fixture dependency. These tests
-add native recovery coverage to ordinary Bazel CI selection without removing or replacing existing
-deployed tests. They do not prove existing deployment tests redundant.
+The package lives outside `system_tests/` to avoid its inherited app fixture dependency.
+These ordinary targets add coverage while the deployed gate remains required. Their presence
+alone does not prove existing deployment tests redundant or qualify a smaller graph.
 
 An opt-in control discards only the completed-turn case's Runtime state before restart. It must
 fail at retained Session inventory, rather than setup:

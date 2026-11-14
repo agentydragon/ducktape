@@ -135,6 +135,7 @@ py_library(
 py_library(
     name = "bazel_ci",
     srcs = ["bazel_ci.py"],
+    data = ["//agentplane/system_tests:ci_contracts.json"],
     visibility = ["//:__subpackages__"],
 )
 

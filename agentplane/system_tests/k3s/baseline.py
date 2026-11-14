@@ -44,6 +44,7 @@ FIXTURE_IMAGE_REPOSITORY = "git.allegedly.works/ducktape-ci/"
 # store is dropped. Not the scheduler's `EstimatedFreeDiskBytes`: a full cache would then keep the store from ever being kept.
 RETAINED_IMAGE_STORE_MIN_FREE_BYTES = 20 * 10**9
 _IMAGE_STORE_MARKER = Path("agent/containerd/.stack-state.json")
+_SHARED_K3S_DATA_DIR = Path("/var/lib/k3s-env")
 
 
 def run(
@@ -161,11 +162,11 @@ def node_ip() -> str:
 
 
 class K3s:
-    def __init__(self, work: Path, binary: Path) -> None:
+    def __init__(self, work: Path, binary: Path, *, data_dir: Path = _SHARED_K3S_DATA_DIR) -> None:
         self.work = work
         self.binary = binary
         self.kubeconfig = work / "kubeconfig"
-        self.data_dir = Path("/var/lib/k3s-env")
+        self.data_dir = data_dir
         self.node_ip = node_ip()
         self._database_cleanup = contextlib.ExitStack()
         # CRI publishes an imported image's config-ID alias before its pinned tag.
@@ -317,10 +318,6 @@ class K3s:
                 f"api-audiences=https://kubernetes.default.svc.cluster.local,k3s,{KUBERNETES_AUDIENCE}",
                 "--kubelet-arg",
                 "feature-gates=ImageVolume=true",
-                # Preserve real same-Pod Secret projection without a production-length
-                # periodic sync wait. This fixture source is part of the retained-node fingerprint.
-                "--kubelet-arg",
-                "sync-frequency=5s",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -891,7 +888,30 @@ def write_marker(marker: dict[str, Any]) -> None:
     temporary.replace(_BASELINE_MARKER)
 
 
+def _persistent_data_dir() -> Path:
+    """Isolate only executor-authorized KVM retention from the worker's shared K3s mount."""
+    if (
+        os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") == "1"
+        and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1"
+    ):
+        return _BASELINE_ROOT / "data"
+    return _SHARED_K3S_DATA_DIR
+
+
+def _marker_data_dir(marker: dict[str, Any]) -> Path:
+    """Resolve only known storage paths, including v1 markers that predate path ownership."""
+    value = marker.get("data_dir", str(_SHARED_K3S_DATA_DIR))
+    if not isinstance(value, str):
+        raise RuntimeError("persistence marker has an invalid K3s data directory")
+    recorded = Path(value)
+    if recorded not in {_SHARED_K3S_DATA_DIR, _BASELINE_ROOT / "data"}:
+        raise RuntimeError(f"persistence marker names an unowned K3s data directory: {recorded}")
+    return recorded
+
+
 def stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
+    if _marker_data_dir(previous) != k3s.data_dir:
+        raise RuntimeError("persistence marker data directory does not match the K3s owner")
     _record_baseline_transition("stop_owned_begin", k3s.data_dir)
     identity = previous["identity"]
     current_boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
@@ -920,8 +940,9 @@ def stop_owned(k3s: K3s, previous: dict[str, Any]) -> None:
 def stop_previous() -> None:
     """Leave retention mode by stopping only the server recorded in the ownership marker."""
     if _BASELINE_MARKER.exists():
-        retained = K3s(_BASELINE_ROOT, _BASELINE_ROOT / "k3s")
-        stop_owned(retained, json.loads(_BASELINE_MARKER.read_text()))
+        marker = json.loads(_BASELINE_MARKER.read_text())
+        retained = K3s(_BASELINE_ROOT, _BASELINE_ROOT / "k3s", data_dir=_marker_data_dir(marker))
+        stop_owned(retained, marker)
         _BASELINE_MARKER.unlink()
 
 
@@ -989,8 +1010,9 @@ def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> 
         span.set_attribute("persistence.reason", "missing_marker")
         _BASELINE_ROOT.mkdir(exist_ok=True)
         binary = _BASELINE_ROOT / "k3s"
-        k3s = K3s(_BASELINE_ROOT, binary)
         previous = json.loads(_BASELINE_MARKER.read_text()) if _BASELINE_MARKER.exists() else None
+        data_dir = _persistent_data_dir()
+        k3s = K3s(_BASELINE_ROOT, binary, data_dir=_marker_data_dir(previous) if previous is not None else data_dir)
         if previous is not None:
             if previous.get("state") not in {"clean", "dirty"}:
                 raise RuntimeError("invalid persistence state marker")
@@ -1003,7 +1025,7 @@ def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> 
                     span.set_attribute("persistence.reason", "unhealthy")
                     logger.warning("retained k3s is unhealthy; rebuilding the owned baseline: %s", exc)
                 else:
-                    if current == previous["identity"]:
+                    if current == previous["identity"] and k3s.data_dir == data_dir:
                         span.set_attribute("persistence.outcome", "warm")
                         span.set_attribute("persistence.reason", "reused")
                         previous["state"] = "dirty"
@@ -1022,6 +1044,7 @@ def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> 
                 )
             stop_owned(k3s, previous)
             _BASELINE_MARKER.unlink()
+            k3s.data_dir = data_dir
         shutil.copy2(source, binary)
         previous_outputs = os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR")
         os.environ["TEST_UNDECLARED_OUTPUTS_DIR"] = str(_BASELINE_ROOT)
@@ -1036,7 +1059,12 @@ def open_baseline(source: Path, fingerprint: str, *, layers_in_memory: bool) -> 
         # probe or marker write must not leave an unmarked detached server for the next action to reset.
         with contextlib.ExitStack() as starting:
             starting.callback(k3s.stop, process)
-            marker = {"state": "dirty", "fingerprint": fingerprint, "identity": _baseline_identity(k3s, process.pid)}
+            marker = {
+                "state": "dirty",
+                "fingerprint": fingerprint,
+                "identity": _baseline_identity(k3s, process.pid),
+                "data_dir": str(k3s.data_dir),
+            }
             write_marker(marker)
             starting.pop_all()
         span.set_attribute("persistence.outcome", "cold")

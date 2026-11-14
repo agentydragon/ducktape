@@ -2,7 +2,7 @@
 
 load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
-load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "GENERIC_DEVICE_PLUGIN_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
+load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_DIGEST", "CERT_MANAGER_WEBHOOK_REFERENCE", "GENERIC_DEVICE_PLUGIN_DIGEST", "GENERIC_DEVICE_PLUGIN_REFERENCE", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_DIGEST", "KYVERNO_KYVERNO_REFERENCE", "TRUST_MANAGER_DIGEST", "TRUST_MANAGER_REFERENCE")
 load("//devinfra/python:defs.bzl", "py_test")
 
 K3S_EXEC_PROPERTIES = {
@@ -62,6 +62,14 @@ def k3s_recycling_key(vm):
     return "k3s-persistence-v7-" + "-".join(
         _COMMON_BASELINE_DIGESTS + (_VM_BASELINE_DIGESTS if vm else []),
     )
+
+def k3s_firecracker_recycling_key():
+    """The v1 shared-data key, retained only to clean the in-flight experiment owner."""
+    return k3s_recycling_key(vm = False) + "-firecracker-v1-" + GENERIC_DEVICE_PLUGIN_DIGEST
+
+def k3s_firecracker_recycling_key_v2():
+    """Isolate disk-backed Firecracker K3s state in a versioned runner family."""
+    return k3s_recycling_key(vm = False) + "-firecracker-v2-private-data-" + GENERIC_DEVICE_PLUGIN_DIGEST
 
 # A test that runs a k3s stack in its action. Such a test is an ordinary target otherwise: PR CI
 # runs it when its inputs change, and a pass caches.
@@ -209,7 +217,7 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = []):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], shard_count = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
@@ -300,6 +308,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platfor
         name = name,
         size = "enormous",
         args = args,
+        shard_count = shard_count,
         srcs = srcs,
         main = main,
         data = data,

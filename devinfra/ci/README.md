@@ -2,6 +2,25 @@
 
 CI-side utilities and configuration.
 
+## Agentplane contract graph experiment
+
+[`ci_contracts.json`](../../agentplane/system_tests/ci_contracts.json) uses the v2 schema to declare
+named implementation domains. Each domain owns its exact implementation labels, required tests,
+and replacement tests. Its current `shadow` mode records a proposal and leaves required test
+selection unchanged. Unknown inputs, BUILD changes, changes that span or ambiguously match domains,
+and full sweeps keep broad acceptance. A matched domain removes only its own replacements.
+
+The selector first maps changed source paths against each domain's declared
+implementations. Only a change that touches exactly one domain proceeds to companion
+discovery, which uses `same_pkg_direct_rdeps` to find ordinary tests in the
+implementation's own package. Every changed source must then be owned by the
+implementation or those tests, and every direct consumer must be accounted for;
+shared helpers and other production owners keep broad selection. Associated owner
+tests remain explicitly required alongside that domain's required tests, even if
+the affected-target selector returns no tests. A test-only change does not activate
+deployment replacement. This accounts for code-plus-regression-test changes without
+accepting paths by name.
+
 ## PR visual review
 
 The publisher moved with its code to <../pr_visuals/README.md>.

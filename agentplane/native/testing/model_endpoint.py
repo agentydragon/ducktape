@@ -9,6 +9,7 @@ objects and sockets stay inside this module.
 from __future__ import annotations
 
 import asyncio
+import ssl
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import TracebackType
@@ -236,16 +237,17 @@ class ModelEndpoint[RequestT: StreamableRequest]:
             raise RuntimeError("model endpoint has not started")
         return self._origin
 
-    async def start(self) -> None:
+    async def start(self, *, ssl_context: ssl.SSLContext | None = None) -> None:
         app = web.Application()
         self._add_routes(app)
         app.router.add_post("/{tail:.*}", self.serve)
         self._runner = web.AppRunner(app, handler_cancellation=True)
         await self._runner.setup()
-        site = web.TCPSite(self._runner, self._bind_host, 0)
+        site = web.TCPSite(self._runner, self._bind_host, 0, ssl_context=ssl_context)
         await site.start()
         address = cast(tuple[str, int], self._runner.addresses[0])
-        self._origin = f"http://{address[0]}:{address[1]}"
+        scheme = "https" if ssl_context is not None else "http"
+        self._origin = f"{scheme}://{address[0]}:{address[1]}"
 
     def _add_routes(self, app: web.Application) -> None:
         """Add fixture-specific routes beside the model API."""
