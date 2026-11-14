@@ -21,6 +21,8 @@ go_test(
     srcs = ["bearer_test.go"],
     embed = [":bearer"],
     deps = [
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//health",
