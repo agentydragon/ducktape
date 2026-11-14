@@ -193,8 +193,8 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 Finished since and deleted: the environment rule slices (`resume` #16346, `bind_session` #16351) and
 Sessions re-checking the live Identity (#16373). Not released: the stage 3 moves of section 17,
 retiring `orchestration_v1` and launcher auto-grants.
-Decided since: explicit resume reserves no wake budget (07:41, card "No budget for explicit resume");
-its behavior PR is `EXPLICIT_RESUME_BUDGET_REMOVAL` in section 17.
+Explicit resume reserves no wake budget (#16375). The every-replica serving design is released;
+its implementation still waits for operator approval in section 17.
 
 ```mermaid
 flowchart LR
@@ -202,9 +202,9 @@ flowchart LR
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
     end
     subgraph SPLIT_TRACK[Two-binary split, section 17]
-        EXPLICIT_RESUME_BUDGET_REMOVAL[Decided: explicit resume reserves no wake budget]
-        ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Not released: EnvironmentService into Environments]
-        EXPLICIT_RESUME_BUDGET_REMOVAL --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
+        ENVIRONMENT_SERVICE_SERVING_DESIGN[In review: every-replica serving contract]
+        ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Held: EnvironmentService into Environments]
+        ENVIRONMENT_SERVICE_SERVING_DESIGN -->|operator approval| ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     end
     REFACTOR_COHERENCE_AUDIT[Candidate: leftovers and coherence sweep]
 ```
@@ -3907,13 +3907,13 @@ no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
 (pre-cutover leftovers) is done and left the plan; the other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                                                                                                     |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                            |
-| 3. The two-binary moves         | `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                       |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                             |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                 |
+| Plan stage                      | DAG node                                                                                                                                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                |
+| 3. The two-binary moves         | `ENVIRONMENT_SERVICE_SERVING_DESIGN`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                           |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                 |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                     |
 
 The remaining stage 3 moves are not released. Sessions re-checking the live Identity landed in #16373.
 
@@ -3921,14 +3921,14 @@ The remaining stage 3 moves are not released. Sessions re-checking the live Iden
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
     GO_LAYOUT_FIXES[Candidate: stage 2 layout fixes]
-    EXPLICIT_RESUME_BUDGET_REMOVAL[Decided: explicit resume reserves no wake budget]
-    ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Agreed: EnvironmentService into Environments]
+    ENVIRONMENT_SERVICE_SERVING_DESIGN[In review: every-replica serving contract]
+    ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Held: EnvironmentService into Environments]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Held: the rest moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
-    EXPLICIT_RESUME_BUDGET_REMOVAL --> ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
+    ENVIRONMENT_SERVICE_SERVING_DESIGN -->|operator approval| ENVIRONMENT_SERVICE_TO_ENVIRONMENTS
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
@@ -3943,24 +3943,19 @@ flowchart LR
 `app-session-client-name` (#16394) and `env-execution-package-names` (#16402) landed. Each is its own
 small PR. **Exit:** each track's plan exit met on devel.
 
-### `EXPLICIT_RESUME_BUDGET_REMOVAL` — explicit resume reserves no wake budget
+### `ENVIRONMENT_SERVICE_SERVING_DESIGN` — every-replica serving contract
 
-**Decided (operator, 2026-11-14 07:41 UTC, card "No budget for explicit resume").** Today every
-explicit resume, including an Identity's `resume` grant since #16346, reserves the Dispatcher
-database's wake budget. A resume acts only on a fully stopped Sandbox, so a Sandbox resumes at most
-once per stop, and the grant scopes which Sandboxes an Identity may wake. Drop the reservation from
-the explicit path in a behavior PR before EnvironmentService moves; automatic wake keeps its budget in
-the Sessions binary. **Exit:** explicit resume admits without touching the Dispatcher database;
-automatic wake's limit is unchanged.
+**In review; design only.** The operator released [the serving note](environment_service_serving.md)
+on 2026-11-14 at 23:13 UTC (card "Serving design note first"). **Exit:** operator approval of the
+listener lifecycle, readiness, authority and rollout contract. Implementation stays held until then.
 
 ### `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS` — EnvironmentService moves into the Environments binary
 
-**Agreed direction; not released.** Operator, 2026-11-14 01:10 UTC: "merging environment service
-into sandbox controller sounds good to me". Blocked on
-`EXPLICIT_RESUME_BUDGET_REMOVAL`. Still to write: the every-replica
-serving contract, since the Sandbox Controller is a leader-elected manager with no listener
-(listener lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate
-identity and retargeted callers). Then move `runner_gateway/environments` with `lifecycle`,
+**Implementation held for operator approval of [the serving contract](environment_service_serving.md).**
+No code moves before `ENVIRONMENT_SERVICE_SERVING_DESIGN` is approved.
+The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
+Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
+Then move `runner_gateway/environments` with `lifecycle`,
 `management` and `view` to `environments/internal/service`, and `environmentaccess` to
 `environments/access` (the Sessions binary imports it for `bind_session`). The automatic half of
 `lifecycle` stays with the Dispatcher. orchestration_v1's `fixture_test.go`, the only outside
