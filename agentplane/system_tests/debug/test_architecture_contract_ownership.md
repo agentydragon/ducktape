@@ -169,6 +169,19 @@ composition and a matched complete graph are pending. It does not replace the
 full VM gate, its trace contract, either packaged harness contract or separate
 OOM acceptance. See [the platform proof](test_architecture_iteration8.md).
 
+The opt-in `VM_PLATFORM_PRIVATE_SUPERVISION_OWNER=direct-guest` experiment assigns
+only the private systemd fixture to the existing direct Claude guest. The deployed
+platform witness selects the ordinary VM template, checks the actual admitted
+VMI's kernel arguments and requires no private receipt. It retains its setup
+kernel budgets, detached-descendant fencing, issuer/Pod binding, launcher/mount
+acceptance, workspace and real CLI assertions. The default remains `deployed`;
+unknown owner values fail. Every experimental graph using this mode must include
+`//agentplane/x/direct_vm_boot:test_runtime_session`, whose existing receipt,
+11 private subtests, two turns and cleanup remain unchanged. Both targets run
+fresh in each comparison arm. This is a manual candidate assignment, not a
+required-gate owner transfer. The controls and measurement boundaries are in
+[iteration 9](test_architecture_iteration9.md).
+
 The smallest faithful future contracts are the existing Go owner tests for pure
 state transitions, the current native process fixtures for Runtime/History
 restart semantics, and K3s tests for controller-produced identities, issuer and
