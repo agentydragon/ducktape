@@ -41,7 +41,7 @@ gateway_audience: runner-gateway
 dispatcher_callers: [agentplane/app, agentplane/notifications]
 gateway_callers: [agentplane/runner-gateway]
 sandbox_controller_account: agentplane/sandbox-controller
-runner_control_target_template: '{sandbox}-control.{namespace}.svc:8080'
+runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'
 runner_security: {mode: mtls, tls: {cert_file: /tmp/test-cert, key_file: /tmp/test-key, ca_file: /tmp/test-ca}}
 gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}
 rpc:
@@ -360,7 +360,7 @@ func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
 
 func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T) {
 	settings := strings.Replace(requiredFile, "listen_address: ':8080'", "listen_address: 127.0.0.1:41001", 1)
-	settings = strings.Replace(settings, "runner_control_target_template: '{sandbox}-control.{namespace}.svc:8080'",
+	settings = strings.Replace(settings, "runner_control_target_template: 'runner-gateway.{namespace}.svc:8080'",
 		"runner_control_target_template: 127.0.0.1:41001", 1) + `
 proxy_port: 42000
 kubeconfig: /tmp/fake-kubeconfig

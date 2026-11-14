@@ -343,7 +343,7 @@ data:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/session-dispatcher
     proxy_port: 8080
-    runner_control_target_template: "{sandbox}-control.{namespace}.svc:8080"
+    runner_control_target_template: runner-gateway.{namespace}.svc:8080
     dispatcher_audience: session-dispatcher
     gateway_audience: agentplane-runner-gateway
     runner_security:

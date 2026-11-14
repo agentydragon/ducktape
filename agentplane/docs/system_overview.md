@@ -209,7 +209,8 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
   retained history.
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
-  routing and `<sandbox>-environment-runtime` Leases solely for legacy route publication.
+  routing and `<sandbox>-environment-runtime` Leases solely for legacy route publication during caller
+  rollout. Current callers use the stable `runner-gateway` Service.
   Every replica independently watches and calls the Runtime without a connection epoch. The Sandbox Controller's
   direct mTLS `observe_only` watch supplies the accepted workload UID and binds it for the Runtime
   process before the first facts snapshot; the Controller keeps those facts in memory per

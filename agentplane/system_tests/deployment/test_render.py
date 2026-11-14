@@ -326,7 +326,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     endpoint = f"{dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{dispatcher_port}"
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["session_dispatcher_target"] == endpoint
-    assert app_config["runner_gateway_control_target"] == "{sandbox}-control.{namespace}.svc:8080"
+    assert app_config["runner_gateway_control_target"] == "runner-gateway.{namespace}.svc:8080"
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     assert app_container.get("args", []) == []
     app_env = {entry["name"]: entry for entry in app_container["env"]}

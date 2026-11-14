@@ -26,7 +26,7 @@ actions:
   url: http://test-actions.invalid:8080
   token_file: /test/tokens/actions
 runner_gateway:
-  control_target: "{sandbox}-control.{namespace}.svc:8080"
+  control_target: "runner-gateway.{namespace}.svc:8080"
   token_file: /test/tokens/gateway
 history_service:
   target: test-history.invalid:8080
@@ -61,7 +61,7 @@ actions:
     ca_file: /test/ca.pem
     server_uri: spiffe://agentplane/actions
 runner_gateway:
-  control_target: "{sandbox}-control.{namespace}.svc:8080"
+  control_target: "runner-gateway.{namespace}.svc:8080"
   token_file: /test/tokens/gateway
   tls:
     ca_file: /test/ca.pem
@@ -106,7 +106,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" || c.TokenAudience != "test-notifications" ||
 		c.OperatorReaderAccount != "test-app" || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
-		c.RunnerGateway.ControlTarget != "{sandbox}-control.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
+		c.RunnerGateway.ControlTarget != "runner-gateway.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
 		c.SessionDispatcher.Target != "test-dispatcher.invalid:8080" || c.SessionDispatcher.TokenFile != "/test/tokens/dispatcher" ||
 		c.RequestTimeoutSeconds != 15 || c.MessageBodyLimitBytes != 32768 || c.GitHub.APIVersion != "2022-11-28" {
@@ -221,7 +221,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"Actions URL credentials":     {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-user@actions.invalid:8080", 1)},
 		"Actions URL invalid port":    {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:70000", 1)},
 		"no Actions token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/actions\n", "", 1)},
-		"no control target":           {file: strings.Replace(requiredFile, "  control_target: \"{sandbox}-control.{namespace}.svc:8080\"\n", "", 1)},
+		"no control target":           {file: strings.Replace(requiredFile, "  control_target: \"runner-gateway.{namespace}.svc:8080\"\n", "", 1)},
 		"no History token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},
 		"no Dispatcher target":        {file: strings.Replace(requiredFile, "  target: test-dispatcher.invalid:8080\n", "", 1)},
 		"HTTP port out of range":      {file: requiredFile + "http_port: 70000\n"},

@@ -123,9 +123,8 @@ class Settings(BaseModel):
     policy_service_token_file: Path = Path("/var/run/secrets/agentplane-policy/token")
     runner_gateway_control_target: str = Field(
         min_length=1,
-        description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
-        "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
-        "runner connection.",
+        description="Stable Runner Gateway Service target, typically `runner-gateway.{namespace}.svc:8080`; "
+        "the Gateway routes each lifecycle call using the Sandbox identity.",
     )
     history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl = Field(

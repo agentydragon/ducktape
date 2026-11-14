@@ -78,7 +78,7 @@ func validStartupDiagnosticSettings(t *testing.T) samplersettings.Settings {
 		"code_mode_host": "/usr/local/bin/codex-code-mode-host",
 		"executor_codex": "/usr/local/bin/codex",
 		"logs": "/tmp/sampler-logs",
-		"gateway_target": "sandbox-control.{namespace}.svc:8080",
+		"gateway_target": "runner-gateway.{namespace}.svc:8080",
 		"gateway_token_file": "/var/run/secrets/gateway/token",
 		"max_live_sessions": 1,
 		"rpc_timeout_seconds": 1,

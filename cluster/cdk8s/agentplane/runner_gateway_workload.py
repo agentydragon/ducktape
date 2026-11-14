@@ -164,7 +164,7 @@ class RunnerGateway(Construct):
         proxy = runner_gateway.service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
-        # the per-Sandbox control Service with this projected Gateway-audience token.
+        # the stable Runner Gateway Service with this projected Gateway-audience token.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
         self.proxy_callers = proxy_callers
         dispatcher_accounts = frozenset(map(_account, dispatcher_callers))

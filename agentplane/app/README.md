@@ -671,7 +671,7 @@ snapshot, and changing the Environment incarnation or account discards the prior
 
 - **Connection direction:** the Runner Gateway dials the runner's private mTLS gRPC server
   ([runner control](../docs/runner_control.md)); the runner pushes journals to Event ingress.
-  Callers use the per-Sandbox control Service across Pod replacements.
+  Callers use the stable Runner Gateway Service across Pod replacements.
 - **Model credentials:** staging uses a dedicated key for OpenAI/Claude subscription and local
   Ollama chat routes; testing uses the `cheap-experiments` LiteLLM key. The Pod holds no
   key: the sidecar strips caller Authorization on the exact-origin SVID route, the central proxy

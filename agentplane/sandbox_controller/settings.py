@@ -28,8 +28,8 @@ class Settings(BaseModel):
     )
     runner_gateway_target: str = Field(
         min_length=1,
-        description="Where the controller quiesces a Sandbox's runner through the Runner Gateway: one target, or a "
-        "template of `{sandbox}` and `{namespace}` such as the Sandbox's own control Service.",
+        description="Where the controller quiesces a Sandbox's runner through the stable Runner Gateway Service: "
+        "one target, or a template such as `runner-gateway.{namespace}.svc:8080`.",
     )
     runner_gateway_token_file: Path = Field(
         description="Projected ServiceAccount token the Runner Gateway accepts from this controller."

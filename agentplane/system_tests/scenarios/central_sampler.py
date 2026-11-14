@@ -30,11 +30,7 @@ from agentplane.system_tests.driver.central_sampler import (
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.sandbox import (
-    ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
-    SANDBOX_READY_SECONDS,
-    wait_until_running,
-)
+from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
@@ -100,13 +96,6 @@ async def _capture_session_diagnostics(
             }
         except Exception as error:
             diagnostic["sandbox_error"] = repr(error)
-        try:
-            environment_runtime_lease = await cluster.kubectl(
-                "get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"
-            )
-            diagnostic["environment_runtime_lease"] = json.loads(environment_runtime_lease)
-        except Exception as error:
-            diagnostic["environment_runtime_lease_error"] = repr(error)
         try:
             diagnostic["cluster_services_endpoints_pods"] = json.loads(
                 await cluster.kubectl("get", "services,endpointslices,pods", "-o", "json")
@@ -666,22 +655,13 @@ async def _roll_gateway_for_central_session(
     old_uid = old_pod["metadata"]["uid"]
     killed_native: tuple[str, str, str] | None = None
     read_failure = None
-    old_lease = None
     if abrupt:
-        old_lease = json.loads(
-            await cluster.kubectl("get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json")
-        )
-        assert old_lease["spec"]["holderIdentity"] == old_pod["metadata"]["name"], old_lease
         assert crictl_command is not None
     try:
         if abrupt:
             assert crictl_command is not None
-            (undeclared_outputs_dir() / "gateway-crash-before.json").write_text(
-                json.dumps({"pod": old_pod, "lease": old_lease}, indent=2) + "\n"
-            )
-            # Killing first lets kubelet restart this Pod before scale-down; the restarted
-            # Gateway can claim a new epoch and gracefully release it on SIGTERM. SIGSTOP
-            # prevents cleanup while deletion removes this Pod from kubelet's desired set.
+            (undeclared_outputs_dir() / "gateway-crash-before.json").write_text(json.dumps(old_pod, indent=2) + "\n")
+            # SIGSTOP prevents cleanup while deletion removes this Pod from kubelet's desired set.
             async with _stopped_gateway_process(cluster, old_pod, crictl_command):
                 await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
                 await cluster.kubectl(
@@ -690,39 +670,15 @@ async def _roll_gateway_for_central_session(
                     "--for=jsonpath={.metadata.deletionTimestamp}",
                     "--timeout=15s",
                 )
+                terminating_pod = json.loads(
+                    await cluster.kubectl("get", "pod", old_pod["metadata"]["name"], "-o", "json")
+                )
                 (undeclared_outputs_dir() / "gateway-crash-terminating.json").write_text(
-                    json.dumps(
-                        {
-                            "pod": json.loads(
-                                await cluster.kubectl("get", "pod", old_pod["metadata"]["name"], "-o", "json")
-                            ),
-                            "lease": json.loads(
-                                await cluster.kubectl(
-                                    "get",
-                                    "lease",
-                                    f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}",
-                                    "-o",
-                                    "json",
-                                )
-                            ),
-                        },
-                        indent=2,
-                    )
-                    + "\n"
+                    json.dumps(terminating_pod, indent=2) + "\n"
                 )
         else:
             await cluster.kubectl("scale", "deployment/runner-gateway", "--replicas=0")
         await cluster.kubectl("wait", f"pod/{old_pod['metadata']['name']}", "--for=delete", "--timeout=45s")
-        if old_lease is not None:
-            lease = json.loads(
-                await cluster.kubectl(
-                    "get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"
-                )
-            )
-            (undeclared_outputs_dir() / "gateway-crash-deleted.json").write_text(json.dumps(lease, indent=2) + "\n")
-            assert lease["metadata"]["uid"] == old_lease["metadata"]["uid"], lease
-            assert lease["spec"]["holderIdentity"] == old_lease["spec"]["holderIdentity"], lease
-            assert lease["spec"]["leaseTransitions"] == old_lease["spec"]["leaseTransitions"], lease
         gateway_slices = json.loads(
             await cluster.kubectl(
                 "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
@@ -777,12 +733,7 @@ async def _roll_gateway_for_central_session(
         while True:
             slices = json.loads(
                 await cluster.kubectl(
-                    "get",
-                    "endpointslices",
-                    "-l",
-                    f"kubernetes.io/service-name={deployed.sandbox}-control",
-                    "-o",
-                    "json",
+                    "get", "endpointslices", "-l", "kubernetes.io/service-name=runner-gateway", "-o", "json"
                 )
             )["items"]
             if any(
@@ -794,11 +745,6 @@ async def _roll_gateway_for_central_session(
                 outage_seconds = asyncio.get_running_loop().time() - unavailable_started
                 break
             await asyncio.sleep(0.2)
-    if old_lease is not None:
-        lease = json.loads(
-            await cluster.kubectl("get", "lease", f"{deployed.sandbox}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json")
-        )
-        assert lease["spec"]["leaseTransitions"] > old_lease["spec"]["leaseTransitions"], lease
     return (
         await sampler_caller_after_gateway_roll(cluster, deployed),
         outage_seconds,
@@ -1708,7 +1654,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                     "incarnation_uid": deployed.incarnation_uid,
                     "template": template,
                     "tool_output": output,
-                    "control_target": deployed.control_target,
+                    "gateway_target": deployed.gateway_target,
                     "source_id": terminal.origin.source_id,
                     "terminal_cursor": terminal.cursor,
                     "folded_through": summary.folded_through,
@@ -2199,15 +2145,9 @@ async def _assert_central_components_unchanged(
 ) -> None:
     for component, expected in pod_uids.items():
         assert await _ready_pod_uids(cluster, component) == expected, f"{component} changed during History outage"
-    control = json.loads(await cluster.kubectl("get", "endpointslice", f"{deployed.sandbox}-control", "-o", "json"))
-    ready = [
-        address
-        for endpoint in control.get("endpoints") or []
-        if (endpoint.get("conditions") or {}).get("ready") is True
-        for address in endpoint.get("addresses") or []
-    ]
-    assert ready, f"Sandbox runner lost its ready Gateway endpoint: {control}"
-    assert any(address in deployed.control_target for address in ready), ready
+    ready = await _ready_service_endpoint_addresses(cluster, "runner-gateway")
+    assert ready, "Runner Gateway Service lost all ready endpoints during the History outage"
+    await deployed.runner.list_sessions(expected_incarnation_uid=deployed.incarnation_uid)
 
 
 async def _wait_for_history_cursors(

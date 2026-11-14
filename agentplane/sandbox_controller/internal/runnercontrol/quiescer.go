@@ -25,12 +25,11 @@ import (
 // quiesceTimeout bounds the whole idempotent handshake, including route-readiness retries.
 const quiesceTimeout = 30 * time.Second
 
-// GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
-// control Service, which names the replica holding its runner connection.
+// GatewayQuiescer calls `Runner.Quiesce` through the stable Runner Gateway Service.
 type GatewayQuiescer struct {
 	TLS *peertls.ClientTLS
 	// Target is a template of `{sandbox}` and `{namespace}`, typically
-	// sandboxapi.ControlServiceTargetTemplate.
+	// sandboxapi.RunnerGatewayTargetTemplate.
 	Target string
 	// TokenFile is the projected ServiceAccount token the gateway accepts from this controller.
 	TokenFile string
@@ -52,7 +51,7 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *sandboxapi.Sandbo
 	defer cancel()
 	err := retry.Do(ctx, retry.WithMaxRetries(2, retry.NewConstant(time.Second)), func(ctx context.Context) error {
 		// Restore-time WatchState can precede Gateway Pod readiness. A fresh connection
-		// re-resolves the elected control Service, while the expected UID fences every try.
+		// resolves the shared Service, while the expected UID fences every try.
 		err := environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
 			Target: target, TokenFile: g.TokenFile, TLS: g.TLS, Timeout: quiesceTimeout,
 			SandboxName: sandbox.Name, SandboxUID: string(sandbox.UID), SandboxNamespace: sandbox.Namespace,

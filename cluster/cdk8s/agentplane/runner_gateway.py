@@ -21,6 +21,5 @@ def target(namespace: str) -> str:
 
 
 def control_target(namespace: str) -> str:
-    """Each Sandbox's control Service, `<sandbox>-control`, which names the replica holding its runner
-    connection, as the `{sandbox}`/`{namespace}` template the clients' `control_target` takes."""
-    return f"{{sandbox}}-control.{{namespace}}.svc:{service(namespace).pod_port}"
+    """Stable shared Runner Gateway Service target, parameterized by the Sandbox namespace."""
+    return f"{NAME}.{{namespace}}.svc:{service(namespace).pod_port}"
