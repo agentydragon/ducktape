@@ -5,7 +5,7 @@
   "scope": "Iteration 12 architecture: reduced-root screen, direct private-systemd receipt controls, integrated rebase and merged independent ports. Fleet measurement windows and required gates unchanged.",
   "report_sha256": "ba22b13dc521177257f18a063bed6bd5a96b2e4635bf81005ccb64d4659b8ec6",
   "evidence_sha256": "3590092332cacd726b4d7729e4ca69a9d1b8353418b660a1d76b4141d54466fa",
-  "previous_gh_pages_commit": "11326650b7085fa9a73f73e8a993a08e1a010b7f",
+  "previous_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
   "pilot_branch": "agent/test-architecture-pivot",
   "pilot_head_commit": "417b6428baeae93116fb293a782120664a754697",
   "pilot_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
@@ -124,8 +124,8 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "source_devel_commit_scope": "Latest integrated source only; historical measurements retain their own exact tested revisions and original windows.",
-  "publication_base_gh_pages_commit": "11326650b7085fa9a73f73e8a993a08e1a010b7f",
-  "root_navigation_sha256": "01ee177482fdeec3a64f17e4bf3bb596ffb28b9c84c5ab3a56684908fa731da6",
+  "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
+  "root_navigation_sha256": "e8cf00f8f03e8dd0452e21d4e1ec5ce4ba32358f4405a54d1b58d2acde772054",
   "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
   "iteration11": {
     "evidence_file": "iteration11.json",

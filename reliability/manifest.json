@@ -62,7 +62,7 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_base_gh_pages_commit": "11326650b7085fa9a73f73e8a993a08e1a010b7f",
+  "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
   "visual_validation_status": "Presentation proof is recorded separately in visual-validation.json and must match the captured HTML, evidence and manifests.",
   "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
   "architecture_iteration11": {
