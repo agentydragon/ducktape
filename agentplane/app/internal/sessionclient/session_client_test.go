@@ -13,6 +13,8 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -217,6 +219,55 @@ type identityEnvironmentRuntimeServer struct {
 	seen map[string]string
 }
 
+type appSVIDEnvironmentRuntimeServer struct {
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
+	t     *testing.T
+	calls int
+	seen  map[string]string
+}
+
+func (s *appSVIDEnvironmentRuntimeServer) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+	s.t.Helper()
+	identity, err := peertls.PeerIdentity(ctx)
+	if err != nil || identity != peertls.AppURI {
+		s.t.Fatalf("Runtime proxy peer identity = %q, error %v", identity, err)
+	}
+	incoming, ok := metadata.FromIncomingContext(ctx)
+	if !ok || len(incoming.Get("authorization")) != 0 {
+		s.t.Fatalf("Runtime proxy received authorization metadata: %v", incoming)
+	}
+	s.calls++
+	for key, values := range incoming {
+		if len(values) == 1 {
+			s.seen[key] = values[0]
+		}
+	}
+	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: "runtime-session"}}}, nil
+}
+
+type appSVIDDispatcherServer struct {
+	dispatcherpb.UnimplementedSessionDispatcherServer
+	t     *testing.T
+	calls int
+}
+
+func (s *appSVIDDispatcherServer) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
+	s.t.Helper()
+	identity, err := peertls.PeerIdentity(ctx)
+	if err != nil || identity != peertls.AppURI {
+		s.t.Fatalf("Session Dispatcher peer identity = %q, error %v", identity, err)
+	}
+	values, ok := metadata.FromIncomingContext(ctx)
+	if !ok || len(values.Get("authorization")) != 0 {
+		s.t.Fatalf("Session Dispatcher received authorization metadata: %v", values)
+	}
+	s.calls++
+	return &dispatcherpb.CreateSessionResponse{Session: &dispatcherpb.Session{
+		SessionId: request.GetSessionId(),
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}},
+	}}, nil
+}
+
 func (s *identityEnvironmentRuntimeServer) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
 	s.capture(ctx)
 	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: "durable-session"}}}, nil
@@ -293,6 +344,49 @@ func TestGatewayEnvironmentRuntimeProxyBindsCurrentSandboxMetadata(t *testing.T)
 	}
 }
 
+func TestGatewayEnvironmentRuntimeProxyAuthenticatesAppSVIDWithoutBearer(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serverConfig := ca.Issue(t, peertls.SessionDispatcherURI)
+	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(serverCredentials))
+	service := &appSVIDEnvironmentRuntimeServer{t: t, seen: make(map[string]string)}
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	appCertificate := ca.Issue(t, peertls.AppURI)
+	proxy, err := NewGatewayEnvironmentRuntimeProxy(EnvironmentRuntimeConfig{
+		TLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
+			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
+		},
+		Namespace: "operators", Timeout: time.Second, TargetTemplate: listener.Addr().String(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{
+		Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators",
+	}}
+	listed, err := proxy.ListSessions(context.Background(), sandbox)
+	if err != nil || listed.GetSessions()[0].GetSessionId() != "runtime-session" {
+		t.Fatalf("SVID-authenticated ListSessions = %v, %v", listed, err)
+	}
+	if service.calls != 1 {
+		t.Fatalf("Runtime calls = %d, want 1", service.calls)
+	}
+	if service.seen[sandboxapi.RunnerProxySandboxUIDMetadataKey] != "sandbox-uid" {
+		t.Fatalf("Runtime proxy Sandbox UID = %q", service.seen[sandboxapi.RunnerProxySandboxUIDMetadataKey])
+	}
+}
+
 type dispatcherTestServer struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	t          *testing.T
@@ -366,5 +460,57 @@ func TestSessionDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) 
 	var timeout *RequestTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("deadline error = %T %v, want RequestTimeoutError", err, err)
+	}
+}
+
+func TestSessionDispatcherClientAuthenticatesAppSVIDWithoutBearerAndDoesNotFallBack(t *testing.T) {
+	ca := peertlstesting.NewCA(t)
+	serverConfig := ca.Issue(t, peertls.SessionDispatcherURI)
+	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(serverCredentials))
+	service := &appSVIDDispatcherServer{t: t}
+	dispatcherpb.RegisterSessionDispatcherServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	appCertificate := ca.Issue(t, peertls.AppURI)
+	clientTLS := &peertls.ClientTLS{
+		CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
+		CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
+	}
+	client, err := NewSessionDispatcherClient(SessionDispatcherConfig{
+		TLS: clientTLS, Target: listener.Addr().String(), Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.NewString()
+	if _, err := client.CreateSession(context.Background(), sessionClientTestRequest(id)); err != nil {
+		t.Fatalf("SVID-authenticated CreateSession: %v", err)
+	}
+	if service.calls != 1 {
+		t.Fatalf("Session Dispatcher calls = %d, want 1", service.calls)
+	}
+
+	missingCertificate := *clientTLS
+	missingCertificate.CertFile = t.TempDir() + "/missing.crt"
+	failedClient, err := NewSessionDispatcherClient(SessionDispatcherConfig{
+		TLS: &missingCertificate, Target: listener.Addr().String(), Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := failedClient.CreateSession(context.Background(), sessionClientTestRequest(uuid.NewString())); err == nil {
+		t.Fatal("CreateSession succeeded after its configured SVID certificate became unavailable")
+	}
+	if service.calls != 1 {
+		t.Fatalf("failed SVID call reached the service; calls = %d", service.calls)
 	}
 }

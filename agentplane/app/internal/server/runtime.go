@@ -239,7 +239,11 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("configure generated Action Service HTTP facade: %w", err)
 	}
 	actionGateway := upstreamproxy.NewHandlerUpstream(actionFacade, "")
-	connectionFacade, err := facade.NewHandler(facadeContext, connectionTarget, 10*time.Second, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
+	connectionFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, connectionTarget, 10*time.Second,
+		facade.HandlerOptions{TLS: config.ConnectionServiceTLS},
+		connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint,
+	)
 	if err != nil {
 		return fmt.Errorf("configure generated Connection Service HTTP facade: %w", err)
 	}

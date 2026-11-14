@@ -6,6 +6,7 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
@@ -17,8 +18,11 @@ type GatewayEnvironmentRuntimeProxy struct{ config EnvironmentRuntimeConfig }
 
 // NewGatewayEnvironmentRuntimeProxy validates the per-Sandbox Environment Runtime transport settings.
 func NewGatewayEnvironmentRuntimeProxy(config EnvironmentRuntimeConfig) (*GatewayEnvironmentRuntimeProxy, error) {
-	if config.Namespace == "" || config.TokenFile == "" || config.Timeout <= 0 {
-		return nil, errors.New("runner namespace, token file, and positive timeout are required")
+	if config.Namespace == "" || config.Timeout <= 0 {
+		return nil, errors.New("runner namespace and positive timeout are required")
+	}
+	if err := config.TLS.ValidateCaller(config.TokenFile, peertls.AppURI); err != nil {
+		return nil, errors.New("Runner Gateway caller authentication is invalid")
 	}
 	if config.TargetTemplate == "" {
 		config.TargetTemplate = sandboxapi.RunnerGatewayTargetTemplate()

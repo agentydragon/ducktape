@@ -5,14 +5,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import NewSandboxDefaults
 from agentplane.log_levels import LogLevels
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    MCP_EDGE_URI,
+    NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+    ClientTLS,
+)
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from util.urls import HttpEndpointUrl
 
@@ -92,6 +102,9 @@ class Settings(BaseModel):
     connection_service_url: HttpEndpointUrl = Field(
         description="The Connection Service's generated HTTP/JSON facade; its host and port also serve gRPC health."
     )
+    connection_service_tls: ClientTLS | None = Field(
+        default=None, description="Optional verified TLS for MCP edge ConnectionService gRPC calls."
+    )
     action_federation: ActionFederationSettings
     frontend_config: FrontendConfig = Field(
         default_factory=FrontendConfig,
@@ -120,7 +133,7 @@ class Settings(BaseModel):
         description="Runner Gateway gRPC host:port for Session Dispatcher commands and app-brokered resume requests.",
     )
     policy_service_target: str = Field(default="policy-controller:8082", min_length=1)
-    policy_service_token_file: Path = Path("/var/run/secrets/agentplane-policy/token")
+    policy_service_token_file: Path | None = Path("/var/run/secrets/agentplane-policy/token")
     runner_gateway_control_target: str = Field(
         min_length=1,
         description="Stable Runner Gateway Service target, typically `runner-gateway.{namespace}.svc:8080`; "
@@ -130,18 +143,18 @@ class Settings(BaseModel):
     notifications_url: HttpEndpointUrl = Field(
         description="The Notification Service's endpoint; its host and port serve the operator gRPC API."
     )
-    notifications_token_file: Path = Path("/var/run/secrets/agentplane-notifications/token")
+    notifications_token_file: Path | None = Path("/var/run/secrets/agentplane-notifications/token")
     notifications_request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
-    runner_gateway_token_file: Path = Field(
+    runner_gateway_token_file: Path | None = Field(
         default=Path("/var/run/secrets/agentplane-runner-gateway/token"),
         description="The rotating projected ServiceAccount token for the Runner Gateway audience.",
     )
-    session_dispatcher_token_file: Path = Field(
+    session_dispatcher_token_file: Path | None = Field(
         default=Path("/var/run/secrets/agentplane-session-dispatcher/token"),
         description="The rotating projected ServiceAccount token for the Session Dispatcher audience.",
     )
     session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
+    history_service_token_file: Path | None = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
@@ -155,7 +168,7 @@ class Settings(BaseModel):
         default=None,
         description="Electric replicating the History Service fold; omit to disable authenticated thread-sync routes.",
     )
-    egress_admin_token_file: Path = Path("/var/run/secrets/agentplane-egress-admin/token")
+    egress_admin_token_file: Path | None = Path("/var/run/secrets/agentplane-egress-admin/token")
     egress_admin_timeout: float = Field(
         default=5, gt=0, allow_inf_nan=False, description="Seconds to wait for the proxy's initial decision snapshot."
     )
@@ -168,3 +181,46 @@ class Settings(BaseModel):
     oidc: OIDCSettings | None = Field(
         default=None, description="Static OIDC relying-party settings; credentials arrive through Secret inputs."
     )
+
+    @model_validator(mode="after")
+    def validate_service_callers(self) -> Settings:
+        """Keep service-token callers paired with their receiver and caller identities."""
+        for name, tls, token_file, server_uri in (
+            (
+                "session_dispatcher",
+                self.session_dispatcher_tls,
+                self.session_dispatcher_token_file,
+                SESSION_DISPATCHER_URI,
+            ),
+            ("runner_gateway", self.runner_gateway_tls, self.runner_gateway_token_file, SESSION_DISPATCHER_URI),
+            ("history_service", self.history_service_tls, self.history_service_token_file, HISTORY_SERVICE_URI),
+            ("policy_service", self.policy_service_tls, self.policy_service_token_file, POLICY_CONTROLLER_URI),
+            ("egress_admin", self.egress_admin_tls, self.egress_admin_token_file, EGRESS_PROXY_URI),
+            ("notifications", self.notifications_tls, self.notifications_token_file, NOTIFICATIONS_URI),
+        ):
+            if tls is not None and tls.server_uri != server_uri:
+                raise ValueError(f"{name}_tls.server_uri must identify {server_uri}")
+            try:
+                if tls is not None:
+                    tls.validate_caller(token_file, APP_URI)
+                elif token_file is None:
+                    raise ValueError("a token file is required when caller TLS is not configured")
+            except ValueError as exc:
+                raise ValueError(f"{name} caller authentication: {exc}") from exc
+
+        # These facades carry a request-bound operator OAuth token. An App SVID may
+        # identify the transport peer, but it does not replace that operator authority.
+        for name, tls, server_uri in (
+            ("actions", self.actions_tls, ACTIONS_URI),
+            ("connection_service", self.connection_service_tls, MCP_EDGE_URI),
+        ):
+            if tls is None:
+                continue
+            if tls.server_uri != server_uri:
+                raise ValueError(f"{name}_tls.server_uri must identify {server_uri}")
+            if tls.uses_svid:
+                try:
+                    tls.validate_caller(None, APP_URI)
+                except ValueError as exc:
+                    raise ValueError(f"{name} caller authentication: {exc}") from exc
+        return self
