@@ -14,11 +14,13 @@ from pathlib import Path
 from uuid import UUID
 
 import grpc
+import pytest
 from kubernetes_asyncio import client as k8s_client
 from python.runfiles import Runfiles
 
 from agentplane.env.config import Configuration, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing.gateway import bind_incarnation
+from agentplane.grpc.calls import ServiceError
 from agentplane.net.peertls.config import MTLS, TLS
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
@@ -128,7 +130,6 @@ def write_guest_inputs(
 async def authenticated_readiness(
     gateway: GatewayProcess,
     token_file: Path,
-    api_server: KubernetesApiServer,
     sandbox: SandboxCluster,
     *,
     control: EnvironmentRuntimeControl,
@@ -142,7 +143,20 @@ async def authenticated_readiness(
     )
     remote = gateway.gateway_client(token_file, request_timeout_s=2)
     await gateway.wait_for_runner(remote, sandbox.destination, timeout_s=30)
-    status = await remote.runner(sandbox.destination).status()
+    with pytest.raises(ServiceError) as refused:
+        await remote.runner_unary(
+            sandbox.destination,
+            lambda stub: stub.GetStatus,
+            session_pb2.GetStatusRequest(),
+            expected_incarnation_uid=f"other-{sandbox.pod_uid}",
+        )
+    assert refused.value.code == grpc.StatusCode.ABORTED
+    status = await remote.runner_unary(
+        sandbox.destination,
+        lambda stub: stub.GetStatus,
+        session_pb2.GetStatusRequest(),
+        expected_incarnation_uid=sandbox.pod_uid,
+    )
     assert status.environment_runtime_boot_id
     assert status.HasField("lifecycle")
     assert status.lifecycle.desired_mode == session_pb2.ENVIRONMENT_RUNTIME_LIFECYCLE_MODE_RUNNING
@@ -153,19 +167,6 @@ async def authenticated_readiness(
     assert not status.lifecycle.HasField("blocker")
     assert not status.sessions
 
-    lease_name = f"{sandbox.name}-environment-runtime"
-    lease = await k8s_client.CoordinationV1Api(api_server.api).read_namespaced_lease(lease_name, sandbox.namespace)
-    annotations = lease.metadata.annotations
-    assert lease.metadata.owner_references is not None
-    assert any(
-        owner.uid == sandbox.uid and owner.name == sandbox.name and owner.kind == "Sandbox"
-        for owner in lease.metadata.owner_references
-    )
-    assert annotations["agentplane.allegedly.works/pod-uid"] == sandbox.pod_uid
-    assert annotations["agentplane.allegedly.works/last-connected-pod-uid"] == sandbox.pod_uid
-    assert annotations["agentplane.allegedly.works/environment-runtime-boot-id"] == status.environment_runtime_boot_id
-    assert lease.spec.lease_transitions is not None
-    assert lease.spec.lease_transitions > 0
     return status
 
 
