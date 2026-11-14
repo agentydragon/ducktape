@@ -77,7 +77,9 @@ type Server struct {
 
 	config Config
 
+	adoptionMu            sync.Mutex
 	mu                    sync.RWMutex
+	adoptedIncarnationUID string
 	watch                 *watch
 	highestEpoch          uint64
 	highestSandboxUID     string
@@ -91,7 +93,7 @@ func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *
 // Listen opens the configured authenticated control listener and registers the
 // Runner, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
-	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI)
+	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI, environmentruntimetransport.SandboxControllerURI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -263,26 +265,47 @@ func (s *Server) WatchState(
 	request *environmentruntimepb.WatchStateRequest,
 	server grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse],
 ) error {
-	if err := s.authorizeGatewayPeer(server.Context()); err != nil {
+	if request == nil {
+		return status.Error(codes.InvalidArgument, "watch request is required")
+	}
+	authorize := s.authorizeGatewayPeer
+	if request.ObserveOnly {
+		authorize = s.authorizeControllerPeer
+	}
+	if err := authorize(server.Context()); err != nil {
 		return err
 	}
-	current, err := s.directWatchContext(request, server.Context())
+	var current *watch
+	var err error
+	if request.ObserveOnly {
+		current, err = s.passiveWatchContext(request, server.Context())
+	} else {
+		current, err = s.directWatchContext(request, server.Context())
+	}
 	if err != nil {
 		return err
 	}
-	defer s.finishWatch(current)
-	if err := s.config.AdoptIncarnation(current.ctx, current.incarnationUID); err != nil {
+	if request.ObserveOnly {
+		defer current.cancel()
+	} else {
+		defer s.finishWatch(current)
+	}
+	if err := s.adoptWatch(current, request.ObserveOnly); err != nil {
 		return err
 	}
-	if err := current.ctx.Err(); err != nil {
-		return status.FromContextError(err).Err()
-	}
-	if err := s.markWatchReady(current); err != nil {
-		return err
+	if !request.ObserveOnly {
+		if err := s.markWatchReady(current); err != nil {
+			return err
+		}
 	}
 	return s.forwardWatchState(
-		current.ctx,
+		current.ctx, authorize,
 		func() (*environmentruntimepb.WatchStateResponse, error) {
+			if request.ObserveOnly {
+				if err := s.validatePassiveWatch(current); err != nil {
+					return nil, err
+				}
+			}
 			facts, err := s.config.Facts()
 			if err != nil {
 				return nil, err
@@ -296,8 +319,66 @@ func (s *Server) WatchState(
 	)
 }
 
+// Passive watches own only their stream context. In particular, finishing one
+// cannot clear the Gateway watch or cancel its admission/Executor context.
+func (s *Server) passiveWatchContext(req *environmentruntimepb.WatchStateRequest, parent context.Context) (*watch, error) {
+	if req.SandboxUid == "" || req.IncarnationUid == "" || req.ConnectionEpoch != 0 {
+		return nil, status.Error(codes.InvalidArgument, "observe-only watch requires sandbox UID, incarnation UID, and zero connection epoch")
+	}
+	if req.SandboxUid != s.config.SandboxUID {
+		return nil, status.Error(codes.PermissionDenied, "watch request names another Sandbox")
+	}
+	ctx, cancel := context.WithCancel(parent)
+	return &watch{ctx: ctx, cancel: cancel, sandboxUID: req.SandboxUid, incarnationUID: req.IncarnationUid}, nil
+}
+
+func (s *Server) authorizeControllerPeer(ctx context.Context) error {
+	if err := s.config.Security.AuthorizePeer(ctx, environmentruntimetransport.SandboxControllerURI); err != nil {
+		return status.Error(codes.Unauthenticated, "observe-only peer is not authenticated as the Sandbox Controller")
+	}
+	return nil
+}
+
+func (s *Server) validatePassiveWatch(current *watch) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if (s.adoptedIncarnationUID != "" && s.adoptedIncarnationUID != current.incarnationUID) ||
+		(s.highestIncarnationUID != "" && s.highestIncarnationUID != current.incarnationUID) ||
+		(s.watch != nil && s.watch.incarnationUID != current.incarnationUID) {
+		return status.Error(codes.FailedPrecondition, "observe-only watch cannot replace the Runtime incarnation")
+	}
+	return nil
+}
+
+func (s *Server) adoptWatch(current *watch, passive bool) error {
+	// Gateway replacement still cancels its predecessor before waiting here.
+	// Serialize adoption so a passive observer cannot restore an earlier identity
+	// after a concurrent Gateway has adopted its successor.
+	s.adoptionMu.Lock()
+	defer s.adoptionMu.Unlock()
+	if err := current.ctx.Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	if passive {
+		if err := s.validatePassiveWatch(current); err != nil {
+			return err
+		}
+	}
+	if err := s.config.AdoptIncarnation(current.ctx, current.incarnationUID); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.adoptedIncarnationUID = current.incarnationUID
+	s.mu.Unlock()
+	if err := current.ctx.Err(); err != nil {
+		return status.FromContextError(err).Err()
+	}
+	return nil
+}
+
 func (s *Server) forwardWatchState(
 	ctx context.Context,
+	authorize func(context.Context) error,
 	response func() (*environmentruntimepb.WatchStateResponse, error),
 	send func(*environmentruntimepb.WatchStateResponse) error,
 ) error {
@@ -308,7 +389,7 @@ func (s *Server) forwardWatchState(
 	stageSeen := false
 	forceHeartbeat := true
 	for {
-		if err := s.authorizeGatewayPeer(ctx); err != nil {
+		if err := authorize(ctx); err != nil {
 			return err
 		}
 		changed := s.config.Changes()

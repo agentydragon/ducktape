@@ -18,6 +18,7 @@ const configFileEnv = "AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE"
 // which renders the Deployment's required settings file.
 type config struct {
 	RunnerGatewayTLS       *peertls.ClientTLS `yaml:"runner_gateway_tls"`
+	RunnerSecurity         peertls.Security   `yaml:"runner_security"`
 	Namespace              string             `yaml:"namespace"`
 	MetricsBindAddress     string             `yaml:"metrics_bind_address"`
 	HealthProbeBindAddress string             `yaml:"health_probe_bind_address"`
@@ -60,6 +61,9 @@ func loadConfig() (config, error) {
 }
 
 func (c config) validate() error {
+	if err := c.RunnerSecurity.Validate(); err != nil {
+		return fmt.Errorf("runner_security: %w", err)
+	}
 	if c.RunnerGatewayTLS != nil {
 		if err := c.RunnerGatewayTLS.Validate(); err != nil {
 			return fmt.Errorf("runner_gateway_tls: %w", err)

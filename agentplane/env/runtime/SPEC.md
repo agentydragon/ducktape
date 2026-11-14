@@ -98,7 +98,13 @@ The live gate reopens only after a successor journal reopen and its acknowledgem
 publication succeed for the current Running incarnation; same-incarnation re-entry stays closed.
 
 External authentication, Sandbox/incarnation authorization and Gateway epochs remain in
-`runtime/control`. Direct Session admission uses that authority and Runtime's gate. `CreateSession`
+`runtime/control`. The Sandbox Controller's `observe_only` state watches carry epoch zero and
+never replace, authorize or cancel the Gateway's exclusive control/Executor epoch. A passive watch
+can perform initial incarnation adoption, including a replacement workload restoring sealed state;
+once a watch has established an incarnation in this Runtime process, passive observers cannot
+change it. Gateway adoption retains its existing successor fencing path. Only the Controller's
+exact SPIFFE identity may open passive watches; every control and Executor call still requires
+the Gateway identity and its live epoch. Direct Session admission uses that authority and Runtime's gate. `CreateSession`
 acknowledges a durable reservation, without promising process readiness. Model lookup occurs outside
 the gate; the reservation rechecks the epoch and accepted revision before its retained write.
 Claude model lookup uses the local gRPC `model_config_target` without a bearer; the egress

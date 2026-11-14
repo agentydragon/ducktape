@@ -61,7 +61,7 @@ from cluster.cdk8s.agentplane import (
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
+from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -71,6 +71,7 @@ _POD_LABEL_NAME = "agentplane-environment-runtime"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _STORAGE_CLASS = "piraeus-hdd-local"
 _LABELS = {"app.kubernetes.io/name": _POD_LABEL_NAME}
+_SANDBOX_CONTROLLER_CILIUM_LABELS = {"app.kubernetes.io/name": "sandbox-controller"}
 ENVIRONMENT_RUNTIME_SERVICE_PORT = 9090
 _ENVIRONMENT_RUNTIME_TLS_PATH = "/run/agentplane/environment-runtime-tls"
 # Shared by the Runner configuration, its container volumeMount, and the
@@ -295,7 +296,13 @@ class EnvironmentSandbox(Construct):
             "environment-runtime-listener",
             metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
             endpoint_selector=pods(namespace).selector,
-            ingress=[runner_gateway.service(namespace).pods.admit(ENVIRONMENT_RUNTIME_SERVICE_PORT)],
+            ingress=[
+                runner_gateway.service(namespace).pods.admit(ENVIRONMENT_RUNTIME_SERVICE_PORT),
+                IngressRule.from_endpoints(
+                    {**_SANDBOX_CONTROLLER_CILIUM_LABELS, "k8s:io.kubernetes.pod.namespace": namespace},
+                    ports=[ENVIRONMENT_RUNTIME_SERVICE_PORT],
+                ),
+            ],
         )
 
 

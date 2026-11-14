@@ -51,7 +51,10 @@ service EnvironmentRuntime {
 message WatchStateRequest {
   string sandbox_uid = 1;
   string incarnation_uid = 2;  // current Pod or virt-launcher Pod UID
-  uint64 connection_epoch = 3;  // monotonically increasing Gateway Lease epoch
+  uint64 connection_epoch = 3;  // nonzero Gateway Lease epoch; zero for observe_only
+  // Sandbox Controller observations are independent of the Gateway's exclusive epoch.
+  // Requires the Controller peer identity; grants no control or Executor authorization.
+  bool observe_only = 4;
 }
 
 message WatchStateResponse {

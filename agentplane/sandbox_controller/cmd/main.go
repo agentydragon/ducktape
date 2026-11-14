@@ -102,9 +102,13 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
+	states := sandboxcontroller.NewRuntimeStates(runnercontrol.RuntimeWatcher{Security: c.RunnerSecurity}, time.Now)
+	if err := mgr.Add(states); err != nil {
+		return err
+	}
 	reconciler := &sandboxcontroller.Reconciler{
 		Client: mgr.GetClient(), Objects: mgr.GetAPIReader(), KubeVirt: kubeVirt,
-		Quiescer: quiescer, Leases: mgr.GetClient(), Credentials: credentials, Now: time.Now,
+		Quiescer: quiescer, Leases: mgr.GetClient(), States: states, Credentials: credentials, Now: time.Now,
 		FirecrackerStatus: sandboxcontroller.PodProxyFirecrackerStatusReader{Client: clientset},
 		Suspender:         runnercontrol.GatewaySuspender{Target: c.RunnerGatewayTarget, TokenFile: c.RunnerGatewayTokenFile, TLS: c.RunnerGatewayTLS},
 	}

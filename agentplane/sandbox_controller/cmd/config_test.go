@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,6 +15,12 @@ metrics_bind_address: ":9090"
 health_probe_bind_address: ":9091"
 runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
 runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+runner_security:
+  mode: mtls
+  tls:
+    cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
+    key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
+    ca_file: /run/agentplane/workload-trust/ca.crt
 `
 
 func writeSettings(t *testing.T, content string) string {
@@ -33,6 +40,7 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		"HEALTH_PROBE_BIND_ADDRESS",
 		"RUNNER_GATEWAY_TARGET",
 		"RUNNER_GATEWAY_TOKEN_FILE",
+		"RUNNER_SECURITY",
 	} {
 		t.Setenv("AGENTPLANE_SANDBOX_CONTROLLER_"+name, "from-environment")
 	}
@@ -45,8 +53,13 @@ func TestLoadConfigReadsYAMLAndIgnoresPerSettingEnvironment(t *testing.T) {
 		Namespace: "agentplane", MetricsBindAddress: ":9090", HealthProbeBindAddress: ":9091",
 		RunnerGatewayTarget:    "{sandbox}-control.{namespace}.svc:8080",
 		RunnerGatewayTokenFile: "/var/run/secrets/agentplane-runner-gateway/token",
+		RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &peertls.Config{
+			CertFile: "/run/agentplane/sandbox-controller-client-tls/tls.crt",
+			KeyFile:  "/run/agentplane/sandbox-controller-client-tls/tls.key",
+			CAFile:   "/run/agentplane/workload-trust/ca.crt",
+		}},
 	}
-	if c != want {
+	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("unexpected settings: %+v", c)
 	}
 }
@@ -84,6 +97,7 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 		"namespace":                 "namespace: agentplane\n",
 		"runner_gateway_target":     "runner_gateway_target: \"{sandbox}-control.{namespace}.svc:8080\"\n",
 		"runner_gateway_token_file": "runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token\n",
+		"runner_security":           "runner_security:\n  mode: mtls\n  tls:\n    cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt\n    key_file: /run/agentplane/sandbox-controller-client-tls/tls.key\n    ca_file: /run/agentplane/workload-trust/ca.crt\n",
 	}
 	cases := map[string]string{
 		"unknown key":        validSettings + "unknown_setting: value\n",
@@ -94,6 +108,12 @@ func TestLoadConfigRejectsInvalidSettingsFiles(t *testing.T) {
 		),
 		"empty health probe bind address": strings.Replace(
 			validSettings, "health_probe_bind_address: \":9091\"\n", "health_probe_bind_address: \"\"\n", 1,
+		),
+		"missing runner security mode": strings.Replace(
+			validSettings, "  mode: mtls\n", "", 1,
+		),
+		"incomplete runner security TLS": strings.Replace(
+			validSettings, "    key_file: /run/agentplane/sandbox-controller-client-tls/tls.key\n", "", 1,
 		),
 	}
 	for name, line := range missing {

@@ -2,7 +2,7 @@
 
 The runner serves native gRPC on one private listener: `Runner`, `Executor` and standard gRPC
 health. The Gateway derives its address from the current workload's Pod IP and the runner port;
-KubeVirt forwards that port into the guest. Only Gateway workloads may reach it. History Event
+KubeVirt forwards that port into the guest. Gateway workloads and the Sandbox Controller may reach it; method authorization separates their roles. History Event
 ingress remains a separate outbound platform route.
 
 Runner configuration requires `control.listen_address` and `control.security.mode`; the Gateway
@@ -16,6 +16,22 @@ The service definitions are `env/runtime/control/environment_runtime.proto` and 
 `proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
 
 ## State observation and fencing
+
+The leader-elected Sandbox Controller independently opens `WatchState(observe_only=true)` directly
+to each accepted incarnation, authenticating with its dedicated client SVID. This stream carries no
+Gateway epoch and grants no command or Executor authority. The Controller validates Sandbox UID,
+Pod UID and boot ID, then keeps bootstrap, quiesce, setup, idle and blocker facts in memory.
+A local watch generation fences callbacks from replaced streams. A new leader relists Sandboxes
+and starts fresh watches and idle timers. Lost streams retry after one second; a 30-second
+heartbeat timeout clears idle eligibility immediately, while connectivity status keeps a one-minute
+grace. Reconnects start a full idle timer, even when the Runtime reports the same idle timestamp.
+Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
+stop or deletion. Bootstrap failure remains terminal for its incarnation.
+
+The Gateway's separate, exclusive watch still controls its proxy admission fence during this reader
+migration. Its Lease and `<sandbox>-control` EndpointSlice remain in use; the Controller no longer
+reads lifecycle facts from that Lease. Quiesce and suspend admission RPCs continue through the
+Gateway proxy. Removing that replica ownership protocol is a separate change.
 
 One Gateway replica claims the runner Lease, then calls `Runner.WatchState` with the Sandbox UID,
 incarnation Pod UID and claimed epoch. For a VM, the incarnation UID is the virt-launcher Pod's.
@@ -194,14 +210,14 @@ current quiesce stage. The runner publishes subsequent stages through
 `WatchState`; `quiesced` means every journal's seal is acknowledged by ingress. The runner records
 acknowledgements on its state volume, so progress survives a runner restart. Repeated `Quiesce`
 requests continue the same operation. The Sandbox Controller retries an unfinished request at its
-one-minute deadline; Lease stage changes enqueue it sooner, and the persisted request time prevents
+one-minute deadline; directly observed stage changes enqueue it sooner, and the persisted request time prevents
 other watch events or a controller restart from bypassing that deadline. Only after every Session is
 flushed may the Sandbox's volume go. A runner that cannot report leaves the Sandbox in sealing for
 the operator.
 
 ## Connection records in Kubernetes
 
-The Gateway owns a Lease `<sandbox>-runner` and EndpointSlice `<sandbox>-control` per Sandbox.
+The Gateway owns a Lease `<sandbox>-environment-runtime` and EndpointSlice `<sandbox>-control` per Sandbox.
 The Sandbox Controller owns the headless, selector-less control Service. All records are owned by
 the exact Sandbox API, kind, name and UID, with no other owners, and must not be deleting. Foreign
 records, including those of a deleted Sandbox whose name was reused, block connection acceptance.
@@ -210,8 +226,8 @@ The Lease's `holderIdentity` is the Gateway Pod name, `leaseTransitions` the mon
 epoch, `renewTime` the last authenticated state snapshot and `leaseDurationSeconds` 30. Its
 `agentplane.allegedly.works/pod-uid` and
 `agentplane.allegedly.works/environment-runtime-boot-id` annotations bind the workload incarnation
-and Environment Runtime process. Environment Runtime facts replace the corresponding Lease annotations.
-Readers trust them only while the Lease is live and names the current incarnation.
+and Environment Runtime process. The Gateway still replaces the corresponding fact annotations
+until writer cleanup; the Sandbox Controller reads facts only from its direct observation.
 
 Claiming the Lease uses resource-version conflict retries and refuses takeover of another live
 holder. The Gateway assigns a Sandbox-lifetime route epoch above both the retained EndpointSlice
@@ -341,7 +357,8 @@ receipt first. Certificate resources can remain while rolling back; prior runner
 
 ## Heartbeat and liveness
 
-`WatchState` publishes a snapshot on a fact change and every 10 seconds while idle. The Gateway
+`WatchState` publishes a snapshot on a fact change and every 10 seconds while idle. The Controller
+and Gateway each end their separate observation after 30 seconds without a snapshot. The Gateway also
 ends observation after 30 seconds without a snapshot, on transport failure, or on identity or
 ownership loss. Healthy observations have no age limit. It supervises a new observation while the
 workload remains current. A live observation establishes control connectivity, not harness readiness,

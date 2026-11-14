@@ -105,6 +105,15 @@ budget remains authoritative across all of its native services.
   accepting the replacement Environment Runtime boot.
   Cancelling or superseding the watch changes observer readiness but does not cancel already
   admitted durable work.
+- The Sandbox Controller presents `spiffe://agentplane/sandbox-controller` and opens independent
+  `WatchState` streams with `observe_only = true`, the Sandbox UID, the current workload
+  incarnation UID and connection epoch zero. Responses contain the Runtime boot ID and facts with
+  epoch zero. Initial observation adopts the incarnation through the ordinary lifecycle barriers;
+  subsequent passive observers cannot change the incarnation established by a watch in this
+  process. Passive streams never replace or cancel the Gateway watch, and their cancellation
+  cannot revoke its control or Executor authorization. The Controller cannot invoke control or
+  Executor RPCs, and the Gateway cannot select passive observation. Explicit insecure fixtures
+  skip peer authentication while retaining the request, identity and epoch checks.
 - Every unary call and execution-session stream is fenced with the Sandbox UID, incarnation
   UID, Environment Runtime boot ID and connection epoch. A stale epoch cannot authorize a call or clear a newer
   observer's readiness. Calls with stale boot or observer metadata fail before admission with

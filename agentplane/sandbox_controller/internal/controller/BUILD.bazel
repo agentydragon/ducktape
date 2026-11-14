@@ -16,6 +16,7 @@ go_library(
         "idle.go",
         "launch.go",
         "quiescer.go",
+        "runtime_states.go",
         "state_volume.go",
         "vm.go",
         "workspace.go",
@@ -26,6 +27,7 @@ go_library(
         "//agentplane/sandbox_controller/internal/runnercontrol:__pkg__",
     ],
     deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/requester",
         "//agentplane/policy/api/v1alpha1",
@@ -57,6 +59,7 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/predicate",
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
+        "@io_k8s_sigs_controller_runtime//pkg/source",
         "@io_kubevirt_api//core/v1:core",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
@@ -74,6 +77,7 @@ go_test(
         "identity_test.go",
         "idle_test.go",
         "launch_test.go",
+        "runtime_states_test.go",
         "state_volume_test.go",
         "vm_test.go",
         "workspace_test.go",
@@ -82,10 +86,12 @@ go_test(
     embed = [":controller"],
     x_defs = {"github.com/agentydragon/ducktape/agentplane/sandbox_controller/internal/controller.vmGuestContractRlocation": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
     deps = [
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/identity/credentials/api/v1alpha1",
         "//agentplane/identity/credentials/issuer",
         "//agentplane/identity/credentials/requester",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:environment_runtime_state_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/lease",
         "@io_bazel_rules_go//go/runfiles",
@@ -114,6 +120,7 @@ go_test(
         "@io_kubevirt_api//core/v1:core",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 

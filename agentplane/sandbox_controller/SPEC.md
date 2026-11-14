@@ -48,13 +48,13 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   by it, with the template's state volume backed by the PVC. A plain Pod that goes away or ends while
   running is replaced by a new incarnation on the same PVC. A Firecracker launcher is held for
   recovery if it disappears or ends, because its retained state may contain a RAM checkpoint.
-- Clearing `spec.running` deletes a plain Pod, once the runner that connected from it has sealed every
-  Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
-  nothing to seal. The Sandbox stays held, with `status.stopStage: Quiescing`, while the quiesce fails or
+- Clearing `spec.running` deletes a plain Pod, once its published runner incarnation has sealed every
+  Session (`status.quiescedIncarnation` names the sealed Pod). After leadership takeover, absent observation history does not prove that a published
+  incarnation has nothing to seal. The Sandbox stays held, with `status.stopStage: Quiescing`, while the quiesce fails or
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
   UID in `status.quiesceAttempt` together with `status.stopStage: Quiescing` before calling the runner,
   so watch events and controller restarts cannot bypass its one-minute
-  retry deadline; Lease facts can complete the seal sooner. Applies only to a controller configured
+  retry deadline; fresh directly observed Runtime facts can complete the seal sooner. Applies only to a controller configured
   to seal.
 - A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
   new Sessions.
@@ -82,13 +82,14 @@ Gateway token; token contents remain in the rotating read-only projected volume.
 - `status.idleSuspendBlockers` reports the current reasons the connected runner is busy: `ActiveTurn`,
   `PendingCommand`, `Setup` or `Activation`, each with its `sessionId`; `Bootstrap` and `Admission` have
   no Session. It is empty when autosuspend is off or no current reason is reported. The controller publishes these only from
-  a live Runner Gateway Lease for the current incarnation, and clears them when that connection is
-  absent, expired or belongs to another incarnation.
+  a fresh direct Runtime snapshot for the current incarnation, and clears them when that connection is
+  absent, stale or belongs to another incarnation.
 - A wake that lands while a Pod or VM idle suspension is being recorded replaces the incarnation:
   that runner is already sealed to new work. A Firecracker wake resumes the same incarnation.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
-- Runner control always uses the runner as an mTLS server and the Runner Gateway as its client. The
+- Runner control uses the runner as an mTLS server. The Runner Gateway is its command client;
+  the Sandbox Controller has a dedicated SVID authorized only for passive state observation. The
   controller exposes no transport choice on a `SandboxTemplate` and labels workloads only with the
   credential ID each incarnation was started with.
   The controller's own Gateway calls retain their projected bearer and verify the shared service's
@@ -199,9 +200,9 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   or unavailable status never marks a suspend complete or a resume ready.
 - Suspension keeps the same Pod, Pod UID, ServiceAccount, and runner credential. It does not quiesce
   the runner or seal Sessions. `status.stopStage` becomes `Stopped` only after the supervisor reports
-  `suspended`; resuming waits for `running`. The launcher Pod also records the Gateway Lease epoch
-  at suspension. Its old idle fact cannot trigger another autosuspend after wake: a newer connection
-  epoch and a fresh full idle timer are required. A missing or ended launcher is held for recovery rather
+  `suspended`; resuming waits for `running`. Suspension cancels the Controller's observation before
+  checkpoint. Its old idle fact cannot trigger another autosuspend after wake: a fresh stream
+  and a full idle timer are required. A missing or ended launcher is held for recovery rather
   than cold booted on top of a possible checkpoint. Final deletion wakes a suspended launcher,
   quiesces the runner normally, and then deletes the Pod and retained claims.
 - The new template arm is an API addition. Existing staging templates remain Pod/VM until changed;
@@ -311,29 +312,28 @@ when no Event can be read the message says only that the Pod is not running yet.
 Otherwise it is False with `PodNotReady` when everything runs but the Pod is not Ready, and else
 with the reason and message of `Running`.
 
-`EnvironmentRuntimeConnected` is True while the Runner Gateway's connection Lease for the Sandbox names the
-incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
-incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
-`AwaitingEnvironmentRuntime`, `ConnectionLost`, `ConnectionPending` or `WorkloadNotReady`. `ConnectionPending`
-means the Gateway has claimed observation of this incarnation but has not published a validated
-runner boot ID. The Gateway installs its locally callable, incarnation-fenced connection before it
-publishes that boot ID; the claim precedes dialing and does not prove connectivity or authentication.
-The Gateway initiates the mTLS connection to the runner listener. Losing the connection restarts and
-replaces nothing. A controller not configured to read Leases omits it.
+`EnvironmentRuntimeConnected` is True after an authenticated direct `WatchState` snapshot for the
+current Sandbox UID and incarnation Pod UID, until 30 seconds without a heartbeat plus a one-minute
+status grace. It is False with `NeverConnected`, `ConnectionLost` or `WorkloadNotReady`. The elected
+Controller uses its own narrow SVID and an observe-only stream; it never acquires the Gateway's
+command epoch. Losing the stream immediately disqualifies facts for idle suspension and quiescence,
+then retries after one second. Connectivity loss restarts and replaces nothing.
 
-Suspension and deletion require quiescence only for a verified runner incarnation. A Gateway
-observation claim alone does not prove contact. The Lease retains `last-connected-pod-uid` after
-a validated boot identity is recorded, across reconnect claims and Lease expiry; losing connectivity
-does not waive quiescence for a previously connected runner. A pending claim with no verified contact
-can stop without a Quiesce RPC.
+A new leader discovers published incarnations from the initial cache list and opens new watches.
+No observation or idle elapsed time survives takeover. Suspension and deletion conservatively
+require sealing every published incarnation that has not already been recorded quiesced: empty
+memory cannot prove that a Runtime never admitted work. The last unsealed published incarnation
+remains in status when its Pod disappears, so deletion can restart a runner against retained journals.
+A replacement route is published before calling its incarnation-fenced Quiesce. Persisted quiesce attempts and retry
+deadlines survive takeover; only a fresh matching quiesced snapshot or an acknowledged Quiesce RPC
+completes the seal. Pod UID and local watch generation fence replaced streams; a new boot ID or
+reopened stream restarts the full idle timer.
 
 `Bootstrapped` is True once the Sandbox's bootstrap has run to success, and when the Sandbox has
 none (`NoBootstrap`). It is Unknown with `BootstrapNotReported` while the incarnation's runner has
 reported nothing, False with `BootstrapRunning` while the script runs, and False with
 `BootstrapFailed` when it failed or was interrupted, which is terminal: the controller never
-retries it. A controller not configured to read Leases
-omits it.
+retries it. The persisted failed condition remains terminal for the same incarnation after takeover.
 
-`Ready` is True while `WorkloadReady` and `EnvironmentRuntimeConnected` are True and `Bootstrapped` is not
-False (Unknown does not hold it), and otherwise False with the reason and message of the first
-that does not. It means the Sandbox can take work; the lifecycle phase is separate.
+`Ready` is True while `WorkloadReady` and `EnvironmentRuntimeConnected` are True and `Bootstrapped` is True, and otherwise carries the status, reason and message of the first
+condition that does not. A missing bootstrap report keeps readiness Unknown. It means the Sandbox can take work; the lifecycle phase is separate.

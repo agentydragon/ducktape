@@ -6351,23 +6351,14 @@ spec:
         - ports:
             - port: "9090"
               protocol: TCP
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: sandbox-controller-settings
-  namespace: agentplane-staging
-data:
-  config.yaml: |
-    runner_gateway_tls:
-      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      server_uri: spiffe://agentplane/session-dispatcher
-    namespace: agentplane-staging
-    metrics_bind_address: :8080
-    health_probe_bind_address: :8081
-    runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
-    runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-immutable: false
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: sandbox-controller
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "9090"
+              protocol: TCP
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -6462,6 +6453,9 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
+            - mountPath: /run/agentplane/sandbox-controller-client-tls
+              name: sandbox-controller-client-workload-tls
+              readOnly: true
             - mountPath: /etc/agentplane-sandbox-controller
               name: configmap-sandbox-controller-settings
               readOnly: true
@@ -6491,6 +6485,9 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
       volumes:
+        - name: sandbox-controller-client-workload-tls
+          secret:
+            secretName: sandbox-controller-client-workload-tls
         - configMap:
             name: sandbox-controller-settings
           name: configmap-sandbox-controller-settings
@@ -6533,6 +6530,51 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: sandbox-controller
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sandbox-controller-client-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: sandbox-controller-client-workload-tls
+  uris:
+    - spiffe://agentplane/sandbox-controller
+  usages:
+    - digital signature
+    - client auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-controller-settings
+  namespace: agentplane-staging
+data:
+  config.yaml: |
+    runner_gateway_tls:
+      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+      server_uri: spiffe://agentplane/session-dispatcher
+    runner_security:
+      mode: mtls
+      tls:
+        cert_file: /run/agentplane/sandbox-controller-client-tls/tls.crt
+        key_file: /run/agentplane/sandbox-controller-client-tls/tls.key
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    namespace: agentplane-staging
+    metrics_bind_address: :8080
+    health_probe_bind_address: :8081
+    runner_gateway_target: "{sandbox}-control.{namespace}.svc:8080"
+    runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
+immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -6717,6 +6759,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-environment-runtime
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "9090"
               protocol: TCP
   endpointSelector:
     matchLabels:

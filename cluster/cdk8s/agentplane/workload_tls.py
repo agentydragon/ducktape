@@ -64,3 +64,29 @@ def serving_certificate(scope: Construct, env: Environment, *, container: Contai
     container.mount(_CERT_PATH, certificate, read_only=True)
     ca_file = mount_trust_bundle(scope, container)
     return TLS(cert_file=f"{_CERT_PATH}/tls.crt", key_file=f"{_CERT_PATH}/tls.key", ca_file=str(ca_file))
+
+
+def client_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
+    """Issue and mount a workload client SVID, using the separately mounted workload trust bundle."""
+    cert_path = f"/run/agentplane/{name}-client-tls"
+    secret_name = f"{name}-client-workload-tls"
+    Certificate(
+        scope,
+        "client-workload-certificate",
+        metadata=ApiObjectMetadata(name=f"{name}-client-workload", namespace=env.namespace),
+        secret_name=secret_name,
+        uris=[uri],
+        duration="24h",
+        renew_before="8h",
+        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
+        usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.CLIENT_AUTH],
+        issuer_ref=cluster_ca.WORKLOAD_ISSUER,
+    )
+    certificate = Volume.from_secret(
+        scope,
+        "client-workload-tls-volume",
+        Secret.from_secret_name(scope, "client-workload-tls-secret", secret_name),
+        name=f"{name}-client-workload-tls",
+    )
+    container.mount(cert_path, certificate, read_only=True)
+    return TLS(cert_file=f"{cert_path}/tls.crt", key_file=f"{cert_path}/tls.key", ca_file=TRUST_BUNDLE_FILE)

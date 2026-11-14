@@ -2,7 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
-	"strconv"
+	"fmt"
 	"sync"
 	"time"
 
@@ -26,19 +26,20 @@ type idleTimers struct {
 
 type idleSighting struct {
 	// The runner's `idle-since` fact: a different value is a new idle period.
-	idleSince time.Time
-	firstSeen time.Time
+	idleSince  time.Time
+	connection string
+	firstSeen  time.Time
 	// No suspend is attempted before this, after an attempt that did not take.
 	notBefore time.Time
 }
 
 // observe is the sighting of the idle period that began at idleSince, started at now if it is new.
-func (t *idleTimers) observe(key types.NamespacedName, idleSince, now time.Time) idleSighting {
+func (t *idleTimers) observe(key types.NamespacedName, connection string, idleSince, now time.Time) idleSighting {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	sighting, ok := t.sightings[key]
-	if !ok || !sighting.idleSince.Equal(idleSince) {
-		sighting = idleSighting{idleSince: idleSince, firstSeen: now}
+	if !ok || !sighting.idleSince.Equal(idleSince) || sighting.connection != connection {
+		sighting = idleSighting{idleSince: idleSince, firstSeen: now, connection: connection}
 		if t.sightings == nil {
 			t.sightings = map[types.NamespacedName]idleSighting{}
 		}
@@ -89,19 +90,18 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 		r.idle.forget(key)
 		return idleCheck{}, nil
 	}
-	lease, err := r.runnerLease(ctx, sandbox)
-	if err != nil {
-		return idleCheck{}, err
+	snapshot := r.States.Snapshot(sandbox, string(pod.UID))
+	if !snapshot.fresh(r.Now()) {
+		r.idle.forget(key)
+		return idleCheck{}, nil
 	}
 	if isFirecrackerPod(w.pod) {
 		if firecrackerSuspending(sandbox) {
 			return idleCheck{}, nil
 		}
-		// The restored guest can report running before the Gateway has reconnected. A Lease
-		// from before checkpoint must never trigger immediate re-suspension on stale idle facts.
-		before, err := strconv.ParseInt(w.pod.Annotations[FirecrackerSuspendEpochAnnotation], 10, 32)
-		if w.pod.Annotations[FirecrackerRunningAnnotation] != "true" ||
-			(w.pod.Annotations[FirecrackerSuspendEpochAnnotation] != "" && (err != nil || leaseTransitions(&lease) <= int32(before))) {
+		// The supervisor must confirm the guest is running before observed idle facts
+		// can start a new suspension timer after restore.
+		if w.pod.Annotations[FirecrackerRunningAnnotation] != "true" {
 			r.idle.forget(key)
 			return idleCheck{}, nil
 		}
@@ -115,10 +115,7 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 			return idleCheck{}, nil
 		}
 	}
-	facts, err := sandboxlease.DecodeFacts(lease.Name, lease.Annotations, string(pod.UID))
-	if err != nil {
-		return idleCheck{}, err
-	}
+	facts := snapshot.Facts
 	if facts.Stage != sandboxlease.QuiesceNone {
 		r.idle.forget(key)
 		return idleCheck{lameduck: true}, nil
@@ -128,7 +125,7 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 		return idleCheck{}, nil
 	}
 	now := r.Now()
-	sighting := r.idle.observe(key, *facts.IdleSince, now)
+	sighting := r.idle.observe(key, fmt.Sprintf("%s/%s/%d", snapshot.PodUID, snapshot.BootID, snapshot.Generation), *facts.IdleSince, now)
 	if sandbox.Spec.IdleSuspendAfter == nil {
 		return idleCheck{}, nil
 	}

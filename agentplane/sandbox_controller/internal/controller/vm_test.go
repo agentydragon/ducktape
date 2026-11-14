@@ -315,7 +315,7 @@ func TestVMSandboxIsReadyWhenItsLauncherPodIsReady(t *testing.T) {
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "NeverConnected" {
 		t.Errorf("Ready = %s/%s with a guest runner that never reached the gateway, want False/NeverConnected", got.Status, got.Reason)
 	}
-	connect(t, c, string(launcher.UID))
+	connect(t, r, string(launcher.UID))
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
 		t.Errorf("Ready = %s/%s with a connected guest runner, want True", got.Status, got.Reason)
@@ -397,8 +397,9 @@ func TestSwitchToAPodTemplateDeletesTheVMBeforeThePodStarts(t *testing.T) {
 func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
-	vmi, _ := startVMI(t, c, kubevirtv1.Running)
-	connect(t, c, "uid-runner")
+	vmi, launcher := startVMI(t, c, kubevirtv1.Running)
+	reconcileOnce(t, r) // Accept the VMI and publish its launcher as the runner incarnation.
+	connect(t, r, string(launcher.UID))
 	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)

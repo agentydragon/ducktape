@@ -1069,3 +1069,42 @@ func standardTestCredentials(t *testing.T, config peertls.Config, server bool) c
 	}
 	return credentials.NewTLS(conf)
 }
+
+func TestOpenedServerCredentialsAdmitOnlyExplicitClientIdentities(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	runnerURI := "spiffe://agentplane/test/sandbox/credential-id"
+	runner := ca.Issue(t, runnerURI)
+	opened, err := (peertls.Security{Mode: peertls.MutualTLS, TLS: &runner}).Open(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = opened.Close() })
+	if _, err := opened.ServerCredentials(); err == nil {
+		t.Fatal("ServerCredentials accepted an empty client identity list")
+	}
+	server, err := opened.ServerCredentials(peertls.GatewayURI, peertls.SandboxControllerURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		identity string
+		accepted bool
+	}{
+		{identity: peertls.GatewayURI, accepted: true},
+		{identity: peertls.SandboxControllerURI, accepted: true},
+		{identity: peertls.HistoryIngressURI},
+		{identity: runnerURI},
+	} {
+		t.Run(test.identity, func(t *testing.T) {
+			client := ca.Issue(t, test.identity)
+			credentials, err := client.ClientCredentials(runnerURI)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = handshake(t, credentials, server)
+			if (err == nil) != test.accepted {
+				t.Fatalf("client %q handshake error = %v, accepted = %v", test.identity, err, test.accepted)
+			}
+		})
+	}
+}

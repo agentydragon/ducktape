@@ -13,7 +13,8 @@ Deletion first has the runner seal every
 Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
-`status.quiescedIncarnation`. `runner_gateway_target` and `runner_gateway_token_file` are required settings in the mounted YAML file.
+`status.quiescedIncarnation`. `runner_security` selects the Controller's own direct observer credentials;
+`runner_gateway_target` and `runner_gateway_token_file` remain required settings in the mounted YAML file.
 Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 Each incarnation runs with the Sandbox's `WorkloadCredential`, which the controller requests
@@ -53,7 +54,8 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace.
 - [`cache.go`](internal/controller/cache.go): the cache holds only objects carrying the Sandbox label (ConfigMaps,
   Services and the other kinds it creates or watches), every Identity and WorkloadCredential in the
-  namespace, Pod Events and the Gateway's connection Leases. RBAC cannot select by label, so the Role
+  namespace, Pod Events and (until the writer cleanup) the Gateway's connection Leases. Runtime facts come from direct
+  in-memory observation, not those Leases. RBAC cannot select by label, so the Role
   still grants `list`/`watch` on those kinds.
 
 Ordinary child resources use narrow server-side apply updates after an uncached ownership
@@ -92,9 +94,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   proxy. The controller records the last request time for that runner incarnation before calling,
   then waits up to one minute before retrying a failed or unfinished request. Runner stage changes
   enqueue it sooner; `quiesced` completes without another call. The recorded deadline survives
-  watch events and controller restarts. The controller never holds a runner connection. A Sandbox
-  with no connection Lease, the Runner Gateway's record that a runner ever connected, has nothing to
-  seal and is deleted without `Quiesced`.
+  watch events and controller restarts. A published incarnation is conservatively sealed even after leadership takeover has lost its
+  observation history; empty memory cannot establish that it admitted no work. Its unsealed
+  published UID stays in status if the Pod disappears, so deletion still recovers retained journals.
 - **The idle timer is controller memory, started at its first sight of each `idle-since` value.**
   The runner's clock never counts, so skew cannot suspend early; a restart starts every timer
   over and suspends up to one `idleSuspendAfter` later. `status.idleSuspendAt` reports the next
@@ -107,11 +109,17 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   write on the stale resource version. The next reconcile finds a runner in lameduck with no
   recorded cause; the Sandbox is to run, so the stop path seals it and replaces the incarnation.
   A restart between the call and the write ends the same way, at the cost of one incarnation.
-- **`EnvironmentRuntimeConnected` watches the Lease.** A new connection, a different runner Pod or a change in
-  the runner's published facts (quiesce stage, idle-since, bootstrap state, setup state, autosuspend
-  blockers, valid only while the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox, as does
-  a renewal that revives a lapsed connection; other renewals do not. Time is not an event, so the
-  moment a live connection would lapse is requeued. A lapsed or pending connection is not polled.
+- **The elected leader watches Runtime directly.** `WatchState(observe_only=true)` uses the
+  Controller's own SVID and grants no Gateway command authority. `runtime_states.go` keeps snapshots
+  in memory by Sandbox UID and Pod UID, with boot ID and a local stream generation. A replacement
+  fences late callbacks. New leaders discover current incarnations through the initial cache list
+  and reopen watches; they wait for an authenticated snapshot before reporting connectivity or idle
+  eligibility. Lost streams retry after one second. A 30-second heartbeat timeout makes idle facts
+  ineligible immediately; connectivity keeps a one-minute grace. Reopening a stream restarts its
+  full idle timer, including when `idle-since` is unchanged. Quiesce retry deadlines remain durable;
+  only fresh observed quiescence or an acknowledged quiesce RPC completes a seal. Bootstrap failure
+  stays terminal for that incarnation. The Gateway still owns its separate active call epoch,
+  connection Lease and control EndpointSlice during this reader migration.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.

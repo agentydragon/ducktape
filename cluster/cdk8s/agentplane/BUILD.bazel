@@ -261,6 +261,7 @@ py_library(
     srcs = ["sandbox_controller.py"],
     deps = [
         ":environment",
+        ":environment_sandbox",
         ":service_workload",
         ":workload_tls",
         "//agentplane/net/peertls:config",
@@ -1380,8 +1381,10 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
+        ":environment_sandbox",
         ":runner_gateway",
         ":sandbox_controller",
+        ":workload_tls",
         "//:conftest",
         "//agentplane/sandbox_controller:settings",
         "//cluster/cdk8s:conftest",

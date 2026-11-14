@@ -10,10 +10,10 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from agentplane.net.peertls.config import SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.sandbox_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import workload_tls
+from cluster.cdk8s.agentplane import environment_sandbox, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -72,21 +72,6 @@ class SandboxController(Construct):
         self.gateway = gateway
         namespace = env.namespace
         endpoint = metrics(namespace)
-        settings = Settings(
-            runner_gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
-            namespace=namespace,
-            metrics_bind_address=f":{endpoint.port.number}",
-            health_probe_bind_address=f":{_HEALTH_PORT}",
-            runner_gateway_target=gateway_control_target,
-            runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
-        )
-        settings_file = SettingsFile(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=namespace),
-            content=yaml_config(settings),
-            path=_SETTINGS_PATH,
-        )
         workload = add_service_workload(
             self,
             env,
@@ -104,6 +89,25 @@ class SandboxController(Construct):
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
+        )
+        runner_tls = workload_tls.client_certificate(
+            self, env, container=workload.container, name=NAME, uri=SANDBOX_CONTROLLER_URI
+        )
+        settings = Settings(
+            runner_gateway_tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+            runner_security=MTLS(tls=runner_tls),
+            namespace=namespace,
+            metrics_bind_address=f":{endpoint.port.number}",
+            health_probe_bind_address=f":{_HEALTH_PORT}",
+            runner_gateway_target=gateway_control_target,
+            runner_gateway_token_file=Path(_GATEWAY_TOKEN_DIR) / "token",
+        )
+        settings_file = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=namespace),
+            content=yaml_config(settings),
+            path=_SETTINGS_PATH,
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.mount_trust_bundle(self, workload.container)
@@ -190,7 +194,14 @@ class SandboxController(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[cilium.SCRAPERS.admit(endpoint.pod_port)],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), self.gateway.egress()],
+            egress=[
+                cilium.dns_egress(),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                self.gateway.egress(),
+                EgressRule.to_endpoints(
+                    environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
+                ),
+            ],
         )
         ServiceMonitor(
             self,
