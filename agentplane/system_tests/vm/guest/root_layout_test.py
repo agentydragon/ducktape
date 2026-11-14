@@ -24,7 +24,7 @@ def test_root_run_is_the_fixture_symlink_in_all_images() -> None:
         assert target == "/run", f"{image_key}: {target}"
 
 
-def test_only_the_setup_platform_image_omits_packaged_harnesses() -> None:
+def test_only_the_setup_platform_image_omits_claude_and_keeps_codex() -> None:
     runfiles_root = Runfiles.CreateOrRaise().root()
     closure = runfiles_root / os.environ["EROFS_CLOSURE_RLOCATION"]
     tool = runfiles_root / os.environ["EROFS_TOOL_RLOCATION"]
@@ -34,7 +34,7 @@ def test_only_the_setup_platform_image_omits_packaged_harnesses() -> None:
             result = subprocess.run(
                 [tool, closure, "dump.erofs", f"--path={path}", image], check=True, capture_output=True, text=True
             )
-            if image_key == "ROOT_PLATFORM_IMAGE_RLOCATION":
+            if image_key == "ROOT_PLATFORM_IMAGE_RLOCATION" and path == "/opt/harnesses/claude":
                 # dump.erofs reports a missing path on stderr but still exits zero.
                 assert not result.stdout, result
                 assert f"read inode failed @ {path}" in result.stderr, result
