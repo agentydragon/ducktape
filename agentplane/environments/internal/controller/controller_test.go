@@ -233,7 +233,7 @@ func getCondition(t *testing.T, c client.Client, conditionType string) *metav1.C
 	return condition
 }
 
-func TestSandboxIsReadyWhileItsPodIsReadyAndItsRunnerConnected(t *testing.T) {
+func TestSandboxIsReadyWhileItsPodIsReadyAndItsRuntimeConnected(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	pod := getPod(t, c)
@@ -310,7 +310,7 @@ func TestStatusConditionsUseRuntimeStateSnapshot(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-pod"},
 		Status:     corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 	}
-	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod, runnerIncarnationPublished: true}, nil, nil); err != nil {
+	if _, err := r.updateStatus(context.Background(), sandbox, workload{pod: pod, runtimeIncarnationPublished: true}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, conditionType := range []string{sandboxapi.ConditionEnvironmentRuntimeConnected, sandboxapi.ConditionBootstrapped} {
@@ -322,7 +322,7 @@ func TestStatusConditionsUseRuntimeStateSnapshot(t *testing.T) {
 }
 
 func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	setIdleSuspendAfter(t, c, durationPtr(idleSuspendAfter))
 	setBootstrap(t, c, "echo test-bootstrap")
@@ -382,7 +382,7 @@ func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t
 	}
 }
 
-func TestSandboxWhoseRunnerNeverConnectedIsNotReady(t *testing.T) {
+func TestSandboxWhoseRuntimeNeverConnectedIsNotReady(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
@@ -401,7 +401,7 @@ func TestSandboxWhoseRunnerNeverConnectedIsNotReady(t *testing.T) {
 	}
 }
 
-func TestRunnerOfAnEarlierIncarnationDoesNotMakeTheSandboxReady(t *testing.T) {
+func TestRuntimeOfAnEarlierIncarnationDoesNotMakeTheSandboxReady(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	pod := getPod(t, c)
@@ -418,7 +418,7 @@ func TestRunnerOfAnEarlierIncarnationDoesNotMakeTheSandboxReady(t *testing.T) {
 }
 
 func TestRuntimeObservationDropIsToleratedUntilTheGraceLapses(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
@@ -433,7 +433,7 @@ func TestRuntimeObservationDropIsToleratedUntilTheGraceLapses(t *testing.T) {
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
 		t.Errorf("Ready = %s/%s inside the grace, want True", got.Status, got.Reason)
 	}
-	if want := runtimeStateTimeout + runnerDisconnectGrace - 45*time.Second; result.RequeueAfter != want {
+	if want := runtimeStateTimeout + runtimeDisconnectGrace - 45*time.Second; result.RequeueAfter != want {
 		t.Errorf("requeue = %s, want %s, when the observation grace expires", result.RequeueAfter, want)
 	}
 	r.Now = func() time.Time { return testNow.Add(2 * time.Minute) }
@@ -742,7 +742,7 @@ func quiesceSessions(t *testing.T, r *Reconciler) {
 
 // publishSnapshot simulates a verified Runtime WatchState snapshot delivered to the
 // leader-local Sandbox Controller state manager.
-func publishSnapshot(t *testing.T, r *Reconciler, runner string, facts EnvironmentRuntimeFacts) {
+func publishSnapshot(t *testing.T, r *Reconciler, runtimeUID string, facts EnvironmentRuntimeFacts) {
 	t.Helper()
 	if r.States == nil {
 		r.States = NewRuntimeStates(nil, r.Now)
@@ -752,12 +752,12 @@ func publishSnapshot(t *testing.T, r *Reconciler, runner string, facts Environme
 	if pod == nil {
 		pod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: sandbox.Name}}
 	}
-	pod.UID = types.UID(runner)
+	pod.UID = types.UID(runtimeUID)
 	key := client.ObjectKeyFromObject(sandbox)
 	r.States.mu.Lock()
 	current := r.States.active[key]
 	generation := uint64(0)
-	if current != nil && current.snapshot.PodUID == runner && current.snapshot.BootID == "test-runner-boot" {
+	if current != nil && current.snapshot.PodUID == runtimeUID && current.snapshot.BootID == "test-runner-boot" {
 		generation = current.snapshot.Generation
 	}
 	if generation == 0 {
@@ -768,16 +768,16 @@ func publishSnapshot(t *testing.T, r *Reconciler, runner string, facts Environme
 		sandbox: sandbox.DeepCopy(), pod: pod.DeepCopy(), credentialID: pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey],
 		cancel: func() {}, generation: generation,
 		snapshot: RuntimeSnapshot{
-			SandboxUID: sandbox.UID, PodUID: runner, BootID: "test-runner-boot",
+			SandboxUID: sandbox.UID, PodUID: runtimeUID, BootID: "test-runner-boot",
 			LastSeen: r.Now(), Connected: true, Generation: generation, Facts: facts,
 		},
 	}
 	r.States.mu.Unlock()
 }
 
-func connect(t *testing.T, r *Reconciler, runner string) {
+func connect(t *testing.T, r *Reconciler, runtimeUID string) {
 	t.Helper()
-	publishSnapshot(t, r, runner, EnvironmentRuntimeFacts{})
+	publishSnapshot(t, r, runtimeUID, EnvironmentRuntimeFacts{})
 }
 
 func currentRuntimeFacts(t *testing.T, r *Reconciler) (string, EnvironmentRuntimeFacts) {
@@ -819,7 +819,7 @@ func TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot(t *testing.T)
 	}
 }
 
-func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
+func TestDeletionWaitsForRuntimeToSealAndFlush(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	connect(t, r, string(getPod(t, c).UID))
@@ -890,7 +890,7 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 }
 
 func TestDeletingAStoppedSandboxRunsItOnceMoreToQuiesce(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	pod := getPod(t, c)
 	if err := c.Delete(context.Background(), pod); err != nil {
 		t.Fatal(err)
@@ -933,8 +933,8 @@ func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	}
 }
 
-// runningWithRunner is a running Sandbox whose Pod has a UID and whose runner connected from it.
-func runningWithRunner(t *testing.T) (*Reconciler, client.Client) {
+// runningWithRuntime is a running Sandbox whose Pod has a UID and whose runner connected from it.
+func runningWithRuntime(t *testing.T) (*Reconciler, client.Client) {
 	t.Helper()
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
@@ -948,8 +948,8 @@ func runningWithRunner(t *testing.T) (*Reconciler, client.Client) {
 	return r, c
 }
 
-func TestSuspensionWaitsForTheRunnerToQuiesce(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestSuspensionWaitsForRuntimeToQuiesce(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.err = errors.New("runner unreachable")
 	setRunning(t, c, false)
@@ -999,7 +999,7 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 		{name: "failed", state: BootstrapFailed},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r, c := runningWithRunner(t)
+			r, c := runningWithRuntime(t)
 			publishBootstrap(t, r, BootstrapRunning)
 			setRunning(t, c, false)
 			reconcileOnce(t, r)
@@ -1029,7 +1029,7 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 }
 
 func TestSuspensionWaitsForARunningSetup(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	updateRuntimeFacts(t, r, func(facts *EnvironmentRuntimeFacts) {
 		facts.SetupsRunning = true
 	})
@@ -1048,7 +1048,7 @@ func TestSuspensionWaitsForARunningSetup(t *testing.T) {
 }
 
 func TestDeletionDoesNotWaitForARunningBootstrap(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	publishBootstrap(t, r, BootstrapRunning)
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
@@ -1057,8 +1057,8 @@ func TestDeletionDoesNotWaitForARunningBootstrap(t *testing.T) {
 	}
 }
 
-func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestAQuiescedStageSealsTheSandboxWithoutAskingRuntime(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	publishQuiesceStage(t, r, QuiesceQuiesced)
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
@@ -1071,7 +1071,7 @@ func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
 }
 
 func TestStaleQuiescedRuntimeSnapshotDoesNotCompleteSeal(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	publishQuiesceStage(t, r, QuiesceQuiesced)
 	r.Now = func() time.Time { return testNow.Add(runtimeStateTimeout + time.Second) }
 	r.Quiescer.(*fakeQuiescer).result = QuiesceResult{Quiescing: true}
@@ -1089,8 +1089,8 @@ func TestStaleQuiescedRuntimeSnapshotDoesNotCompleteSeal(t *testing.T) {
 	}
 }
 
-func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestAQuiescingRuntimeIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	now := testNow
 	r.Now = func() time.Time { return now }
 	quiescer := r.Quiescer.(*fakeQuiescer)
@@ -1118,7 +1118,7 @@ func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 }
 
 func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	now := testNow
 	r.Now = func() time.Time { return now }
 	oldTransition := metav1.NewTime(now.Add(-5 * quiesceDeadline))
@@ -1207,8 +1207,8 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 	}
 }
 
-func TestFailedQuiesceAttemptStatusWriteDoesNotCallRunner(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestFailedQuiesceAttemptStatusWriteDoesNotCallRuntime(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	setRunning(t, c, false)
 	conflict := apierrors.NewConflict(runtimeschema.GroupResource{Group: "agentplane.allegedly.works", Resource: "sandboxes"}, sandboxName, errors.New("stale resource version"))
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
@@ -1232,8 +1232,8 @@ func TestFailedQuiesceAttemptStatusWriteDoesNotCallRunner(t *testing.T) {
 	}
 }
 
-func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestQuiesceAttemptDoesNotThrottleANewRuntimeIncarnationDuringDeletion(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	now := testNow
 	r.Now = func() time.Time { return now }
 	quiescer := r.Quiescer.(*fakeQuiescer)
@@ -1290,8 +1290,8 @@ func TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion(t *tes
 	}
 }
 
-func TestSuspensionOfAnIncarnationNoRunnerConnectedFromSealsNothing(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestSuspensionOfAnUnconnectedIncarnationSealsNothing(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	pod := getPod(t, c)
 	pod.UID = "uid-later-pod"
 	if err := c.Update(context.Background(), pod); err != nil {
@@ -1308,7 +1308,7 @@ func TestSuspensionOfAnIncarnationNoRunnerConnectedFromSealsNothing(t *testing.T
 }
 
 func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	setRunning(t, c, true)
@@ -1318,8 +1318,8 @@ func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
 	}
 }
 
-func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestResumingWhileTheRuntimeQuiescesFinishesTheQuiesceFirst(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.result = QuiesceResult{Quiescing: true}
 	setRunning(t, c, false)
@@ -1338,8 +1338,8 @@ func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 	}
 }
 
-func TestARunnerThatHasNotFinishedQuiescingIsNotTakenForQuiesced(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestARuntimeThatHasNotFinishedQuiescingIsNotTakenForQuiesced(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	// The Running condition's transition time comes from the wall clock.
 	r.Now = time.Now
 	quiescer := r.Quiescer.(*fakeQuiescer)
@@ -1351,8 +1351,8 @@ func TestARunnerThatHasNotFinishedQuiescingIsNotTakenForQuiesced(t *testing.T) {
 	}
 }
 
-func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
-	r, c := runningWithRunner(t)
+func TestDeletingASuspendedSealedSandboxAsksNoRuntime(t *testing.T) {
+	r, c := runningWithRuntime(t)
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	reconcileOnce(t, r)
@@ -1408,7 +1408,7 @@ func TestAStoppedSandboxIsSuspended(t *testing.T) {
 }
 
 func TestControllerTakeoverConservativelySealsAcceptedIncarnation(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	quiescer.err = errors.New("runner unavailable after controller takeover")
 	restarted := &Reconciler{

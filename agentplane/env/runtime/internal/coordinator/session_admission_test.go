@@ -250,7 +250,7 @@ func TestOpenSessionRetryUsesPersistedSetupAfterAcknowledgementReadFailure(t *te
 	}
 }
 
-func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
+func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
@@ -550,7 +550,7 @@ func failedInitialOperationHost(t *testing.T, failTeardown bool) (*Runtime, *ini
 	store.failTeardown.Store(failTeardown)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, binary)
 	config.expectCloseError = true
-	r := newLifecycleRunnerWithState(t, config, store)
+	r := newLifecycleRuntimeWithState(t, config, store)
 	startDirectExecutionTestClient(t, r, "test-incarnation")
 
 	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
@@ -772,7 +772,7 @@ func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
 }
 
 func TestScriptOutputFailureStopsProcessAndReturnsCause(t *testing.T) {
-	r := newBareRunner(t)
+	r := newBareRuntime(t)
 	failure := fmt.Errorf("bootstrap output storage failed")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

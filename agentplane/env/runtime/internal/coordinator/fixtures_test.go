@@ -96,10 +96,10 @@ func insecureControl() configuration.EnvironmentRuntimeControlConfiguration {
 // The fixture exercises the production Runtime and its shared component controllers.
 func newLifecycleRuntime(t *testing.T, config runtimeTestConfig) *Runtime {
 	t.Helper()
-	return newLifecycleRunnerWithState(t, config, nil)
+	return newLifecycleRuntimeWithState(t, config, nil)
 }
 
-func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store state.State) *Runtime {
+func newLifecycleRuntimeWithState(t *testing.T, config runtimeTestConfig, store state.State) *Runtime {
 	t.Helper()
 	if config.Config.HistoryIngress.Target == "" {
 		config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)

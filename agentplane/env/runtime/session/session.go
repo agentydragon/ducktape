@@ -70,7 +70,7 @@ type Session struct {
 	codexExitEpoch  uint64
 }
 
-// Session dependencies name only the capabilities that one session needs. The Runner
+// Session dependencies name only the capabilities that one session needs. The Environment Runtime
 // admission barrier and registry are deliberately absent.
 type sessionDependencies struct {
 	admission          lifecycle.EnvironmentAdmissionGuard

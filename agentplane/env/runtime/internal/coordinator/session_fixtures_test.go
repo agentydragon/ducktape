@@ -39,7 +39,7 @@ func newSessionTestRuntimeWithState(t *testing.T, config runtimeTestConfig, reso
 			}
 		}
 	}
-	r = newLifecycleRunnerWithState(t, config, resources)
+	r = newLifecycleRuntimeWithState(t, config, resources)
 	startDirectExecutionTestClient(t, r, "test-incarnation")
 	// Assertions retain manual ACK control. Only cleanup enables real delivery,
 	// which observes and acknowledges seals published later by Runtime.Close.

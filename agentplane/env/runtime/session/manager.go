@@ -20,7 +20,7 @@ import (
 )
 
 // Manager owns the in-memory registry and reconstruction of durable
-// sessions. Runner's admission mutex remains the sole quiesce barrier.
+// sessions. Runtime's admission mutex remains the sole quiesce barrier.
 type Manager struct {
 	ctx           context.Context
 	state         state.State

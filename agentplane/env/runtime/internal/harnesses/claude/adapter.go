@@ -63,7 +63,7 @@ type claudeAdapter struct {
 	adapterID       string
 }
 
-// New creates an adapter bound to one runner-owned Session.
+// New creates an adapter bound to one Runtime-owned Session.
 func New(host harness.AdapterHost, launch harness.LaunchConfig) harness.ProcessAdapter {
 	snapshot := host.Session()
 	nativeID := snapshot.NativeSessionID
@@ -490,7 +490,7 @@ func (a *claudeAdapter) OnFrame(ctx context.Context, raw json.RawMessage, source
 	case "result":
 		return a.handleResult(ctx, frame, sources)
 	default:
-		// Unknown native frames remain archived verbatim by Session and have no runner projection.
+		// Unknown native frames remain archived verbatim by Session and have no Runtime projection.
 		return nil
 	}
 }

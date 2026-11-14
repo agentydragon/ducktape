@@ -22,7 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Configuration is the file contract used by every Runner deployment. Sandbox
+// Configuration is the file contract used by every Environment Runtime deployment. Sandbox
 // identity/bootstrap are supplied separately by the Sandbox Controller.
 type Configuration struct {
 	Version                       int                                    `json:"version"`

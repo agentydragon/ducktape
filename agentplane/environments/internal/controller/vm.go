@@ -97,7 +97,7 @@ func (r *Reconciler) haltVM(ctx context.Context, vm *kubevirtv1.VirtualMachine) 
 // startVM creates the Sandbox's VM, or starts its halted one with the template as it is now, so a
 // changed image or template applies at this start; a halted VM's disks are kept.
 func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload, template *sandboxapi.SandboxTemplate) (workload, *unready, error) {
-	if !validRunnerCredentialID(w.credential.ID) {
+	if !validRuntimeCredentialID(w.credential.ID) {
 		return w, &unready{reason: "RunnerCredentialMissing", message: "no runner credential is issued for the next VMI"}, nil
 	}
 	vm, blocked := renderVM(sandbox, template, w.credential)
@@ -105,10 +105,10 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *sandboxapi.Sandbox, w
 		return w, blocked, nil
 	}
 	if w.vm != nil {
-		lastVMIUID := w.vm.Annotations[RunnerCredentialLastVMIUIDAnnotation]
+		lastVMIUID := w.vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation]
 		w.vm.Labels, w.vm.Annotations, w.vm.Spec = vm.Labels, vm.Annotations, vm.Spec
 		if lastVMIUID != "" {
-			w.vm.Annotations[RunnerCredentialLastVMIUIDAnnotation] = lastVMIUID
+			w.vm.Annotations[EnvironmentRuntimeCredentialLastVMIUIDAnnotation] = lastVMIUID
 		}
 		return w, nil, r.Update(ctx, w.vm)
 	}
@@ -152,7 +152,7 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	if blocked := withLaunchDisk(sandbox, template, instance); blocked != nil {
 		return nil, blocked
 	}
-	if blocked := withRunnerTLSDisk(template, instance, credential.SecretName); blocked != nil {
+	if blocked := withEnvironmentRuntimeTLSDisk(template, instance, credential.SecretName); blocked != nil {
 		return nil, blocked
 	}
 	// DataVolume names are per namespace, so each Sandbox's VM gets its own, prefixed with the
@@ -194,8 +194,8 @@ func renderVM(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate,
 	meta.Annotations = map[string]string{
 		RenderedSpecAnnotation:                             renderedSpec(spec),
 		sandboxapi.EnvironmentRuntimeCredentialMetadataKey: credential.ID,
-		RunnerCredentialVMIUIDAnnotation:                   "",
-		RunnerCredentialLastVMIUIDAnnotation:               "",
+		EnvironmentRuntimeCredentialVMIUIDAnnotation:       "",
+		EnvironmentRuntimeCredentialLastVMIUIDAnnotation:   "",
 	}
 	return &kubevirtv1.VirtualMachine{ObjectMeta: meta, Spec: *spec}, nil
 }

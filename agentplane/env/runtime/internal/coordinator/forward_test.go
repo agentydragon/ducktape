@@ -31,34 +31,34 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func TestForwardRunnerServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
+func TestForwardRuntimeServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 	for _, mode := range []environmentruntimetransport.SecurityMode{environmentruntimetransport.MutualTLS, environmentruntimetransport.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
-			testRunnerHealthAndFencing(t, mode)
+			testRuntimeHealthAndFencing(t, mode)
 		})
 	}
 }
 
-func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.SecurityMode) {
+func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.SecurityMode) {
 	t.Helper()
-	runnerSecurity := environmentruntimetransport.Security{Mode: mode}
+	runtimeSecurity := environmentruntimetransport.Security{Mode: mode}
 	gatewaySecurity := environmentruntimetransport.Security{Mode: mode}
 	controllerSecurity := environmentruntimetransport.Security{Mode: mode}
-	var runnerURI string
+	var runtimeURI string
 	if mode == environmentruntimetransport.MutualTLS {
 		ca := environmentruntimetransporttesting.NewCA(t)
 		var err error
-		runnerURI, err = workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
+		runtimeURI, err = workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 		if err != nil {
 			t.Fatal(err)
 		}
-		runnerTLS := ca.Issue(t, runnerURI)
+		runtimeTLS := ca.Issue(t, runtimeURI)
 		gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 		controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
-		runnerSecurity.TLS, gatewaySecurity.TLS, controllerSecurity.TLS = &runnerTLS, &gatewayTLS, &controllerTLS
+		runtimeSecurity.TLS, gatewaySecurity.TLS, controllerSecurity.TLS = &runtimeTLS, &gatewayTLS, &controllerTLS
 	}
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runnerSecurity}
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runtimeSecurity}
 	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
@@ -69,7 +69,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 		server.Stop()
 		_ = listener.Close()
 	})
-	credentials, err := gatewaySecurity.ClientCredentials(runnerURI)
+	credentials, err := gatewaySecurity.ClientCredentials(runtimeURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 		t.Fatalf("pre-watch health = %v, error %v; want SERVING", health, err)
 	}
 
-	controllerCredentials, err := controllerSecurity.ClientCredentials(runnerURI)
+	controllerCredentials, err := controllerSecurity.ClientCredentials(runtimeURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func testRunnerHealthAndFencing(t *testing.T, mode environmentruntimetransport.S
 	}
 }
 
-func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
+func TestRuntimeRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	wrongURI, err := workloadid.ID{Namespace: "another-namespace", Name: "another-sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
@@ -200,18 +200,18 @@ func TestRunnerRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 	}
 }
 
-func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *testing.T) {
+func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerTLS := ca.Issue(t, runnerURI)
+	runtimeTLS := ca.Issue(t, runtimeURI)
 	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS}}
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS}}
 	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
@@ -222,7 +222,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 		server.Stop()
 		_ = listener.Close()
 	})
-	credentials, err := gatewayTLS.ClientCredentials(runnerURI)
+	credentials, err := gatewayTLS.ClientCredentials(runtimeURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +260,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	watchCtx, cancelWatch := context.WithCancel(ctx)
 	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
-	controllerCredentials, err := controllerTLS.ClientCredentials(runnerURI)
+	controllerCredentials, err := controllerTLS.ClientCredentials(runtimeURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,16 +339,16 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 	}
 }
 
-func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
+func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
+	runtimeURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerTLS := ca.Issue(t, runnerURI)
+	runtimeTLS := ca.Issue(t, runtimeURI)
 	gatewayTLS := ca.Issue(t, environmentruntimetransport.GatewayURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS}}
+	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS}}
 	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
 	if err != nil {
@@ -359,7 +359,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 		server.Stop()
 		_ = listener.Close()
 	})
-	credentials, err := gatewayTLS.ClientCredentials(runnerURI)
+	credentials, err := gatewayTLS.ClientCredentials(runtimeURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
-	controllerCredentials, err := controllerTLS.ClientCredentials(runnerURI)
+	controllerCredentials, err := controllerTLS.ClientCredentials(runtimeURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -419,7 +419,7 @@ func TestForwardRunnerRejectsUnconfiguredExecutionSession(t *testing.T) {
 	}
 }
 
-func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
+func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 	const burst = 12
 	const notificationData = 600_000
 	sent := make(chan error, 1)
@@ -524,15 +524,15 @@ func TestForwardRunnerBackpressuresExecutorOutputBurst(t *testing.T) {
 
 func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	runnerURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
+	runtimeURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerTLS := ca.Issue(t, runnerURI)
+	runtimeTLS := ca.Issue(t, runtimeURI)
 	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
 	config.Control = configuration.EnvironmentRuntimeControlConfiguration{
 		ListenAddress: "127.0.0.1:0",
-		Security:      environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runnerTLS},
+		Security:      environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS},
 	}
 	r := newLifecycleRuntime(t, config)
 	listener, server, err := r.control.Listen(r.executorProxy)
@@ -544,7 +544,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 	dial := func(identity string) *grpc.ClientConn {
 		t.Helper()
 		clientTLS := ca.Issue(t, identity)
-		credentials, err := clientTLS.ClientCredentials(runnerURI)
+		credentials, err := clientTLS.ClientCredentials(runtimeURI)
 		if err != nil {
 			t.Fatal(err)
 		}

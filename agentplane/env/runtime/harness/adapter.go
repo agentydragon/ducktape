@@ -26,7 +26,7 @@ type SessionSnapshot struct {
 	TotalContextBudgetTokens *int
 	Resuming                 bool
 	ActiveTurnID             string
-	// Environment holds the variables only this Session's tools see, beside the runner-wide harness
+	// Environment holds the variables only this Session's tools see, beside the Runtime-wide harness
 	// environment: its Session ID. A shared process applies them per native thread.
 	Environment map[string]string
 }
@@ -137,7 +137,7 @@ type Adapter interface {
 type ProcessAdapter interface {
 	Adapter
 	Command() ([]string, error)
-	// Environment is the harness's own variables; the runner adds them to the runner-wide harness
+	// Environment is the harness's own variables; the Runtime adds them to the Runtime-wide harness
 	// environment and the Session's Environment.
 	Environment() (map[string]string, error)
 }

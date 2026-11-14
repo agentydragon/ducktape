@@ -90,7 +90,7 @@ func TestRuntimeCloseTerminalStatusPublicationFailureRetainsOwner(t *testing.T) 
 		return errors.New("injected Session stop failure")
 	}
 	failedCore := &closeStatusPublicationFailureState{CoreState: store, err: publicationFailure, fail: &failPublication, attempts: &statusWrites}
-	r := newLifecycleRunnerWithState(t, config, state.WrapCore(failedCore))
+	r := newLifecycleRuntimeWithState(t, config, state.WrapCore(failedCore))
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
 	if err := r.Close(ctx); !errors.Is(err, publicationFailure) {

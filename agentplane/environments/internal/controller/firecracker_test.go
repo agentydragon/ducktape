@@ -41,7 +41,7 @@ func firecrackerTemplate() *sandboxapi.SandboxTemplate {
 func TestFirecrackerRenderAndLayout(t *testing.T) {
 	template := firecrackerTemplate()
 	sandbox := &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Name: sandboxName, Namespace: namespace, UID: "uid-sandbox"}}
-	pod, blocked := render(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runnerCredentialTestSecret})
+	pod, blocked := render(sandbox, template, requester.Issued{ID: "0123456789abcdef0123456789abcdef", SecretName: runtimeCredentialTestSecret})
 	if blocked != nil {
 		t.Fatalf("render blocked: %v", blocked)
 	}
@@ -237,7 +237,7 @@ func TestFirecrackerDeletionWaitsForFreshRuntimeStateAfterResume(t *testing.T) {
 }
 
 func TestFirecrackerDeletionRetainsUnsealedStateWhenLauncherIsLost(t *testing.T) {
-	r, c := runningWithRunner(t)
+	r, c := runningWithRuntime(t)
 	sandbox := getSandbox(t, c)
 	sandbox.Status.Volumes.State.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
 	if err := c.Status().Update(context.Background(), sandbox); err != nil {
@@ -263,7 +263,7 @@ func TestFirecrackerIdleRequiresFreshRuntimeSnapshotAfterResume(t *testing.T) {
 	if snapshot := r.States.Snapshot(getSandbox(t, c), string(pod.UID)); snapshot.BootID != "" {
 		t.Fatalf("Runtime snapshot survived Firecracker checkpoint/resume: %+v", snapshot)
 	}
-	publishIdleSince(t, r, &runnerIdleSince)
+	publishIdleSince(t, r, &runtimeIdleSince)
 	check, err := r.suspendIfIdle(context.Background(), getSandbox(t, c), workload{pod: getPod(t, c)})
 	if err != nil || check.recheck != idleSuspendAfter {
 		t.Fatalf("a resumed guest's first fresh state did not restart the idle timer: %+v, %v", check, err)

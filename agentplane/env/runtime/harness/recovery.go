@@ -10,7 +10,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
-// ObservedItem is the runner's durable view of an item emitted during a turn.
+// ObservedItem is the Runtime's durable view of an item emitted during a turn.
 type ObservedItem struct {
 	// TurnID owns the item even when its completion appears during a later turn.
 	TurnID      string

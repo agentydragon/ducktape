@@ -58,7 +58,7 @@ type codexAdapter struct {
 	processingResponses  map[string]bool
 }
 
-// New creates an adapter for one runner-owned Session hosted as a thread of the Runner's shared
+// New creates an adapter for one Runtime-owned Session hosted as a thread of the Environment Runtime's shared
 // app-server. Native history is read through that server's public RPCs.
 func New(host harness.AdapterHost) harness.Adapter {
 	snapshot := host.Session()
@@ -78,7 +78,7 @@ func (a *codexAdapter) BlocksCommandDispatch() bool {
 	return len(a.turnStarts) != 0
 }
 
-// Handshake starts or resumes this Session's thread on the shared app-server, which the Runner has
+// Handshake starts or resumes this Session's thread on the shared app-server, which the Environment Runtime has
 // already initialized.
 func (a *codexAdapter) Handshake(ctx context.Context) (nativeID string, resultErr error) {
 	ctx, span := observability.Start(ctx, "agentplane.codex.thread.handshake")

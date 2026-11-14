@@ -190,7 +190,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 }
 
 // Runtime authenticates the environment owner; Gateway authorizes remote callers. This service
-// checks one immutable incarnation; it cannot adopt or replace a Runner epoch.
+// checks one immutable incarnation; it cannot adopt or replace a Runtime epoch.
 func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ bool, accept func(context.Context) error) error {
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {
 		return status.Error(codes.InvalidArgument, "execution scope is incomplete")

@@ -158,11 +158,11 @@ func (r *Reconciler) suspendIfIdle(ctx context.Context, sandbox *sandboxapi.Sand
 	idle, generation := sandboxapi.SuspendedByIdle, sandbox.Spec.WakeGeneration
 	sandbox.Status.SuspendedBy, sandbox.Status.SuspendedAtWakeGeneration = &idle, &generation
 	// The accepted request is the quiesce's first attempt, so the stop path does not repeat it at once.
-	runner := string(pod.UID)
+	runtimeUID := string(pod.UID)
 	if result.Quiescing {
-		sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(now)}
+		sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{RunnerPodUID: runtimeUID, AttemptedAt: metav1.NewTime(now)}
 	} else {
-		sandbox.Status.QuiescedIncarnation = &runner
+		sandbox.Status.QuiescedIncarnation = &runtimeUID
 	}
 	return idleCheck{}, nil
 }

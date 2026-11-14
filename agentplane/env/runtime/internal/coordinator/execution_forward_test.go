@@ -28,7 +28,7 @@ type directExecutionTestClient struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	conn        *grpc.ClientConn
-	runner      environmentruntimepb.EnvironmentRuntimeClient
+	runtime     environmentruntimepb.EnvironmentRuntimeClient
 	executor    executorpb.ExecutorClient
 	callCtx     context.Context
 	stopWatch   func() error
@@ -59,10 +59,10 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		_ = listener.Close()
 		t.Fatal(err)
 	}
-	runnerClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
-	bindTestIncarnation(t, runnerClient, r.config.Launch.Sandbox.UID, incarnation)
+	runtimeClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	bindTestIncarnation(t, runtimeClient, r.config.Launch.Sandbox.UID, incarnation)
 	watchCtx, stopWatch := context.WithCancel(ctx)
-	watch, err := runnerClient.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
+	watch, err := runtimeClient.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: r.config.Launch.Sandbox.UID, IncarnationUid: incarnation,
 	})
 	if err != nil {
@@ -94,7 +94,7 @@ func startDirectExecutionTestClient(t *testing.T, r *Runtime, incarnation string
 		_ = conn.Close()
 	})
 	return &directExecutionTestClient{
-		ctx: ctx, cancel: cancel, conn: conn, runner: runnerClient,
+		ctx: ctx, cancel: cancel, conn: conn, runtime: runtimeClient,
 		executor: executorpb.NewExecutorClient(conn), callCtx: callCtx, stopWatch: func() error {
 			stopWatch()
 			for {
@@ -126,7 +126,7 @@ func (h *directExecutionTestClient) replaceWatch(incarnation string) error {
 		_ = h.stopWatch()
 	}
 	watchCtx, stopWatch := context.WithCancel(h.ctx)
-	watch, err := h.runner.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
+	watch, err := h.runtime.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: h.identity.UID, IncarnationUid: incarnation,
 	})
 	if err != nil {
@@ -244,7 +244,7 @@ func TestOpenSessionSurvivesGatewayObserverLoss(t *testing.T) {
 	if err := client.stopWatch(); status.Code(err) != codes.Canceled {
 		t.Fatalf("Gateway observer cancellation = %v, want Canceled", err)
 	}
-	if _, err := client.runner.GetStatus(client.callCtx, &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := client.runtime.GetStatus(client.callCtx, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("GetStatus after Gateway observer loss: %v", err)
 	}
 	r.mu.Lock()
@@ -431,7 +431,7 @@ func TestPassiveWatchCancellationPreservesAdmittedExecution(t *testing.T) {
 	}
 	watchCtx, cancelWatch := context.WithCancel(client.ctx)
 	defer cancelWatch()
-	watch, err := client.runner.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
+	watch, err := client.runtime.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: client.identity.UID, IncarnationUid: client.incarnation, ObserveOnly: true,
 	})
 	if err != nil {
@@ -493,7 +493,7 @@ func TestExecutionSurvivesGatewayObserverLoss(t *testing.T) {
 	if err := client.stopWatch(); status.Code(err) != codes.Canceled {
 		t.Fatalf("Gateway observer cancellation = %v, want Canceled", err)
 	}
-	if _, err := client.runner.GetStatus(client.callCtx, &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := client.runtime.GetStatus(client.callCtx, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("GetStatus after Gateway observer loss: %v", err)
 	}
 	close(executor.release)

@@ -431,7 +431,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 	}
 	frame := append(json.RawMessage(nil), line...)
 	if err := adapter.OnFrame(ctx, frame, entry.Origin.Sequence); err != nil {
-		// Native protocols may acquire fields independently of the runner. Preserve the
+		// Native protocols may acquire fields independently of the Runtime. Preserve the
 		// original frame and report the translation failure; storage failures stop us.
 		var storageErr *journal.StorageError
 		if errors.Is(err, context.Canceled) || errors.As(err, &storageErr) {
@@ -446,7 +446,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 func (s *Session) harnessEnded(ctx context.Context, code int) error {
 	s.mu.Lock()
 	s.codexExitEpoch++
-	stoppedByRunner := s.nativeStop != stopNone
+	stoppedByRuntime := s.nativeStop != stopNone
 	s.codexAppServer = nil
 	s.processID = ""
 	s.processState = sessionpb.ProcessState_PROCESS_STATE_UNSPECIFIED
@@ -459,7 +459,7 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 			return err
 		}
 	}
-	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRunner}), nil); err != nil {
+	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRuntime}), nil); err != nil {
 		return err
 	}
 	s.wake()

@@ -37,7 +37,7 @@ type heldSystemdLaunch struct {
 	release    chan bool
 }
 
-// This target runs before Runner in one ordinary VM guest. Session setup tests cover
+// This target runs before the Environment Runtime in one ordinary VM guest. Session setup tests cover
 // workspace creation, credentials, kernel budgets and detached-child fencing through
 // the public protocol; these checks need private injection or direct supervisor access.
 // It is deliberately excluded from supervision_test: no fake manager establishes these claims.
@@ -89,10 +89,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 	defer cancelConnection()
 	defer conn.Close()
 
-	t.Run("stale_runner_invocation_cannot_execute", func(t *testing.T) {
+	t.Run("stale_runtime_invocation_cannot_execute", func(t *testing.T) {
 		stale := *launcher
 		stale.lifetimeMarker = filepath.Join(runtimeLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
-		effect := filepath.Join(dir, "stale-runner-effect")
+		effect := filepath.Join(dir, "stale-runtime-effect")
 		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}, StopGrace: fixtureStopGrace})
 		if err != nil {
 			t.Fatal(err)
@@ -792,7 +792,7 @@ func proofUnitProperties(executable string, args []string, slice string) []syste
 	return []systemd.Property{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("CollectMode", "inactive"), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(fixtureStopGrace/time.Microsecond))}
 }
 
-type systemdProofRunnerConfig struct {
+type systemdProofRuntimeConfig struct {
 	StateDir    string `json:"state_dir"`
 	Environment struct {
 		Kind         string   `json:"kind"`
@@ -806,9 +806,9 @@ type systemdProofRunnerConfig struct {
 	} `json:"environment"`
 }
 
-func loadSystemdProofConfiguration(t *testing.T) (systemdProofRunnerConfig, string) {
+func loadSystemdProofConfiguration(t *testing.T) (systemdProofRuntimeConfig, string) {
 	t.Helper()
-	var config systemdProofRunnerConfig
+	var config systemdProofRuntimeConfig
 	readSystemdProofJSON(t, "/run/agentplane/config/environment-runtime.json", &config)
 	if config.StateDir == "" {
 		t.Fatal("Runner configuration has no state_dir")

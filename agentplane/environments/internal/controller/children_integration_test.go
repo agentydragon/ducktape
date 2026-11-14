@@ -48,7 +48,7 @@ func eventually(t *testing.T, check func() bool) {
 	}
 }
 
-func withRunnerCertificateCRD(t *testing.T) kubeapiserver.Option {
+func withCertificateCRD(t *testing.T) kubeapiserver.Option {
 	t.Helper()
 	directory := t.TempDir()
 	manifest := `apiVersion: apiextensions.k8s.io/v1
@@ -227,7 +227,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	kube, err := kubeapiserver.Start(
-		withRunnerCertificateCRD(t),
+		withCertificateCRD(t),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -342,9 +342,9 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	// The apiserver keeps both trust sources: the cluster bundle and the workload CA alone.
 	tlsVolume := slices.IndexFunc(pod.Spec.Volumes, func(volume corev1.Volume) bool { return volume.Name == EnvironmentRuntimeTLSVolumeName })
 	if tlsVolume < 0 || pod.Spec.Volumes[tlsVolume].Projected == nil || !slices.ContainsFunc(pod.Spec.Volumes[tlsVolume].Projected.Sources, func(source corev1.VolumeProjection) bool {
-		return source.ConfigMap != nil && source.ConfigMap.Name == RunnerWorkloadTrustBundleName && slices.Equal(source.ConfigMap.Items, []corev1.KeyToPath{{Key: RunnerTrustBundleKey, Path: RunnerWorkloadTrustFile}})
+		return source.ConfigMap != nil && source.ConfigMap.Name == EnvironmentRuntimeWorkloadTrustBundleName && slices.Equal(source.ConfigMap.Items, []corev1.KeyToPath{{Key: EnvironmentRuntimeTrustBundleKey, Path: EnvironmentRuntimeWorkloadTrustFile}})
 	}) {
-		t.Fatalf("runner Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, RunnerWorkloadTrustFile)
+		t.Fatalf("runner Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, EnvironmentRuntimeWorkloadTrustFile)
 	}
 	const otherID = "fedcba9876543210fedcba9876543210"
 	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, fmt.Appendf(nil, `{

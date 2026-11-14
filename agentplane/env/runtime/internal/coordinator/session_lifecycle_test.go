@@ -893,8 +893,8 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	}
 }
 
-func TestCloseProgressesForEmptyRunner(t *testing.T) {
-	r := newBareRunner(t)
+func TestCloseProgressesForEmptyRuntime(t *testing.T) {
+	r := newBareRuntime(t)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	if err := waitClose(t, closeDone); err != nil {

@@ -305,7 +305,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)
@@ -410,7 +410,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 		releaseSealOnce.Do(func() { close(releaseSeal) })
 	})
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)
@@ -482,10 +482,10 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.Config.HistoryIngress.Target = startHistoryService(t, history)
 	config.expectCloseError = true
-	r = newLifecycleRunnerWithState(t, config, store)
+	r = newLifecycleRuntimeWithState(t, config, store)
 	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)

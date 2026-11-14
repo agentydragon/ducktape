@@ -69,7 +69,7 @@ func (r guestResources) Validate() error {
 }
 
 // guestResourceSystemdProperties reads and validates the shared configuration before returning
-// systemd properties. The VM applies these before starting the runner, so this
+// systemd properties. The VM applies these before starting the Environment Runtime, so this
 // path must reject malformed limits before systemctl is invoked.
 func GuestResourceSystemdProperties(configPath string) ([]string, error) {
 	return guestResourceSystemdPropertiesWithMeminfo(configPath, "/proc/meminfo")
