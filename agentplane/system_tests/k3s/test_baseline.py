@@ -73,6 +73,51 @@ def test_open_baseline_records_private_kvm_data_path(
     assert json.loads((retained_root / "server.json").read_text())["data_dir"] == str(expected)
 
 
+@pytest.mark.parametrize(
+    "existing",
+    ["marker", "marker_symlink", "marker_temp", "data_dir", "data_symlink", "data_dangling_symlink", "root_symlink"],
+)
+def test_fresh_kvm_data_dir_refuses_existing_state_without_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: str
+) -> None:
+    root = tmp_path / "retained"
+    root.mkdir()
+    marker = root / "server.json"
+    data_dir = root / "data"
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", root)
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", marker)
+    if existing == "marker":
+        marker.write_text('{"state":"dirty"}')
+    elif existing == "marker_symlink":
+        marker.symlink_to(tmp_path / "missing-marker-target")
+    elif existing == "marker_temp":
+        marker.with_suffix(".tmp").write_text('{"state":"dirty"}')
+    elif existing == "data_dir":
+        data_dir.mkdir()
+    elif existing == "data_symlink":
+        data_dir.symlink_to(tmp_path)
+    elif existing == "data_dangling_symlink":
+        data_dir.symlink_to(tmp_path / "missing-data-target")
+    elif existing == "root_symlink":
+        root.rmdir()
+        root.symlink_to(tmp_path / "other-root", target_is_directory=True)
+    else:
+        raise AssertionError(existing)
+
+    with pytest.raises(RuntimeError, match="fresh KVM action found"):
+        baseline.fresh_kvm_data_dir()
+
+    if existing == "root_symlink":
+        assert root.is_symlink()
+    elif existing.startswith("marker"):
+        marker_path = marker.with_suffix(".tmp") if existing == "marker_temp" else marker
+        assert os.path.lexists(marker_path)
+        if existing == "marker":
+            assert marker.read_text() == '{"state":"dirty"}'
+    else:
+        assert os.path.lexists(data_dir)
+
+
 @pytest.mark.parametrize("private", [False, True])
 def test_stop_previous_uses_only_marker_owned_data_path(
     retained_root: Path, monkeypatch: pytest.MonkeyPatch, private: bool

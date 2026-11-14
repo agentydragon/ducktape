@@ -18,9 +18,10 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, Agent
+from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.driver.turn import TURN_SECONDS
 from agentplane.testing.scripted_model import Text
 
 # History settlement may remove these streamed entries after their paired completion is archived.

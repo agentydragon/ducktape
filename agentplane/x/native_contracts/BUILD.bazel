@@ -142,3 +142,39 @@ py_test(
         "@rules_python//python/runfiles",
     ],
 )
+
+py_test(
+    name = "test_session_driver",
+    size = "medium",
+    srcs = ["test_session_driver.py"],
+    data = [
+        "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: production Runtime subprocess
+        "@claude_code_cli_linux_x64//:claude",  # keep: this contract launches the pinned Claude CLI
+    ],
+    env = NATIVE_RUNNER_DOCKER_ENV,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES,
+    requires_docker = True,
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/env/e2e/testing:events",
+        "//agentplane/env/e2e/testing:process_fixtures",
+        "//agentplane/history_service/api/history:history_service_pb2",
+        "//agentplane/history_service/testing:go_service",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/system_tests/driver:session",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
