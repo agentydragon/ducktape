@@ -8,9 +8,9 @@ import pytest
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl, SVIDEndpoint
 from agentplane.env.e2e.testing.fixtures import endpoint, model, sandbox, spec, workspace
 from agentplane.env.e2e.testing.history_tunnel import history_tunnel
-from agentplane.environment_runtime_transport.config import MTLS
 from agentplane.history_service.testing.fixtures import service_database_template, service_history_db_url
 from agentplane.history_service.testing.go_service import GoHistoryService, go_history_service
+from agentplane.net.peertls.config import MTLS
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway

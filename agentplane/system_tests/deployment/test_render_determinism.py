@@ -10,7 +10,6 @@ from python.runfiles import Runfiles
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _EXPECTED_OUTPUTS = {
-    "local-model-central.json",
     "local-model.json",
     "local-model-central.json",
     "local-model-central-budget.json",
