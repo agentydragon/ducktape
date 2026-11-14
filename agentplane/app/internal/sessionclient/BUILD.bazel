@@ -39,6 +39,8 @@ go_test(
     deps = [
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",

@@ -15,7 +15,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Config pins this client's service address and rotating projected bearer token.
+// Config pins this client's service address and caller authentication settings.
 type Config struct {
 	TLS       *peertls.ClientTLS
 	Target    string
@@ -31,10 +31,13 @@ type Client struct {
 }
 
 // New constructs a client without waiting for the remote service to be reachable. gRPC connects
-// lazily, and the bearer interceptor rereads the projected token for every RPC.
+// lazily, and bearer mode rereads its projected token for every RPC.
 func New(config Config) (*Client, error) {
-	if config.Target == "" || config.TokenFile == "" || config.Timeout <= 0 {
-		return nil, errors.New("History Service target, token file, and positive timeout are required")
+	if config.Target == "" || config.Timeout <= 0 {
+		return nil, errors.New("History Service target and positive timeout are required")
+	}
+	if err := config.TLS.ValidateCaller(config.TokenFile, peertls.AppURI); err != nil {
+		return nil, errors.New("History Service caller authentication is invalid")
 	}
 	client := &Client{config: config}
 	if err := client.dialLocked(); err != nil {

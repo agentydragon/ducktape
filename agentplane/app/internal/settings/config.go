@@ -29,6 +29,7 @@ type Config struct {
 	SessionDispatcherTLS                *peertls.ClientTLS         `mapstructure:"session_dispatcher_tls"`
 	RunnerGatewayTLS                    *peertls.ClientTLS         `mapstructure:"runner_gateway_tls"`
 	PolicyServiceTLS                    *peertls.ClientTLS         `mapstructure:"policy_service_tls"`
+	ConnectionServiceTLS                *peertls.ClientTLS         `mapstructure:"connection_service_tls"`
 	Models                              runtimeconfig.ModelCatalog `mapstructure:"models"`
 	ThreadPresets                       map[string]ThreadPreset    `mapstructure:"thread_presets"`
 	SandboxPresets                      map[string]SandboxPreset   `mapstructure:"sandbox_presets"`
@@ -237,6 +238,7 @@ func Load() (Config, error) {
 	if err := mapDecoder.Decode(rawSettings); err != nil {
 		return Config{}, fmt.Errorf("invalid app settings: %w", err)
 	}
+	c.clearImplicitServiceTokensForSVID(rawSettings)
 	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
@@ -370,14 +372,9 @@ func (c Config) validate() error {
 		"runner_gateway_target":             c.RunnerGatewayTarget,
 		"session_dispatcher_target":         c.SessionDispatcherTarget,
 		"policy_service_target":             c.PolicyServiceTarget,
-		"policy_service_token_file":         c.PolicyServiceTokenFile,
 		"runner_gateway_control_target":     c.RunnerGatewayControlTarget,
 		"history_service_target":            c.HistoryServiceTarget,
 		"notifications_url":                 c.NotificationsURL,
-		"notifications_token_file":          c.NotificationsTokenFile,
-		"runner_gateway_token_file":         c.RunnerGatewayTokenFile,
-		"session_dispatcher_token_file":     c.SessionDispatcherTokenFile,
-		"history_service_token_file":        c.HistoryServiceTokenFile,
 		"database_url":                      c.DatabaseURL,
 		"egress_admin_url":                  c.EgressAdminURL,
 		"connection_service_url":            c.ConnectionServiceURL,
@@ -392,12 +389,30 @@ func (c Config) validate() error {
 			return fmt.Errorf("%s is required", name)
 		}
 	}
-	if c.PolicyServiceTLS != nil {
-		if err := c.PolicyServiceTLS.Validate(); err != nil {
-			return fmt.Errorf("policy_service_tls: %w", err)
+	for _, caller := range []struct {
+		name, tokenFile, serverURI string
+		tls                        *peertls.ClientTLS
+	}{
+		{"session_dispatcher", c.SessionDispatcherTokenFile, peertls.SessionDispatcherURI, c.SessionDispatcherTLS},
+		{"runner_gateway", c.RunnerGatewayTokenFile, peertls.SessionDispatcherURI, c.RunnerGatewayTLS},
+		{"history_service", c.HistoryServiceTokenFile, peertls.HistoryIngressURI, c.HistoryServiceTLS},
+		{"policy_service", c.PolicyServiceTokenFile, peertls.PolicyControllerURI, c.PolicyServiceTLS},
+		{"egress_admin", c.EgressAdminTokenFile, peertls.EgressProxyURI, c.EgressAdminTLS},
+		{"notifications", c.NotificationsTokenFile, peertls.NotificationsURI, c.NotificationsTLS},
+	} {
+		if err := validateAppServiceCaller(caller.name, caller.tls, caller.tokenFile, caller.serverURI); err != nil {
+			return err
 		}
-		if c.PolicyServiceTLS.ServerURI != peertls.PolicyControllerURI {
-			return errors.New("policy_service_tls.server_uri must identify the Policy Controller")
+	}
+	for _, peer := range []struct {
+		name, serverURI string
+		tls             *peertls.ClientTLS
+	}{
+		{"actions", peertls.ActionsURI, c.ActionsTLS},
+		{"connection_service", peertls.MCPEdgeURI, c.ConnectionServiceTLS},
+	} {
+		if err := validateOptionalAppPeerTLS(peer.name, peer.tls, peer.serverURI); err != nil {
+			return err
 		}
 	}
 	if strings.TrimSpace(c.ListenAddress) == "" {
@@ -459,6 +474,57 @@ func (c Config) validate() error {
 		return errors.New("action_federation.token_endpoint must be null in direct mode")
 	}
 	return validateCatalog(c.Models, c.ThreadPresets, c.SandboxPresets)
+}
+
+// clearImplicitServiceTokensForSVID preserves legacy default token paths while allowing an
+// SVID-configured caller to omit its former projected token-file setting entirely.
+func (c *Config) clearImplicitServiceTokensForSVID(raw map[string]any) {
+	for _, caller := range []struct {
+		field string
+		tls   *peertls.ClientTLS
+		value *string
+	}{
+		{"session_dispatcher_token_file", c.SessionDispatcherTLS, &c.SessionDispatcherTokenFile},
+		{"runner_gateway_token_file", c.RunnerGatewayTLS, &c.RunnerGatewayTokenFile},
+		{"history_service_token_file", c.HistoryServiceTLS, &c.HistoryServiceTokenFile},
+		{"policy_service_token_file", c.PolicyServiceTLS, &c.PolicyServiceTokenFile},
+		{"egress_admin_token_file", c.EgressAdminTLS, &c.EgressAdminTokenFile},
+		{"notifications_token_file", c.NotificationsTLS, &c.NotificationsTokenFile},
+	} {
+		if caller.tls != nil && caller.tls.UsesSVID() && !rawHasKey(raw, caller.field) {
+			*caller.value = ""
+		}
+	}
+}
+
+func validateAppServiceCaller(name string, tls *peertls.ClientTLS, tokenFile, serverURI string) error {
+	if tls != nil && tls.ServerURI != serverURI {
+		return fmt.Errorf("%s_tls.server_uri must identify %s", name, serverURI)
+	}
+	if err := tls.ValidateCaller(tokenFile, peertls.AppURI); err != nil {
+		return fmt.Errorf("%s caller authentication: %w", name, err)
+	}
+	return nil
+}
+
+// validateOptionalAppPeerTLS covers facades whose per-request operator bearer remains the
+// authority. An App SVID may add transport identity, without replacing that dynamic credential.
+func validateOptionalAppPeerTLS(name string, tls *peertls.ClientTLS, serverURI string) error {
+	if tls == nil {
+		return nil
+	}
+	if err := tls.Validate(); err != nil {
+		return fmt.Errorf("%s_tls: %w", name, err)
+	}
+	if tls.ServerURI != serverURI {
+		return fmt.Errorf("%s_tls.server_uri must identify %s", name, serverURI)
+	}
+	if tls.UsesSVID() {
+		if err := tls.ValidateCaller("", peertls.AppURI); err != nil {
+			return fmt.Errorf("%s caller authentication: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func validateHTTPURL(name, raw string) error {

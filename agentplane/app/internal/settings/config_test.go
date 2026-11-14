@@ -126,6 +126,117 @@ func TestPolicyServiceTLSRequiresThePolicyControllerIdentity(t *testing.T) {
 	}
 }
 
+func appSVIDTLS(serverURI string) *peertls.ClientTLS {
+	return &peertls.ClientTLS{
+		CAFile: "/run/agentplane/workload-trust/ca.pem", ServerURI: serverURI,
+		CertFile: "/run/agentplane/app/tls.crt", KeyFile: "/run/agentplane/app/tls.key", ClientURI: peertls.AppURI,
+	}
+}
+
+func TestAppServiceCallersCanUseSVIDWithoutProjectedTokens(t *testing.T) {
+	config := validTestConfig()
+	config.SessionDispatcherTLS = appSVIDTLS(peertls.SessionDispatcherURI)
+	config.SessionDispatcherTokenFile = ""
+	config.RunnerGatewayTLS = appSVIDTLS(peertls.SessionDispatcherURI)
+	config.RunnerGatewayTokenFile = ""
+	config.HistoryServiceTLS = appSVIDTLS(peertls.HistoryIngressURI)
+	config.HistoryServiceTokenFile = ""
+	config.PolicyServiceTLS = appSVIDTLS(peertls.PolicyControllerURI)
+	config.PolicyServiceTokenFile = ""
+	config.EgressAdminTLS = appSVIDTLS(peertls.EgressProxyURI)
+	config.EgressAdminTokenFile = ""
+	config.NotificationsTLS = appSVIDTLS(peertls.NotificationsURI)
+	config.NotificationsTokenFile = ""
+	if err := config.validate(); err != nil {
+		t.Fatalf("SVID caller config rejected: %v", err)
+	}
+
+	config.SessionDispatcherTokenFile = "/run/legacy/token"
+	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
+		t.Fatalf("SVID plus configured bearer error = %v, want caller-authentication error", err)
+	}
+}
+
+func TestAppSVIDSettingsRequireExactCallerIdentityAndPeer(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*Config)
+		want   string
+	}{
+		{
+			name: "wrong client identity",
+			change: func(config *Config) {
+				config.SessionDispatcherTLS.ClientURI = peertls.NotificationsURI
+				config.SessionDispatcherTokenFile = ""
+			},
+			want: "session_dispatcher caller authentication",
+		},
+		{
+			name: "wrong server identity",
+			change: func(config *Config) {
+				config.SessionDispatcherTLS.ServerURI = peertls.HistoryIngressURI
+			},
+			want: "session_dispatcher_tls.server_uri",
+		},
+		{
+			name: "server-only TLS still requires token",
+			change: func(config *Config) {
+				config.SessionDispatcherTLS = &peertls.ClientTLS{
+					CAFile: "/run/agentplane/workload-trust/ca.pem", ServerURI: peertls.SessionDispatcherURI,
+				}
+				config.SessionDispatcherTokenFile = ""
+			},
+			want: "session_dispatcher caller authentication",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := validTestConfig()
+			config.SessionDispatcherTLS = appSVIDTLS(peertls.SessionDispatcherURI)
+			config.SessionDispatcherTokenFile = ""
+			test.change(&config)
+			if err := config.validate(); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validate() error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestOperatorFacadesKeepOperatorBearerWhenAppSVIDIsConfigured(t *testing.T) {
+	config := validTestConfig()
+	config.ActionsTLS = appSVIDTLS(peertls.ActionsURI)
+	config.ConnectionServiceTLS = appSVIDTLS(peertls.MCPEdgeURI)
+	if err := config.validate(); err != nil {
+		t.Fatalf("operator facades rejected their transport SVID: %v", err)
+	}
+	config.ConnectionServiceTLS.ClientURI = peertls.NotificationsURI
+	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "connection_service caller authentication") {
+		t.Fatalf("wrong Connection Service client identity error = %v", err)
+	}
+}
+
+func TestLoadConfigDoesNotRestoreAnImplicitTokenInSVIDMode(t *testing.T) {
+	tlsSettings := `session_dispatcher_tls:
+  ca_file: /run/agentplane/workload-trust/ca.pem
+  server_uri: spiffe://agentplane/session-dispatcher
+  cert_file: /run/agentplane/app/tls.crt
+  key_file: /run/agentplane/app/tls.key
+  client_uri: spiffe://agentplane/app
+`
+	writeConfig(t, validSettingsYAML+tlsSettings)
+	config, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SessionDispatcherTokenFile != "" {
+		t.Fatalf("implicit dispatcher token path = %q, want empty for SVID mode", config.SessionDispatcherTokenFile)
+	}
+
+	writeConfig(t, validSettingsYAML+tlsSettings+"session_dispatcher_token_file: /run/legacy/token\n")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
+		t.Fatalf("explicit legacy token with SVID error = %v", err)
+	}
+}
+
 func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 	t.Run("path required", func(t *testing.T) {
 		t.Setenv("AGENTPLANE_CONFIG_FILE", "")

@@ -564,6 +564,22 @@ py_library(
 )
 
 py_test(
+    name = "test_settings",
+    srcs = ["test_settings.py"],
+    deps = [
+        ":action_federation_settings",
+        ":settings",
+        "//:conftest",
+        "//agentplane/identity/operator:settings",
+        "//agentplane/net/peertls:config",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_history_gateway",
     size = "medium",
     srcs = ["test_history_gateway.py"],

@@ -12,8 +12,8 @@ import (
 )
 
 // SessionDispatcherConfig controls one fresh, non-retrying connection per unary
-// Session Dispatcher call. Projected bearer tokens are read by bearer.Dial for
-// each RPC, so kubelet token rotation is observed without restarting the app.
+// Session Dispatcher call. A projected token is reread per RPC in bearer mode;
+// service SVID mode sends no bearer metadata.
 type SessionDispatcherConfig struct {
 	TLS       *peertls.ClientTLS
 	Target    string
@@ -26,8 +26,11 @@ type SessionDispatcherClient struct{ config SessionDispatcherConfig }
 
 // NewSessionDispatcherClient validates a Session Dispatcher transport configuration.
 func NewSessionDispatcherClient(config SessionDispatcherConfig) (*SessionDispatcherClient, error) {
-	if config.Target == "" || config.TokenFile == "" || config.Timeout <= 0 {
-		return nil, errors.New("Session Dispatcher target, token file, and positive timeout are required")
+	if config.Target == "" || config.Timeout <= 0 {
+		return nil, errors.New("Session Dispatcher target and positive timeout are required")
+	}
+	if err := config.TLS.ValidateCaller(config.TokenFile, peertls.AppURI); err != nil {
+		return nil, errors.New("Session Dispatcher caller authentication is invalid")
 	}
 	return &SessionDispatcherClient{config: config}, nil
 }
