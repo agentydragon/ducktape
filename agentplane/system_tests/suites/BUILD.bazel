@@ -301,7 +301,7 @@ k3s_suite(
     ],
 )
 
-# Same platform assertions, with no harness packages in the guest image.
+# Same platform assertions, without unused Claude. Codex supplies embedded Execution.
 k3s_suite(
     name = "test_vm_platform_light_guest_candidate",
     srcs = ["test_vm_platform.py"],

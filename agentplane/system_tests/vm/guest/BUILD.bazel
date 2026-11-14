@@ -372,6 +372,7 @@ pkg_tar(
         ":root_common",
         ":root_platform_prepare",
         ":root_var_links",
+        "//agentplane/system_tests/deployment:runner_codex_harness",
     ],
 )
 
