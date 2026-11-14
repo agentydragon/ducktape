@@ -339,7 +339,7 @@ flowchart LR
     actions[Action service] -->|service mTLS + typed Identity envelope| dispatcher[Dispatcher / Sessions role]
     actions -->|service mTLS + typed launch origin| environments
     sessions[Sessions service role] -->|service mTLS: session methods| proxy[Runtime proxy role]
-    environments -->|service mTLS: controller methods| proxy
+    controller[Sandbox Controller service] -->|service mTLS: controller methods| proxy
     sampler[Central sampler service] -->|service mTLS: Executor grant| executor[Executor]
     proxy -->|existing Gateway client SVID until caller cutover| runtime[Native Runtime]
 ```
