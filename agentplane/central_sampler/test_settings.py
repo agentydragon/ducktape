@@ -36,11 +36,14 @@ def settings_data() -> dict[str, Any]:
         "lease_seconds": 60,
         "gateway_target": "gateway.invalid",
         "gateway_token_file": Path("/fixture/gateway-token"),
+        "gateway_tls": {"ca_file": "/fixture/workload-ca.pem", "server_uri": "spiffe://agentplane/session-dispatcher"},
     }
 
 
 def test_provider_phase_budgets_are_optional_and_independent() -> None:
     settings = Settings(**settings_data())
+    assert settings.gateway_tls is not None
+    assert settings.gateway_tls.server_uri == "spiffe://agentplane/session-dispatcher"
     assert settings.provider_response_header_timeout_seconds is None
     assert settings.provider_idle_timeout_seconds is None
 
@@ -49,6 +52,21 @@ def test_provider_phase_budgets_are_optional_and_independent() -> None:
     )
     assert configured.provider_response_header_timeout_seconds == 120
     assert configured.provider_idle_timeout_seconds == 600
+
+
+def test_gateway_tls_must_name_runner_gateway_rpc_listener() -> None:
+    # The serving Gateway listener uses the Session Dispatcher service identity; GatewayURI is
+    # reserved for the Gateway's client identity on runner-control mTLS.
+    with pytest.raises(ValidationError, match=r"gateway_tls\.server_uri"):
+        Settings.model_validate(
+            {
+                **settings_data(),
+                "gateway_tls": {
+                    "ca_file": "/fixture/workload-ca.pem",
+                    "server_uri": "spiffe://agentplane/runner-gateway",
+                },
+            }
+        )
 
 
 @pytest.mark.parametrize("field", ["provider_response_header_timeout_seconds", "provider_idle_timeout_seconds"])

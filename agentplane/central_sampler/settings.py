@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.net.peertls.config import ClientTLS, ServerTLSListener, ServiceSPIFFEID
+from agentplane.net.peertls.config import SESSION_DISPATCHER_URI, ClientTLS, ServerTLSListener, ServiceSPIFFEID
 
 DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = 30
 MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = (2**63 - 1) // 1_000_000_000
@@ -359,6 +359,12 @@ class Settings(BaseModel):
             raise ValueError("history target and token file must be configured together")
         if (self.gateway_target is None) != (self.gateway_token_file is None):
             raise ValueError("gateway target and token file must be configured together")
+        return self
+
+    @model_validator(mode="after")
+    def gateway_tls_names_runner_gateway_listener(self) -> Self:
+        if self.gateway_tls is not None and self.gateway_tls.server_uri != SESSION_DISPATCHER_URI:
+            raise ValueError("gateway_tls.server_uri must name the Runner Gateway RPC listener")
         return self
 
     @model_validator(mode="after")
