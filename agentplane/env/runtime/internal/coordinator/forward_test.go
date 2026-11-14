@@ -708,6 +708,21 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedGatewayReplicas(t *tes
 			}
 		})
 	}
+	proxy := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.RuntimeProxyURI))
+	if _, err := proxy.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("role-specific Runtime proxy status: %v", err)
+	}
+	proxyWatch, err := proxy.WatchState(ctx, passiveRequest)
+	if err == nil {
+		_, err = proxyWatch.Recv()
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("Runtime proxy must not inherit Controller passive watch: %v", err)
+	}
+	unlisted := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.SessionsURI))
+	if _, err := unlisted.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("Sessions bypassed the Runtime proxy TLS allowlist: %v", err)
+	}
 	if _, err := controller.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Controller GetStatus with valid Gateway metadata = %v", err)
 	}

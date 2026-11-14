@@ -646,3 +646,18 @@ external MCP bearers and forwards workload calls under the bound ServiceAccount'
 - gRPC: [Actions](../action_service/api/contracts/action_service.proto), [operator Actions](../action_service/api/contracts/operator_action_service.proto), [Connections](../mcp_edge/api/connection/connection_service.proto), [Web Push](../action_service/api/web_push/web_push_service.proto), [Environment Service](../environments/v1/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/api/ingress/session_ingress.proto), [Session Dispatcher](../runner_gateway/dispatcher/api/session/session_dispatcher.proto), [History Service](../history_service/api/history/history_service.proto), and the [Notification Service](../notification_service/api/notifications/notifications.proto) API (whose HTTP annotations generate the App browser facade; the service itself serves workload calls over gRPC). The Runner Gateway also serves standard gRPC health and proxies the Environment Runtime and Executor services over a direct mTLS connection to each runner.
 - HTTP and streaming APIs: [Integration app](../app/) (Bazel target: `//agentplane/app/cmd:agentplane-app`), [Electric proxy](../app/internal/proxy/electric.go), [Action Service generated facade](../action_service/api/contracts/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../x/indexing/app.py).
 - Controllers and egress: [Sandbox Controller](../sandbox_controller/internal/controller/controller.go), [Policy Controller](../policy_controller/internal/controller/controller.go), [central egress proxy](../egress/internal/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).
+
+## Staged Runtime proxy caller identity
+
+Runtime admits the exact `spiffe://agentplane/runtime-proxy` certificate for its existing Gateway
+control and Executor capabilities, retaining the current `runner-gateway` certificate during
+migration. Sessions must call through the proxy; its certificate has no direct Runtime grant.
+Controller passive watches retain their separate exact identity and permissions. No caller changes
+its credential in this stage.
+
+```mermaid
+flowchart LR
+    sessions[Sessions service SVID] -->|separate network hop and grant| proxy[Runtime proxy]
+    proxy -->|mTLS: runtime-proxy or current runner-gateway SVID| runtime[Environment Runtime]
+    controller[Sandbox Controller SVID] -->|mTLS: passive WatchState only| runtime
+```
