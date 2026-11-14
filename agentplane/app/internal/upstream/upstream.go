@@ -1,5 +1,5 @@
-// Package proxy contains the app's HTTP proxy primitives and thread Electric routes.
-package proxy
+// Package upstream forwards app requests to backend services and generated facades.
+package upstream
 
 import (
 	"bytes"

@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "upstream",
+    srcs = ["upstream.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/upstream",
+)
+
+go_test(
+    name = "unit_test",
+    srcs = ["upstream_test.go"],
+    embed = [":upstream"],
+)
