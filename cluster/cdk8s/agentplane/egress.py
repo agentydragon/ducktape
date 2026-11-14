@@ -542,7 +542,11 @@ class Egress(Construct):
             duration="24h",
             renew_before="8h",
             private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-            usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
+            usages=[
+                CertificateSpecUsages.DIGITAL_SIGNATURE,
+                CertificateSpecUsages.CLIENT_AUTH,
+                CertificateSpecUsages.SERVER_AUTH,
+            ],
             issuer_ref=cluster_ca.WORKLOAD_ISSUER,
         )
 

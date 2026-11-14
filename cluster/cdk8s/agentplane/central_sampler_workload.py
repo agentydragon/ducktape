@@ -21,7 +21,7 @@ from constructs import Construct
 
 from agentplane.central_sampler.settings import Settings
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, HISTORY_SERVICE_URI, SESSION_DISPATCHER_URI
 from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -147,7 +147,9 @@ class CentralSampler(Construct):
         )
         workload.container.mount(str(Path(_CONFIG_PATH).parent), settings_volume, read_only=True)
         workload.container.mount(_LOGS_PATH, Volume.from_empty_dir(self, "logs-volume", "logs"))
-        workload_tls.mount_trust_bundle(self, workload.container)
+        workload_tls.service_certificate(
+            self, env, container=workload.container, name=central_sampler.NAME, uri=CENTRAL_SAMPLER_URI
+        )
         public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
         workload.container.mount(
             "/var/run/public-web-pki",

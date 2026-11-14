@@ -7,11 +7,16 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 ACTIONS_URI: Final = "spiffe://agentplane/actions"
+APP_URI: Final = "spiffe://agentplane/app"
 POLICY_CONTROLLER_URI: Final = "spiffe://agentplane/policy-controller"
 CENTRAL_SAMPLER_URI: Final = "spiffe://agentplane/central-sampler"
 EGRESS_PROXY_URI: Final = "spiffe://agentplane/egress-proxy"
+GATEWAY_SESSIONS_URI: Final = "spiffe://agentplane/sessions"
+GATEWAY_RUNTIME_PROXY_URI: Final = "spiffe://agentplane/runtime-proxy"
+GATEWAY_ENVIRONMENTS_URI: Final = "spiffe://agentplane/environments"
 HISTORY_SERVICE_URI: Final = "spiffe://agentplane/history-ingress"
 LLM_INGRESS_URI: Final = "spiffe://agentplane/llm-ingress"
+MCP_EDGE_URI: Final = "spiffe://agentplane/mcp-edge"
 NOTIFICATIONS_URI: Final = "spiffe://agentplane/notifications"
 SESSION_DISPATCHER_URI: Final = "spiffe://agentplane/session-dispatcher"
 SANDBOX_CONTROLLER_URI: Final = "spiffe://agentplane/sandbox-controller"

@@ -1435,6 +1435,7 @@ spec:
     - spiffe://agentplane/llm-ingress
   usages:
     - digital signature
+    - client auth
     - server auth
 ---
 apiVersion: v1
@@ -1566,6 +1567,7 @@ spec:
     - spiffe://agentplane/egress-proxy
   usages:
     - digital signature
+    - client auth
     - server auth
 ---
 apiVersion: v1
@@ -2891,6 +2893,7 @@ spec:
     - spiffe://agentplane/history-ingress
   usages:
     - digital signature
+    - client auth
     - server auth
 ---
 apiVersion: v1
@@ -3542,6 +3545,9 @@ spec:
               readOnly: true
             - mountPath: /var/log/central-sampler
               name: logs
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
@@ -3579,6 +3585,9 @@ spec:
           name: central-sampler-settings
         - emptyDir: {}
           name: logs
+        - name: workload-tls
+          secret:
+            secretName: central-sampler-workload-tls
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
@@ -3636,6 +3645,29 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: central-sampler
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: central-sampler-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: central-sampler-workload-tls
+  uris:
+    - spiffe://agentplane/central-sampler
+  usages:
+    - digital signature
+    - client auth
+    - server auth
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -4443,6 +4475,9 @@ spec:
             - mountPath: /etc/agentplane
               name: configmap-app-config
               readOnly: true
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
@@ -4490,6 +4525,9 @@ spec:
         - configMap:
             name: app-config
           name: configmap-app-config
+        - name: workload-tls
+          secret:
+            secretName: app-workload-tls
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
@@ -4567,6 +4605,29 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: app
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: app-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: app-workload-tls
+  uris:
+    - spiffe://agentplane/app
+  usages:
+    - digital signature
+    - client auth
+    - server auth
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -6552,6 +6613,7 @@ spec:
   usages:
     - digital signature
     - client auth
+    - server auth
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -7081,6 +7143,7 @@ spec:
     - spiffe://agentplane/actions
   usages:
     - digital signature
+    - client auth
     - server auth
 ---
 apiVersion: v1
@@ -8317,6 +8380,9 @@ spec:
             - mountPath: /etc/agentplane-mcp-edge
               name: configmap-mcp-edge-settings
               readOnly: true
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
               readOnly: true
@@ -8355,6 +8421,9 @@ spec:
         - configMap:
             name: mcp-edge-settings
           name: configmap-mcp-edge-settings
+        - name: workload-tls
+          secret:
+            secretName: mcp-edge-workload-tls
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
@@ -8398,6 +8467,29 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mcp-edge
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mcp-edge-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: mcp-edge-workload-tls
+  uris:
+    - spiffe://agentplane/mcp-edge
+  usages:
+    - digital signature
+    - client auth
+    - server auth
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8882,6 +8974,7 @@ spec:
     - spiffe://agentplane/notifications
   usages:
     - digital signature
+    - client auth
     - server auth
 ---
 apiVersion: v1
@@ -10994,6 +11087,12 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           volumeMounts:
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
+            - mountPath: /run/agentplane/workload-trust
+              name: workload-trust
+              readOnly: true
             - mountPath: /etc/agentplane-policy-controller
               name: configmap-policy-controller-settings
               readOnly: true
@@ -11017,6 +11116,12 @@ spec:
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
       volumes:
+        - name: workload-tls
+          secret:
+            secretName: policy-controller-workload-tls
+        - configMap:
+            name: agentplane-workload-ca-bundle
+          name: workload-trust
         - configMap:
             name: policy-controller-settings
           name: configmap-policy-controller-settings
@@ -11053,6 +11158,29 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: policy-controller
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: policy-controller-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: ClusterIssuer
+    name: agentplane-workload
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: policy-controller-workload-tls
+  uris:
+    - spiffe://agentplane/policy-controller
+  usages:
+    - digital signature
+    - client auth
+    - server auth
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

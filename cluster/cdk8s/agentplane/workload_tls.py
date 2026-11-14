@@ -39,9 +39,8 @@ def client_tls(server_uri: str) -> ClientTLS:
     return ClientTLS(ca_file=Path(TRUST_BUNDLE_FILE), server_uri=server_uri)
 
 
-def serving_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
-    """Mount a serving leaf from the workload CA and the workload CA itself, which is both the
-    listener's `ca_file` for client SVIDs and the trust the workload's own clients dial with."""
+def service_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
+    """Mount the service's client-and-server SVID and workload-CA trust bundle."""
     secret_name = f"{name}-workload-tls"
     Certificate(
         scope,
@@ -52,7 +51,11 @@ def serving_certificate(scope: Construct, env: Environment, *, container: Contai
         duration="24h",
         renew_before="8h",
         private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.SERVER_AUTH],
+        usages=[
+            CertificateSpecUsages.DIGITAL_SIGNATURE,
+            CertificateSpecUsages.CLIENT_AUTH,
+            CertificateSpecUsages.SERVER_AUTH,
+        ],
         issuer_ref=cluster_ca.WORKLOAD_ISSUER,
     )
     certificate = Volume.from_secret(
@@ -67,25 +70,29 @@ def serving_certificate(scope: Construct, env: Environment, *, container: Contai
 
 
 def client_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
-    """Issue and mount a workload client SVID, using the separately mounted workload trust bundle."""
+    """Mount a service client SVID and workload-CA trust bundle for a direct mTLS connection."""
     cert_path = f"/run/agentplane/{name}-client-tls"
     secret_name = f"{name}-client-workload-tls"
     Certificate(
         scope,
-        "client-workload-certificate",
+        f"{name}-client-workload-certificate",
         metadata=ApiObjectMetadata(name=f"{name}-client-workload", namespace=env.namespace),
         secret_name=secret_name,
         uris=[uri],
         duration="24h",
         renew_before="8h",
         private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.ALWAYS),
-        usages=[CertificateSpecUsages.DIGITAL_SIGNATURE, CertificateSpecUsages.CLIENT_AUTH],
+        usages=[
+            CertificateSpecUsages.DIGITAL_SIGNATURE,
+            CertificateSpecUsages.CLIENT_AUTH,
+            CertificateSpecUsages.SERVER_AUTH,
+        ],
         issuer_ref=cluster_ca.WORKLOAD_ISSUER,
     )
     certificate = Volume.from_secret(
         scope,
-        "client-workload-tls-volume",
-        Secret.from_secret_name(scope, "client-workload-tls-secret", secret_name),
+        f"{name}-client-workload-tls-volume",
+        Secret.from_secret_name(scope, f"{name}-client-workload-tls-secret", secret_name),
         name=f"{name}-client-workload-tls",
     )
     container.mount(cert_path, certificate, read_only=True)

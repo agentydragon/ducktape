@@ -14,6 +14,22 @@ from cdk8s import App
 from more_itertools import one
 
 from agentplane.egress import sidecar_config
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
+    EGRESS_PROXY_URI,
+    GATEWAY_ENVIRONMENTS_URI,
+    GATEWAY_RUNTIME_PROXY_URI,
+    GATEWAY_SESSIONS_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    MCP_EDGE_URI,
+    NOTIFICATIONS_URI,
+    POLICY_CONTROLLER_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+)
 from cluster.cdk8s.agentplane import egress, runner_gateway, staging
 from cluster.cdk8s.agentplane.sandbox_pod import SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.cdk8s.cert_manager import cluster_ca
@@ -165,6 +181,73 @@ def test_agentplane_svids_come_from_the_workload_ca(staging_manifests: list[Body
         if doc["spec"]["issuerRef"]
         != {"name": cluster_ca.WORKLOAD_ISSUER.name, "kind": cluster_ca.WORKLOAD_ISSUER.kind}
     } == set()
+
+
+def test_service_svids_are_mounted_with_client_and_server_usage(staging_manifests: list[Body]) -> None:
+    service_uris = {
+        ACTIONS_URI,
+        APP_URI,
+        CENTRAL_SAMPLER_URI,
+        EGRESS_PROXY_URI,
+        GATEWAY_ENVIRONMENTS_URI,
+        GATEWAY_RUNTIME_PROXY_URI,
+        GATEWAY_SESSIONS_URI,
+        HISTORY_SERVICE_URI,
+        LLM_INGRESS_URI,
+        MCP_EDGE_URI,
+        NOTIFICATIONS_URI,
+        POLICY_CONTROLLER_URI,
+        SANDBOX_CONTROLLER_URI,
+        SESSION_DISPATCHER_URI,
+    }
+    certificates = {
+        uri: doc
+        for doc in staging_manifests
+        if doc["kind"] == "Certificate"
+        for uri in doc["spec"].get("uris", [])
+        if uri in service_uris
+    }
+    assert set(certificates) == service_uris
+
+    deployments = {
+        doc["metadata"]["name"]: doc["spec"]["template"]["spec"]
+        for doc in staging_manifests
+        if doc["kind"] == "Deployment"
+    }
+    for uri, certificate in certificates.items():
+        assert {"digital signature", "client auth", "server auth"} <= set(certificate["spec"]["usages"])
+        secret_name = certificate["spec"]["secretName"]
+        assert any(
+            volume.get("secret", {}).get("secretName") == secret_name
+            and any(
+                mount["name"] == volume["name"] and mount["readOnly"]
+                for container in pod["containers"]
+                for mount in container.get("volumeMounts", [])
+            )
+            for pod in deployments.values()
+            for volume in pod.get("volumes", [])
+        ), f"{uri} Secret {secret_name} is not mounted read-only in a service Deployment"
+
+    gateway = deployments[runner_gateway.NAME]
+    caller_secrets = [
+        certificates[uri]["spec"]["secretName"]
+        for uri in (GATEWAY_SESSIONS_URI, GATEWAY_RUNTIME_PROXY_URI, GATEWAY_ENVIRONMENTS_URI)
+    ]
+    assert len(set(caller_secrets)) == len(caller_secrets)
+    caller_mounts = []
+    for secret_name in caller_secrets:
+        volume = one(
+            volume for volume in gateway["volumes"] if volume.get("secret", {}).get("secretName") == secret_name
+        )
+        caller_mounts.append(
+            one(
+                mount
+                for container in gateway["containers"]
+                for mount in container.get("volumeMounts", [])
+                if mount["name"] == volume["name"] and mount["readOnly"]
+            )
+        )
+    assert len({mount["mountPath"] for mount in caller_mounts}) == len(caller_mounts)
 
 
 def test_the_workload_ca_chains_to_the_cluster_root_and_its_bundle_carries_it_alone(scratch_app: App) -> None:
