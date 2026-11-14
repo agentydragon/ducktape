@@ -268,7 +268,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...),
 		ServiceReaders: sets.New(c.EnvironmentServiceReaders...), ServiceManagers: sets.New(c.EnvironmentServiceManagers...),
 		ServiceLaunchers: sets.New(c.EnvironmentServiceLaunchers...),
-		IdentityChanges:  store,
 	})
 	if err != nil {
 		return err

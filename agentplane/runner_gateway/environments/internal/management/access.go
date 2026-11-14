@@ -183,8 +183,8 @@ func (a *Access) SetIdleSuspendAfter(ctx context.Context, name, uid string, valu
 	})
 }
 
-// ResolveIdentity pins the name chosen by the operator to its current incarnation for the
-// Dispatcher guard. A change between this read and the patch is refused by SetIdentity.
+// ResolveIdentity pins the name chosen by the operator to its current incarnation.
+// A change between this read and the patch is refused by SetIdentity.
 func (a *Access) ResolveIdentity(ctx context.Context, name string) (*identitypb.Identity, error) {
 	if name == "" {
 		return nil, nil
@@ -200,8 +200,8 @@ func (a *Access) ResolveIdentity(ctx context.Context, name string) (*identitypb.
 	return &identitypb.Identity{Name: name, Uid: string(identity.UID)}, nil
 }
 
-// SetIdentity patches only spec.identity on the selected stopped Sandbox. The caller holds the
-// Dispatcher's exclusive per-Sandbox admission lock until this patch returns.
+// SetIdentity patches only spec.identity with the Sandbox UID and resourceVersion.
+// CRD admission enforces that the workload is stopped.
 func (a *Access) SetIdentity(ctx context.Context, name, uid string, expected *identitypb.Identity) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		resource, err := a.incarnation(ctx, name, uid)
@@ -210,9 +210,6 @@ func (a *Access) SetIdentity(ctx context.Context, name, uid string, expected *id
 		}
 		if resource.DeletionTimestamp != nil {
 			return &SandboxTearingDownError{Name: name}
-		}
-		if resource.Status.OperatingMode != "" && resource.Status.StopStage != sandboxapi.StopStageStopped {
-			return &IdentityChangeRunningError{Name: name}
 		}
 		if expected != nil {
 			current, err := a.ResolveIdentity(ctx, expected.GetName())
