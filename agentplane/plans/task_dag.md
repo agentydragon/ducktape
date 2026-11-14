@@ -3909,7 +3909,6 @@ evidence and line-level steps for every track below; its stages are ordered by c
 
 | Plan stage                      | DAG node                                                                                                                                                                                                         |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                |
 | 3. The two-binary moves         | `ENVIRONMENT_SERVICE_SERVING_DESIGN`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
 | 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                           |
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                 |
@@ -3920,7 +3919,6 @@ The remaining stage 3 moves are not released. Sessions re-checking the live Iden
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
-    GO_LAYOUT_FIXES[Candidate: stage 2 layout fixes]
     ENVIRONMENT_SERVICE_SERVING_DESIGN[In review: every-replica serving contract]
     ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[Held: EnvironmentService into Environments]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
@@ -3934,14 +3932,6 @@ flowchart LR
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     SESSIONS_BINARY_DIRECTORY --> RUNNER_GATEWAY_RENAME
 ```
-
-### `GO_LAYOUT_FIXES` — stage 2 layout fixes
-
-**Candidate; not released.** The Go plan tracks that hold whatever the service map becomes:
-`runner-era-names` (the app's share landed in #16394), `sampler-json-contract`,
-`egress-sidecar-runtime` and `llm-ingress-server-boundary`;
-`app-session-client-name` (#16394) and `env-execution-package-names` (#16402) landed. Each is its own
-small PR. **Exit:** each track's plan exit met on devel.
 
 ### `ENVIRONMENT_SERVICE_SERVING_DESIGN` — every-replica serving contract
 
