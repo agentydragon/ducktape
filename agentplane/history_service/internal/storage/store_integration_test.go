@@ -759,14 +759,28 @@ func TestAServiceWriterKeepsItsCertificateAndExecutionIdentitySeparate(t *testin
 			t.Fatal(err)
 		}
 	}
+	if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, Sandbox{}, &identity); err != nil {
+		t.Fatalf("reconnect without Sandbox provenance: %v", err)
+	}
+	replacementSandbox := testIdentitySandbox
+	replacementSandbox.UID = "replacement-sandbox-uid"
+	if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, replacementSandbox, &identity); !errors.Is(err, ErrSandboxMismatch) {
+		t.Fatalf("replacement Sandbox UID: %v, want ErrSandboxMismatch", err)
+	}
 	var serviceURI, identityName, identityUID string
-	var accountUID sql.NullString
-	if err := db.QueryRowContext(t.Context(), `SELECT writer_service_uri, writer_uid, execution_identity_name, execution_identity_uid
-		FROM session_history WHERE id=$1`, sessionID).Scan(&serviceURI, &accountUID, &identityName, &identityUID); err != nil {
+	var accountUID, sandboxNamespace, sandboxName, sandboxUID sql.NullString
+	if err := db.QueryRowContext(t.Context(), `SELECT writer_service_uri, writer_uid, execution_identity_name, execution_identity_uid,
+		sandbox_namespace, sandbox_name, sandbox_uid FROM session_history WHERE id=$1`, sessionID).Scan(
+		&serviceURI, &accountUID, &identityName, &identityUID, &sandboxNamespace, &sandboxName, &sandboxUID,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if serviceURI != serviceWriter.SPIFFEID || accountUID.Valid || identityName != identity.Name || identityUID != identity.UID {
-		t.Fatalf("writer=%q account=%v execution identity=%s/%s", serviceURI, accountUID, identityName, identityUID)
+	if serviceURI != serviceWriter.SPIFFEID || accountUID.Valid || identityName != identity.Name || identityUID != identity.UID ||
+		!sandboxNamespace.Valid || sandboxNamespace.String != testIdentitySandbox.Namespace ||
+		!sandboxName.Valid || sandboxName.String != testIdentitySandbox.Name ||
+		!sandboxUID.Valid || sandboxUID.String != testIdentitySandbox.UID {
+		t.Fatalf("writer=%q account=%v execution identity=%s/%s sandbox=%v/%v/%v", serviceURI, accountUID,
+			identityName, identityUID, sandboxNamespace, sandboxName, sandboxUID)
 	}
 
 	listed := func(scope ReadScope) bool {
