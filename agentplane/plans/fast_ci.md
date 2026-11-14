@@ -293,17 +293,31 @@ full versus 173.669s candidate. Both full baselines were cold while both candida
 VM baselines were warm, dominating the apparent VM process reduction. Do not
 promote that witness as a speed optimization.
 
-The next architecture spike separates a single real deployed VM platform witness
-from duplicate model turns. It must retain issuer/Pod binding, authenticated
-Runtime readiness, workspace execution and real CLI routing; both packaged guest
-contracts retain harness setup/fence, two-turn and History ownership. Private
-kernel, launcher, mounts and supervision need explicit ownership and seeded
-controls before any gate changes. The deployed witness and MCP Services nearly
+The manual single-VM platform witness now passes its first physical execution
+without any model requests. Ordinary Session setup retains issuer/Pod binding,
+authenticated Runtime readiness, workspace execution, actual kernel supervision
+and real CLI routing without new execution privileges. Its case span is 152.462s,
+including 112.454s waiting for the Sandbox; the cold physical action is 356.510s.
+This is a different source/cache exposure from the earlier graph, so no speed
+saving is established. Inspect the existing launcher/boot/Runtime artifacts for
+that readiness phase before expanding comparisons. Both packaged guest contracts
+retain harness setup/fence, two-turn and History ownership. Private kernel,
+launcher, mounts and supervision still need seeded controls against the new
+composition before any gate changes. The deployed witness and MCP Services nearly
 tie in the warm candidate, with Pod next; measure the combined graph rather than
 extrapolating an isolated improvement. The existing importer draft #15126 remains
 unproven and should be revisited only through a repaired matched benchmark.
 See [`test_architecture_iteration7.md`](../system_tests/debug/test_architecture_iteration7.md)
 for the complete screen, cache limits and next experiment.
+The implemented platform composition and first proof are in
+[`test_architecture_iteration8.md`](../system_tests/debug/test_architecture_iteration8.md).
+
+The storage startup race found in subsequent required CI is repaired on this
+branch with a bounded readiness wait; both real-cluster recovery/non-recovery
+controls and all 21 required Pod cases pass. The narrow devel port is
+[#16299](https://github.com/agentydragon/ducktape/pull/16299). Controller exit cause
+and fleet recurrence remain open; see
+[`storage_controller_startup.md`](../system_tests/debug/storage_controller_startup.md).
 
 Iteration evidence and the remaining coverage boundaries are recorded in
 [`system_tests/debug/test_architecture_iteration2.md`](../system_tests/debug/test_architecture_iteration2.md).

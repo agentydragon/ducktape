@@ -160,6 +160,15 @@ listener closure and restored state ownership. The working-tree witnesses are
 
 ## Promotion boundary
 
+The manual `//agentplane/system_tests/suites:test_vm_platform_candidate` adds a
+single deployed KubeVirt guest with no model turns. It retains issued identity,
+private systemd supervision, actual setup kernel limits and ownership, a unique
+workspace round-trip, real CLI routes, detached-descendant fencing and same-boot
+identity. Its first physical action passes, but seeded controls against this new
+composition and a matched complete graph are pending. It does not replace the
+full VM gate, its trace contract, either packaged harness contract or separate
+OOM acceptance. See [the platform proof](test_architecture_iteration8.md).
+
 The smallest faithful future contracts are the existing Go owner tests for pure
 state transitions, the current native process fixtures for Runtime/History
 restart semantics, and K3s tests for controller-produced identities, issuer and

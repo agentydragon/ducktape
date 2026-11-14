@@ -269,6 +269,38 @@ k3s_suite(
     ],
 )
 
+# Manual next-generation platform witness: one real guest retains the kernel,
+# issuer, workspace and CLI routes; packaged guest contracts own model turns.
+k3s_suite(
+    name = "test_vm_platform_candidate",
+    srcs = ["test_vm_platform.py"],
+    main = "test_vm_platform.py",
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/vm:configuration",
+        "//agentplane/system_tests/vm:guest_logs",
+        "//agentplane/system_tests/vm:guest_setup_probe",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
 # One real guest exercises the ordinary Sandbox deletion and ACPI shutdown path. It still uses
 # the standard VM fixture, but avoids sessions, harnesses and concurrent guests.
 k3s_suite(
