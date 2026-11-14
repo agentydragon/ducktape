@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
@@ -83,7 +84,7 @@ func anthropicParts(parts []protocol.ContentPart) ([]inputBlock, error) {
 			if strings.HasPrefix(address, "data:") {
 				meta, data, ok := strings.Cut(strings.TrimPrefix(address, "data:"), ",")
 				media, base64 := strings.CutSuffix(meta, ";base64")
-				if !ok || !base64 || !protocol.IsOneOf(media, "image/png", "image/jpeg", "image/gif", "image/webp") {
+				if !ok || !base64 || !slices.Contains([]string{"image/png", "image/jpeg", "image/gif", "image/webp"}, media) {
 					return nil, errors.New("unsupported Anthropic image data URL")
 				}
 				result = append(result, newImageBlock(media, data))

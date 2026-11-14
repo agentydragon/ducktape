@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -511,11 +513,11 @@ func sameNativeContext(left, right protocol.Context) bool {
 	if err != nil {
 		return false
 	}
-	lv, err := protocol.DecodeJSONValue(l)
+	lv, err := jsonwire.DecodeJSONValue(l)
 	if err != nil {
 		return false
 	}
-	rv, err := protocol.DecodeJSONValue(r)
+	rv, err := jsonwire.DecodeJSONValue(r)
 	if err != nil {
 		return false
 	}

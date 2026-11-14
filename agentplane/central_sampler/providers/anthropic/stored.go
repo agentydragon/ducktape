@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -289,7 +290,7 @@ func restoreBlock(reader content.ContentReader, id content.ContentID) (json.RawM
 	if kind == "" || stored.Kind != kind {
 		return nil, fmt.Errorf("stored Anthropic block %s has type %q in kind %q", id, blockType, stored.Kind)
 	}
-	return protocol.CloneJSON(stored.Payload), nil
+	return slices.Clone(stored.Payload), nil
 }
 
 func blockStorageKind(blockType BlockType) content.ContentKind {

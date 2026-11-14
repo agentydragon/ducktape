@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerio"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -82,7 +85,7 @@ func toolDefinitions(surface protocol.ToolSurface, encoding protocol.ExecEncodin
 		strict := false
 		return []AdditionalTool{{
 			Type: "function", Name: "exec", Description: surface.Description, Strict: &strict,
-			Parameters: protocol.CloneJSON(surface.Parameters),
+			Parameters: slices.Clone(surface.Parameters),
 		}}, nil
 	}
 	if !json.Valid(surface.WaitParameters) {
@@ -91,7 +94,7 @@ func toolDefinitions(surface protocol.ToolSurface, encoding protocol.ExecEncodin
 	strict := false
 	return []AdditionalTool{
 		{Type: "custom", Name: "exec", Description: surface.Description, Format: &ToolFormat{Type: "grammar", Syntax: "lark", Definition: surface.FreeformGrammar}},
-		{Type: "function", Name: "wait", Description: surface.WaitDescription, Strict: &strict, Parameters: protocol.CloneJSON(surface.WaitParameters)},
+		{Type: "function", Name: "wait", Description: surface.WaitDescription, Strict: &strict, Parameters: slices.Clone(surface.WaitParameters)},
 	}, nil
 }
 
@@ -356,7 +359,7 @@ func eventPayload(event Event) (streamEvent, error) {
 			return streamEvent{}, err
 		}
 	}
-	value, err := protocol.DecodeJSONValue(data)
+	value, err := jsonwire.DecodeJSONValue(data)
 	if err != nil {
 		return streamEvent{}, err
 	}

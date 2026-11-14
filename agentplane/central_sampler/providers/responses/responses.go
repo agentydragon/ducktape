@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -77,15 +78,15 @@ func (item *Item) UnmarshalJSON(data []byte) error {
 	}
 	*item = Item{
 		Type: wire.Type, ID: wire.ID, Role: wire.Role, CallID: wire.CallID, Name: wire.Name,
-		Input: wire.Input, Arguments: wire.Arguments, Content: protocol.CloneJSON(wire.Content), Summary: protocol.CloneJSON(wire.Summary),
-		Output: wire.Output, EncryptedContent: wire.EncryptedContent, Tools: wire.Tools, Raw: protocol.CloneJSON(data),
+		Input: wire.Input, Arguments: wire.Arguments, Content: slices.Clone(wire.Content), Summary: slices.Clone(wire.Summary),
+		Output: wire.Output, EncryptedContent: wire.EncryptedContent, Tools: wire.Tools, Raw: slices.Clone(data),
 	}
 	return nil
 }
 
 func (item Item) MarshalJSON() ([]byte, error) {
 	if len(item.Raw) != 0 {
-		return protocol.CloneJSON(item.Raw), nil
+		return slices.Clone(item.Raw), nil
 	}
 	type wire Item
 	return json.Marshal(wire(item))
@@ -249,14 +250,14 @@ func (event *Event) UnmarshalJSON(data []byte) error {
 	}
 	*event = Event{
 		Type: wire.Type, ItemID: wire.ItemID, Delta: wire.Delta, Item: wire.Item,
-		Response: response, ResponseRaw: protocol.CloneJSON(wire.Response), Raw: protocol.CloneJSON(data),
+		Response: response, ResponseRaw: slices.Clone(wire.Response), Raw: slices.Clone(data),
 	}
 	return nil
 }
 
 func (event Event) MarshalJSON() ([]byte, error) {
 	if len(event.Raw) != 0 {
-		return protocol.CloneJSON(event.Raw), nil
+		return slices.Clone(event.Raw), nil
 	}
 	type wire Event
 	return json.Marshal(wire(event))
@@ -279,7 +280,7 @@ func (terminal *Terminal) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	*terminal = Terminal{Status: protocol.CloneJSON(wire.Status), Usage: protocol.CloneJSON(wire.Usage), Raw: protocol.CloneJSON(data)}
+	*terminal = Terminal{Status: slices.Clone(wire.Status), Usage: slices.Clone(wire.Usage), Raw: slices.Clone(data)}
 	return nil
 }
 
@@ -296,7 +297,7 @@ func (terminal Terminal) StatusValue() (string, bool) {
 
 func (terminal Terminal) MarshalJSON() ([]byte, error) {
 	if len(terminal.Raw) != 0 {
-		return protocol.CloneJSON(terminal.Raw), nil
+		return slices.Clone(terminal.Raw), nil
 	}
 	type wire Terminal
 	return json.Marshal(wire(terminal))

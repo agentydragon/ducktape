@@ -40,7 +40,7 @@ func (c *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
 		if err := validateAnthropicMessage(record); err != nil {
 			return nil, fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
-		result[i] = protocol.CloneJSON(record)
+		result[i] = slices.Clone(record)
 	}
 	return result, nil
 }
@@ -82,7 +82,7 @@ func (c *Context) AppendRecords(records []json.RawMessage) error {
 		}
 	}
 	for _, record := range records {
-		c.messages = append(c.messages, protocol.CloneJSON(record))
+		c.messages = append(c.messages, slices.Clone(record))
 	}
 	return nil
 }

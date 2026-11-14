@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 )
 
 // ObservationKind identifies one code-mode runtime result variant.
@@ -34,7 +34,7 @@ type Observation struct {
 
 func (o *Observation) UnmarshalJSON(data []byte) error {
 	var variants map[string]json.RawMessage
-	if err := protocol.DecodeObject(data, &variants); err != nil {
+	if err := jsonwire.DecodeObject(data, &variants); err != nil {
 		return err
 	}
 	if len(variants) != 1 {
@@ -47,7 +47,7 @@ func (o *Observation) UnmarshalJSON(data []byte) error {
 		default:
 			return fmt.Errorf("unsupported code-mode observation %q", kind)
 		}
-		if err := protocol.DecodeObject(raw, &o.Cell); err != nil {
+		if err := jsonwire.DecodeObject(raw, &o.Cell); err != nil {
 			return err
 		}
 	}
@@ -63,14 +63,14 @@ func DecodeWaitObservation(raw json.RawMessage) (Observation, error) {
 		Type    string          `json:"type"`
 		Outcome json.RawMessage `json:"outcome"`
 	}
-	if err := protocol.DecodeObject(raw, &reply); err != nil {
+	if err := jsonwire.DecodeObject(raw, &reply); err != nil {
 		return Observation{}, err
 	}
 	if reply.Type != "wait/completed" {
 		return Observation{}, fmt.Errorf("unexpected code-mode wait response %q", reply.Type)
 	}
 	var outcome map[string]json.RawMessage
-	if err := protocol.DecodeObject(reply.Outcome, &outcome); err != nil {
+	if err := jsonwire.DecodeObject(reply.Outcome, &outcome); err != nil {
 		return Observation{}, err
 	}
 	if len(outcome) != 1 {
@@ -81,7 +81,7 @@ func DecodeWaitObservation(raw json.RawMessage) (Observation, error) {
 			return Observation{}, fmt.Errorf("unsupported code-mode wait outcome %q", kind)
 		}
 		var observation Observation
-		if err := protocol.DecodeObject(value, &observation); err != nil {
+		if err := jsonwire.DecodeObject(value, &observation); err != nil {
 			return Observation{}, err
 		}
 		return observation, nil

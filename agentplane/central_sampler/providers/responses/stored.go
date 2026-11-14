@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -187,14 +188,14 @@ func RestoreRequest(reader content.ContentReader, profile content.ContentID, rec
 		if _, err := rawObject(toolPayload); err != nil {
 			return nil, fmt.Errorf("decode stored request tool %d: %w", index, err)
 		}
-		tools = append(tools, protocol.CloneJSON(toolPayload))
+		tools = append(tools, slices.Clone(toolPayload))
 	}
 	input := make([]json.RawMessage, 0, len(records))
 	for index, record := range records {
 		if _, err := rawObject(record); err != nil {
 			return nil, fmt.Errorf("request input %d: %w", index, err)
 		}
-		input = append(input, protocol.CloneJSON(record))
+		input = append(input, slices.Clone(record))
 	}
 	request := Request{
 		Model: stored.Model, Instructions: instructions, Stream: stored.Stream, Store: stored.Store,
@@ -241,7 +242,7 @@ func getPayload(reader content.ContentReader, id content.ContentID, kind content
 	if content.ID != id || content.Kind != kind {
 		return nil, fmt.Errorf("stored content %s has unexpected kind or identity: %w", id, protocol.ErrInvalid)
 	}
-	return protocol.CloneJSON(content.Payload), nil
+	return slices.Clone(content.Payload), nil
 }
 
 func rawObject(raw json.RawMessage) (map[string]json.RawMessage, error) {

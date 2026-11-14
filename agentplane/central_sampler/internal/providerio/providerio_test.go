@@ -16,14 +16,14 @@ import (
 
 func TestProviderResponseHeaderTimeoutCoversHeaderWait(t *testing.T) {
 	started := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := &http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		close(started)
-		<-r.Context().Done()
-	}))
-	defer server.Close()
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})}
 
-	client := WithProviderResponseHeaderTimeout(server.Client(), 25*time.Millisecond)
-	response, err := client.Get(server.URL)
+	client = WithProviderResponseHeaderTimeout(client, 25*time.Millisecond)
+	response, err := client.Get("https://fixture.invalid")
 	if response != nil {
 		_ = response.Body.Close()
 		t.Fatal("received response headers from a stalled provider")
@@ -35,7 +35,7 @@ func TestProviderResponseHeaderTimeoutCoversHeaderWait(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("server did not receive the request")
+		t.Fatal("transport did not start the request")
 	}
 }
 

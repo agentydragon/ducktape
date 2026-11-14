@@ -14,7 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+
 	"github.com/google/uuid"
 )
 
@@ -125,9 +126,9 @@ func (m *Manager) OpenSession(ctx context.Context, conversationID string, journa
 		cancel()
 		if err == nil {
 			var response HostResponse
-			err = protocol.DecodeObject(value, &response)
+			err = jsonwire.DecodeObject(value, &response)
 			if err == nil && (response.Type != "session/ready" || response.SessionID != sessionID) {
-				err = fmt.Errorf("unexpected code-mode session/open response: %s", protocol.CanonicalJSON(response))
+				err = fmt.Errorf("unexpected code-mode session/open response: %s", marshalForError(response))
 			}
 		}
 		if err != nil {
@@ -238,7 +239,7 @@ func (m *Manager) startHost() (*Process, error) {
 		var payload []byte
 		payload, err = readHostFrame(host.Stdout())
 		if err == nil {
-			err = protocol.DecodeObject(payload, &ready)
+			err = jsonwire.DecodeObject(payload, &ready)
 		}
 	}
 	if err != nil {
@@ -247,7 +248,7 @@ func (m *Manager) startHost() (*Process, error) {
 	}
 	if ready.Type != Ready || ready.SelectedVersion != 1 || ready.Capabilities == nil {
 		_ = host.Close()
-		return nil, fmt.Errorf("unexpected code-mode handshake: %s", protocol.CanonicalJSON(ready))
+		return nil, fmt.Errorf("unexpected code-mode handshake: %s", marshalForError(ready))
 	}
 	for _, capability := range ready.Capabilities {
 		if !slices.Contains(offered, capability) {
@@ -304,7 +305,7 @@ func (m *Manager) readLoop(host *Process) {
 			return
 		}
 		var frame Frame
-		if err := protocol.DecodeObject(payload, &frame); err != nil {
+		if err := jsonwire.DecodeObject(payload, &frame); err != nil {
 			m.fail(host, fmt.Errorf("decode code-mode host frame: %w", err))
 			return
 		}
@@ -434,7 +435,15 @@ func (m *Manager) dispatch(host *Process, frame *Frame, raw []byte) error {
 		m.mu.Unlock()
 		return nil
 	}
-	return fmt.Errorf("unexpected code-mode frame: %s", protocol.CanonicalJSON(frame))
+	return fmt.Errorf("unexpected code-mode frame: %s", marshalForError(frame))
+}
+
+func marshalForError(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
 }
 
 func (m *Manager) sendDelegateError(host *Process, id int64, message string) error {

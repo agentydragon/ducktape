@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/central_sampler:__subpackages__"])
+
+go_library(
+    name = "jsonwire",
+    srcs = ["json.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire",
+)
+
+go_test(
+    name = "jsonwire_test",
+    srcs = ["json_test.go"],
+    embed = [":jsonwire"],
+)

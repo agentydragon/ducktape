@@ -16,6 +16,7 @@ go_library(
     visibility = ["//agentplane/central_sampler:__subpackages__"],
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/jsonwire",
         "//agentplane/central_sampler/internal/outputbuffer",
         "//agentplane/central_sampler/internal/sessionstore",
         "//agentplane/central_sampler/internal/settings",
