@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shlex
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -14,13 +15,14 @@ from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver import workload_credentials
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_platform import native_platform_clients
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
 from agentplane.system_tests.driver.scenario import ScenarioResources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import traced_scenario, tracer
-from agentplane.system_tests.scenarios import runner_credentials
 from agentplane.system_tests.vm.configuration import SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.vm.supervision import session_setup_is_supervised
@@ -46,6 +48,7 @@ async def test_vm_boot_contract(
     client: Client,
     cluster: Cluster,
     dispatcher: SessionDispatcherClient,
+    tmp_path: Path,
     scenario_resources: ScenarioResources,
     scripted: ScriptedUpstream,
 ) -> None:
@@ -64,7 +67,7 @@ async def test_vm_boot_contract(
             assert view.kubernetes_diagnostics.HasField("pod")
             assert view.kubernetes_diagnostics.pod.uid
 
-            identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
+            identity = await workload_credentials.check_vm_runner_certificate(cluster, view)
             assert identity[0] == view.kubernetes_diagnostics.pod.uid
             assert identity[1]
 
@@ -88,7 +91,7 @@ async def test_vm_boot_contract(
                 "system_test.session.create", attributes={"harness": harness_name, "sandbox.name": view.target.name}
             ):
                 agent = await session_setup_is_supervised(
-                    guest_client, dispatcher, view.target.name, view.target.uid, harness, models[harness]
+                    native_platform.history, dispatcher, view.target.name, view.target.uid, harness, models[harness]
                 )
             marker = f"VM_WORKSPACE_ROUNDTRIP_{harness_name}_{view.target.uid.replace('-', '')}"
             workspace_file = f".agentplane-vm-boot-candidate-{view.target.uid.replace('-', '')}"
@@ -118,11 +121,14 @@ async def test_vm_boot_contract(
             assert rules["identity"] == {"name": view.identity_name}, turn.transcript
             assert "NOTIFICATIONS_GRPC_OK" in turn.tool_outputs[-1], turn.transcript
 
-            await runner_credentials.assert_vm_runner_identity_unchanged(
+            await workload_credentials.assert_vm_runner_identity_unchanged(
                 cluster, view.kubernetes_diagnostics.pod.name, identity
             )
 
-    async with asyncio.TaskGroup() as guests:
+    async with (
+        native_platform_clients(cluster, tmp_path / "native-platform") as native_platform,
+        asyncio.TaskGroup() as guests,
+    ):
         guests.create_task(
             traced_scenario("vm-turn-harness_claude", check_guest(session_pb2.HARNESS_CLAUDE, SUPERVISION_TEMPLATE))
         )

@@ -115,3 +115,170 @@ Gateway/other owners where distinct contracts and measured costs justify it.
 Include ineligible PRs in the representative backend result. The goal remains
 30% lower median complete feedback including reruns, no worse p90/flake rate,
 preserved important coverage, and documented compute/maintenance cost.
+
+## Native platform driver milestone
+
+The new `system_tests/driver/session.py` drives an exact environment-hosted
+Session through real Dispatcher and History clients. Create and input submissions
+are sent once; only History reads reconnect. An initial missing History attachment
+may wait, but a Session disappearing after a healthy read fails. Placement stays
+pinned to its original Environment UID. Setup output and completed turns use the
+same correction-aware page state extracted from the App reader. App and native
+drivers share the existing exact-admission/terminal interpreter, including cursor
+advancement on failed turns and rereading entries beyond a returned terminal.
+
+The ordinary
+[`test_session_driver` proof](https://app.buildbuddy.io/invocation/fe144b9c-d652-486f-8d8c-a2211888713a)
+passed one real-process case in one attempt. It creates a Session with setup,
+checks stdout/stderr, leaves an earlier completed turn unread, observes an actual
+History RPC timeout while that fixture-owned process is paused, and observes
+Runtime finish through Gateway while History cannot answer. After History
+resumes, the collector returns only the requested turn; a third input completes.
+The case requires three exact admissions, ordered answers, completed statuses,
+contiguous History cursors and exactly three model requests. Its
+[dependency query](https://app.buildbuddy.io/invocation/ea165288-9a17-4d69-b866-ffaf364e6095)
+contains no `//agentplane/app` targets.
+
+This is an App-free Session driver proof, **not an App-free platform suite or a
+latency comparison**. The source is frozen `38f6c8e` plus a recorded 57-file overlay
+from local `0b6df927` and these working changes; it is not exact-head full CI.
+The native case took 50.295s, pytest 51.072s, TestRunner 74.718s and Bazel 82.145s.
+Observed CPU was 129.294s and peak memory approximately 1.087GB. Requested estimates
+were 3000mCPU, 7.5GB memory and 10GiB free disk; estimates are not observed capacity
+or billing. Disk consumption is unknown. This new ordinary test adds work until
+platform dependencies or selected tests are actually removed.
+
+Existing Agent and baseline regressions passed in the
+[first batch](https://app.buildbuddy.io/invocation/3ac1ef4c-dc7a-4dd8-9f3b-14c95c92be1f).
+Two new test harness errors were corrected: a nested autospec over already mocked
+gRPC callables and a positional argument to a keyword-only fixture parameter.
+The [focused rerun](https://app.buildbuddy.io/invocation/9c3ac457-8c78-4654-b565-b2e5c3a8a2ed)
+passed 14 native-driver safety cases and nine stack lifecycle cases. The
+[explicit changed-library build](https://app.buildbuddy.io/invocation/b15649dd-cb24-43c3-8395-6079f47a620a)
+passed all 11 libraries and their lint/type aspects. These runs do not estimate
+fleet flakiness or qualify a replacement gate.
+
+### Private fresh-KVM prerequisite
+
+Fresh non-retained KVM stacks need a private store and must skip the legacy
+previous-server stop. The first candidate used `/var/lib/k3s-persistence-v7/data`
+on the action overlay root. Its guard rejected existing ownership markers/data
+(including symlinks) before stack setup; non-KVM and retained-v2 paths stayed
+unchanged. The pending rejected v1 cleanup remains unexecuted.
+
+The [read-only preflight](https://app.buildbuddy.io/invocation/48d541fa-e122-405b-aad7-c66f3bfc72ad)
+ran only `TestActionK3sIsolationPreflight` in the manual KVM test target and passed.
+Its private diagnostic artifact records an overlay root with no propagation,
+critical K3s/kubelet/CNI/log paths on that root, cgroup `0::/`, no pre-existing
+private baseline and absent fixed CRI/debug sockets. It starts no K3s, signals no
+process, changes no mount and never opens the shared-store contents. It does not
+prove hostile-job isolation or inspect live Docker HostConfig. Namespace links
+are observations, not proof that every namespace differs from the host.
+
+The [physical Firecracker probe](https://app.buildbuddy.io/invocation/8651baa4-f752-4632-85d0-504f4828765f)
+rejected that first placement: both collected cases errored before their bodies.
+K3s never wrote kubeconfig and repeatedly reported that its overlayfs snapshotter
+could not mount under the Docker overlay data directory (`invalid argument`).
+Bootstrap reached its existing 180s deadline; the process was then terminated by
+fixture cleanup. The error does not independently identify the filesystem
+constraint; the workspace-placement retry tests that hypothesis. Raising the
+deadline would not repair the repeatedly failing mount.
+Bazel elapsed was 195.743s and TestRunner 189.285s. Debian package 404 messages
+were fallback warnings; they did not prevent test execution. No platform case
+passed in this run, and no shared-store cleanup was executed.
+
+A second [read-only workspace observation](https://app.buildbuddy.io/invocation/b51aed00-3480-4d78-a66a-8913dd0e8b0e)
+confirmed that Bazel's absolute `TEST_TMPDIR` resolves onto the unique action's
+ext4 workspace mount, together with `TEST_SRCDIR`. The corrected candidate uses
+`TEST_TMPDIR/k3s`, requiring an existing absolute caller-owned test directory and
+an absent data path. This avoids a shared K3s store, extra mounts, loop devices
+and memory-backed layers. Physical qualification of that corrected placement is
+recorded below; the read-only observation alone did not establish compatibility.
+
+The [corrected offline checks](https://app.buildbuddy.io/invocation/18fa6181-44f9-4ecc-a72b-f9931811ffa9)
+pass all 39 baseline and 11 stack cases without failures, errors or skips, together
+with explicit lint/type checks for both changed libraries. The source manifest
+records frozen `38f6c8e` plus 59 overlay paths; only the four fresh-store/lifecycle
+files changed from the read-only workspace probe. Its SHA256 is
+`8a399d249f6c6e4d352e993f56471190bff0a1b60595bf12852a00f95ce72b9d`.
+
+The [corrected physical Firecracker run](https://app.buildbuddy.io/invocation/d0983102-efe1-4dbf-8b4b-f8314d9d09ca)
+passes both ordinary cases, in one run and one attempt, with no failures, errors
+or skips: live-guest preservation and refusal of a cluster-CA leaf naming the
+Gateway. JUnit reports 246.889s; the cases report 204.183s and 42.487s (including
+fixture exposure). TestRunner execution is 254.857s; Bazel elapsed is 290.188s
+with a 259.86s critical path. These clocks overlap and are not additive.
+K3s writes kubeconfig, and the captured data paths are all under the private
+workspace's `k3s` child, with no legacy-store or overlay-root candidate paths.
+The existing bootstrap span is 8.320s and stack setup 74.649s. The only changed
+runtime choice from the failing placement is the data path and its guard; this
+supports using the action's ext4 workspace for the fresh store. The run still
+uses the existing App-dependent platform suite; the native lifecycle/profile
+cut is separate work.
+
+TestRunner CPU, peak memory and disk consumption are not exposed by this
+execution record. Its queue timestamps are inverted, so queue duration is
+unknown. This is one successful fresh-store run, not a matched latency comparison
+or a p90/flake qualification. Shared-store cleanup remains unexecuted.
+
+Private storage also gives up cross-action CRI image retention. Its effect on
+cold image imports and full-suite p90 remains unmeasured; do not call it a latency
+improvement. The manual preflight adds diagnostic maintenance but no ordinary CI
+execution. The native driver reuses shared pagination and turn interpretation
+rather than maintaining a second parser.
+
+### Next actual dependency cut and qualification
+
+- Migrate VM/Firecracker lifecycle operations and diagnostics to native
+  EnvironmentService/SandboxControl/History clients, with an explicitly authorized
+  fixture principal that does not require an App process or App-issued identity.
+- Give those suites separate rendered profiles and image maps without App. Audit
+  inherited conftest dependencies as well as direct imports; removing Python calls
+  alone leaves `app:image` in the graph.
+- Retain real App route/composition/fold assertions in ordinary App integration
+  tests. Keep issuer, credential rotation, controller, storage, guest supervision,
+  checkpoint and recovery assertions with their actual platform owners.
+- Re-query actual dependency paths and replay representative real source plus
+  BUILD edits under ordinary caching. Count ineligible changes in the aggregate.
+- Measure the complete required gate, reruns, competing tails, p90 and busy-load
+  resource cost before adopting any selection substitution or claiming 30%.
+
+### Native platform dependency migration
+
+The same architecture branch now implements native Environment lifecycle, Session/History and
+Runner-control clients for the ordinary VM and Firecracker targets. A dedicated fixture
+ServiceAccount receives audience-specific tokens bound to one Ready fixture Pod UID. The native
+profiles retain real PostgreSQL, platform binaries, controllers, PKI and guest images, and omit the
+App Deployment, image, database role/bootstrap, OIDC and App-issued tokens. Their idle identity Pod
+uses `/bin/sleep` from the already-required pinned PostgreSQL image; no extra harness image is added.
+
+The required Firecracker target retains its two cases. The required VM target retains the one case
+that concurrently exercises both Claude and Codex, including setup fencing, private systemd
+supervision, issuer binding, Egress/Notification CLI routes and process traces. Native History
+checks retain exact command admission, ordered terminal events and the exact Sandbox UID fold.
+App Thread projection remains with the ordinary focused App routes and Bridge contracts. Manual OOM
+code was separated from the required VM scenario; it remains a manual deployed test.
+
+The first dependency query exposed an App HTTP client imported indirectly through shared credential
+checks. Moving those checks into `driver/workload_credentials.py` removes that dependency without
+changing their four function ASTs beyond the declared helper renames. Three Firecracker guest/cert
+probe functions are also AST-identical. The repeated [query](https://app.buildbuddy.io/invocation/254f8996-bf00-46d8-ba09-71f7a1c405ea)
+contains no App executable, image, internal server, HTTP testing client or App-backed conftest for
+either ordinary target. Shared rendering still imports App configuration types; this is not an
+empty-App-prefix claim.
+
+The [14-target caller build](https://app.buildbuddy.io/invocation/f0f076a4-82fa-45b5-a7d5-673c5e2bcfe2)
+passes with lint/type aspects, including the migrated ordinary and manual VM/Firecracker variants
+and MCP callers. Earlier combined validation exposed required config values, missing direct
+protobuf stub dependencies, mock typing and native plugin wiring. The first physical native run
+stopped before K3s because the removed conftest had owned `k3s_binary`. That fixture now has a shared
+App-free plugin, and native plugins load before collection. These are implementation failures,
+not samples of production CI flakiness.
+
+The next frozen validation uses base `38f6c8e723` plus the complete source overlay (manifest SHA256
+`edb05fd902079a4ccfc75bbfee03f8ccee69b93068382a9391225a49726fa98b`). Combined unit/render
+[df45e49f](https://app.buildbuddy.io/invocation/df45e49f-68e0-4d5c-a7dc-6097cc3bf224),
+the actual dependency graph
+and unchanged physical acceptance are being checked; no passing physical native result or complete
+feedback saving is claimed yet. Remote metadata's `devel` commit identifies the checkout before
+source patches, not the exact tested tree. Keep that distinction through rebasing and full CI.

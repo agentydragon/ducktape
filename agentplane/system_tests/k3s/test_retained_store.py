@@ -221,3 +221,5 @@ def test_clean_image_store_reuse_and_rejected_reuse_paths(runfiles: Runfiles, k3
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+# gazelle:include_dep //agentplane/system_tests/k3s:pytest_plugin

@@ -14,13 +14,13 @@ from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver import workload_credentials
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
 from agentplane.system_tests.driver.scenario import ScenarioResources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.session_setup import run_setup
-from agentplane.system_tests.scenarios import runner_credentials
 from agentplane.system_tests.vm.configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.vm.guest_setup_probe import VM_SETUP_PROBE, assert_vm_setup_probe, setup_fence_probe
@@ -61,7 +61,7 @@ async def test_one_vm_platform_without_model_turns(
         assert view.observed_state.phase == environment_service_pb2.SANDBOX_PHASE_RUNNING
         assert view.observed_state.readiness.state == environment_service_pb2.READINESS_STATE_READY
         assert view.kubernetes_diagnostics.HasField("pod")
-        identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
+        identity = await workload_credentials.check_vm_runner_certificate(cluster, view)
         assert identity[0] == view.kubernetes_diagnostics.pod.uid
         assert identity[1]
         pod = json.loads(await cluster.kubectl("get", "pod", view.kubernetes_diagnostics.pod.name, "-o", "json"))
@@ -148,7 +148,7 @@ async def test_one_vm_platform_without_model_turns(
         assert after.lifecycle.stage == session_pb2.ENVIRONMENT_RUNTIME_LIFECYCLE_STAGE_RUNNING
         assert after.lifecycle.progress_current
         assert not after.lifecycle.error
-        await runner_credentials.assert_vm_runner_identity_unchanged(
+        await workload_credentials.assert_vm_runner_identity_unchanged(
             cluster, view.kubernetes_diagnostics.pod.name, identity
         )
         if private_owner == PrivateSupervisionOwner.DIRECT_GUEST:

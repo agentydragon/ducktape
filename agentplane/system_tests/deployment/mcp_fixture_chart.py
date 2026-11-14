@@ -90,6 +90,9 @@ def objects(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
     assert fixture.mcp_edge is not None
+    assert fixture.app is not None
+    assert fixture.app_login is not None
+    assert fixture.mcp_linkage is not None
     fixture_chart.add_secret(
         fixture.chart,
         _MCP_EDGE_OAUTH_SECRET,

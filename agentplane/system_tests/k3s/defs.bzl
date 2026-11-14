@@ -86,7 +86,9 @@ _CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local
 _CENTRAL_BUDGET_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-budget.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
+_VM_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm-native.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
+_FIRECRACKER_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker-native.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/deployment:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
@@ -107,6 +109,11 @@ _COMMON_SERVICE_IMAGES = {
     "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
     "//agentplane/environments:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
     "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+}
+_APP_FREE_SERVICE_IMAGES = {
+    image: reference
+    for image, reference in _COMMON_SERVICE_IMAGES.items()
+    if image != "//agentplane/app:image"
 }
 _HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
@@ -179,17 +186,19 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses a dedicated stack because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "central": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
-    "central_services": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
-    "central_budget": struct(service_images = _SERVICE_IMAGES, fixture = _CENTRAL_BUDGET_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "pod": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "central": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_services": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_budget": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_BUDGET_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
-    "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
-    "mcp": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
-    "vm": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
-    "firecracker": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
-    "real_model": struct(service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
+    "deletion": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "mcp": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
+    "vm": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
+    "vm_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _VM_NATIVE_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
+    "firecracker": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "firecracker_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _FIRECRACKER_NATIVE_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "real_model": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
 }
 
 def _image_manifest_impl(ctx):
@@ -251,7 +260,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platfor
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if config.native_fixtures else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
@@ -317,7 +326,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platfor
         tags = suite_tags,
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
-        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
+            "//agentplane/system_tests/k3s:pytest_plugin",
+        ] + (["//agentplane/system_tests/driver:native_fixtures"] if config.native_fixtures else []) + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
     )
 
 def k3s_tcg_vm_image_manifest(name):

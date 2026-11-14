@@ -78,22 +78,30 @@ def test_leftover_sandbox_prevents_workload_cleanup(
     assert all(command[0] == "get" for command in calls)
 
 
-@pytest.mark.parametrize("existing", ["marker", "private_data"])
+@pytest.mark.parametrize("existing", ["marker", "private_data", "missing_test_tmpdir", "relative_test_tmpdir"])
 def test_fresh_kvm_refusal_precedes_stack_creation_and_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, existing: str
 ) -> None:
     root = tmp_path / "retained"
     root.mkdir()
     marker = root / "server.json"
-    data_dir = root / "data"
+    data_parent = tmp_path / "action-test-tmp"
+    data_parent.mkdir()
+    data_dir = data_parent / "k3s"
     monkeypatch.setattr(baseline, "_BASELINE_ROOT", root)
     monkeypatch.setattr(baseline, "_BASELINE_MARKER", marker)
     if existing == "marker":
         marker.write_text('{"state":"dirty"}')
-    else:
+    elif existing == "private_data":
         data_dir.mkdir()
     monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1")
     monkeypatch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", raising=False)
+    if existing == "missing_test_tmpdir":
+        monkeypatch.delenv("TEST_TMPDIR", raising=False)
+    elif existing == "relative_test_tmpdir":
+        monkeypatch.setenv("TEST_TMPDIR", "relative-test-tmp")
+    else:
+        monkeypatch.setenv("TEST_TMPDIR", str(data_parent))
 
     calls: list[str] = []
     monkeypatch.setattr(stack.baseline, "stop_previous", lambda: calls.append("stop_previous"))
@@ -102,8 +110,11 @@ def test_fresh_kvm_refusal_precedes_stack_creation_and_cleanup(
     monkeypatch.setattr(stack.tempfile, "mkdtemp", lambda: calls.append("work_mkdir"))
     monkeypatch.setattr(stack, "K3s", lambda *_args, **_kwargs: calls.append("construct_k3s"))
 
+    expected_error = (
+        "TEST_TMPDIR" if existing in {"missing_test_tmpdir", "relative_test_tmpdir"} else "fresh KVM action found"
+    )
     with (
-        pytest.raises(RuntimeError, match="fresh KVM action found"),
+        pytest.raises(RuntimeError, match=expected_error),
         stack.running_stack(
             inputs=None,  # type: ignore[arg-type]
             models=None,  # type: ignore[arg-type]
@@ -117,7 +128,7 @@ def test_fresh_kvm_refusal_precedes_stack_creation_and_cleanup(
     assert calls == []
     if existing == "marker":
         assert marker.read_text() == '{"state":"dirty"}'
-    else:
+    elif existing == "private_data":
         assert data_dir.is_dir()
 
 
@@ -130,6 +141,12 @@ def test_action_store_and_previous_stop_follow_the_selected_lifecycle(
     monkeypatch.setattr(baseline, "_BASELINE_MARKER", root / "server.json")
     monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1" if require_kvm else "0")
     monkeypatch.delenv("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE", raising=False)
+    action_tmpdir = tmp_path / "action-test-tmp"
+    if require_kvm:
+        action_tmpdir.mkdir()
+        monkeypatch.setenv("TEST_TMPDIR", str(action_tmpdir))
+    else:
+        monkeypatch.delenv("TEST_TMPDIR", raising=False)
     monkeypatch.setattr(stack.tempfile, "mkdtemp", lambda: str(tmp_path / "work"))
     monkeypatch.setattr(stack.pki_infrastructure, "releases", lambda: ([], []))
     monkeypatch.setattr(stack.process_traces, "ProcessTraces", lambda *_args: contextlib.nullcontext())
@@ -175,7 +192,7 @@ def test_action_store_and_previous_stop_follow_the_selected_lifecycle(
 
     expected_constructor = {"work": tmp_path / "work", "binary": Path("k3s")}
     if require_kvm:
-        expected_constructor["data_dir"] = root / "data"
+        expected_constructor["data_dir"] = action_tmpdir / "k3s"
     expected: list[tuple[str, dict[str, Any]]] = [("construct", expected_constructor)]
     if not require_kvm:
         expected.append(("stop_previous", {}))

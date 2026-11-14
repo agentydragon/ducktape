@@ -211,3 +211,5 @@ def test_persistent_xtables_lock_fails_closed(iptables_binary: Path) -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+# gazelle:include_dep //agentplane/system_tests/k3s:pytest_plugin

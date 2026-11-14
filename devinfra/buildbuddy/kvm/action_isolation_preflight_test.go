@@ -27,6 +27,7 @@ const (
 type actionMount struct {
 	id          int
 	mountPoint  string
+	root        string
 	filesystem  string
 	propagation []string
 	raw         string
@@ -64,6 +65,7 @@ func collectActionIsolationEvidence() (string, []string) {
 			mounts = parsed
 		}
 	}
+	appendBazelWorkspaceMountObservations(&report, mounts)
 
 	if err := appendNamespaceLinks(&report); err != nil {
 		failures = append(failures, "namespace-links-incomplete")
@@ -168,9 +170,18 @@ func parseActionMounts(data []byte) ([]actionMount, error) {
 		if err != nil {
 			return nil, fmt.Errorf("line %d has invalid mount ID", lineNumber)
 		}
+		mountPoint, err := decodeMountInfoPath(fields[4])
+		if err != nil {
+			return nil, fmt.Errorf("line %d has invalid mountpoint escape: %w", lineNumber, err)
+		}
+		root, err := decodeMountInfoPath(fields[3])
+		if err != nil {
+			return nil, fmt.Errorf("line %d has invalid mount-root escape: %w", lineNumber, err)
+		}
 		mounts = append(mounts, actionMount{
 			id:          id,
-			mountPoint:  fields[4],
+			mountPoint:  mountPoint,
+			root:        root,
 			filesystem:  fields[separator+1],
 			propagation: append([]string(nil), fields[6:separator]...),
 			raw:         line,
@@ -183,6 +194,89 @@ func parseActionMounts(data []byte) ([]actionMount, error) {
 		return nil, errors.New("no mount entries")
 	}
 	return mounts, nil
+}
+
+func decodeMountInfoPath(value string) (string, error) {
+	var decoded strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] != '\\' {
+			decoded.WriteByte(value[i])
+			continue
+		}
+		if i+3 >= len(value) {
+			return "", errors.New("truncated octal escape")
+		}
+		for _, digit := range value[i+1 : i+4] {
+			if digit < '0' || digit > '7' {
+				return "", errors.New("invalid octal escape")
+			}
+		}
+		parsed, err := strconv.ParseUint(value[i+1:i+4], 8, 8)
+		if err != nil {
+			return "", err
+		}
+		decoded.WriteByte(byte(parsed))
+		i += 3
+	}
+	return decoded.String(), nil
+}
+
+func appendBazelWorkspaceMountObservations(report *strings.Builder, mounts []actionMount) {
+	report.WriteString("\n--- Bazel action workspace path observations ---\n")
+	report.WriteString("TEST_TMPDIR is Bazel's per-test temporary directory; TEST_SRCDIR identifies the runfiles tree. These paths are observed only; no files beneath them are read.\n")
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		report.WriteString("working directory: unavailable: " + err.Error() + "\n")
+	} else {
+		appendWorkspacePathObservation(report, "working directory", workingDirectory, mounts)
+	}
+	for _, variable := range []string{"TEST_TMPDIR", "TEST_SRCDIR"} {
+		value := os.Getenv(variable)
+		if value == "" {
+			report.WriteString(variable + ": unset\n")
+			continue
+		}
+		appendWorkspacePathObservation(report, variable, value, mounts)
+	}
+}
+
+func appendWorkspacePathObservation(report *strings.Builder, name, path string, mounts []actionMount) {
+	report.WriteString(name + " raw path: " + path + "\n")
+	if !filepath.IsAbs(path) {
+		report.WriteString("  resolved path: unavailable (not absolute)\n")
+		return
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		report.WriteString("  resolved path: unavailable: " + err.Error() + "\n")
+		appendLongestCoveringMount(report, "raw path", path, mounts)
+		return
+	}
+	report.WriteString("  resolved path: " + resolvedPath + "\n")
+	appendLongestCoveringMount(report, "resolved path", resolvedPath, mounts)
+}
+
+func appendLongestCoveringMount(report *strings.Builder, label, path string, mounts []actionMount) {
+	longest := -1
+	var covering []actionMount
+	for _, mount := range mounts {
+		if !mountCoversPath(mount.mountPoint, path) {
+			continue
+		}
+		if len(mount.mountPoint) > longest {
+			longest = len(mount.mountPoint)
+			covering = []actionMount{mount}
+		} else if len(mount.mountPoint) == longest {
+			covering = append(covering, mount)
+		}
+	}
+	if len(covering) == 0 {
+		report.WriteString("  " + label + " longest covering mount: none\n")
+		return
+	}
+	for _, mount := range covering {
+		report.WriteString(fmt.Sprintf("  %s longest covering mount: ID=%d filesystem=%s mountpoint=%s root=%s\n", label, mount.id, mount.filesystem, mount.mountPoint, mount.root))
+	}
 }
 
 func checkActionMounts(report *strings.Builder, mounts []actionMount) ([]string, bool) {

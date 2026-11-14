@@ -33,6 +33,7 @@ from agentplane.system_tests.driver.central_sampler import (
     sampler_caller_after_gateway_roll,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
@@ -1825,7 +1826,12 @@ async def dispatcher_central_setup_tool_and_retained_answer(
 
 
 async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
-    cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster,
+    client: Client,
+    environments: EnvironmentServiceClient,
+    tmp_path: Path,
+    scripted: ScriptedUpstream,
+    executor: Executor,
 ) -> None:
     """A resident central Session continues its next requested exec on the resumed Pod."""
     session_id = str(uuid4())
@@ -1898,7 +1904,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         )
 
         previous_incarnation = deployed.incarnation_uid
-        await client.suspend_sandbox(target)
+        await environments.suspend_environment(target)
         async with asyncio.timeout(SANDBOX_READY_SECONDS):
             while True:
                 suspended = await client.get_environment(target)
@@ -1909,8 +1915,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
                     break
                 await asyncio.sleep(0.2)
 
-        await client.resume_sandbox(target)
-        resumed = await wait_until_running(client, target)
+        await environments.resume_environment(target)
+        resumed = await wait_until_running(environments, target)
         assert resumed.target.uid == deployed.sandbox_uid
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation

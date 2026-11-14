@@ -73,6 +73,7 @@ py_test(
         K3S_BINARY,
     ],
     env = {
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin",
         "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
         "K3S_IMPORT_BENCHMARK_GROUPS": "pki,fixture",
         "K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY": "1",
@@ -85,6 +86,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/k3s:pytest_plugin",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -105,6 +107,7 @@ py_test(
         K3S_BINARY,
     ],
     env = {
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin",
         "K3S_BINARY_RLOCATION": "$(rlocationpath " + K3S_BINARY + ")",
         "K3S_IMPORT_BENCHMARK_GROUPS": "vm,pki,fixture,guest",
         "K3S_IMPORT_BENCHMARK_LAYERS_IN_MEMORY": "0",
@@ -121,6 +124,7 @@ py_test(
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:baseline",
+        "//agentplane/system_tests/k3s:pytest_plugin",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -129,7 +133,8 @@ py_test(
     ],
 )
 
-# Bazel-built Debian guest and production launcher on the dedicated KVM worker.
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 k3s_suite(
     name = "test_firecracker",
     srcs = ["test_firecracker.py"],
@@ -155,13 +160,11 @@ k3s_suite(
         "test.EstimatedMemory": "6GB",
     },
     require_kvm = True,
-    stack = "firecracker",
+    stack = "firecracker_native",
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:firecracker",
@@ -171,6 +174,8 @@ k3s_suite(
     ],
 )
 
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 # Manual same-runner baseline experiment. Keep the required target cold and unchanged.
 k3s_suite(
     name = "test_firecracker_prepared_baseline_candidate",
@@ -185,14 +190,12 @@ k3s_suite(
     },
     main = "test_firecracker.py",
     require_kvm = True,
-    stack = "firecracker",
+    stack = "firecracker_native",
     tags = ["manual"],
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:firecracker",
@@ -202,6 +205,8 @@ k3s_suite(
     ],
 )
 
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 # Keep the required two-guest control above; compare the same assertions on one fresh guest.
 k3s_suite(
     name = "test_firecracker_shared_guest_candidate",
@@ -213,14 +218,12 @@ k3s_suite(
     },
     main = "test_firecracker_shared_guest.py",
     require_kvm = True,
-    stack = "firecracker",
+    stack = "firecracker_native",
     tags = ["manual"],
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:firecracker",
@@ -360,26 +363,26 @@ k3s_suite(
 )
 
 # Every VM scenario boots independently on the same stack and runs concurrently.
+# Native fixtures replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 k3s_suite(
     name = "test_vm",
     srcs = ["test_vm.py"],
-    stack = "vm",
+    stack = "vm_native",
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:local_models",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:offered_models",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:vm_sandbox",
         "//agentplane/system_tests/vm:configuration",
         "//agentplane/system_tests/vm:trace_contract",
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -404,12 +407,13 @@ k3s_suite(
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
         "//agentplane/system_tests/driver:offered_models",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/driver:workload_credentials",
         "//agentplane/system_tests/vm:configuration",
         "//agentplane/system_tests/vm:guest_logs",
         "//agentplane/system_tests/vm:supervision",
@@ -443,7 +447,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:session_setup",
-        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/driver:workload_credentials",
         "//agentplane/system_tests/vm:configuration",
         "//agentplane/system_tests/vm:guest_logs",
         "//agentplane/system_tests/vm:guest_setup_probe",
@@ -476,7 +480,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:session_setup",
-        "//agentplane/system_tests/scenarios:runner_credentials",
+        "//agentplane/system_tests/driver:workload_credentials",
         "//agentplane/system_tests/vm:configuration",
         "//agentplane/system_tests/vm:guest_logs",
         "//agentplane/system_tests/vm:guest_setup_probe",
@@ -498,9 +502,9 @@ k3s_suite(
     tags = ["manual"],
     deps = [
         "//:conftest",
-        "//agentplane/app/testing:client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:environment_transport",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/vm:host_qemu",
         "//agentplane/system_tests/vm:shutdown_diagnostic",
@@ -555,7 +559,8 @@ k3s_suite(
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/scenarios:vm_oom",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -580,7 +585,8 @@ k3s_suite(
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
-        "//agentplane/system_tests/scenarios:vm_sandbox",
+        "//agentplane/system_tests/scenarios:vm_oom",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

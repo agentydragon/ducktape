@@ -83,7 +83,9 @@ def test_fresh_kvm_data_dir_refuses_existing_state_without_mutation(
     root = tmp_path / "retained"
     root.mkdir()
     marker = root / "server.json"
-    data_dir = root / "data"
+    data_parent = tmp_path / "action-test-tmp"
+    data_parent.mkdir()
+    data_dir = data_parent / "k3s"
     monkeypatch.setattr(baseline, "_BASELINE_ROOT", root)
     monkeypatch.setattr(baseline, "_BASELINE_MARKER", marker)
     if existing == "marker":
@@ -105,7 +107,7 @@ def test_fresh_kvm_data_dir_refuses_existing_state_without_mutation(
         raise AssertionError(existing)
 
     with pytest.raises(RuntimeError, match="fresh KVM action found"):
-        baseline.fresh_kvm_data_dir()
+        baseline.fresh_kvm_data_dir(data_parent=data_parent)
 
     if existing == "root_symlink":
         assert root.is_symlink()
@@ -116,6 +118,44 @@ def test_fresh_kvm_data_dir_refuses_existing_state_without_mutation(
             assert marker.read_text() == '{"state":"dirty"}'
     else:
         assert os.path.lexists(data_dir)
+
+
+def test_fresh_kvm_data_dir_uses_explicit_action_parent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    data_parent = tmp_path / "action-test-tmp"
+    data_parent.mkdir()
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", tmp_path / "retained")
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", tmp_path / "retained/server.json")
+
+    data_dir = baseline.fresh_kvm_data_dir(data_parent=data_parent)
+
+    assert data_dir == data_parent / "k3s"
+    assert not data_dir.exists()
+    assert not (tmp_path / "retained").exists()
+
+
+@pytest.mark.parametrize("invalid_parent", ["relative", "missing", "symlink"])
+def test_fresh_kvm_data_dir_requires_a_real_explicit_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid_parent: str
+) -> None:
+    parent = tmp_path / "action-test-tmp"
+    if invalid_parent == "symlink":
+        target = tmp_path / "actual-action-test-tmp"
+        target.mkdir()
+        parent.symlink_to(target, target_is_directory=True)
+        data_parent = parent
+    elif invalid_parent == "missing":
+        data_parent = parent
+    else:
+        data_parent = Path("relative-action-test-tmp")
+    monkeypatch.setattr(baseline, "_BASELINE_ROOT", tmp_path / "retained")
+    monkeypatch.setattr(baseline, "_BASELINE_MARKER", tmp_path / "retained/server.json")
+
+    with pytest.raises(RuntimeError, match="fresh KVM action"):
+        baseline.fresh_kvm_data_dir(data_parent=data_parent)
+
+    assert not (tmp_path / "retained").exists()
+    if invalid_parent == "symlink":
+        assert parent.is_symlink()
 
 
 @pytest.mark.parametrize("private", [False, True])
