@@ -86,6 +86,18 @@
         track.status.startsWith("DEFERRED")
           ? "~ deferred"
           : workStatus[track.status].badge;
+      const cutColor = {
+        DECIDED: "teal",
+        PROPOSED: "grape",
+        "PROPOSED DESIGN": "grape",
+        OPEN: "orange",
+        NEXT: "blue",
+        QUEUED: "gray",
+      };
+      const sourceLinks = (plan, paths) =>
+        html`<${Group} gap="xs" mt="xs"
+          >${paths.map((path) => html`<${Anchor} key=${path} size="xs" href=${sourceURL(plan, path)}>${path}<//>`)}<//
+        >`;
       function treeLines(plan, component, goal, showFiles) {
         const all = component.id === "all";
         const root = {
@@ -359,6 +371,7 @@
             <${Group} component="nav" gap="md"
               ><${Anchor} href="#trees">${"Current and goal trees"}<//
               ><${Anchor} href="#coverage">${"Component decisions"}<//
+              ><${Anchor} href="#binaries">${"Target binaries"}<//
               ><${Anchor} href="#remaining">${"Remaining work"}<//
               ><${Anchor} href="#adoption">${"Adoption order"}<//
               ><${Anchor} href="#rules">${"Organization rules"}<//><//
@@ -472,6 +485,72 @@
                       >
                     <//>`,
                 )}<//
+              >
+            <//>
+            <${Stack} component="section" id="binaries" gap="md">
+              <${Title} order=${2}>${"Target binaries and cut line"}<//>
+              <${Group} gap="sm" wrap="nowrap" align="flex-start"
+                ><${Badge}
+                  color=${cutColor[plan.target_binaries.status]}
+                  style=${{ flexShrink: 0 }}
+                  >${plan.target_binaries.status}<//
+                ><${Text} size="sm" c="dimmed"
+                  >${plan.target_binaries.status_note}<//
+                ><//
+              >
+              <${Blockquote} color="blue"
+                >${plan.target_binaries.proposal_quote}<//
+              >
+              <${Text}>${plan.target_binaries.summary}<//>
+              <${Title} order=${3}>${"Today"}<//>
+              <${SimpleGrid} cols=${{ base: 1, sm: 2 }}
+                >${plan.target_binaries.today.map((b) => html`<${Paper} key=${b.name} withBorder p="md" style=${{ minWidth: 0, overflowWrap: "anywhere" }}><${Text} fw=${600} ff="monospace">${b.name}<//><${Text} size="sm" mt="xs">${b.text}<//>${sourceLinks(plan, b.evidence_paths)}<//>`)}<//
+              >
+              <${Title} order=${3}>${"Proposed"}<//>
+              <${SimpleGrid} cols=${{ base: 1, sm: 2 }}
+                >${plan.target_binaries.binaries.map((b) => html`<${Paper} key=${b.name} withBorder p="md" style=${{ minWidth: 0, overflowWrap: "anywhere" }}><${Title} order=${4}>${b.name}<//><${Text} size="sm" c="dimmed">${b.text}<//><${List} size="sm" mt="xs" spacing="xs">${b.owns.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//><${Text} size="sm" mt="xs">${"Callers: " + b.callers}<//><${Text} size="xs" c="dimmed" mt="xs">${"From: " + b.from_paths.join(" · ")}<//><//>`)}<//
+              >
+              <${Title} order=${3}>${"Cut line"}<//>
+              ${plan.target_binaries.cut_line.map(
+                (cut) =>
+                  html`<${Paper}
+                    key=${cut.id}
+                    id=${"cut-" + cut.id}
+                    withBorder
+                    p="md"
+                    style=${{ minWidth: 0, overflowWrap: "anywhere" }}
+                    ><${Group} gap="sm"
+                      ><${Badge} color=${cutColor[cut.status]}>${cut.status}<//
+                      ><${Title} order=${4}>${cut.title}<//><//
+                    >
+                    ${cut.decision ? html`<${Text} size="sm" fw=${600} mt="xs">${cut.decision}<//>` : ""}
+                    <${Text} size="sm" mt="xs">${"Today: " + cut.today}<//>
+                    <${Text} size="sm" mt="xs">${cut.proposal}<//>
+                    ${sourceLinks(plan, cut.evidence_paths)}<//
+                  >`,
+              )}
+              <${Title} order=${3}>${"Keep-alive holds"}<//>
+              <${Group} gap="sm" wrap="nowrap" align="flex-start"
+                ><${Badge}
+                  color=${cutColor[plan.target_binaries.keep_alive.status]}
+                  style=${{ flexShrink: 0 }}
+                  >${plan.target_binaries.keep_alive.status}<//
+                ><${Text} size="sm" c="dimmed"
+                  >${plan.target_binaries.keep_alive.steer}<//
+                ><//
+              >
+              <${Text} size="sm"
+                >${"Today: " + plan.target_binaries.keep_alive.today}<//
+              >
+              <${List} spacing="xs" size="sm"
+                >${plan.target_binaries.keep_alive.proposal.map((item) => html`<${List.Item} key=${item}>${item}<//>`)}<//
+              >
+              ${sourceLinks(plan, plan.target_binaries.keep_alive.evidence_paths)}
+              <${Title} order=${3}
+                >${"Questions for the operator, one at a time"}<//
+              >
+              <${List} type="ordered" spacing="xs"
+                >${plan.target_binaries.questions.map((q) => html`<${List.Item} key=${q.text}><${Badge} size="sm" mr="xs" color=${cutColor[q.status]}>${q.status}<//>${q.text}<//>`)}<//
               >
             <//>
             <${Stack} component="section" id="remaining" gap="md">
