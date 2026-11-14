@@ -185,26 +185,58 @@ class Settings(BaseModel):
     @model_validator(mode="after")
     def validate_service_callers(self) -> Settings:
         """Keep service-token callers paired with their receiver and caller identities."""
-        service_callers = (
+        # Match Go's YAML loader: an omitted legacy default is cleared for SVID mode,
+        # while an explicitly configured bearer token remains an authentication conflict.
+        if (
+            self.session_dispatcher_tls is not None
+            and self.session_dispatcher_tls.uses_svid
+            and "session_dispatcher_token_file" not in self.model_fields_set
+        ):
+            self.session_dispatcher_token_file = None
+        if (
+            self.runner_gateway_tls is not None
+            and self.runner_gateway_tls.uses_svid
+            and "runner_gateway_token_file" not in self.model_fields_set
+        ):
+            self.runner_gateway_token_file = None
+        if (
+            self.history_service_tls is not None
+            and self.history_service_tls.uses_svid
+            and "history_service_token_file" not in self.model_fields_set
+        ):
+            self.history_service_token_file = None
+        if (
+            self.policy_service_tls is not None
+            and self.policy_service_tls.uses_svid
+            and "policy_service_token_file" not in self.model_fields_set
+        ):
+            self.policy_service_token_file = None
+        if (
+            self.egress_admin_tls is not None
+            and self.egress_admin_tls.uses_svid
+            and "egress_admin_token_file" not in self.model_fields_set
+        ):
+            self.egress_admin_token_file = None
+        if (
+            self.notifications_tls is not None
+            and self.notifications_tls.uses_svid
+            and "notifications_token_file" not in self.model_fields_set
+        ):
+            self.notifications_token_file = None
+
+        for name, tls, token_file, server_uri in (
             (
                 "session_dispatcher",
                 self.session_dispatcher_tls,
-                "session_dispatcher_token_file",
+                self.session_dispatcher_token_file,
                 SESSION_DISPATCHER_URI,
             ),
-            ("runner_gateway", self.runner_gateway_tls, "runner_gateway_token_file", SESSION_DISPATCHER_URI),
-            ("history_service", self.history_service_tls, "history_service_token_file", HISTORY_SERVICE_URI),
-            ("policy_service", self.policy_service_tls, "policy_service_token_file", POLICY_CONTROLLER_URI),
-            ("egress_admin", self.egress_admin_tls, "egress_admin_token_file", EGRESS_PROXY_URI),
-            ("notifications", self.notifications_tls, "notifications_token_file", NOTIFICATIONS_URI),
-        )
-        for name, tls, token_field, server_uri in service_callers:
-            token_file = getattr(self, token_field)
-            # Match Go's YAML loader: an omitted legacy default is cleared for SVID mode,
-            # while an explicitly configured bearer token remains an authentication conflict.
-            if tls is not None and tls.uses_svid and token_field not in self.model_fields_set:
-                setattr(self, token_field, None)
-                token_file = None
+            ("runner_gateway", self.runner_gateway_tls, self.runner_gateway_token_file, SESSION_DISPATCHER_URI),
+            ("history_service", self.history_service_tls, self.history_service_token_file, HISTORY_SERVICE_URI),
+            ("policy_service", self.policy_service_tls, self.policy_service_token_file, POLICY_CONTROLLER_URI),
+            ("egress_admin", self.egress_admin_tls, self.egress_admin_token_file, EGRESS_PROXY_URI),
+            ("notifications", self.notifications_tls, self.notifications_token_file, NOTIFICATIONS_URI),
+        ):
             if tls is not None and tls.server_uri != server_uri:
                 raise ValueError(f"{name}_tls.server_uri must identify {server_uri}")
             try:
