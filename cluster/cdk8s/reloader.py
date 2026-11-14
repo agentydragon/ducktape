@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -87,9 +86,3 @@ def chart(app: App) -> Chart:
         values=_values(),
     )
     return chart
-
-
-def reloader(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, NAME, directory, interval="10m0s", timeout="5m", depends_on=[flux_kustomization_depends_on(kyverno)]
-    )

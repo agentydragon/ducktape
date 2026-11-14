@@ -7,7 +7,7 @@ from __future__ import annotations
 from cdk8s import App, Chart, Yaml
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Json6902Patch, Kustomization, PatchTarget, RenderedDirectory, flux_kustomization
+from cluster.cdk8s.flux import Json6902Patch, PatchTarget
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
@@ -62,11 +62,3 @@ def cdi_operator_namespace_patch(app: App) -> Chart:
     chart = Chart(app, "namespace-patch", disable_resource_name_hashes=True)
     namespaces.namespace_patch(chart, "namespace", name=_CDI_NAMESPACE, vpa=Vpa.DISABLED)
     return chart
-
-
-def kubevirt_operator(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, "kubevirt-operator", directory, timeout="10m")
-
-
-def cdi_operator(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, "cdi-operator", directory, timeout="10m")

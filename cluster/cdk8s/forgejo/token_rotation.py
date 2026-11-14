@@ -19,13 +19,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo import namespace, secret_copy
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -227,20 +221,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def forgejo_token_rotation(
-    chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    cert_manager_environment: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        timeout="2m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, cert_manager_environment),
-    )

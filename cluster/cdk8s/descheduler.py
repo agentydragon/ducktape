@@ -13,7 +13,6 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from cluster.cdk8s import piraeus, stateful_infra
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -147,7 +146,3 @@ def rbac_chart(app: App) -> Chart:
     chart = Chart(app, "rbac", disable_resource_name_hashes=True)
     PvcReader(chart, "pvc-reader")
     return chart
-
-
-def descheduler(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, depends_on=[flux_kustomization_depends_on(kyverno)], timeout="5m")

@@ -12,7 +12,6 @@ from cilium_crds.io.cilium import (
 from cluster.cdk8s import cilium, namespaces
 from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
@@ -90,7 +89,3 @@ def chart(app: App) -> Chart:
         kube_apiserver=True,
     )
     return chart
-
-
-def haku_namespace(flux_chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(flux_chart, NAME, directory, retry_interval=None, wait=None, timeout="2m")

@@ -84,12 +84,6 @@ def app(
     )
 
 
-def bootstrap(chart: Chart, directory: RenderedDirectory, app: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, "gitlab-spike-bootstrap", directory, timeout="15m", depends_on=flux_kustomization_depends_on_many(app)
-    )
-
-
 def gitops(
     chart: Chart,
     directory: RenderedDirectory,

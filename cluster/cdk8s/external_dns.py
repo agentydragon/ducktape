@@ -8,7 +8,6 @@ from external_dns_crds.io.k8s.externaldns import DnsEndpoint, DnsEndpointSpec, D
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -77,12 +76,6 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def external_dns(chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, NAME, directory, timeout="5m", depends_on=[flux_kustomization_depends_on(external_secrets_operator)]
-    )
-
-
 def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """The static endpoints that do not come from HTTPRoutes."""
     chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
@@ -130,7 +123,3 @@ def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         ),
     )
     return chart
-
-
-def records(chart: Chart, directory: RenderedDirectory, operator: Kustomization) -> Kustomization:
-    return flux_kustomization(chart, f"{NAME}-records", directory, depends_on=[flux_kustomization_depends_on(operator)])

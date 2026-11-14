@@ -27,7 +27,6 @@ from gateway_api_gateway_crds.io.k8s.networking.gateway import (
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.gateway_api.gateway import Gateway
@@ -182,9 +181,3 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
         ],
     )
     return chart
-
-
-def gateway(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, "gateway", directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
-    )

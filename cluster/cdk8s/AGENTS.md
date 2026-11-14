@@ -115,14 +115,17 @@ how to regenerate: `cluster/AGENTS.md` § Generated manifests.
 
 ## The Flux graph
 
-Every Flux `Kustomization` is one function in one shared chart; its dependencies are its
-parameters. `generate_manifests.py` is the hand-written topological order.
+Every Flux `Kustomization` is an actual object in one shared chart.
+`generate_manifests.py` is the hand-written topological order. Declare mechanical nodes
+there with `flux.flux_kustomization`; keep component functions when they bind meaningful
+readiness, lifecycle or source policy. Do not add a forwarding function solely to name a
+node or pass its timing fields and predecessors.
 
-- **A node is `name(chart, directory: RenderedDirectory, *predecessors) -> Kustomization`**,
-  writes no file, and returns `flux.flux_kustomization(chart, name, directory, ...)`,
-  which derives `sourceRef`, `path`, `decryption` from the directory and applies our
-  defaults (listed in its docstring); the node passes only differing `KustomizationSpec`
-  fields as same-named keywords. The entry point builds the artifact
+- **Declare a node with `flux.flux_kustomization(chart, name, directory, ...)`**, which
+  derives `sourceRef`, `path`, `decryption` from the directory and applies our defaults
+  (listed in its docstring); pass only differing `KustomizationSpec` fields as same-named
+  keywords. A retained component function takes its directory and predecessors as
+  parameters, writes no file, and returns that object. The entry point builds the artifact
   (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call
   and passes `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
   as the node's argument, which synthesizes the directory's one generated file
@@ -136,7 +139,7 @@ parameters. `generate_manifests.py` is the hand-written topological order.
   reading name/namespace off the constructs (so the entry carries an explicit
   `namespace`). Predecessors are already-built values — never strings, module-level
   lookups, or late resolution.
-- **The entry point calls nodes in dependency order**, passing results as locals; a wrong
+- **The entry point constructs nodes in dependency order**, passing results as locals; a wrong
   order is a `NameError`, a cycle unwritable. Never add a registry, sorter, lazy
   reference, node-describing class/record, or a module that builds nodes on import.
 - **A resource chart joins in order: chart → Kustomization → dependents.** Build the chart
@@ -155,7 +158,7 @@ parameters. `generate_manifests.py` is the hand-written topological order.
   `health_checks`) stay on the node. `None` leaves the field unset (Flux's default, which
   differs from ours). The same _fact_ twice becomes one local; the same _value_
   everywhere (SOPS `decryption`) may become a module constant.
-- **A node lives with its directory's generator once fully generated**
+- **A retained component function lives with its directory's generator once fully generated**
   (`aiquota.aiquota`, `litellm.keys.litellm_keys_tf`); until then in
   `<area>/flux_kustomizations.py`, moving as part of the conversion. No interim flattening
   of those packages.
@@ -167,7 +170,7 @@ parameters. `generate_manifests.py` is the hand-written topological order.
   that edit plus the committed files; `GENERATED_ROOT` iff the generator writes every
   file in the directory.
 
-Worked edge, `monitoring-crds -> ntfy`:
+Worked edge, `monitoring-crds -> cpap-sync`:
 
 ```python
 # monitoring/flux_kustomizations.py
@@ -183,39 +186,31 @@ def monitoring_crds(chart: Chart) -> Kustomization:
     )
 
 
-# ntfy.py, beside the chart it deploys
-def ntfy(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    cnpg: Kustomization,
-    external_secrets_operator: Kustomization,
-    monitoring_crds: Kustomization,
-    kyverno: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds, kyverno),
-    )
-
-
 # generate_manifests.py
 monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
 ...
-ntfy_artifact = artifact("ntfy", ntfy.OUTPUT_DIR)
-ntfy_kustomization = ntfy.ntfy(
+cpap_sync_artifact = artifact("cpap-sync", cpap_sync.OUTPUT_DIR)
+flux.flux_kustomization(
     flux_chart,
-    # The SOPS sibling turns on Flux decryption.
-    write_directory(root, ntfy_artifact, ntfy.chart, siblings=["credentials.sops.yaml"]),
-    cnpg_kustomization,
-    external_secrets_operator_kustomization,
-    monitoring_crds_kustomization,
-    kyverno_kustomization,
+    cpap_sync.NAME,
+    write_directory(
+        root,
+        cpap_sync_artifact,
+        cpap_sync.namespace_chart,
+        cpap_sync.chart,
+        siblings=[cpap_sync.CARD_SECRET_FILE],
+        components=["./image-pins"],
+    ),
+    timeout="30m",
+    depends_on=flux.flux_kustomization_depends_on_many(
+        external_secrets_operator_kustomization,
+        kubevirt_kustomization,
+        monitoring_crds_kustomization,
+        cert_manager_environment_kustomization,
+    ),
 )
 ...
-write_artifact_generators(root, ducktape=[..., ntfy_artifact, ...], flux_system=[...])
+write_artifact_generators(root, ducktape=[..., cpap_sync_artifact, ...], flux_system=[...])
 ```
 
 The only string edge is `artifact-generators -> flux-system` (`artifact_generators.py`):

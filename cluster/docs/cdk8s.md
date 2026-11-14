@@ -71,7 +71,10 @@ The parked tree, `cluster/parked` (`PARKED_ROOT`), is outside both roots and app
 nothing; it is hand-written apart from augur-evidence's generated file.
 
 Every directory's Flux Kustomization object is created in topo order by
-`generate_manifests.py` and emitted in the central Flux chart. `artifact-generators`
+`generate_manifests.py` and emitted in the central Flux chart. Mechanical nodes call
+`flux.flux_kustomization` directly with native typed fields and explicit dependencies on
+already-built objects; component functions remain where they bind readiness, lifecycle or
+source policy. Neither shape infers graph edges or artifact membership. `artifact-generators`
 imports the deployed source-watcher CRD; `generate_manifests.py` builds each consumer's
 artifact before its Kustomization node, writes the directory with
 `generation.write_directory` as the node's `RenderedDirectory` argument, and hands every

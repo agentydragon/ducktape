@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -55,9 +54,3 @@ def chart(app: App) -> Chart:
         },
     )
     return chart
-
-
-def vpa(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, NAME, directory, timeout="5m", depends_on=flux_kustomization_depends_on_many(kyverno)
-    )

@@ -10,7 +10,6 @@ from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmRelease
 from pydantic import BaseModel, ConfigDict, Field
 
 from cluster.cdk8s import namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -130,7 +129,3 @@ def chart(app: App) -> Chart:
         role_ref=k8s.RoleRef(kind="ClusterRole", name="cluster-admin", api_group="rbac.authorization.k8s.io"),
     )
     return chart
-
-
-def headlamp(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, timeout="10m")

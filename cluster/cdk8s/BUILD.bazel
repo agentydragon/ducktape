@@ -463,7 +463,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -631,7 +630,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
@@ -810,7 +808,6 @@ py_library(
     deps = [
         ":artifact_generators",
         ":external_creds",
-        ":flux",
         ":manifest_roots",
         ":reflector",
         "//cluster/cdk8s/forgejo:secret_copy",
@@ -952,7 +949,6 @@ py_library(
     srcs = ["descheduler.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":piraeus",
@@ -1025,7 +1021,6 @@ py_library(
     srcs = ["external_dns.py"],
     deps = [
         ":external_creds",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1242,7 +1237,6 @@ py_library(
     srcs = ["user_agentydragon.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         "@pypi//cdk8s",
@@ -1277,7 +1271,6 @@ py_library(
     srcs = ["metrics_server.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1290,7 +1283,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1303,7 +1295,6 @@ py_library(
     srcs = ["keda.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1438,7 +1429,6 @@ py_library(
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1492,7 +1482,6 @@ py_library(
     srcs = ["reloader.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1504,7 +1493,6 @@ py_library(
     srcs = ["vpa.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1517,7 +1505,6 @@ py_library(
     visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1531,7 +1518,6 @@ py_library(
     srcs = ["nvidia_device_plugin.py"],
     deps = [
         ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1860,7 +1846,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
@@ -1973,7 +1958,6 @@ py_library(
     srcs = ["seaweedfs_csi.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1993,7 +1977,6 @@ py_library(
     data = ["@ducktape_tofu_controller//:terraform_crd"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":flux",
         ":helm",
         ":image_automation",
         ":manifest_roots",

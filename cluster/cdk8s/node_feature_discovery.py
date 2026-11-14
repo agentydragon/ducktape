@@ -7,7 +7,6 @@ from cdk8s import App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -51,7 +50,3 @@ def chart(app: App) -> Chart:
         },
     )
     return chart
-
-
-def node_feature_discovery(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, timeout="5m")

@@ -9,7 +9,6 @@ from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 
@@ -36,19 +35,3 @@ def chart(app: App) -> Chart:
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
     )
     return chart
-
-
-def cert_manager_environment(
-    chart: Chart,
-    directory: RenderedDirectory,
-    cert_manager: Kustomization,
-    cert_manager_trust: Kustomization,
-    external_secrets_operator: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
-    )

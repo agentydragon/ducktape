@@ -20,7 +20,6 @@ from external_secret_store_crds.io.external_secrets import ClusterSecretStoreSpe
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "external-secrets-config"
@@ -164,17 +163,3 @@ def chart(app: App) -> Chart:
         remote_namespace="forgejo-images",
     )
     return chart
-
-
-def external_secrets_config(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        interval="10m0s",
-        retry_interval="30s",
-        timeout="5m0s",
-        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
-    )

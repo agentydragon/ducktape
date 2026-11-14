@@ -8,7 +8,6 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -81,16 +80,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def atuin_user_provisioner(
-    chart: Chart, directory: RenderedDirectory, atuin: Kustomization, user_agentydragon: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        retry_interval=None,
-        wait=None,
-        depends_on=flux_kustomization_depends_on_many(atuin, user_agentydragon),
-    )
