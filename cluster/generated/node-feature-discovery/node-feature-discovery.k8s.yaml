@@ -35,8 +35,6 @@ spec:
     remediation:
       retries: 3
   interval: 15m
-  upgrade:
-    disableWait: true
   values:
     worker:
       config:
@@ -50,7 +48,3 @@ spec:
       tolerations:
         - effect: NoSchedule
           operator: Exists
-      updateStrategy:
-        rollingUpdate:
-          maxUnavailable: 3
-        type: RollingUpdate

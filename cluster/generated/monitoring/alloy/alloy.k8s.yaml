@@ -483,11 +483,7 @@ spec:
         name: grafana
         namespace: flux-system
       version: 1.x
-  install:
-    disableWait: true
   interval: 30m
-  upgrade:
-    disableWait: true
   values:
     alloy:
       configMap:
@@ -520,10 +516,6 @@ spec:
           operator: Equal
           value: "true"
       type: daemonset
-      updateStrategy:
-        rollingUpdate:
-          maxUnavailable: 3
-        type: RollingUpdate
       volumes:
         extra:
           - hostPath:

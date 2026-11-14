@@ -56,24 +56,21 @@ Rejected alternatives:
 
 ## Remaining work
 
-1. Verify on the live cluster by suspending a laptop and watching it:
-   - the taint appears after 5 minutes;
-   - promtail's DaemonSet status drops the node and its pods are force-deleted;
-   - on resume the taint clears within seconds and the DaemonSet pods return;
-   - Cilium on the laptop comes back before the node turns Ready;
-   - the Piraeus satellite and CSI node pods recover.
-2. Stop every laptop-scheduled DaemonSet from tolerating the taint. Narrow blanket
-   `operator: Exists` tolerations, starting with Cilium's agent and envoy. Add a cdk8s fleet rule rejecting a DaemonSet toleration that matches
-   `node.kubernetes.io/out-of-service`.
-3. Once 1 and 2 hold:
-   - remove `disableWait` from kube-prometheus-stack, promtail and NFD;
-   - remove the `maxUnavailable` floors and `test_roaming_daemonset_capacity`;
-   - remove the manual Cilium rollout workaround;
-   - remove the `only_when_node_ready` parameter;
-   - update `cluster/docs/mesh_membership.md` § Roaming k8s nodes.
-4. Alerts: key node-level exclusions on the out-of-service taint instead of the static
-   roaming taint, so an online laptop alerts like any node. Prefer one Alertmanager inhibition
-   (a `RoamingNodeOffline` source alert with a `node` label) over forked rules. Remove the
-   null routes for pod and DaemonSet alerts once their sources vanish with the pods.
-5. Out of scope here: `KubeVersionMismatch` (NixOS kubelets ahead of Talos) is version
-   drift, not absence.
+Verified live on 2026-11-14 with `rugged`: tainted while offline, untainted 2 s after its
+kubelet returned, every DaemonSet pod back within seconds. The DaemonSet `maxUnavailable`
+floors and Helm `disableWait` are gone.
+
+- **Cilium:** its agent and envoy tolerate every taint, so they still count an offline
+  laptop, which is why `cilium.tf` skips Helm's wait and rolls agents by hand. Narrow
+  their tolerations, then drop that workaround. Add a cdk8s fleet rule rejecting a
+  DaemonSet toleration that matches `node.kubernetes.io/out-of-service`.
+- **Piraeus:** drop `only_when_node_ready` from the `lvm-metrics` collector alert; the
+  collector's DaemonSet now has zero desired pods while its laptop is away.
+- **Alerts:** key node-level exclusions on the out-of-service taint instead of the static
+  roaming taint, so an online laptop alerts like any node. Prefer one Alertmanager
+  inhibition (a `RoamingNodeOffline` source alert with a `node` label) over forked rules.
+  Remove the null routes for pod and DaemonSet alerts once their sources vanish with the
+  pods.
+
+Out of scope: `KubeVersionMismatch` (NixOS kubelets ahead of Talos) is version drift, not
+absence.

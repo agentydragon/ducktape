@@ -28,13 +28,10 @@ Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
 
 ## Roaming k8s nodes
 
-A `role: "laptop"` entry is also a roaming Kubernetes node, and its count sets
-the floor for `maxUnavailable` on every DaemonSet that schedules there — an
-offline node's pod holds the unavailable budget forever, deadlocking the rollout
-while Helm and Flux report success.
-`//cluster/cdk8s/monitoring:test_roaming_daemonset_capacity` derives the count from
-this roster and fails with the files to fix; the incident is in
-<lessons_learned/2026_07_31_promtail_daemonset_roaming_deadlock.md>.
+A `role: "laptop"` entry is also a roaming Kubernetes node. Its NixOS host config
+taints it `node-role.kubernetes.io/roaming=true:NoSchedule`, which is what the
+[roaming node controller](../roaming_node_controller/README.md) keys on to mark it
+out of service while offline.
 
 ## Schema cheatsheet
 
