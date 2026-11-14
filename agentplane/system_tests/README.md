@@ -181,17 +181,15 @@ they do not have an approved runner with staging identity and connectivity. Keep
 and caching enabled for other tests.
 
 The default deployment is `https://agentplane-staging.allegedly.works` in namespace
-`agentplane-staging`. `test_thread_latency` mints a short-lived `agentplane-agent` token from the
-caller kubeconfig unless `AGENTPLANE_SYSTEM_TEST_TOKEN` is supplied. The caller needs RBAC to create
-tokens for that ServiceAccount. `test_ollama_routes` reads the deployed catalog and uses the same
-caller kubeconfig for Sandbox operations. Do not print or save credentials.
+`agentplane-staging`. Set `AGENTPLANE_SYSTEM_TEST_TOKEN` to an operator ID token accepted by the
+target app; the live suite does not mint an app ServiceAccount token. `test_ollama_routes` reads the
+deployed catalog and uses the caller kubeconfig for Sandbox operations. Do not print or save credentials.
 
-| Variable                                 | Default                                                |
-| ---------------------------------------- | ------------------------------------------------------ |
-| `AGENTPLANE_SYSTEM_TEST_URL`             | `https://agentplane-staging.allegedly.works`           |
-| `AGENTPLANE_SYSTEM_TEST_TOKEN`           | Minted from caller kubeconfig by `test_thread_latency` |
-| `AGENTPLANE_SYSTEM_TEST_NAMESPACE`       | `agentplane-staging`                                   |
-| `AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT` | `agentplane-agent`                                     |
+| Variable                           | Default                                      |
+| ---------------------------------- | -------------------------------------------- |
+| `AGENTPLANE_SYSTEM_TEST_URL`       | `https://agentplane-staging.allegedly.works` |
+| `AGENTPLANE_SYSTEM_TEST_TOKEN`     | Required operator ID token                   |
+| `AGENTPLANE_SYSTEM_TEST_NAMESPACE` | `agentplane-staging`                         |
 
 Check the local seams before a long run:
 
@@ -199,13 +197,11 @@ Check the local seams before a long run:
 command -v bazelisk kubectl
 bazelisk version
 kubectl config current-context
-kubectl -n agentplane-staging create token agentplane-agent \
-  --audience=agentplane --duration=600s >/dev/null
+test -n "${AGENTPLANE_SYSTEM_TEST_TOKEN:-}"
 ```
 
-The preflight must not print or save the returned token. If it fails, fix caller RBAC or kubeconfig
-before running the test. A Bazel module-loading failure is a caller's Bazel/repository-rule issue,
-not a staging failure.
+The caller-supplied token must not be printed or saved. A Bazel module-loading failure is a caller's
+Bazel/repository-rule issue, not a staging failure.
 
 Run a staging thread-latency check with:
 

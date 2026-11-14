@@ -20,6 +20,18 @@ py_library(
 )
 
 py_test(
+    name = "test_conftest",
+    srcs = ["test_conftest.py"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_ollama_routes",
     timeout = "eternal",
     srcs = ["test_ollama_routes.py"],
@@ -61,7 +73,6 @@ py_test(
     srcs = ["test_thread_latency.py"],
     env_inherit = [
         "AGENTPLANE_SYSTEM_TEST_NAMESPACE",
-        "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT",
         "AGENTPLANE_SYSTEM_TEST_TOKEN",
         "AGENTPLANE_SYSTEM_TEST_URL",
         "HOME",

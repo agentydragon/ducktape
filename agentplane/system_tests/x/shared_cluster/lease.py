@@ -68,7 +68,6 @@ async def _run(args: argparse.Namespace) -> None:
         await asyncio.to_thread(
             _write, args.output / "allocation.json", credentials.allocation.model_dump_json(indent=2)
         )
-        await asyncio.to_thread(_write, args.output / "application-token", credentials.application_token)
         await asyncio.to_thread(_write, args.output / "observer.kubeconfig", json.dumps(kubeconfig, indent=2))
         print(names.application)
 

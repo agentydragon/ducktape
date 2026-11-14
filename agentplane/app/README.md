@@ -347,12 +347,11 @@ and all are cryptographic:
   or the app answers 403. The audience
   would not be a gate on its own: RBAC decides which ServiceAccount a principal may mint a token
   for, never which audience it asks for, so an unnamed subject is refused however it minted. Empty
-  -- the default -- accepts no token caller at all. On staging the list holds one entry, and an
-  agent mints for the ServiceAccount that exists only to be that identity:
+  -- the default -- accepts no token caller at all. Live system tests use an operator ID token from
+  the configured issuer rather than minting this app-specific ServiceAccount token.
 
   ```sh
-  TOKEN=$(kubectl -n agentplane-staging create token agentplane-agent --audience=agentplane)
-  curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
+  curl -H "Authorization: Bearer $AGENTPLANE_SYSTEM_TEST_TOKEN" https://agentplane-staging.allegedly.works/sandboxes
   ```
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:

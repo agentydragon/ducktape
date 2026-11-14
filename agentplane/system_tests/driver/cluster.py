@@ -2,16 +2,12 @@
 
 import asyncio
 import json
-import subprocess
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 from kubernetes_asyncio import client as k8s, config as k8s_config
-
-AGENT_SERVICE_ACCOUNT = "agentplane-agent"
-AUDIENCE = "agentplane"
 
 # The longest `kubectl wait` a scenario asks for is 300 s; kubectl gets a little more to report it.
 KUBECTL_SECONDS = 310
@@ -65,22 +61,3 @@ class Cluster:
         await k8s_config.load_kube_config(config_file=str(self.kubeconfig), client_configuration=configuration)
         async with k8s.ApiClient(configuration) as api:
             yield api
-
-
-class TokenNotMintedError(Exception):
-    """`kubectl create token` refused; its own message says why."""
-
-
-def mint_token(*, cluster: Cluster, service_account: str, audience: str, lifetime: str = "1800s") -> str:
-    """An audience-scoped token for `service_account`, from whatever kubeconfig the caller holds.
-
-    RBAC on `serviceaccounts/token` is what gates this. The audience is chosen freely by whoever
-    asks and so proves nothing on its own, which is why the app checks the subject as well.
-    """
-    command = cluster.command("create", "token", service_account, f"--audience={audience}", f"--duration={lifetime}")
-    minted = subprocess.run(command, capture_output=True, text=True, check=False)
-    if minted.returncode != 0:
-        # kubectl says what is wrong -- no kubeconfig, no RBAC, no such ServiceAccount -- and
-        # CalledProcessError would hide all of it behind an exit status.
-        raise TokenNotMintedError(f"`{' '.join(command)}` failed with {minted.returncode}: {minted.stderr.strip()}")
-    return minted.stdout.strip()

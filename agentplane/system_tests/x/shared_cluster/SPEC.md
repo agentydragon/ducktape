@@ -98,7 +98,7 @@ they do not run KubeVirt's webhook or launcher. Trusted infrastructure installat
 live denial checks and the test adapter remain required before connecting untrusted
 tests.
 
-The eventual Bazel driver gets an application identity and a separate Kubernetes
+The eventual Bazel driver gets an application credential and a separate Kubernetes
 observer identity. The observer may read its Sandbox, VMI and Pod logs, without workload
 writes, Secret access, exec/attach, token minting, impersonation or infrastructure writes.
 `check_permissions` checks the supplied identity with SelfSubjectAccessReview and fails
@@ -115,17 +115,15 @@ PR-provided controllers do not get cluster administration as a shortcut.
 The trusted `lease_bin` CLI takes an explicit **inner** admin kubeconfig. It never runs
 inside the untrusted test action. Allocation acquires the single Kubernetes capacity
 Lease in `kube-system`, creates the three namespaces with object/storage quotas and
-absolute `cleanup.kyverno.io/ttl` labels, then requests separate short-lived application
-and observer tokens. The lifetime is bounded to 10–60 minutes; it is not renewed.
+absolute `cleanup.kyverno.io/ttl` labels, then requests one short-lived observer token.
+The lifetime is bounded to 10–60 minutes; it is not renewed.
 Quotas bound object counts and requested storage. Aggregate CPU and memory containment
 still comes from the outer node container's cgroup.
 
-The private handoff directory contains allocation metadata, an `agentplane`-audience
-application token and an observer kubeconfig. The kubeconfig contains only the cluster
-CA and observer token, never the administrator's client identity. The observer can get
-its namespace's Sandbox and VMI objects and Pod logs, without the writes or sensitive
-reads covered by `check_permissions`. The application ServiceAccount has no Kubernetes
-Role; its application authorization is a separate deployment concern.
+The private handoff directory contains allocation metadata and an observer kubeconfig.
+The kubeconfig contains only the cluster CA and observer token, never the administrator's
+client identity. The observer can get its namespace's Sandbox and VMI objects and Pod logs,
+without the writes or sensitive reads covered by `check_permissions`.
 
 Cleanup requests deletion with each recorded namespace UID as a precondition. The CLI
 waits for namespace deletion before releasing capacity, and never strips finalizers or

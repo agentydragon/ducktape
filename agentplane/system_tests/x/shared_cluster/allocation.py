@@ -14,7 +14,6 @@ CAPACITY_NAMESPACE = "kube-system"
 CAPACITY_LEASE = "agentplane-test-capacity"
 TTL_LABEL = "cleanup.kyverno.io/ttl"
 OBSERVER = "test-observer"
-APPLICATION = "agentplane-agent"
 
 
 class CapacityUnavailableError(Exception):
@@ -35,7 +34,6 @@ class Allocation(BaseModel):
 
 class Credentials(BaseModel):
     allocation: Allocation
-    application_token: str = Field(repr=False)
     observer_token: str = Field(repr=False)
 
 
@@ -147,11 +145,10 @@ async def allocate(*, api: k8s.ApiClient, lifetime: timedelta, quota: dict[str, 
             name,
             k8s.V1ResourceQuota(metadata=k8s.V1ObjectMeta(name="test-run"), spec=k8s.V1ResourceQuotaSpec(hard=quota)),
         )
-    for account in (APPLICATION, OBSERVER):
-        await core.create_namespaced_service_account(
-            names.application,
-            k8s.V1ServiceAccount(metadata=k8s.V1ObjectMeta(name=account), automount_service_account_token=False),
-        )
+    await core.create_namespaced_service_account(
+        names.application,
+        k8s.V1ServiceAccount(metadata=k8s.V1ObjectMeta(name=OBSERVER), automount_service_account_token=False),
+    )
     rbac = k8s.RbacAuthorizationV1Api(api)
     await rbac.create_namespaced_role(
         names.application,
@@ -172,11 +169,9 @@ async def allocate(*, api: k8s.ApiClient, lifetime: timedelta, quota: dict[str, 
             subjects=[RbacV1Subject(kind="ServiceAccount", name=OBSERVER, namespace=names.application)],
         ),
     )
-    application = await _token(core, names.application, APPLICATION, ["agentplane"], seconds)
     observer = await _token(core, names.application, OBSERVER, [], seconds)
     return Credentials(
         allocation=Allocation(run_id=run_id, namespace_uids=namespace_uids, expires_at=expires_at),
-        application_token=application.token,
         observer_token=observer.token,
     )
 
