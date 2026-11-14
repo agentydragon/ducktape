@@ -730,6 +730,16 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
         _resource(docs, "ConfigMap", f"{central_sampler.NAME}-settings")["data"]["settings.json"]
     )
     assert settings.executor_reconnect_timeout_seconds is None
+    assert settings.actions is not None
+    assert (
+        settings.actions.target == f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
+    )
+    assert settings.actions.tls is not None
+    assert settings.actions.tls.cert_file == "/run/agentplane/workload-tls/tls.crt"
+    assert settings.actions.tls.key_file == "/run/agentplane/workload-tls/tls.key"
+    assert settings.actions.tls.ca_file == "/run/agentplane/workload-trust/ca-certificates.crt"
+    action_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
+    assert action_settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     ingress_connection = settings.connections["llm-ingress"]
     assert ingress_connection.base_url == (
         f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"

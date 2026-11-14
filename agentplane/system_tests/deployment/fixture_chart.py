@@ -42,10 +42,16 @@ from agentplane.action_service.catalog import ActionGroup
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import FrontendConfig, LangfuseSearchSettings, Settings, TraceSearchSettings
-from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
+from agentplane.central_sampler.settings import (
+    ActionsConfig,
+    AuthConfig,
+    ConnectionConfig,
+    ModelConfig,
+    ResponsesConfig,
+)
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
-from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI
+from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
@@ -206,6 +212,14 @@ def environment(
     central_sampler_props = None
     if central_sampler:
         central_sampler_props = CentralSamplerProps(
+            actions=ActionsConfig(
+                target=f"{ACTIONS_SERVICE.fqdn}:{ACTIONS_SERVICE.port.number}",
+                tls=TLS(
+                    cert_file="/run/agentplane/workload-tls/tls.crt",
+                    key_file="/run/agentplane/workload-tls/tls.key",
+                    ca_file=workload_tls.TRUST_BUNDLE_FILE,
+                ),
+            ),
             replicas=_ONE_REPLICA,
             models={
                 GPT6_LUNA_RESPONSES.id: ModelConfig(
@@ -308,6 +322,7 @@ def environment(
         ),
         app=AppProps(origin=app_origin, oidc_issuer=DEX_ISSUER, reach_incluster_authentik=False, runner_zone=None),
         actions=ActionsProps(
+            central_sampler_session_delegation=central_sampler,
             operator_oidc=operator_oidc,
             caller_service_account_namespaces=frozenset({NAMESPACE}),
             mcp_servers={},
