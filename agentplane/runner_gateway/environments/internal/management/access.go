@@ -447,14 +447,12 @@ func isAlphaNumeric(value byte) bool {
 // The encoding needs only to be decodable; retries are matched by sameIntent, never by its bytes.
 type createIntent struct {
 	Actor   *intentActor    `json:"actor,omitempty"`
-	Caller  intentCaller    `json:"caller,omitempty"`
+	Caller  *intentCaller   `json:"caller,omitempty"`
 	Request json.RawMessage `json:"request"`
 }
 
 type intentActor struct {
 	Kind            string `json:"kind"`
-	Namespace       string `json:"namespace,omitempty"`
-	Name            string `json:"name,omitempty"`
 	ServiceSPIFFEID string `json:"service_spiffe_id,omitempty"`
 }
 
@@ -469,13 +467,14 @@ func encodeCreateIntent(request *environmentpb.CreateEnvironmentRequest, actor A
 	if err != nil {
 		return "", err
 	}
-	var receiptActor intentActor
+	intent := createIntent{Request: requestJSON}
 	if actor.ServiceAccount != nil {
-		receiptActor = intentActor{Kind: "service_account", Namespace: actor.ServiceAccount.GetNamespace(), Name: actor.ServiceAccount.GetName()}
+		// Keep account receipts readable by old replicas throughout the receiver rollout.
+		intent.Caller = &intentCaller{Namespace: actor.ServiceAccount.GetNamespace(), Name: actor.ServiceAccount.GetName()}
 	} else {
-		receiptActor = intentActor{Kind: "service", ServiceSPIFFEID: actor.ServiceSPIFFEID}
+		intent.Actor = &intentActor{Kind: "service", ServiceSPIFFEID: actor.ServiceSPIFFEID}
 	}
-	encoded, err := json.Marshal(createIntent{Actor: &receiptActor, Request: requestJSON})
+	encoded, err := json.Marshal(intent)
 	if err != nil {
 		return "", err
 	}
@@ -489,17 +488,11 @@ func sameIntent(recorded string, request *environmentpb.CreateEnvironmentRequest
 	if err := json.Unmarshal([]byte(recorded), &intent); err != nil {
 		return false
 	}
-	if intent.Actor == nil {
-		// Receipts created before typed actors stored the authenticated ServiceAccount in caller.
-		// Keep those retries recoverable while refusing to treat them as service actors.
-		if actor.ServiceAccount == nil || intent.Caller.Namespace != actor.ServiceAccount.GetNamespace() || intent.Caller.Name != actor.ServiceAccount.GetName() {
+	if actor.ServiceAccount != nil {
+		if intent.Actor != nil || intent.Caller == nil || intent.Caller.Namespace != actor.ServiceAccount.GetNamespace() || intent.Caller.Name != actor.ServiceAccount.GetName() {
 			return false
 		}
-	} else if actor.ServiceAccount != nil {
-		if intent.Actor.Kind != "service_account" || intent.Actor.Namespace != actor.ServiceAccount.GetNamespace() || intent.Actor.Name != actor.ServiceAccount.GetName() {
-			return false
-		}
-	} else if intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != actor.ServiceSPIFFEID {
+	} else if intent.Caller != nil || intent.Actor == nil || intent.Actor.Kind != "service" || intent.Actor.ServiceSPIFFEID != actor.ServiceSPIFFEID {
 		return false
 	}
 	var recordedRequest environmentpb.CreateEnvironmentRequest

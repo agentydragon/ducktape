@@ -149,7 +149,7 @@ func TestCreateIntentKeepsTypedServiceActorsAndLegacyAccountRetries(t *testing.T
 		t.Fatal(err)
 	}
 	legacy, err := json.Marshal(createIntent{
-		Caller: intentCaller{Namespace: namespace, Name: "app"}, Request: requestJSON,
+		Caller: &intentCaller{Namespace: namespace, Name: "app"}, Request: requestJSON,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +159,17 @@ func TestCreateIntentKeepsTypedServiceActorsAndLegacyAccountRetries(t *testing.T
 	}
 	if sameIntent(string(legacy), request, serviceActor) {
 		t.Fatal("legacy ServiceAccount receipt was adopted by a service actor")
+	}
+	accountReceipt, err := encodeCreateIntent(request, accountActor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded createIntent
+	if err := json.Unmarshal([]byte(accountReceipt), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Actor != nil || decoded.Caller == nil || *decoded.Caller != (intentCaller{Namespace: namespace, Name: "app"}) {
+		t.Fatal("new account receipt is unreadable by old receivers")
 	}
 }
 
