@@ -12,8 +12,8 @@ use selector_resolve::{
 };
 use source_match::ParsedSourceMatchSelector;
 use spec::{
-    InitializerBindingEffects, InitializerPurity, LogicalModule, MemberEffect, MemberPurity,
-    UnassignedMode,
+    InitializerBindingEffects, InitializerExternalEffects, InitializerPurity, LogicalModule,
+    MemberEffect, MemberPurity, UnassignedMode,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -69,6 +69,7 @@ pub struct MemberRequest {
     /// Lexical-effect contract for this binding's variable initializer only.
     /// It does not constrain heap, global, host, or future callback effects.
     pub initializer_binding_effects: Option<InitializerBindingEffects>,
+    pub initializer_external_effects: Option<InitializerExternalEffects>,
     /// Author prototype premises for the source-checked local factory proof.
     pub retained_record_factory: bool,
     /// Spec-level local-effect annotation. `TypescriptDecorateHelper`
@@ -114,6 +115,7 @@ impl MemberRequest {
         self.purity != MemberPurity::Default
             || self.initializer_purity != InitializerPurity::Default
             || self.initializer_binding_effects.is_some()
+            || self.initializer_external_effects.is_some()
             || self.retained_record_factory
             || self.effect != MemberEffect::Default
             || !self.pure_members.is_empty()
@@ -281,6 +283,7 @@ pub fn build_members(
                 purity: MemberPurity::Default,
                 initializer_purity: InitializerPurity::Default,
                 initializer_binding_effects: None,
+                initializer_external_effects: None,
                 retained_record_factory: false,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
@@ -311,6 +314,7 @@ pub fn build_members(
                 purity: MemberPurity::Default,
                 initializer_purity: InitializerPurity::Default,
                 initializer_binding_effects: None,
+                initializer_external_effects: None,
                 retained_record_factory: false,
                 effect: MemberEffect::Default,
                 pure_members: Vec::new(),
@@ -401,6 +405,20 @@ fn merge_binding_annotation(
             )?;
         }
         request.initializer_binding_effects = Some(effects);
+    }
+
+    if let Some(effects) = annotation.initializer_external_effects {
+        if request
+            .initializer_external_effects
+            .is_some_and(|existing| existing != effects)
+        {
+            bail_annotation_conflict(
+                request_id,
+                export_name,
+                AnnotationField::InitializerExternalEffects,
+            )?;
+        }
+        request.initializer_external_effects = Some(effects);
     }
 
     if annotation.effect != MemberEffect::Default {

@@ -166,6 +166,7 @@ pub(super) struct PreparedLogicalChunk<'a> {
     member_claims: MemberClaimProjection,
     structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
     source_only_initializer_bindings: BTreeSet<String>,
+    isolated_external_initializer_bindings: BTreeSet<String>,
     builder: ChunkPlanBuilder,
 }
 
@@ -177,6 +178,7 @@ pub(super) struct ClaimedLogicalChunk<'a> {
     structural_analysis: StructuralChunkSourceFacts<'a>,
     /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
     source_only_initializer_bindings: BTreeSet<String>,
+    isolated_external_initializer_bindings: BTreeSet<String>,
 }
 
 /// Construct output-plan state from source-level facts and the exact shared
@@ -222,6 +224,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         resolved_members,
         member_claims,
         source_only_initializer_bindings,
+        isolated_external_initializer_bindings,
         ..
     } = frontend;
     ensure!(frontend_chunk_id == chunk_id, "frontend chunk id mismatch");
@@ -276,6 +279,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         member_claims,
         structural_analysis: Some(structural_analysis),
         source_only_initializer_bindings,
+        isolated_external_initializer_bindings,
         builder,
     })
 }
@@ -329,6 +333,8 @@ pub(super) fn claim_prepared_chunk<'a>(
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
     let source_only_initializer_bindings =
         std::mem::take(&mut prepared.source_only_initializer_bindings);
+    let isolated_external_initializer_bindings =
+        std::mem::take(&mut prepared.isolated_external_initializer_bindings);
     let structural_analysis = prepared
         .structural_analysis
         .take()
@@ -337,6 +343,7 @@ pub(super) fn claim_prepared_chunk<'a>(
         prepared,
         structural_analysis,
         source_only_initializer_bindings,
+        isolated_external_initializer_bindings,
     })
 }
 
@@ -368,6 +375,7 @@ pub(super) fn finish_logical_chunk(
         prepared,
         structural_analysis,
         source_only_initializer_bindings,
+        isolated_external_initializer_bindings,
         ..
     } = claimed;
     let PreparedLogicalChunk {
@@ -461,6 +469,9 @@ pub(super) fn finish_logical_chunk(
     analysis
         .validate_initializer_binding_effects(&source_only_initializer_bindings)
         .with_context(|| format!("validating initializer binding effects in chunk `{chunk_id}`"))?;
+    analysis
+        .apply_initializer_external_effects(&isolated_external_initializer_bindings)
+        .with_context(|| format!("validating initializer heap effects in chunk `{chunk_id}`"))?;
     let precomputed =
         match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
             Ok(precomputed) => precomputed,

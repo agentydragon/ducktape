@@ -8,8 +8,8 @@ use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::Value;
 use spec::{
-    BindingAnnotation, InitializerBindingEffects, IntrinsicFamilies, IntrinsicFamily,
-    IntrinsicsNeverWritten, ProgramPremises,
+    BindingAnnotation, InitializerBindingEffects, InitializerExternalEffects, IntrinsicFamilies,
+    IntrinsicFamily, IntrinsicsNeverWritten, ProgramPremises,
 };
 
 fn annotated_encoder_split(source: &'static str) -> FixtureOpts<'static> {
@@ -111,6 +111,117 @@ fn encoder_initializers_commute_with_independent_allocations() {
         &[],
     );
     assert_preserved_entry_output(&fixture, "0 a b\n");
+}
+
+#[test]
+fn isolated_encoder_initializers_emit_across_heap_barriers_without_pairwise_promises() {
+    let mut options = annotated_encoder_split(
+        "const encoder = new TextEncoder();\n\
+         const values = [];\n\
+         const decoder = new TextDecoder('utf8');\n\
+         const left = encoder.encode('a');\n\
+         const right = encoder.encode('b');\n\
+         console.log(values.length, decoder.decode(left), decoder.decode(right));\n\
+         export { encoder, left, right };\n",
+    )
+    .with_dataflow_aware_s_chain()
+    .with_trusted_dataflow_summaries();
+    for (_, module) in &mut options.logical_modules {
+        for binding in ["left", "right"] {
+            module
+                .annotations
+                .get_mut(binding)
+                .unwrap()
+                .initializer_external_effects = Some(InitializerExternalEffects::Isolated);
+        }
+    }
+    let fixture = run_fixture(options);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/codec.js",
+        &["encoder", "left", "right"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "0 a b\n");
+}
+
+#[test]
+fn isolated_initializer_rejects_observed_shared_array_reads_and_writes() {
+    for source in [
+        "const state = [1]; const value = state[0]; export { value };",
+        "const state = [1]; const value = (state[0] = 2); export { value };",
+        "function factory(previous) { const fresh = []; if (previous) previous[0] = 1; return fresh; }\n\
+         const first = factory(); const value = factory(first); export { value };",
+    ] {
+        let mut module = logical_module("a", &[Member::new("value")]);
+        module.1.annotations.insert(
+            "value".to_owned(),
+            BindingAnnotation {
+                initializer_external_effects: Some(InitializerExternalEffects::Isolated),
+                ..Default::default()
+            },
+        );
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![module])
+                .with_unassigned_mode(unassigned_mode_inline())
+                .with_dataflow_aware_s_chain()
+                .with_trusted_dataflow_summaries(),
+            &["initializer_external_effects", "observed heap accesses"],
+        );
+    }
+}
+
+#[test]
+fn isolated_initializer_keeps_shared_var_redeclarations() {
+    let mut module = logical_module("a", &[Member::new("value")]);
+    module.1.annotations.insert(
+        "value".to_owned(),
+        BindingAnnotation {
+            initializer_external_effects: Some(InitializerExternalEffects::Isolated),
+            ..Default::default()
+        },
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "var value = 0; var value; console.log(value); export { value };",
+            vec![module],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries(),
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/a.js",
+        &["value"],
+        &[],
+    );
+    assert_preserved_entry_output(&fixture, "0\n");
+}
+
+#[test]
+fn isolated_initializer_rejects_global_property_reads_and_writes() {
+    for source in [
+        "globalThis.flag = 1; const value = globalThis.flag; export { value };",
+        "const value = (globalThis.flag = 2); export { value };",
+        "globalThis.flag = 1; function read() { return globalThis.flag; } const value = read(); export { value };",
+    ] {
+        let mut module = logical_module("a", &[Member::new("value")]);
+        module.1.annotations.insert(
+            "value".to_owned(),
+            BindingAnnotation {
+                initializer_external_effects: Some(InitializerExternalEffects::Isolated),
+                ..Default::default()
+            },
+        );
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![module])
+                .with_unassigned_mode(unassigned_mode_inline())
+                .with_dataflow_aware_s_chain()
+                .with_trusted_dataflow_summaries(),
+            &["initializer_external_effects", "global-property accesses"],
+        );
+    }
 }
 
 fn set_source_only(staged: &Staged, binding: &str, chunk_rename: bool) {

@@ -128,6 +128,7 @@ pub enum AnnotationField {
     Purity,
     InitializerPurity,
     InitializerBindingEffects,
+    InitializerExternalEffects,
     Effect,
     PureMembers,
     NoSyncCallbackMembers,
