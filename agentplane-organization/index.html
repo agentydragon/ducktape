@@ -70,14 +70,22 @@
       import { html, mount } from "../report.js";
       const sourceURL = (plan, path) =>
         `https://github.com/agentydragon/ducktape/tree/${plan.source_sha}/${path}`;
+      const workStatus = {
+        READY: { color: "blue", badge: "→ ready" },
+        PLANNED: { color: "cyan", badge: "→ planned boundary" },
+        "AGREED DIRECTION": { color: "teal", badge: "→ agreed direction" },
+        HELD: { color: "violet", badge: "→ held to move once" },
+        "DESIGN REQUIRED": { color: "yellow", badge: "? local contract" },
+        "OPEN DIRECTION": { color: "orange", badge: "? open service decision" },
+      };
       const workColor = (track) =>
-        track.status === "READY"
-          ? "blue"
-          : track.status === "PLANNED"
-            ? "cyan"
-            : track.status.startsWith("DEFERRED")
-              ? "gray"
-              : "yellow";
+        track.status.startsWith("DEFERRED")
+          ? "gray"
+          : workStatus[track.status].color;
+      const workBadge = (track) =>
+        track.status.startsWith("DEFERRED")
+          ? "~ deferred"
+          : workStatus[track.status].badge;
       function treeLines(plan, component, goal, showFiles) {
         const all = component.id === "all";
         const root = {
@@ -199,17 +207,14 @@
           if (n && !n.note)
             n.note = path.endsWith("/") ? "context" : "protocol source";
         }
-        const decisions = all
-          ? plan.components.flatMap((c) => c.package_decisions)
-          : component.package_decisions;
+        const decisions = plan.components.flatMap((c) => c.package_decisions);
         if (goal)
           for (const pkg of decisions) {
             if (pkg.decision === "retain") continue;
             const targets = [
               ...new Set(pkg.target_paths.filter((p) => p !== pkg.path)),
             ];
-            const current = node(pkg.path);
-            if (current && buckets.has(pkg.path))
+            if (buckets.has(pkg.path))
               note(
                 pkg.path,
                 targets.length
@@ -346,7 +351,7 @@
             <${Anchor} href="../">${"All reports"}<//>
             <${Title} order=${1}>${"Agentplane: current → goal"}<//>
             <${Text}
-              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. Compare exact moves with proposed responsibility extractions; retained packages have a stated role and reason."}<//
+              >${"A whole-tree organization proposal: concrete commands, domain owners, boundary adapters, persistence and test support. Every tracked Go file has a disposition. The work is ordered by certainty: leftovers are deleted first, then layout fixes that hold under any service map, then moves following agreed service directions, then local extractions, and last the moves that wait on open service decisions, so each file moves once."}<//
             >
             <${Text} size="sm" c="dimmed"
               >${`${plan.counts.files.toLocaleString()} tracked Go files · ${plan.counts.directories} Go packages · ${plan.components.length} top-level areas · source ${plan.source_sha.slice(0, 10)} · observed ${plan.observed_at_utc}. Counts include every tracked Agentplane Go file, including tests and experiments. Trees also show protocol/browser context; generated Go bindings are not tracked files.`}<//
@@ -401,7 +406,7 @@
                 />
               <//>
               <${Stack} gap="xs"
-                >${tracks.map((track) => html`<${Group} key=${track.id} gap="xs"><${Badge} color=${workColor(track)}>${track.status === "READY" ? "→ ready" : track.status === "PLANNED" ? "→ planned boundary" : track.status.startsWith("DEFERRED") ? "~ deferred" : "? ownership design"}<//><${Anchor} href=${"#" + track.id} onClick=${(event) => openWork(event, track.id)}>${track.title}<//><//>`)}<//
+                >${tracks.map((track) => html`<${Group} key=${track.id} gap="xs"><${Badge} color=${workColor(track)}>${workBadge(track)}<//><${Anchor} href=${"#" + track.id} onClick=${(event) => openWork(event, track.id)}>${track.title}<//><//>`)}<//
               >
             <//>
             <${Stack} component="section" id="coverage" gap="md">
@@ -481,7 +486,7 @@
                 style=${{ width: "min(100%, 26rem)" }}
               />
               <${Text} size="sm"
-                >${"Priority follows adoption stage and the queue below. PLANNED has a concrete boundary; DESIGN REQUIRED names unresolved ownership. Neither means a tested code patch. Target 200–3,000 changed LOC per coherent PR, with tests and caller closure."}<//
+                >${"Priority follows adoption stage and the queue below. PLANNED has a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. None of them means a tested code patch. Target 200–3,000 changed LOC per coherent PR, with tests and caller closure."}<//
               >
               <${List} type="ordered" spacing="xs"
                 >${plan.next_prs.map((item) => html`<${List.Item} key=${item.id}><${Anchor} href=${"#" + item.track} onClick=${(event) => openWork(event, item.track)}>${item.title}<//>${" · " + item.readiness}<//>`)}<//

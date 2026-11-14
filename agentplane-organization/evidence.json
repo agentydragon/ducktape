@@ -6,7 +6,7 @@
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
     "checked_origin_devel": "a2c0b74e3cd4a14e2397adb25847665e1a09c094",
-    "checked_at_utc": "2026-11-14T00:52:40+00:00",
+    "checked_at_utc": "2026-11-14T01:36:53+00:00",
     "agentplane_diff_from_reviewed_pin": [
       "agentplane/debug/storage_controller_startup.md",
       "agentplane/system_tests/scenarios/storage.py",
@@ -9911,332 +9911,51 @@
   },
   "report_validation": {
     "state": "PASS",
-    "command": "bbr test //x/agentplane_plan_preview:visual_test --test_output=errors",
-    "invocation": "https://app.buildbuddy.io/invocation/222b403f-7173-4958-9c2d-b4462b9ff4cf",
+    "command": "Local static server over this branch's files; Playwright Chromium against real pinned esm.sh/jsDelivr CDN responses.",
     "cases_passed": 8,
     "matrix": "home/report × desktop 1280×900/mobile 390×844 × light/dark",
     "checks": [
-      "Real pinned esm.sh/jsDelivr CDN responses and live system color-scheme changes.",
-      "All component trees, independent scroll areas, exact moves, proposed owners and absence of app/go/.",
-      "Go filename toggle, component and nested package disclosures, work-status filter and links restoring hidden work.",
-      "Current/goal source-ledger counts and file dispositions; no horizontal page overflow."
+      "No page errors or console errors; no horizontal page overflow in any case.",
+      "Live system color-scheme change switches both pages from light to dark.",
+      "Component selector (runner_gateway, sandbox_controller, action_service), Go filename toggle and work-status filter (OPEN DIRECTION shows its four items).",
+      "Goal trees show EnvironmentService's proposed owners under the Sandbox Controller, runtimecontrol's exact move and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,256 source files and 219 package decisions match the immutable inventory.",
-      "Source/evidence paths, current Bazel labels, track IDs, component IDs, dependency acyclicity and move-target uniqueness checked.",
-      "Queue orders content prerequisites before dependents; all changed packages have work items and all retained packages have a rationale."
+      "All 1,256 source files and 219 package decisions match the immutable inventory; every pending track exists.",
+      "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
+      "New work items' source and evidence paths exist on devel a2c0b74e3c and their validation labels exist in the pinned BUILD files."
     ],
-    "screenshots": [
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "component-decisions",
-        "artifact": "test.outputs/test-outputs/files/960717114f881028f170ff1a574c90a7c0e727aa496578469bd66b21290d91d4.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/425723db15092d353ae4ce7e9cc35b35c32bcb6a8108d17ad272343a76bd087b/67980",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "app-tree",
-        "artifact": "test.outputs/test-outputs/files/2a69df404b09d0fdb73d32a1d99a896c2226a10bc9b23f7fa3161321d24692c2.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/5ddcd8a418c9b3ca8a85406013e811ca79664e284315065b26a90fcbb7e59c8f/90515",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "package-decision",
-        "artifact": "test.outputs/test-outputs/files/829deb8e11d62539e7fbb0fe5d9c0d86322f3c0c404ef972ed80396ad71661b1.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/433c6099c2766abb4315140e2a1138be719a72942ba66f28a3bc2201edace067/124224",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "runner_gateway-move",
-        "artifact": "test.outputs/test-outputs/files/e0c1357a0e36eb152b7cfbceba0133476eff4ed692bd2fb45bbbd016222518d4.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/7b3a30910c0e276af2c3f91e20d3f65ec675a59fe4bfa8b305a4f1727fc02878/70779",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "runner_gateway-move",
-        "artifact": "test.outputs/test-outputs/files/73932d5a7b992125ae643170537c3639a0fe8f78a204b31682fe36eeaa5235d3.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/2a5a6c787c98ed7aa1045ad4e2bce147bfb4a7233f9294b1ad9248cdc80d5448/76295",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/394376d692ed1fd4598d0c71d5efdda90f9c136b1d8f1f7f4a9d51e763efaeca.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/2b08ed4203ae29656b4e1ca7b14548fb1f2f1664bbf01136031d477a83d4177f/61941",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "remaining-work",
-        "artifact": "test.outputs/test-outputs/files/d04577ef2537c00c8cbe8b193de1c41edea354703583ea27c42edc0307946a62.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/cbf5f3b148919c3d501b979a50b0e6aa8c3c854a76384ab6947b9cd9b809b0ea/160808",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "app-tree",
-        "artifact": "test.outputs/test-outputs/files/848de105e772e3ca6db5df65115c0808568e0ea9a76fba858bbf780f3ba59807.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/6be10fefa000046a8de344f43100e662df2abf95c0af5eef8ce7af1d3237cf2a/90005",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "component-decisions",
-        "artifact": "test.outputs/test-outputs/files/f80c791e394411343830bfd9323273034db97c6a4b8e0fff22a56dc1f282d3c5.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/e07c437e6e1c98be821bd470d6105cd05534dfec6d3fc37f3b3e85b573b35aec/52750",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "remaining-work",
-        "artifact": "test.outputs/test-outputs/files/16cdfd7da14975b7af4f12e218b3f4bd663c4f90d2a2812adba340336ad27852.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/315d907835d34a44080e87dddd396f51c0319a5518c56dae281a53759eb98603/65381",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "app-tree",
-        "artifact": "test.outputs/test-outputs/files/1afe26192054887368062974005e2b29c69f24b572bc64bd50be36d733d1e8b8.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/457ac47c05d52f2a59211e426a2b1754810b7ca07b05706601b9a7ba47296bd7/74730",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/d137e7c20ee6743d6fe5557836fd870b02a776ed66bc29ed59748baea5e7c7a0.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/1910c5e7dfd8b01b1528ee4f2d9c7606ff374d54167aa8880b995a283a1f7b0d/136583",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-mobile-light]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/b88fad2917139a57ebd2fd0a8dea363919c44ab5b4d4c595b6c80b6ee623ab00.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/bdc5a1e4fb78be9c499987fbd2a7b433a00d949fde07c7bbfb3046399efc5303/65756",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "runner_gateway-move",
-        "artifact": "test.outputs/test-outputs/files/3af5417702b87b65b5844f9db0ac3e2e7c0ec574c9a7925fd2b8408251641abe.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/d1364f677f54532fe2872d6454dc20d5ea6aef204a51d33a8ea1f5e72a47eeac/69456",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-mobile-dark]",
-        "checkpoint": "organization-card",
-        "artifact": "test.outputs/test-outputs/files/140dec02f50f2a8b2d5a8b85c6c24d3de7e9dace67c69bb42787b1b4e9b67317.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/b2e1aa7239282481f547a8a3008743c24e3430ca40e2549a9ca27aca9b9ac902/48762",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "tree-pair",
-        "artifact": "test.outputs/test-outputs/files/e451923b144b4b6077e45978fde06a5d463242fc2b638a0d433a4888c360fcd7.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/772d8c5eb1986d6b88426df8f93d9abe825ff3844399a48d86247cbb6d46339e/74788",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-mobile-dark]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/616f61bff2b1e66417387dabccc9ce8d4f37e31b1a989fe80f3d872d4850305e.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/c8dd7f0786b87c85c7519e0e8b6bf81b5a728fb06747272540700065baf29bfd/66715",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "package-decision",
-        "artifact": "test.outputs/test-outputs/files/c98cae0627664038648e8f0054aa36405afd8c600e82fb3dd8ce143255d68830.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/ee85b12fa7dd3c5ae2ca91121d98e1db33aa2e3e102e6a8e729483c5e006e17d/128684",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "app-tree",
-        "artifact": "test.outputs/test-outputs/files/1257dc66c11fb7242600106a528a83ecf5f4a610dc625e1104fd491a0977a3bc.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/2cbaf4f09294ccfa70289be41aa78e94d0d92c5d465d3b8528b7f42c6d5e51e5/75472",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "remaining-work",
-        "artifact": "test.outputs/test-outputs/files/23097e71a05ef93f26a0c934580c2e23826bba3722354976ba33637abce9fb48.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/44032d22109fd5e06b4ebfc98c157e5bd877c339f480958fbbd1c8bf2e2d8a7f/161500",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "component-decisions",
-        "artifact": "test.outputs/test-outputs/files/50de6a32850071457ec94bcffe9fc03eff8da31c833d0fca4f5d25c9f80331a1.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/b2286fd9854eebee5777f94ce789cc71ea2996054b939c5f724b382edcde6b67/52080",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-mobile-light]",
-        "checkpoint": "organization-card",
-        "artifact": "test.outputs/test-outputs/files/ad1addd7877d06ba06f57fbc17b895aae62c170a9c5cd8fb86d202cd915ad730.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/7e853c949d2f8fa297a9b4c95310847c26a5ffbf6fe2e400306f38ff2653c1a7/50316",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "notification-tree",
-        "artifact": "test.outputs/test-outputs/files/27858377619a32a41a2b1ddc2ddcd7e9fc47833a690f9c45bebe253174a970d9.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/ba3b9d716b94f054bcf055309f5807f6e2c093ece636a04760ab2a74198c3caa/111249",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "package-decision",
-        "artifact": "test.outputs/test-outputs/files/206b68ba16c571dc24fcea4c17ca083f4d11285d7d107675cd66ecf544aff138.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/3c1ef210bc8d3e1225d45972d1949ba81070091026c545bd37efa74a10ce2cfd/133863",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "notification-tree",
-        "artifact": "test.outputs/test-outputs/files/c70a9bcc59d0775f12e672b2568da47bc8056355aa20ccf8eb7c0bf775d77ed2.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/1247990760224496f06d81e8fe615afb5582076320e1ef20eec58ff02b155d5d/74554",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "history-current",
-        "artifact": "test.outputs/test-outputs/files/efdcf6f0ef8f90b8abf5a9ff65440eb5dc8724c4fa44cc6ac85d0566540c649d.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/16d775a1d68b7dbbc3c5ab5287659eff34dae8f9f1c1dc7a37c8b4ae35e5c652/65764",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "runner_gateway-move",
-        "artifact": "test.outputs/test-outputs/files/cef5da2ebce96c171ace90b51eca062b86b68f3532bdd64c1a3982007f377503.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/1810963c07e3892cc2b3c87f9ab74d218152637454ff24748b5f760683d89198/76904",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "component-decisions",
-        "artifact": "test.outputs/test-outputs/files/1523be72f22181f0263166a7e2047d868af174ba1c4edd6752cfa1b2ca0f7c81.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/33d609e9fa3077c5f9b8ff19851fe82e5a99900079c4b8d4453c271e88d73524/67480",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "package-decision",
-        "artifact": "test.outputs/test-outputs/files/b0f335d1c2df1497ae6bab3f8d88667ad8009de9eef8f3f1faafcb9548938abf.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/cb83a7dfcf645aadb10e8feedee2ff1c00164abf03b2f9100b868280c6d6bd60/118078",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "tree-pair",
-        "artifact": "test.outputs/test-outputs/files/f2d9d94f428b3759aba34b49198cb8bd931727816eb9d36b8c02f04d86960887.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/0a63d1fa899551aa72f1813910ff323e6cf1740ec774832e3055bc3080a65eea/98591",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/5199069780f5a0279d42ac035f047b30d523173cbad1c7acbd559a93a0780909.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/f1b7106f944dc529ae9a12930cf72507ec37e5b93a1d2a6a77494cab7c638a94/136847",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "history-current",
-        "artifact": "test.outputs/test-outputs/files/82e40d4fcdba9c3fe38fbb89126301691c6337a6d7f45e9e3d1ccabb4f542ad6.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/88187d50adaeee99b4abef1b2b1b6acd2bdf9af73f3d446d9d4680ca65bc650f/57834",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-desktop-light]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/957d6b82c9cecc44c95ad8ee3ebdfdbed51316260612521e939475632ccefff8.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/27e93605ef290e5ab7d0a256423302b23c3dfcbc2e16c33fd0ff2bab289df4b9/141596",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-light]",
-        "checkpoint": "tree-pair",
-        "artifact": "test.outputs/test-outputs/files/789f5fafe62935fa979c03c77e06a9e8b9065c6d84df99050df143214f78b424.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/f25501377fbf150bbbab6df7f44ab4bd9d4160a3c872813b639e2183382f16b6/98435",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "history-current",
-        "artifact": "test.outputs/test-outputs/files/f03de0a5cc249f4b994d6b80d5a9bd2e25d52b8a4a45a414cfe84cd04525efd2.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/8b6fa416aff4f10de196ea2832d46e7f7e788006964c3f1bd9b6bc09ef3a5074/58130",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-light]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/3414af640c32159112f764374f84937f8f74514d98f12203266ca0fe0db44492.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/55761388bc6e2d19062a571944feabdedb685992d75be7a6ae5d50507ebb19f3/61093",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "tree-pair",
-        "artifact": "test.outputs/test-outputs/files/502701a2ae5bc9a15a2c1126b7f59a0ac6ca013f5e05762a52ef50e527c5448c.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/10f28c706c8566cade404855ac1d6aee9d3a2267aa6bb7593c03ff91e0536c4f/74303",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-desktop-dark]",
-        "checkpoint": "notification-tree",
-        "artifact": "test.outputs/test-outputs/files/d73c1a0f4c52a5ef2f667216bebf31f9768e6cf0f42da677c9c98a705c21f3cc.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/69f23eabc3c2a078206be32827418bcd1bb1b5f9e659da6fd19a8015ce9c77b5/112327",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "notification-tree",
-        "artifact": "test.outputs/test-outputs/files/a1d1b9c8edd9c1d33433b0e94cf89f5f3b23389ceebbbe54b92906f53c501447.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/16599ec4aae54d8f261472ede1cacc2c18b62a8948b8eb32fcb93bf2214197bd/76594",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-desktop-dark]",
-        "checkpoint": "organization-card",
-        "artifact": "test.outputs/test-outputs/files/6b25ab92edab1a02fdf56f4c4019a926f71748aaed8b98f3aba00701d28a649c.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/eafd9c3a86cabfcc64047dceabd8b270bc5f83d750deaebc0bcbfce72e1f920b/126455",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "remaining-work",
-        "artifact": "test.outputs/test-outputs/files/388a9623b513835376e03a6b5991611a37bcf8f226539daab3884d53b056f570.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/b992ea10ed290084d95f5fe0f639917481d6a1c1ae24f852b7c1dc51a3463d39/66683",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-desktop-dark]",
-        "checkpoint": "first-screen",
-        "artifact": "test.outputs/test-outputs/files/dd56a5e74bb730499333045c58ad38034d9b33a2084bb069fc888a61174ffb7b.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/b936b3ccc07eee7a7670a2b0ce1106b1c221d62fd6a03d6bcb5de0e64c484522/139700",
-        "visually_inspected": false
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[home-desktop-light]",
-        "checkpoint": "organization-card",
-        "artifact": "test.outputs/test-outputs/files/5de23d6491d27e041d603c819a3e5474353631f861d912e41d648402a510f694.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/c246326c85408751dfb7b9fd2785679e0c6aa1509fa363a32d3f7f41092239d2/131051",
-        "visually_inspected": true
-      },
-      {
-        "case": "x/agentplane_plan_preview/visual_test.py::test_pages[report-mobile-dark]",
-        "checkpoint": "history-current",
-        "artifact": "test.outputs/test-outputs/files/5b310f07a5b37180a84f29ee4e520fd3b409ec800c2ad2da8f0497fc36a769fe.png",
-        "uri": "bytestream://remote.buildbuddy.io/blobs/00890611a183e10a7810aadbf9fe77e416c6985d99b3ddd724f1fde310f0c70b/65666",
-        "visually_inspected": false
-      }
-    ],
-    "visual_review": "Inspected ten final captures covering both pages at desktop/mobile widths in both themes, plus nested package and adoption details. Trees retain bounded horizontal scrolling; page text and controls remain readable.",
+    "visual_review": "Inspected the remaining-work queue, adoption order, sandbox_controller trees and new work-item cards (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
+  },
+  "sequence_review": {
+    "revised_at_utc": "2026-11-14T01:36:53+00:00",
+    "checked_origin_devel": "a2c0b74e3cd4a14e2397adb25847665e1a09c094",
+    "purpose": "Reorder the remaining work by certainty so each file moves once: leftover deletions, layout fixes that hold under any service map, operator-agreed service moves, local extractions, moves waiting on open service decisions, deferred contracts.",
+    "operator_inputs_2026_11_14": [
+      "Python/Go leftovers, dead code and tolerances for things that no longer exist should go.",
+      "Merging EnvironmentService into the Sandbox Controller sounds good.",
+      "Fine with exposing the real internal Dispatcher, EnvironmentService and History interfaces for delegation and retiring orchestration_v1, if the interfaces are sane.",
+      "The Notification Service probably splits into an inbox-holding service plus GitHub webhook processing as an actor adding messages to inboxes; the subscribe-to-a-source seam covering Actions and GitHub is unclear.",
+      "Journals sounds like where History should eventually go; naming approved: Journal for what a harness or process emits, stored verbatim; Thread for the messaging object with editable messages. The migration is not approved work.",
+      "The runtime-dials-Gateway connection mode was removed and the Gateway Lease is no longer particularly useful.",
+      "Service authentication will be made consistent; the scheme is not picked."
+    ],
+    "verified_at_devel": [
+      "runner_gateway/environments, lifecycle, internal/management and internal/view import no Gateway or Dispatcher package.",
+      "Dispatcher couplings to EnvironmentService: in-process RequestWake (dispatcher/delivery.go, delivery_wake.go); wake budget in Dispatcher PostgreSQL (dispatcher/wake.go ReserveWakeAttempt via runner_gateway/main.go lifecycleWakeBudget); identity fence dispatcher.Store.ChangeSandboxIdentity passed as IdentityChanges (runner_gateway/main.go, dispatcher/store.go).",
+      "The Sandbox Controller is a leader-elected controller-runtime manager with no gRPC listener or database (sandbox_controller/cmd/main.go).",
+      "orchestration_v1 launch creates Identity, PolicySet and PolicyBinding objects with the Kubernetes client (action_service/orchestration_v1/launch.go); the Dispatcher refuses Identity CreateSession (runner_gateway/dispatcher/api.go).",
+      "Viper is imported only by app/internal/settings/config.go and action_service/config.go, both file-only UnmarshalExact loaders.",
+      "The Gateway publishes Runtime WatchState facts on the <sandbox>-environment-runtime Lease (internal/gateway/runner_observer.go, records.go); the Sandbox Controller reads them (internal/controller/controller.go, idle.go, cache.go).",
+      "Control Service target users: dispatcher/runner_client.go, runner_gateway/config.go, app/internal/bridge/runner.go, notification_service/internal/rpc/runner.go, sandbox_controller/internal/runnercontrol/quiescer.go.",
+      "232 non-generated Go files mention runner beyond the Gateway's own name; Notification's runner_entry and runner_cursor are stored columns (notification_service/migrations/notifications/00013_baseline.sql); History's FoldRunner is a fold job runner."
+    ],
+    "corrections_to_earlier_findings": [
+      "agentplane/indexing is not used only by x/indexing: haku/console's migrations import its vector_type (haku/console/BUILD.bazel, migrations/versions/0135_final_schema.py). It is Python and outside this Go plan.",
+      "The twelve Python settings.py models are live cdk8s authoring schemas and fixture inputs, not dead code; making settings single-source is an open mechanism choice (settings-single-source).",
+      "The Lease facts' Unrecognised variants are STYLE.md's roll-safety deviation, not a tolerance for removed state; they go with the Lease."
+    ],
+    "limits": "Planning only. No Go code moved, no Go tests run, nothing deployed."
   }
 }

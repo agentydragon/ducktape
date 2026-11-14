@@ -2750,7 +2750,9 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "settings-viper-removal",
         "action-service-cmd-layout",
+        "orchestration-v1-retirement",
         "action-service-grpcgate"
       ],
       "disposition": "exact move",
@@ -2769,6 +2771,7 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "settings-viper-removal",
         "action-service-cmd-layout",
         "action-service-grpcgate"
       ],
@@ -2857,7 +2860,7 @@
       "planned_package": "catalog",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["orchestration-v1-retirement"],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/admission/catalog"
     },
@@ -4601,6 +4604,7 @@
       "candidate_owners": [],
       "pending_tracks": [
         "action-service-cmd-layout",
+        "orchestration-v1-retirement",
         "action-service-grpcgate"
       ],
       "disposition": "exact move",
@@ -4664,13 +4668,13 @@
       "generated": false,
       "lines": 234,
       "sha256": "b87416b017752b236aa5b1d5621993f2be5d3b753519ee44ff99595b34941a94",
-      "planned_path": "agentplane/action_service/orchestration_v1/contract/inputs.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "contract",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1/contract"
     },
     {
@@ -4680,13 +4684,13 @@
       "generated": false,
       "lines": 152,
       "sha256": "ad196aebf636cbf71de4d192077524428493407817565e2bf68defe163e24685",
-      "planned_path": "agentplane/action_service/orchestration_v1/contract/inputs_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "contract",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1/contract"
     },
     {
@@ -4696,13 +4700,13 @@
       "generated": false,
       "lines": 166,
       "sha256": "b3963ec9a59a186a89b753721b098d8df28955314925e9268f711bbc18b47cc9",
-      "planned_path": "agentplane/action_service/orchestration_v1/executor.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4712,13 +4716,13 @@
       "generated": false,
       "lines": 542,
       "sha256": "660d83aa7cec803f7c07b457b7a9f7fa76c8eaa263db2046074d09da27e42f50",
-      "planned_path": "agentplane/action_service/orchestration_v1/executor_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4728,13 +4732,13 @@
       "generated": false,
       "lines": 417,
       "sha256": "5da2c10a7188fb516830392dcf223efd635dc7a438896cb0f2ed4c56a08d1ea0",
-      "planned_path": "agentplane/action_service/orchestration_v1/fixture_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4744,13 +4748,13 @@
       "generated": false,
       "lines": 358,
       "sha256": "b2a4d54c91e2b5728c9b13e4775a1cac73e5dce0ac5583477da515145a45d4f6",
-      "planned_path": "agentplane/action_service/orchestration_v1/launch.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4760,13 +4764,13 @@
       "generated": false,
       "lines": 66,
       "sha256": "1c0809b5c078715ffa846adbba72a5c5fd49bc681a5f08c7b99880090eda6023",
-      "planned_path": "agentplane/action_service/orchestration_v1/presets.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4776,13 +4780,13 @@
       "generated": false,
       "lines": 337,
       "sha256": "42f89fdcd5f7ddc4b2ca6ff5835a3ef3e75629aa69902008edfd39ba68795538",
-      "planned_path": "agentplane/action_service/orchestration_v1/reads.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4792,13 +4796,13 @@
       "generated": false,
       "lines": 308,
       "sha256": "3de8731d7017e52b9f36675c5cbd858d2cf527bb069a1c92387b28ee457629c5",
-      "planned_path": "agentplane/action_service/orchestration_v1/reads_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4808,13 +4812,13 @@
       "generated": false,
       "lines": 149,
       "sha256": "1881064c6e4d3b1b276a33f038c432135b3b5e445dd2f3f97e19b9c4fb67b57e",
-      "planned_path": "agentplane/action_service/orchestration_v1/sessions.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4824,13 +4828,13 @@
       "generated": false,
       "lines": 179,
       "sha256": "681c96a7a5c49ea3e09c3c411d7e222f96a9093e26e97fb859d119db17d83c0b",
-      "planned_path": "agentplane/action_service/orchestration_v1/turns.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -4840,13 +4844,13 @@
       "generated": false,
       "lines": 377,
       "sha256": "39f6b9c85929927bc466e9103d3d9629afcd094e7ca68ca80d39fd9a45233167",
-      "planned_path": "agentplane/action_service/orchestration_v1/turns_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "orchestrationv1",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "gated removal",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "disposition": "gated removal",
       "package_decision": "agentplane/action_service/orchestration_v1"
     },
     {
@@ -5504,7 +5508,11 @@
         "agentplane/app/internal/bridge",
         "agentplane/app/internal/sessionclient"
       ],
-      "pending_tracks": ["app-session-client-name"],
+      "pending_tracks": [
+        "runner-era-names",
+        "app-session-client-name",
+        "gateway-replica-ownership"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/app/internal/bridge"
     },
@@ -6063,7 +6071,7 @@
         "agentplane/app/internal/httpapi/streams",
         "agentplane/app/cmd"
       ],
-      "pending_tracks": ["app-http-owners"],
+      "pending_tracks": ["runner-era-names", "app-http-owners"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/app/internal/server"
     },
@@ -6086,7 +6094,7 @@
         "agentplane/app/internal/httpapi/streams",
         "agentplane/app/cmd"
       ],
-      "pending_tracks": ["app-http-owners"],
+      "pending_tracks": ["runner-era-names", "app-http-owners"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/app/internal/server"
     },
@@ -6493,7 +6501,7 @@
       "planned_package": "settings",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["settings-viper-removal"],
       "disposition": "retain owner",
       "package_decision": "agentplane/app/internal/settings"
     },
@@ -6509,7 +6517,7 @@
       "planned_package": "settings",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["settings-viper-removal"],
       "disposition": "retain owner",
       "package_decision": "agentplane/app/internal/settings"
     },
@@ -6973,8 +6981,8 @@
         "agentplane/central_sampler/internal/executor/tools"
       ],
       "pending_tracks": [
-        "sampler-executor-boundary",
-        "sampler-execution-state"
+        "sampler-execution-state",
+        "sampler-executor-boundary"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
@@ -7019,8 +7027,8 @@
         "agentplane/central_sampler/internal/executor/tools"
       ],
       "pending_tracks": [
-        "sampler-executor-boundary",
-        "sampler-execution-state"
+        "sampler-execution-state",
+        "sampler-executor-boundary"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
@@ -7065,8 +7073,8 @@
         "agentplane/central_sampler/internal/executor/tools"
       ],
       "pending_tracks": [
-        "sampler-executor-boundary",
-        "sampler-execution-state"
+        "sampler-execution-state",
+        "sampler-executor-boundary"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
@@ -7134,8 +7142,8 @@
         "agentplane/central_sampler/internal/executor/tools"
       ],
       "pending_tracks": [
-        "sampler-executor-boundary",
-        "sampler-execution-state"
+        "sampler-execution-state",
+        "sampler-executor-boundary"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
@@ -7523,7 +7531,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-resident-session", "sampler-provider-io"],
+      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7561,7 +7569,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-resident-session", "sampler-provider-io"],
+      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7580,7 +7588,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-resident-session", "sampler-provider-io"],
+      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7599,7 +7607,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-resident-session", "sampler-provider-io"],
+      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7637,7 +7645,7 @@
         "agentplane/central_sampler/internal/residentruntime",
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
-      "pending_tracks": ["sampler-resident-session", "sampler-provider-io"],
+      "pending_tracks": ["sampler-provider-io", "sampler-resident-session"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/residentruntime"
     },
@@ -7852,9 +7860,9 @@
         "agentplane/central_sampler/internal/environmentcontext"
       ],
       "pending_tracks": [
+        "sampler-execution-state",
         "sampler-request-preparation",
-        "sampler-content-persistence",
-        "sampler-execution-state"
+        "sampler-content-persistence"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
@@ -7877,9 +7885,9 @@
         "agentplane/central_sampler/internal/environmentcontext"
       ],
       "pending_tracks": [
-        "sampler-content-persistence",
         "sampler-execution-state",
-        "sampler-request-preparation"
+        "sampler-request-preparation",
+        "sampler-content-persistence"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
@@ -7952,8 +7960,8 @@
         "agentplane/central_sampler/internal/environmentcontext"
       ],
       "pending_tracks": [
-        "sampler-request-preparation",
         "sampler-execution-state",
+        "sampler-request-preparation",
         "sampler-content-persistence"
       ],
       "disposition": "candidate boundary",
@@ -8502,8 +8510,8 @@
         "agentplane/central_sampler/internal/environmentcontext"
       ],
       "pending_tracks": [
-        "sampler-request-preparation",
         "sampler-execution-state",
+        "sampler-request-preparation",
         "sampler-content-persistence"
       ],
       "disposition": "candidate boundary",
@@ -8552,9 +8560,9 @@
         "agentplane/central_sampler/internal/environmentcontext"
       ],
       "pending_tracks": [
+        "sampler-execution-state",
         "sampler-request-preparation",
-        "sampler-content-persistence",
-        "sampler-execution-state"
+        "sampler-content-persistence"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
@@ -8627,6 +8635,7 @@
         "agentplane/central_sampler/internal/environmentcontext"
       ],
       "pending_tracks": [
+        "transition-tolerance-removal",
         "sampler-execution-state",
         "sampler-request-preparation",
         "sampler-content-persistence"
@@ -9008,8 +9017,8 @@
         "agentplane/central_sampler/internal/jsonwire"
       ],
       "pending_tracks": [
-        "sampler-provider-io",
         "sampler-json-contract",
+        "sampler-provider-io",
         "sampler-execution-state"
       ],
       "disposition": "candidate boundary",
@@ -9108,8 +9117,8 @@
         "agentplane/central_sampler/internal/jsonwire"
       ],
       "pending_tracks": [
-        "sampler-provider-io",
         "sampler-json-contract",
+        "sampler-provider-io",
         "sampler-execution-state"
       ],
       "disposition": "candidate boundary",
@@ -9158,9 +9167,9 @@
         "agentplane/central_sampler/internal/jsonwire"
       ],
       "pending_tracks": [
-        "sampler-execution-state",
         "sampler-json-contract",
-        "sampler-provider-io"
+        "sampler-provider-io",
+        "sampler-execution-state"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/protocol"
@@ -9540,7 +9549,7 @@
       "planned_package": "exportfixture",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["transition-tolerance-removal"],
       "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/testing/exportfixture"
     },
@@ -15476,7 +15485,7 @@
       "planned_package": "backfill",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/backfill"
     },
@@ -15492,7 +15501,7 @@
       "planned_package": "backfill",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/backfill"
     },
@@ -15508,7 +15517,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15524,7 +15533,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15540,7 +15549,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15556,7 +15565,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15572,7 +15581,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15588,7 +15597,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15604,7 +15613,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15620,7 +15629,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15636,7 +15645,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/cmd"
     },
@@ -15652,7 +15661,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15668,7 +15677,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15684,7 +15693,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15700,7 +15709,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15716,7 +15725,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15732,7 +15741,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15748,7 +15757,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15764,7 +15773,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15780,7 +15789,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15796,7 +15805,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15812,7 +15821,7 @@
       "planned_package": "ingress",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/ingress"
     },
@@ -15828,7 +15837,7 @@
       "planned_package": "migrations",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/migrations"
     },
@@ -15844,7 +15853,7 @@
       "planned_package": "migrations",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/migrations"
     },
@@ -15860,7 +15869,7 @@
       "planned_package": "migrations",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/migrations"
     },
@@ -15876,7 +15885,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15892,7 +15901,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15908,7 +15917,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15924,7 +15933,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15940,7 +15949,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15956,7 +15965,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15972,7 +15981,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -15988,7 +15997,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16004,7 +16013,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16020,7 +16029,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16036,7 +16045,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16052,7 +16061,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16068,7 +16077,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16084,7 +16093,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16100,7 +16109,7 @@
       "planned_package": "projection",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/projection"
     },
@@ -16116,7 +16125,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16132,7 +16141,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16148,7 +16157,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16164,7 +16173,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16180,7 +16189,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16196,7 +16205,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16212,7 +16221,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16228,7 +16237,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16244,7 +16253,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16260,7 +16269,7 @@
       "planned_package": "reads",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/reads"
     },
@@ -16276,7 +16285,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16292,7 +16301,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16308,7 +16317,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16324,7 +16333,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16340,7 +16349,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16356,7 +16365,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16372,7 +16381,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/rpc"
     },
@@ -16388,7 +16397,7 @@
       "planned_package": "settledcursors",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/settledcursors"
     },
@@ -16404,7 +16413,7 @@
       "planned_package": "settledcursors",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/settledcursors"
     },
@@ -16420,7 +16429,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16436,7 +16445,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16452,7 +16461,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16468,7 +16477,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16484,7 +16493,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16500,7 +16509,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16516,7 +16525,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16532,7 +16541,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16548,7 +16557,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16564,7 +16573,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16580,7 +16589,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16596,7 +16605,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16612,7 +16621,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["transition-tolerance-removal", "history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16628,7 +16637,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16644,7 +16653,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -16660,7 +16669,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16676,7 +16685,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16692,7 +16701,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16708,7 +16717,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16724,7 +16733,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16740,7 +16749,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16756,7 +16765,7 @@
       "planned_package": "threadfold",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/threadfold"
     },
@@ -16772,7 +16781,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/ops"
     },
@@ -16788,7 +16797,7 @@
       "planned_package": "historytesting",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/testing"
     },
@@ -16804,7 +16813,7 @@
       "planned_package": "spans",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/testing/spans"
     },
@@ -18584,9 +18593,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -18605,9 +18615,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -18626,9 +18637,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -18647,9 +18659,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -18667,7 +18680,7 @@
       "planned_package": "docs",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/docs"
     },
@@ -18684,9 +18697,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -18705,9 +18719,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -18725,7 +18740,7 @@
       "planned_package": "inboxaccess",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/inboxaccess"
     },
@@ -18741,7 +18756,7 @@
       "planned_package": "inboxaccess",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/inboxaccess"
     },
@@ -18757,7 +18772,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18773,7 +18788,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18789,7 +18804,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18805,7 +18820,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18821,7 +18836,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18837,7 +18852,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18853,7 +18868,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18869,7 +18884,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18885,7 +18900,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18901,7 +18916,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18917,7 +18932,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18933,7 +18948,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18949,7 +18964,10 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "gateway-replica-ownership"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18965,7 +18983,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18981,7 +18999,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -18997,7 +19015,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19013,7 +19031,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19029,7 +19047,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19045,7 +19063,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19061,7 +19079,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19077,7 +19095,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19093,7 +19111,7 @@
       "planned_package": "rpc",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
     },
@@ -19109,7 +19127,7 @@
       "planned_package": "sessionidentity",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sessionidentity"
     },
@@ -19125,7 +19143,7 @@
       "planned_package": "actions",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/actions"
     },
@@ -19141,7 +19159,7 @@
       "planned_package": "actions",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/actions"
     },
@@ -19157,7 +19175,7 @@
       "planned_package": "actions",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/actions"
     },
@@ -19173,7 +19191,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19189,7 +19207,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19205,7 +19223,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19221,7 +19239,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19237,7 +19255,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19253,7 +19271,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19269,7 +19287,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19285,7 +19303,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19301,7 +19319,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19317,7 +19335,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19333,7 +19351,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19349,7 +19367,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19365,7 +19383,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19381,7 +19399,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19397,7 +19415,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19413,7 +19431,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19429,7 +19447,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19445,7 +19463,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19461,7 +19479,7 @@
       "planned_package": "client",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/client"
     },
@@ -19477,7 +19495,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19493,7 +19511,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19509,7 +19527,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19525,7 +19543,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19541,7 +19559,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19557,7 +19575,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19573,7 +19591,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19589,7 +19607,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19605,7 +19623,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19621,7 +19639,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19637,7 +19655,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19653,7 +19671,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19669,7 +19687,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19685,7 +19703,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19701,7 +19719,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19717,7 +19735,7 @@
       "planned_package": "settings",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/settings"
     },
@@ -19733,7 +19751,7 @@
       "planned_package": "settings",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/settings"
     },
@@ -19749,7 +19767,7 @@
       "planned_package": "settings",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/settings"
     },
@@ -19765,7 +19783,7 @@
       "planned_package": "settings",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/settings"
     },
@@ -19781,7 +19799,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -19797,7 +19815,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19813,7 +19834,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19829,7 +19853,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19845,7 +19872,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19861,7 +19891,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19877,7 +19910,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19893,7 +19929,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19909,7 +19948,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19925,7 +19967,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19941,7 +19986,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19957,7 +20005,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19973,7 +20024,10 @@
       "planned_package": "state",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["notification-github-fact-effects"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-fact-effects"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/state"
     },
@@ -19989,7 +20043,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -20005,7 +20059,7 @@
       "planned_package": "testing",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/testing"
     },
@@ -20021,7 +20075,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -20037,7 +20091,7 @@
       "planned_package": "webhook",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/webhook"
     },
@@ -20053,7 +20107,7 @@
       "planned_package": "webhook",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/webhook"
     },
@@ -20069,7 +20123,7 @@
       "planned_package": "webhook",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github/webhook"
     },
@@ -20085,7 +20139,7 @@
       "planned_package": "github",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources/github"
     },
@@ -20101,7 +20155,7 @@
       "planned_package": "sources",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources"
     },
@@ -20117,7 +20171,7 @@
       "planned_package": "sources",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/sources"
     },
@@ -20136,7 +20190,10 @@
         "agentplane/notification_service/internal/storagecodec",
         "agentplane/notification_service/internal/sources/github/storagecodec"
       ],
-      "pending_tracks": ["notification-github-model-codecs"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-model-codecs"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/storagecodec"
     },
@@ -20155,7 +20212,10 @@
         "agentplane/notification_service/internal/storagecodec",
         "agentplane/notification_service/internal/sources/github/storagecodec"
       ],
-      "pending_tracks": ["notification-github-model-codecs"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-model-codecs"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/storagecodec"
     },
@@ -20174,7 +20234,10 @@
         "agentplane/notification_service/internal/storagecodec",
         "agentplane/notification_service/internal/sources/github/storagecodec"
       ],
-      "pending_tracks": ["notification-github-model-codecs"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-model-codecs"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/storagecodec"
     },
@@ -20193,7 +20256,10 @@
         "agentplane/notification_service/internal/storagecodec",
         "agentplane/notification_service/internal/sources/github/storagecodec"
       ],
-      "pending_tracks": ["notification-github-model-codecs"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-model-codecs"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/storagecodec"
     },
@@ -20212,7 +20278,10 @@
         "agentplane/notification_service/internal/storagecodec",
         "agentplane/notification_service/internal/sources/github/storagecodec"
       ],
-      "pending_tracks": ["notification-github-model-codecs"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-model-codecs"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/storagecodec"
     },
@@ -20231,7 +20300,10 @@
         "agentplane/notification_service/internal/storagecodec",
         "agentplane/notification_service/internal/sources/github/storagecodec"
       ],
-      "pending_tracks": ["notification-github-model-codecs"],
+      "pending_tracks": [
+        "notification-inbox-split",
+        "notification-github-model-codecs"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/storagecodec"
     },
@@ -20252,10 +20324,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20277,10 +20350,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20302,10 +20376,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20327,10 +20402,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20352,10 +20428,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20377,10 +20454,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20402,10 +20480,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20427,10 +20506,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20452,10 +20532,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20477,10 +20558,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20502,10 +20584,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20527,10 +20610,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-inbox-fanout",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-observation-projection"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20552,10 +20636,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-inbox-owner",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20577,10 +20662,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-inbox-owner",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20602,10 +20688,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-inbox-owner",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20627,10 +20714,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-inbox-fanout",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-observation-projection"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20652,10 +20740,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20677,10 +20766,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20702,10 +20792,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20727,10 +20818,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20752,10 +20844,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20777,10 +20870,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20802,10 +20896,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20827,10 +20922,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-observation-projection",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-inbox-fanout"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20852,10 +20948,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-inbox-fanout",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-observation-projection"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20877,10 +20974,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20902,10 +21000,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20927,10 +21026,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20952,10 +21052,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-inbox-fanout",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-observation-projection"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -20977,10 +21078,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21002,10 +21104,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21027,6 +21130,7 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
@@ -21050,6 +21154,7 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
@@ -21073,10 +21178,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21098,10 +21204,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21123,10 +21230,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21148,10 +21256,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21173,10 +21282,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21198,10 +21308,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21223,10 +21334,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21248,10 +21360,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21273,10 +21386,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21298,10 +21412,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21323,10 +21438,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-inbox-owner",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21348,10 +21464,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-github-inbox-fanout",
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
-        "notification-github-observation-projection"
+        "notification-github-inbox-fanout",
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21373,10 +21490,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21398,10 +21516,11 @@
         "agentplane/notification_service/internal/sources/github/publication"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
+        "notification-inbox-split",
         "notification-github-fact-effects",
         "notification-github-inbox-fanout",
-        "notification-github-observation-projection"
+        "notification-github-observation-projection",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/internal/store"
@@ -21418,7 +21537,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21434,7 +21553,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21450,7 +21569,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21466,7 +21585,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21482,7 +21601,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21498,7 +21617,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21514,7 +21633,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21530,7 +21649,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21546,7 +21665,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21562,7 +21681,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21578,7 +21697,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21594,7 +21713,7 @@
       "planned_package": "worker",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/worker"
     },
@@ -21611,9 +21730,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -21632,9 +21752,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -21652,7 +21773,7 @@
       "planned_package": "migrations",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/migrations"
     },
@@ -21668,7 +21789,7 @@
       "planned_package": "migrations",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/migrations"
     },
@@ -21689,6 +21810,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21712,6 +21834,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21735,6 +21858,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21758,6 +21882,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21781,6 +21906,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21804,8 +21930,9 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
-        "notification-github-model-codecs"
+        "notification-inbox-split",
+        "notification-github-model-codecs",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/model"
@@ -21827,6 +21954,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21850,6 +21978,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21873,8 +22002,9 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
-        "notification-inbox-owner",
-        "notification-github-model-codecs"
+        "notification-inbox-split",
+        "notification-github-model-codecs",
+        "notification-inbox-owner"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/notification_service/model"
@@ -21896,6 +22026,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21919,6 +22050,7 @@
         "agentplane/notification_service/internal/sources/github/model"
       ],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-github-model-codecs",
         "notification-inbox-owner"
       ],
@@ -21938,9 +22070,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -21958,7 +22091,7 @@
       "planned_package": "testing",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["notification-inbox-split"],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/testing"
     },
@@ -21975,9 +22108,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -21996,9 +22130,10 @@
       "goal_path_status": "exact move",
       "candidate_owners": [],
       "pending_tracks": [
+        "notification-inbox-split",
         "notification-service-cmd-layout",
-        "notification-github-fact-effects",
         "notification-github-model-codecs",
+        "notification-github-fact-effects",
         "protobuf-alignment"
       ],
       "disposition": "exact move",
@@ -22923,6 +23058,8 @@
         "agentplane/runner_gateway/dispatcher/internal/store"
       ],
       "pending_tracks": [
+        "transition-tolerance-removal",
+        "environment-service-to-sandbox-controller",
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
@@ -22945,6 +23082,8 @@
         "agentplane/runner_gateway/dispatcher/internal/store"
       ],
       "pending_tracks": [
+        "transition-tolerance-removal",
+        "environment-service-to-sandbox-controller",
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
@@ -23091,6 +23230,7 @@
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-dispatcher-store"
       ],
       "disposition": "candidate boundary",
@@ -23157,6 +23297,7 @@
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-dispatcher-store"
       ],
       "disposition": "candidate boundary",
@@ -23200,6 +23341,8 @@
         "agentplane/runner_gateway/dispatcher/internal/store"
       ],
       "pending_tracks": [
+        "transition-tolerance-removal",
+        "environment-service-to-sandbox-controller",
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
@@ -23310,6 +23453,7 @@
         "agentplane/runner_gateway/dispatcher/internal/store"
       ],
       "pending_tracks": [
+        "environment-service-to-sandbox-controller",
         "runner-gateway-command",
         "runner-gateway-dispatcher-store"
       ],
@@ -23389,16 +23533,18 @@
       "generated": false,
       "lines": 346,
       "sha256": "1b7c116015c4327a21788b11612ef3c0d67e4532729870f51006b845cbbae720",
-      "planned_path": "agentplane/runner_gateway/environments/collection.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "environments",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "policy-controller-rpc-cleanup"
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments"
       ],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "policy-controller-rpc-cleanup",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
     {
@@ -23408,13 +23554,15 @@
       "generated": false,
       "lines": 479,
       "sha256": "7681e85171df786069a9c56055dfb933d8636b67cde6e092efea65387f5727b2",
-      "planned_path": "agentplane/runner_gateway/environments/internal/management/access.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "management",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/management"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/management"
     },
     {
@@ -23424,13 +23572,15 @@
       "generated": false,
       "lines": 508,
       "sha256": "7df511b8b3f769d71d3f8adf1a3d35a00b9ef296a412e696a6dd30a87d4c86e3",
-      "planned_path": "agentplane/runner_gateway/environments/internal/management/access_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "management",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/management"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/management"
     },
     {
@@ -23440,13 +23590,15 @@
       "generated": false,
       "lines": 58,
       "sha256": "d3f66d48f2c47af050cce11ccc4f57873f2eb75104b889bec43d7fc2ff5e52d6",
-      "planned_path": "agentplane/runner_gateway/environments/internal/management/errors.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "management",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/management"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/management"
     },
     {
@@ -23456,13 +23608,15 @@
       "generated": false,
       "lines": 189,
       "sha256": "440c62f09dce6eebb20238c082dee8cc3acbae9c161acb310a515fa92400aace",
-      "planned_path": "agentplane/runner_gateway/environments/internal/view/view.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "view",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/view"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/view"
     },
     {
@@ -23472,13 +23626,15 @@
       "generated": false,
       "lines": 149,
       "sha256": "1a2b1d495024d80dd5e3ce8a76474fe4b8e5712ffa5744e2bbf158c16dfc44da",
-      "planned_path": "agentplane/runner_gateway/environments/internal/view/view_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "view",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/view"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/internal/view"
     },
     {
@@ -23488,13 +23644,15 @@
       "generated": false,
       "lines": 627,
       "sha256": "37b934f307c7500a1dd6859c9e96a7daf66be23d154454282576bb206e904b53",
-      "planned_path": "agentplane/runner_gateway/environments/lifecycle/manager.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "lifecycle",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/lifecycle"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/lifecycle"
     },
     {
@@ -23504,13 +23662,15 @@
       "generated": false,
       "lines": 684,
       "sha256": "eb192b195cc4c05eca5ba740336f585fd35931cc955af0d7e35420ddbf046c83",
-      "planned_path": "agentplane/runner_gateway/environments/lifecycle/service_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "lifecycle_test",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/lifecycle"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/lifecycle"
     },
     {
@@ -23520,13 +23680,15 @@
       "generated": false,
       "lines": 56,
       "sha256": "ed082f67fe8cf9f5d04ad313c5c9195da9962ddee19bc0be0adcc61f7329e168",
-      "planned_path": "agentplane/runner_gateway/environments/lifecycle/types.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "lifecycle",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command"],
-      "disposition": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments/lifecycle"
+      ],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments/lifecycle"
     },
     {
@@ -23536,16 +23698,18 @@
       "generated": false,
       "lines": 222,
       "sha256": "197dff53b6536a76159d1fe47fc58fe52908b0e4683203a98af496df3b060e7d",
-      "planned_path": "agentplane/runner_gateway/environments/management.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "environments",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "policy-controller-rpc-cleanup"
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments"
       ],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "policy-controller-rpc-cleanup",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
     {
@@ -23555,16 +23719,18 @@
       "generated": false,
       "lines": 597,
       "sha256": "9f2707ecb0b0604e691210b32d4e3d36634bc9de049fe13bf21631ad2946ba7e",
-      "planned_path": "agentplane/runner_gateway/environments/service.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "environments",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "policy-controller-rpc-cleanup"
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments"
       ],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "policy-controller-rpc-cleanup",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
     {
@@ -23574,16 +23740,19 @@
       "generated": false,
       "lines": 1564,
       "sha256": "8a15daf92a6bb495b005ab49d995948c66217f572a2f8fcc37c0d3cfdd409ae7",
-      "planned_path": "agentplane/runner_gateway/environments/service_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "environments",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "policy-controller-rpc-cleanup"
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments"
       ],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "policy-controller-rpc-cleanup",
+        "environment-service-to-sandbox-controller",
+        "orchestration-v1-retirement"
+      ],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
     {
@@ -23593,16 +23762,18 @@
       "generated": false,
       "lines": 168,
       "sha256": "625e6a6c20fe9b5b1d8facfcff5bbdf00414a88ec04ecc05e4bb298ed4b5d6ac",
-      "planned_path": "agentplane/runner_gateway/environments/watch.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "environments",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "policy-controller-rpc-cleanup"
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments"
       ],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "policy-controller-rpc-cleanup",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
     {
@@ -23612,16 +23783,18 @@
       "generated": false,
       "lines": 806,
       "sha256": "6cb782a1785cd143ab69dc2b272c3cc04d9f5cac08899408c3b41222dd328272",
-      "planned_path": "agentplane/runner_gateway/environments/watch_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "environments",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [
-        "runner-gateway-command",
-        "policy-controller-rpc-cleanup"
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/sandbox_controller/internal/environments"
       ],
-      "disposition": "retain owner",
+      "pending_tracks": [
+        "policy-controller-rpc-cleanup",
+        "environment-service-to-sandbox-controller"
+      ],
+      "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/environments"
     },
     {
@@ -23637,11 +23810,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23660,11 +23834,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23683,11 +23858,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23706,11 +23882,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23729,11 +23906,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23752,11 +23930,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23775,11 +23954,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23798,11 +23978,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23821,11 +24002,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23844,11 +24026,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23867,11 +24050,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23890,11 +24074,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23913,11 +24098,13 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
+        "gateway-runtime-lease-removal",
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23936,11 +24123,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23959,11 +24147,13 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
+        "gateway-runtime-lease-removal",
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23982,11 +24172,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24005,11 +24196,12 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runnerconnections",
+        "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
+        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24062,7 +24254,11 @@
       "planned_package": null,
       "goal_path_status": "split responsibility",
       "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command", "runner-gateway-app"],
+      "pending_tracks": [
+        "environment-service-to-sandbox-controller",
+        "runner-gateway-command",
+        "runner-gateway-app"
+      ],
       "disposition": "split responsibility",
       "package_decision": "agentplane/runner_gateway"
     },
@@ -24126,7 +24322,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "retain owner",
       "package_decision": "agentplane/sandbox_controller/cmd"
     },
@@ -24142,7 +24338,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["environment-service-to-sandbox-controller"],
       "disposition": "retain owner",
       "package_decision": "agentplane/sandbox_controller/cmd"
     },
@@ -24158,7 +24354,10 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": [
+        "gateway-runtime-lease-removal",
+        "environment-service-to-sandbox-controller"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/sandbox_controller/cmd"
     },
@@ -24218,7 +24417,11 @@
         "agentplane/sandbox_controller/internal/runtimecredentials",
         "agentplane/sandbox_controller/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "gateway-runtime-lease-removal",
+        "sandbox-controller-lifecycle",
+        "gateway-replica-ownership"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24278,7 +24481,10 @@
         "agentplane/sandbox_controller/internal/runtimecredentials",
         "agentplane/sandbox_controller/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "sandbox-controller-lifecycle",
+        "gateway-replica-ownership"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24298,7 +24504,11 @@
         "agentplane/sandbox_controller/internal/runtimecredentials",
         "agentplane/sandbox_controller/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "gateway-runtime-lease-removal",
+        "sandbox-controller-lifecycle",
+        "gateway-replica-ownership"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24518,7 +24728,10 @@
         "agentplane/sandbox_controller/internal/runtimecredentials",
         "agentplane/sandbox_controller/internal/vm"
       ],
-      "pending_tracks": ["sandbox-controller-lifecycle"],
+      "pending_tracks": [
+        "gateway-runtime-lease-removal",
+        "sandbox-controller-lifecycle"
+      ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
@@ -24729,13 +24942,13 @@
       "generated": false,
       "lines": 73,
       "sha256": "d40aadb4fbe3154ac75384fedc1dc2a1042ccc79507e1ba4c7032baf38d86d53",
-      "planned_path": "agentplane/sandbox_controller/internal/runnercontrol/quiescer.go",
+      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/quiescer.go",
       "planned_parts": [],
-      "planned_package": "runnercontrol",
-      "goal_path_status": "retain owner",
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["runner-era-names", "gateway-replica-ownership"],
+      "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
     {
@@ -24745,13 +24958,13 @@
       "generated": false,
       "lines": 47,
       "sha256": "0bb56d1c4407793d290ced0aeda33c429104c590ff5215b4f1cf289b953f0870",
-      "planned_path": "agentplane/sandbox_controller/internal/runnercontrol/quiescer_test.go",
+      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/quiescer_test.go",
       "planned_parts": [],
-      "planned_package": "runnercontrol",
-      "goal_path_status": "retain owner",
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["runner-era-names", "gateway-replica-ownership"],
+      "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
     {
@@ -24761,13 +24974,13 @@
       "generated": false,
       "lines": 44,
       "sha256": "f178e2ab0da50f96793ccdf6b9b9cc8c18d317469f6e2d855907fff4ec130902",
-      "planned_path": "agentplane/sandbox_controller/internal/runnercontrol/suspender.go",
+      "planned_path": "agentplane/sandbox_controller/internal/runtimecontrol/suspender.go",
       "planned_parts": [],
-      "planned_package": "runnercontrol",
-      "goal_path_status": "retain owner",
+      "planned_package": "runtimecontrol",
+      "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["runner-era-names", "gateway-replica-ownership"],
+      "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
     {
@@ -24905,13 +25118,13 @@
       "generated": false,
       "lines": 234,
       "sha256": "f452ab9c1741c051e3e0b4c01367a6e2b7ed7b17c18b95b029000ac93b5c65e2",
-      "planned_path": "agentplane/sandboxes/lease/facts.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "lease",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "delete",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["gateway-runtime-lease-removal"],
+      "disposition": "delete",
       "package_decision": "agentplane/sandboxes/lease"
     },
     {
@@ -24921,13 +25134,13 @@
       "generated": false,
       "lines": 164,
       "sha256": "067ac05ed037df3d7a7cad39a200fef1ad068ab5e4ea13966c822f434f186976",
-      "planned_path": "agentplane/sandboxes/lease/facts_test.go",
+      "planned_path": null,
       "planned_parts": [],
-      "planned_package": "lease",
-      "goal_path_status": "retain owner",
+      "planned_package": null,
+      "goal_path_status": "delete",
       "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
+      "pending_tracks": ["gateway-runtime-lease-removal"],
+      "disposition": "delete",
       "package_decision": "agentplane/sandboxes/lease"
     },
     {
