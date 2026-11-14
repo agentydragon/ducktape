@@ -715,24 +715,26 @@ The app has independent `action_federation.service_url` and `connection_service_
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
 Actions retains upstream MCP linkage and its public client metadata. The edge verifies operator OIDC separately from
-external MCP bearers and forwards workload calls under the bound ServiceAccount's token. Its additional gRPC listener on port 8443
-checks the App service SVID against the workload CA; operator OIDC remains required and determines
-Connection authority. The App still uses port 8080 until its separate caller cutover.
+external MCP bearers, then calls Actions with its exact service SVID and typed Connection/grant provenance. It sends no
+Action audience bearer and has no bearer fallback. Its additional gRPC listener on port 8443
+checks the App service SVID against the workload CA; operator OIDC remains required for App's
+operator methods and is separate from the edge's Connection delegation. The App still uses port 8080
+until its separate caller cutover.
 
 ## Staged Action Service certificate callers
 
-The Actions receiver now accepts the exact App, Notifications, and MCP edge service SVIDs alongside
-existing bearer callers. The services still use their bearer settings until their separate caller
-configuration changes land. App calls carrying a service SVID still require independently verified
-operator OIDC; Notifications receives read-only request access; MCP edge calls require typed
-Connection delegation and retain the configured actor account. MCP delegation uses the effective
+The Actions receiver accepts the exact App, Notifications, and MCP edge service SVIDs alongside
+existing bearer callers. MCP edge now uses its SVID with typed Connection delegation; App and
+Notifications retain their separate bearer caller configurations. App calls carrying a service SVID
+still require independently verified operator OIDC; Notifications receives read-only request access;
+MCP edge calls retain the configured actor account. MCP delegation uses the effective
 Identity's grants and live UID.
 
 ```mermaid
 flowchart LR
     app[App service SVID] -->|accepted with operator OIDC; caller config pending| actions[Action Service]
     notifications[Notifications service SVID] -->|accepted for read methods; caller config pending| actions
-    mcp[MCP edge service SVID] -->|accepted with typed Connection delegation; caller config pending| actions
+    mcp[MCP edge service SVID] -->|mTLS + typed Connection delegation; no bearer fallback| actions
     actions -->|effective Identity grants| policy[Policy bindings]
 ```
 

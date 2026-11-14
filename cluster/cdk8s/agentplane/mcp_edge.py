@@ -27,7 +27,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ServerTLSListener
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ClientTLS, ServerTLSListener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -149,12 +149,16 @@ class McpEdge(Construct):
                 client_ca_file=Path(serving_tls.ca_file),
             ),
             operator_services=[APP_URI],
-            actions_tls=workload_tls.client_tls(ACTIONS_URI),
+            actions_tls=ClientTLS(
+                ca_file=Path(serving_tls.ca_file),
+                server_uri=ACTIONS_URI,
+                cert_file=Path(serving_tls.cert_file),
+                key_file=Path(serving_tls.key_file),
+                client_uri=MCP_EDGE_URI,
+            ),
             actions_target=f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
             policy_namespace=env.namespace,
-            actions_token_file=(
-                "/var/run/secrets/agentplane-mcp/actions" if props.oauth_secret_name is not None else None
-            ),
+            actions_token_file=None,
             oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
             host="0.0.0.0",
             port=self.endpoint.pod_port,

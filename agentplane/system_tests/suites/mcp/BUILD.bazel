@@ -51,6 +51,7 @@ k3s_suite(
         "//agentplane/action_service/api/contracts:action_service_pb2",
         "//agentplane/app/testing:client",
         "//agentplane/mcp_edge/api/connection:connection_service_pb2",
+        "//agentplane/net/peertls:config",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:mcp_servers",
