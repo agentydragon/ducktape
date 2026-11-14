@@ -27,9 +27,8 @@ The manual queue, replica and wake probes are documented in the
 - **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
-  `DELIVERY_STATE_HARNESS_CONFIRMED`, `DELIVERY_STATE_NO_OP`, `DELIVERY_STATE_FAILED`,
-  `DELIVERY_STATE_CANCELLED_IN_DISPATCHER`, and `DELIVERY_STATE_UNKNOWN` (an unconfirmed effect or a
-  deleted Sandbox's command).
+  `DELIVERY_STATE_FAILED`, `DELIVERY_STATE_CANCELLED_IN_DISPATCHER`, and
+  `DELIVERY_STATE_UNKNOWN` (an unconfirmed effect or a deleted Sandbox's command).
   The `reason` describes queue or terminal state; `delivery_blocker` and `wake_assessment` separately
   expose the current environment blocker and latest typed wake observation. A denied or disabled wake
   leaves delivery queued.
@@ -151,7 +150,8 @@ the Sandboxes with pending work that it does not own.
 
 ## Deviations and gaps
 
-- `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
+- A Dispatcher admission proves only that the Runner journaled the command. History owns command outcomes,
+  including its separate `no_op` outcome.
 - Sandbox Pods keep their proxy-only egress. The relay reaches the shared TLS gRPC listener through
   central CONNECT and authenticates with its Runner SVID; the configured CLI credential string remains
   inert. Dispatcher TokenReview audience and caller allowlists remain unchanged. A concrete

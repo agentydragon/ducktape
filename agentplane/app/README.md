@@ -130,8 +130,8 @@ to the browser as ProtoJSON newline-delimited JSON: those commands' Dispatches, 
 a Dispatch whenever one changes. A command with no Dispatch by `CaughtUp` is shown as unknown, since the
 Dispatcher deletes a Sandbox's rows with it. A connection that ends is replaced by a new one, which sends
 the current Dispatches again. Queued and delivering are distinct from
-runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an effect. History
-remains the authority for command outcomes. The browser retains the command locally until History
+runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
+History remains the authority for command outcomes. The browser retains the command locally until History
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.
 

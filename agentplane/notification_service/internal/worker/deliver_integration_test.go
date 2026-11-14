@@ -103,13 +103,12 @@ func TestDispatcherOutcomesAreEitherTerminalOrWaitedFor(t *testing.T) {
 		want *string
 	}{
 		{"failed", dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, ptr("sandbox_deleted"), ptr("Dispatcher DELIVERY_STATE_FAILED: sandbox_deleted")},
-		{"no-op", dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, ptr("nothing to do"), ptr("Dispatcher DELIVERY_STATE_NO_OP: nothing to do")},
 		{"cancelled", dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER, ptr("operator"), ptr("Dispatcher DELIVERY_STATE_CANCELLED_IN_DISPATCHER: operator")},
 		{"unknown without a reason", dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, nil, ptr("Dispatcher DELIVERY_STATE_UNKNOWN: no reason provided")},
+		{"unrecognized state", dispatcherpb.DeliveryState(99), ptr("future state"), ptr("Dispatcher DELIVERY_STATE_UNKNOWN: future state")},
 		{"queued", dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER, ptr("waiting for a runner"), nil},
 		{"delivering", dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER, nil, nil},
 		{"admitted", dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, nil, nil},
-		{"confirmed", dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED, nil, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t, debounce(3600, 3600))

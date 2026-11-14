@@ -111,14 +111,14 @@ async def admitted(
             if not response.HasField("dispatch"):
                 continue
             row: session_dispatcher_pb2.Dispatch = response.dispatch
-            assert row.state not in {
+            state = row.state
+            if state not in session_dispatcher_pb2.DeliveryState.values():
+                state = session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN
+            assert state not in {
                 session_dispatcher_pb2.DELIVERY_STATE_FAILED,
                 session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
             }, row
-            if row.state in {
-                session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
-                session_dispatcher_pb2.DELIVERY_STATE_HARNESS_CONFIRMED,
-            }:
+            if state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
                 return row
     finally:
         stream.cancel()

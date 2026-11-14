@@ -232,15 +232,56 @@ export class CommandSubmissionRefused extends Error {}
 
 export type CommandSubmission = { kind: "dispatch"; dispatch: Dispatch };
 
+const deliveryStateNumbers = new Set(
+  Object.values(DeliveryState).filter((value) => typeof value === "number") as number[]
+);
+const deliveryStateNames = new Set(
+  Object.keys(DeliveryState)
+    .filter((value) => Number.isNaN(Number(value)))
+    .map((value) => `DELIVERY_STATE_${value}`)
+);
+
+/** Map a value from a newer or older Dispatcher binary to the named unknown variant. */
+export function normalizeDeliveryState(state: DeliveryState): DeliveryState {
+  if (state === DeliveryState.UNSPECIFIED || !deliveryStateNumbers.has(state)) return DeliveryState.UNKNOWN;
+  return state;
+}
+
+function normalizeDispatchJson(value: unknown): JsonValue {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value as JsonValue;
+  const row = value as Record<string, unknown>;
+  const state = row.state;
+  if (typeof state === "string") {
+    const normalizedState =
+      deliveryStateNames.has(state) && state !== "DELIVERY_STATE_UNSPECIFIED" ? state : "DELIVERY_STATE_UNKNOWN";
+    return { ...row, state: normalizedState } as JsonValue;
+  }
+  if (typeof state === "number") {
+    return { ...row, state: normalizeDeliveryState(state as DeliveryState) } as JsonValue;
+  }
+  return value as JsonValue;
+}
+
+function normalizeDispatchResponseJson(value: JsonValue): JsonValue {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || value.dispatch == null) return value;
+  return { ...value, dispatch: normalizeDispatchJson(value.dispatch) };
+}
+
 export function dispatchFromJson(value: unknown): Dispatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Session Dispatcher returned an invalid Dispatch");
   }
-  const row = value as Record<string, unknown>;
-  if (typeof row.commandId !== "string" || typeof row.sessionId !== "string" || typeof row.state !== "string") {
+  const normalized = normalizeDispatchJson(value);
+  const row = normalized as Record<string, unknown>;
+  if (
+    typeof row.commandId !== "string" ||
+    typeof row.sessionId !== "string" ||
+    (typeof row.state !== "string" && typeof row.state !== "number")
+  ) {
     throw new Error("Session Dispatcher returned a Dispatch without its command, Session or state");
   }
-  return fromJson(DispatchSchema, value as JsonValue);
+  const dispatch = fromJson(DispatchSchema, normalized);
+  return { ...dispatch, state: normalizeDeliveryState(dispatch.state) };
 }
 
 /** A timeout, lost response, stale destination, or missing Sandbox does not prove an earlier
@@ -276,6 +317,7 @@ function confirmedDispatch(
   commandId: string
 ): Dispatch {
   if (!dispatch) throw new Error("Command receipt could not be verified: missing Dispatch");
+  const state = normalizeDeliveryState(dispatch.state);
   if (
     dispatch.commandId !== commandId ||
     dispatch.sessionId !== threadId ||
@@ -283,7 +325,7 @@ function confirmedDispatch(
     dispatch.state === DeliveryState.UNSPECIFIED
   )
     throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
-  return dispatch;
+  return { ...dispatch, state };
 }
 
 export async function submitInput(
@@ -302,7 +344,7 @@ export async function submitInput(
     `/sessions/${encodeURIComponent(threadId)}:submitInput`,
     bodyWithoutSessionId(toJson(SubmitInputRequestSchema, request))
   );
-  const response = fromJson(SubmitInputResponseSchema, value);
+  const response = fromJson(SubmitInputResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 
@@ -322,7 +364,7 @@ export async function changeModel(
     `/sessions/${encodeURIComponent(threadId)}:changeModel`,
     bodyWithoutSessionId(toJson(ChangeModelRequestSchema, request))
   );
-  const response = fromJson(ChangeModelResponseSchema, value);
+  const response = fromJson(ChangeModelResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 
@@ -342,7 +384,7 @@ export async function changeReasoningEffort(
     `/sessions/${encodeURIComponent(threadId)}:changeReasoningEffort`,
     bodyWithoutSessionId(toJson(ChangeReasoningEffortRequestSchema, request))
   );
-  const response = fromJson(ChangeReasoningEffortResponseSchema, value);
+  const response = fromJson(ChangeReasoningEffortResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 
@@ -362,7 +404,7 @@ export async function interruptTurn(
     `/sessions/${encodeURIComponent(threadId)}:interruptTurn`,
     bodyWithoutSessionId(toJson(InterruptTurnRequestSchema, request))
   );
-  const response = fromJson(InterruptTurnResponseSchema, value);
+  const response = fromJson(InterruptTurnResponseSchema, normalizeDispatchResponseJson(value));
   return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 

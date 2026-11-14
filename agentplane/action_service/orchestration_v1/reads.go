@@ -150,12 +150,22 @@ func (e *Executor) getSession(ctx context.Context, args contract.GetSessionArgs)
 		state.Dispatches = append(state.Dispatches, CommandDelivery{
 			CommandID: dispatch.GetCommandId(), Operation: dispatch.GetOperation().String(), History: history[dispatch.GetCommandId()],
 			Delivery: Delivery{
-				State: dispatch.GetState().String(), Reason: dispatch.Reason,
+				State: deliveryStateName(dispatch.GetState()), Reason: dispatch.Reason,
 				CreatedAt: dispatch.GetCreatedAt().AsTime(), UpdatedAt: dispatch.GetUpdatedAt().AsTime(),
 			},
 		})
 	}
 	return state, nil
+}
+
+func deliveryStateName(state dispatcherpb.DeliveryState) string {
+	if state == dispatcherpb.DeliveryState_DELIVERY_STATE_UNSPECIFIED {
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN.String()
+	}
+	if _, ok := dispatcherpb.DeliveryState_name[int32(state)]; !ok {
+		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN.String()
+	}
+	return state.String()
 }
 
 // commandHistory starts before every listed admission. Clamp to the known committed prefix because

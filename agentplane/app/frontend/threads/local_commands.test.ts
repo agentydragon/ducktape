@@ -344,7 +344,7 @@ it("roundtrips an UNKNOWN Dispatcher state through local ProtoJSON persistence",
   expect(restored[0].dispatch?.state).toBe(DeliveryState.UNKNOWN);
 });
 
-it("reads Dispatch and interrupt evidence saved in the previous local format", () => {
+it("maps an unrecognized enum in saved Dispatch evidence to unknown", () => {
   const input = {
     commandId: "legacy-input",
     operation: { case: "submitInput", value: { text: "keep the exact legacy input" } },
@@ -380,7 +380,7 @@ it("reads Dispatch and interrupt evidence saved in the previous local format", (
       admission: null,
       dispatch: null,
       interruptResult: {
-        state: "DELIVERY_STATE_NO_OP",
+        state: "DELIVERY_STATE_FUTURE",
         reason: "turn already ended",
         admission: null,
       },
@@ -398,6 +398,14 @@ it("reads Dispatch and interrupt evidence saved in the previous local format", (
 
   const savedInterrupt = restored.commands.find((value) => value.command.commandId === interrupt.commandId);
   expect(savedInterrupt?.command).toEqual(interrupt);
-  expect(savedInterrupt?.interruptResult?.state).toBe(DeliveryState.NO_OP);
+  expect(savedInterrupt?.interruptResult?.state).toBe(DeliveryState.UNKNOWN);
   expect(savedInterrupt?.interruptResult?.admission).toBeUndefined();
+});
+
+it("normalizes an unrecognized Dispatcher enum number before retaining its receipt", () => {
+  const store = new LocalCommands("thread", COMMAND_TARGET);
+  store.remember(COMMAND);
+  store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, 99 as DeliveryState, "2026-10-14T12:00:02Z"));
+
+  expect(store.getSnapshot().commands[0].dispatch?.state).toBe(DeliveryState.UNKNOWN);
 });

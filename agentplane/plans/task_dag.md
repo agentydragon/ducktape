@@ -1820,7 +1820,7 @@ flowchart TD
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
-    DISPATCHER_HARNESS_CONFIRMATION[In flight: delete the dead command states first]
+    DISPATCHER_HARNESS_CONFIRMATION[In flight: retire the unused Dispatcher delivery states]
     DISPATCHER_SEND_AUTHORIZATION_GENERALIZE[Deferred: scoped sender grants beyond v0 service trust]
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE[Deferred: retire the superseded state attachment]
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
@@ -2171,15 +2171,15 @@ Runtime busy facts and never this field. Per-Session idle times stay out of Kube
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `DISPATCHER_HARNESS_CONFIRMATION` — settle admitted inputs on a canonical confirmation
+### `DISPATCHER_HARNESS_CONFIRMATION` — retire the unused Dispatcher delivery states
 
-**Decision, then bounded implementation.** `HARNESS_CONFIRMED` currently has no writer; deleting it
-and `NO_OP` was released 2026-11-14 21:15 UTC (card "Delete dead states only"), and #16438 rewrote
-stored rows ahead of the removal. Review the canonical runner/history
-fact that proves an input reached the harness, consume it idempotently and settle the matching
-Dispatch without reading unrelated conversation content. Preserve the distinction between durable
-queue acceptance, runner admission and harness confirmation. Test duplicate/replayed facts and
-restart. Notification presentation/outcome design remains separate.
+**In flight; operator decision, 2026-11-14: delete the states rather than add a confirmation writer.**
+`HARNESS_CONFIRMED` never had a writer. The historical `NO_OP` writer at `0baeb473c9` settled a queued
+`stop_runner_session` while its Sandbox was suspended and stored no runner admission. Because rows can
+remain for the Sandbox lifetime, the data change maps a row with an admission to `RUNNER_ADMITTED` and
+one without it to `UNKNOWN`; the row count is unknown. The code change removes the proto values and
+readers after carrying the migration. History's separate `no_op` outcome and `CommandSettled` remain
+out of scope. Remove this node after the code change lands.
 
 ### `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE` — replace v0 service trust with scoped sender grants
 

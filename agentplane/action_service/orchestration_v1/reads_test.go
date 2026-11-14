@@ -31,6 +31,12 @@ import (
 
 var testEpoch = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
+func TestDeliveryStateNameMapsUnrecognizedValueToUnknown(t *testing.T) {
+	if got := deliveryStateName(dispatcherpb.DeliveryState(99)); got != "DELIVERY_STATE_UNKNOWN" {
+		t.Fatalf("deliveryStateName() = %q, want DELIVERY_STATE_UNKNOWN", got)
+	}
+}
+
 // summaryOf is a summary of a Session that sandbox wrote, first written at first.
 func summaryOf(f fixture, sessionID string, sandbox contract.SandboxRef, first *time.Time) *historypb.SessionSummary {
 	summary := &historypb.SessionSummary{
@@ -69,7 +75,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 		f.dispatcher.hold(nil, &dispatcherpb.Dispatch{
 			CommandId: command, SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID),
 			Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
-			State:     dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED, CreatedAt: at, UpdatedAt: at,
+			State:     dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN, CreatedAt: at, UpdatedAt: at,
 		})
 	}
 	summary := summaryOf(f, session, launched, &testEpoch)

@@ -7,7 +7,7 @@ import {
   DispatchSchema,
   type Dispatch,
 } from "../../../runner_gateway/dispatcher/api/session/session_dispatcher_pb";
-import type { CommandTarget } from "./client";
+import { dispatchFromJson, normalizeDeliveryState, type CommandTarget } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
 type PlainOperation =
@@ -83,7 +83,7 @@ function decode(text: string): LocalCommand {
     if (typeof value.dispatch !== "object" || Array.isArray(value.dispatch)) {
       throw new Error("Invalid locally retained Dispatcher state");
     }
-    dispatch = fromJson(DispatchSchema, value.dispatch as JsonValue);
+    dispatch = dispatchFromJson(value.dispatch);
     if (dispatch.commandId !== command.commandId || !dispatch.sessionId) {
       throw new Error("Invalid locally retained Dispatcher state");
     }
@@ -101,7 +101,7 @@ function decode(text: string): LocalCommand {
     ) {
       throw new Error("Invalid locally retained interrupt result");
     }
-    interruptResult = fromJson(DispatchSchema, value.interruptResult as JsonValue);
+    interruptResult = dispatchFromJson(value.interruptResult);
     if (interruptResult.admission) checkAdmission(command, interruptResult.admission);
   }
   return {
@@ -269,6 +269,7 @@ export class LocalCommands {
 
   acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): void {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
+    const normalizedDispatch = { ...dispatch, state: normalizeDeliveryState(dispatch.state) };
     if (dispatch.admission) {
       checkAdmission(command, dispatch.admission);
       this.checkKnownAdmission(command, dispatch.admission);
@@ -279,15 +280,16 @@ export class LocalCommands {
     const existing = decode(stored);
     if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
     if (
-      dispatch.sessionId !== this.threadId ||
+      normalizedDispatch.sessionId !== this.threadId ||
       (existing.target &&
-        dispatch.state !== DeliveryState.UNKNOWN &&
-        (dispatch.sandbox !== existing.target.sandbox || dispatch.sandboxUid !== existing.target.sandboxUid))
+        normalizedDispatch.state !== DeliveryState.UNKNOWN &&
+        (normalizedDispatch.sandbox !== existing.target.sandbox ||
+          normalizedDispatch.sandboxUid !== existing.target.sandboxUid))
     ) {
       throw new Error("Dispatcher receipt has a different Sandbox destination");
     }
     const previousUpdate = existing.dispatch?.updatedAt;
-    const nextUpdate = dispatch.updatedAt;
+    const nextUpdate = normalizedDispatch.updatedAt;
     if (
       previousUpdate &&
       nextUpdate &&
@@ -296,13 +298,16 @@ export class LocalCommands {
     ) {
       return;
     }
-    const admission = dispatch.admission ?? existing.admission;
+    const admission = normalizedDispatch.admission ?? existing.admission;
     try {
-      localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission, dispatch }));
+      localStorage.setItem(
+        this.key(command.commandId),
+        encode({ ...existing, admission, dispatch: normalizedDispatch })
+      );
     } catch (error) {
       this.snapshot = {
         commands: this.snapshot.commands.map((value) =>
-          value.command.commandId === command.commandId ? { ...value, admission, dispatch } : value
+          value.command.commandId === command.commandId ? { ...value, admission, dispatch: normalizedDispatch } : value
         ),
         inputEchoes: this.snapshot.inputEchoes,
         error: String(error),

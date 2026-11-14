@@ -148,10 +148,7 @@ async def test_dispatcher_retries_after_real_runtime_admission_reply_is_lost(
     assert responses[0].admission.event.command_admitted.command.command_id == command_id
 
     final_dispatch = await admitted(dispatcher, first_dispatch)
-    assert final_dispatch.state in {
-        session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
-        session_dispatcher_pb2.DELIVERY_STATE_HARNESS_CONFIRMED,
-    }
+    assert final_dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
     assert final_dispatch.admission == responses[0].admission
 
     # This later repeat is the Dispatcher receipt-replay control. It cannot account for the two
