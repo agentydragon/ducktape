@@ -163,9 +163,14 @@ def runner_command(
 
 
 def command(
-    config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ingress: Endpoint, model_config_target: str
+    config: RunnerTestConfig,
+    *,
+    control: EnvironmentRuntimeControl,
+    ingress: Endpoint,
+    model_config_target: str,
+    runner_binary: Path | None = None,
 ) -> list[str]:
-    """Serialize test launch values into the production executable's CLI."""
+    """Serialize test launch values into a Runtime executable's CLI."""
     config.state_dir.parent.mkdir(parents=True, exist_ok=True)
     launch_file = config.state_dir.parent / f"{config.state_dir.name}-launch.json"
     launch_file.write_text(
@@ -201,7 +206,7 @@ def command(
     path = config.state_dir.parent / f"{config.state_dir.name}-environment-runtime.json"
     path.write_text(file.model_dump_json(exclude_none=True))
     return [
-        str(Runfiles.CreateOrRaise().root() / RUNTIME_BINARY),
+        str(runner_binary or (Runfiles.CreateOrRaise().root() / RUNTIME_BINARY)),
         "--config",
         str(path),
         "--launch-file",
