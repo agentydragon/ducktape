@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc/credentials"
@@ -173,6 +174,17 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 
 func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	f := newSandboxFixture(t)
+	// Match Gateway's stage-3 per-method resolver: bearer is enabled here, while
+	// exact service SVIDs are admitted by the method rules after TLS validation.
+	perMethodAuth, err := f.callerAuth.WithListenerAuthentication(listener.Config{
+		ListenAddress: ":8080",
+		TLS:           &listener.TLS{CertFile: f.gatewayTLS.CertFile, KeyFile: f.gatewayTLS.KeyFile},
+		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.callerAuth = perMethodAuth
 	g := f.newGateway(t, executorAccount)
 	g.config.RuntimeReaders = []string{peertls.AppURI}
 	g.config.SessionServices = []string{peertls.SessionsURI}
