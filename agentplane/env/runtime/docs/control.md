@@ -105,6 +105,8 @@ budget remains authoritative across all of its native services.
   process, and retries after stream loss must name the same UID, including when an adoption attempt
   had an uncertain outcome. Runtime then sends changed facts and a ten-second heartbeat. Internal
   notifications with unchanged facts do not publish extra snapshots.
+  Replacing a launcher Pod while preserving its Runtime process (KubeVirt live migration) is
+  unsupported: a new launcher Pod is a new incarnation, fenced by incarnation UID and Runtime boot ID.
   The Gateway may retry observation independently of Sandbox discovery. During the compatibility
   rollout, nonzero Gateway `WatchState` epochs retain the existing connection-owner behavior but are
   accepted only for the Controller-bound UID. A Gateway watch with an absent or zero epoch can
