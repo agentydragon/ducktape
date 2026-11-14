@@ -47,12 +47,27 @@ def main() -> None:
             if runnable:
                 print("\n".join(runnable))
         elif query_arg.endswith("contract-validation-owners-query.txt"):
+            (log_dir / "contract-validation-owners-query.log").write_text(query)
             validations = os.environ.get("FAKE_CONTRACT_VALIDATIONS", "")
             if validations:
                 print(validations)
+        elif "contract-domain-" in query_arg:
+            owners = re.findall(r'"(//[^\"]+)"', query)
+            source_map = json.loads(
+                os.environ.get(
+                    "FAKE_CONTRACT_DOMAIN_SOURCES",
+                    json.dumps(
+                        {"//agentplane/env/runtime/journal:journal": ["//agentplane/env/runtime/journal:journal.go"]}
+                    ),
+                )
+            )
+            sources = list(dict.fromkeys(source for owner in owners for source in source_map.get(owner, [])))
+            if sources:
+                print("\n".join(sources))
         elif query_arg.endswith("contract-sources-query.txt"):
             print(os.environ.get("FAKE_CONTRACT_SOURCES", "//agentplane/env/runtime/journal:journal.go"))
         elif query_arg.endswith("contract-owners-query.txt"):
+            (log_dir / "contract-owners-query.log").write_text(query)
             print(os.environ.get("FAKE_CONTRACT_OWNERS", "//agentplane/env/runtime/journal:journal"))
         elif query_arg.endswith("contract-required-query.txt"):
             tags = json.loads(os.environ.get("FAKE_TEST_TAGS", "{}"))
