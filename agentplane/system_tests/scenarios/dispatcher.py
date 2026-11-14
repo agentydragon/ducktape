@@ -496,7 +496,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
         authentication, caller, _caller_uid = await _bound_caller(cluster, "app")
-        identity = await stack.enter_async_context(scenario_identity(cluster, sandbox, policies))
+        identities = await stack.enter_async_context(AsyncExitStack())
+        identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
         created = json.loads(
             await cluster.kubectl(
                 "create",
@@ -730,7 +731,9 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         else:
             environments = environment_service_pb2_grpc.EnvironmentServiceStub(channel)
             target_handle = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
-            next_identity = await stack.enter_async_context(scenario_identity(cluster, f"{sandbox}-next", policies))
+            next_identity = await identities.enter_async_context(
+                scenario_identity(cluster, f"{sandbox}-next", policies)
+            )
             change = environments_pb.SetEnvironmentIdentityRequest(target=target_handle, identity_name=next_identity)
             with pytest.raises(grpc.aio.AioRpcError) as running_change:
                 await environments.SetEnvironmentIdentity(change, metadata=authentication.metadata, timeout=15)
