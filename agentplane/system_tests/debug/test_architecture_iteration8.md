@@ -129,6 +129,22 @@ both attempts. Before removing the duplicate private checks from the manual
 deployed platform candidate, seed controls against the changed composition and
 assign the direct target its required-graph owner. No required owner has moved.
 
+At literal source `fa9094cd8ad82ec9ac4f7496ab864e50cf9767f3`, the same-source
+[healthy run](https://app.buildbuddy.io/invocation/6cb56451-51b4-4719-ac77-9f1b4e00ba91)
+passes all original assertions in one NEW physical action, with one nonempty
+JUnit pass and no errors or skips. Its private Go parent passes in 12.15s with
+11 child passes. The opt-in
+`DIRECT_VM_OMIT_PRIVATE_SUPERVISION_CONTROL=1` omits only the kernel argument;
+it changes no assertion. That
+[negative control](https://app.buildbuddy.io/invocation/8c097f7b-302a-4fc8-b5ca-6ac9b8b7e6c0)
+starts the real Runtime but emits neither private receipt nor parent pass. The
+unchanged receipt wait cannot complete; the existing 120s guest bound exits 124
+and the live-guest watcher fails the case. Both paths remove their container,
+restore the host owner and report no listener cleanup error. This proves an
+omitted fixture is rejected; it does not inject a defect into an individual
+private invariant. The different behaviors are not a speed comparison or a
+reliability-rate sample.
+
 ## Next measurements and admission controls
 
 Before promotion, seed launcher/mount, issuer/Pod-binding, kernel-limit and
