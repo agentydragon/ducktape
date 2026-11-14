@@ -13,16 +13,69 @@ import fnmatch
 import json
 import logging
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 _CI_EXCLUDED_TEST_TAGS = "(^|[^a-zA-Z0-9_-])(manual|live_openai_api)($|[^a-zA-Z0-9_-])"
 _AGENTPLANE_CONTRACT_POLICY = Path("agentplane/system_tests/ci_contracts.json")
+_AGENTPLANE_CONTRACT_SCHEMA = "ducktape.agentplane_test_contracts.v2"
+_BAZEL_LABEL = re.compile(r"^//(?:[A-Za-z0-9._+/-]+)?:[A-Za-z0-9._+/@=,+~-]+$")
+_CONTRACT_DOMAIN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Reject duplicate keys so policy/domain declarations cannot be overwritten silently."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate Agentplane test contract policy key: {key}")
+        result[key] = value
+    return result
+
+
+def _read_agentplane_contract_policy() -> dict[str, Any]:
+    policy = json.loads(_AGENTPLANE_CONTRACT_POLICY.read_text(), object_pairs_hook=_unique_json_object)
+    if not isinstance(policy, dict) or set(policy) != {"schema", "mode", "domains"}:
+        raise ValueError("Unexpected Agentplane test contract policy fields")
+    if (
+        policy["schema"] != _AGENTPLANE_CONTRACT_SCHEMA
+        or not isinstance(policy["mode"], str)
+        or policy["mode"] not in {"shadow", "required"}
+    ):
+        raise ValueError("Unsupported Agentplane test contract policy")
+    domains = policy["domains"]
+    if not isinstance(domains, dict) or not domains:
+        raise ValueError("Agentplane test contract policy domains must be a nonempty object")
+
+    owned_implementations: dict[str, str] = {}
+    for name, domain in domains.items():
+        if not isinstance(name, str) or not _CONTRACT_DOMAIN.fullmatch(name):
+            raise ValueError(f"Invalid Agentplane test contract domain name: {name!r}")
+        if not isinstance(domain, dict) or set(domain) != {"implementations", "replaces", "requires"}:
+            raise ValueError(f"Unexpected Agentplane test contract fields for domain {name}")
+        for field in ("implementations", "requires", "replaces"):
+            labels = domain[field]
+            if not isinstance(labels, list) or (field != "replaces" and not labels):
+                raise ValueError(f"Invalid Agentplane test contract domain {name} {field}")
+            if any(not isinstance(label, str) or not _BAZEL_LABEL.fullmatch(label) for label in labels):
+                raise ValueError(f"Invalid Agentplane test contract labels in domain {name} {field}")
+            if len(labels) != len(set(labels)):
+                raise ValueError(f"Duplicate Agentplane test contract labels in domain {name} {field}")
+        for label in domain["implementations"]:
+            previous = owned_implementations.get(label)
+            if previous is not None:
+                raise ValueError(
+                    f"Agentplane implementation {label} belongs to overlapping domains {previous} and {name}"
+                )
+            owned_implementations[label] = name
+    return policy
 
 
 def _read_json_lockfile(path: Path, *, description: str) -> bytes | None:
@@ -384,24 +437,48 @@ def _contract_test_graph(
 ) -> tuple[list[str], dict[str, object] | None]:
     if selection.full_sweep or not _AGENTPLANE_CONTRACT_POLICY.exists():
         return labels, None
-    policy = json.loads(_AGENTPLANE_CONTRACT_POLICY.read_text())
-    if set(policy) != {"schema", "mode", "implementations", "replaces", "requires"}:
-        raise ValueError("Unexpected Agentplane test contract policy fields")
-    if policy["schema"] != "ducktape.agentplane_test_contracts.v1" or policy["mode"] not in {"shadow", "required"}:
-        raise ValueError("Unsupported Agentplane test contract policy")
-    for field in ("implementations", "replaces", "requires"):
-        if (
-            not isinstance(policy[field], list)
-            or not policy[field]
-            or any(not isinstance(label, str) or not label.startswith("//") for label in policy[field])
-        ):
-            raise ValueError(f"Invalid Agentplane test contract policy {field}")
+    policy = _read_agentplane_contract_policy()
+    domains = policy["domains"]
+    assert isinstance(domains, dict)
     record: dict[str, object] = {"mode": policy["mode"], "eligible": False, "candidate_labels": labels}
     changed_paths = (temp_dir / "changed-files.txt").read_text().splitlines()
-    owners = " ".join(json.dumps(label) for label in policy["implementations"])
+    if not changed_paths:
+        record["reason"] = "change has no source inputs to match to a domain"
+        return labels, record
+
+    # First compare changed source paths with implementation sources in each declared domain.
+    # This query is limited to the policy's owners and avoids discovering companion tests across
+    # every package for unrelated PRs.
+    matching_domains: list[str] = []
+    for name, domain in domains.items():
+        assert isinstance(domain, dict)
+        implementations = domain["implementations"]
+        assert isinstance(implementations, list)
+        owners = " ".join(json.dumps(label) for label in implementations)
+        domain_sources_query = temp_dir / f"contract-domain-{name}-sources-query.txt"
+        domain_sources_query.write_text(f'kind("source file", labels("srcs", set({owners})))\n')
+        sources = _capture(["bazel", "query", f"--query_file={domain_sources_query}"]).splitlines()
+        source_paths = {label[2:].replace(":", "/", 1): label for label in sources if label.startswith("//")}
+        if set(changed_paths) & source_paths.keys():
+            matching_domains.append(name)
+
+    if len(matching_domains) != 1:
+        if matching_domains:
+            record["reason"] = "change matches multiple Agentplane implementation domains"
+            record["candidate_domains"] = sorted(matching_domains)
+        else:
+            record["reason"] = "change does not match an Agentplane implementation domain"
+        return labels, record
+
+    domain_name = matching_domains[0]
+    domain = domains[domain_name]
+    assert isinstance(domain, dict)
+    implementations = domain["implementations"]
+    assert isinstance(implementations, list)
+    owners = " ".join(json.dumps(label) for label in implementations)
     # Implementation fixes normally arrive with their owner tests. Only accept
     # same-package ordinary tests that directly depend on a declared implementation.
-    # Discovering companions must not load //... for unrelated PRs. Helpers,
+    # This query runs only after changed paths select exactly one domain. Helpers,
     # shared sources and other production owners still fail closed below.
     validation_query = temp_dir / "contract-validation-owners-query.txt"
     validation_query.write_text(
@@ -409,7 +486,7 @@ def _contract_test_graph(
         f'$validations except attr("tags", {json.dumps(_CI_EXCLUDED_TEST_TAGS)}, $validations)\n'
     )
     validations = _capture(["bazel", "query", f"--query_file={validation_query}"]).splitlines()
-    accounted_owners = set(policy["implementations"]) | set(validations)
+    accounted_owners = set(implementations) | set(validations)
     accounted = " ".join(json.dumps(label) for label in sorted(accounted_owners))
     sources_query = temp_dir / "contract-sources-query.txt"
     sources_query.write_text(f'kind("source file", labels("srcs", set({accounted})))\n')
@@ -425,10 +502,11 @@ def _contract_test_graph(
     if not changed_owners or not set(changed_owners) <= accounted_owners:
         record["reason"] = "change has an unaccounted direct source owner"
         return labels, record
-    if not set(changed_owners) & set(policy["implementations"]):
+    if not set(changed_owners) & set(implementations):
         record["reason"] = "validation-only change does not replace deployment coverage"
         return labels, record
-    required_labels = set(policy["requires"]) | set(validations)
+    required_labels = set(domain["requires"]) | set(validations)
+    replacements = set(domain["replaces"])
     required = " ".join(json.dumps(label) for label in sorted(required_labels))
     required_query = temp_dir / "contract-required-query.txt"
     required_query.write_text(
@@ -438,10 +516,11 @@ def _contract_test_graph(
     required_tests = _capture(["bazel", "query", f"--query_file={required_query}"]).splitlines()
     if set(required_tests) != required_labels:
         raise ValueError("Every Agentplane replacement must be an ordinary, runnable test target")
-    removed = sorted(set(labels) & set(policy["replaces"]))
+    removed = sorted(set(labels) & replacements)
     candidate = sorted((set(labels) - set(removed)) | set(required_tests))
     record.update(
         eligible=True,
+        domain=domain_name,
         owners=sorted(changed_owners),
         validation_tests=sorted(validations),
         replaced_labels=removed,
