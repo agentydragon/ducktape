@@ -29,6 +29,7 @@ go_library(
         "auth.go",
         "delegation.go",
         "methods.go",
+        "service.go",
         "svid.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/identity/auth",
@@ -36,6 +37,7 @@ go_library(
     deps = [
         "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/resolver",
+        "//agentplane/net/peertls",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:identity_go_proto",
@@ -67,6 +69,7 @@ go_test(
     srcs = [
         "auth_test.go",
         "methods_test.go",
+        "service_test.go",
         "svid_test.go",
         "svid_tls_test.go",
     ],

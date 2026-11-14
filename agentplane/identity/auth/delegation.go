@@ -349,22 +349,30 @@ func (p *delegationPolicy) admitIdentity(
 	ctx, reviewContext context.Context, actor Principal, identity *identitypb.Identity,
 	envelope *delegationpb.Delegation,
 ) (context.Context, error) {
-	if p.identities == nil {
-		return nil, status.Error(codes.PermissionDenied, "delegated Identity callers are not admitted on this method")
-	}
-	uid, found, err := p.identities.GetIdentityUID(reviewContext, identity.GetName())
+	resolved, err := resolveDelegatedIdentity(reviewContext, p.identities, identity)
 	if err != nil {
-		if reviewContext.Err() != nil {
-			return nil, status.FromContextError(reviewContext.Err()).Err()
-		}
-		return nil, status.Error(codes.Unavailable, "delegated caller identity unavailable")
-	}
-	if !found || uid != identity.GetUid() {
-		return nil, status.Error(codes.PermissionDenied, "delegated caller identity is not current")
+		return nil, err
 	}
 	return withAdmission(ctx, DelegatedIdentityAdmission{
 		Actor:           actor,
-		EffectiveCaller: Identity{Name: identity.GetName(), UID: identity.GetUid()},
+		EffectiveCaller: resolved,
 		Provenance:      proto.Clone(envelope).(*delegationpb.Delegation),
 	}), nil
+}
+
+func resolveDelegatedIdentity(ctx context.Context, identities IdentityUIDReader, identity *identitypb.Identity) (Identity, error) {
+	if identities == nil {
+		return Identity{}, status.Error(codes.PermissionDenied, "delegated Identity callers are not admitted on this method")
+	}
+	uid, found, err := identities.GetIdentityUID(ctx, identity.GetName())
+	if err != nil {
+		if ctx.Err() != nil {
+			return Identity{}, status.FromContextError(ctx.Err()).Err()
+		}
+		return Identity{}, status.Error(codes.Unavailable, "delegated caller identity unavailable")
+	}
+	if !found || uid != identity.GetUid() {
+		return Identity{}, status.Error(codes.PermissionDenied, "delegated caller identity is not current")
+	}
+	return Identity{Name: identity.GetName(), UID: identity.GetUid()}, nil
 }

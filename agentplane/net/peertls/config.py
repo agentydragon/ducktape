@@ -17,6 +17,15 @@ SESSION_DISPATCHER_URI: Final = "spiffe://agentplane/session-dispatcher"
 SANDBOX_CONTROLLER_URI: Final = "spiffe://agentplane/sandbox-controller"
 
 
+# Service IDs never use the agent Identity workload grammar.
+type ServiceSPIFFEID = Annotated[
+    str,
+    Field(
+        pattern=r"^spiffe://agentplane/(app|mcp-edge|sessions|runtime-proxy|environments|runner-gateway|sandbox-controller|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler)$"
+    ),
+]
+
+
 class TLS(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -87,7 +96,7 @@ class ClientTLS(BaseModel):
 
     ca_file: Path
     server_uri: str = Field(
-        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler)$"
+        pattern=r"^spiffe://agentplane/(runner-gateway|egress-proxy|history-ingress|notifications|llm-ingress|session-dispatcher|actions|policy-controller|central-sampler|mcp-edge)$"
     )
 
     @model_validator(mode="after")
@@ -105,10 +114,11 @@ class ServerTLSListener(BaseModel):
     listen: str = Field(min_length=1)
     cert_file: Path
     key_file: Path
+    client_ca_file: Path | None = None
 
-    @field_validator("cert_file", "key_file")
+    @field_validator("cert_file", "key_file", "client_ca_file")
     @classmethod
-    def absolute_path(cls, value: Path) -> Path:
-        if not value.is_absolute():
+    def absolute_path(cls, value: Path | None) -> Path | None:
+        if value is not None and not value.is_absolute():
             raise ValueError("server TLS certificate and key paths must be absolute")
         return value

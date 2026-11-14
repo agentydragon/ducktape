@@ -192,10 +192,10 @@ func (c Config) Select(hasCertificate, hasBearer bool) (Mode, error) {
 }
 
 func (c Config) TLSConfig(localURI string) (*tls.Config, error) {
-	return c.tlsConfig(localURI, false)
+	return c.tlsConfig(localURI, false, false)
 }
 
-func (c Config) tlsConfig(localURI string, publicRPCs bool) (*tls.Config, error) {
+func (c Config) tlsConfig(localURI string, publicRPCs, serviceClients bool) (*tls.Config, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -206,6 +206,9 @@ func (c Config) tlsConfig(localURI string, publicRPCs bool) (*tls.Config, error)
 	for _, method := range c.Auth {
 		if spiffe, ok := method.(*SPIFFEAuth); ok && spiffe != nil {
 			files.CAFile = spiffe.CAFile
+			if serviceClients {
+				return files.WorkloadServerTLSConfigWithServices(localURI, c.Has(KubernetesBearer) || publicRPCs)
+			}
 			if c.Has(KubernetesBearer) || publicRPCs {
 				return files.WorkloadServerTLSConfigWithBearer(localURI)
 			}
@@ -219,9 +222,24 @@ func (c Config) tlsConfig(localURI string, publicRPCs bool) (*tls.Config, error)
 // A missing certificate reaches public health methods; private methods still
 // require one of the configured authentication modes. Every presented leaf is verified.
 func (c Config) ServerCredentials(localURI string) (credentials.TransportCredentials, error) {
-	config, err := c.tlsConfig(localURI, true)
+	config, err := c.tlsConfig(localURI, true, false)
 	if err != nil || config == nil {
 		return nil, err
 	}
 	return peertls.ServerCredentials(config)
+}
+
+// ServerCredentialsWithServices also verifies first-party service client certificates.
+// Every protected method still needs its own exact service allowlist.
+func (c Config) ServerCredentialsWithServices(localURI string) (credentials.TransportCredentials, error) {
+	config, err := c.tlsConfig(localURI, true, true)
+	if err != nil || config == nil {
+		return nil, err
+	}
+	return peertls.ServerCredentials(config)
+}
+
+// TLSConfigWithServices is the HTTP equivalent of ServerCredentialsWithServices.
+func (c Config) TLSConfigWithServices(localURI string) (*tls.Config, error) {
+	return c.tlsConfig(localURI, false, true)
 }

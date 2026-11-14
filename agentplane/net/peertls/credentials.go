@@ -32,6 +32,22 @@ const GatewayURI = "spiffe://agentplane/runner-gateway"
 // SandboxControllerURI is the Sandbox Controller's passive Runtime observer identity.
 const SandboxControllerURI = "spiffe://agentplane/sandbox-controller"
 
+// AppURI and MCPEdgeURI identify first-party clients, independently of agent Identities.
+const (
+	// SessionsURI and RuntimeProxyURI follow roles across the planned binary split.
+	SessionsURI     = "spiffe://agentplane/sessions"
+	RuntimeProxyURI = "spiffe://agentplane/runtime-proxy"
+	EnvironmentsURI = "spiffe://agentplane/environments"
+	AppURI          = "spiffe://agentplane/app"
+	MCPEdgeURI      = "spiffe://agentplane/mcp-edge"
+)
+
+// IsServiceURI accepts the fixed first-party service identities. Workload credential
+// URIs have a separate grammar and are never service identities.
+func IsServiceURI(uri string) bool {
+	return uri == SessionsURI || uri == RuntimeProxyURI || uri == EnvironmentsURI || uri == AppURI || uri == MCPEdgeURI || uri == GatewayURI || uri == SandboxControllerURI || isWorkloadServiceURI(uri)
+}
+
 // EgressProxyURI is the fixed identity of the optional workload-authenticated
 // forward-proxy listener.
 const EgressProxyURI = "spiffe://agentplane/egress-proxy"
@@ -60,7 +76,7 @@ const CentralSamplerURI = "spiffe://agentplane/central-sampler"
 func isWorkloadServiceURI(uri string) bool {
 	switch uri {
 	case EgressProxyURI, HistoryIngressURI, NotificationsURI, LLMIngressURI, SessionDispatcherURI, ActionsURI,
-		PolicyControllerURI, CentralSamplerURI:
+		PolicyControllerURI, CentralSamplerURI, MCPEdgeURI:
 		return true
 	default:
 		return false
@@ -197,17 +213,23 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 // listener. It accepts only a current EnvironmentRuntime identity with an
 // explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
 func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
-	return c.workloadServerTLSConfig(localURI, false)
+	return c.workloadServerTLSConfig(localURI, false, false)
 }
 
 // WorkloadServerTLSConfigWithBearer permits a missing client certificate for a
 // listener that also authenticates Kubernetes bearers. Every certificate that
 // is presented still passes the same SPIFFE chain, identity and client EKU checks.
 func (c Config) WorkloadServerTLSConfigWithBearer(localURI string) (*tls.Config, error) {
-	return c.workloadServerTLSConfig(localURI, true)
+	return c.workloadServerTLSConfig(localURI, true, false)
 }
 
-func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls.Config, error) {
+// WorkloadServerTLSConfigWithServices explicitly admits first-party service leaves
+// alongside workload leaves. Method allowlists remain responsible for service authority.
+func (c Config) WorkloadServerTLSConfigWithServices(localURI string, allowNoCertificate bool) (*tls.Config, error) {
+	return c.workloadServerTLSConfig(localURI, allowNoCertificate, true)
+}
+
+func (c Config) workloadServerTLSConfig(localURI string, allowBearer, serviceClients bool) (*tls.Config, error) {
 	if c.WorkloadAPISocket != "" {
 		return nil, errors.New("Workload API server TLS is only supported through Security.Open(ctx)")
 	}
@@ -225,8 +247,10 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer bool) (*tls
 		return nil, fmt.Errorf("local certificate identity %q does not match expected identity %q", source.identity, localURI)
 	}
 	authorizeRuntime := func(id spiffeid.ID, verifiedChains [][]*x509.Certificate) error {
-		if _, err := workloadid.Parse(id.String()); err != nil {
-			return fmt.Errorf("client identity must be a valid workload URI: %w", err)
+		if !serviceClients || !IsServiceURI(id.String()) {
+			if _, err := workloadid.Parse(id.String()); err != nil {
+				return fmt.Errorf("client identity must be a service or workload URI: %w", err)
+			}
 		}
 		if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
 			return errors.New("client certificate chain is not verified")
@@ -280,16 +304,19 @@ func (c Config) BearerServerTLSConfig(localURI string) (*tls.Config, error) {
 	return config, nil
 }
 
-// ServerTLSListener describes an additional listener for bearer-authenticated
-// gRPC calls. Its TLS authenticates only the server; callers keep their existing
-// application credentials and do not present a client certificate.
+// ServerTLSListener describes an additional verified TLS listener. ClientCAFile
+// opts into verifying service client certificates; method rules grant admission.
 type ServerTLSListener struct {
-	Listen   string `json:"listen,omitempty" yaml:"listen,omitempty" mapstructure:"listen,omitempty"`
-	CertFile string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
-	KeyFile  string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
+	Listen       string `json:"listen,omitempty" yaml:"listen,omitempty" mapstructure:"listen,omitempty"`
+	CertFile     string `json:"cert_file,omitempty" yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty"`
+	KeyFile      string `json:"key_file,omitempty" yaml:"key_file,omitempty" mapstructure:"key_file,omitempty"`
+	ClientCAFile string `json:"client_ca_file,omitempty" yaml:"client_ca_file,omitempty" mapstructure:"client_ca_file,omitempty"`
 }
 
 func (c ServerTLSListener) Validate() error {
+	if c.ClientCAFile != "" && !filepath.IsAbs(c.ClientCAFile) {
+		return errors.New("server TLS client_ca_file must be an absolute path")
+	}
 	if c.Listen == "" {
 		return errors.New("server TLS listener requires a listen address")
 	}
@@ -304,13 +331,19 @@ func (c ServerTLSListener) Validate() error {
 	return nil
 }
 
-// Credentials validates and serves the configured service SVID without
-// requesting client certificates.
+// Credentials serves the configured SVID and verifies client certificates when
+// ClientCAFile is configured. Certificate-free callers retain bearer admission.
 func (c ServerTLSListener) Credentials(localURI string) (credentials.TransportCredentials, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
-	config, err := (Config{CertFile: c.CertFile, KeyFile: c.KeyFile}).BearerServerTLSConfig(localURI)
+	var config *tls.Config
+	var err error
+	if c.ClientCAFile != "" {
+		config, err = (Config{CertFile: c.CertFile, KeyFile: c.KeyFile, CAFile: c.ClientCAFile}).WorkloadServerTLSConfigWithServices(localURI, true)
+	} else {
+		config, err = (Config{CertFile: c.CertFile, KeyFile: c.KeyFile}).BearerServerTLSConfig(localURI)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +610,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 
 // parseIdentity accepts fixed service identities or a canonical workload URI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI && identity != SandboxControllerURI && !isWorkloadServiceURI(identity) {
+	if !IsServiceURI(identity) {
 		if _, err := workloadid.Parse(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid workload URI: %w", err)
 		}
