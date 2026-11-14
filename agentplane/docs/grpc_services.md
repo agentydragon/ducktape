@@ -53,8 +53,9 @@ follows it; code that differs converges on it.
 
 ## Authentication
 
-- Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
-  call: projected tokens rotate.
+- **Current backend callers** send `authorization: Bearer <token>` metadata, reading the projected
+  token file for every call: projected tokens rotate. They verify the receiver's server TLS where
+  configured. This describes the migration baseline, not the approved first-party target.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
   `peertls` server credentials. `identity/auth.SVIDResolver` resolves
   the verified peer against the live Sandbox and its accepted runner credential, yielding the
@@ -90,6 +91,15 @@ opt a production method or client into delegation by themselves. The Runner Gate
 configured method list includes the `EnvironmentService` list/get methods; `ResumeEnvironment` remains
 separately configured, and Action Service adapter integration remains separate.
 
+The approved first-party service-to-service target authenticates the component by a client service
+SVID over mutual TLS and verifies the receiver's service SVID on every hop. It needs a distinct
+service principal and exact per-method service allowlist; a service SPIFFE URI is neither an
+`auth.Account` nor a workload `IdentityPrincipal` and supplies no ServiceAccount UID or Pod proof.
+For delegated calls, preserve the service actor, effective Identity, and typed provenance separately.
+Those service-caller admission primitives are not implemented yet; do not treat current bearer rules
+or workload `SVIDResolver` rules as their substitute. App OIDC and external MCP OAuth remain separate
+edge protocols.
+
 ## Errors
 
 - **Server:** a service maps each RPC's error to a status code in one place (`failure` in
@@ -117,8 +127,9 @@ separately configured, and Action Service adapter integration remains separate.
 
 - Most APIs use one `<Service>Client` beside the servicer's owner to expose domain methods
   over its stub. The browser uses the app's operator-session BFF to call the generated Dispatcher
-  HTTP facade. Agentplane service callers use the generated native gRPC stub directly; their
-  transport reads a rotating bearer and sets a deadline. Mutations are not automatically retried.
+  HTTP facade. Agentplane backend callers use the generated native gRPC stub directly; today their
+  transport reads a rotating bearer and sets a deadline. The approved target replaces that backend
+  caller proof with a service client SVID and verified server TLS. Mutations are not automatically retried.
   A client that would call two services is two clients.
 - **Clients take channels; the composition root opens them.** A client's constructor takes a
   `grpc.aio.Channel`, never a target string, and builds its stub from it. Whoever constructs the
@@ -130,9 +141,11 @@ separately configured, and Action Service adapter integration remains separate.
   to the gateway replica holding a Sandbox's runner: the client takes that target and opens and
   closes the channel around the call.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
-- Backend bearer-authenticated channels and workload connections to local sidecar gRPC routes use
-  `grpc.aio.insecure_channel`. The credential-holding sidecar establishes verified TLS to each
-  workload listener; Runtime's direct SVID connections also use verified TLS. The client's
+- Current backend bearer-authenticated channels and workload connections to local sidecar gRPC
+  routes use `grpc.aio.insecure_channel`. The credential-holding sidecar establishes verified TLS
+  to each workload listener; Runtime's direct SVID connections also use verified TLS. During the
+  service-SVID migration, backend channels must use mutually authenticated TLS and verify the exact
+  receiver service URI. The client's
   package says which options its channels need, through a `dial(target)` the composition root
   calls (`agentplane/grpc/calls.py` for the Runner Gateway and History Service clients); a client
   that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc/options.py`).

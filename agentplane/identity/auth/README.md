@@ -97,6 +97,17 @@ binary envelope, rejects duplicate authorization/envelope metadata, and disables
 not install the ordinary Bearer interceptor. Existing direct clients continue using their current
 Bearer helper.
 
+**Backend service caller transition.** The API described above is the current implementation:
+service-to-service callers still use TokenReview-verified ServiceAccount principals, and delegated
+actors are admitted through their ServiceAccount plus Pod proof. The approved target replaces that
+component actor proof with a distinct principal authenticated by its service SPIFFE ID over mutual
+TLS. A service principal must not be coerced into `Account`, `Principal`, `IdentityPrincipal`, or a
+workload `WorkloadCredential`, and it proves no Kubernetes UID or Pod. Delegated admission must keep
+the service actor, effective Identity, and typed provenance separate. Adding client certificates
+alone does not change any method allowlist or delegate an Identity; receiver admission remains
+explicit and method-scoped. Until that API is implemented and receivers have rolled, the Bearer and
+delegated TokenReview descriptions in this README describe live behavior.
+
 [`audience.py`](audience.py) defines `WORKLOAD_TOKEN_AUDIENCE`, the `agentplane-egress` audience
 used by backend callers of LLM ingress and Action Service: the sampler, Notification, and the MCP
 edge's minted Connection tokens. The egress proxy's hop still accepts it, though no workload sends

@@ -3,8 +3,10 @@
 Sandbox-to-service traffic uses the Runtime SVID issued for the current Sandbox incarnation through
 its [`WorkloadCredential`](#workloadcredentials).
 Command/build boxes and standing workloads present `WorkloadCredential` SVIDs too. Backend services
-calling each other retain Kubernetes bearer authentication over verified TLS. This document
-describes both.
+currently call each other with Kubernetes bearer authentication, usually over verified server TLS.
+The approved target is mutual TLS with distinct service SVID identities for first-party
+service-to-service calls. This caller identity is separate from a workload `WorkloadCredential` and
+never resolves to an agent `Identity`.
 
 ## Sandbox SVID route
 
@@ -254,8 +256,13 @@ and an application credential presented together. Admission stays method-specifi
 authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
 or delegated calls.
 
-Backend clients verify the service's SPIFFE URI and server-auth usage against the cluster's
-trust-manager roots, then present their existing TokenReview or delegation credentials. They hold no SVID.
+Backend clients currently verify the service's SPIFFE URI and server-auth usage against the
+cluster's trust-manager roots, then present their existing TokenReview or delegation credentials.
+They do not yet receive a general-purpose service SVID. The approved migration adds client-auth
+service certificates and exact service-principal admission while bearer admission remains
+temporarily available; callers switch only after the receiver image with that admission is pinned.
+A service URI is not a `WorkloadCredential`, a ServiceAccount, or an Identity. For delegated calls
+the service actor, effective Identity, and provenance remain separate.
 Gateway backend and cross-replica methods keep their separate audiences and authorization;
 History bearer writers remain limited to the sampler accounts. LLM inference and native ModelConfig
 share one TLS HTTP/2 listener, retaining the sampler's bearer path and the service-held LiteLLM key.
