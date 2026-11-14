@@ -1,0 +1,286 @@
+{
+  "schema": 1,
+  "scope": "One same-source serial B/A screen of manual VM platform witnesses. Not complete CI, a p90 cohort, fleet reliability, or promotion qualification. Phases overlap and must not be added.",
+  "source": "cdad46e75623a058c9bb19aaac7147c840542cca",
+  "command_flags": [
+    "--config=ci",
+    "--test_tag_filters=-live_openai_api",
+    "--nocache_test_results",
+    "--flaky_test_attempts=1",
+    "--test_output=errors"
+  ],
+  "execution_order": ["reduced-root B", "full-root A"],
+  "arms": [
+    {
+      "arm": "full-root A",
+      "invocation_id": "c0214fb8-fdc9-4a6b-aded-90e1d95a7f1e",
+      "source": "cdad46e75623a058c9bb19aaac7147c840542cca",
+      "outcome": "SUCCESS",
+      "native_elapsed_seconds": 439.855,
+      "physical_execution_seconds": 277.495317,
+      "inner_queue_seconds": 0.062713,
+      "reported_test_cpu_seconds": 798.615295,
+      "junit_suites": [
+        {
+          "tests": "1",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "235.914"
+        }
+      ],
+      "junit_case_names": ["test_one_vm_platform_without_model_turns"],
+      "cache_and_cleanup": {
+        "outcome": "warm",
+        "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+        "layers_in_memory": false,
+        "cleanup": "complete",
+        "workspace_loop_devices_released": 1
+      },
+      "phases": [
+        {
+          "name": "system_test.image.import",
+          "seconds": 43.765721,
+          "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
+        },
+        {
+          "name": "system_test.stack.setup",
+          "seconds": 60.398255,
+          "image": null
+        },
+        {
+          "name": "system_test.sandbox.ready",
+          "seconds": 99.746666,
+          "image": null
+        },
+        {
+          "name": "system_test.session_setup.output_wait",
+          "seconds": 13.656305,
+          "image": null
+        },
+        {
+          "name": "system_test.session_setup.output_wait",
+          "seconds": 1.908671,
+          "image": null
+        },
+        {
+          "name": "system_test.sandbox.cleanup",
+          "seconds": 19.175035,
+          "image": null
+        },
+        {
+          "name": "system_test.scenario",
+          "seconds": 139.19423,
+          "image": null
+        },
+        {
+          "name": "system_test.case",
+          "seconds": 139.907026,
+          "image": null
+        },
+        {
+          "name": "system_test.stack.cleanup",
+          "seconds": 29.70765,
+          "image": null
+        }
+      ]
+    },
+    {
+      "arm": "reduced-root B",
+      "invocation_id": "1d9fe58a-84bb-4867-94dd-904407c843ed",
+      "source": "cdad46e75623a058c9bb19aaac7147c840542cca",
+      "outcome": "SUCCESS",
+      "native_elapsed_seconds": 411.886,
+      "physical_execution_seconds": 266.409347,
+      "inner_queue_seconds": 0.095395,
+      "reported_test_cpu_seconds": 538.15723,
+      "junit_suites": [
+        {
+          "tests": "1",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "236.860"
+        }
+      ],
+      "junit_case_names": ["test_one_vm_platform_without_model_turns"],
+      "cache_and_cleanup": {
+        "outcome": "warm",
+        "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+        "layers_in_memory": false,
+        "cleanup": "complete",
+        "workspace_loop_devices_released": 1
+      },
+      "phases": [
+        {
+          "name": "system_test.image.import",
+          "seconds": 20.115867,
+          "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
+        },
+        {
+          "name": "system_test.stack.setup",
+          "seconds": 35.435923,
+          "image": null
+        },
+        {
+          "name": "system_test.sandbox.ready",
+          "seconds": 136.645956,
+          "image": null
+        },
+        {
+          "name": "system_test.session_setup.output_wait",
+          "seconds": 10.336248,
+          "image": null
+        },
+        {
+          "name": "system_test.session_setup.output_wait",
+          "seconds": 1.272514,
+          "image": null
+        },
+        {
+          "name": "system_test.sandbox.cleanup",
+          "seconds": 15.695829,
+          "image": null
+        },
+        {
+          "name": "system_test.scenario",
+          "seconds": 167.674069,
+          "image": null
+        },
+        {
+          "name": "system_test.case",
+          "seconds": 168.250501,
+          "image": null
+        },
+        {
+          "name": "system_test.stack.cleanup",
+          "seconds": 28.343298,
+          "image": null
+        }
+      ]
+    }
+  ],
+  "root_artifacts": {
+    "source": "cdad46e75623a058c9bb19aaac7147c840542cca",
+    "invocation_id": "d63c195b-e437-422c-b235-b402a76844cb",
+    "images": [
+      {
+        "name": "root.img",
+        "bytes": 553885696,
+        "sha256": "a80383f1304316c099521c39cfc3f41abe05af631ac395941ff7d8badea35888"
+      },
+      {
+        "name": "root-platform.img",
+        "bytes": 408961024,
+        "sha256": "48d42fc4beaacc20d5af740c118230649315d50d173482ed9070e046fe245960"
+      }
+    ],
+    "bytes_removed": 144924672,
+    "percent_removed": 26.165086595773,
+    "scope": "EROFS artifact size; not CI time. Reduced root retains Codex and omits Claude only."
+  },
+  "rejected_no_harness_variant": {
+    "arm": "no-harness rejected",
+    "invocation_id": "77131353-d653-42c5-ae07-7fc064d0dc53",
+    "source": "1279151f658f3047ac6969065b746f391ba5d442",
+    "outcome": "TESTS_FAILED",
+    "native_elapsed_seconds": 612.107,
+    "physical_execution_seconds": 495.851285,
+    "inner_queue_seconds": 0.06449,
+    "reported_test_cpu_seconds": 1204.412574,
+    "junit_suites": [
+      {
+        "tests": "1",
+        "failures": "1",
+        "errors": "0",
+        "skipped": "0",
+        "time": "438.401"
+      }
+    ],
+    "junit_case_names": ["test_one_vm_platform_without_model_turns"],
+    "cache_and_cleanup": {
+      "outcome": "warm",
+      "fingerprint": "ac4cf98674a1ff7ed4ea239c6a3f37e5e6c8070822b977708b97c4bf98bc4d93",
+      "layers_in_memory": false,
+      "cleanup": "complete",
+      "workspace_loop_devices_released": 1
+    },
+    "phases": [
+      {
+        "name": "system_test.image.import",
+        "seconds": 4.319345,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-app:unset"
+      },
+      {
+        "name": "system_test.image.import",
+        "seconds": 2.956303,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset"
+      },
+      {
+        "name": "system_test.image.import",
+        "seconds": 2.399338,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset"
+      },
+      {
+        "name": "system_test.image.import",
+        "seconds": 7.283487,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset"
+      },
+      {
+        "name": "system_test.image.import",
+        "seconds": 12.68626,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"
+      },
+      {
+        "name": "system_test.image.import",
+        "seconds": 7.767413,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
+      },
+      {
+        "name": "system_test.image.import",
+        "seconds": 9.427652,
+        "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
+      },
+      {
+        "name": "system_test.stack.setup",
+        "seconds": 83.087104,
+        "image": null
+      },
+      {
+        "name": "system_test.sandbox.ready",
+        "seconds": 300.096739,
+        "image": null
+      },
+      {
+        "name": "system_test.sandbox.cleanup",
+        "seconds": 16.584426,
+        "image": null
+      },
+      {
+        "name": "system_test.scenario",
+        "seconds": 318.073465,
+        "image": null
+      },
+      {
+        "name": "system_test.case",
+        "seconds": 319.347514,
+        "image": null
+      },
+      {
+        "name": "system_test.stack.cleanup",
+        "seconds": 29.172868,
+        "image": null
+      }
+    ]
+  },
+  "rejection": "Removing Codex makes embedded Execution fail before readiness (native systemd status 203). Retaining Codex restores the working guest. The rejected 75.4 percent root reduction is not a usable saving.",
+  "controls_and_limits": [
+    "Same test body, source, rendered canonical image reference and flags; only the manual guest root artifact differs.",
+    "Both successful runs reused a warm compatible baseline, layers_in_memory=false, imported the changed guest image, completed cleanup and released one loop device.",
+    "One NEW physical TestRunner and one nonempty JUnit case per arm, first run and attempt only.",
+    "No upstream model requests; ordinary full-root required VM and both packaged-harness contracts are unchanged.",
+    "Readiness is 136.646s in reduced versus 99.747s in full; variation offsets part of the import reduction.",
+    "The image omits Claude only; embedded Execution still requires Codex. It cannot be ported as a replacement for the full two-harness VM gate.",
+    "Do not attribute all observed CPU/native differences to architecture; this is one serial pair on different workers."
+  ]
+}

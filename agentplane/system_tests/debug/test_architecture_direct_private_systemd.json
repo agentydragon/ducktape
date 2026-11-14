@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "scope": "Private systemd proof added to the existing manual direct Claude Session guest. Correctness evidence only; no required owner or frequency changed.",
+  "source_before_rebase": "4ff7cf51e6d4eea7c20c8e02f1e3871c5aa7945c",
+  "invocation_id": "6112d945-2813-4f3c-8a38-86b72a0d561e",
+  "target": "//agentplane/x/direct_vm_boot:test_runtime_session",
+  "outcome": "SUCCESS",
+  "native_elapsed_seconds": 224.093,
+  "new_physical_test_actions": 1,
+  "physical_execution_seconds": 188.694214,
+  "reported_test_cpu_seconds": 309.78432,
+  "junit": { "tests": 1, "failures": 0, "errors": 0, "skipped": 0 },
+  "run": 1,
+  "attempt": 1,
+  "private_go_parent": "TestSystemdKernelFixture",
+  "private_go_parent_pass_seconds": 17.35,
+  "private_go_child_passes": 11,
+  "exact_private_serial_receipt": true,
+  "result_file_verified_after_host_owner_restoration": true,
+  "qemu_lifetime_bound_seconds": 120,
+  "container_remove_exit": 0,
+  "host_owner_restoration_confirmed": true,
+  "retained_assertions": [
+    "Authenticated Runtime and same boot identity",
+    "Two real packaged Claude Shell turns with exact command IDs and contiguous sourced History",
+    "Workspace marker round-trip, native supervision and setup descendant fencing",
+    "Real Egress and Notification CLI routes and credential revocation",
+    "Container removal, listener closure and state ownership restoration"
+  ],
+  "first_host_assertion_failure": {
+    "source": "cf571675141cd5880039c0c436415a914d081fe0",
+    "invocation_id": "cd86c86f-275a-4908-a88c-b24099e9bfa6",
+    "outcome": "TESTS_FAILED",
+    "native_elapsed_seconds": 175.663,
+    "new_physical_test_actions": 1,
+    "junit": { "tests": 1, "failures": 1, "errors": 0, "skipped": 0 },
+    "private_go_parent_pass_seconds": 8.16,
+    "failure": "The new host read of the guest result file raised PermissionError while the guest owned state. Serial already contained the real private fixture pass.",
+    "repair": "Require the exact serial receipt and Go parent pass before readiness; check the actual result file after existing teardown restores the host owner. No permission or lifetime change."
+  },
+  "limits": [
+    "The direct target remains manual and does not prove real issuer/controller reconciliation, KubeVirt scheduling or PVC lifecycle.",
+    "No private proof was removed from the required full VM suite or the manual platform candidate.",
+    "The two attempts use different source revisions; their durations are not a performance comparison.",
+    "Seeded controls and a complete graph comparison remain prerequisites to ownership transfer or promotion."
+  ]
+}
