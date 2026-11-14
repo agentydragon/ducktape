@@ -2,7 +2,6 @@ package settings
 
 import (
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -51,7 +50,6 @@ session_dispatcher_target: session-dispatcher:9090
 history_service_target: history:9090
 notifications_url: http://notifications:9090
 listen_address: 0.0.0.0:8080
-token_subjects: [system:serviceaccount:sandboxes:agentplane-agent]
 log_levels: {}
 `
 
@@ -138,16 +136,12 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 	t.Run("valid file and runtime secret", func(t *testing.T) {
 		writeConfig(t, validSettingsYAML)
 		t.Setenv("AGENTPLANE_LISTEN_ADDRESS", "127.0.0.1:9999")
-		t.Setenv("AGENTPLANE_TOKEN_SUBJECTS", `[]`)
 		c, err := Load()
 		if err != nil {
 			t.Fatal(err)
 		}
 		if c.ListenAddress != "0.0.0.0:8080" {
 			t.Fatalf("static environment override was applied: %q", c.ListenAddress)
-		}
-		if !reflect.DeepEqual(c.TokenSubjects, []string{"system:serviceaccount:sandboxes:agentplane-agent"}) {
-			t.Fatalf("token subjects were not loaded from YAML: %#v", c.TokenSubjects)
 		}
 		if c.DatabaseURL != "postgresql://app@postgres/agentplane" {
 			t.Fatalf("database Secret input = %q", c.DatabaseURL)
@@ -169,6 +163,8 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		want string
 	}{
 		{name: "unknown key", yaml: validSettingsYAML + "unknown_setting: true\n", want: "unknown_setting"},
+		{name: "retired subjects", yaml: validSettingsYAML + "token_subjects: []\n", want: "token_subjects"},
+		{name: "retired audience", yaml: validSettingsYAML + "token_audience: agentplane\n", want: "token_audience"},
 		{name: "database secret in file", yaml: validSettingsYAML + "database_url: postgresql://app@postgres/agentplane\n", want: "database_url"},
 		{name: "second document", yaml: validSettingsYAML + "---\nmodels: {}\n", want: "exactly one YAML document"},
 		{name: "malformed YAML", yaml: validSettingsYAML + "thread_presets: [\n", want: "could not decode app settings file"},

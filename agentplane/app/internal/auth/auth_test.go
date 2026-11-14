@@ -8,7 +8,6 @@ import (
 	"crypto/rsa"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -19,8 +18,6 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestSecureCookieRoundTrip(t *testing.T) {
@@ -154,52 +151,19 @@ func TestCallbackRejectsInvalidLoginAttempt(t *testing.T) {
 	}
 }
 
-func TestTokenReviewRequiresAudienceAndAllowlistedSubject(t *testing.T) {
-	reviewer := &fakeTokenReviews{review: &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane"},
-		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
-	}}}
-	caller, code, _ := reviewToken(context.Background(), reviewer, "agentplane", map[string]struct{}{"system:serviceaccount:tools:runner": {}}, "opaque")
-	if code != 0 || caller == nil || caller.Kind != CallerToken {
-		t.Fatalf("accepted TokenReview = (%+v, %d)", caller, code)
-	}
-	if len(reviewer.last.Spec.Audiences) != 1 || reviewer.last.Spec.Audiences[0] != "agentplane" || reviewer.last.Spec.Token != "opaque" {
-		t.Fatalf("TokenReview request = %+v", reviewer.last.Spec)
-	}
-
-	reviewer.review.Status.Audiences = []string{"elsewhere"}
-	if caller, code, _ := reviewToken(context.Background(), reviewer, "agentplane", map[string]struct{}{"system:serviceaccount:tools:runner": {}}, "opaque"); caller != nil || code != http.StatusUnauthorized {
-		t.Fatalf("wrong-audience review = (%+v, %d)", caller, code)
-	}
-	reviewer.review.Status.Audiences = []string{"agentplane"}
-	if caller, code, _ := reviewToken(context.Background(), reviewer, "agentplane", map[string]struct{}{}, "opaque"); caller != nil || code != http.StatusForbidden {
-		t.Fatalf("disallowed subject = (%+v, %d)", caller, code)
-	}
-	reviewer.err = errors.New("unavailable")
-	if caller, code, _ := reviewToken(context.Background(), reviewer, "agentplane", map[string]struct{}{}, "opaque"); caller != nil || code != http.StatusServiceUnavailable {
-		t.Fatalf("review failure = (%+v, %d)", caller, code)
-	}
-}
-
 func TestRequireCallerContextAndSameOrigin(t *testing.T) {
-	reviewer := &fakeTokenReviews{review: &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane"},
-		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
-	}}}
-	a := &Auth{cfg: Config{TokenReviews: reviewer, TokenAudience: "agentplane"}, subjects: map[string]struct{}{"system:serviceaccount:tools:runner": {}}}
+	a, key := pinnedAuth(t)
 	called := false
 	next := a.RequireCaller(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		caller, ok := CallerFromContext(r.Context())
-		if !ok || caller.Principal != "system:serviceaccount:tools:runner" {
+		if !ok || caller.Principal != "test-operator" {
 			t.Errorf("caller from context = (%+v, %v)", caller, ok)
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	r := httptest.NewRequest(http.MethodPost, "/protected", nil)
-	r.Header.Set("Authorization", "Bearer opaque")
+	r.Header.Set("Authorization", "Bearer "+signedIDToken(t, key, operatorClaims()))
 	w := httptest.NewRecorder()
 	next.ServeHTTP(w, r)
 	if !called || w.Code != http.StatusNoContent {
@@ -272,55 +236,28 @@ func TestAudienceMustBeTheSingleConfiguredClient(t *testing.T) {
 	}
 }
 
-type fakeTokenReviews struct {
-	review *authenticationv1.TokenReview
-	err    error
-	last   *authenticationv1.TokenReview
-}
-
-func (f *fakeTokenReviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	f.last = review
-	return f.review, f.err
-}
-
-var _ = errors.New
-
-func TestTokenReviewRejectionLogsOnlyCuratedIdentity(t *testing.T) {
-	const token = "opaque-bearer-must-not-be-logged"
-	const subject = "system:serviceaccount:testing:caller"
-	for _, reason := range []string{"unauthenticated", "missing_username", "wrong_audience", "subject_not_allowed"} {
-		t.Run(reason, func(t *testing.T) {
-			review := &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-				Authenticated: true,
-				User:          authenticationv1.UserInfo{Username: subject}, Audiences: []string{"app-audience"}, Error: "private-provider-detail: " + token,
-			}}
-			switch reason {
-			case "unauthenticated":
-				review.Status.Authenticated = false
-			case "missing_username":
-				review.Status.User.Username = ""
-			case "wrong_audience":
-				review.Status.Audiences = []string{"wrong"}
+func TestKubernetesAndOpaqueBearersAreRejected(t *testing.T) {
+	a, key := pinnedAuth(t)
+	claims := operatorClaims()
+	claims["iss"] = "https://kubernetes.default.svc"
+	claims["sub"] = "system:serviceaccount:agentplane-staging:agentplane-agent"
+	claims["aud"] = "agentplane"
+	for _, token := range []string{"opaque-bearer-must-not-be-logged", signedIDToken(t, key, claims)} {
+		var log bytes.Buffer
+		original := slog.Default()
+		slog.SetDefault(slog.New(slog.NewJSONHandler(&log, nil)))
+		for _, boundary := range []*Auth{a, {}} {
+			request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+			request.Header.Set("Authorization", "Bearer "+token)
+			caller, status, detail := boundary.caller(request)
+			if caller != nil || status != http.StatusUnauthorized {
+				t.Errorf("rejection = %v %d %s", caller, status, detail)
 			}
-			var log bytes.Buffer
-			original := slog.Default()
-			slog.SetDefault(slog.New(slog.NewJSONHandler(&log, nil)))
-			defer slog.SetDefault(original)
-			caller, code, detail := reviewToken(t.Context(), &fakeTokenReviews{review: review}, "app-audience", map[string]struct{}{}, token)
-			if caller != nil || (code != http.StatusUnauthorized && code != http.StatusForbidden) {
-				t.Fatalf("rejection = %v %d %s", caller, code, detail)
+			if strings.Contains(log.String()+detail, token) {
+				t.Error("rejected credential escaped")
 			}
-			var record map[string]any
-			if err := json.Unmarshal(log.Bytes(), &record); err != nil {
-				t.Fatal(err)
-			}
-			if record["reason"] != reason {
-				t.Fatalf("log = %s", log.String())
-			}
-			if strings.Contains(log.String()+detail, token) || strings.Contains(log.String()+detail, "private-provider-detail") {
-				t.Fatal("credential-bearing TokenReview data escaped")
-			}
-		})
+		}
+		slog.SetDefault(original)
 	}
 }
 

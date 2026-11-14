@@ -64,8 +64,6 @@ type Config struct {
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	TokenAudience                       string                     `mapstructure:"token_audience"`
-	TokenSubjects                       []string                   `mapstructure:"token_subjects"`
 	sandboxPresetOrder                  []string
 }
 
@@ -201,7 +199,6 @@ func defaultConfig() Config {
 		EgressAdminTokenFile:                "/var/run/secrets/agentplane-egress-admin/token",
 		EgressAdminTimeoutSeconds:           5,
 		ShutdownTimeoutSeconds:              5,
-		TokenAudience:                       "agentplane",
 	}
 }
 
@@ -341,9 +338,6 @@ func (c *Config) applyDefaults(raw map[string]any) {
 		if models == nil {
 			c.Models.Harnesses[harness] = []string{}
 		}
-	}
-	if c.TokenSubjects == nil {
-		c.TokenSubjects = []string{}
 	}
 	threadPresets, _ := rawSection(raw, "thread_presets")
 	for name, preset := range c.ThreadPresets {

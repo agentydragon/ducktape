@@ -111,8 +111,9 @@ Transport holes that must be explicit in receiver/caller staging are:
 - Policy Controller and Central Sampler have optional server-auth-only TLS settings; these do not
   establish client identity.
 - Public app traffic terminates TLS at the Gateway, so an external client certificate cannot reach
-  the app as mTLS. The app's `agentplane-agent` TokenReview path needs its separately approved
-  issuer-backed test/operator token transition and must not be replaced by a backend service SVID.
+  the app as mTLS. The app uses operator OIDC cookies or ID-token bearers; its `agentplane-agent` TokenReview
+  path is being removed independently after the retired settings roll out. It must not be replaced
+  by a backend service SVID.
 
 Before changing a receiver, pin its existing server URI, add client certificate verification and
 exact service-principal admission, and keep current bearer admission temporarily. The caller switches

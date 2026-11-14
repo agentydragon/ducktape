@@ -18,8 +18,8 @@ import (
 	"google.golang.org/grpc"
 
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	threadhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/threads"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -28,8 +28,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type threadReadStoreFake struct {
@@ -183,16 +181,6 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 	}
 }
 
-type threadReadAcceptedTokenReviewer struct{}
-
-func (threadReadAcceptedTokenReviewer) Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true,
-		Audiences:     []string{"agentplane"},
-		User:          authenticationv1.UserInfo{Username: "system:serviceaccount:tools:runner"},
-	}}, nil
-}
-
 type threadMetadataChangesFake struct {
 	updates      chan struct{}
 	unsubscribed chan struct{}
@@ -205,13 +193,8 @@ func (f *threadMetadataChangesFake) Subscribe(...string) (<-chan struct{}, func(
 func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 	for _, stop := range []string{"cancel", "drain"} {
 		t.Run(stop, func(t *testing.T) {
-			authentication, err := auth.New(auth.Config{
-				TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane",
-				TokenSubjects: []string{"system:serviceaccount:tools:runner"},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
+			fixture := testauth.New(t)
+			authentication := fixture.Auth
 			changes := &threadMetadataChangesFake{updates: make(chan struct{}, 1), unsubscribed: make(chan struct{})}
 			var connected atomic.Bool
 			connected.Store(true)
@@ -230,7 +213,7 @@ func TestThreadMetadataWatchStreamsUpdatesAndCloses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			request.Header.Set("Authorization", "Bearer accepted")
+			fixture.Authorize(request)
 			request.Header.Set("Accept", "application/x-ndjson")
 			response, err := http.DefaultClient.Do(request)
 			if err != nil {
@@ -367,10 +350,8 @@ func TestThreadMutationGateway(t *testing.T) {
 		Sandbox: &historypb.SandboxRef{Name: "sandbox", Uid: proto.String("uid")}, LastTurnStatus: &unknownTurnStatus,
 	}}}
 	inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"}}}
-	authentication, err := auth.New(auth.Config{TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane", TokenSubjects: []string{"system:serviceaccount:tools:runner"}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := testauth.New(t)
+	authentication := fixture.Auth
 	server := newHTTPServer(authentication)
 	threadMetadata := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history, Environments: inventory})
 	if err := registerThreadMetadataGateway(server, &appService{threadMetadata: threadMetadata}); err != nil {
@@ -383,7 +364,7 @@ func TestThreadMutationGateway(t *testing.T) {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		if authorized {
-			req.Header.Set("Authorization", "Bearer accepted")
+			fixture.Authorize(req)
 		}
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, req)

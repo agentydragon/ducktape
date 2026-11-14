@@ -171,23 +171,23 @@ async def test_go_app_creates_a_sandbox_and_rejects_invalid_create_requests(
 
 
 async def test_policy_mutations_require_the_generated_operator_facade(
-    app: AppProcess, sandbox: SandboxCluster, agent_auth: dict[str, str]
+    app: AppProcess, sandbox: SandboxCluster, operator_auth: dict[str, str]
 ) -> None:
     async with httpx.AsyncClient(
-        base_url=app.url, headers={**agent_auth, "Origin": app.url}, timeout=60
-    ) as workload_client:
+        base_url=app.url, headers={**operator_auth, "Origin": app.url}, timeout=60
+    ) as operator_client:
         for method, path in [
             ("POST", f"/sandboxes/{sandbox.name}/policy-bindings"),
             ("DELETE", "/policy-bindings/operator-grant"),
         ]:
-            response = await workload_client.request(method, path)
+            response = await operator_client.request(method, path)
             assert response.status_code == 404, response.text
 
         target = f"/upstream/policy/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/policy-bindings"
-        grant = await workload_client.post(target, json={"sandboxUid": sandbox.uid, "policySets": ["example"]})
+        grant = await operator_client.post(target, json={"sandboxUid": sandbox.uid, "policySets": ["example"]})
         assert grant.status_code == 403, grant.text
 
-        revoke = await workload_client.delete(
+        revoke = await operator_client.delete(
             f"{target}/operator-grant", params={"sandboxUid": sandbox.uid, "bindingUid": "binding-uid"}
         )
         assert revoke.status_code == 403, revoke.text
@@ -235,9 +235,16 @@ async def test_go_app_exposes_configured_browser_views_over_http(http: httpx.Asy
     assert presets.json() == {"presets": []}
 
 
-async def test_protected_go_routes_reject_requests_without_a_workload_token(app: AppProcess) -> None:
+async def test_protected_go_routes_reject_requests_without_a_bearer_token(app: AppProcess) -> None:
     async with httpx.AsyncClient(base_url=app.url) as anonymous:
         response = await anonymous.get("/upstream/environments/v1/environments", params={"limit": 1})
+
+    assert response.status_code == 401
+
+
+async def test_protected_go_routes_reject_kubernetes_bearer(app: AppProcess, kubernetes_auth: dict[str, str]) -> None:
+    async with httpx.AsyncClient(base_url=app.url, headers=kubernetes_auth) as kubernetes_client:
+        response = await kubernetes_client.get("/upstream/environments/v1/environments", params={"limit": 1})
 
     assert response.status_code == 401
 

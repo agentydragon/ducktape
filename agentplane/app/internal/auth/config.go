@@ -1,4 +1,4 @@
-// Package auth implements Agentplane's browser and workload authentication boundary.
+// Package auth implements Agentplane's operator authentication boundary.
 package auth
 
 import (
@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	workloadauth "github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -187,13 +186,10 @@ func (c OIDCConfig) withDefaults() OIDCConfig {
 	return c
 }
 
-// Config wires persistence, OIDC, and Kubernetes TokenReview into an Auth instance.
+// Config wires persistence and OIDC into an Auth instance.
 type Config struct {
 	OIDC                  *OIDCConfig
 	Database              *sql.DB
-	TokenReviews          workloadauth.TokenReviews
-	TokenAudience         string
-	TokenSubjects         []string
 	StoreFederationTokens bool
 	HTTPClient            *http.Client
 	SessionChanges        ChangeSource
