@@ -319,7 +319,7 @@ directly and 404s clearly on an unknown group or action. Both are workload-authe
 no owner-scoping, since the catalog is the same for every caller.
 
 Group bindings are reviewed runtime configuration, not a dynamic registry: each Action Service
-replica reads `action_groups` from the settings file when it starts ([configuration](config.go)).
+replica reads `action_groups` from the settings file when it starts ([configuration](cmd/config.go)).
 `catalog.MCPBinding.config` is never exposed by discovery; only the human-authored executor description is.
 
 The catalog is also the admission and routing authority: `ActionService` resolves the submitted
@@ -337,7 +337,7 @@ retried. Each service replica may own its own current MCP session; the database-
 single-Execution claim and lease token, not the MCP connection, fence dispatch and keep a lost
 attempt from being replayed.
 
-`main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding`, a
+`cmd/main.go` builds a supervised `mcpexec.Executor` for each `catalog.MCPBinding`, a
 `sandbox.Executor` for each `catalog.PodBinding` and an `orchestrationv1.Executor` for each
 `catalog.OrchestrationBinding`. The MCP executor discovers upstream tools through
 its Go SDK session; Sandbox Actions come from the configured template roster and are offered after
@@ -616,7 +616,7 @@ SIGTERM/SIGINT mark readiness unavailable, stop admission, and drain dispatch an
 supervisors. The gRPC server allows five seconds for open calls to finish before closing its
 connections; execution shutdown is owned by the worker. Both deployments allow 60 seconds for
 termination. Go probes use gRPC health: the default readiness service and `livez` for liveness.
-See [service shutdown](main.go) and [execution ownership](SPEC.md#execution-ownership-and-shutdown).
+See [service shutdown](cmd/main.go) and [execution ownership](SPEC.md#execution-ownership-and-shutdown).
 
 Execution renewals run every third of the granted lease duration, with each renewal RPC bounded by
 the same interval, so a call outlasts its lease window rather than being swept from under it. The
