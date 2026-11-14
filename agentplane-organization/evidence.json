@@ -9993,13 +9993,17 @@
         {
           "at_utc": "2026-11-14T07:20",
           "text": "Operator, 2026-11-14 07:20 UTC, answering the card \"Choose how an Identity change is fenced against Session admission\": \"okay, sounds good to me, sessions can re-check\"."
+        },
+        {
+          "at_utc": "2026-11-14T07:41",
+          "text": "Operator, 2026-11-14 07:41 UTC, card \"Choose how explicit resume is rate-bounded once EnvironmentService has no database\": \"No budget for explicit resume\"."
         }
       ],
       "verified": [
         "`runner_gateway/main.go` builds the Dispatcher, EnvironmentService, the lifecycle manager, the Runtime proxy and the Executor into one process and registers them on one gRPC server.",
         "`dispatcher.ProxyRunner` dials `sandboxapi.ControlServiceTargetTemplate()` for every Runtime call, including from the same Pod.",
         "`dispatcherAccount` proves the delivery token belongs to the serving Pod (TokenReview Pod name and UID, ServiceAccount); `internal/gateway` admits Runtime mutations only from that account.",
-        "`lifecycle.Manager.applyResume` reserves the Dispatcher-database budget for both explicit and automatic wakes; `eligibilityFor` denies every explicit resume except direct Pod-bound `operator_callers`.",
+        "`lifecycle.Manager.applyResume` reserves the Dispatcher-database budget for both explicit and automatic wakes.",
         "Automatic wake refuses when `spec.running` is false or `status.suspendedBy` is `Requested`; operator resume may undo a requested stop.",
         "The Sandbox Controller keeps idle timers in memory from its first sighting of the Runtime's `idle-since` and quiesces with `ifIdleSince`; the Runtime aborts if anything arrived since.",
         "Runtime blockers: per Session active turn, pending input and setup; Runtime-wide Admission, ExecutorRelay (open Executor call or session) and Bootstrap.",

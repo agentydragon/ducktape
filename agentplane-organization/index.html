@@ -550,9 +550,13 @@
               <${Title} order=${3}
                 >${"Questions for the operator, one at a time"}<//
               >
-              <${List} type="ordered" spacing="xs"
-                >${plan.target_binaries.questions.map((q) => html`<${List.Item} key=${q.text}><${Badge} size="sm" mr="xs" color=${cutColor[q.status]}>${q.status}<//>${q.text}<//>`)}<//
-              >
+              ${
+                plan.target_binaries.questions.length === 0
+                  ? html`<${Text} size="sm" c="dimmed">${"None open."}<//>`
+                  : html`<${List} type="ordered" spacing="xs"
+                      >${plan.target_binaries.questions.map((q) => html`<${List.Item} key=${q.text}><${Badge} size="sm" mr="xs" color=${cutColor[q.status]}>${q.status}<//>${q.text}<//>`)}<//
+                    >`
+              }
             <//>
             <${Stack} component="section" id="remaining" gap="md">
               <${Title} order=${2}>${"Remaining work"}<//>
