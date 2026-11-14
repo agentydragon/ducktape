@@ -3635,7 +3635,8 @@ showing exactly the deployed services and the traffic between them in `cluster/c
 Each removal needs its own evidence and any real prerequisite, and is fixed in a PR of its own; this
 node leaves with the last of them.
 
-**Identity cutover residue, 2026-11-14:** Central Sampler migration 17 removes retained session
+**Identity cutover residue, 2026-11-14:** Central Sampler migration 17 is in review in
+[#16323](https://github.com/agentydragon/ducktape/pull/16323). It removes retained session
 configurations without `execution_identity` or with the reserved `execution_principal` field, plus
 their session-owned conversation, event, command and provider state. The staging row count could not
 be obtained because this Identity cannot exec or port-forward to the database Pod. History already
