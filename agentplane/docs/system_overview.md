@@ -16,7 +16,7 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway TLS RPC :8080<br/>Sessions: Dispatcher + queue<br/>Environments: Controller, EnvironmentService, Runtime proxy + Executor<br/>current server URI: session-dispatcher]
+        gw[Runner Gateway TLS RPC :8080: Dispatcher, EnvironmentService, proxy and observation]
         sandboxctl[Sandbox Controller]
         policy[Policy Controller]
         hs[History TLS RPC :8080: readers and JournalIngress]
@@ -185,7 +185,10 @@ and testing use the SVID hop; TLS mode never falls back to token mode.
 The Gateway mounts separate caller-role SVIDs for Sessions (`spiffe://agentplane/sessions`), Runtime
 proxy (`spiffe://agentplane/runtime-proxy`) and Environments (`spiffe://agentplane/environments`). Its
 current listener keeps the `spiffe://agentplane/session-dispatcher` server URI until the API split; the
-`spiffe://agentplane/runner-gateway` Runtime-control client certificate remains separate.
+`spiffe://agentplane/runner-gateway` Runtime-control client certificate remains separate. These mounts
+do not enable new traffic. In the planned binary split, Sessions takes the Dispatcher and its queue;
+Environments takes the Sandbox Controller, EnvironmentService, Runtime proxy and Executor. The
+Sessions-to-Runtime-proxy hop remains a network edge with its own exact caller grant.
 
 Firecracker Sandboxes use a controller-owned launcher Pod, a separate SVID-authenticated relay and a
 NixOS guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
