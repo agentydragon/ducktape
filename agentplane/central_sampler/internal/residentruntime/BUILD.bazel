@@ -6,6 +6,7 @@ go_library(
     name = "residentruntime",
     srcs = [
         "codemode.go",
+        "codemode_actions.go",
         "codemode_host.go",
         "protocol_adapter.go",
         "provider_recovery_runtime.go",
@@ -21,8 +22,11 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/residentruntime",
     deps = [
+        "//agentplane/action_service/actionresult",
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
+        "//agentplane/central_sampler/internal/actions",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/content",
         "//agentplane/central_sampler/internal/eventcodec",
@@ -60,8 +64,10 @@ go_library(
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
@@ -71,6 +77,7 @@ go_test(
     size = "medium",
     srcs = [
         "anthropic_test.go",
+        "codemode_actions_test.go",
         "codemode_test.go",
         "integration_testmain_test.go",
         "notification_test.go",
@@ -86,8 +93,10 @@ go_test(
     race = "on",
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
+        "//agentplane/central_sampler/internal/actions",
         "//agentplane/central_sampler/internal/codemode",
         "//agentplane/central_sampler/internal/content",
         "//agentplane/central_sampler/internal/executor",
@@ -103,8 +112,11 @@ go_test(
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/history_service/api/ingress:session_ingress_go_proto",
         "//agentplane/identity/auth",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:command_go_proto",
+        "//agentplane/proto:delegation_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
         "//agentplane/proto:identity_go_proto",
@@ -119,8 +131,10 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )
 

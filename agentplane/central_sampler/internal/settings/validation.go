@@ -64,6 +64,14 @@ func prefixValidationError(prefix string, err error) error {
 }
 
 func (s Settings) Validate() error {
+	if s.Actions != nil {
+		if strings.TrimSpace(s.Actions.Target) == "" {
+			return invalidSetting("actions.target", "is required when actions is configured")
+		}
+		if err := s.Actions.TLS.Validate(); err != nil {
+			return prefixValidationError("actions.tls", err)
+		}
+	}
 	if err := auth.ValidateServiceCallers(s.ServiceCallers); err != nil {
 		return prefixValidationError("service_callers", err)
 	}

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
@@ -23,18 +23,30 @@ import (
 // CodeModeHost binds sampler ownership and tool execution to the shared host.
 type CodeModeHost struct {
 	*codemode.Manager
-	store *sessionstore.Store
+	store   *sessionstore.Store
+	actions *actions.Client
 }
 
-func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *sessionstore.Store) *CodeModeHost {
-	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store: store}
+func NewCodeModeHost(parent context.Context, settings samplersettings.Settings, store *sessionstore.Store, actionClient *actions.Client) *CodeModeHost {
+	return &CodeModeHost{Manager: codemode.NewManager(parent, settings.CodeModeHost, settings.Logs, time.Duration(settings.RPCTimeoutSeconds)*time.Second, settings.CodeModeObservationTimeout()), store: store, actions: actionClient}
 }
 
 func (m *CodeModeHost) OpenSession(ctx context.Context, conversationID string, owner sessionstore.Owner, executor *executor.Executor) (*CodeMode, error) {
-	if executor == nil {
-		return nil, errors.New("code-mode executor is required")
-	}
 	code := &CodeMode{store: m.store, owner: owner, executor: executor}
+	if m.actions != nil {
+		retained, err := m.store.GetSessionForConversation(ctx, owner)
+		if err != nil {
+			return nil, err
+		}
+		identity, err := retained.ExecutionIdentity()
+		if err != nil {
+			return nil, err
+		}
+		code.actions, err = m.actions.Bind(retained.ID, identity)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var journal codemode.Journal
 	if m.store != nil {
 		journal = codeJournal{store: m.store, owner: owner}
@@ -88,7 +100,7 @@ func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, requ
 		return empty, empty, fmt.Errorf("unsupported code-mode delegate type %q", request.Type)
 	}
 	invocation := request.Invocation
-	if invocation.ToolName.Name == "" || invocation.ToolName.Namespace != nil {
+	if invocation.ToolName.Name == "" {
 		return empty, empty, errors.New("code-mode tool invocation has no supported tool name")
 	}
 	requestJournal, err := jsonwire.Object(invocation)
@@ -101,6 +113,16 @@ func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, requ
 	intent, err := r.store.RecordNested(ctx, r.owner, sessionstore.IntentTool, requestJournal)
 	if err != nil {
 		return empty, empty, err
+	}
+	if invocation.ToolName.Namespace != nil {
+		return r.invokeAction(ctx, intent, invocation)
+	}
+	if r.executor == nil {
+		reply := codemode.DelegateResult{Status: "error", Message: "this tool requires an attached environment"}
+		if err := r.store.FinishNested(ctx, r.owner, intent, map[string]any{"error": reply.Message}); err != nil {
+			return empty, empty, err
+		}
+		return reply, reply, nil
 	}
 	result, err := r.executor.Invoke(ctx, invocation.ToolName.Name, invocation.Input)
 	var rejected *toolcontract.Rejection

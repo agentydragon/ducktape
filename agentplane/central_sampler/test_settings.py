@@ -40,6 +40,25 @@ def settings_data() -> dict[str, Any]:
     }
 
 
+def test_actions_are_optional_and_only_accept_service_mtls() -> None:
+    assert Settings(**settings_data()).actions is None
+    configured = Settings.model_validate(
+        {
+            **settings_data(),
+            "actions": {"target": "actions:8080", "tls": {"workload_api_socket": "unix:///run/spire/api.sock"}},
+        }
+    )
+    assert configured.actions is not None
+    assert configured.actions.tls.workload_api_socket == "unix:///run/spire/api.sock"
+    for actions in (
+        {"target": "actions:8080"},
+        {"target": " ", "tls": {"workload_api_socket": "unix:///run/spire/api.sock"}},
+        {"target": "actions:8080", "tls": {}, "token_file": "/run/token"},
+    ):
+        with pytest.raises(ValidationError):
+            Settings.model_validate({**settings_data(), "actions": actions})
+
+
 def test_provider_phase_budgets_are_optional_and_independent() -> None:
     settings = Settings(**settings_data())
     assert settings.gateway_tls is not None

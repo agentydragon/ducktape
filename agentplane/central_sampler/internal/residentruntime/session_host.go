@@ -5,8 +5,10 @@ import (
 	"errors"
 	"sync"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	"google.golang.org/protobuf/proto"
 )
 
 type liveHost struct {
@@ -40,9 +42,17 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner sessi
 	if err != nil {
 		return nil, err
 	}
-	executor, closeTransport, err := r.newExecutor(ctx, r.store, owner, session, r.settings)
-	if err != nil {
+	configuration := new(samplerpb.CreateSessionRequest)
+	if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 		return nil, err
+	}
+	var executor *executor.Executor
+	closeTransport := func() error { return nil }
+	if configuration.GetExecutor() != nil {
+		executor, closeTransport, err = r.newExecutor(ctx, r.store, owner, session, r.settings)
+		if err != nil {
+			return nil, err
+		}
 	}
 	code, err := r.codeHost.OpenSession(ctx, owner.ConversationID, owner, executor)
 	if err != nil {

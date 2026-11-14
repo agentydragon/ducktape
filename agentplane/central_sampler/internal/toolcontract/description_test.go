@@ -286,3 +286,18 @@ func TestParseWaitArgumentsAppliesCodexDefaults(t *testing.T) {
 func equalIntPointer(left, right *int) bool {
 	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
+
+func TestActionHostDefinitionRetainsCompleteCatalogSchema(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","$defs":{"choice":{"oneOf":[{"const":"a"},{"const":"b"}]}},"properties":{"choice":{"$ref":"#/$defs/choice"}},"additionalProperties":false}`)
+	namespace := "example-actions"
+	definition, err := HostActionDefinition("example-actions__choose", protocol.ToolName{Name: "choose", Namespace: &namespace}, "Choose a value.", schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.Name != "example_actions__choose" || definition.ToolName.Name != "choose" || *definition.ToolName.Namespace != namespace || !strings.Contains(definition.Description, string(schema)) {
+		t.Fatalf("Action lost catalog name or schema: %+v", definition)
+	}
+	if definition.InputSchema != nil || definition.OutputSchema != nil {
+		t.Fatal("passed an unsupported complete schema to the pinned host")
+	}
+}

@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/historyexport",
+        "//agentplane/central_sampler/internal/actions",
         "//agentplane/central_sampler/internal/residentruntime",
         "//agentplane/central_sampler/internal/rpc",
         "//agentplane/central_sampler/internal/sessionstore",

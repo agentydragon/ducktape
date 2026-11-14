@@ -22,6 +22,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/actionresult"
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 )
 
@@ -419,7 +420,9 @@ func TestSessionDelegationResultIsReturnedAsStructuredContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := succeededResult(stored, pb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION)
+	request := testRequest(pb.ActionState_ACTION_STATE_SUCCEEDED)
+	request.Execution = &pb.Execution{Result: stored}
+	result, err := actionresult.Result(request, pb.ExecutorKind_EXECUTOR_KIND_SESSION_DELEGATION, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
+type Actions struct {
+	Target string         `json:"target"`
+	TLS    peertls.Config `json:"tls"`
+}
+
 type Settings struct {
+	Actions                              *Actions                    `json:"actions,omitempty"`
 	ServiceCallers                       []string                    `json:"service_callers,omitempty"`
 	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
 	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`

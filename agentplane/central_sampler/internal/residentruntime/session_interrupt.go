@@ -28,11 +28,15 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner se
 	delegatesPending := false
 	if live != nil {
 		delegatesPending = live.code.HasDelegates()
-		live.executor.StopDispatch()
+		if live.executor != nil {
+			live.executor.StopDispatch()
+		}
 		cells, cleanupErr = live.code.Interrupt(cleanupCtx)
-		var processErr error
-		processes, processErr = live.executor.InterruptAll(cleanupCtx)
-		cleanupErr = errors.Join(cleanupErr, processErr)
+		if live.executor != nil {
+			var processErr error
+			processes, processErr = live.executor.InterruptAll(cleanupCtx)
+			cleanupErr = errors.Join(cleanupErr, processErr)
+		}
 		if detachErr := live.code.Detach(cleanupCtx); detachErr != nil {
 			cleanupErr = errors.Join(cleanupErr, detachErr)
 		}

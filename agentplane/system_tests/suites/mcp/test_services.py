@@ -156,6 +156,20 @@ async def test_dispatcher_central_setup_tool_and_retained_answer(
 
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
+async def test_central_sampler_action_wait_keeps_other_code_mode_cells_live(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, operator_bff: httpx.AsyncClient
+) -> None:
+    await central_sampler.delegated_action_wait_keeps_code_mode_live(
+        cluster,
+        tmp_path,
+        scripted,
+        Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-actions"),
+        operator_bff,
+    )
+
+
+@pytest.mark.scripted_model
+@pytest.mark.timeout(600)
 async def test_pod_central_sampler_exec_resumes_after_sandbox_suspend_resume(
     cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream
 ) -> None:

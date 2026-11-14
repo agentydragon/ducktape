@@ -10,8 +10,11 @@ from pathlib import Path
 from uuid import uuid4
 
 import grpc
+import httpx
 import pytest
+from google.protobuf.json_format import ParseDict
 
+from agentplane.action_service.api.contracts import action_service_pb2
 from agentplane.app.testing.client import Client
 from agentplane.central_sampler.api import sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
@@ -21,6 +24,7 @@ from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.requests import ResponsesRequest
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.central_sampler import (
     MODEL,
     CentralStack,
@@ -33,6 +37,7 @@ from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
+from agentplane.system_tests.scenarios import mcp
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import ModelRequest, Reasoning, ShellCall, Text, ToolOutput
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -984,6 +989,133 @@ async def gateway_roll_keeps_live_central_read_and_turn(
             )
             + "\n"
         )
+
+
+async def _pending_action_by_message(operator_bff: httpx.AsyncClient, message: str) -> action_service_pb2.ActionRequest:
+    async with asyncio.timeout(15):
+        while True:
+            response = await operator_bff.get(
+                "/upstream/actions/v1/action-requests", params={"state": "ACTION_STATE_DECISION_PENDING"}
+            )
+            assert response.status_code == 200
+            requests = ParseDict(response.json(), action_service_pb2.ListActionRequestsResponse())
+            matches = [
+                request
+                for request in requests.action_requests
+                if (argument := request.arguments.fields.get("message")) is not None
+                and argument.string_value == message
+            ]
+            if matches:
+                assert len(matches) == 1, matches
+                return matches[0]
+            await asyncio.sleep(0.1)
+
+
+async def delegated_action_wait_keeps_code_mode_live(
+    cluster: Cluster, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor, operator_bff: httpx.AsyncClient
+) -> None:
+    """An Identity-backed central Session waits on a real Action while another cell runs."""
+    session_id, command_id = str(uuid4()), str(uuid4())
+    message = f"central-sampler-action-{uuid4()}"
+    async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
+        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        assert isinstance(model, CodexModel)
+        spec = session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                    executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+                )
+            ),
+            cwd=executor.cwd,
+            model=MODEL,
+        )
+        await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec, setup_script=":\n"),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await deployed.dispatcher.SubmitInput(
+            session_dispatcher_pb2.SubmitInputRequest(
+                session_id=session_id,
+                expected_sandbox_uid=deployed.sandbox_uid,
+                command_id=command_id,
+                text="Call the echo Action and report its result.",
+            ),
+            metadata=deployed.metadata,
+            timeout=15,
+        )
+        await _wait_for_setup(deployed, session_id)
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        action_cell = (
+            '// @exec: {"yield_time_ms": 1}\n'
+            "const result = await tools.test_everything__echo({message: "
+            + json.dumps(message)
+            + "});\ntext(JSON.stringify(result));"
+        )
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("submit-echo", "exec", action_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        assert request.native.client_metadata.session_id == session_id
+        running = next(output for output in request.tool_outputs if output.call_id == "submit-echo")
+        assert any(block.startswith("Script running with cell ID ") for block in running.blocks), running.blocks
+
+        pending = await _pending_action_by_message(operator_bff, message)
+        assert pending.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
+        assert pending.action.group == mcp_servers.EVERYTHING_GROUP
+        assert pending.action.name == mcp_servers.ECHO
+        assert pending.arguments.fields["message"].string_value == message
+
+        concurrent_cell = 'text("concurrent cell completed while the Action waits");'
+        async with request._exchange as exchange:
+            await exchange.send(
+                *responses_sse.response_stream(
+                    [responses_sse.CustomToolCall("concurrent-cell", "exec", concurrent_cell)], model=MODEL
+                ).events
+            )
+        request = await asyncio.wait_for(model.request(), timeout=30)
+        concurrent = next(output for output in request.tool_outputs if output.call_id == "concurrent-cell")
+        assert any(block.startswith("Script completed") for block in concurrent.blocks), concurrent.blocks
+        assert "concurrent cell completed while the Action waits" in "\n".join(concurrent.blocks)
+        pending = await _pending_action_by_message(operator_bff, message)
+        assert pending.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
+
+        identity_data = json.loads(await cluster.kubectl("get", "identity", deployed.sandbox, "-o", "json"))
+        identity = identity_pb2.Identity(name=deployed.sandbox, uid=identity_data["metadata"]["uid"])
+
+        def assert_attribution(receipt: action_service_pb2.ActionRequest) -> None:
+            assert receipt.HasField("caller_identity")
+            assert receipt.caller_identity == identity
+            assert receipt.WhichOneof("provenance") == "session_provenance"
+            assert receipt.session_provenance.session_id == session_id
+            assert receipt.delegating_actor.WhichOneof("actor") == "service_spiffe_id"
+            assert receipt.delegating_actor.service_spiffe_id == "spiffe://agentplane/central-sampler"
+
+        assert_attribution(pending)
+        await mcp._decide_pending(operator_bff, pending.id, action_service_pb2.VERDICT_ALLOW)
+
+        request, action_text, _, action_output = await _follow_code_mode_cell(
+            model, request, "submit-echo", timeout_s=120
+        )
+        assert "Script completed" in action_text, action_text
+        assert message in action_text, action_text
+        assert "Script completed" in "\n".join(action_output.blocks), action_output
+        await model.reply(request, Text("The echo Action completed."))
+        await _wait_for_turn_status(deployed, session_id, command_id, event_pb2.TURN_STATUS_COMPLETED)
+        await _wait_for_folded_turn(deployed, session_id, command_id)
+
+        terminal_response = await operator_bff.get(f"/upstream/actions/v1/action-requests/{pending.id}")
+        assert terminal_response.status_code == 200
+        terminal = mcp._bff_request(terminal_response)
+        assert terminal.state == action_service_pb2.ACTION_STATE_SUCCEEDED
+        assert terminal.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
+        assert_attribution(terminal)
+        assert terminal.arguments.fields["message"].string_value == message
+        mcp._assert_echoed(terminal.execution.result, message)
 
 
 async def gateway_crash_settles_live_central_read_and_accepts_next_input(
