@@ -17,7 +17,7 @@ from agentplane.egress.platform_routes import PLATFORM_ROUTES_LISTEN_ADDRESS, Pl
 from agentplane.egress.sidecar_config import Proxy, Settings, WorkloadRoute
 from util.net import Listener, listen_tcp
 
-_BINARY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"
+_BINARY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/sidecar/cmd/egress-sidecar_/egress-sidecar"
 
 
 class SidecarProcess:

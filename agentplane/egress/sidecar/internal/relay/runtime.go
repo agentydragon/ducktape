@@ -1,4 +1,4 @@
-package main
+package relay
 
 import (
 	"context"
@@ -15,31 +15,34 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/observability"
 )
 
-func main() {
+// Run loads the sidecar configuration, initializes its transports, and serves until shutdown.
+// Its exit codes are consumed by the process wrapper in cmd/main.go.
+func Run() int {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	c, err := loadConfig(os.Getenv)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return 2
 	}
 	s, err := newSidecar(c)
 	if err != nil {
 		slog.Error("egress sidecar transport setup failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	shutdownTracing, err := observability.Init(ctx, "egress-sidecar")
 	if err != nil {
 		slog.Error("egress sidecar tracing setup failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	err = s.run(ctx)
 	shutdownTracing()
 	if err != nil {
 		slog.Error("egress sidecar stopped", "error", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func newSidecar(c config) (*sidecar, error) {

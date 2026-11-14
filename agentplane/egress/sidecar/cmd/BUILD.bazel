@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "egress-sidecar",
+    srcs = ["main.go"],
+    pure = "on",
+    visibility = ["//agentplane/egress/sidecar:__pkg__"],
+    deps = ["//agentplane/egress/sidecar/internal/relay:runtime"],
+)
