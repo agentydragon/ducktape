@@ -74,6 +74,11 @@ wall-time win; reject its promotion. A shorter exhaustion budget changes coverag
 and remains manual. One prepared KVM cold/warm pair saves 8.79% native time but
 exposes unsafe shared-data ownership; private-data v2 remains unmeasured. These
 results prioritize owner-specific graph selection and retained case witnesses.
+The [current backend applicability audit](../system_tests/debug/common_backend_contracts.md)
+finds BUILD edits in 33 of 46 recent backend-input PRs. Its first concrete class
+is App handler/server changes, with direct route tests and real App/Dispatcher/
+History witnesses. That class is only 3/46 PRs; qualify broader applicability
+and the complete required gate before claiming the median goal.
 Do not expand a global replacement list just to make more historical PRs
 eligible. Implementation-plus-owner-test changes must be accounted
 for structurally, and their owner tests must remain required. Test-only, shared
