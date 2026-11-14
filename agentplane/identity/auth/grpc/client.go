@@ -49,12 +49,15 @@ type ClientInterceptors struct {
 	Stream grpc.StreamClientInterceptor
 }
 
-// DialDelegated calls target using the destination-audience token at tokenPath and an explicit per-call Delegation
+// DialDelegated calls target using a service SVID or destination-audience token and an explicit per-call Delegation
 // envelope. It has no ordinary Bearer interceptor and disables retries. The token file is read for each RPC so
 // projected-token rotation is observed.
 func DialDelegated(target, tokenPath string, timeout time.Duration, transport *peertls.ClientTLS, interceptors ClientInterceptors) (*grpc.ClientConn, error) {
-	if target == "" || tokenPath == "" || timeout <= 0 {
-		return nil, errors.New("target, token file and a positive timeout are required")
+	if target == "" || timeout <= 0 {
+		return nil, errors.New("target and a positive timeout are required")
+	}
+	if err := transport.ValidateCaller(tokenPath, ""); err != nil {
+		return nil, err
 	}
 	credentials, err := transport.Credentials()
 	if err != nil {
@@ -68,7 +71,7 @@ func DialDelegated(target, tokenPath string, timeout time.Duration, transport *p
 	clientOptions := []grpc.DialOption{
 		grpc.WithTransportCredentials(credentials),
 		observability.GRPCClientOption(),
-		grpc.WithPerRPCCredentials(delegatedCredentials{tokenPath: tokenPath}),
+		grpc.WithPerRPCCredentials(delegatedCredentials{tokenPath: tokenPath, svid: transport.UsesSVID()}),
 		grpc.WithChainUnaryInterceptor(unaryInterceptors...),
 		grpc.WithDisableRetry(),
 	}
@@ -78,7 +81,10 @@ func DialDelegated(target, tokenPath string, timeout time.Duration, transport *p
 	return grpc.NewClient(target, clientOptions...)
 }
 
-type delegatedCredentials struct{ tokenPath string }
+type delegatedCredentials struct {
+	tokenPath string
+	svid      bool
+}
 
 func (c delegatedCredentials) GetRequestMetadata(ctx context.Context, _ ...string) (map[string]string, error) {
 	encoded, ok := ctx.Value(delegationContextKey{}).([]byte)
@@ -88,6 +94,9 @@ func (c delegatedCredentials) GetRequestMetadata(ctx context.Context, _ ...strin
 	metadata, _ := metadata.FromOutgoingContext(ctx)
 	if len(metadata.Get("authorization")) != 0 || len(metadata.Get(auth.DelegationMetadataKey)) != 0 {
 		return nil, ErrDelegationContext
+	}
+	if c.svid {
+		return map[string]string{auth.DelegationMetadataKey: string(encoded)}, nil
 	}
 	data, err := os.ReadFile(c.tokenPath)
 	if err != nil {
@@ -103,7 +112,7 @@ func (c delegatedCredentials) GetRequestMetadata(ctx context.Context, _ ...strin
 	}, nil
 }
 
-func (delegatedCredentials) RequireTransportSecurity() bool { return false }
+func (c delegatedCredentials) RequireTransportSecurity() bool { return c.svid }
 
 type tokenFileError struct{ message string }
 
