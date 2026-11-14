@@ -432,6 +432,14 @@ class Actions(Construct):
             path="/etc/agentplane-actions/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
+        # Projection may create the volume arrays when no OAuth Secret is mounted. It must follow
+        # every ordinary mount so those arrays cannot replace the serving TLS or settings volumes.
+        if props.orchestration_v1 is not None or props.session_delegation is not None:
+            workload.project_tokens(
+                "peer-tokens",
+                _PEER_TOKEN_DIR,
+                {"dispatcher": self.dispatcher_audience, "history": self.history_audience},
+            )
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)
@@ -689,12 +697,6 @@ class Actions(Construct):
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
             container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
-        if self.env.actions.orchestration_v1 is not None or self.env.actions.session_delegation is not None:
-            workload.project_tokens(
-                "peer-tokens",
-                _PEER_TOKEN_DIR,
-                {"dispatcher": self.dispatcher_audience, "history": self.history_audience},
-            )
         return workload
 
     def _add_network_policy(self) -> None:

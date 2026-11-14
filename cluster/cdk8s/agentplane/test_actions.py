@@ -101,6 +101,42 @@ def test_action_service_exposes_only_grpc(staging_manifests: list[dict[str, Any]
     )
 
 
+def test_peer_tokens_preserve_settings_and_tls_without_optional_secret_mounts(scratch_app: App) -> None:
+    props = replace(
+        staging.ENV.actions,
+        oauth_secret_items=(),
+        bearer_mcp_mounts=(),
+        web_push=None,
+        github_mcp_client_secret_name=None,
+        mcp_servers={},
+        mcp_client_metadata=None,
+    )
+    assert props.orchestration_v1 is not None
+    env = replace(staging.ENV, actions=props)
+    chart = Chart(scratch_app, "actions-without-secrets", disable_resource_name_hashes=True)
+    actions.Actions(
+        chart,
+        "actions",
+        env,
+        database_url=EnvValue.from_value("postgres://unused"),
+        history=history_service.service(env.namespace),
+        history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+        placement=None,
+        registry_secret_name=None,
+    )
+    docs = Cdk8sTesting.synth(chart)
+    pod = one(doc for doc in docs if doc["kind"] == "Deployment")["spec"]["template"]["spec"]
+    container = one(container for container in pod["containers"] if container["name"] == "actions")
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {mount["mountPath"]: volumes[mount["name"]] for mount in container["volumeMounts"]}
+    config_path = one(entry for entry in container["env"] if entry["name"] == "AGENTPLANE_ACTIONS_CONFIG_FILE")["value"]
+    assert mounts[config_path.rsplit("/", 1)[0]]["configMap"]["name"] == "actions-settings"
+    assert any(volume.get("secret", {}).get("secretName") == "actions-workload-tls" for volume in mounts.values())
+    assert any("projected" in volume for volume in mounts.values())
+
+
 def test_action_replica_alert_uses_environment_namespace(scratch_app: App) -> None:
     env = replace(staging.ENV, namespace="agentplane-test")
     chart = Chart(scratch_app, "actions", disable_resource_name_hashes=True)
