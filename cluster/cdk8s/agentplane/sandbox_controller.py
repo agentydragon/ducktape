@@ -1,4 +1,4 @@
-"""The Sandbox Controller (agentplane/sandbox_controller) reconciles state and optional workspace
+"""The Sandbox Controller (agentplane/environments) reconciles state and optional workspace
 PVCs, WorkloadCredentials and Pod or VM incarnations for Sandboxes using their referenced Identities."""
 
 from __future__ import annotations

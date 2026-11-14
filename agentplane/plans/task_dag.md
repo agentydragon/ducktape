@@ -3907,13 +3907,13 @@ no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
 (pre-cutover leftovers) is done and left the plan; the other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                                                                                                                               |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                                                      |
+| Plan stage                      | DAG node                                                                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2. Layout under any service map | `GO_LAYOUT_FIXES`                                                                                                                                                                                            |
 | 3. The two-binary moves         | `EXPLICIT_RESUME_BUDGET_REMOVAL`, `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                                                 |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                                                       |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                                           |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                                                       |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                             |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                 |
 
 The remaining stage 3 moves are not released. Sessions re-checking the live Identity landed in #16373.
 
