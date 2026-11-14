@@ -722,10 +722,66 @@ every caller imports their owning modules directly. PolicyObjects is an async re
 manager, retaining cancellation-safe cleanup. Static comparison at the extraction source
 preserves all 26 moved assertions and the original scenario list. This is not runtime proof.
 
-The native target grows from four to seven cases. Devel `22d099a9` subsequently adds two
-ordinary Pod authorization/lifecycle cases, so the integrated union is **23 cases: native seven
-plus App-backed sixteen**. Both new devel cases remain in the complement and required suite.
+The native target grows from four to seven cases. Devel `22d099a9` subsequently adds the
+explicit native-Session binding-grant case and changes the existing idle-Pod resume case.
+The integrated union is **22 cases: native seven plus App-backed fifteen**. The new case and
+the changed case remain in the complement and required suite. An AST comparison against
+`b0ca37f6` confirms exactly one addition and no removals; the seven native function identities
+exactly match the seven complement deselections.
 The old 21-case and 49-case measurements above retain their original source-specific counts.
 Run the updated partition and explicitly named helper libraries before a new frozen full-graph
 screen. Keep both candidates manual; no elapsed saving or selector promotion follows from
 moving scenarios or counting assertions.
+
+The first new full-system candidate at `d74c813c`,
+[B6](https://app.buildbuddy.io/invocation/12d78e6c-8773-4e1f-91f5-24b2d93d34a4), ends in
+`BUILD_FAILURE`: 16 physical test actions produce 50 JUnit cases, 49 passing and one failing,
+with no skipped/error cases. The declared 51-case expectation mistakenly counted the changed
+idle-Pod resume case as another addition. Preserve that planning error and the original plan;
+do not use this attempt for timing adoption or silently change its declared denominator.
+No control arm runs. VM KVM, Firecracker, the fifteen-case Pod complement and both Services
+partitions pass. The native shared-account Egress case exposes an App-only administrative
+reader credential; the extracted Egress helper also lacks a direct protobuf dependency for
+its mypy stub chain. Both are concrete source issues, not observer or cache failures.
+
+The reader repair makes the scenario choose its explicit configured ServiceAccount. App-owned
+cases retain their App-bound token and real EgressAdmin authorization witness; native cases
+use the fixture's live Pod-bound native identity. Only fixture configuration adds that exact
+native reader to its allowlist. Production authorization and all impersonation, revocation
+and denial assertions remain. The new modules explicitly declare protobuf for type checking.
+
+[Focused repaired qualification](https://app.buildbuddy.io/invocation/5822cb08-38a8-4eaa-b6c2-d05a3e17f20c)
+uses `d74c813c` plus the retained eight-file repair overlay. All seven native Pod cases pass
+in 213.9s, the renderer passes in 28.9s, and all nine explicitly named helper libraries and
+their aspects pass. That overlay temporarily uses the native reader in App-owned scenarios
+too; the final source restores the explicit App reader there. The native identity and fixture
+allowlist in the passing native exposure are unchanged. This is focused coverage evidence,
+not a complete-graph or matched timing result.
+
+### Direct guest cleanup and startup qualification
+
+The `d74c813c` ordinary CI exposure also fails during Codex guest Execution startup. Its
+cleanup subsequently reports `EADDRINUSE` from a bind probe. Captured artifacts do not
+establish whether that original socket was a live listener or a closed connection in
+`TIME_WAIT`. The cleanup witness now attempts a connection and requires refusal; the
+prelaunch availability witness still binds. A real Linux TCP test rejects an open listener,
+closes an accepted connection from the server side, proves the old bind probe reports
+`EADDRINUSE`, and proves the closed-listener witness succeeds. It does not weaken the
+cleanup requirement that the QEMU listener must have stopped accepting connections.
+
+[Final explicit-reader and cleanup checks](https://app.buildbuddy.io/invocation/e29be447-22be-4a53-9702-f5d88da13aef)
+pass the fresh real-socket test and all seven explicitly named libraries/aspects at
+`d74c813c` plus the retained final reader/cleanup overlay. Native Bazel elapsed is 33.997s;
+the socket test is 16.5s. The original guest failure still needs its own rerun.
+
+The separately reviewable startup repair is
+[PR #16411](https://github.com/agentydragon/ducktape/pull/16411). It preserves successful
+fence proof when a canceled managed launch joins its exact late-started process, allowing
+embedded Execution to distinguish an expected fully fenced stop from an unknown fence.
+Unproven and failed fences remain terminal. Its
+[full focused race-enabled validation](https://app.buildbuddy.io/invocation/1ea07d98-03c0-4138-908f-a0c302b21c9d)
+passes supervision, service and PID1 coordinator targets, including first-adoption
+cancellation/retry. Exact-head PR CI and the original guest rerun remain separate evidence;
+no fleet rerun-rate improvement is established. An injected replacement-start probe whose
+production applicability is unproven is preserved in
+[issue #16412](https://github.com/agentydragon/ducktape/issues/16412).

@@ -19,6 +19,9 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.tracing import tracer
 
+# Generated protocol stubs import protobuf types that mypy resolves through direct deps.
+# gazelle:include_dep @pypi//protobuf
+
 POLICY_READY_SECONDS = 120.0
 
 
