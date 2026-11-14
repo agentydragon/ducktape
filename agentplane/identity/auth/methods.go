@@ -31,11 +31,13 @@ const (
 
 // Rule is who may call one gRPC method.
 type Rule struct {
-	kind            ruleKind
-	resolver        *Resolver
-	subjectResolver SubjectResolver
-	accounts        sets.Set[Account]
-	delegation      *delegationPolicy
+	kind              ruleKind
+	resolver          *Resolver
+	subjectResolver   SubjectResolver
+	accounts          sets.Set[Account]
+	delegation        *delegationPolicy
+	serviceCallers    map[string]struct{}
+	serviceDelegation *serviceDelegationPolicy
 }
 
 // Public admits a call without reading its bearer. Only the standard health service is public: Kubernetes
@@ -117,6 +119,38 @@ func (m Methods) WithDelegation(
 	return methods, nil
 }
 
+// WithServiceCallers adds exact direct service peers to named methods only.
+func (m Methods) WithServiceCallers(methodNames []string, callers []string) (Methods, error) {
+	return m.withServiceRules(methodNames, func(rule Rule) (Rule, error) { return rule.AllowServiceCallers(callers) })
+}
+
+// WithServiceDelegation adds method-scoped service actor grants independently of direct callers.
+func (m Methods) WithServiceDelegation(methodNames []string, actors []ServiceDelegator, identities IdentityUIDReader) (Methods, error) {
+	return m.withServiceRules(methodNames, func(rule Rule) (Rule, error) { return rule.AllowServiceDelegationFrom(actors, identities) })
+}
+
+func (m Methods) withServiceRules(methodNames []string, configure func(Rule) (Rule, error)) (Methods, error) {
+	methods := make(Methods, len(m))
+	maps.Copy(methods, m)
+	seen := make(map[string]struct{}, len(methodNames))
+	for _, method := range methodNames {
+		if _, duplicate := seen[method]; duplicate {
+			return nil, fmt.Errorf("service method %q is repeated", method)
+		}
+		seen[method] = struct{}{}
+		rule, ok := methods[method]
+		if !ok {
+			return nil, fmt.Errorf("service method %q is not served", method)
+		}
+		configured, err := configure(rule)
+		if err != nil {
+			return nil, fmt.Errorf("service method %q: %w", method, err)
+		}
+		methods[method] = configured
+	}
+	return methods, nil
+}
+
 // HealthMethods lists the standard health service's methods as Public.
 func HealthMethods() Methods {
 	return Methods{
@@ -176,6 +210,12 @@ func sameAdmission(a, b Admission) bool {
 		second, ok := b.(DelegatedIdentityAdmission)
 		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&
 			proto.Equal(first.Provenance, second.Provenance)
+	case ServiceAdmission:
+		second, ok := b.(ServiceAdmission)
+		return ok && first == second
+	case DelegatedServiceIdentityAdmission:
+		second, ok := b.(DelegatedServiceIdentityAdmission)
+		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller && proto.Equal(first.Provenance, second.Provenance)
 	case IdentityAdmission:
 		second, ok := b.(IdentityAdmission)
 		return ok && first == second
@@ -277,6 +317,9 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 		resolveContext, cancel = context.WithTimeout(ctx, admissionTimeout)
 		defer cancel()
 	}
+	if admitted, service, err := rule.admitService(ctx, resolveContext); service {
+		return admitted, err
+	}
 	md, _ := metadata.FromIncomingContext(ctx)
 	authorization := md.Get("authorization")
 	delegations := md.Get(DelegationMetadataKey)
@@ -349,6 +392,11 @@ const httpMethodName = "/http"
 // AdmitRequest admits an HTTP request by this Rule exactly as the interceptors admit an RPC, from
 // its Authorization header, its base64 delegation header and its verified TLS peer. The returned
 // context carries the same typed Admitted result and, for a direct ServiceAccount, Caller.
+// AdmitContext authenticates a native transport context with this rule.
+func (r Rule) AdmitContext(ctx context.Context, admissionTimeout time.Duration) (context.Context, error) {
+	return Methods{httpMethodName: r}.admit(ctx, httpMethodName, admissionTimeout)
+}
+
 func (r Rule) AdmitRequest(request *http.Request, admissionTimeout time.Duration) (context.Context, error) {
 	return Methods{httpMethodName: r}.admit(requestContext(request), httpMethodName, admissionTimeout)
 }
