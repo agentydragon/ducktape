@@ -974,6 +974,8 @@ flowchart LR
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
+    KUBERNETES_DECOUPLING_DESIGN[Decision, unscheduled: how far to decouple from Kubernetes]
+    KUBERNETES_DECOUPLING_DESIGN -. related test-weight options .-> K3S_BUNDLED_SERVICES_SPIKE
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -1529,6 +1531,24 @@ or discard the reduced mode, with normal-layout coverage retained for those boun
 Keep the expensive workflow manual-only; this spike does not authorize a production topology
 change, removal of existing coverage or a language rewrite. Keep one documented invocation path
 per supported test tier.
+
+### `KUBERNETES_DECOUPLING_DESIGN` — how far to decouple from Kubernetes
+
+**Decision, unscheduled; operator request, 2026-11-14 UTC.** The operator asked for a plan on making
+Agentplane more decoupleable from Kubernetes, for example for lighter integration tests, with Flux
+still configuring it through something like Crossplane, and with environments that execute commands
+without Kubernetes; he is unsure it is a good idea. [The plan](kubernetes_decoupling.md) inventories
+the coupling and compares an API-server-only test tier (O1), removing incidental coupling behind
+existing service APIs (O2), an environment backend without Kubernetes (O3) and moving the record
+store ([D4](architecture_overview.md#four-directions), O4).
+
+**Recommendation:** O2 first, O1 on the existing process fixtures, O3 as a design only if
+environments off Kubernetes are wanted as a product capability, O4 only on measured remaining test
+cost. **Question for review:** is the payoff lighter tests (O1 and O2), or environments off
+Kubernetes as a product capability (O3), which changes the
+[principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
+`PRIVILEGED_BACKEND_AUTH_DESIGN` and `RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` stay independently
+decidable.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
 
