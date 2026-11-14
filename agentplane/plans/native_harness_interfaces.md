@@ -107,28 +107,78 @@ Each would need either a common abstraction the evidence does not support, which
 [common protocol](../docs/common_protocol.md#harness-differences-remain-evidence) forbids, or a
 per-kind command path, which does not exist.
 
-## What stays harness-neutral regardless
+## The neutral floor
 
 Routing and admission never read harness output: Dispatcher routes by the Session record, its
-placement and the live Identity. What the platform needs from output is a **control floor**, which
-every kind can state with evidence:
+placement and the live Identity. The floor is what the platform itself acts on. Names are today's
+unless marked new; fields are a sketch.
 
-- **Command outcome** (`CommandAdmitted`, `CommandFailed`, `CommandNoop`): Dispatcher receipts,
-  `observe_input`, notices.
-- **Input confirmation**: notices and `observe_input`. Correlating Claude's coalesced or
-  tool-continuation input needs the pending commands, which only the Runtime holds.
-- **Turn boundaries and status**: interrupt fencing, `idle_since`, `read_turns`. The Runtime mints
-  Claude's turn IDs, so this fact cannot come from Claude.
-- **Applied model and effort**, **process and setup lifecycle**, and **`ConversationReconciled`**
-  after process loss.
-- **Native frames**, verbatim.
+**Commands in:** `SubmitInput{text}`, `InterruptTurn{turn_id}`, `ChangeModel{model}`,
+`ChangeReasoningEffort{effort}`, each with a caller-chosen `command_id`. Everything else is per kind.
+
+**Facts out**, written by the Runtime adapters or the central sampler:
+
+| Fact                                                                         | Fields                                                                           | Read by                                                                        | Why it cannot stay native                                                                                              |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `CommandAdmitted`                                                            | the whole `Command`                                                              | Dispatcher (`RUNNER_ADMITTED` receipt), notices, fold, `observe_input`         | It is the Runtime's own journal commit; no harness frame exists.                                                       |
+| `CommandSettled` (new; see [below](#did-the-command-execute))                | `command_id`, outcome `EFFECTED`/`FAILED`/`NOOP`, `reason`, `turn_id` for inputs | the Runtime's pending set, notices, fold, `observe_input`                      | Mapping a native request back to its commands lives only in the Runtime journal's private `native_request` tables.     |
+| `TurnStarted`, `TurnCompleted`                                               | `turn_id`, `model`; `status`, `error`                                            | interrupt fencing, `idle_since`, `read_turns`, `observe_input`, sidebar status | The Runtime mints Claude's turn IDs; Claude's protocol has none.                                                       |
+| `ModelChanged`, `ReasoningEffortChanged`                                     | applied value and previous value                                                 | the journal checkpoint, the model picker                                       | Codex applies at the next `turn/start`, Claude on a control response; the checkpoint commits atomically with the fact. |
+| `HarnessStarted`/`Exited`/`Lost`/`LaunchFailed`, `Setup*`, `JournalReopened` | pid, resumed, exit code, setup output                                            | Runtime status, journal view lifecycle rows, recovery                          | Process facts the harness cannot report about itself.                                                                  |
+| `ConversationReconciled`                                                     | `turn_id`, per native item ID: retained, absent, unknown or revised              | journal view badges after process loss                                         | Compares what the Runtime journaled with what native history kept after a restart.                                     |
+| `Native`                                                                     | direction, exact line                                                            | journal view, decoders, debugging                                              | It is the native form.                                                                                                 |
+
+Leaving the floor: `ItemStarted`, `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`,
+`ToolOutputDelta`, `ItemCompleted`. `CommandSettled` absorbs `HarnessUserMessageConfirmed`,
+`CommandFailed`, `CommandNoop` and the command IDs on `ModelChanged`, `ReasoningEffortChanged` and
+`TurnCompleted`.
+The sampler's `BoundaryRecord` and `ExecutionProgress` are its kind's own records.
+
+### Did the command execute?
+
+Tracked today, per layer:
+
+- **Dispatcher:** `QUEUED_IN_DISPATCHER` → `DELIVERING_TO_RUNNER` → `RUNNER_ADMITTED`, which stores
+  the Runtime's `CommandAdmitted` receipt, or `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN`. The
+  `HARNESS_CONFIRMED` and `NO_OP` states have no writer.
+- **Runtime:** its journal's `command` row records admission, whether a native write was planned,
+  and a terminal cursor. Five signals settle a command: `HarnessUserMessageConfirmed` (inputs),
+  `ModelChanged`, `ReasoningEffortChanged`, `TurnCompleted.interrupted_by_command_id`, and
+  `CommandFailed`/`CommandNoop`. An unsettled command keeps the Sandbox busy (`idle_since`), and
+  after a restart a dispatched but unsettled command stays pending rather than being resent.
+- **Readers:** the History fold collapses the five into `PENDING`/`EFFECTED`/`FAILED`/`NOOP`
+  (`ThreadCommandOutcome`), which drives the app's last progress light ("Agent confirmed message",
+  "Applied"). The Notification inbox keeps one notice in flight until it is confirmed or failed
+  ([`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](task_dag.md#notification_command_outcome_design--notice-delivery-without-reading-conversation-history)).
+  `observe_input` reports `input_confirmed`, then the correlated turn.
+
+"Confirmed" already means different things per kind. Claude's evidence is the model response's
+`message_start` naming the input, or the tool-result cohort it joined. Codex's is the `turn/start`
+response; an input joining a running turn sits in that turn's pending input until the current
+model response and its tool calls finish ([Codex notes](../docs/harness_protocols.md#tools-steering-and-interrupt-1)).
+
+Options:
+
+1. **Keep it as today:** five settling signals and one "confirmed" whose meaning differs by kind.
+2. **One settlement in the floor (recommended):** `CommandSettled`, defined by the Runtime's own
+   boundary, "the harness took it and the Runtime holds no more work for it", not "it reached the
+   model". Same evidence as today; readers stop mapping five signals; the fold's outcome enum
+   becomes the producer's. Whether the model saw it is a per-kind reading of `Native`.
+3. **Admitted only:** drop settlement from the floor. The Runtime still computes it for idle and
+   restart, so nothing is saved there; notices lose their pacing gate; the app light and
+   `observe_input` need per-kind decoders plus a newly published native-request-to-command map.
+
+Settlement is produced only where that map lives: the Runtime adapters, and the sampler for its
+Sessions. Readers keep getting it from History. Whether the Dispatch record also carries it, so
+notices and `observe_input` stop scanning History, stays with
+[`DISPATCHER_HARNESS_CONFIRMATION`](task_dag.md#dispatcher_harness_confirmation--settle-admitted-inputs-on-a-canonical-confirmation).
 
 ## Options
 
 - **A. Grow the neutral surface.** Add per-harness operations to the common set as `Compact` was,
   and keep content Events. Cheapest; keeps the triple storage and the leaks above, and each new
   capability bends the common set.
-- **B. Neutral control floor, native content, per-kind commands.** Described below.
+- **B. The neutral floor above, native content, per-kind commands.** Described below.
 - **C. Raw pass-through.** Callers send native frames; the Runtime journals and forwards them; every
   consumer decodes per kind. It loses the control floor: nothing could fence a Claude interrupt
   without Runtime-minted turn IDs, and notices, `observe_input` and `idle_since` lose their facts.
@@ -192,7 +242,7 @@ Against:
 
 ## Recommendation
 
-B, as two independent halves. Input: add the per-kind command oneof; its first slice moves `Compact`
+B, with the [floor above](#the-neutral-floor) and settlement option 2, as two independent halves. Input: add the per-kind command oneof; its first slice moves `Compact`
 into `SamplerCommand`, proving the shape with no new native behavior, and later operations arrive
 with whichever freezer capability is selected. Output: decide together with
 `JOURNAL_REPRESENTATION_DESIGN` and land after its journal view. Renaming or splitting the Runtime's
