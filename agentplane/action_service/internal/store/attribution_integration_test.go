@@ -14,13 +14,13 @@ func TestDelegationAttributionRoundTripsBesideEffectiveCaller(t *testing.T) {
 	f := newFixture(t)
 	owner := IdentityPrincipal{Identity: Identity{Name: "test-effective-identity", UID: "test-effective-identity-uid"}}
 	sessionID, connectionID, grantID := uuid.New(), uuid.New(), uuid.New()
-	serviceAccountActor := func(podName, podUID string) *action_servicepb.DelegatingActor {
-		return &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceAccount{ServiceAccount: &action_servicepb.DelegatingServiceAccount{
+	serviceAccountActor := func(podName, podUID string) *action_servicepb.DelegatingServiceAccount {
+		return &action_servicepb.DelegatingServiceAccount{
 			Identity: &identitypb.ServiceAccountIdentity{
 				Account: &identitypb.ServiceAccount{Namespace: "test-actor-namespace", Name: "test-actor"}, Uid: "test-actor-uid",
 			},
 			PodName: podName, PodUid: podUID,
-		}}}
+		}
 	}
 	for _, test := range []struct {
 		key         string
@@ -29,18 +29,18 @@ func TestDelegationAttributionRoundTripsBesideEffectiveCaller(t *testing.T) {
 		{
 			key: "session-service-actor",
 			attribution: &DelegationAttribution{
-				Actor: &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{
+				Actor: action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{
 					ServiceSpiffeId: "spiffe://test.example/delegator",
 				}},
-				SessionID: &sessionID,
+				Provenance: SessionProvenance{SessionID: sessionID},
 			},
 		},
 		{key: "session-workload-actor-without-pod-binding", attribution: &DelegationAttribution{
-			Actor: serviceAccountActor("", ""), SessionID: &sessionID,
+			Actor: action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceAccount{ServiceAccount: serviceAccountActor("", "")}}, Provenance: SessionProvenance{SessionID: sessionID},
 		}},
 		{key: "connection-workload-actor", attribution: &DelegationAttribution{
-			Actor:        serviceAccountActor("test-actor-pod", "test-actor-pod-uid"),
-			ConnectionID: &connectionID, ConnectionGrantID: &grantID,
+			Actor:      action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceAccount{ServiceAccount: serviceAccountActor("test-actor-pod", "test-actor-pod-uid")}},
+			Provenance: ConnectionProvenance{ConnectionID: connectionID, GrantID: grantID},
 		}},
 	} {
 		t.Run(test.key, func(t *testing.T) {
@@ -60,16 +60,16 @@ func TestDelegationAttributionRoundTripsBesideEffectiveCaller(t *testing.T) {
 		t.Fatalf("read by effective Identity and idempotency key = %+v, %v", first, err)
 	}
 	connectionAttribution := &DelegationAttribution{
-		Actor:        &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/other"}},
-		ConnectionID: &connectionID, ConnectionGrantID: &grantID,
+		Actor:      action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/other"}},
+		Provenance: ConnectionProvenance{ConnectionID: connectionID, GrantID: grantID},
 	}
 	if _, err := f.Submit(t.Context(), owner, input("session-service-actor"), Admission{RequestID: uuid.New(), Attribution: connectionAttribution}); conflictReason(err) != ConflictIdempotencyKeyUsed {
 		t.Fatalf("attribution changed idempotency behavior: %v", err)
 	}
 	first, err = f.List(t.Context(), owner, ListFilter{IdempotencyKey: stringPointer("session-service-actor")})
 	if err != nil || len(first) != 1 || !sameAttribution(first[0].Attribution, &DelegationAttribution{
-		Actor:     &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/delegator"}},
-		SessionID: &sessionID,
+		Actor:      action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/delegator"}},
+		Provenance: SessionProvenance{SessionID: sessionID},
 	}) {
 		t.Fatalf("original attribution after conflicting retry = %+v, %v", first, err)
 	}
@@ -97,15 +97,14 @@ func TestDirectAndLegacyWritersReadWithoutAttribution(t *testing.T) {
 
 func TestInvalidDelegationAttributionStoresNothing(t *testing.T) {
 	f := newFixture(t)
-	sessionID, connectionID := uuid.New(), uuid.New()
+	sessionID := uuid.New()
 	for _, test := range []struct {
 		name        string
 		attribution *DelegationAttribution
 	}{
-		{name: "missing actor", attribution: &DelegationAttribution{SessionID: &sessionID}},
-		{name: "missing grant", attribution: &DelegationAttribution{
-			Actor:        &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/delegator"}},
-			ConnectionID: &connectionID,
+		{name: "missing actor", attribution: &DelegationAttribution{Provenance: SessionProvenance{SessionID: sessionID}}},
+		{name: "missing provenance", attribution: &DelegationAttribution{
+			Actor: action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/delegator"}},
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -125,8 +124,7 @@ func sameAttribution(got, want *DelegationAttribution) bool {
 	if got == nil || want == nil {
 		return got == want
 	}
-	return proto.Equal(got.Actor, want.Actor) && reflect.DeepEqual(got.SessionID, want.SessionID) &&
-		reflect.DeepEqual(got.ConnectionID, want.ConnectionID) && reflect.DeepEqual(got.ConnectionGrantID, want.ConnectionGrantID)
+	return proto.Equal(&got.Actor, &want.Actor) && reflect.DeepEqual(got.Provenance, want.Provenance)
 }
 
 func stringPointer(value string) *string { return &value }

@@ -102,12 +102,13 @@ func requestView(request store.ActionRequest) (*action_servicepb.ActionRequest, 
 		Decision: decision, Execution: execution,
 	}
 	if attribution := request.Attribution; attribution != nil {
-		view.DelegatingActor = attribution.Actor
-		if attribution.SessionID != nil {
-			view.Provenance = &action_servicepb.ActionRequest_SessionProvenance{SessionProvenance: &delegationpb.SessionProvenance{SessionId: attribution.SessionID.String()}}
-		} else if attribution.ConnectionID != nil && attribution.ConnectionGrantID != nil {
+		view.DelegatingActor = &attribution.Actor
+		switch provenance := attribution.Provenance.(type) {
+		case store.SessionProvenance:
+			view.Provenance = &action_servicepb.ActionRequest_SessionProvenance{SessionProvenance: &delegationpb.SessionProvenance{SessionId: provenance.SessionID.String()}}
+		case store.ConnectionProvenance:
 			view.Provenance = &action_servicepb.ActionRequest_ConnectionProvenance{ConnectionProvenance: &delegationpb.ConnectionProvenance{
-				ConnectionId: attribution.ConnectionID.String(), GrantId: attribution.ConnectionGrantID.String(),
+				ConnectionId: provenance.ConnectionID.String(), GrantId: provenance.GrantID.String(),
 			}}
 		}
 	}

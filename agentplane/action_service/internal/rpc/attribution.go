@@ -16,10 +16,10 @@ func recordedDelegation(proof auth.Admission) (*store.DelegationAttribution, err
 	var envelope *delegationpb.Delegation
 	switch proof := proof.(type) {
 	case auth.DelegatedServiceIdentityAdmission:
-		attribution.Actor = &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: proof.Actor.SPIFFEID}}
+		attribution.Actor = action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: proof.Actor.SPIFFEID}}
 		envelope = proof.Provenance
 	case auth.DelegatedIdentityAdmission:
-		attribution.Actor = &action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceAccount{ServiceAccount: &action_servicepb.DelegatingServiceAccount{
+		attribution.Actor = action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceAccount{ServiceAccount: &action_servicepb.DelegatingServiceAccount{
 			Identity: &identitypb.ServiceAccountIdentity{
 				Account: &identitypb.ServiceAccount{Namespace: proof.Actor.Account.Namespace, Name: proof.Actor.Account.Name},
 				Uid:     proof.Actor.ServiceAccountUID,
@@ -36,7 +36,7 @@ func recordedDelegation(proof auth.Admission) (*store.DelegationAttribution, err
 		if err != nil {
 			return nil, unauthenticated
 		}
-		attribution.SessionID = &id
+		attribution.Provenance = store.SessionProvenance{SessionID: id}
 	case *delegationpb.Delegation_Connection:
 		connectionID, err := uuid.Parse(provenance.Connection.GetConnectionId())
 		if err != nil {
@@ -46,7 +46,7 @@ func recordedDelegation(proof auth.Admission) (*store.DelegationAttribution, err
 		if err != nil {
 			return nil, unauthenticated
 		}
-		attribution.ConnectionID, attribution.ConnectionGrantID = &connectionID, &grantID
+		attribution.Provenance = store.ConnectionProvenance{ConnectionID: connectionID, GrantID: grantID}
 	default:
 		return nil, unauthenticated
 	}

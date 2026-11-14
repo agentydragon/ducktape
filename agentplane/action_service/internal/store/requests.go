@@ -64,9 +64,6 @@ func validateAttribution(attribution *DelegationAttribution) error {
 	if attribution == nil {
 		return nil
 	}
-	if attribution.Actor == nil {
-		return invalid("delegation actor is required")
-	}
 	switch actor := attribution.Actor.GetActor().(type) {
 	case *action_servicepb.DelegatingActor_ServiceSpiffeId:
 		if actor.ServiceSpiffeId == "" {
@@ -82,10 +79,10 @@ func validateAttribution(attribution *DelegationAttribution) error {
 	default:
 		return invalid("delegating actor kind is required")
 	}
-	session := attribution.SessionID != nil
-	connection := attribution.ConnectionID != nil && attribution.ConnectionGrantID != nil
-	if session == connection || (attribution.ConnectionID == nil) != (attribution.ConnectionGrantID == nil) {
-		return invalid("delegation attribution needs a Session ID or a Connection and grant ID")
+	switch attribution.Provenance.(type) {
+	case SessionProvenance, ConnectionProvenance:
+	default:
+		return invalid("delegation provenance is required")
 	}
 	return nil
 }
@@ -97,16 +94,16 @@ func encodeAttribution(attribution *DelegationAttribution) (any, any, any, any, 
 	if err := validateAttribution(attribution); err != nil {
 		return nil, nil, nil, nil, err
 	}
-	actor, err := proto.Marshal(attribution.Actor)
+	actor, err := proto.Marshal(&attribution.Actor)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	var sessionID, connectionID, connectionGrantID any
-	if attribution.SessionID != nil {
-		sessionID = *attribution.SessionID
-	}
-	if attribution.ConnectionID != nil {
-		connectionID, connectionGrantID = *attribution.ConnectionID, *attribution.ConnectionGrantID
+	switch provenance := attribution.Provenance.(type) {
+	case SessionProvenance:
+		sessionID = provenance.SessionID
+	case ConnectionProvenance:
+		connectionID, connectionGrantID = provenance.ConnectionID, provenance.GrantID
 	}
 	return actor, sessionID, connectionID, connectionGrantID, nil
 }
@@ -118,19 +115,17 @@ func decodeAttribution(actorProto []byte, sessionID, connectionID, connectionGra
 	if actorProto == nil {
 		return nil, fmt.Errorf("delegation provenance has no actor")
 	}
-	var actor action_servicepb.DelegatingActor
-	if err := proto.Unmarshal(actorProto, &actor); err != nil {
+	attribution := new(DelegationAttribution)
+	if err := proto.Unmarshal(actorProto, &attribution.Actor); err != nil {
 		return nil, err
 	}
-	attribution := &DelegationAttribution{Actor: &actor}
-	if sessionID.Valid {
-		attribution.SessionID = &sessionID.UUID
-	}
-	if connectionID.Valid {
-		attribution.ConnectionID = &connectionID.UUID
-	}
-	if connectionGrantID.Valid {
-		attribution.ConnectionGrantID = &connectionGrantID.UUID
+	switch {
+	case sessionID.Valid && !connectionID.Valid && !connectionGrantID.Valid:
+		attribution.Provenance = SessionProvenance{SessionID: sessionID.UUID}
+	case !sessionID.Valid && connectionID.Valid && connectionGrantID.Valid:
+		attribution.Provenance = ConnectionProvenance{ConnectionID: connectionID.UUID, GrantID: connectionGrantID.UUID}
+	default:
+		return nil, fmt.Errorf("delegation attribution needs a Session ID or a Connection and grant ID")
 	}
 	if err := validateAttribution(attribution); err != nil {
 		return nil, err

@@ -28,7 +28,7 @@ func TestSessionAttributionUsesOnlyTheAdmittedServiceAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recorded.SessionID == nil || *recorded.SessionID != id || recorded.ConnectionID != nil || recorded.Actor.GetServiceSpiffeId() != peertls.CentralSamplerURI {
+	if recorded.Provenance != (store.SessionProvenance{SessionID: id}) || recorded.Actor.GetServiceSpiffeId() != peertls.CentralSamplerURI {
 		t.Fatalf("admitted Session attribution = %+v", recorded)
 	}
 	// The receipt needs only the logical Session and exact Identity. No environment is involved,
@@ -70,7 +70,7 @@ func TestRecordedWorkloadActorKeepsItsIndependentPodProof(t *testing.T) {
 		Identity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "components", Name: "mcp-edge"}, Uid: "account-uid"},
 		PodName:  "mcp-edge-pod", PodUid: "pod-uid",
 	}
-	if !proto.Equal(recorded.Actor.GetServiceAccount(), want) || recorded.ConnectionID == nil || *recorded.ConnectionID != connectionID || recorded.ConnectionGrantID == nil || *recorded.ConnectionGrantID != grantID || recorded.SessionID != nil {
+	if !proto.Equal(recorded.Actor.GetServiceAccount(), want) || recorded.Provenance != (store.ConnectionProvenance{ConnectionID: connectionID, GrantID: grantID}) {
 		t.Fatalf("recorded workload actor = %+v", recorded)
 	}
 }
