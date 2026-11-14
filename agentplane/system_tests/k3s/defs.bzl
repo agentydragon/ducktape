@@ -87,6 +87,7 @@ _CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local
 _CENTRAL_SERVICES_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services-native.json"
 _CENTRAL_BUDGET_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-budget.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
+_MCP_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-services.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
 _VM_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm-native.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
@@ -198,6 +199,7 @@ _STACKS = {
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
     "deletion": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "mcp": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
+    "mcp_services": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_FIXTURE_IMAGES)),
     "vm": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "vm_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _VM_NATIVE_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),

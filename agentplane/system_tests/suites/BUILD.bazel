@@ -374,6 +374,25 @@ k3s_suite(
     deps = _POD_DEPS,
 )
 
+# The native trust target owns these four cases in this manual graph. Keep the remaining
+# App-backed cases and their existing bindings; qualify their union before changing the gate.
+k3s_suite(
+    name = "test_pod_without_trust_candidate",
+    srcs = ["test_pod.py"],
+    args = [
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+    ],
+    case_slots = 6,
+    exec_properties = {"EstimatedComputeUnits": "8"},
+    main = "test_pod.py",
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = _POD_DEPS,
+)
+
 # This suite scales the Dispatcher and deletes controller Pods; it needs its own no-MCP stack.
 k3s_suite(
     name = "test_dispatcher",
