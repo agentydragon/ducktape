@@ -10010,6 +10010,44 @@
       "finding": "The per-Sandbox Lease is also the Gateway's connection Lease: claiming it allocates the ConnectionEpoch that fences Gateway unary, admission and Executor calls and guards EndpointSlice publication. Calling the current WatchState from the Controller would replace the Gateway's epoch.",
       "plan_change": "gateway-runtime-lease-removal became runtime-facts-off-lease (stage 1: move fact readers, then delete fact publication and the codec). Deleting the connection Lease moved to gateway-replica-ownership (stage 5), which must name the replacement call fence and EndpointSlice owner.",
       "operator_decision": "2026-11-14 02:36 UTC, on the card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\" the operator chose \"Any replica, no epoch\": the Runtime fences only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Plan: new stage 1 item gateway-connection-lease-removal; gateway-replica-ownership narrows to the Dispatcher's ownership Lease and the Gateway's name."
+    },
+    "target_binaries": {
+      "reviewed_at_utc": "2026-11-14T05:40:00+00:00",
+      "checked_origin_devel": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
+      "agentplane_delta_since_pin": "None: no commit between the plan pin and this devel touches agentplane/.",
+      "operator_inputs": [
+        {
+          "at_utc": "2026-11-14T05:11",
+          "text": "So, what's the plan on how we will structure binaries? One binary that handles sandbox controller kubernetes stuff and also communicates with the env runtimes in those sandboxes for running commands and starting native sessions in hosted harnesses and codex exec server stuff? And a separate binary handles the routing of commands to *sessions*, which would go either to central sampler or to hosted harnesses through the first binary?"
+        },
+        {
+          "at_utc": "2026-11-14T05:18",
+          "text": "I'm sure you can find a good solution. I think something like \"please keep this sandbox alive for me until time X\" would be probably reasonable."
+        },
+        {
+          "at_utc": "2026-11-14T05:19",
+          "text": "Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"."
+        },
+        {
+          "at_utc": "2026-11-14T05:21",
+          "text": "Yes (to closing #16311 and #16318 once their surviving parts are in this plan)."
+        },
+        {
+          "at_utc": "2026-11-14T05:29",
+          "text": "Operator, 2026-11-14 05:29 UTC, card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"."
+        }
+      ],
+      "verified": [
+        "`runner_gateway/main.go` builds the Dispatcher, EnvironmentService, the lifecycle manager, the Runtime proxy and the Executor into one process and registers them on one gRPC server.",
+        "`dispatcher.ProxyRunner` dials `sandboxapi.ControlServiceTargetTemplate()` for every Runtime call, including from the same Pod.",
+        "`dispatcherAccount` proves the delivery token belongs to the serving Pod (TokenReview Pod name and UID, ServiceAccount); `internal/gateway` admits Runtime mutations only from that account.",
+        "`lifecycle.Manager.applyResume` reserves the Dispatcher-database budget for both explicit and automatic wakes; `eligibilityFor` denies every explicit resume except direct Pod-bound `operator_callers`.",
+        "Automatic wake refuses when `spec.running` is false or `status.suspendedBy` is `Requested`; operator resume may undo a requested stop.",
+        "The Sandbox Controller keeps idle timers in memory from its first sighting of the Runtime's `idle-since` and quiesces with `ifIdleSince`; the Runtime aborts if anything arrived since.",
+        "Runtime blockers: per Session active turn, pending input and setup; Runtime-wide Admission, ExecutorRelay (open Executor call or session) and Bootstrap.",
+        "The Dispatcher README states a central sampler Session bypasses execution-Sandbox readiness and wake; `central_sampler` has no resume or wake call, and its executor retries `Unavailable` until a deadline.",
+        "#16311 (draft, plans/environment_service_controller_merge.md) kept the Gateway for Dispatcher and proxy and had the controller call back for the budget; #16318 (draft, stacked on it) added that controller-only budget RPC."
+      ]
     }
   }
 }

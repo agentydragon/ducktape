@@ -23861,9 +23861,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -23885,13 +23883,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23909,13 +23904,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23933,13 +23925,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23957,13 +23946,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -23981,13 +23967,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24005,13 +23988,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24029,13 +24009,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24053,13 +24030,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24077,13 +24051,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24101,13 +24072,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24125,13 +24093,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24149,13 +24114,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24173,9 +24135,7 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
@@ -24197,13 +24157,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24221,13 +24178,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy",
         "gateway-connection-lease-removal"
       ],
@@ -24246,13 +24200,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
@@ -24270,13 +24221,10 @@
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
+        "agentplane/sandbox_controller/internal/runtimeproxy"
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
         "runner-gateway-connections-proxy"
       ],
       "disposition": "candidate boundary",
