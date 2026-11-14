@@ -154,10 +154,15 @@ container limits stop meeting the production resource contract.
 
 ## Agentplane opt in
 
-- Gateway `central_sampler` configures one gRPC target and rotating caller token file. Its separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner serves inside the Sandbox. Default
-  empty settings preserve native operation and do not enable the new transport.
-- The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
-  account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity. With
+- Gateway `central_sampler` configures one gRPC target and either a rotating caller token file or
+  `gateway_tls` with the Gateway server URI, trust bundle, and central sampler client SVID. Its
+  separate `executor_callers` allowlist authorizes access to the same `Executor` API the Runner
+  serves inside the Sandbox. Default empty settings preserve native operation and do not enable the
+  new transport.
+- The sampler exports to History with either its rotating caller token or `history_tls` configured
+  with the History server URI, trust bundle, and central sampler client SVID. History explicitly
+  allows the sampler account or service in its ingress policy; it retains the distinct executor
+  Sandbox identity. With
   `ingress.sampler_identity_callers`, History also admits the sampler pushing a Session's journal
   as a delegating actor for the Identity the Session executes as ([SPEC.md](SPEC.md#identity-and-admission)).
 - The app's `HARNESS_CENTRAL_SAMPLER` offer maps to the `central_sampler_v1` placement and offers
@@ -170,10 +175,12 @@ container limits stop meeting the production resource contract.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.
-  A Responses connection with `auth.type: agentplane_ingress` (its `credential_file` the projected
-  workload token) is Agentplane's LLM ingress: the sampler samples a Session executing as an
-  Identity as a delegating actor for it, which the ingress attributes the call to given
-  `central_sampler_identity_callers`. `bearer` connections are never delegated to.
+  Responses `agentplane_ingress` connections use either the projected workload token in
+  `credential_file` or `tls` configured with the LLM ingress server URI, trust bundle, and central
+  sampler client SVID. The sampler samples a Session executing as an Identity as a delegating actor
+  for it, which the ingress attributes the call to given `central_sampler_identity_callers`. The
+  typed Identity and Session envelope is retained in either mode; SVID mode carries no Authorization
+  header. `bearer` connections are never delegated to.
 
 Readiness for the first open still requires a running executor. Binding is fixed to the Sandbox UID. After suspend/resume or replacement of its execution Pod,
 initialization can adopt the authenticated new incarnation, abandon old execution handles, and

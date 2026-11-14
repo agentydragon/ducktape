@@ -122,6 +122,19 @@ func TestProviderRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
 	}
 }
 
+func TestProviderOmitsAuthorizationHeaderForSVIDAuthentication(t *testing.T) {
+	authorizationPresent := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, authorizationPresent = r.Header[http.CanonicalHeaderKey("Authorization")]
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	_, _ = Sample(t.Context(), server.Client(), server.URL, "", []byte(`{}`), Config{Dialect: DialectLite}, nil, nil, false, protocol.ProviderHooks{})
+	if authorizationPresent {
+		t.Fatal("SVID-authenticated request carried an Authorization header")
+	}
+}
+
 func TestResponsesTruncatedStreamIsProviderTransient(t *testing.T) {
 	response, err := readStream(t.Context(), strings.NewReader("data: {\"type\":\"response.created\"}\n\n"), nil, protocol.ProviderHooks{})
 	var transient *protocol.ProviderTransientError

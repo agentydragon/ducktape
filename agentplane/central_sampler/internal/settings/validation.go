@@ -11,6 +11,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 )
 
 const (
@@ -130,12 +131,29 @@ func (s Settings) Validate() error {
 			return invalidSetting("allowed_accounts", "must use namespace/name")
 		}
 	}
-	if (s.HistoryTarget == "") != (s.HistoryTokenFile == "") {
-		return invalidSetting("history_target,history_token_file", "must be configured together")
+	history := s.HistoryTarget != ""
+	if !history && (s.HistoryTokenFile != "" || s.HistoryTLS != nil) {
+		return invalidSetting("history_target,history_token_file,history_tls", "History transport settings require history_target")
+	}
+	if history {
+		if s.HistoryTLS != nil && s.HistoryTLS.ServerURI != peertls.HistoryIngressURI {
+			return invalidSetting("history_tls.server_uri", "must name the History ingress service")
+		}
+		if err := s.HistoryTLS.ValidateCaller(s.HistoryTokenFile, peertls.CentralSamplerURI); err != nil {
+			return invalidSettingWithCause("history_target,history_token_file,history_tls", "must configure exactly one bearer token or central sampler service SVID, with verified History TLS", err)
+		}
 	}
 	gateway := s.GatewayTarget != ""
-	if gateway != (s.GatewayTokenFile != "") {
-		return invalidSetting("gateway_target,gateway_token_file", "must be configured together")
+	if !gateway && (s.GatewayTokenFile != "" || s.GatewayTLS != nil) {
+		return invalidSetting("gateway_target,gateway_token_file,gateway_tls", "Gateway transport settings require gateway_target")
+	}
+	if gateway {
+		if s.GatewayTLS != nil && s.GatewayTLS.ServerURI != peertls.GatewayURI {
+			return invalidSetting("gateway_tls.server_uri", "must name the Runner Gateway service")
+		}
+		if err := s.GatewayTLS.ValidateCaller(s.GatewayTokenFile, peertls.CentralSamplerURI); err != nil {
+			return invalidSettingWithCause("gateway_target,gateway_token_file,gateway_tls", "must configure exactly one bearer token or central sampler service SVID, with verified Gateway TLS", err)
+		}
 	}
 	direct := s.DirectExecutorTarget != ""
 	if gateway == direct {

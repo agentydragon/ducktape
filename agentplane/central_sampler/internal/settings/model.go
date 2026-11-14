@@ -21,9 +21,9 @@ type AuthType string
 
 const (
 	AuthTypeBearer AuthType = "bearer"
-	// AuthTypeAgentplaneIngress is Agentplane's LLM ingress: the credential is the sampler's
-	// projected workload token, and a Session executing as an Identity is sampled as a delegating
-	// actor for that Identity (providerAuthorization).
+	// AuthTypeAgentplaneIngress is Agentplane's LLM ingress: it uses the sampler's projected
+	// workload token or central sampler service SVID, and a Session executing as an Identity is
+	// sampled as a delegating actor for that Identity (providerAuthorization).
 	AuthTypeAgentplaneIngress AuthType = "agentplane_ingress"
 	AuthTypeAnthropicAPIKey   AuthType = "anthropic_api_key"
 )
@@ -157,11 +157,39 @@ func (c ConnectionConfig) Validate() error {
 			return invalidSettingWithCause("tls", "connection TLS settings are invalid", err)
 		}
 	}
-	if (c.Auth.Credential == "") == (c.Auth.CredentialFile == "") {
-		return invalidSetting("auth", "connection auth requires exactly one of credential and credential_file")
-	}
 	switch c.Auth.Type {
-	case AuthTypeBearer, AuthTypeAgentplaneIngress, AuthTypeAnthropicAPIKey:
+	case AuthTypeBearer, AuthTypeAnthropicAPIKey:
+		if (c.Auth.Credential == "") == (c.Auth.CredentialFile == "") {
+			return invalidSetting("auth", "connection auth requires exactly one of credential and credential_file")
+		}
+		if c.TLS != nil && c.TLS.UsesSVID() {
+			return invalidSetting("tls", "service SVID authentication is only supported for agentplane_ingress connections")
+		}
+	case AuthTypeAgentplaneIngress:
+		hasCredential := c.Auth.Credential != "" || c.Auth.CredentialFile != ""
+		if c.Auth.Credential != "" && c.Auth.CredentialFile != "" {
+			return invalidSetting("auth", "connection auth requires at most one of credential and credential_file")
+		}
+		if c.TLS != nil && c.TLS.ServerURI != peertls.LLMIngressURI {
+			return invalidSetting("tls.server_uri", "agentplane_ingress connections must verify the LLM ingress service")
+		}
+		if c.TLS != nil && c.TLS.UsesSVID() {
+			if hasCredential {
+				return invalidSetting("auth,tls", "service SVID and bearer credential authentication cannot be combined")
+			}
+			if err := c.TLS.ValidateCaller("", peertls.CentralSamplerURI); err != nil {
+				return invalidSettingWithCause("tls", "connection service SVID caller is invalid", err)
+			}
+		} else {
+			if !hasCredential {
+				return invalidSetting("auth", "agentplane_ingress requires a credential or central sampler service SVID")
+			}
+			if c.TLS != nil {
+				if err := c.TLS.ValidateCaller("configured", ""); err != nil {
+					return invalidSettingWithCause("tls", "connection TLS settings are invalid", err)
+				}
+			}
+		}
 	default:
 		return invalidSetting("auth.type", "connection auth.type must be bearer, agentplane_ingress or anthropic_api_key")
 	}

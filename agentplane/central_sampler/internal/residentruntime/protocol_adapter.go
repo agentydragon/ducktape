@@ -34,9 +34,14 @@ func executionIdentity(session *sessionstore.Session) (*identitypb.Identity, err
 // call. Agentplane's LLM ingress is called as a delegating actor for the Session's execution
 // Identity. A bearer connection is never delegated to.
 func providerAuthorization(connection samplersettings.ConnectionConfig, attribution providerAttribution) (string, map[string]string, error) {
-	credential, err := readProviderCredential(connection)
-	if err != nil {
-		return "", nil, err
+	serviceSVID := connection.Auth.Type == samplersettings.AuthTypeAgentplaneIngress && connection.TLS.UsesSVID()
+	credential := ""
+	if !serviceSVID {
+		var err error
+		credential, err = readProviderCredential(connection)
+		if err != nil {
+			return "", nil, err
+		}
 	}
 	if connection.Auth.Type != samplersettings.AuthTypeAgentplaneIngress {
 		return "Bearer " + credential, map[string]string{"x-agentplane-session-id": attribution.SessionID}, nil
@@ -50,6 +55,9 @@ func providerAuthorization(connection samplersettings.ConnectionConfig, attribut
 	})
 	if err != nil {
 		return "", nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "delegation envelope invalid", "error": err.Error(), "dispatched": false}}
+	}
+	if serviceSVID {
+		return "", map[string]string{auth.DelegationMetadataKey: encoded}, nil
 	}
 	return auth.DelegatedScheme + " " + credential, map[string]string{auth.DelegationMetadataKey: encoded}, nil
 }
