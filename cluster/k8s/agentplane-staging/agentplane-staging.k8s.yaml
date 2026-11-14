@@ -3091,6 +3091,11 @@ data:
         "server_uri": "spiffe://agentplane/session-dispatcher"
       },
       "listen": "0.0.0.0:8080",
+      "listen_tls": {
+        "listen": "0.0.0.0:8083",
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key"
+      },
       "connections": {
         "llm-ingress": {
           "tls": {
@@ -3512,6 +3517,9 @@ spec:
             - containerPort: 8080
               name: grpc
               protocol: TCP
+            - containerPort: 8083
+              name: grpc-tls
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             grpc:
@@ -3631,6 +3639,10 @@ spec:
       port: 8080
       protocol: TCP
       targetPort: 8080
+    - name: grpc-tls
+      port: 8083
+      protocol: TCP
+      targetPort: 8083
   selector:
     cdk8s.io/metadata.addr: agentplane-central-sampler-deployment-c84b5474
   type: ClusterIP
@@ -3752,6 +3764,8 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+            - port: "8083"
               protocol: TCP
 ---
 apiVersion: v1
@@ -10979,6 +10993,10 @@ data:
     metrics_bind_address: :8080
     health_probe_bind_address: :8081
     grpc_bind_address: :8082
+    grpc_tls:
+      listen: :8083
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
     grpc_audience: agentplane-policy
     reader_accounts:
       - agentplane-staging/app
@@ -11060,6 +11078,9 @@ spec:
               protocol: TCP
             - containerPort: 8082
               name: grpc
+              protocol: TCP
+            - containerPort: 8083
+              name: grpc-tls
               protocol: TCP
             - containerPort: 8081
               name: health
@@ -11144,6 +11165,10 @@ spec:
       port: 8082
       protocol: TCP
       targetPort: 8082
+    - name: grpc-tls
+      port: 8083
+      protocol: TCP
+      targetPort: 8083
   selector:
     cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
   type: ClusterIP
@@ -11244,6 +11269,8 @@ spec:
       toPorts:
         - ports:
             - port: "8082"
+              protocol: TCP
+            - port: "8083"
               protocol: TCP
 ---
 apiVersion: monitoring.coreos.com/v1
