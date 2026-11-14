@@ -70,6 +70,15 @@ concern. A standing record is one non-rotating credential with no Pod provenance
 per-incarnation credentials of Sandboxes and boxes: bring standing workloads up to per-incarnation
 credentials, or accept the weaker guarantee everywhere.
 
+### `WORKLOAD_CREDENTIAL_ID_STABILITY` — reconsider a fresh credential ID per binding
+
+Deferred design question from the workload identity cutover (2026-11-12); revisit if credential
+lookup latency is measured as a cost. Each accepted binding gets a fresh `WorkloadCredential` ID, so
+a replacement cannot reuse credentials left on a terminating Pod, VM disk or Firecracker snapshot
+([credential IDs](../docs/workload_authentication.md#workloadcredentials)). Decide whether the
+binding checks alone make that redundant, or whether a stable ID with a Pod-binding check is
+preferable.
+
 ## Haku
 
 ### `HAKU_ACTION_NATIVE_CLIENT` — migrate the existing Haku Action client
@@ -258,7 +267,19 @@ When enabling a hosted harness feature: isolate hosted configuration from determ
 
 ### `DT` — driver-provided declarations and background control
 
-[Driver tools/background plan](driver_tools_and_background.md); reuse Action contracts, preceded by hosted/capture config isolation.
+Deferred pending a real consumer; preceded by `HARNESS_CONFIG_ISOLATION` and `INPUT_DELIVERY`.
+Harness behavior is in [driver tools](../docs/driver_tools.md) and
+[background work](../docs/background_work.md). A driver-declared tool that works outside the Sandbox
+is an ordinary ActionRequest: its identity and schema come from the Action catalog, Decision and
+at-most-one Execution stay separate, configuration selects the Executor, and receipts and durable
+events deliver the result; no MCP registry, parallel `ToolRequest` or harness-specific approval
+object. Harness background work is local runtime state, not an Action Execution: the common floor is
+list and stop by harness ID, correlated to the originating tool call, and a harness task ID is never
+a retry, idempotency or authorization authority. Before either surface lands: one named consumer,
+scripted tests against both pinned harnesses, a mapping of harness declaration and correlation fields
+to Action definition, request and execution, and an explicit unsupported result where a harness
+cannot honor a mutation such as replacing tools mid-thread
+([deferred plan](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/driver_tools_and_background.md)).
 
 ### `HARNESS_MCP_TASKS_EVAL` — compare with Action receipts
 
@@ -318,7 +339,8 @@ Deferred until the operator selects child transcript browsing or independent chi
 The 2026-10-16 selection is native delegation with root-only normalized output, not child Sessions.
 [Completed native evidence](../native/docs/child_sessions.md) establishes visibility and recovery
 boundaries; it does not settle child authorization or independent control. The
-[native discovery plan](native_session_discovery.md) retains the proposed design. Event ingress can
+[native discovery plan](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/native_session_discovery.md), a 2026-10 snapshot, holds the remaining
+characterization matrix and a proposed read-only projection of runner-observed native Sessions. Event ingress can
 index runner-declared children if selected, but does not itself implement discovery, durable identity,
 or access policy. Multiagent authority decisions can use the evidence without requiring child ingestion.
 
@@ -444,13 +466,27 @@ Reopen it only after the design in [#11817](https://github.com/agentydragon/duck
 resolved; then decide its interaction, owner, and reliable History reads before implementation. Thread
 names remain set, changed, and cleared by operators.
 
+### `LAUNCHER_FLEET_VIEW` — workers grouped under their launcher
+
+Operator idea, 2026-10-27, from the `orchestration_v1` design: a fleet view grouping workers under
+the Session or caller that launched them, and subscriptions to a worker's lifecycle ("this Sandbox
+died"). Revisit when agents routinely launch fleets of workers.
+
 ### `T3` — thread search and lookup
 
 Transcript full-text search/lookup remains deferred; ordinary paginated Thread browsing is independent.
 
 ### `ACCESS` — delegated versus brokered external access
 
-[External access design](external_access.md): delegated versus brokered credentials/grants, not decided by current egress wiring.
+Revisit when the access model for an external system is next chosen; not decided by current egress
+wiring. Delegated identity gives the agent a principal the target enforces (Kubernetes RBAC, a GitHub
+App, a scoped token, an egress allowlist), with the credential held by the substituting proxy; a
+brokered credential runs the operator's credential behind an Action, so its policy reimplements the
+target's rules but can express argument-level limits and human review. The proposed rule: delegate
+whenever the target's RBAC or an allowlist can express the boundary, broker only what it cannot. The
+[deferred notes](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/external_access.md), written before Agentplane Identities replaced Sandbox
+ServiceAccounts, also hold a revocation gate for minted grants, a per-system inventory and an
+authorization-system evaluation protocol; they select no product, service or identity migration.
 
 ### `EGRESS_CHANGE` — agent-requested egress policy expansion
 
@@ -480,10 +516,37 @@ Session UUID as their key and record the Sandbox UID beside it (operator, 2026-1
 
 ### `API_AGGREGATION` — serve agent-facing records as a Kubernetes aggregated API
 
-Held by the operator, 2026-10-17. [The exploration](api_aggregation_exploration.md) has the candidates and costs.
+Held by the operator, 2026-10-17. [The exploration](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/api_aggregation_exploration.md), a 2026-10-17
+snapshot, has the candidates and costs.
 `ActionRequest`'s workload half is the only identified candidate if a `kubectl`-style client
 surface is wanted. The Action Service already runs in Go. RBAC as sender authorization does not need it: a
 service asks `SubjectAccessReview`, which belongs to the sender-grant and agent-authority choices.
+Keeping the option open costs one column: when the Action Service's schema is rewritten, give
+request rows a per-table transactional version, so a `resourceVersion` watch can be layered later.
+
+## Availability
+
+### `ELECTRIC_MULTI_ACTIVE_HA` — more than one useful Electric replica
+
+Optional and unscheduled; revisit if the operator withdraws the
+[single-replica exception](../docs/electric_single_replica.md) (2026-10-30 PDT). The promising
+topology gives each active instance its own replication slot/stream identity and shape store
+([separate-storage guide](https://electric.ax/docs/sync/guides/upgrading#separate-storage-ephemeral)).
+Before a manifest change, design and accept:
+
+1. Stable instance identity and slot lifecycle: each stream adds a publication and a WAL-retaining
+   slot. Confirm temporary-slot or explicit cleanup in the pinned image, and fit both slots under
+   the [Postgres WAL cap](../../cluster/cdk8s/agentplane/database.py).
+2. Routing every request for one thread's shapes to the same instance across App replicas and
+   connections, with failover and rebalance through the authenticated proxy.
+3. Different stores have different shape handles, so a route change or Pod replacement can return
+   409: verify refetch, subset and live continuation and 503 retry through the real App proxy, and
+   that an old handle is never taken as valid on another instance.
+4. A rolling replacement and a replica failure with two active instances, live shape reads and
+   slot/WAL observations; readiness reflects the topology, and a stopped instance releases or
+   retires its replication resources.
+
+Storage class, routing algorithm, slot cleanup policy and an image upgrade are all unselected.
 
 ## Broader verification inventory
 

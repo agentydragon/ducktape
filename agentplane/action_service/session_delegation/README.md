@@ -79,3 +79,11 @@ This adapter only reuses existing environments and creates no target or caller g
 resume is a reviewed request checked by `EnvironmentService.ResumeEnvironment` against the caller's
 existing `resumePolicy`; it adds no caller authority. Submitted input remains governed separately by
 the backend's wake-on-send policy.
+
+## Acceptance
+
+`//agentplane/system_tests/suites/mcp:test_delegation` drives these Actions from an external MCP
+client through real Connection consent with the integration app scaled to zero;
+`//agentplane/system_tests/suites/mcp:test_parent_delegation` drives them from a parent Session
+through the CLI. Both prescribe the model's calls, so they do not show that an unaided agent finds
+and uses the workflow.

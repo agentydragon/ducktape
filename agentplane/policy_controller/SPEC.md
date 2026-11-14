@@ -71,9 +71,7 @@ UID and resourceVersion preconditions.
 `PolicyService.CreateIdentity`, behind the same writer allowlist, creates an Identity of the
 requested name and description in the policy namespace, with no owner: its creator deletes it.
 `ALREADY_EXISTS` if the name is taken. A launch creates the Identity, grants it PolicySets, then
-creates the environment naming it, as three operations
-([identity plan](../plans/identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits),
-question 11).
+creates the environment naming it, as three operations (operator, 2026-11-11).
 
 `PolicyService.GrantIdentityPolicyBinding`, behind the same allowlist, binds known PolicySets to one
 exact Identity incarnation (name and UID, `NOT_FOUND` for another or a deleting one). The binding's

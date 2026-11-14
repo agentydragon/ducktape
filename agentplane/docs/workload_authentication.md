@@ -93,7 +93,13 @@ The issuer reads the owner reference as data and never reads the owner. Its cont
   (CRD transition rules), so a running incarnation is never re-pointed.
 - **Who writes:** the Sandbox Controller and the Action Service may create, update and delete records
   in their namespace, and Flux applies standing ones; only the Policy Controller may write
-  `workloadcredentials/status`.
+  `workloadcredentials/status`. Each writer has its own upstream gate: who may set
+  `Sandbox.spec.identity`, the Identity caller the Action Service authenticates for a box, and git
+  for a standing record. Flux's kustomize-controller already holds `*`, so a narrower grant to it
+  would record intent without enforcing it; Haku cannot author a record, since the `haku-state`
+  Kustomization impersonates `haku-state-reconciler`, which holds no right on them. A narrower
+  requester could later be admitted by a `ValidatingAdmissionPolicy` calling the CEL `authorizer`
+  for a custom `use` verb on the named Identity.
 
 ### Standing workloads
 
@@ -273,6 +279,10 @@ metadata header. Its server-held LiteLLM key is never exposed to the runner. See
 
 Do not infer that arbitrary callers are admitted, or treat an egress placeholder, source IP, or
 caller-supplied identity header as authentication.
+
+No off-cluster workload holds an SVID: a Secret mount does not reach one, and external MCP clients
+use the MCP edge's OAuth grants bound to an Identity. Delivery to such a workload is designed when
+one needs it; the record and resolver need no change for in-cluster workloads.
 
 For service-mediated caller authorization, use the approved
 [delegated authorization design](delegated_authorization.md). Resource-specific permissions and

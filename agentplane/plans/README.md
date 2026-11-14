@@ -22,19 +22,12 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   objects and data live, the operator's workflows through each, what Agentplane borrows from
   Kubernetes and what each direction keeps or replaces, what is right under every direction, and the
   experiments that would narrow the choice; no direction chosen
-- [Dispatcher and Gateway as one service](dispatcher_gateway_merge.md) — candidate service topology,
-  holder-owned delivery and an immediate-or-fail send, awaiting the delivery-ownership decision; they
-  do not gate the Runner extractions
 - [History tags and History's Sandbox records](sandbox_tags.md) — older Sandbox-scoped History
   proposal; inbox tags ship, but grouping ownership, grants and lifetimes need review for independent
   Sessions before this is treated as an approved prerequisite
-- [Native session discovery](native_session_discovery.md) — remaining harness characterization and
-  deferred shared-session design with identity, attribution and durability gates
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
-- [Electric exception](electric_ha.md) — accepted single replica and current replacement impact, with optional rolling and multi-active HA design boundaries
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
-- [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Session runtime model](session_runtime_model.md) — current environment component boundaries and
   agreed names/layout; future Session vocabulary for environment-bound
   native harnesses, central sampling, execution attachments and backend-specific constraints
@@ -46,17 +39,11 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
-  the target (one `Identity`, three credential forms) and remaining Session/service/app cutover work
-  and identity-lifetime questions; the Sandbox switch is merged in source, rollout and acceptance
-  remain open, and question 11 is settled
+  the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;
+  the Sandbox switch is accepted on staging, and question 11 is settled
 - [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
   worked examples for explicit environment lifecycle grants to Identities, with the operator's
   remaining questions
-- [Workload identity lifecycle](workload_identity_lifecycle.md) — the Kubernetes-token and
-  ServiceAccount-bound paths left on Agentplane APIs, and open questions on backend callers and the
-  app's token
-- [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
-  choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — messaging and
   same-principal delegation shipped; broader cross-principal transcript reads, archive policy and
   Session grouping remain open, and historical Sandbox-scoped examples do not settle the independent
@@ -66,11 +53,6 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   documented in [Session delegation](../action_service/session_delegation/README.md)
 - [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
   follow-ups, browser error codes, attribution, and direct browser access as a later option
-- [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
-  agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
-  cheaper route
-- [Orchestrating agents from an MCP client](mcp_orchestration.md) — P1 `orchestration_v1` is shipped; remaining
-  design covers backend grants per operation and bounds on launcher delegation
 - [History read and follow consumers](history_read_follow.md) — whether the Notification outcome scan
   moves to `FollowSession`, and whether `ReadSessionEvents` folds into it
 - [Storage representations and compression](storage_representations.md) — measured content copies

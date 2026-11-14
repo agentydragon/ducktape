@@ -124,7 +124,7 @@ CLI access, with Actions-first adapters allowed and explicit RPC/CLI extraction 
 not block independent PRs. Required system checks and a documented rollback precede staging changes.
 
 The control-plane deployment target remains rolling updates with at least two replicas, with the
-accepted [Electric exception](electric_ha.md). K3s fixtures remain single-replica; a two-replica
+accepted [Electric exception](../docs/electric_single_replica.md). K3s fixtures remain single-replica; a two-replica
 nested K3s roll and associated RBE kernel change are waived. Arbitrary JS-state restoration and
 the broader runtime redesign remain outside this sprint.
 
@@ -793,8 +793,11 @@ the operator's to choose. Stamping an inbox tag at launch, which presets already
 alternative. Spend limits: see the [approved scope boundary](session_delegation_workflows.md#budget-and-broader-policy-boundaries).
 
 **Operator input, 2026-10-27 UTC (not a decision):** decide "how to specify what's the set of things that an agent
-may allow its launched sandboxes to do": the templates, PolicySets and tags a launcher may give the workers it starts
-([orchestration](mcp_orchestration.md#what-a-launcher-may-let-its-workers-do)).
+may allow its launched sandboxes to do": the templates, PolicySets and tags a launcher may give the workers it starts,
+and how many it may run at once. In `orchestration_v1` the operator approves every launch, so the launch card is the
+bound. Nothing is inherited, which suggests a list of the launcher's own rather than a subset of its grants, so an
+orchestrator without GitHub access could still start a worker holding `common-github-read`; Kubernetes RBAC's `bind`
+verb has this shape, and its counterpart here would grant attaching named PolicySets.
 
 ### `AGENT_SANDBOX_LAUNCH` — constrained agent-requested launch
 
@@ -811,10 +814,10 @@ with the Action Service trusted by the Dispatcher and History ([ADR](../docs/adr
 a grant its backend checks: Session creation and commands after `THREAD_CREATE_AUTHORIZATION` and
 `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`, Session reads after `THREAD_READ_POLICY`, launch after
 `AGENT_SANDBOX_LAUNCH`. The executor then calls as the caller, launcher grants write the backend rule instead of an
-`argument_schema` auto-approval ([target shape](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)), and
+`argument_schema` auto-approval ([target shape](../docs/adr_orchestration_v1.md#why-shape-matching-is-a-stopgap)), and
 `send_message` joins the group. Exit: the Action Service is in neither the Dispatcher's callers and wake callers nor
-History's readers, and no launcher grant matches argument shapes. The older Sandbox-only grant
-sketch in the orchestration plan must be reconciled with `SESSION_ACCESS_GROUPING_DESIGN` and
+History's readers, and no launcher grant matches argument shapes. The original grant sketch targeted
+Sandboxes with a ServiceAccount subject; reconcile it with `SESSION_ACCESS_GROUPING_DESIGN` and
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` before applying it to Environment-independent Sessions; the
 Session permission target and principal representation remain open.
 
@@ -2031,7 +2034,7 @@ operation-scoped grants, delegated caller proof and the effect of revocation on 
 general senders are admitted. Consider RBAC-backed permissions, but choose the authority with the
 multiagent model; the operator prefers verb-over-target rules to shape-matched auto-approval and expects Session
 commands to be RBAC-checked in the Runner Gateway (2026-10-27,
-[orchestration](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)). Include authorization before wake and any required execution-time recheck. The
+[orchestration ADR](../docs/adr_orchestration_v1.md#why-shape-matching-is-a-stopgap)). Include authorization before wake and any required execution-time recheck. The
 resolved environment UID or placement-generation fence is part of `DELIVERY_DESTINATION_CONTRACT`, independent of sender policy.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
@@ -2374,7 +2377,7 @@ an Environment controller merge is an option to evaluate, not a selected design.
 authorization, database and Kubernetes access, watches, scaling, availability, failure and rollout
 boundaries. Decide delivery ownership, fencing, replica failure, ordering and recovery for the
 selected topology before changing existing guarantees.
-The former [Dispatcher/Gateway merge proposal](dispatcher_gateway_merge.md) is historical for its
+The former [Dispatcher/Gateway merge proposal](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/dispatcher_gateway_merge.md) is historical for its
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
 Runtime restructuring does not wait for this decision.
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` remains independent.
@@ -2448,7 +2451,7 @@ open within the Identity model:
   grant it PolicySets, and have the central sampler act for it (`CENTRAL_SESSION_ACTING_DESIGN`);
   who may change or revoke that. An Identity reference is not a credential or authority. The trust
   boundary includes who may create or recreate the Identity, write a `WorkloadCredential` naming it
-  ([lifecycle](workload_identity_lifecycle.md#authorization)) and bind policy to it; a UID pin in
+  ([who writes](../docs/workload_authentication.md#workloadcredentials)) and bind policy to it; a UID pin in
   Dispatcher alone cannot override name-keyed bindings.
 - **Existing and Session-scoped identities.** A Session may name an authorized existing Identity,
   including its Environment's; it never deletes, or implicitly grants to, one it did not create. A
@@ -3060,7 +3063,7 @@ requires a new binding and authorization. Until proven safe, prevent concurrent 
 A reachable runner returns a terminal missing-target outcome for the public Session; offline
 queued acceptance cannot prove membership. Native child IDs are harness-chosen: if exposed, register
 stable runner-chosen public mappings with store and parent identity before publication, and separate visibility
-from independent control. Child projection remains [deferred](native_session_discovery.md); use the
+from independent control. Child projection remains [deferred](task_freezer.md#native_subagent_threads--as-linked-agentplane-threads); use the
 [merged child characterization](../native/docs/child_sessions.md) for process capability. The operator's private remote-control RE finding
 reports outbound HTTP session-start polling with one Claude process launched per Session speaking
 RemoteIO, characterized as essentially the existing stream-json stdio protocol. This is an
@@ -3108,9 +3111,9 @@ Sandbox deployment is recorded in the [live evidence](../docs/sandbox_identity_c
 The target is one identity source with three credential forms (operator decision, 2026-11-10;
 [plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
 SVIDs over mTLS, the MCP edge's OAuth tokens, and Kubernetes' own authentication toward the Kubernetes
-API alone. The paths that miss it are inventoried in the
-[lifecycle plan](workload_identity_lifecycle.md#remaining-paths), each tracked by a node below or by
-`APP_AGENT_TOKEN_DECISION`.
+API alone. The one agent path that misses it, the app's `agentplane-agent` TokenReview bearer, is
+`APP_AGENT_TOKEN_DECISION`; backend components authenticating as their own ServiceAccounts are retained
+by operator decision (`PRIVILEGED_BACKEND_AUTH_DESIGN`).
 
 **Remaining work.** The standing-workload proxy decision-log observation remains open. Explicit
 environment lifecycle grants, cross-Identity inbox target semantics, the app TokenReview decision,
@@ -3494,8 +3497,7 @@ Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside test
   (`central_sampler_workload.py`). Rename it for the sampler, or fold it into History's own audience;
   coordinate the sampler's projection and History's listener audiences. No gate.
 - **The Action Service's `caller_service_account_namespaces`** lists `public-coder-agent`'s namespace
-  (`cluster/cdk8s/agentplane/staging.py`, `ActionsProps`), which no caller reaches it from
-  ([lifecycle plan § After the bearer hop](workload_identity_lifecycle.md#after-the-bearer-hop)); the
+  (`cluster/cdk8s/agentplane/staging.py`, `ActionsProps`), which no caller reaches it from; the
   setting feeds the TokenReview and SVID resolvers, the policy informer and a per-namespace Role
   (`actions.py`). Drop the entry and its Role after confirming no `WorkloadCredential` or bearer
   caller in that namespace reaches the Action Service.
@@ -3633,8 +3635,8 @@ Dispatch reviewed migrations separately, rather than coupling them to package-di
 #### `PRIVILEGED_BACKEND_AUTH_DESIGN` — review privileged service authentication and transport
 
 **Future; independent of the completed workload-Identity cutover.** The operator decided to keep backend
-components authenticated as their own ServiceAccounts for now ([workload identity lifecycle, rows
-6–8](workload_identity_lifecycle.md#remaining-paths)); this is distinct from Sandbox and standing
+components authenticated as their own ServiceAccounts for now ([workload
+authentication](../docs/workload_authentication.md#tokenreview-and-projected-credentials)); this is distinct from Sandbox and standing
 workloads authenticated by SVID, and from a component's explicitly delegated effective Identity.
 The transport contract for those component calls is inconsistent: [workload authentication](../docs/workload_authentication.md)
 says backend bearers use verified TLS, while [gRPC services](../docs/grpc_services.md) prescribes
@@ -3680,9 +3682,9 @@ fallback. This design does not block the active identity cutover.
   `app/internal/auth/auth.go`). Decide whether they move to real-issuer ID tokens; remove its
   `token_subjects` rendering (`cluster/cdk8s/agentplane/app_settings.py`,
   `system_tests/deployment/fixture_chart.py`) and `AGENT_SERVICE_ACCOUNT` in
-  `system_tests/driver/cluster.py` only after every remaining caller has moved. The
-  [lifecycle plan](workload_identity_lifecycle.md) is deleted when its rows 1 to 4 are gone and its
-  open questions, this one included, are settled.
+  `system_tests/driver/cluster.py` only after every remaining caller has moved. These callers come
+  through the public route, where TLS ends at the Gateway, so a client certificate cannot reach the
+  app as mTLS.
 - **`CENTRAL_SESSION_CREATION_CONTRACT` ([#15436](https://github.com/agentydragon/ducktape/pull/15436),
   recommendation A):** `central_sampler_v1` is retired in the cutover that adds the `central_sampler`
   placement: `CentralSamplerV1Placement` in `proto/session.proto`,

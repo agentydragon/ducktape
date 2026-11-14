@@ -19,6 +19,10 @@ Policy Controller keeps. Deployed scope and the static grants around it:
 
 - **Live semantics.** Editing a set changes every bound ServiceAccount's native bindings, including
   removals. Edits to a referenced Role's rules reach every binding to that Role under any design.
+  Assignment to a set and the set's definition stay separate: an edit adding or removing an egress
+  rule reaches every current holder without touching their bindings, while independent overlapping
+  grants still apply. Any replacement authorization model must keep this indirection (operator,
+  2026-10-16).
 - **Roles are referenced, never defined.** A rule names an existing `Role` (in each named
   namespace) or `ClusterRole`; cluster-wide rules take only `ClusterRole`. Generated bindings name
   the ServiceAccount directly, so a set has no Kubernetes `Group` effect.
