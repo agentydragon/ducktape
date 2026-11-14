@@ -119,6 +119,30 @@ def test_every_deployment_verifies_agentplane_svids_against_the_workload_ca_alon
     assert {name: bundles for name, bundles in trust.items() if bundles != {cluster_ca.WORKLOAD_BUNDLE}} == {}
 
 
+def test_mcp_tls_listener_uses_its_mounted_certificate_and_only_admits_app(staging_manifests: list[Body]) -> None:
+    pod = _resource(staging_manifests, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+    settings = yaml.safe_load(one(_resource(staging_manifests, "ConfigMap", "mcp-edge-settings")["data"].values()))
+    tls = settings["rpc_tls"]
+    assert settings["operator_services"] == [APP_URI]
+    for field in ("cert_file", "key_file"):
+        path = PurePosixPath(tls[field])
+        secret_name = mounts[path.parent]["secret"]["secretName"]
+        certificate = one(
+            doc
+            for doc in staging_manifests
+            if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
+        )
+        assert certificate["spec"]["uris"] == [MCP_EDGE_URI]
+    ca = PurePosixPath(tls["client_ca_file"])
+    assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
+    port = int(tls["listen"].rsplit(":", 1)[1])
+    assert any(p["containerPort"] == port for p in container["ports"])
+    assert any(p["targetPort"] == port for p in _resource(staging_manifests, "Service", "mcp-edge")["spec"]["ports"])
+
+
 def _template_pods(documents: list[Body]) -> Iterator[tuple[str, Body]]:
     """Every Sandbox Pod shape: Pod and Firecracker SandboxTemplates, and the command boxes' PodTemplates."""
     for doc in documents:

@@ -8194,32 +8194,6 @@ spec:
             severity: warning
 ---
 apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: mcp-edge-settings
-  namespace: agentplane-staging
-data:
-  settings.yaml: |
-    actions_tls:
-      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-      server_uri: spiffe://agentplane/actions
-    actions_target: actions.agentplane-staging.svc.cluster.local:8080
-    policy_namespace: agentplane-staging
-    actions_token_file: /var/run/secrets/agentplane-mcp/actions
-    oauth_file: /etc/agentplane-mcp/oauth
-    host: 0.0.0.0
-    port: 8080
-    http_port: 8081
-    operator_oidc:
-      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
-      audience: agentplane-staging-actions
-      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
-      token_profile: authentik
-    max_wait_seconds: 30
-    direct_wait_seconds: 30
-immutable: false
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   labels:
@@ -8298,6 +8272,9 @@ spec:
             - containerPort: 8081
               name: http
               protocol: TCP
+            - containerPort: 8443
+              name: grpc-tls
+              protocol: TCP
           readinessProbe:
             failureThreshold: 3
             grpc:
@@ -8329,14 +8306,14 @@ spec:
             - mountPath: /etc/agentplane-mcp
               name: secret-agentplane-mcp-oauth
               readOnly: true
-            - mountPath: /etc/agentplane-mcp-edge
-              name: configmap-mcp-edge-settings
-              readOnly: true
             - mountPath: /run/agentplane/workload-tls
               name: workload-tls
               readOnly: true
             - mountPath: /run/agentplane/workload-trust
               name: workload-trust
+              readOnly: true
+            - mountPath: /etc/agentplane-mcp-edge
+              name: configmap-mcp-edge-settings
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-mcp
               name: actions-token
@@ -8370,15 +8347,15 @@ spec:
               - key: oauth
                 path: oauth
             secretName: agentplane-mcp-oauth
-        - configMap:
-            name: mcp-edge-settings
-          name: configmap-mcp-edge-settings
         - name: workload-tls
           secret:
             secretName: mcp-edge-workload-tls
         - configMap:
             name: agentplane-workload-ca-bundle
           name: workload-trust
+        - configMap:
+            name: mcp-edge-settings
+          name: configmap-mcp-edge-settings
         - name: actions-token
           projected:
             sources:
@@ -8405,6 +8382,10 @@ spec:
       port: 8081
       protocol: TCP
       targetPort: 8081
+    - name: grpc-tls
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
   selector:
     cdk8s.io/metadata.addr: agentplane-mcp-edge-deployment-c88c8f8c
   type: ClusterIP
@@ -8442,6 +8423,39 @@ spec:
     - digital signature
     - client auth
     - server auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-edge-settings
+  namespace: agentplane-staging
+data:
+  settings.yaml: |
+    actions_tls:
+      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+      server_uri: spiffe://agentplane/actions
+    rpc_tls:
+      listen: 0.0.0.0:8443
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+    operator_services:
+      - spiffe://agentplane/app
+    actions_target: actions.agentplane-staging.svc.cluster.local:8080
+    policy_namespace: agentplane-staging
+    actions_token_file: /var/run/secrets/agentplane-mcp/actions
+    oauth_file: /etc/agentplane-mcp/oauth
+    host: 0.0.0.0
+    port: 8080
+    http_port: 8081
+    operator_oidc:
+      issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
+      audience: agentplane-staging-actions
+      jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging-actions/jwks/
+      token_profile: authentik
+    max_wait_seconds: 30
+    direct_wait_seconds: 30
+immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -8626,6 +8640,14 @@ spec:
       toPorts:
         - ports:
             - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: app
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8443"
               protocol: TCP
     - fromEndpoints:
         - matchLabels:

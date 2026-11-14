@@ -27,7 +27,7 @@ from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.mcp_edge.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, MCP_EDGE_URI
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, ServerTLSListener
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, app as app_component, database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
@@ -60,6 +60,11 @@ def http_service(namespace: str) -> ServiceRef:
     return ServiceRef(name=NAME, port=Port(name="http", number=8081), pods=Pods(namespace, tuple(_LABELS.items())))
 
 
+def tls_service(namespace: str) -> ServiceRef:
+    """ConnectionService with an App service certificate and operator OIDC."""
+    return ServiceRef(name=NAME, port=Port(name="grpc-tls", number=8443), pods=Pods(namespace, tuple(_LABELS.items())))
+
+
 class McpEdge(Construct):
     """The workload and its scoped Kubernetes and network permissions."""
 
@@ -79,33 +84,15 @@ class McpEdge(Construct):
         self.env = env
         self.endpoint = service(env.namespace)
         self.http = http_service(env.namespace)
+        self.tls = tls_service(env.namespace)
         props = env.mcp_edge
 
-        settings_contract = Settings(
-            actions_tls=workload_tls.client_tls(ACTIONS_URI),
-            actions_target=f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
-            policy_namespace=env.namespace,
-            actions_token_file=(
-                "/var/run/secrets/agentplane-mcp/actions" if props.oauth_secret_name is not None else None
-            ),
-            oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
-            host="0.0.0.0",
-            port=self.endpoint.pod_port,
-            http_port=self.http.pod_port,
-            operator_oidc=props.operator_oidc,
-        )
-        settings = SettingsFile(
-            self,
-            "settings",
-            metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
-            content=yaml_config(settings_contract),
-            path="/etc/agentplane-mcp-edge/settings.yaml",
-        )
+        settings_name = f"{NAME}-settings"
         variables = {DATABASE_URL_ENV: database_url}
         workload = add_service_workload(
             self,
             env,
-            serves=[self.endpoint, self.http],
+            serves=[self.endpoint, self.http, self.tls],
             container=NAME,
             image=_IMAGE,
             image_pull_policy=image_pull_policy,
@@ -130,7 +117,7 @@ class McpEdge(Construct):
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
             annotations={
-                "configmap.reloader.stakater.com/reload": settings.config_map.name,
+                "configmap.reloader.stakater.com/reload": settings_name,
                 **(
                     {"secret.reloader.stakater.com/reload": props.oauth_secret_name}
                     if props.oauth_secret_name is not None
@@ -148,8 +135,40 @@ class McpEdge(Construct):
                 items={"client-secret": PathMapping(path="client-secret"), "oauth": PathMapping(path="oauth")},
             )
             workload.container.mount(_SECRET_DIR, oauth_volume, read_only=True)
+        serving_tls = workload_tls.service_certificate(
+            self, env, container=workload.container, name=NAME, uri=MCP_EDGE_URI
+        )
+        assert serving_tls.cert_file is not None
+        assert serving_tls.key_file is not None
+        assert serving_tls.ca_file is not None
+        settings_contract = Settings(
+            rpc_tls=ServerTLSListener(
+                listen=f"0.0.0.0:{self.tls.pod_port}",
+                cert_file=Path(serving_tls.cert_file),
+                key_file=Path(serving_tls.key_file),
+                client_ca_file=Path(serving_tls.ca_file),
+            ),
+            operator_services=[APP_URI],
+            actions_tls=workload_tls.client_tls(ACTIONS_URI),
+            actions_target=f"{actions.service(env.namespace).fqdn}:{actions.service(env.namespace).port.number}",
+            policy_namespace=env.namespace,
+            actions_token_file=(
+                "/var/run/secrets/agentplane-mcp/actions" if props.oauth_secret_name is not None else None
+            ),
+            oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
+            host="0.0.0.0",
+            port=self.endpoint.pod_port,
+            http_port=self.http.pod_port,
+            operator_oidc=props.operator_oidc,
+        )
+        settings = SettingsFile(
+            self,
+            "settings",
+            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
+            content=yaml_config(settings_contract),
+            path="/etc/agentplane-mcp-edge/settings.yaml",
+        )
         settings.mount_into(workload.container, env=Settings.config_file_env)
-        workload_tls.service_certificate(self, env, container=workload.container, name=NAME, uri=MCP_EDGE_URI)
         if props.oauth_secret_name is not None:
             workload.project_tokens(
                 "actions-token", "/var/run/secrets/agentplane-mcp", {"actions": WORKLOAD_TOKEN_AUDIENCE}
@@ -210,6 +229,7 @@ class McpEdge(Construct):
                     else []
                 ),
                 app_component.service(namespace).pods.admit(endpoint.pod_port),
+                app_component.service(namespace).pods.admit(self.tls.pod_port),
                 cilium.SCRAPERS.admit(self.http.pod_port),
             ],
             egress=[
