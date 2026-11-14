@@ -345,3 +345,18 @@ central Session into a native harness Session.
   programs, request compression).
 - Local model providers (LiteLLM routes models), Codex's OTel exporter, feedback upload and Windows
   support.
+
+## Service certificate admission during the cutover
+
+Optional `service_callers` grants exact service SPIFFE IDs the Sampler API and requires
+`listen_tls.client_ca_file`. It defaults empty; receiver images must be pinned before manifests set
+this field. Service peers authenticate without a Kubernetes token or account/Pod lookup. The
+existing bearer allowlist remains a separate path until the caller cutover is complete.
+
+Sampler Session ownership distinguishes service SPIFFE IDs from ServiceAccount UIDs. Migration 18
+adds a separate service owner column without rewriting existing rows. A service cannot reopen or
+read Sessions owned by an old account or another service. Before the Sessions caller switches to its
+SVID, existing account-owned Sessions need an explicit ownership cutover; no certificate is implicitly
+mapped to a Kubernetes UID. Roll back the receiver image with the additive schema retained before
+service callers are enabled. After service-owned Sessions exist, their ownership must be addressed
+before rolling back to a receiver that understands only account owners.

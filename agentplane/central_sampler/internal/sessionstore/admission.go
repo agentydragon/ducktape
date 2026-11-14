@@ -16,8 +16,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerUID string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {
-	if command == nil || command.GetCommandId() == "" || ownerUID == "" {
+func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {
+	if command == nil || command.GetCommandId() == "" || ownerKey == "" {
 		return nil, protocol.ErrInvalid
 	}
 	wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(command)
@@ -30,7 +30,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 		if err != nil {
 			return err
 		}
-		if session.AccountUID != ownerUID {
+		if session.OwnerKey != ownerKey {
 			return ErrForbidden
 		}
 		var payload []byte

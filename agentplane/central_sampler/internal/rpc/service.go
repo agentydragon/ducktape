@@ -25,7 +25,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -38,22 +37,42 @@ type Sampler struct {
 	Wakeups  *wakeups.Hub
 }
 
-func (s *Sampler) admitted(ctx context.Context) (context.Context, context.CancelFunc, auth.Principal, error) {
+// admitted returns an owner key, never a synthetic Kubernetes principal for a service.
+func (s *Sampler) admitted(ctx context.Context) (context.Context, context.CancelFunc, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(s.Settings.RPCTimeoutSeconds)*time.Second)
-	md, _ := metadata.FromIncomingContext(ctx)
-	token, err := auth.BearerToken(md.Get("authorization"))
+	accounts := make([]auth.Account, 0, len(s.Settings.AllowedAccounts))
+	for _, name := range s.Settings.AllowedAccounts {
+		var account auth.Account
+		if err := account.UnmarshalText([]byte(name)); err != nil {
+			return ctx, cancel, "", samplerError(ctx, err)
+		}
+		accounts = append(accounts, account)
+	}
+	rule, err := auth.Accounts(s.Resolver, accounts).AllowServiceCallers(s.Settings.ServiceCallers)
 	if err != nil {
-		return ctx, cancel, auth.Principal{}, status.Error(codes.Unauthenticated, "workload bearer refused")
+		return ctx, cancel, "", samplerError(ctx, err)
 	}
-	principal, err := s.Resolver.ResolveToken(ctx, token)
-	if errors.Is(err, auth.ErrInvalidBearer) {
-		err = status.Error(codes.Unauthenticated, "workload bearer refused")
-	} else if err != nil {
-		err = samplerError(ctx, err)
-	} else if !s.Settings.AllowsAccount(principal.Account.Namespace, principal.Account.Name) {
-		err = status.Error(codes.PermissionDenied, "session access refused")
+	admitted, err := rule.AdmitContext(ctx, 0)
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidBearer) {
+			err = status.Error(codes.Unauthenticated, "workload credential refused")
+		} else if status.Code(err) == codes.Unknown {
+			err = samplerError(ctx, err)
+		}
+		return ctx, cancel, "", err
 	}
-	return ctx, cancel, principal, err
+	proof, err := auth.Admitted(admitted)
+	if err != nil {
+		return ctx, cancel, "", err
+	}
+	switch caller := proof.(type) {
+	case auth.ServiceAdmission:
+		return admitted, cancel, caller.Caller.SPIFFEID, nil
+	case auth.DirectAdmission:
+		return admitted, cancel, caller.Caller.GetUid(), nil
+	default:
+		return ctx, cancel, "", status.Error(codes.PermissionDenied, "session access refused")
+	}
 }
 
 func samplerError(ctx context.Context, err error) error {
@@ -115,7 +134,7 @@ func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSe
 	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
 		return invalid()
 	}
-	session, err := s.Store.CreateSession(ctx, request, principal.ServiceAccountUID, modelConfig.API, s.Settings.PlatformInstructions)
+	session, err := s.Store.CreateSession(ctx, request, principal, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -166,7 +185,7 @@ func (s *Sampler) command(ctx context.Context, sessionID string, command *comman
 		}
 		return nil
 	}
-	entry, err := s.Store.Admit(ctx, sessionID, command, principal.ServiceAccountUID, validate)
+	entry, err := s.Store.Admit(ctx, sessionID, command, principal, validate)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -205,7 +224,7 @@ func (s *Sampler) RecoverSession(ctx context.Context, r *samplerpb.RecoverSessio
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.Store.RecoverSession(ctx, r.GetSessionId(), principal.ServiceAccountUID, r.GetExpectedCursor(), r.GetOperatorNote(), r.GetReplacementIncarnationUid())
+	session, err := s.Store.RecoverSession(ctx, r.GetSessionId(), principal, r.GetExpectedCursor(), r.GetOperatorNote(), r.GetReplacementIncarnationUid())
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -219,7 +238,7 @@ func (s *Sampler) GetSession(ctx context.Context, r *samplerpb.GetSessionRequest
 	if err != nil {
 		return nil, err
 	}
-	session, err := s.Store.GetSession(ctx, r.GetSessionId(), principal.ServiceAccountUID)
+	session, err := s.Store.GetSession(ctx, r.GetSessionId(), principal)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -235,7 +254,7 @@ func (s *Sampler) ReadProviderRequest(r *samplerpb.ReadProviderRequestRequest, s
 	}
 	defer cancel()
 
-	request, err := s.Store.LoadProviderRequest(ctx, r.GetSessionId(), principal.ServiceAccountUID, r.GetRequestId())
+	request, err := s.Store.LoadProviderRequest(ctx, r.GetSessionId(), principal, r.GetRequestId())
 	if err != nil {
 		return samplerError(ctx, err)
 	}
@@ -265,7 +284,7 @@ func (s *Sampler) ListSessions(ctx context.Context, r *samplerpb.ListSessionsReq
 	if err != nil {
 		return nil, err
 	}
-	sessions, err := s.Store.ListSessions(ctx, principal.ServiceAccountUID)
+	sessions, err := s.Store.ListSessions(ctx, principal)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -286,7 +305,7 @@ func (s *Sampler) GetCommand(ctx context.Context, r *samplerpb.GetCommandRequest
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.Store.GetSession(ctx, r.GetSessionId(), principal.ServiceAccountUID); err != nil {
+	if _, err := s.Store.GetSession(ctx, r.GetSessionId(), principal); err != nil {
 		return nil, samplerError(ctx, err)
 	}
 	result, err := s.Store.GetCommand(ctx, r.GetSessionId(), r.GetCommandId())
@@ -306,7 +325,7 @@ func (s *Sampler) FollowEvents(r *samplerpb.FollowEventsRequest, stream grpc.Ser
 			cancel()
 			return err
 		}
-		if _, err = s.Store.GetSession(ctx, r.GetSessionId(), principal.ServiceAccountUID); err != nil {
+		if _, err = s.Store.GetSession(ctx, r.GetSessionId(), principal); err != nil {
 			mapped := samplerError(ctx, err)
 			cancel()
 			return mapped

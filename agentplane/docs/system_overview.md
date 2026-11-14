@@ -403,6 +403,19 @@ provider continuation format: the sampler owns that state in its database. Wrapp
 harnesses keep their current local sampling, execution and persistence paths. See the
 [standalone API and recovery contract](../central_sampler/SPEC.md).
 
+### Staged Sampler service admission
+
+The sampler can admit explicitly configured Sessions service SVIDs alongside current bearer callers.
+Service ownership is stored as the real SPIFFE ID, separately from ServiceAccount UID ownership.
+This receiver support does not transfer ownership of existing Sessions; that later caller cutover
+requires an explicit ownership plan and pinned receiver images.
+
+```mermaid
+flowchart LR
+    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: exact Sampler method grant| sampler[Central Sampler]
+    sampler -->|service SPIFFE ID ownership| db[(Sampler PostgreSQL)]
+```
+
 ## Environment control and native Sessions
 
 ```mermaid

@@ -74,7 +74,7 @@ type StoredProviderRequest struct {
 }
 
 // Authorization is rooted in Session ownership; content hashes are never public read handles.
-func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, accountUID, requestID string) (*StoredProviderRequest, error) {
+func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, ownerKey, requestID string) (*StoredProviderRequest, error) {
 	if _, err := uuid.Parse(requestID); err != nil {
 		return nil, protocol.ErrMissing
 	}
@@ -82,7 +82,7 @@ func (s *Store) LoadProviderRequest(ctx context.Context, sessionID, accountUID, 
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var raw []byte
 		if err := tx.QueryRowContext(ctx, `SELECT i.request FROM sampler_intent i JOIN sampler_session s ON s.conversation_id=i.conversation_id
-            WHERE s.id=$1 AND s.account_uid=$2 AND i.id=$3`, sessionID, accountUID, requestID).Scan(&raw); err != nil {
+            WHERE s.id=$1 AND COALESCE(s.service_spiffe_id,s.account_uid)=$2 AND i.id=$3`, sessionID, ownerKey, requestID).Scan(&raw); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return protocol.ErrMissing
 			}

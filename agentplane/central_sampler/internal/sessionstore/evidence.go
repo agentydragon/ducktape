@@ -32,7 +32,7 @@ func (s *Store) ProtocolEvent(ctx context.Context, owner Owner, operationID stri
 }
 
 func sessionForConversation(ctx context.Context, tx *sql.Tx, conversationID string) (*Session, error) {
-	session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id,conversation_id,account_uid,configuration,model,effort,source_id,cursor,
+	session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id,conversation_id,COALESCE(service_spiffe_id,account_uid),configuration,model,effort,source_id,cursor,
 		active_turn,active_command,workspace_prepared,setup_state,setup_started,blocked,blocked_reason FROM sampler_session WHERE conversation_id=$1 FOR UPDATE`, conversationID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, protocol.ErrMissing

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 )
 
 const (
@@ -62,6 +63,12 @@ func prefixValidationError(prefix string, err error) error {
 }
 
 func (s Settings) Validate() error {
+	if err := auth.ValidateServiceCallers(s.ServiceCallers); err != nil {
+		return prefixValidationError("service_callers", err)
+	}
+	if len(s.ServiceCallers) > 0 && (s.ListenTLS == nil || s.ListenTLS.ClientCAFile == "") {
+		return invalidSetting("service_callers", "requires listen_tls.client_ca_file")
+	}
 	if s.ListenTLS != nil {
 		if err := s.ListenTLS.Validate(); err != nil {
 			return prefixValidationError("listen_tls", err)

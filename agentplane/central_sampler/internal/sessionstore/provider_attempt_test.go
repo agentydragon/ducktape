@@ -153,6 +153,7 @@ func TestProviderAttemptMigrationBackfillsUnresolvedIntentWithoutRetryAllowance(
 		t.Fatal(err)
 	}
 
+	removeServiceOwnerMigration(t, store.DB())
 	// Recreate the committed v15 baseline shape and reapply all later migrations to the live row.
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_retry_due_idx`)
 	migrationExec(t, store.DB(), `DROP INDEX sampler_intent_provider_predecessor_idx`)

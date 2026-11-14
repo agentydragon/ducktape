@@ -18,8 +18,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
-	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" || (platformInstructions != nil && strings.TrimSpace(*platformInstructions) == "") {
+func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest, ownerKey string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
+	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerKey == "" || (platformInstructions != nil && strings.TrimSpace(*platformInstructions) == "") {
 		return nil, protocol.ErrInvalid
 	}
 	executor := request.GetExecutor()
@@ -48,11 +48,11 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, request.SessionId); err != nil {
 			return err
 		}
-		existing, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, conversation_id, account_uid, configuration, model, effort,
+		existing, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, conversation_id, COALESCE(service_spiffe_id,account_uid), configuration, model, effort,
 			source_id, cursor, active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason
 			FROM sampler_session WHERE id=$1`, request.SessionId))
 		if err == nil {
-			if existing.AccountUID != ownerUID {
+			if existing.OwnerKey != ownerKey {
 				return ErrForbidden
 			}
 			previous := &samplerpb.CreateSessionRequest{}
@@ -92,14 +92,14 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 			setupState = sessionpb.SetupState_SETUP_STATE_RUNNING
 		}
 		opened = &Session{
-			ID: request.GetSessionId(), ConversationID: conversationID, AccountUID: ownerUID,
+			ID: request.GetSessionId(), ConversationID: conversationID, OwnerKey: ownerKey,
 			Configuration: wire, Model: request.GetSpec().GetModel(), Effort: request.GetSpec().GetReasoningEffort(),
 			SourceID: uuid.NewString(), SetupState: setupState,
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_session(id,conversation_id,account_uid,configuration,model,effort,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_session(id,conversation_id,account_uid,service_spiffe_id,configuration,model,effort,
 			source_id,cursor,active_turn,active_command,workspace_prepared,setup_state,setup_started,blocked)
-			VALUES($1,$2,$3,$4,$5,$6,$7,0,NULL,NULL,FALSE,$8,FALSE,FALSE)`,
-			opened.ID, opened.ConversationID, opened.AccountUID, opened.Configuration, opened.Model, opened.Effort, opened.SourceID, int32(setupState)); err != nil {
+			VALUES($1,$2,$3,$9,$4,$5,$6,$7,0,NULL,NULL,FALSE,$8,FALSE,FALSE)`,
+			opened.ID, opened.ConversationID, legacyAccountUID(opened.OwnerKey), opened.Configuration, opened.Model, opened.Effort, opened.SourceID, int32(setupState), serviceSPIFFEID(opened.OwnerKey)); err != nil {
 			return err
 		}
 		if _, err := appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
@@ -119,10 +119,10 @@ func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSess
 	return opened, err
 }
 
-func (s *Store) GetSession(ctx context.Context, id, ownerUID string) (*Session, error) {
+func (s *Store) GetSession(ctx context.Context, id, ownerKey string) (*Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	session, err := scanSession(s.db.QueryRowContext(ctx, `SELECT id, conversation_id, account_uid, configuration, model, effort, source_id, cursor,
+	session, err := scanSession(s.db.QueryRowContext(ctx, `SELECT id, conversation_id, COALESCE(service_spiffe_id,account_uid), configuration, model, effort, source_id, cursor,
 		active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason FROM sampler_session WHERE id=$1`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, protocol.ErrMissing
@@ -130,7 +130,7 @@ func (s *Store) GetSession(ctx context.Context, id, ownerUID string) (*Session, 
 	if err != nil {
 		return nil, err
 	}
-	if ownerUID != "" && session.AccountUID != ownerUID {
+	if ownerKey != "" && session.OwnerKey != ownerKey {
 		return nil, ErrForbidden
 	}
 	return session, nil
@@ -173,15 +173,15 @@ func (s *Store) StampCodeHostInstance(ctx context.Context, owner Owner, instance
 	})
 }
 
-func (s *Store) ListSessions(ctx context.Context, ownerUID string) ([]*Session, error) {
+func (s *Store) ListSessions(ctx context.Context, ownerKey string) ([]*Session, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	query := `SELECT id, conversation_id, account_uid, configuration, model, effort, source_id, cursor,
+	query := `SELECT id, conversation_id, COALESCE(service_spiffe_id,account_uid), configuration, model, effort, source_id, cursor,
 		active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason FROM sampler_session`
 	args := []any{}
-	if ownerUID != "" {
-		query += ` WHERE account_uid=$1`
-		args = append(args, ownerUID)
+	if ownerKey != "" {
+		query += ` WHERE COALESCE(service_spiffe_id,account_uid)=$1`
+		args = append(args, ownerKey)
 	}
 	query += ` ORDER BY id`
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -269,4 +269,19 @@ func cloneExecutionIdentity(identity *identitypb.Identity) *identitypb.Identity 
 		return nil
 	}
 	return proto.Clone(identity).(*identitypb.Identity)
+}
+
+// Service owners use a separate column; a certificate never supplies an account UID.
+func legacyAccountUID(owner string) string {
+	if strings.HasPrefix(owner, "spiffe://") {
+		return ""
+	}
+	return owner
+}
+
+func serviceSPIFFEID(owner string) *string {
+	if strings.HasPrefix(owner, "spiffe://") {
+		return &owner
+	}
+	return nil
 }

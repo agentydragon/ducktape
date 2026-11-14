@@ -4,19 +4,22 @@
 
 `Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID
 to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
-caller ServiceAccount UID and fixed `SandboxDestination` plus expected incarnation UID. The
+a typed caller owner (ServiceAccount UID or service SPIFFE ID) and fixed `SandboxDestination` plus expected incarnation UID. The
 Dispatcher and sampler require the spec environment and executor destination to match. The
 Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
-retaining it in the immutable configuration across retries and restarts. The authenticated sampler
-ServiceAccount remains the journal producer identity and is retained separately by History. The
+retaining it in the immutable configuration across retries and restarts. The authenticated sampler actor remains the journal producer identity and is retained separately
+by History; its projected ServiceAccount token is still the current outbound proof until the
+separately staged caller cutover. The
 Dispatcher uses its one configured central sampler target; callers select the V1 placement, not a
-service endpoint. Model and effort must be server-configured. Every RPC uses TokenReview and the
-allowed-account policy; Session UUID knowledge grants no authority.
+service endpoint. Model and effort must be server-configured. Every RPC uses the explicit bearer-account policy or the exact service SVID allowlist. Service
+ownership is stored separately from account UIDs; existing account-owned Sessions never become
+service-owned implicitly. Session UUID knowledge grants no authority. Service admission requires
+verified client TLS with the configured trust bundle and never falls back to bearer verification.
 
 The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
-authenticates as itself with its own projected token and holds no agent key, and each History push
-and each LLM ingress call for the Session names the retained Identity as effective caller and the
-Session as provenance. Neither JavaScript nor tool arguments can name or override it; History
+authenticates as itself with its own projected token and holds no agent key, and each History push names the retained Identity as effective caller and the Session as provenance.
+LLM ingress receives the same typed proof when the connection selects `auth.mode: agentplane_ingress`;
+staging still selects bearer mode with Session metadata until its separate caller cutover. Neither JavaScript nor tool arguments can name or override it; History
 refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
 receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose
 Identity is gone. Direct Anthropic connections carry no delegation. Executor and Gateway calls stay

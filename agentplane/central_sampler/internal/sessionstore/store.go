@@ -278,7 +278,7 @@ func lockSession(ctx context.Context, tx *sql.Tx, sessionID string) (*Conversati
 	if err := loadConversationItems(ctx, tx, conversation); err != nil {
 		return nil, nil, err
 	}
-	session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, conversation_id::text, account_uid, configuration, model, effort,
+	session, err := scanSession(tx.QueryRowContext(ctx, `SELECT id, conversation_id::text, COALESCE(service_spiffe_id, account_uid), configuration, model, effort,
 		source_id, cursor, active_turn, active_command, workspace_prepared, setup_state, setup_started, blocked, blocked_reason
 		FROM sampler_session WHERE id=$1 FOR UPDATE`, sessionID))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -292,7 +292,7 @@ func scanSession(row rowScanner) (*Session, error) {
 	var activeTurn, activeCommand, blockedReason sql.NullString
 	var cursor int64
 	var setupState int32
-	err := row.Scan(&session.ID, &session.ConversationID, &session.AccountUID, &session.Configuration,
+	err := row.Scan(&session.ID, &session.ConversationID, &session.OwnerKey, &session.Configuration,
 		&session.Model, &session.Effort, &session.SourceID, &cursor, &activeTurn, &activeCommand,
 		&session.WorkspacePrepared, &setupState, &session.SetupStarted, &session.Blocked, &blockedReason)
 	if err != nil {

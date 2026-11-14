@@ -1,8 +1,16 @@
 package rpc
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"os"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
@@ -40,8 +48,8 @@ func TestAdmissionAuthenticatesAndAuthorizesAccountUID(t *testing.T) {
 			if status.Code(err) != c.code {
 				t.Fatalf("code=%v expected %v", status.Code(err), c.code)
 			}
-			if err == nil && principal.ServiceAccountUID != c.uid {
-				t.Fatalf("account UID %q", principal.ServiceAccountUID)
+			if err == nil && principal != c.uid {
+				t.Fatalf("account UID %q", principal)
 			}
 			if err != nil && status.Convert(err).Message() == "secret upstream token" {
 				t.Fatal("backend detail leaked")
@@ -62,5 +70,63 @@ func TestSamplerErrorsExposeFixedStatus(t *testing.T) {
 		if status.Convert(err).Message() == c.err.Error() {
 			t.Fatalf("error detail leaked: %v", err)
 		}
+	}
+}
+
+func TestServiceAdmissionReturnsServiceOwnershipWithoutTokenReview(t *testing.T) {
+	ca := transporttesting.NewCA(t)
+	for _, tc := range []struct {
+		name, actor string
+		bearer      bool
+		want        codes.Code
+	}{
+		{name: "Sessions role", actor: peertls.SessionsURI, want: codes.OK},
+		{name: "former combined identity", actor: peertls.SessionDispatcherURI, want: codes.PermissionDenied},
+		{name: "unrelated service", actor: peertls.ActionsURI, want: codes.PermissionDenied},
+		{name: "bearer beside certificate", actor: peertls.SessionsURI, bearer: true, want: codes.Unauthenticated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := ca.Issue(t, tc.actor)
+			certificate, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			roots := x509.NewCertPool()
+			raw, err := os.ReadFile(ca.RootFile)
+			if err != nil || !roots.AppendCertsFromPEM(raw) {
+				t.Fatalf("roots: %v", err)
+			}
+			chains, err := leaf.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: chains}}})
+			if tc.bearer {
+				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer test-token"))
+			}
+			resolver, err := auth.NewResolver(fixtureReviews{failure: errors.New("unexpected TokenReview fallback")}, "test-sampler", []string{"test"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sampler := Sampler{Resolver: resolver, Settings: fixtureSettings()}
+			sampler.Settings.ServiceCallers = []string{peertls.SessionsURI}
+			admitted, cancel, owner, err := sampler.admitted(ctx)
+			defer cancel()
+			if status.Code(err) != tc.want {
+				t.Fatalf("admission=%v,want=%s", err, tc.want)
+			}
+			if tc.want == codes.OK {
+				if owner != peertls.SessionsURI {
+					t.Fatalf("owner=%q", owner)
+				}
+				if _, err := auth.Caller(admitted); err == nil {
+					t.Fatal("service obtained account proof")
+				}
+			}
+		})
 	}
 }

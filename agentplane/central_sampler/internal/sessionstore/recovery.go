@@ -348,9 +348,9 @@ func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, owner Owner, conv
 
 // RecoverSession abandons one blocked runtime or sampling boundary after an operator has inspected
 // the recorded evidence. It never retries the provider request or any executor operation.
-func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expectedCursor uint64, operatorNote, replacementIncarnationUID string) (*Session, error) {
+func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expectedCursor uint64, operatorNote, replacementIncarnationUID string) (*Session, error) {
 	note := strings.TrimSpace(operatorNote)
-	if id == "" || ownerUID == "" || note == "" || len(note) > 4096 || len(replacementIncarnationUID) > 128 || strings.TrimSpace(replacementIncarnationUID) != replacementIncarnationUID {
+	if id == "" || ownerKey == "" || note == "" || len(note) > 4096 || len(replacementIncarnationUID) > 128 || strings.TrimSpace(replacementIncarnationUID) != replacementIncarnationUID {
 		return nil, protocol.ErrInvalid
 	}
 	var recovered *Session
@@ -359,7 +359,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		if err != nil {
 			return err
 		}
-		if session.AccountUID != ownerUID {
+		if session.OwnerKey != ownerKey {
 			return ErrForbidden
 		}
 		if session.Cursor != expectedCursor || !session.Blocked {
