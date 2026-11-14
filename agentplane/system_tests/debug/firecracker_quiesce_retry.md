@@ -24,18 +24,32 @@ sealing is followed promptly by Pod deletion and observed Sandbox absence. In B2
 the first seal succeeds and cleanup takes 13.855s. The extra minute is the
 controller's persisted `quiesceDeadline`, not a minute of VMM deletion.
 
-The failed RPC reaches the Gateway but has no downstream Runtime RPC span. Existing
-traces omit error messages intentionally. Runtime thaw or a Controller WatchState
-response does not prove that the Gateway's cached destination and elected control
-route are ready. The precise failed routing predicate remains unproven.
+The scoped Gateway diagnostics and matching collector allowlist identify the
+rejection in [PR CI](https://app.buildbuddy.io/invocation/9e943df5-9491-5e9a-9df7-1e35e45c734d),
+testing merge `056bd735be` containing branch `6aae2a61a5`. At 05:04:57.835 UTC,
+the Gateway has `sandbox.phase=Quiescing`, the expected Pod UID and
+`runtime.proxy.pod_ready=false`; it returns `destination_unavailable` without
+forwarding to Runtime. Its verified control-ready event arrives at 05:04:58.786,
+but the controller does not retry until 05:05:57.015. Cleanup takes 70.270s.
+The other guest's first seal succeeds and cleanup takes 17.083s.
 
-The branch adds safe routing-phase/result attributes and a verified local-control
-acceptance event to the existing Gateway traces. No request bodies, credentials
-or free-form errors are recorded. Run the unchanged required two-guest target
-with these traces before changing routing, sealing or retry policy. Preserve
-same-incarnation fencing, durable Session seals and exact-UID deletion waits.
+The Controller's direct Runtime WatchState can become fresh before the Gateway's
+Pod inventory and elected route are ready. Direct observation alone therefore
+does not establish proxy readiness. No free-form error descriptions or request
+data are needed to distinguish this failure.
 
-If a route/cache race is confirmed, prefer repairing that admission boundary;
-do not globally shorten the persisted deadline that protects unfinished/stalled
-quiescence across watch events and controller restarts. Track follow-up in
+The candidate keeps every Gateway readiness/authorization check and the persisted
+controller cooldown. A single handshake makes at most three attempts on
+`Unavailable`, one second apart and within the existing 30-second total budget.
+Each attempt opens a fresh connection to resolve the elected control Service and
+requires the originally requested incarnation Pod UID. Gateway aborts a changed
+incarnation before forwarding; authorization refusals and acknowledged unfinished
+seals are not retried inside the handshake.
+
+The [old-behavior probe](https://app.buildbuddy.io/invocation/baed436b-71df-4d42-a798-59ec5d452f2b)
+fails the new recovery and expected-incarnation assertions. The
+[candidate's focused validation](https://app.buildbuddy.io/invocation/36520d5d-7f17-4881-9140-55df5709e645)
+passes all four targets: Gateway proxy, controller, quiescer and transport client.
+A fresh unchanged Firecracker control is still required before claiming the
+repair or its saving. Track it and matched follow-up exposure in
 [#16099](https://github.com/agentydragon/ducktape/issues/16099).
