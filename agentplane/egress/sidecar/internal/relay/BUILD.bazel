@@ -1,0 +1,61 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "runtime",
+    srcs = [
+        "codec.go",
+        "config.go",
+        "platform_routes.go",
+        "relay.go",
+        "runtime.go",
+        "tls_route.go",
+        "workload_routes.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/egress/sidecar/internal/relay",
+    visibility = ["//agentplane/egress/sidecar/cmd:__pkg__"],
+    deps = [
+        "//agentplane/egress/internal/identity",
+        "//agentplane/identity/auth/listener",
+        "//agentplane/net/httpconnect",
+        "//agentplane/net/listener",
+        "//agentplane/net/peertls",
+        "//agentplane/observability",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//keepalive",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "sidecar_test",
+    srcs = [
+        "config_test.go",
+        "platform_routes_test.go",
+        "relay_test.go",
+        "workload_routes_test.go",
+    ],
+    embed = [":runtime"],
+    visibility = ["//agentplane/egress/sidecar:__pkg__"],
+    deps = [
+        "//agentplane/identity/auth/listener",
+        "//agentplane/identity/credentials/workloadid",
+        "//agentplane/net/httpconnect",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//health/grpc_health_v1",
+        "@org_golang_google_grpc//keepalive",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
+        "@org_golang_google_grpc//status",
+    ],
+)
