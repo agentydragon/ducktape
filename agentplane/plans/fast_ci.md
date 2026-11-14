@@ -322,6 +322,11 @@ See [`test_architecture_iteration7.md`](../system_tests/debug/test_architecture_
 for the complete screen, cache limits and next experiment.
 The implemented platform composition and first proof are in
 [`test_architecture_iteration8.md`](../system_tests/debug/test_architecture_iteration8.md).
+The next manual comparison explicitly assigns private supervision to the direct
+Claude guest, checks the admitted VMI arguments and runs both retained targets
+fresh in each arm. Default deployed supervision and every required owner remain.
+The experiment and bounded graph hypothesis are in
+[`test_architecture_iteration9.md`](../system_tests/debug/test_architecture_iteration9.md).
 
 The storage startup race found in subsequent required CI is repaired on this
 branch with a bounded readiness wait; both real-cluster recovery/non-recovery
