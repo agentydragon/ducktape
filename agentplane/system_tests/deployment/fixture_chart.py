@@ -22,7 +22,11 @@ from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRu
 from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
 from cdk8s_plus_34 import ConfigMap, Cpu, DeploymentStrategy, EnvValue, ImagePullPolicy, k8s
 from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
-from cert_manager_crds.io.cert_manager import CertificateSpecIssuerRef, CertificateSpecUsages
+from cert_manager_crds.io.cert_manager import (
+    CertificateSpecIssuerRef,
+    CertificateSpecPrivateKeyRotationPolicy,
+    CertificateSpecUsages,
+)
 from constructs import Construct
 from more_itertools import one
 from pydantic import AnyHttpUrl
@@ -358,7 +362,9 @@ def _add_runner_root(chart: Chart) -> None:
         is_ca=True,
         duration="87600h",
         renew_before="8760h",
-        private_key=CertificatePrivateKey.ecdsa_p256(),
+        # Already-issued intermediates must survive a root reissuance during fixture startup.
+        # Cleanup removes the root Secret between fixtures, so each fixture still gets a fresh key.
+        private_key=CertificatePrivateKey.ecdsa_p256(CertificateSpecPrivateKeyRotationPolicy.NEVER),
         usages=[CertificateSpecUsages.CERT_SIGN, CertificateSpecUsages.CRL_SIGN],
         issuer_ref=CertificateSpecIssuerRef(name=bootstrap.name, kind="ClusterIssuer"),
     )
