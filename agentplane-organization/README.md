@@ -8,12 +8,11 @@ the complete source ledger at the same immutable commit. `evidence.json`
 records source review, actual importers/build targets and report validation.
 These files describe a proposal, not implemented boundaries.
 
-`target_binaries` in `go-plan.json` records the binary shape under review (an
+`target_binaries` in `go-plan.json` records the agreed binary shape (an
 Environments binary and a Sessions binary in place of the Runner Gateway and
 Sandbox Controller), the cut line between them with each crossing's status, the
 keep-alive hold design, and the operator questions still open, asked one at a
-time. Tracks name it where their placement depends on it; no track moves files
-on it until it is the agreed direction.
+time. Tracks name it where their placement depends on it.
 
 ## Reading the goal
 

@@ -31,10 +31,10 @@
     "On merge, delete the landed work item, exact mappings and dependencies; refresh the immutable current inventory and revisit affected package decisions. Keep only remaining work in the plan. A new package or unclassified file requires review before coverage is claimed."
   ],
   "target_binaries": {
-    "status": "PROPOSED",
-    "status_note": "Operator proposal, 2026-11-14 05:11 UTC, under review. Automatic wake is decided (Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".) No track moves files on this shape until it is the agreed direction.",
+    "status": "AGREED DIRECTION",
+    "status_note": "Operator proposal, 2026-11-14 05:11 UTC; adopted as the agreed reorg direction at 05:29 UTC (card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"). Automatic wake decided at 05:19 UTC (card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\").",
     "proposal_quote": "So, what's the plan on how we will structure binaries? One binary that handles sandbox controller kubernetes stuff and also communicates with the env runtimes in those sandboxes for running commands and starting native sessions in hosted harnesses and codex exec server stuff? And a separate binary handles the routing of commands to *sessions*, which would go either to central sampler or to hosted harnesses through the first binary?",
-    "summary": "Two binaries replace `runner-gateway` and `sandbox-controller`. The Environments binary owns Sandboxes and everything that calls an Environment Runtime; the Sessions binary owns Session admission, the durable command queue and routing, and reaches Runtimes only through the Environments binary. The Runner Gateway disappears. After gateway-connection-lease-removal its Runtime proxy and Executor keep no per-Sandbox state, and the Dispatcher already calls the proxy over the network (`dispatcher/runner_client.go` dials the per-Sandbox control Service even inside its own Pod), so moving the proxy out adds no hop. Before this proposal the plan, and the merge contract drafted in #16311 (closed as superseded), kept the Gateway as Dispatcher plus proxy.",
+    "summary": "Two binaries replace `runner-gateway` and `sandbox-controller`. The Environments binary owns Sandboxes and everything that calls an Environment Runtime; the Sessions binary owns Session admission, the durable command queue and routing, and reaches Runtimes only through the Environments binary. The Runner Gateway disappears. After gateway-connection-lease-removal its Runtime proxy and Executor keep no per-Sandbox state, and the Dispatcher already calls the proxy over the network (`dispatcher/runner_client.go` dials the per-Sandbox control Service even inside its own Pod), so moving the proxy out adds no hop. Before this direction the plan, and the merge contract drafted in #16311 (closed as superseded), kept the Gateway as Dispatcher plus proxy.",
     "today": [
       {
         "name": "runner-gateway",
@@ -69,8 +69,7 @@
         "from_paths": [
           "agentplane/sandbox_controller",
           "agentplane/runner_gateway/environments",
-          "agentplane/runner_gateway/internal/gateway",
-          "agentplane/runner_gateway/internal/sandboxinventory"
+          "agentplane/runner_gateway/internal/gateway"
         ],
         "callers": "The app, the app bridge, the Notification Service, the central sampler and the Sessions binary."
       },
@@ -86,6 +85,7 @@
         "from_paths": [
           "agentplane/runner_gateway/dispatcher",
           "agentplane/runner_gateway/migrations",
+          "agentplane/runner_gateway/internal/sandboxinventory",
           "agentplane/runner_gateway/main.go",
           "agentplane/runner_gateway/config.go"
         ],
@@ -144,8 +144,8 @@
         "id": "sandbox-view",
         "title": "The Sessions binary's view of Sandboxes",
         "status": "PROPOSED",
-        "today": "The delivery worker and admission read an informer cache of Sandboxes, Pods and VMs in process (`internal/sandboxinventory`, shared with the proxy) plus an uncached Identity reader.",
-        "proposal": "The Sessions binary keeps its own read-only Kubernetes cache, so delivery adds no call; the proxy's copy goes with the Environments binary.",
+        "today": "The delivery worker and admission read Sandboxes through `internal/sandboxinventory` (the Dispatcher's catalog over the process's informer cache of Sandboxes, Pods and VMs) plus an uncached Identity reader. The proxy reads the same informer cache directly.",
+        "proposal": "`internal/sandboxinventory` stays with the Sessions binary over its own read-only Kubernetes cache, so delivery adds no call; the proxy reads the Environments binary's cache.",
         "evidence_paths": [
           "agentplane/runner_gateway/internal/sandboxinventory/sandbox_kubernetes.go",
           "agentplane/runner_gateway/dispatcher/delivery.go"
@@ -198,7 +198,7 @@
     "questions": [
       {
         "status": "NEXT",
-        "text": "Adopt the two-binary shape as the agreed direction? Then the Gateway command, assembly and proxy tracks re-target to the two binaries, and the Gateway naming question goes away."
+        "text": "Name the two binaries' directories. The Sessions binary leaves `runner_gateway/` (proposal: `session_dispatcher/`, matching the `SessionDispatcher` service and its SVID); the Environments binary keeps `sandbox_controller/` or becomes `environments/` beside its API. The Sessions command and assembly wait on this so their files move once."
       },
       {
         "status": "QUEUED",
@@ -7564,11 +7564,11 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Runner Gateway deployment configuration, service startup, and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Runner Gateway peer auth, records, runner connections, proxy RPCs, sandbox access, and observer lifecycle; these share gateway connection ownership. EnvironmentService moves to the Sandbox Controller (agreed direction, stage 3); its runtime Lease goes in stage 1; its remaining per-Sandbox duties and name wait on gateway-replica-ownership (stage 5).",
+      "goal_note": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Environment Service discovery, management, and watch APIs over Sandbox resources.; Kubernetes mutations implementing EnvironmentService management operations.; Converts Sandbox resources into EnvironmentService API views.; Policy and guarded desired-state transitions for existing Sandboxes.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers and connection Leases until gateway-connection-lease-removal. The agreed two-binary shape splits this component: EnvironmentService, the Runtime proxy and the Executor go to the Environments binary (stage 3); the Dispatcher, its migrations and the command become the Sessions binary.",
       "decision": {
         "state": "REWORK",
         "role": "Session dispatch authority, Environment API and gateway adapters",
-        "goal_summary": "Runner Gateway deployment configuration, service startup, and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Runner Gateway peer auth, records, runner connections, proxy RPCs, sandbox access, and observer lifecycle; these share gateway connection ownership.",
+        "goal_summary": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.; Environment Service discovery, management, and watch APIs over Sandbox resources.; Kubernetes mutations implementing EnvironmentService management operations.; Converts Sandbox resources into EnvironmentService API views.; Policy and guarded desired-state transitions for existing Sandboxes.; Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers and connection Leases until gateway-connection-lease-removal.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/runner_gateway/config.go",
@@ -7597,7 +7597,7 @@
       "package_decisions": [
         {
           "path": "agentplane/runner_gateway",
-          "role": "Runner Gateway deployment configuration, service startup, and process assembly.",
+          "role": "Sessions binary (today's Runner Gateway) deployment configuration, service startup and process assembly.",
           "decision": "move",
           "target_paths": ["agentplane/runner_gateway/cmd"],
           "reason": "Runner Gateway deployment configuration, service startup, and process assembly. Move all package Go files, including colocated tests, to `agentplane/runner_gateway/cmd`; update callers and BUILD targets in the same change without a shim. Exact Go package set is config.go, main.go and config_test.go; app extraction follows separately.",
@@ -7781,15 +7781,13 @@
         },
         {
           "path": "agentplane/runner_gateway/internal/gateway",
-          "role": "Runner Gateway peer auth, records, runner connections, proxy RPCs, sandbox access, and observer lifecycle; these share gateway connection ownership.",
-          "decision": "design",
+          "role": "Runtime proxy, Executor, peer authentication and Sandbox/Pod validation; Runner observers and connection Leases until gateway-connection-lease-removal.",
+          "decision": "move",
           "target_paths": [
-            "agentplane/runner_gateway/internal/gateway",
-            "agentplane/runner_gateway/internal/runtimeconnections",
-            "agentplane/runner_gateway/internal/proxy"
+            "agentplane/sandbox_controller/internal/runtimeproxy"
           ],
-          "reason": "Runner Gateway peer auth, records, runner connections, proxy RPCs, sandbox access, and observer lifecycle; these share gateway connection ownership. Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
-          "gate": "No move planned; preserve API/schema and current behavior.",
+          "reason": "The agreed two-binary shape puts every Runtime caller path in the Environments binary. After the connection Lease goes the package is a stateless forwarder with no per-Sandbox state to split.",
+          "gate": "Moves after gateway-connection-lease-removal and EnvironmentService's every-replica listener (runner-gateway-connections-proxy).",
           "evidence_paths": [
             "agentplane/runner_gateway/internal/gateway/connections.go",
             "agentplane/runner_gateway/internal/gateway/executor.go",
@@ -7800,7 +7798,6 @@
           "pending_tracks": [
             "gateway-connection-lease-removal",
             "runner-gateway-command",
-            "gateway-replica-ownership",
             "runner-gateway-connections-proxy"
           ],
           "counts": {
@@ -7810,7 +7807,7 @@
         },
         {
           "path": "agentplane/runner_gateway/internal/sandboxinventory",
-          "role": "Kubernetes-backed sandbox inventory lookup for Gateway routing.",
+          "role": "Informer-backed Sandbox reads and the uncached Identity reader behind the Dispatcher's catalog; stays with the Sessions binary.",
           "decision": "retain",
           "target_paths": [
             "agentplane/runner_gateway/internal/sandboxinventory"
@@ -7929,6 +7926,7 @@
         "runner-era-names",
         "environment-service-to-sandbox-controller",
         "sandbox-controller-lifecycle",
+        "runner-gateway-connections-proxy",
         "settings-single-source"
       ],
       "goal_note": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status. Receives EnvironmentService (agreed direction, stage 3).",
@@ -9544,7 +9542,7 @@
       "kind": "service boundary move",
       "stage": 3,
       "priority": 1,
-      "summary": "Operator, 2026-11-14 direction discussion: merging EnvironmentService into the Sandbox Controller \"sounds good\". The service code is self-contained: `runner_gateway/environments` and its `lifecycle`, `internal/management` and `internal/view` packages import shared Agentplane packages and generated protos, never Gateway or Dispatcher internals. Three in-process couplings with the Dispatcher, plus the Sandbox Controller not serving gRPC today, decide the merge's shape. Under the proposed two-binary shape (target binaries) the Sandbox Controller becomes the Environments binary. Automatic wake stays with the Dispatcher (Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".)",
+      "summary": "Operator, 2026-11-14 direction discussion: merging EnvironmentService into the Sandbox Controller \"sounds good\". The service code is self-contained: `runner_gateway/environments` and its `lifecycle`, `internal/management` and `internal/view` packages import shared Agentplane packages and generated protos, never Gateway or Dispatcher internals. Three in-process couplings with the Dispatcher, plus the Sandbox Controller not serving gRPC today, decide the merge's shape. Under the agreed two-binary shape (target binaries) the Sandbox Controller becomes the Environments binary; the Runtime proxy and Executor follow (runner-gateway-connections-proxy). Automatic wake stays with the Dispatcher (Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".)",
       "how": [
         "Write the remaining merge contract: (a) wake is decided: the Dispatcher keeps `RequestWake`'s automatic policy check and its budget and writes the Sandbox spec itself, so EnvironmentService carries only explicit resume; split `lifecycle` along that line.",
         "(b) wake budget: stays in the Dispatcher's PostgreSQL (`dispatcher/wake.go` `ReserveWakeAttempt`); the controller reserves none. Explicit resume needs its own bound only once Identity callers can resume (cut line: explicit-resume bound).",
@@ -9584,18 +9582,18 @@
     },
     {
       "id": "runner-gateway-command",
-      "title": "Move Runner Gateway root package to cmd as one exact package group",
-      "status": "READY",
+      "title": "Place the Sessions binary's command under cmd as one exact package group",
+      "status": "HELD",
       "components": ["runner_gateway"],
       "source_paths": ["agentplane/runner_gateway"],
       "target_paths": ["agentplane/runner_gateway/cmd"],
-      "summary": "Move config.go, main.go and config_test.go together, preserving package main and behavior. Root BUILD also owns non-Go image/test targets, so relocate only command ownership and update BUILD callers.",
+      "summary": "Under the agreed two-binary shape the Runner Gateway's root package becomes the Sessions binary's command. Move config.go, main.go and config_test.go together, preserving package main and behavior. Root BUILD also owns non-Go image/test targets, so relocate only command ownership and update BUILD callers.",
       "how": [
         "Move the three listed Go files and package-local test together; keep root image and other non-Go target ownership explicit.",
         "Update executable, main library, BUILD callers, docs and manifests atomically; no shim.",
         "Do not extract app behavior in this move."
       ],
-      "gate": "Preserve non-Go root build rules and deployment contract while moving the Go command package. Sequenced after EnvironmentService leaves: that move rewrites this composition (EnvironmentService construction, the lifecycle wake budget, environment caller lists). If a Gateway rename is decided by then (gateway-replica-ownership), combine them so these files move once. If the two-binary shape is adopted (target binaries), this becomes the Sessions binary's command.",
+      "gate": "Held so the files move once: EnvironmentService and the Runtime proxy leaving rewrite this composition, and the Sessions binary's directory follows the binaries' naming question (target binaries). Preserve non-Go root build rules and the deployment contract.",
       "preserve": "YAML/env configuration precedence and validation; Migration/startup exit behavior; Existing trust/account checks",
       "validation": [
         "//agentplane/runner_gateway:config_test",
@@ -9606,7 +9604,10 @@
         "agentplane/runner_gateway/config.go",
         "agentplane/runner_gateway/BUILD.bazel"
       ],
-      "dependencies": ["environment-service-to-sandbox-controller"],
+      "dependencies": [
+        "environment-service-to-sandbox-controller",
+        "runner-gateway-connections-proxy"
+      ],
       "priority": 2,
       "review_size": "Group the exact command move with the app assembly extraction, or other command placement work, if its rename-aware diff is below 200 LOC. Close all callers in that PR.",
       "path_moves": [
@@ -9628,12 +9629,12 @@
       "source_owner": "agentplane/runner_gateway",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 3,
+      "stage": 5,
       "proposed_file_targets": []
     },
     {
       "id": "runner-gateway-app",
-      "title": "Extract Runner Gateway assembly into an internal app owner",
+      "title": "Extract the Sessions binary's assembly into an internal app owner",
       "status": "PLANNED",
       "components": ["runner_gateway"],
       "source_paths": [
@@ -9649,11 +9650,11 @@
       "how": [
         "Move config.go and config_test.go to app; provide a narrow Run/Main entry accepting context and args.",
         "Move kubernetesConfig, dispatcherAccount, accountNamespaces, wake budget, readiness, run/listenAndServe/serve and config/migration setup as appropriate.",
-        "Keep cmd/main.go minimal; retain per-Pod TokenReview/UID/service-account checks in app setup.",
+        "Keep cmd/main.go minimal. The same-Pod delivery-account proof (`dispatcherAccount`) leaves with the proxy; the Sessions binary presents its own workload identity to the Environments proxy.",
         "Combine with command placement when useful. If the command move lands separately, adapt paths by rebase; it is not an architectural prerequisite."
       ],
-      "gate": "Test config precedence and server wiring; preserve bounded shutdown and identity checks. If the two-binary shape is adopted (target binaries), this becomes the Sessions binary's command.",
-      "preserve": "Dispatcher workload identity proof and namespace scoping; Listener readiness before serving; Observer/connection cleanup before exit",
+      "gate": "Test config precedence and server wiring; preserve bounded shutdown. Waits, with the command placement, for EnvironmentService and the proxy to leave and for the Sessions binary's directory name.",
+      "preserve": "Namespace scoping; listener readiness before serving; bounded shutdown of delivery workers",
       "validation": [
         "//agentplane/runner_gateway:config_test",
         "//agentplane/runner_gateway:runner-gateway"
@@ -9663,7 +9664,10 @@
         "agentplane/runner_gateway/config.go",
         "agentplane/runner_gateway/config_test.go"
       ],
-      "dependencies": ["environment-service-to-sandbox-controller"],
+      "dependencies": [
+        "environment-service-to-sandbox-controller",
+        "runner-gateway-connections-proxy"
+      ],
       "priority": 3,
       "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
       "path_moves": [],
@@ -9723,7 +9727,7 @@
       "kind": "organization",
       "source_owner": "agentplane/runner_gateway",
       "deleted_paths": [],
-      "stage": 3,
+      "stage": 5,
       "proposed_file_targets": []
     },
     {
@@ -10960,16 +10964,16 @@
       "proposed_file_targets": [],
       "source_owner": null,
       "id": "gateway-replica-ownership",
-      "title": "Decide the Dispatcher's ownership Lease and the Gateway's name",
+      "title": "Decide what replaces the Dispatcher's ownership Lease",
       "components": ["runner_gateway"],
       "status": "OPEN DIRECTION",
       "kind": "service boundary design",
       "stage": 5,
       "priority": 8,
-      "summary": "With the connection Lease and the `-control` EndpointSlice going (gateway-connection-lease-removal), the Gateway keeps no per-Sandbox routing state. The Dispatcher still claims its own per-Sandbox ownership Lease (`dispatcher/ownership.go`), while History, Notifications and the sampler use `postgres/lease`. What stays in `runner_gateway` once EnvironmentService leaves, and its name (`RUNNER_GATEWAY_RENAME`, operator 2026-10-31: Environment Gateway), follow from this. The proposed two-binary shape (target binaries) would remove the Gateway: its proxy and Executor go to the Environments binary and the Dispatcher becomes the Sessions binary, so the naming question becomes the two binaries' names.",
+      "summary": "With the connection Lease and the `-control` EndpointSlice going (gateway-connection-lease-removal), the Dispatcher's own per-Sandbox ownership Lease (`dispatcher/ownership.go`) is the last Kubernetes Lease in delivery, while History, Notifications and the sampler use `postgres/lease`. The Gateway's name question (`RUNNER_GATEWAY_RENAME`, operator 2026-10-31: Environment Gateway) is dropped: the agreed two-binary shape removes the Gateway, and the binaries' names are in the target binaries questions.",
       "how": [
         "Decide what, if anything, replaces the Dispatcher's ownership Lease.",
-        "Then settle the Gateway's package split (runner-gateway-connections-proxy, runner-gateway-dispatcher-store) and name in one sequence, so its files move once."
+        "Then design the Dispatcher store split (runner-gateway-dispatcher-store) once, with the decided ownership."
       ],
       "gate": "Open.",
       "preserve": "Generation and incarnation fencing of deliveries.",
@@ -10984,24 +10988,21 @@
     },
     {
       "id": "runner-gateway-connections-proxy",
-      "title": "Keep the gateway owner cohesive until a connection/watch/proxy split has explicit lifetimes",
-      "status": "DESIGN REQUIRED",
-      "components": ["runner_gateway"],
+      "title": "Move the Runtime proxy and Executor into the Environments binary",
+      "status": "AGREED DIRECTION",
+      "components": ["runner_gateway", "sandbox_controller"],
       "source_paths": ["agentplane/runner_gateway/internal/gateway"],
-      "target_paths": [
-        "agentplane/runner_gateway/internal/gateway",
-        "agentplane/runner_gateway/internal/runtimeconnections",
-        "agentplane/runner_gateway/internal/proxy"
-      ],
-      "summary": "Retain `package gateway` and its current directory. It owns peer/auth records, runner connections, proxy RPCs, sandbox access, and observer lifecycle; those files share connection and lease release ownership. A future split must identify which owner closes each connection and releases each fence. Candidate owners are `internal/runtimeconnections` for connection/observer/lease lifetime and `internal/proxy` for RPC forwarding, with `internal/gateway` composing/authenticating them. No current file is allocated to either candidate until receiver state and close/release ownership are mapped.",
+      "target_paths": ["agentplane/sandbox_controller/internal/runtimeproxy"],
+      "summary": "Agreed with the two-binary shape (Operator, 2026-11-14 05:29 UTC, card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\".) `internal/gateway` holds the Runtime proxy (native Session creation, commands and read-only diagnostics), the Executor behind the central sampler's code mode, peer authentication, Sandbox and Pod validation, and until gateway-connection-lease-removal the Runner observers and connection Leases. After that removal what remains is a stateless authenticated forwarder: per call it validates the Sandbox and its current Pod, dials the Runtime with mutual TLS and forwards once, never replaying an uncertain mutation.",
       "how": [
-        "Map gateway connection/observer/watch lifetimes and lease-release order before proposing new packages.",
-        "Keep methods on the shared gateway owner together until the state/API boundary is explicit.",
-        "Do not rename the aggregate to proxy based on one role among several.",
-        "Probe whether independent APIs can separate proxy calls from connection/watch lifetime; if not, keep the cohesive gateway package."
+        "After gateway-connection-lease-removal, re-inventory `internal/gateway`: the proxy, the Executor, peer authentication and Sandbox/Pod validation remain.",
+        "Move it whole into the Environments binary under the proposed `sandbox_controller/internal/runtimeproxy` (the directory follows the binaries' naming question), served by the every-replica listener EnvironmentService brings (target binaries cut line: serving).",
+        "Grant the proxy's mutating methods to the Sessions binary's workload identity in place of the same-Pod account proof (`dispatcherAccount`), receivers before senders (cut line: Runtime calls).",
+        "Retarget callers: the Dispatcher's `ProxyRunner`, the app bridge, the Notification Service's `ProxyRunner` and the central sampler's Executor client. The controller's quiesce calls the Runtime directly, as its `WatchState` observer already does.",
+        "Update RBAC, certificate identities, cdk8s and settings (code before manifests) and the README system diagram; remove the old serving path after traffic has left (cut line: rollout)."
       ],
-      "gate": "No package split until an owner map and race tests prove close-before-release, observer join and generation fencing. Candidate paths are provisional; require narrow APIs and race-tested close-before-release before creating them. The connection Lease, its epoch and the control EndpointSlice go first (gateway-connection-lease-removal). Split only what remains. Under the proposed two-binary shape the proxy and Executor move to the Environments binary; after the connection Lease goes, map the split against that destination.",
-      "preserve": "Peer authentication; Connection/observer lifetime and lease release ordering; Generation fences",
+      "gate": "Direction agreed. Waits for gateway-connection-lease-removal, so no Lease or epoch code moves, and for EnvironmentService's every-replica listener. Cross-service protocol change: system tests covering command delivery, quiesce, suspend and the central sampler's code mode must pass, and each PR states its rollback.",
+      "preserve": "Per-method caller authorization; Sandbox UID, incarnation and boot-ID fencing; at-most-once forwarding of execution mutations; Executor stream semantics.",
       "validation": [
         "//agentplane/runner_gateway/internal/gateway:gateway_test",
         "//agentplane/runner_gateway/internal/gateway:queue_runner_integration_test"
@@ -11010,26 +11011,32 @@
         "agentplane/runner_gateway/internal/gateway/gateway.go",
         "agentplane/runner_gateway/internal/gateway/connections.go",
         "agentplane/runner_gateway/internal/gateway/runner_observer.go",
-        "agentplane/runner_gateway/internal/gateway/proxy.go"
+        "agentplane/runner_gateway/internal/gateway/proxy.go",
+        "agentplane/runner_gateway/internal/gateway/executor.go",
+        "agentplane/runner_gateway/main.go",
+        "agentplane/runner_gateway/dispatcher/runner_client.go",
+        "agentplane/app/internal/bridge/runner.go",
+        "agentplane/notification_service/internal/rpc/runner.go",
+        "agentplane/central_sampler/internal/executor/executor.go",
+        "agentplane/sandbox_controller/internal/runnercontrol/quiescer.go"
       ],
       "dependencies": [
         "gateway-connection-lease-removal",
-        "gateway-replica-ownership",
         "environment-service-to-sandbox-controller"
       ],
       "priority": 9,
-      "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
+      "review_size": "One PR moving the package and retargeting callers behind the new Service; one removing the old serving path after the pins.",
       "candidate_owner_paths": [
         "agentplane/runner_gateway/internal/runtimeconnections",
         "agentplane/runner_gateway/internal/proxy"
       ],
       "path_moves": [],
       "package_renames": [],
-      "kind": "responsibility extraction",
+      "kind": "agreed move across services",
       "source_owner": "agentplane/runner_gateway/internal/gateway",
       "file_splits": [],
       "deleted_paths": [],
-      "stage": 5,
+      "stage": 3,
       "proposed_file_targets": []
     },
     {
@@ -11340,11 +11347,10 @@
       "title": "Follow the agreed service directions",
       "work": [
         "environment-service-to-sandbox-controller",
-        "runner-gateway-command",
-        "runner-gateway-app",
+        "runner-gateway-connections-proxy",
         "orchestration-v1-retirement"
       ],
-      "result": "Move EnvironmentService into the Sandbox Controller after its merge contract (automatic wake stays with the Dispatcher, decided 2026-11-14), then place what remains of the Gateway's command once. Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
+      "result": "Make the Sandbox Controller the Environments binary: move EnvironmentService after its merge contract (automatic wake stays with the Dispatcher, decided 2026-11-14), then the Runtime proxy and Executor. Retire orchestration_v1 once its interface review and the environment-rule slices are answered."
     },
     {
       "stage": 4,
@@ -11378,13 +11384,14 @@
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner",
+        "runner-gateway-command",
+        "runner-gateway-app",
         "gateway-replica-ownership",
-        "runner-gateway-connections-proxy",
         "runner-gateway-dispatcher-store",
         "history-journals",
         "settings-single-source"
       ],
-      "result": "The Notification split, the Dispatcher's ownership Lease and the Gateway's name (or, under the proposed two-binary shape, no Gateway), the Journal service and a single settings source are open. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
+      "result": "The Notification split, the Dispatcher's ownership Lease, the two binaries' names (which place the Sessions binary's command once), the Journal service and a single settings source are open. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
     },
     {
       "stage": 6,
@@ -11690,6 +11697,13 @@
       "title": "Move EnvironmentService into the Sandbox Controller",
       "readiness": "AGREED DIRECTION",
       "first_step": "Write the identity-fence and every-replica serving contract; automatic wake stays with the Dispatcher."
+    },
+    {
+      "id": "next-11",
+      "track": "runner-gateway-connections-proxy",
+      "title": "Move the Runtime proxy and Executor into the Environments binary",
+      "readiness": "AGREED DIRECTION",
+      "first_step": "After the connection Lease removal, move internal/gateway into the Environments binary behind EnvironmentService's listener."
     }
   ],
   "maintenance": {
