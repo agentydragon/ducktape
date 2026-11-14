@@ -51,13 +51,20 @@ reservations through a public EnvironmentService method.
 **Identity change.** A check followed by an unlocked controller patch is insufficient: a Session can
 be admitted between them. The controller authenticates and authorizes the original
 `SetEnvironmentIdentity` caller, resolves the requested Identity to its exact UID, then calls a
-private Dispatcher identity-change operation. Dispatcher takes the same exclusive Sandbox UID
-advisory lock used today, checks retained Sessions under that lock, and performs the guarded
-Kubernetes patch before releasing it. The operation accepts the exact Sandbox UID and expected
-resource version plus the desired Identity name and UID; it re-reads and verifies the target and
-Identity as necessary before patching. `CreateSession` continues to take the shared lock and recheck
-the live binding. A same-name replacement, a conflict, failed Session query or unavailable Dispatcher
-must not turn into a successful unguarded mutation. The private operation admits only the controller
+private Dispatcher identity-change operation. The operation accepts the exact Sandbox UID and
+expected resource version plus the desired Identity name and UID; it re-reads and verifies the target
+and Identity before patching. Dispatcher checks retained Sessions under its exclusive Sandbox UID
+advisory lock, and `CreateSession` takes the shared lock and rechecks the live binding.
+
+The lock alone does not establish the fence: cancellation, a lost database connection or process
+death can release it while an already-issued Kubernetes patch may still commit. Before enabling the
+private operation or moving traffic, design and test a durable pending identity-change fence that
+Session admission checks across those failures. On an unknown patch outcome, retain that fence until
+reconciliation has established the resulting binding and made any late request unable to apply;
+do not clear it merely because the RPC returned an error or a read still shows the old binding. The
+existing in-process path has the same cross-system uncertainty and needs the same protection during
+the mixed-version overlap. A same-name replacement, a conflict, failed Session query or unavailable
+Dispatcher must not turn into a successful unguarded mutation. The private operation admits only the controller
 workload; it is not a new user-facing identity-change API. Preserve the existing refusal and conflict
 semantics and limits on listed Session IDs.
 
