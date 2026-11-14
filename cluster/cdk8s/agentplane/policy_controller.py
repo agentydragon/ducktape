@@ -6,14 +6,17 @@ policy_controller_rbac.py and binding_delegation.py.
 from __future__ import annotations
 
 from collections.abc import Set
+from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
+from agentplane.net.peertls.config import POLICY_CONTROLLER_URI, ServerTLSListener
 from agentplane.policy_controller.settings import Settings
 from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s.agentplane import workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.cert_manager.cluster_ca import WORKLOAD_ISSUER
@@ -30,6 +33,7 @@ NAME = "policy-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-policy-controller"
 _HEALTH_PORT = 8081
+_TLS_PORT = 8083
 TOKEN_AUDIENCE = "agentplane-policy"
 # How long a PolicyBinding may outlive its expiresAt before it alerts: the controller deletes it
 # within seconds, so this is the controller being down or its deletes failing.
@@ -49,6 +53,14 @@ def metrics(namespace: str) -> ServiceRef:
 def service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME, port=Port(name="grpc", number=8082), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+    )
+
+
+def tls_service(namespace: str) -> ServiceRef:
+    return ServiceRef(
+        name=NAME,
+        port=Port(name="grpc-tls", number=_TLS_PORT),
+        pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
 
@@ -72,13 +84,20 @@ class PolicyController(Construct):
         self.env = env
         namespace = env.namespace
         endpoint = metrics(namespace)
+        grpc_service = service(namespace)
+        grpc_tls_service = tls_service(namespace)
         settings = Settings(
             policy_namespace=namespace,
             subject_namespaces=frozenset({namespace}),
             accounts_namespace=accounts_namespace,
             metrics_bind_address=f":{endpoint.port.number}",
             health_probe_bind_address=f":{_HEALTH_PORT}",
-            grpc_bind_address=f":{service(namespace).pod_port}",
+            grpc_bind_address=f":{grpc_service.pod_port}",
+            grpc_tls=ServerTLSListener(
+                listen=f":{grpc_tls_service.pod_port}",
+                cert_file=Path(workload_tls.CERT_FILE),
+                key_file=Path(workload_tls.KEY_FILE),
+            ),
             grpc_audience=TOKEN_AUDIENCE,
             workload_issuer=WORKLOAD_ISSUER.name,
             # policy_controller_rbac.py grants the issuer the same namespaces.
@@ -96,7 +115,7 @@ class PolicyController(Construct):
         workload = add_service_workload(
             self,
             env,
-            serves=[endpoint, service(namespace)],
+            serves=[endpoint, grpc_service, grpc_tls_service],
             container="policy-controller",
             image=f"{_IMAGE}:unset",
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
@@ -112,6 +131,7 @@ class PolicyController(Construct):
             registry_secret_name=registry_secret_name,
         )
         settings_file.mount_into(workload.container, env=Settings.config_file_env)
+        workload_tls.serving_certificate(self, env, container=workload.container, name=NAME, uri=POLICY_CONTROLLER_URI)
         self.account = workload.account
         token_reviewer_cluster_rbac(
             self,
@@ -132,7 +152,9 @@ class PolicyController(Construct):
             endpoint_selector=endpoint.pods.selector,
             ingress=[
                 cilium.SCRAPERS.admit(endpoint.pod_port),
-                Pods(namespace=namespace, labels=()).admit(service(namespace).pod_port),
+                Pods(namespace=namespace, labels=()).admit(
+                    service(namespace).pod_port, tls_service(namespace).pod_port
+                ),
             ],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER)],
         )
