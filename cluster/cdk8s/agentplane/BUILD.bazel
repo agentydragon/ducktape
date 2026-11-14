@@ -943,6 +943,7 @@ py_test(
         ":staging",
         ":telemetry",
         "//:conftest",
+        "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",

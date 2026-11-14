@@ -2139,13 +2139,13 @@ Boxes and Sandboxes are to converge into one object type
 ### `SERVICE_SETTINGS_RETHINK` — how Agentplane services are configured
 
 **Decision, then changes; unscheduled (operator, 2026-10-20 UTC: keep the egress sidecar on YAML "for now" and
-"leave a to-do to rethink how the configuration of this whole thing should work").** Today each Go service
-reads environment variables, plus a YAML file where it has settings env cannot carry, through Viper; the
-egress sidecar reads one strict `yaml.v3` file; each service's Python `Settings` schema renders both. The
-operator asked whether services need both files and environment variables ("Do we need both files and
-env vars", 2026-10-20 UTC). Moving the sidecar to Viper would also need its audience and route maps
-to become lists of records, since Viper lowercases map keys. Settle the approach for all services
-first; changes follow as their own nodes.
+"leave a to-do to rethink how the configuration of this whole thing should work").** The app and Action Service
+read required YAML files with strict `yaml.v3` and `mapstructure` decoding; other services retain their existing
+file and runtime-input contracts, and the egress sidecar reads one strict `yaml.v3` file. Each service's Python
+`Settings` schema renders its static settings. The operator asked whether services need both files and environment
+variables ("Do we need both files and env vars", 2026-10-20 UTC). A generic environment layer would need to account
+for Viper's lowercasing of map keys, which requires list-shaped audience and route maps for the sidecar. Settle the
+approach for all services first; changes follow as their own nodes.
 
 ## 9. Legacy burn-down
 
@@ -3608,11 +3608,6 @@ Live callers checked on devel, 2026-11-10 (`grep` of `auth.<Rule>(` outside test
   push by SVID, so its only sender is the central sampler's `history` projected token
   (`central_sampler_workload.py`). Rename it for the sampler, or fold it into History's own audience;
   coordinate the sampler's projection and History's listener audiences. No gate.
-- **The Action Service's `caller_service_account_namespaces`** lists `public-coder-agent`'s namespace
-  (`cluster/cdk8s/agentplane/staging.py`, `ActionsProps`), which no caller reaches it from; the
-  setting feeds the TokenReview and SVID resolvers, the policy informer and a per-namespace Role
-  (`actions.py`). Drop the entry and its Role after confirming no `WorkloadCredential` or bearer
-  caller in that namespace reaches the Action Service.
 - **Stale doc sentences.** `docs/workload_authentication.md` § TokenReview and projected credentials
   says Sandbox Runtime templates "continue to project" the Kubernetes token (none since #15258; only
   command boxes do) and § Service authorization says authentication yields "only the verified Sandbox
