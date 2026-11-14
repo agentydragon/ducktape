@@ -70,6 +70,7 @@ class GatewayProcess:
     dispatcher_audience: str
     gateway_audience: str
     _restart: Callable[[Callable[[], Awaitable[None]] | None], Awaitable[GoProcess]]
+    _close_listener: Callable[[], None]
 
     @property
     def client_tls(self) -> runtime_transport.ClientTLS:
@@ -136,6 +137,8 @@ class GatewayProcess:
             await asyncio.sleep(min(0.05, remaining))
 
     async def stop(self) -> None:
+        """Stop permanently, releasing the parent's copy of the inherited listener too."""
+        self._close_listener()
         if self.process.returncode is None:
             with suppress(ProcessLookupError):
                 self.process.terminate()
@@ -287,6 +290,7 @@ async def run_gateway(
                     dispatcher_audience=dispatcher_audience,
                     gateway_audience=gateway_audience,
                     _restart=restart_process,
+                    _close_listener=rpc_listener.socket.close,
                 )
                 # Keep the parent listener FD open so the replacement inherits the same bound
                 # address while the old process is stopped.
