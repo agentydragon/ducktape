@@ -22,7 +22,13 @@ from agentplane.env.runtime.harness import Harness
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI
+from agentplane.net.peertls.config import (
+    CENTRAL_SAMPLER_URI,
+    GATEWAY_SESSIONS_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
 from agentplane.system_tests.deployment import fixture_chart, fixture_database, rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
@@ -39,6 +45,7 @@ from cluster.cdk8s.agentplane import (
     mcp_edge,
     runner_gateway,
     session_dispatcher,
+    workload_tls,
 )
 from util.settings_contract import env_name
 
@@ -280,7 +287,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
     assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-session-dispatcher"
-    token_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "runner-gateway-token")
     token = next(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")["projected"][
         "sources"
     ][0]["serviceAccountToken"]
@@ -289,7 +295,20 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     gateway_config = yaml.safe_load(
         _resource(docs, "ConfigMap", f"{fixture_chart.RUNNER_GATEWAY}-settings")["data"]["settings.yaml"]
     )
-    assert gateway_config["runner_token_file"] == f"{token_mount['mountPath']}/{token['path']}"
+    assert "runner_token_file" not in gateway_config
+    sessions_tls_mount = one(
+        mount
+        for mount in container["volumeMounts"]
+        if mount["name"] == f"{runner_gateway.NAME}-sessions-client-workload-tls"
+    )
+    sessions_tls_path = PurePosixPath(sessions_tls_mount["mountPath"])
+    assert gateway_config["gateway_tls"] == {
+        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "server_uri": SESSION_DISPATCHER_URI,
+        "cert_file": str(sessions_tls_path / "tls.crt"),
+        "key_file": str(sessions_tls_path / "tls.key"),
+        "client_uri": GATEWAY_SESSIONS_URI,
+    }
     assert gateway_config["gateway_audience"] == token["audience"]
     assert gateway_config["operator_callers"] == [f"{NAMESPACE}/app"]
     assert gateway_config["environment_launchers"] == [f"{NAMESPACE}/actions"]
