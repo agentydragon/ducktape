@@ -59,7 +59,7 @@ def test_operator_reader_account_and_service_svid_can_coexist() -> None:
     values["operator_reader_account"] = "test-app"
     values["operator_reader_services"] = ["spiffe://agentplane/app"]
     values["rpc"] = {
-        **static_values()["rpc"],
+        "listen_address": "0.0.0.0:8080",
         "auth": [
             {"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]},
             {"mode": "spiffe", "ca_file": "/trust/workload-ca.pem"},
