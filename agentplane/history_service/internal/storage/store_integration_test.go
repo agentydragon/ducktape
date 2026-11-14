@@ -759,14 +759,28 @@ func TestAServiceWriterKeepsItsCertificateAndExecutionIdentitySeparate(t *testin
 			t.Fatal(err)
 		}
 	}
+	if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, Sandbox{}, &identity); err != nil {
+		t.Fatalf("reconnect without Sandbox provenance: %v", err)
+	}
+	replacementSandbox := testIdentitySandbox
+	replacementSandbox.UID = "replacement-sandbox-uid"
+	if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, replacementSandbox, &identity); !errors.Is(err, ErrSandboxMismatch) {
+		t.Fatalf("replacement Sandbox UID: %v, want ErrSandboxMismatch", err)
+	}
 	var serviceURI, identityName, identityUID string
-	var accountUID sql.NullString
-	if err := db.QueryRowContext(t.Context(), `SELECT writer_service_uri, writer_uid, execution_identity_name, execution_identity_uid
-		FROM session_history WHERE id=$1`, sessionID).Scan(&serviceURI, &accountUID, &identityName, &identityUID); err != nil {
+	var accountUID, sandboxNamespace, sandboxName, sandboxUID sql.NullString
+	if err := db.QueryRowContext(t.Context(), `SELECT writer_service_uri, writer_uid, execution_identity_name, execution_identity_uid,
+		sandbox_namespace, sandbox_name, sandbox_uid FROM session_history WHERE id=$1`, sessionID).Scan(
+		&serviceURI, &accountUID, &identityName, &identityUID, &sandboxNamespace, &sandboxName, &sandboxUID,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if serviceURI != serviceWriter.SPIFFEID || accountUID.Valid || identityName != identity.Name || identityUID != identity.UID {
-		t.Fatalf("writer=%q account=%v execution identity=%s/%s", serviceURI, accountUID, identityName, identityUID)
+	if serviceURI != serviceWriter.SPIFFEID || accountUID.Valid || identityName != identity.Name || identityUID != identity.UID ||
+		!sandboxNamespace.Valid || sandboxNamespace.String != testIdentitySandbox.Namespace ||
+		!sandboxName.Valid || sandboxName.String != testIdentitySandbox.Name ||
+		!sandboxUID.Valid || sandboxUID.String != testIdentitySandbox.UID {
+		t.Fatalf("writer=%q account=%v execution identity=%s/%s sandbox=%v/%v/%v", serviceURI, accountUID,
+			identityName, identityUID, sandboxNamespace, sandboxName, sandboxUID)
 	}
 
 	listed := func(scope ReadScope) bool {
@@ -787,6 +801,29 @@ func TestAServiceWriterKeepsItsCertificateAndExecutionIdentitySeparate(t *testin
 	}
 	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); !errors.Is(err, ErrWriterMismatch) {
 		t.Fatalf("ServiceAccount replaced service writer: %v", err)
+	}
+}
+
+func TestAServiceWriterMayBindWithoutSandboxProvenance(t *testing.T) {
+	store := testStore(t)
+	serviceWriter := ServiceWriter{SPIFFEID: "spiffe://agentplane/central-sampler"}
+	sessionID := uuid.New()
+	for range 2 {
+		if _, err := store.BindServiceWriter(t.Context(), sessionID, serviceWriter, Sandbox{}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var serviceURI string
+	var sandboxNamespace, sandboxName, sandboxUID sql.NullString
+	if err := store.db.QueryRowContext(t.Context(), `SELECT writer_service_uri, sandbox_namespace, sandbox_name, sandbox_uid
+		FROM session_history WHERE id=$1`, sessionID).Scan(&serviceURI, &sandboxNamespace, &sandboxName, &sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	if serviceURI != serviceWriter.SPIFFEID || sandboxNamespace.Valid || sandboxName.Valid || sandboxUID.Valid {
+		t.Fatalf("service writer=%q sandbox=%v/%v/%v", serviceURI, sandboxNamespace, sandboxName, sandboxUID)
+	}
+	if _, err := store.BindServiceWriter(t.Context(), uuid.New(), serviceWriter, Sandbox{Namespace: "testing"}, nil); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("incomplete Sandbox attribution: %v", err)
 	}
 }
 

@@ -21,6 +21,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -31,6 +33,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -134,6 +137,69 @@ func newServerWithDelegation(
 	return testServer{service: service, hub: hub, client: historypb.NewHistoryServiceClient(connection), history: history, db: db}
 }
 
+func newServiceAccessServer(
+	t *testing.T,
+	directCallers []string,
+	serviceDelegators []auth.ServiceDelegator,
+	identities auth.IdentityUIDReader,
+) (testServer, func(*testing.T, string) historypb.HistoryServiceClient) {
+	t.Helper()
+	db := postgres.Open(t, integrationDatabase.URL)
+	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, storage.ChannelHistory, projection.ChannelSummaries, storage.ChannelSessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { hub.Close() })
+	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := storage.NewStore(db, storage.Options{SettleDeltas: true})
+	service := NewService(Options{
+		Reader:         &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
+		ReaderAccounts: []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},
+		Wakeups:        hub, RequestTimeout: callDeadline, WatchLease: time.Second,
+	})
+	methods := Methods(resolver)
+	methods, err = methods.WithServiceCallers(ReadMethods(), directCallers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err = methods.WithServiceDelegation(ReadMethods(), serviceDelegators, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
+	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(callDeadline), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	historypb.RegisterHistoryServiceServer(server, service)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	connect := func(t *testing.T, caller string) historypb.HistoryServiceClient {
+		t.Helper()
+		clientFiles := ca.Issue(t, caller)
+		clientTLS, err := clientFiles.ClientTLSConfig(peertls.HistoryIngressURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return historypb.NewHistoryServiceClient(connection)
+	}
+	return testServer{service: service, hub: hub, history: history, db: db}, connect
+}
+
 // bearing is a call context carrying the token, or none for "".
 func bearing(t *testing.T, token string) context.Context {
 	t.Helper()
@@ -197,6 +263,20 @@ func delegatedIdentity(t *testing.T, token string, identity storage.Identity) co
 	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
 		"authorization", "Agentplane-Delegated "+token, auth.DelegationMetadataKey, string(encoded),
 	))
+}
+
+func serviceDelegatedIdentity(t *testing.T, identity storage.Identity) context.Context {
+	t.Helper()
+	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: uuid.NewString()}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
+	t.Cleanup(cancel)
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(auth.DelegationMetadataKey, string(encoded)))
 }
 
 func testEntry(cursor uint64) *eventlogpb.EventEntry {
@@ -539,6 +619,63 @@ func TestDelegatedHistoryUsesTheRetainedIdentityScope(t *testing.T) {
 	}
 	if _, err := server.client.ReadSessionEvents(delegatedIdentity(t, readerToken, owner), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("delegation with replaced effective caller UID = %v, want PermissionDenied", err)
+	}
+}
+
+func TestServiceReaderAndDelegatedServiceUseSeparateReadScopes(t *testing.T) {
+	owner := storage.Identity{Name: "service-scope-owner-" + uuid.NewString(), UID: uuid.NewString()}
+	other := storage.Identity{Name: "service-scope-other-" + uuid.NewString(), UID: uuid.NewString()}
+	server, connect := newServiceAccessServer(
+		t,
+		[]string{peertls.NotificationsURI},
+		[]auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}},
+		newLiveIdentities(owner, other),
+	)
+	owned, _ := server.recordAs(t, owner)
+	foreign, _ := server.recordAs(t, other)
+	legacy, _ := server.record(t)
+	for _, sessionID := range []uuid.UUID{owned, foreign, legacy} {
+		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	request := func(sessionID uuid.UUID) *historypb.ReadSessionEventsRequest {
+		return &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10}
+	}
+
+	// A configured direct service reader has the backend-wide scope, including retained
+	// Identity-owned and legacy ServiceAccount-owned Sessions.
+	directReader := connect(t, peertls.NotificationsURI)
+	for _, sessionID := range []uuid.UUID{owned, foreign, legacy} {
+		page, err := directReader.ReadSessionEvents(bearing(t, ""), request(sessionID))
+		if err != nil || len(page.GetEntries()) != 1 {
+			t.Errorf("allowlisted direct reader of %s = %+v, %v", sessionID, page, err)
+		}
+	}
+
+	// The delegator has no direct reader grant, and an unrelated service has neither grant.
+	for name, actor := range map[string]string{
+		"delegator without envelope": peertls.ActionsURI,
+		"unlisted service":           peertls.AppURI,
+	} {
+		t.Run(name, func(t *testing.T) {
+			client := connect(t, actor)
+			if _, err := client.ReadSessionEvents(bearing(t, ""), request(owned)); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("direct service read = %v, want PermissionDenied", err)
+			}
+		})
+	}
+
+	delegator := connect(t, peertls.ActionsURI)
+	delegated := serviceDelegatedIdentity(t, owner)
+	page, err := delegator.ReadSessionEvents(delegated, request(owned))
+	if err != nil || len(page.GetEntries()) != 1 {
+		t.Fatalf("delegated owner read = %+v, %v", page, err)
+	}
+	for _, sessionID := range []uuid.UUID{foreign, legacy} {
+		if _, err := delegator.ReadSessionEvents(delegated, request(sessionID)); status.Code(err) != codes.NotFound {
+			t.Errorf("delegated read of other Identity or legacy Session %s = %v, want NotFound", sessionID, err)
+		}
 	}
 }
 

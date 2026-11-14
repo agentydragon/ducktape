@@ -71,8 +71,8 @@ type Identity struct{ Name, UID string }
 
 func (i Identity) valid() bool { return i.Name != "" && i.UID != "" }
 
-// Sandbox is the Sandbox incarnation a Session executes in. UID is empty for a legacy writer whose
-// ServiceAccount has no Sandbox controller.
+// Sandbox is optional attribution to an execution Sandbox. Namespace and Name are stored together;
+// UID may be absent, and a central Session may have no Sandbox attribution.
 type Sandbox struct{ Namespace, Name, UID string }
 
 // ReadScope limits retained reads to one immutable execution Identity, or
@@ -274,10 +274,10 @@ func (s *Store) BindSamplerWriter(ctx context.Context, sessionID uuid.UUID, writ
 	return s.bindWriter(ctx, sessionID, writer, sandbox, identity)
 }
 
-// BindServiceWriter retains a component's exact certificate identity, its central executor Sandbox,
-// and the separately authenticated execution Identity.
+// BindServiceWriter retains a component's exact certificate identity and the separately authenticated
+// execution Identity. Sandbox attribution is optional and never establishes the Session's read scope.
 func (s *Store) BindServiceWriter(ctx context.Context, sessionID uuid.UUID, writer ServiceWriter, sandbox Sandbox, identity *Identity) (Checkpoint, error) {
-	if writer.SPIFFEID == "" || sandbox.Namespace == "" || sandbox.Name == "" || sandbox.UID == "" {
+	if writer.SPIFFEID == "" || (sandbox.Namespace == "") != (sandbox.Name == "") {
 		return Checkpoint{}, ErrInvalidArgument
 	}
 	return s.bindWriter(ctx, sessionID, writer, sandbox, identity)
@@ -311,6 +311,10 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		if sandboxUID != "" {
 			sandboxUIDValue = sandboxUID
 		}
+		var sandboxNamespaceValue, sandboxNameValue any
+		if namespace != "" {
+			sandboxNamespaceValue, sandboxNameValue = namespace, name
+		}
 		var executionIdentityName, executionIdentityUID any
 		if identity != nil {
 			executionIdentityName, executionIdentityUID = identity.Name, identity.UID
@@ -328,7 +332,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid,
 				writer_identity_name, writer_identity_uid, writer_service_uri, execution_identity_name, execution_identity_uid, source_id, last_cursor)
 				VALUES ($1, $2, $3, $4, $6, $7, $5, $8, $9, $10, $11, $12, NULL, 0) ON CONFLICT DO NOTHING`,
-				sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
+				sessionID, written[0], written[1], written[2], sandboxUIDValue, sandboxNamespaceValue, sandboxNameValue,
 				written[3], written[4], written[5], executionIdentityName, executionIdentityUID)
 			if err != nil {
 				return err
@@ -352,7 +356,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			if _, err := tx.ExecContext(ctx, `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4,
 				sandbox_namespace = COALESCE(sandbox_namespace, $6), sandbox_name = COALESCE(sandbox_name, $7), sandbox_uid = $5,
 				writer_identity_name = $8, writer_identity_uid = $9, writer_service_uri = $10
-				WHERE id = $1`, sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
+				WHERE id = $1`, sessionID, written[0], written[1], written[2], sandboxUIDValue, sandboxNamespaceValue, sandboxNameValue,
 				written[3], written[4], written[5]); err != nil {
 				return err
 			}
@@ -370,7 +374,11 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 				row.sandboxUID = optionalString(sandboxUID)
 				changed = true
 			case row.sandboxUID != nil && *row.sandboxUID != sandboxUID:
-				return fmt.Errorf("%w: %s", ErrSandboxMismatch, sessionID)
+				// A service writer may reconnect without optional environment attribution.
+				// Existing account and Identity writers retain their exact Sandbox fence.
+				if _, serviceWriter := writer.(ServiceWriter); !serviceWriter || sandboxUID != "" {
+					return fmt.Errorf("%w: %s", ErrSandboxMismatch, sessionID)
+				}
 			}
 		}
 		if created {
