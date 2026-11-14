@@ -25,7 +25,7 @@ from pydantic import AnyHttpUrl
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.identity.auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
-from agentplane.net.peertls.config import LLM_INGRESS_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, workload_tls
 from cluster.cdk8s.agentplane.codex_models import codex_catalog
@@ -208,7 +208,8 @@ class LlmIngress(Construct):
                 if env.central_sampler is not None
                 else frozenset()
             ),
-            central_sampler_identity_callers=False,
+            central_sampler_services=([CENTRAL_SAMPLER_URI] if env.central_sampler is not None else []),
+            central_sampler_identity_callers=env.central_sampler is not None,
             token_audience=WORKLOAD_TOKEN_AUDIENCE,
             log_llm_requests=env.llm_ingress.log_llm_requests,
             models=list(env.llm_ingress.models),

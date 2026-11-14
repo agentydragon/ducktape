@@ -1448,9 +1448,11 @@ data:
     allowed_service_account_namespaces:
       - agentplane-staging
     policy_namespace: agentplane-staging
+    central_sampler_services:
+      - spiffe://agentplane/central-sampler
     central_sampler_accounts:
       - agentplane-staging/central-sampler
-    central_sampler_identity_callers: false
+    central_sampler_identity_callers: true
     token_audience: agentplane-egress
     log_llm_requests: true
     models: []
