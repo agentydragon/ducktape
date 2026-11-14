@@ -5,15 +5,15 @@
   "observed_at_utc": "2026-11-14T00:48:53+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
-    "checked_at_utc": "2026-11-14T06:05:00+00:00",
-    "previous_pin": "55e7df4226dd4d761a72b96ea055a362c953e3ec",
-    "go_or_proto_delta": "Since 55e7df42 only #16344 (retry transient Gateway readiness before delaying quiescence) changed Go: it edited 7 files and added, removed or moved none; no `.proto` changed. No tracked work landed.",
+    "checked_origin_devel": "1f3e26cc58081ce16029b3906710296af9c90842",
+    "checked_at_utc": "2026-11-14T07:15:00+00:00",
+    "previous_pin": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+    "go_or_proto_delta": "Since 02dc3c7a2e, #16345, #16346, #16350, #16352 and #16359 changed Go: 5 files added (`identity/auth/service{,_test}.go`, `runner_gateway/environmentaccess/policy{,_test}.go`, `runner_gateway/environments/environment_grants_test.go`), 20 edited, none removed or moved; no `.proto` changed. #16340 added Dispatcher migration `00018`. No track landed whole.",
     "landed": [],
     "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths; packages that no longer hold Go files (`action_service` root, `app/internal/proxy`, `policy` root) left the ledger."
   },
   "inventory": {
-    "source_sha": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+    "source_sha": "1f3e26cc58081ce16029b3906710296af9c90842",
     "counts": {
       "files": 1270,
       "directories": 222,
@@ -9917,16 +9917,16 @@
       "Goal trees show the Action Service's cmd package, EnvironmentService's proposed owners under the Sandbox Controller and no emptied directories."
     ],
     "structural_checks": [
-      "All 1,270 tracked Go files at devel 02dc3c7a2e match the ledger's path, blob hash, line count, package and test flags; the 222 directories and package decisions match one to one; every pending track exists.",
+      "All 1,275 tracked Go files at devel 1f3e26cc58 match the ledger's path, blob hash, line count, package and test flags; the 223 directories and package decisions match one to one; every pending track exists.",
       "Every non-retained package has a work item; adoption stages cover every work item once; content prerequisites precede dependents; move targets are unique and new.",
-      "Every work item's source, evidence and deletion paths exist at 02dc3c7a2e, and its validation labels exist in the pinned BUILD files."
+      "Every work item's source, evidence and deletion paths exist at 1f3e26cc58, and its validation labels exist in the pinned BUILD files."
     ],
     "visual_review": "Inspected the reworked runtime-facts-off-lease and gateway-replica-ownership cards, the remaining-work queue, adoption order and the action_service and sandbox_controller trees (desktop light, mobile dark). Screenshots were not published.",
     "limits": "Planning/report validation only. No Go behavior changes, Go tests, deployments or live acceptance are claimed."
   },
   "sequence_review": {
     "revised_at_utc": "2026-11-14T01:36:53+00:00",
-    "checked_origin_devel": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+    "checked_origin_devel": "1f3e26cc58081ce16029b3906710296af9c90842",
     "purpose": "Reorder the remaining work by certainty so each file moves once: leftover deletions, layout fixes that hold under any service map, operator-agreed service moves, local extractions, moves waiting on open service decisions, deferred contracts.",
     "operator_inputs_2026_11_14": [
       "Python/Go leftovers, dead code and tolerances for things that no longer exist should go.",
@@ -9963,7 +9963,7 @@
     },
     "target_binaries": {
       "reviewed_at_utc": "2026-11-14T05:40:00+00:00",
-      "checked_origin_devel": "02dc3c7a2e5416922235ee1c4c4c2fe63ca38981",
+      "checked_origin_devel": "1f3e26cc58081ce16029b3906710296af9c90842",
       "agentplane_delta_since_pin": "None: the pin is the checked devel.",
       "operator_inputs": [
         {
@@ -10004,7 +10004,8 @@
         "Outside `runner_gateway/`, 43 Go files import the generated `dispatcher/api/session` package and 14 TypeScript files import its generated code; `agentplane/app/app_service.proto` imports the `.proto` file. The proto package is `agentplane.runner_gateway.dispatcher`.",
         "Outside `runner_gateway/`, only `agentplane/action_service/session_delegation/dispatcher_integration_test.go`, `agentplane/action_service/session_delegation/dispatcher_integration_testmain_test.go` import `dispatcher` or `migrations`, and only `agentplane/action_service/orchestration_v1/fixture_test.go` imports `environments` or `environments/lifecycle`.",
         "At the pin `agentplane/environments/` holds only `v1/environment_service.proto` and its BUILD file; `agentplane/session_dispatcher/` does not exist.",
-        "`sandbox_controller` is referenced by Bazel label from `devinfra/ci/image_targets.json`, `agentplane/system_tests/k3s/defs.bzl` and `cluster/cdk8s/agentplane/BUILD.bazel` (`:settings`)."
+        "`sandbox_controller` is referenced by Bazel label from `devinfra/ci/image_targets.json`, `agentplane/system_tests/k3s/defs.bzl` and `cluster/cdk8s/agentplane/BUILD.bazel` (`:settings`).",
+        "Since #16346 every explicit resume, including an Identity grant, reserves the Dispatcher-database wake budget; after #16351 the Dispatcher imports `environmentaccess` for `bind_session` (checked on its head)."
       ]
     }
   }
