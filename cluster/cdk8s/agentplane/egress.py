@@ -53,7 +53,7 @@ from trust_manager_crds.io.cert_manager.trust import (
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import APIServer, Settings
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
-from agentplane.net.peertls.config import EGRESS_PROXY_URI
+from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway
@@ -559,6 +559,7 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
+            admin_grpc_service_callers=frozenset({APP_URI}),
             ca_cert=Path("/etc/agentplane-egress/ca/tls.crt"),
             ca_key=Path("/etc/agentplane-egress/ca/tls.key"),
             upstream_ca_file=Path(f"{_UPSTREAM_CA_DIR}/{CA_BUNDLE_KEY}"),

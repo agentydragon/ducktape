@@ -15,7 +15,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import Settings as EgressSettings
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import APP_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI, SESSION_DISPATCHER_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
@@ -97,6 +97,7 @@ def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: li
     )
     assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
     assert config["admin_grpc_callers"] == [f"{staging.ENV.namespace}/app"]
+    assert config["admin_grpc_service_callers"] == [APP_URI]
 
 
 @pytest.fixture(scope="module")
