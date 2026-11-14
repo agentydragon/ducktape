@@ -32,7 +32,7 @@ Checked on `devel` `a2c0b74e3`.
   became ready 50–150 s after k3s started and a VM stack about 200 s, mostly image import
   ([stack timings](../system_tests/k3s/debug/stack_timings.md)).
 - **Central-sampler suites** (`test_sampler_roll`, `test_gateway_crash`, `test_history_outage`, the
-  central half of `test_services`) sample in the central sampler, not in a Sandbox. They use a Pod
+  `test_services_central`) sample in the central sampler, not in a Sandbox. They use a Pod
   only for the executor, because `central_sampler_v1` binds every central Session to a
   Sandbox-backed executor, and for the services' own Deployments. The
   central creation contract in review ([#15436](https://github.com/agentydragon/ducktape/pull/15436))

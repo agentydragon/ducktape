@@ -22,6 +22,16 @@ single B/A pair, not complete required-PR feedback or median/p90/flake qualifica
 The next gate is a balanced repeat and actual source/test/BUILD selection proof.
 [Current pair and limits](common_backend_contracts.md#corrected-full-system-composition-b7a7).
 
+The reverse-order pair has now completed successfully at the same immutable
+source: 555.785s control versus 360.143s candidate, 35.2% lower once, with the
+detailed artifact/resource audit tracked separately. The branch now implements
+this composition as [ordinary partitioned targets](ordinary_partition_graph.md):
+disjoint Pod and Services rosters, unchanged VM acceptance on KVM and unchanged
+Firecracker cases without incidental Notification setup. Exact-head ordinary CI
+and representative source/test/BUILD selection are the next qualification gates;
+the journal substitution policy remains shadow-only. No complete PR median,
+p90 or flake-rate improvement is established.
+
 An earlier fixed-source full-system screen was negative: 14 ordinary targets versus a 16-target
 composition pass the same 49 logical JUnit cases, but native elapsed grows from 516.795s to
 574.657s. The candidate contains a provider-kernel panic and a subsequent distinct successful

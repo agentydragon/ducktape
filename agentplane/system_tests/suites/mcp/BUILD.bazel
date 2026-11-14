@@ -42,45 +42,12 @@ k3s_suite(
     ],
 )
 
+# MCP discovery, consented identity and Policy binding keep their App-backed deployment.
 k3s_suite(
-    name = "test_services",
-    srcs = ["test_services.py"],
-    stack = "mcp",
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/action_service/api/contracts:action_service_pb2",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:mcp_servers",
-        "//agentplane/system_tests/deployment:stack",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:environment_transport",
-        "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:harness_pair",
-        "//agentplane/system_tests/driver:operator_login",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "//agentplane/system_tests/scenarios:dcr",
-        "//agentplane/system_tests/scenarios:external_connection",
-        "//agentplane/system_tests/scenarios:mcp",
-        "//agentplane/system_tests/scenarios:policy_objects",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# Keep the MCP slice's entrypoint limited to its three cases so it does not inherit central sampler
-# source or dependencies from the required combined control.
-k3s_suite(
-    name = "test_services_mcp_candidate",
-    srcs = ["test_services_mcp_candidate.py"],
-    main = "test_services_mcp_candidate.py",
+    name = "test_services_mcp",
+    srcs = ["test_services_mcp.py"],
+    main = "test_services_mcp.py",
     stack = "mcp_services",
-    tags = ["manual"],
     deps = [
         ":conftest",
         "//:conftest",
@@ -102,51 +69,14 @@ k3s_suite(
     ],
 )
 
-k3s_suite(
-    name = "test_services_central_candidate",
-    srcs = ["test_services.py"],
-    args = [
-        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_deployed_discovery_and_registration",
-        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_external_mcp_connection_uses_its_consented_identity",
-        "--deselect=agentplane/system_tests/suites/mcp/test_services.py::test_policy_binding_auto_approves_the_bound_sandbox",
-    ],
-    main = "test_services.py",
-    stack = "central_services",
-    tags = ["manual"],
-    deps = [
-        ":conftest",
-        "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:stack",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:environment_transport",
-        "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:harness_pair",
-        "//agentplane/system_tests/driver:operator_login",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:central_sampler",
-        "//agentplane/system_tests/scenarios:dcr",
-        "//agentplane/system_tests/scenarios:external_connection",
-        "//agentplane/system_tests/scenarios:mcp",
-        "//agentplane/system_tests/scenarios:policy_objects",
-        "@pypi//httpx",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-# The same four central sampler service scenarios run with App-free Pod-bound reader identities.
+# Central sampler service scenarios use Pod-bound native readers.
 # Native fixtures replace this package's App-backed conftest and the ancestor system-test conftest.
 # gazelle:ignore
 k3s_suite(
-    name = "test_services_central_native_candidate",
-    srcs = ["test_services_central_native_candidate.py"],
-    main = "test_services_central_native_candidate.py",
+    name = "test_services_central",
+    srcs = ["test_services_central.py"],
+    main = "test_services_central.py",
     stack = "central_services_native",
-    tags = ["manual"],
     deps = [
         "//:conftest",
         "//agentplane/system_tests/driver:cluster",

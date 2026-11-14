@@ -645,7 +645,8 @@ class TestGatewayContinuity:
                     assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
                     suffix_output.extend(b"".join(chunk.data for chunk in response.chunks))
                     cursor = response.next_seq - 1 if response.next_seq else cursor
-                    if response.exited:
+                    # Exit can precede the last output frame; drain the closed stream too.
+                    if response.exited and response.closed and not response.chunks:
                         assert response.exit_code == 0
                         break
             assert bytes(suffix_output) == suffix.encode()
@@ -698,7 +699,7 @@ class TestGatewayContinuity:
                     assert response.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
                     fresh_output.extend(b"".join(chunk.data for chunk in response.chunks))
                     fresh_cursor = response.next_seq - 1 if response.next_seq else fresh_cursor
-                    if response.exited:
+                    if response.exited and response.closed and not response.chunks:
                         assert response.exit_code == 0
                         break
             assert bytes(fresh_output) == b"fresh"

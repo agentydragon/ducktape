@@ -28,29 +28,43 @@ changes are compatible. `test_dispatcher` owns a separate stack because it scale
 and deletes a controller Pod. The external MCP delegation acceptance owns another stack because it
 scales the app to zero after OAuth consent.
 
-| Target                                                                 | Coverage                                              |
-| ---------------------------------------------------------------------- | ----------------------------------------------------- |
-| `//agentplane/system_tests/suites:test_pod`                            | Pod Sandbox scenarios                                 |
-| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
-| `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
-| `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
-| `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
-| `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
-| `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read       |
-| `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
-| `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
-| `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
-| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
-| `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
-| `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
-| `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                  |
-| `//agentplane/system_tests/suites:test_vm_profile`                     | Manual tool-OOM probe with guest profiling            |
-| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Experimental KVM variant, manual                      |
+| Target                                                                 | Coverage                                                       |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `//agentplane/system_tests/suites:test_pod`                            | App Sessions, History, storage and Pod lifecycle               |
+| `//agentplane/system_tests/suites:test_pod_platform`                   | Pod workload trust, certificate reissue and Egress credentials |
+| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                               |
+| `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                            |
+| `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                             |
+| `//agentplane/system_tests/suites/mcp:test_services_mcp`               | MCP discovery, external identity and policy binding            |
+| `//agentplane/system_tests/suites/mcp:test_services_central`           | Central sampler setup, suspend/resume and Gateway recovery     |
+| `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work                    |
+| `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read                |
+| `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn           |
+| `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                                        |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                               |
+| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the KVM worker pool                    |
+| `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions                     |
+| `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases          |
+| `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                           |
+| `//agentplane/system_tests/suites:test_vm_profile`                     | Manual tool-OOM probe with guest profiling                     |
+| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Manual duplicate of the required KVM acceptance                |
 
 `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
 [`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
+
+The required graph separates App-dependent scenarios from native platform and central-service
+scenarios. Each target runs its own complete case roster; CI does not deselect cases to make the
+partition. Native targets retain real controller, issuer, Gateway, History and guest boundaries where
+the scenario needs them. The App Pod target runs at most six case leases on an eight-CU action;
+storage still runs exclusively first. VM and Firecracker each request four CPUs on `kvm-vm`,
+with fresh per-action state and no retained K3s process. Firecracker omits the incidental Notification
+workload; VM retains its CLI Notification checks.
+
+This branch's ordinary graph implements the measured system-subtree composition. Full required-check
+latency, representative affected-target selection, cold/burst capacity, p90 and flakiness still need
+qualification; see [the experiment overview](debug/ci_architecture_experiment_overview.md).
 
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and
