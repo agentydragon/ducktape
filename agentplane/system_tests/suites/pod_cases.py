@@ -12,7 +12,7 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.system_tests.driver import scenario
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.harness_pair import run_harness_pair_concurrently, run_harness_pair_in_own_sandboxes
+from agentplane.system_tests.driver.harness_pair import run_harness_pair, run_harness_pair_in_own_sandboxes
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -87,7 +87,7 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(resources: 
 
 async def the_model_call_itself_goes_through_the_proxy(resources: Resources) -> None:
     async with resources.shared() as (client, runners):
-        await run_harness_pair_concurrently(
+        await run_harness_pair(
             client,
             lambda harness, model: egress.the_model_call_itself_goes_through_the_proxy(
                 resources.cluster,
@@ -141,7 +141,7 @@ async def pod_mtls_session_survives_replacement_and_keeps_history(resources: Res
 
 async def the_standing_instruction_reaches_the_model_and_only_in_its_own_session(resources: Resources) -> None:
     async with resources.shared() as (client, runners):
-        await run_harness_pair_concurrently(
+        await run_harness_pair(
             client,
             lambda harness, model: (
                 session_instructions.the_standing_instruction_reaches_the_model_and_only_in_its_own_session(
@@ -195,7 +195,7 @@ async def an_unknown_history_session_is_not_found(resources: Resources) -> None:
 
 async def every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor(resources: Resources) -> None:
     async with resources.shared() as (client, runners):
-        await run_harness_pair_concurrently(
+        await run_harness_pair(
             client,
             lambda harness, model: (
                 thread_history.every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor(
@@ -209,7 +209,7 @@ async def turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_in
     resources: Resources,
 ) -> None:
     async with resources.shared() as (client, runners):
-        await run_harness_pair_concurrently(
+        await run_harness_pair(
             client,
             lambda harness, model: (
                 thread_history.unwatched_turns_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn(

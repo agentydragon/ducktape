@@ -1,0 +1,17 @@
+{
+  "schema": "ducktape.agentplane_test_contracts.v1",
+  "mode": "shadow",
+  "implementations": ["//agentplane/env/runtime/journal:journal"],
+  "replaces": [
+    "//agentplane/system_tests/suites:test_firecracker",
+    "//agentplane/system_tests/suites:test_pod",
+    "//agentplane/system_tests/suites:test_vm",
+    "//agentplane/system_tests/suites/mcp:test_services"
+  ],
+  "requires": [
+    "//agentplane/x/direct_vm_boot:test_runtime_codex_session",
+    "//agentplane/x/direct_vm_boot:test_runtime_session",
+    "//agentplane/x/native_contracts:test_admission_reply_loss",
+    "//agentplane/x/native_contracts:test_recovery"
+  ]
+}

@@ -3,8 +3,9 @@
 Evidence reviewed on 14 November 2026 UTC. Implementation measurements below
 identify their source; the latest import screen uses `6997d12620` on
 [draft PR #16102](https://github.com/agentydragon/ducktape/pull/16102).
-Optimization is paused. This write-up records completed work and outstanding
-evidence; it does not promote a replacement gate.
+Optimization resumed with a 30% median complete-feedback qualification goal and
+no worse p90 or flake rate. This write-up records completed work and outstanding
+evidence; the replacement gate remains unqualified.
 
 **There is no qualified 30% reduction in complete PR feedback.** The branch has
 working smaller contracts, useful independent ports, several rejected ideas and
@@ -39,6 +40,11 @@ That is not a current branch-versus-devel or rerun-inclusive PR saving.
 | Batch seven fixture render profiles                                    | Existing assertions pass, but observed render window/action does not shorten and a VM-only consumer gains nine outputs.                                                                                                                      | Withdrawn. Lower aggregate CPU alone did not justify broader dependencies.                                                                                                                                                                                                       |
 | Repair reliability defects found while measuring                       | Listener allocation, storage precondition and Quiesce repairs have focused proof. Quiesce reproduces unavailable routing then same-incarnation forwarding about **1.008s later**, avoiding the observed minute-delayed retry.                | These are useful repairs, not measured fleet flake-rate or complete-PR reductions. [Storage](storage_controller_startup.md), [Quiesce](firecracker_quiesce_retry.md).                                                                                                            |
 
+Before the next graph comparison, required fixtures return to devel defaults:
+four Bridge shards, ordinary kubelet cadence, serial Pod pairs and the 120-second
+Gateway reconnect deadline. The trials above remain historical evidence; their
+savings and costs are excluded from the architecture-only comparison.
+
 ## Independent ports and validation state
 
 Earlier fixture/import/profile/listener ports, storage precondition #16299,
@@ -47,18 +53,21 @@ Quiesce repair #16344 and route diagnostics #16363 are in devel. Their independe
 value does not depend on adopting the architecture pivot.
 
 [Notification fixture #16370](https://github.com/agentydragon/ducktape/pull/16370)
-and [native recovery #16374](https://github.com/agentydragon/ducktape/pull/16374)
-are open at this review. They add ordinary coverage without removing deployed
-witnesses. Notification's two new tests have fresh passing JUnit evidence at
-`2fd65524b0`; complete PR checks are still pending. Native port `605da061d5`
-repairs an omitted test-launch parameter; preceding failures were fixture setup,
-not scenario exposure. It also adds a third input after History recovery. Its
-latest scenario/CI verdict was pending when optimization paused.
+is merged in devel at `bb7c716f5a`. The architecture branch rebased onto that
+source. [Native recovery #16374](https://github.com/agentydragon/ducktape/pull/16374)
+remains open at `605da061d5`; its Bazel, pre-commit, artifact/import and visual
+checks pass. It adds ordinary coverage without removing deployed witnesses.
+Its initial failures were fixture setup; the repaired target includes a third
+input after History recovery.
 
-Main source `6997d12620` passed Bazel, pre-commit and artifact/import checks.
-Earlier literal `87c576a69c` passed five fresh manual targets / eight nonempty
-cases covering recovery, reply loss and packaged Gateway/Claude/Codex. Those
-manual results belong to that earlier source, not every later rebase.
+Main source `7efbf06932` passes Bazel, pre-commit and artifact/import checks,
+including ordinary BuildBuddy invocation `e27407ca`. This full branch check is
+not a representative routine-backend comparison. The current working milestone
+adds an exact-owner shadow selector and promotes four contracts; deployed tests
+remain required. The focused selector and native contract checks are recorded in
+[the ordinary graph evidence](ordinary_contract_graph.md). The discarded-journal
+control `6094b0b9` reaches the intended missing-retained-Session assertion after
+real Runtime restart; its healthy counterpart is `254e237c`.
 
 The gh-pages refinement is a separate unpublished snapshot. Its browser run
 passed, but review found missing spaces around links; visual proof/publication
