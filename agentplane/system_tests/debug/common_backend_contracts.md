@@ -408,6 +408,30 @@ case multiset, no new failure/cleanup signatures, a materially shorter complete 
 and explicit CPU, memory and requested-compute cost. One larger action may cost more or queue
 longer; no saving is yet measured and the ordinary two-slot target remains required.
 
+The first [four-slot capacity exposure](https://app.buildbuddy.io/invocation/7b26a47a-b973-4eed-b5c0-f318e51e37f7)
+now passes at exact `a915738a26075f2b0126f5df65599008fe7d0524`: all 21 Pod case names match
+the earlier control, and independent render determinism passes. Both targets execute fresh in
+one attempt. Native Bazel elapsed is 539.360s for these two targets, a different graph from the
+seven-target control. Pod physical execution is 442.477s, CPU 1,674.522s and peak memory
+5,721,894,912 bytes. The earlier control is 452.003s, CPU 1,037.989s and peak memory
+5,535,584,256 bytes. Against that reference, CPU is 1.613 times and requested compute-unit
+execution time 1.958 times; both exceed the predeclared 1.5 screening caps. Peak memory is
+1.034 times, below its 2.0 cap. Do not adopt this arrangement or claim a large elapsed saving.
+
+Kubernetes actually reports 11 allocatable CPUs and 20,012,876 KiB of memory. The eight requested
+compute units are a separate scheduler property. Existing spans show a 220.225s case envelope
+versus 321.105s in the earlier two-slot control, but setup is 130.737s versus 33.305s and cleanup
+62.533s versus 64.601s. The candidate imports cold images, including 59.544s for environment-tools;
+the control skips already-usable imports. Sources and warmth differ, so this is mechanism evidence,
+not a causal timing result. The same important case assertions and storage exclusivity pass.
+
+The next manual variant tests six slots under the same eight-compute-unit request, based on the
+observed capacity. It consolidates the candidates onto the ordinary Pod module rather than keeping
+copied fixtures. It is unmeasured; capacity does not prove every concurrent workload fits. Preserve
+the first cold exposure and its failed resource screen. A matching-source, warmth-accounted control
+and complete competing graph are still needed before promotion, followed by representative
+ordinary-cache required-check and rerun/p90/flake qualification.
+
 The independent Actions repair is [PR #16386](https://github.com/agentydragon/ducktape/pull/16386),
 open and unmerged at `d34c757904475f262cce517503a21d863e466684`. All three required hosted checks
 pass, as do 25 generated-manifest cases with no staging snapshot drift. Its

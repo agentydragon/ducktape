@@ -228,14 +228,20 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], shard_count = None):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], shard_count = None, case_slots = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
     `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
+    `case_slots` is a Pod-scenario-only override for the shared case batch limit.
     """
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
+    if case_slots != None:
+        if type(case_slots) != "int" or case_slots < 1:
+            fail("case_slots must be a positive integer")
+        if stack != "pod_scenarios":
+            fail("case_slots requires the pod_scenarios stack")
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
     if platform_guest and (stack != "vm" or profile_guest):
@@ -264,6 +270,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platfor
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
         "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if config.native_fixtures else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
+    if case_slots != None:
+        env["AGENTPLANE_POD_CASE_SLOTS"] = str(case_slots)
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm or config.firecracker:

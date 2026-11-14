@@ -90,9 +90,13 @@ new variant in the render-determinism expected set, now repaired without weakeni
 The retested balanced Pod split at `6c31cfb9f7` retains the same 40 cases across the competing
 graph and observes native Bazel 495.738s to 429.315s (13.4% lower in one B/A pair). Pod CPU is
 35.8% higher; warmth, two extra candidate build actions and concurrent load differ. It is not
-promoted. A manual four-slot Pod candidate requests one eight-CU action to test shared setup
-without a second cluster, preserving all 21 cases and exclusive storage first. Its capacity,
-timing and reliability remain unqualified. [Detailed evidence](common_backend_contracts.md#pod-partition-and-capacity-screen).
+promoted. The first manual four-slot/eight-CU Pod candidate passes all 21 cases, but takes
+442.477s versus the earlier control's 452.003s and exceeds the CPU/requested-compute screening
+caps. It has cold setup of 130.737s versus 33.305s, while the case envelope falls from 321.105s
+to 220.225s; this is an unmatched-source/warmth observation. Kubernetes reports 11 allocatable
+CPUs, distinct from requested CUs. A six-slot variant under that same request is the next manual
+experiment; it consolidates shared code, retains all cases and storage exclusivity, and establishes
+no new speed claim. [Detailed evidence](common_backend_contracts.md#pod-partition-and-capacity-screen).
 
 The [actual App-image consumer query](https://app.buildbuddy.io/invocation/ce224205-7707-4240-8c4b-9a5520a3b468)
 leaves Pod and MCP Services among the four platform tails. This proves a dependency cut, not
