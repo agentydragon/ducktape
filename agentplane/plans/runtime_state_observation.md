@@ -62,8 +62,9 @@ Dispatcher queue and command-delivery behavior remains owned by its separate del
 
 The independent-observer Gateway route and stable-Service callers are implemented in merged #16365
 (`efacbf509178221d60e392168ba812aff360beae`). No Gateway connection Lease or per-Sandbox control
-Service/EndpointSlice creation remains. The Sandbox Controller owns any existing per-Sandbox route
-objects, so normal Sandbox garbage collection removes them; Gateway code does not delete them.
+Service/EndpointSlice creation remains. Neither service reconciles or deletes retained route objects.
+Objects with Sandbox owner references are collected only when that Sandbox is deleted; unowned
+objects require manual deletion. Ordinary suspension and Pod replacement collect neither.
 
 The final RBAC and protocol cleanup is gated on staging image pins. Before merging that cleanup,
 verify both that the Runner Gateway image containing #16365 is pinned and running in staging and that

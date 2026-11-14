@@ -54,7 +54,7 @@ Controller still provisions certificates, so cluster and k3s stacks retain real 
 
 **Selected by Rai, 2026-11-14 02:36 UTC, relayed by Claude.** Callers route through the stable
 `runner-gateway` Service, so any authenticated Gateway replica may receive a call and connect
-directly to the current Runtime. No per-Sandbox `<sandbox>-control` EndpointSlice, Gateway
+directly to the current Runtime. No per-Sandbox `<sandbox>-control` EndpointSlice or Gateway
 connection Lease participates in routing. The Controller-bound
 Sandbox UID and workload Pod UID plus the Runtime's boot ID fence each call. The shared Gateway SVID
 does not let a replica choose or advance an incarnation. Per-method caller authorization remains,
