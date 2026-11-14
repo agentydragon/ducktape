@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -67,10 +68,27 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	return kubeConfig, nil
 }
 
-// dispatcherAccount proves that the token used by delivery workers belongs to this
-// Gateway/Dispatcher Pod. Caller headers and an account allowlist alone cannot identify
-// the combined process; TokenReview's Pod UID must agree with the current Pod as well.
+// dispatcherAccount identifies the ServiceAccount used by delivery workers. In bearer mode,
+// TokenReview binds the projected token to this Pod. In SVID mode, the service certificate only
+// authenticates the service role, so the account comes from the configured Pod's live API record.
 func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, objects client.Reader) (auth.Account, error) {
+	if c.GatewayTLS != nil && c.GatewayTLS.UsesSVID() {
+		if c.Namespace == "" || c.PodName == "" {
+			return auth.Account{}, errors.New("configured Gateway Pod namespace and name are required")
+		}
+		var pod corev1.Pod
+		if err := objects.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: c.PodName}, &pod); err != nil {
+			return auth.Account{}, fmt.Errorf("read configured Gateway Pod: %w", err)
+		}
+		if pod.Namespace != c.Namespace || pod.Name != c.PodName || pod.UID == "" || pod.Spec.ServiceAccountName == "" {
+			return auth.Account{}, errors.New("configured Gateway Pod has incomplete Kubernetes identity")
+		}
+		account := auth.Account{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName}
+		if !slices.Contains(c.GatewayCallers, account) {
+			return auth.Account{}, errors.New("configured Gateway Pod ServiceAccount is not an admitted Gateway caller")
+		}
+		return account, nil
+	}
 	token, err := os.ReadFile(c.RunnerTokenFile)
 	if err != nil {
 		return auth.Account{}, errors.New("could not read Dispatcher workload credential")
@@ -296,7 +314,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	gatewayRPCAuth, err := gatewayAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.GatewayAudience, false), nil)
+	gatewayRPCAuth, err := gatewayAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.GatewayAudience, true), dispatcherSVIDs)
 	if err != nil {
 		return fmt.Errorf("configure Gateway proxy authentication: %w", err)
 	}

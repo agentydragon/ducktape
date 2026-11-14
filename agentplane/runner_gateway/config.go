@@ -226,7 +226,6 @@ func (c *config) validate() error {
 		{"sandbox_namespace", c.Namespace},
 		{"policy_namespace", c.PolicyNamespace},
 		{"dispatcher_database_url", c.DispatcherDatabaseURL},
-		{"runner_token_file", c.RunnerTokenFile},
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},
 		{"runner_control_target_template", c.RunnerControlTargetTemplate},
@@ -262,6 +261,9 @@ func (c *config) validate() error {
 	}
 	if c.GatewayTLS.ServerURI != peertls.SessionDispatcherURI {
 		return errors.New("gateway_tls.server_uri must identify the Session Dispatcher service")
+	}
+	if err := c.GatewayTLS.ValidateCaller(c.RunnerTokenFile, peertls.SessionsURI); err != nil {
+		return fmt.Errorf("gateway_tls caller authentication: %w", err)
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
@@ -318,15 +320,15 @@ func (c *config) validate() error {
 			return fmt.Errorf("operator caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
-	if target := c.CentralSampler; target != nil && (target.Target == "" || target.TokenFile == "") {
-		return errors.New("central_sampler requires a target and token_file")
-	}
-	if target := c.CentralSampler; target != nil && target.TLS != nil {
-		if err := target.TLS.Validate(); err != nil {
-			return fmt.Errorf("central_sampler.tls: %w", err)
+	if target := c.CentralSampler; target != nil {
+		if target.Target == "" {
+			return errors.New("central_sampler requires a target")
 		}
-		if target.TLS.ServerURI != peertls.CentralSamplerURI {
+		if target.TLS != nil && target.TLS.ServerURI != peertls.CentralSamplerURI {
 			return errors.New("central_sampler.tls.server_uri must identify the Central Sampler")
+		}
+		if err := target.TLS.ValidateCaller(target.TokenFile, peertls.SessionsURI); err != nil {
+			return fmt.Errorf("central_sampler caller authentication: %w", err)
 		}
 	}
 

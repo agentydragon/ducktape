@@ -20,7 +20,7 @@ type ProxyRunner struct {
 	Namespace string
 	TokenFile string
 	Timeout   time.Duration
-	// GatewayTLS pins the Session Dispatcher server SVID without presenting a client certificate.
+	// GatewayTLS pins the Session Dispatcher server SVID and may present the Sessions role SVID.
 	GatewayTLS *peertls.ClientTLS
 	// Defaults to the stable Runner Gateway Service when empty. Templates can also
 	// be a fixed target for host-process integration tests.

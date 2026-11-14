@@ -222,6 +222,7 @@ go_test(
         "//agentplane/identity/auth/listener",
         "//agentplane/net/peertls",
         "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher",
         "//agentplane/runner_gateway/environments",
         "//agentplane/runner_gateway/environments/lifecycle",
         "//agentplane/sandboxes/api",

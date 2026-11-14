@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -581,6 +582,59 @@ func TestOptionalCentralSamplerTarget(t *testing.T) {
 	}
 }
 
+func TestSVIDCallersMayOmitBearerTokenFiles(t *testing.T) {
+	settings := strings.Replace(requiredFile, "runner_token_file: /var/run/token\n", "", 1)
+	settings = strings.Replace(settings,
+		"gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher}",
+		"gateway_tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/session-dispatcher, cert_file: /tmp/sessions-cert, key_file: /tmp/sessions-key, client_uri: spiffe://agentplane/sessions}", 1)
+	settings += `central_sampler:
+  target: sampler:8080
+  tls: {ca_file: /tmp/workload-ca, server_uri: spiffe://agentplane/central-sampler, cert_file: /tmp/sessions-cert, key_file: /tmp/sessions-key, client_uri: spiffe://agentplane/sessions}
+`
+	path := configtest.WriteSettings(t, settings)
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RunnerTokenFile != "" || c.GatewayTLS.ClientURI != peertls.SessionsURI || c.CentralSampler.TokenFile != "" || c.CentralSampler.TLS.ClientURI != peertls.SessionsURI {
+		t.Fatalf("SVID caller settings were not retained: gateway=%+v sampler=%+v", c.GatewayTLS, c.CentralSampler)
+	}
+
+	for name, mutate := range map[string]func(*config){
+		"wrong Gateway caller": func(c *config) { c.GatewayTLS.ClientURI = peertls.AppURI },
+		"mixed Gateway auth":   func(c *config) { c.RunnerTokenFile = "/run/token" },
+		"wrong sampler caller": func(c *config) { c.CentralSampler.TLS.ClientURI = peertls.AppURI },
+		"mixed sampler auth":   func(c *config) { c.CentralSampler.TokenFile = "/run/token" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			invalid := c
+			invalid.GatewayTLS = cloneClientTLS(c.GatewayTLS)
+			invalid.CentralSampler = cloneCentralTarget(c.CentralSampler)
+			mutate(&invalid)
+			if err := invalid.validate(); err == nil {
+				t.Fatal("accepted invalid SVID caller settings")
+			}
+		})
+	}
+}
+
+func cloneClientTLS(source *peertls.ClientTLS) *peertls.ClientTLS {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
+}
+
+func cloneCentralTarget(source *dispatcher.CentralTarget) *dispatcher.CentralTarget {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	copy.TLS = cloneClientTLS(source.TLS)
+	return &copy
+}
+
 // dispatcherReviews is the external TokenReview response used by the startup identity check.
 type dispatcherReviews struct {
 	t         *testing.T
@@ -645,6 +699,45 @@ func TestDispatcherCredentialProvesTheCurrentWorkloadAtStartup(t *testing.T) {
 				}
 			} else if err == nil {
 				t.Fatalf("startup admitted account %v", got)
+			}
+		})
+	}
+}
+
+func TestDispatcherAccountUsesConfiguredPodForServiceSVIDCalls(t *testing.T) {
+	account := auth.Account{Namespace: "agentplane", Name: "gateway"}
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name        string
+		pod         *corev1.Pod
+		callers     []auth.Account
+		wantAccount auth.Account
+		wantError   bool
+	}{
+		{name: "configured Pod", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: "gateway"}}, callers: []auth.Account{account}, wantAccount: account},
+		{name: "different namespace", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "foreign", Name: "gateway-pod", UID: "pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: "gateway"}}, callers: []auth.Account{account}, wantError: true},
+		{name: "missing UID", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod"}, Spec: corev1.PodSpec{ServiceAccountName: "gateway"}}, callers: []auth.Account{account}, wantError: true},
+		{name: "missing ServiceAccount", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "pod-uid"}}, callers: []auth.Account{account}, wantError: true},
+		{name: "unlisted ServiceAccount", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: "other"}}, callers: []auth.Account{account}, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(test.pod).Build()
+			c := config{
+				Namespace: "agentplane", PodName: "gateway-pod", GatewayCallers: test.callers,
+				GatewayTLS: &peertls.ClientTLS{CAFile: "/ca", ServerURI: peertls.SessionDispatcherURI, CertFile: "/cert", KeyFile: "/key", ClientURI: peertls.SessionsURI},
+			}
+			got, err := dispatcherAccount(t.Context(), c, nil, objects)
+			if test.wantError {
+				if err == nil {
+					t.Fatalf("accepted configured Pod identity as %v", got)
+				}
+				return
+			}
+			if err != nil || got != test.wantAccount {
+				t.Fatalf("dispatcher account=%v, error=%v", got, err)
 			}
 		})
 	}

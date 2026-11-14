@@ -99,6 +99,73 @@ def test_control_service_tls_pins_session_dispatcher_identity() -> None:
         Settings.model_validate(source)
 
 
+def test_gateway_sessions_svid_is_an_optional_tokenless_caller_mode() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["runner_token_file"] = None
+    source["gateway_tls"].update(
+        cert_file="/test/sessions-cert", key_file="/test/sessions-key", client_uri="spiffe://agentplane/sessions"
+    )
+    settings = Settings.model_validate(source)
+    assert settings.runner_token_file is None
+    assert settings.gateway_tls.client_uri == "spiffe://agentplane/sessions"
+
+    source["runner_token_file"] = "/run/token"
+    with pytest.raises(ValidationError, match="service SVID and bearer token authentication cannot be combined"):
+        Settings.model_validate(source)
+
+    source["runner_token_file"] = None
+    source["gateway_tls"]["client_uri"] = "spiffe://agentplane/app"
+    with pytest.raises(ValidationError, match="client_uri must be 'spiffe://agentplane/sessions'"):
+        Settings.model_validate(source)
+
+    source["gateway_tls"]["client_uri"] = None
+    source["gateway_tls"].pop("cert_file")
+    source["gateway_tls"].pop("key_file")
+    with pytest.raises(ValidationError, match="a bearer token file or service SVID is required"):
+        Settings.model_validate(source)
+
+
+def test_central_sampler_sessions_svid_is_an_optional_tokenless_caller_mode() -> None:
+    source = _settings({"mode": "insecure"}).model_dump(mode="json")
+    source["central_sampler"] = {
+        "target": "sampler:8080",
+        "token_file": None,
+        "tls": {
+            "ca_file": "/test/workload-ca",
+            "server_uri": "spiffe://agentplane/central-sampler",
+            "cert_file": "/test/sessions-cert",
+            "key_file": "/test/sessions-key",
+            "client_uri": "spiffe://agentplane/sessions",
+        },
+    }
+    settings = Settings.model_validate(source)
+    assert settings.central_sampler is not None
+    assert settings.central_sampler.token_file is None
+    assert settings.central_sampler.tls is not None
+    assert settings.central_sampler.tls.client_uri == "spiffe://agentplane/sessions"
+
+    source["central_sampler"]["token_file"] = "/run/token"
+    with pytest.raises(ValidationError, match="service SVID and bearer token authentication cannot be combined"):
+        Settings.model_validate(source)
+
+    source["central_sampler"]["token_file"] = None
+    source["central_sampler"]["tls"]["client_uri"] = "spiffe://agentplane/app"
+    with pytest.raises(ValidationError, match="client_uri must be 'spiffe://agentplane/sessions'"):
+        Settings.model_validate(source)
+
+    source["central_sampler"]["tls"]["client_uri"] = "spiffe://agentplane/sessions"
+    source["central_sampler"]["tls"]["server_uri"] = "spiffe://agentplane/policy-controller"
+    with pytest.raises(ValidationError, match=r"central_sampler\.tls\.server_uri must identify the Central Sampler"):
+        Settings.model_validate(source)
+
+    source["central_sampler"]["tls"]["server_uri"] = "spiffe://agentplane/central-sampler"
+    source["central_sampler"]["tls"]["client_uri"] = None
+    source["central_sampler"]["tls"].pop("cert_file")
+    source["central_sampler"]["tls"].pop("key_file")
+    with pytest.raises(ValidationError, match="a bearer token file or service SVID is required"):
+        Settings.model_validate(source)
+
+
 def test_service_settings_require_spiffe_listener_authentication() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="json")
     source["rpc"]["auth"] = [source["rpc"]["auth"][1]]
