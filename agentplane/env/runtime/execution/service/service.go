@@ -178,7 +178,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 	// Cancel sessions before draining RPCs: OpenSession streams are held until
 	// explicitly canceled, and a canceled unary call alone never stops native work.
 	cancel()
-	if closeErr := adapter.Close(); closeErr != nil {
+	if closeErr := executionAdapter.Close(); closeErr != nil {
 		err = errors.Join(err, closeErr)
 	}
 	return err
