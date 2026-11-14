@@ -2287,6 +2287,7 @@ service caller contract. The separate destination-authority decision
 flowchart TD
     RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
     RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN[Decision: reconsider per-runner Gateway ownership]
+    RUNNER_STATE_OBSERVATION[Unscheduled decision: direct passive Runtime observation by Sandbox Controller]
 ```
 
 ### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
@@ -2334,6 +2335,22 @@ without automatic replay. If this decision selects a new architecture, its imple
 on the reviewed decision.
 **Exit:** reviewed choice, ownership and failure semantics, migration/rollback plan, and
 deterministic multi-replica and race coverage for any selected change.
+
+### `RUNNER_STATE_OBSERVATION` — direct Runtime facts for the Sandbox Controller
+
+**Unscheduled decision.** The [runtime state observation proposal](runtime_state_observation.md)
+recommends a leader-elected Sandbox Controller manager watch a passive Runtime state stream directly
+and keep facts in memory by Sandbox UID, runner Pod UID and boot ID. The existing `Runner.WatchState`
+cannot simply be reused: its exclusive `ConnectionEpoch` establishes and fences every proxy and
+Executor call. The proposal requires a separate read-only Controller stream and identity while the
+Gateway keeps its connection Lease, active call epoch and EndpointSlice through reader migration.
+
+**Review question:** approve the direct passive stream and its dedicated Controller SVID, with the
+Gateway's current proxy ownership retained, or keep Lease facts? The separate
+`RUNNER_GATEWAY_REPLICA_OWNERSHIP_DESIGN` decision must choose a replacement call fence and
+EndpointSlice owner before the connection Lease can be removed. Dispatcher delivery Lease ownership
+remains out of scope pending operator choice. **Exit:** reviewed Runtime RPC and authorization
+contract, freshness and lifecycle semantics, and the staged reader/writer migration.
 
 ## Scope and retirement of stale gates
 
