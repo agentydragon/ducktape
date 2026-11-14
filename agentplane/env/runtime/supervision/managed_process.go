@@ -12,6 +12,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// ErrFencedLaunch marks an interrupted launch whose exact process attempt has
+// finished cleanup. The original error remains available through errors.Is; this
+// proof is never returned when stopping or releasing the attempt fails.
+var ErrFencedLaunch = errors.New("native launch was fenced")
+
 // ManagedProcess exposes native streams while COSI owns launch, exit observation,
 // and fencing. Protocol workers may wait on it without driving backend operations.
 type ManagedProcess struct {
@@ -76,7 +81,10 @@ func (h *Host) Launch(ctx context.Context, owner string, generation uint64, supe
 	if err != nil {
 		// Cancellation ends admission, but cannot abandon an uncertain launch.
 		// Teardown joins the start and fences any process it returns late.
-		return nil, errors.Join(err, p.Stop(context.WithoutCancel(ctx)))
+		if stopErr := p.Stop(context.WithoutCancel(ctx)); stopErr != nil {
+			return nil, errors.Join(err, stopErr)
+		}
+		return nil, errors.Join(ErrFencedLaunch, err)
 	}
 	return p, nil
 }
