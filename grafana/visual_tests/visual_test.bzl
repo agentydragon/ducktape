@@ -25,6 +25,7 @@ def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests
         requires_docker = True,
         tags = ["visual"],
         deps = ([fixture] if fixture else []) + [
+            "//grafana/visual_tests:fixture_codec",
             "//grafana/visual_tests:recorded",
             "//grafana/visual_tests:visual_browser",
             "//grafana/visual_tests:visual_harness",

@@ -50,6 +50,32 @@ fixture fails the test; an explicitly empty frame represents a real empty result
 Repeated panels can provide `variant_variable` and `variants` keyed by the
 selected fixture value, so each repeated row uses its own recorded data.
 
+Recordings may use `grafana-recorded-shared-v1`: `shared` holds ordinary JSON
+subtrees and `fixture` holds the response, with singleton
+`{"$recorded_ref": "value_001"}` objects referring to shared entries. References
+can occur at any depth (including inside shared entries). These are literal
+captured arrays and schema fragments, with no generated samples, interpolation,
+or compression. Expansion precedes the same query/variable validation and
+returns independent copies at every use. Missing/cyclic references and unknown
+versions fail. Ordinary unencoded fixtures remain supported.
+
+For capture/refresh, retain the existing sanitization and capture notes, then
+run the codec on the full recording (paths below are examples):
+
+```sh
+bb run //grafana/visual_tests:fixture_codec_cli -- compact capture.json dashboard_visual_fixture.json
+prettier --write dashboard_visual_fixture.json
+bb run //grafana/visual_tests:fixture_codec_cli -- expand dashboard_visual_fixture.json expanded.json
+```
+
+The compactor verifies expanded-object equality before writing. Also compare the
+expanded parsed JSON with the sanitized capture after formatting, then discard
+the extra capture/expanded files and run the dashboard's visual target. Do not
+refresh recordings merely to re-encode them. `$recorded_ref` and
+`recorded_format` are reserved keys: capture input containing either is rejected
+rather than silently reinterpreted. Use expansion to inspect/edit a full
+response; editing a shared entry intentionally affects all its references.
+
 This scenario does **not** execute or validate PromQL, LogQL or SQL, datasource
 plugins, or production substitutions. The fixtures preserve captured data shapes,
 but may not cover every variable choice or current live state. A green test only

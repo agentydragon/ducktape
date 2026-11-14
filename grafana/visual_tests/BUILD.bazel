@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -48,6 +48,27 @@ py_test(
         ":recorded",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "fixture_codec",
+    srcs = ["fixture_codec.py"],
+)
+
+py_binary(
+    name = "fixture_codec_cli",
+    srcs = ["fixture_codec.py"],
+    main = "fixture_codec.py",
+)
+
+py_test(
+    name = "test_fixture_codec",
+    srcs = ["test_fixture_codec.py"],
+    deps = [
+        ":fixture_codec",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
