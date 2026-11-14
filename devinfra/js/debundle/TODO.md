@@ -396,6 +396,18 @@ literal `RegExp` construction; the active classifier test correctly expects
 Unknown today. Keep the future test ignored until that precondition is
 implemented; do not admit constructors that can throw.
 
+Infer literal-string `TextEncoder.encode` initialization from a proved fresh
+receiver and intact constructor/method identities. The accepted split in
+`e2e/initializer_source_only_test.rs` currently needs explicit initializer purity
+and lexical-effect promises. Its dataflow-aware allocation fixture additionally
+needs commuting promises against independent allocations: purity and lexical
+effects alone do not establish heap independence, and commuting with one barrier
+preserves ordering through earlier statements. Compose precise heap/call effects
+and native proof dependencies so those promises can be removed; retain fallback
+for shadowing, replacement, accessors and coercing arguments. Follow
+<plans/native_receiver_identity.md> and verify a real extraction gain before
+changing gate behavior.
+
 ## Rename pipeline
 
 `lowering/rename_ledger.rs`'s module doc is the architecture reference for
