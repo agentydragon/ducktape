@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
+	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -180,7 +180,7 @@ func TestHistoryEntityGeneratedFacade(t *testing.T) {
 	}
 	authentication := newStreamTestAuth(t)
 	app := newHTTPServer(authentication)
-	registerStreamingRoutes(app, streamingDependencies{HistoryHTTP: proxy.NewHandlerUpstream(generated, "")})
+	registerStreamingRoutes(app, streamingDependencies{HistoryHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
 	const id = "9b6d568a-2253-43d7-a7d4-190e98359594"
 	body, err := protojson.Marshal(&historypb.ReadThreadEntitiesRequest{Window: &historypb.ReadThreadEntitiesRequest_Range{
 		Range: &historypb.EntityRange{StartEntityIndex: 2, Limit: 1},
@@ -556,7 +556,7 @@ func TestEnvironmentGeneratedFacadeRejectsUnknownAndDispatcherRoutes(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: proxy.NewHandlerUpstream(generated, "")})
+	registerStreamingRoutes(server, streamingDependencies{EnvironmentHTTP: upstreamproxy.NewHandlerUpstream(generated, "")})
 	handler := server.Handler(authentication)
 	for _, test := range []struct {
 		method, path string

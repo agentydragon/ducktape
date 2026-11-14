@@ -1,0 +1,16 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "electricproxy",
+    srcs = ["electric.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/electricproxy",
+    deps = ["//agentplane/app/internal/upstream"],
+)
+
+go_test(
+    name = "unit_test",
+    srcs = ["electric_test.go"],
+    embed = [":electricproxy"],
+)

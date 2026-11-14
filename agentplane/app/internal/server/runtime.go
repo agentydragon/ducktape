@@ -24,15 +24,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/bridge"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/electricproxy"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historywatch"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/migrations"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/status"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/threads"
+	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	"github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -238,12 +239,12 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure generated Action Service HTTP facade: %w", err)
 	}
-	actionGateway := proxy.NewHandlerUpstream(actionFacade, "")
+	actionGateway := upstreamproxy.NewHandlerUpstream(actionFacade, "")
 	connectionFacade, err := facade.NewHandler(facadeContext, connectionTarget, 10*time.Second, connection_servicepb.RegisterConnectionServiceHandlerFromEndpoint)
 	if err != nil {
 		return fmt.Errorf("configure generated Connection Service HTTP facade: %w", err)
 	}
-	connectionGateway := proxy.NewHandlerUpstream(connectionFacade, "")
+	connectionGateway := upstreamproxy.NewHandlerUpstream(connectionFacade, "")
 	dispatcherFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, config.SessionDispatcherTarget,
 		time.Duration(config.SessionDispatcherRequestTimeoutSecs*float64(time.Second)),
@@ -254,12 +255,12 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
 	}
-	dispatcherGateway := proxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
+	dispatcherGateway := upstreamproxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
 	policyFacade, err := facade.NewHandler(facadeContext, config.PolicyServiceTarget, 10*time.Second, policypb.RegisterPolicyServiceHandlerFromEndpoint)
 	if err != nil {
 		return fmt.Errorf("configure generated Policy Service HTTP facade: %w", err)
 	}
-	policyGateway := proxy.NewHandlerUpstream(policyFacade, config.PolicyServiceTokenFile)
+	policyGateway := upstreamproxy.NewHandlerUpstream(policyFacade, config.PolicyServiceTokenFile)
 	historyFacade, err := facade.NewHandlerWithOptions(
 		facadeContext, config.HistoryServiceTarget,
 		time.Duration(config.HistoryServiceRequestTimeoutSeconds*float64(time.Second)),
@@ -269,7 +270,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure generated History Service HTTP facade: %w", err)
 	}
-	historyGateway := proxy.NewHandlerUpstream(historyFacade, config.HistoryServiceTokenFile)
+	historyGateway := upstreamproxy.NewHandlerUpstream(historyFacade, config.HistoryServiceTokenFile)
 	notificationTarget, err := grpcTargetFromHTTPURL(config.NotificationsURL)
 	if err != nil {
 		return fmt.Errorf("configure Notification Service gRPC client: %w", err)
@@ -283,7 +284,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure generated Notification Service HTTP facade: %w", err)
 	}
-	notificationGateway := proxy.NewHandlerUpstream(notificationFacade, config.NotificationsTokenFile)
+	notificationGateway := upstreamproxy.NewHandlerUpstream(notificationFacade, config.NotificationsTokenFile)
 	egressTarget, err := grpcTargetFromHTTPURL(config.EgressAdminURL)
 	if err != nil {
 		return fmt.Errorf("configure Egress Service gRPC client: %w", err)
@@ -293,7 +294,7 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure generated Egress HTTP facade: %w", err)
 	}
-	egressGateway := proxy.NewHandlerUpstream(egressFacade, config.EgressAdminTokenFile)
+	egressGateway := upstreamproxy.NewHandlerUpstream(egressFacade, config.EgressAdminTokenFile)
 	consoleConnector, err := sandboxes.NewConsoleConnector(kubeConfig)
 	if err != nil {
 		return fmt.Errorf("configure Sandbox console client: %w", err)
@@ -337,7 +338,7 @@ func Run(ctx context.Context, config settings.Config) error {
 		Console: consoleConnector, Logger: logger,
 	})
 	if config.ElectricURL != "" {
-		electric, electricErr := proxy.NewElectricProxy(baseClient, config.ElectricURL, threadEpochStore{history: history})
+		electric, electricErr := electricproxy.NewElectricProxy(baseClient, config.ElectricURL, threadEpochStore{history: history})
 		if electricErr != nil {
 			return fmt.Errorf("configure Electric thread sync: %w", electricErr)
 		}

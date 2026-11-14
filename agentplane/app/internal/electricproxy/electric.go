@@ -1,4 +1,4 @@
-package proxy
+package electricproxy
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 )
 
 const (
@@ -60,7 +62,7 @@ type SubsetRequest struct {
 
 // ElectricProxy forwards the app's pinned thread shapes to Electric.
 type ElectricProxy struct {
-	upstream *UpstreamProxy
+	upstream *upstream.UpstreamProxy
 	store    ThreadEpochStore
 }
 
@@ -70,11 +72,11 @@ func NewElectricProxy(client *http.Client, electricURL string, store ThreadEpoch
 	if store == nil {
 		return nil, errors.New("thread scope store is required")
 	}
-	upstream, err := NewUpstreamProxy(client, electricURL)
+	target, err := upstream.NewUpstreamProxy(client, electricURL)
 	if err != nil {
 		return nil, err
 	}
-	return &ElectricProxy{upstream: upstream, store: store}, nil
+	return &ElectricProxy{upstream: target, store: store}, nil
 }
 
 // Register mounts the authenticated-by-caller sync routes on mux. Callers should mount this handler
@@ -202,7 +204,7 @@ func (p *ElectricProxy) forward(
 	if subset != nil {
 		headers.Set("Content-Type", "application/json")
 	}
-	p.upstream.Relay(w, r, RelayRequest{
+	p.upstream.Relay(w, r, upstream.RelayRequest{
 		Method: method, Path: "v1/shape", Query: query, Header: headers, Body: body,
 		ResponseHeaders: responseHeaders, CacheControl: "private, no-cache",
 		OnError: func(w http.ResponseWriter, r *http.Request, _ error) {

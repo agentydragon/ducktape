@@ -14,8 +14,8 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
+	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -129,7 +129,7 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 // identity. Browser sessions stay tied to logout; bearer callers stay tied to the request.
 func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
-	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
 		writeDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
 		return
 	}
@@ -188,7 +188,7 @@ func (r *streamingRoutes) egressFacade(w http.ResponseWriter, request *http.Requ
 
 func (r *streamingRoutes) serviceAccountFacade(w http.ResponseWriter, request *http.Request, upstream streamingUpstream, label string) {
 	path := request.PathValue("path")
-	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
 		writeDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
 		return
 	}
@@ -211,7 +211,7 @@ func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.
 
 func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
-	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
 		writeDetailError(w, http.StatusNotFound, "unknown History facade route")
 		return
 	}
@@ -224,7 +224,7 @@ func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Req
 
 func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Request, upstream streamingUpstream, label string) {
 	path := request.PathValue("path")
-	if !proxy.GeneratedFacadeRouteAllowed(request.Method, path) {
+	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
 		writeDetailError(w, http.StatusNotFound, "unknown "+label+" route")
 		return
 	}

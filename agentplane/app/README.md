@@ -94,7 +94,8 @@ get their Threads once it does.
 - `cmd/`: process signal handling, CLI selection and the `agentplane-app` executable.
 - `internal/threads/`: operator-owned Thread metadata. Generated Dispatcher HTTP routes own command submissions.
   History owns event storage, folding and evidence; `internal/historydata/` reads it through gRPC.
-- `internal/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
+- `internal/electricproxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
+- `internal/upstream/`: streaming HTTP and in-process facade forwarding to backend services.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
 - `internal/auth/` and `internal/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
   exchange. Logout, expiry and replica notifications end browser streams.

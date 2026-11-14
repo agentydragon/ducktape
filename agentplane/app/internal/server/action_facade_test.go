@@ -17,7 +17,7 @@ import (
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	webpushpb "github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
+	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	connectionpb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
@@ -93,7 +93,7 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 	if err := os.WriteFile(tokenFile, []byte("app-pod-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	upstream := proxy.NewHandlerUpstream(handler, tokenFile)
+	upstream := upstreamproxy.NewHandlerUpstream(handler, tokenFile)
 	for _, operation := range []struct{ method, url, body, path string }{
 		{http.MethodPost, "/upstream/environments/v1/environments", `{"name":"created","template":"pod"}`, "v1/environments"},
 		{http.MethodDelete, "/upstream/environments/v1/environments/agentplane/created?target.uid=sandbox-uid", "", "v1/environments/agentplane/created"},
@@ -204,7 +204,7 @@ func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 	}
 	request := httptest.NewRequest(http.MethodGet, "/upstream/notifications/v1/sessions/a/inbox:watch", nil)
 	response := httptest.NewRecorder()
-	if err := proxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(response, request, request.Context(), "v1/sessions/a/inbox:watch", ""); err != nil {
+	if err := upstreamproxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(response, request, request.Context(), "v1/sessions/a/inbox:watch", ""); err != nil {
 		t.Fatal(err)
 	}
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"inbox"`) {
@@ -221,7 +221,7 @@ func TestGeneratedNotificationWatchBindsSessionIDAndServiceToken(t *testing.T) {
 	))
 	oldRequest.Header.Set("Content-Type", "application/json")
 	oldResponse := httptest.NewRecorder()
-	if err := proxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(oldResponse, oldRequest, oldRequest.Context(), "v1/messages", ""); err != nil {
+	if err := upstreamproxy.NewHandlerUpstream(handler, tokenFile).ForwardHTTP(oldResponse, oldRequest, oldRequest.Context(), "v1/messages", ""); err != nil {
 		t.Fatal(err)
 	}
 	if oldResponse.Code != http.StatusBadRequest || service.sendCalled {
@@ -277,7 +277,7 @@ func (s *generatedActionService) ListActionGroups(
 	return &actionpb.ListActionGroupsResponse{ActionGroups: []*actionpb.ActionGroup{{Key: "test", Title: "Test group"}}}, nil
 }
 
-func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *proxy.HandlerUpstream {
+func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *upstreamproxy.HandlerUpstream {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -307,7 +307,7 @@ func newGeneratedActionFacade(t *testing.T, service *generatedActionService) *pr
 	if err != nil {
 		t.Fatal(err)
 	}
-	return proxy.NewHandlerUpstream(handler, "")
+	return upstreamproxy.NewHandlerUpstream(handler, "")
 }
 
 func TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer(t *testing.T) {
@@ -390,7 +390,7 @@ func TestGeneratedConnectionFacadeUsesFederatedBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	upstream := proxy.NewHandlerUpstream(handler, "")
+	upstream := upstreamproxy.NewHandlerUpstream(handler, "")
 	request := httptest.NewRequest(http.MethodGet, "/upstream/connections/v1/operator/connections", nil)
 	response := httptest.NewRecorder()
 	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/operator/connections", "connection-token"); err != nil {
@@ -427,7 +427,7 @@ func TestGeneratedDispatcherFacadeReadsRotatingServiceToken(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte("first-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	upstream := proxy.NewHandlerUpstream(handler, tokenFile)
+	upstream := upstreamproxy.NewHandlerUpstream(handler, tokenFile)
 	for _, token := range []string{"first-token", "rotated-token"} {
 		if err := os.WriteFile(tokenFile, []byte(token+"\n"), 0o600); err != nil {
 			t.Fatal(err)
@@ -510,7 +510,7 @@ func TestGeneratedDispatcherFacadeFiltersResponseHeadersAndPreservesStreaming(t 
 		t.Fatalf("generated handler did not expose backend metadata for the boundary test: %v", rawResponse.Header())
 	}
 
-	upstream := proxy.NewHandlerUpstream(handler, "")
+	upstream := upstreamproxy.NewHandlerUpstream(handler, "")
 	response := httptest.NewRecorder()
 	trackedResponse := &flushCountingResponseWriter{ResponseRecorder: response}
 	request := httptest.NewRequest(http.MethodGet, "/upstream/dispatcher/v1/dispatches:watch", nil)
@@ -554,9 +554,9 @@ func (w *flushCountingResponseWriter) Flush() {
 	w.ResponseRecorder.Flush()
 }
 
-func newGeneratedDispatcherFacade(t *testing.T, service *generatedDispatcherService, unaryTimeout time.Duration) *proxy.HandlerUpstream {
+func newGeneratedDispatcherFacade(t *testing.T, service *generatedDispatcherService, unaryTimeout time.Duration) *upstreamproxy.HandlerUpstream {
 	t.Helper()
-	return proxy.NewHandlerUpstream(newGeneratedDispatcherHandler(t, service, unaryTimeout), "")
+	return upstreamproxy.NewHandlerUpstream(newGeneratedDispatcherHandler(t, service, unaryTimeout), "")
 }
 
 func newGeneratedDispatcherHandler(t *testing.T, service dispatcherpb.SessionDispatcherServer, unaryTimeout time.Duration) http.Handler {

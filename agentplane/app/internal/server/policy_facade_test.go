@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/proxy"
+	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	egresspb "github.com/agentydragon/ducktape/agentplane/egress/api/admin/egress_adminpb"
 	rulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
@@ -59,7 +59,7 @@ func policyUpstream(t *testing.T, service policypb.PolicyServiceServer) streamin
 	if err := os.WriteFile(token, []byte("policy-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return proxy.NewHandlerUpstream(handler, token)
+	return upstreamproxy.NewHandlerUpstream(handler, token)
 }
 
 func TestGeneratedPolicyFacadeUsesAppTokenAndSubject(t *testing.T) {
@@ -186,7 +186,7 @@ func TestGeneratedEgressFacadeUsesAppToken(t *testing.T) {
 	if err := os.WriteFile(token, []byte("egress-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	upstream := proxy.NewHandlerUpstream(handler, token)
+	upstream := upstreamproxy.NewHandlerUpstream(handler, token)
 	request := httptest.NewRequest(http.MethodGet, "/upstream/egress/v1/credentials:watch", nil)
 	response := httptest.NewRecorder()
 	if err := upstream.ForwardHTTP(response, request, context.Background(), "v1/credentials:watch", ""); err != nil {
