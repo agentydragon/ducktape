@@ -8967,6 +8967,8 @@ data:
       token_file: /var/run/secrets/notifications/history
     token_audience: agentplane-notifications
     operator_reader_account: app
+    operator_reader_services:
+      - spiffe://agentplane/app
     quotas:
       inboxes_per_account: 64
       active_subscriptions_per_inbox: 64
