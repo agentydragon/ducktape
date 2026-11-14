@@ -5,12 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.system_tests.driver.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster, mint_token
+from agentplane.system_tests.driver.cluster import Cluster
 
 BASE_URL = "AGENTPLANE_SYSTEM_TEST_URL"
 TOKEN = "AGENTPLANE_SYSTEM_TEST_TOKEN"
 NAMESPACE = "AGENTPLANE_SYSTEM_TEST_NAMESPACE"
-SERVICE_ACCOUNT = "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT"
 
 STAGING_URL = "https://agentplane-staging.allegedly.works"
 STAGING_NAMESPACE = "agentplane-staging"
@@ -22,13 +21,15 @@ def base_url() -> str:
 
 
 @pytest.fixture(scope="session")
-def token(cluster: Cluster) -> str:
-    """The caller's own token if it set one, else one minted from the caller's kubeconfig."""
-    if (supplied := os.environ.get(TOKEN)) is not None:
-        return supplied
-    return mint_token(
-        cluster=cluster, service_account=os.environ.get(SERVICE_ACCOUNT, AGENT_SERVICE_ACCOUNT), audience=AUDIENCE
-    )
+def token() -> str:
+    """Require a caller-supplied operator ID token for the live app API."""
+    return read_token()
+
+
+def read_token() -> str:
+    if not (supplied := os.environ.get(TOKEN)):
+        pytest.fail(f"set {TOKEN} to an operator ID token accepted by the target Agentplane app", pytrace=False)
+    return supplied
 
 
 @pytest.fixture(scope="session")

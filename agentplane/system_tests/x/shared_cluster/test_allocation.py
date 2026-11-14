@@ -32,7 +32,7 @@ async def _finish_deletion(core: k8s.CoreV1Api, name: str) -> None:
             await core.read_namespace(name)
 
 
-async def test_allocation_mints_scoped_credentials_and_holds_capacity_until_cleanup(
+async def test_allocation_mints_observer_credentials_and_holds_capacity_until_cleanup(
     tmp_path: Path, runfiles: Runfiles
 ) -> None:
     async with kubernetes_apiserver() as server:
@@ -60,13 +60,11 @@ async def test_allocation_mints_scoped_credentials_and_holds_capacity_until_clea
         assert kubeconfig["users"] == [{"name": "observer", "user": {"token": kubeconfig["users"][0]["user"]["token"]}}]
         credentials = allocation.Credentials(
             allocation=allocation.Allocation.model_validate_json((output / "allocation.json").read_text()),
-            application_token=(output / "application-token").read_text(),
             observer_token=kubeconfig["users"][0]["user"]["token"],
         )
         owned = credentials.allocation
         names = Namespaces(owned.run_id)
         assert stdout.decode().strip() == names.application
-        assert credentials.application_token not in stdout.decode()
         assert credentials.observer_token not in stdout.decode()
         core = k8s.CoreV1Api(server.api)
         for name in names.all:
@@ -76,15 +74,7 @@ async def test_allocation_mints_scoped_credentials_and_holds_capacity_until_clea
             assert namespace.metadata.labels[allocation.TTL_LABEL] == owned.expires_at.strftime("%Y-%m-%dT%H%M%SZ")
             quota = await core.read_namespaced_resource_quota("test-run", name)
             assert quota.spec.hard
-        assert credentials.application_token not in repr(credentials)
         assert credentials.observer_token not in repr(credentials)
-        authenticated = await k8s.AuthenticationV1Api(server.api).create_token_review(
-            k8s.V1TokenReview(spec=k8s.V1TokenReviewSpec(token=credentials.application_token, audiences=["agentplane"]))
-        )
-        assert authenticated.status.authenticated
-        assert (
-            authenticated.status.user.username == f"system:serviceaccount:{names.application}:{allocation.APPLICATION}"
-        )
 
         configuration = k8s.Configuration()
         configuration.host = server.api.configuration.host

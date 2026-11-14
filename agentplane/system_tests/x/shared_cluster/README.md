@@ -19,8 +19,7 @@ bb run //agentplane/system_tests/x/shared_cluster:lease_bin -- \
 ```
 
 The new output directory is mode 0700; its files are mode 0600. Only
-`application-token` and `observer.kubeconfig` go to the test driver. Keep
-`allocation.json` with trusted setup for cleanup:
+`observer.kubeconfig` goes to the test driver. Keep `allocation.json` with trusted setup for cleanup:
 
 ```bash
 bb run //agentplane/system_tests/x/shared_cluster:lease_bin -- \
