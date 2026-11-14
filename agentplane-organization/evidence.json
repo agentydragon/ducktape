@@ -9989,6 +9989,10 @@
         {
           "at_utc": "2026-11-14T05:49",
           "text": "Operator, 2026-11-14 05:49 UTC, card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\"."
+        },
+        {
+          "at_utc": "2026-11-14T07:20",
+          "text": "Operator, 2026-11-14 07:20 UTC, answering the card \"Choose how an Identity change is fenced against Session admission\": \"okay, sounds good to me, sessions can re-check\"."
         }
       ],
       "verified": [
@@ -10005,7 +10009,8 @@
         "Outside `runner_gateway/`, only `agentplane/action_service/session_delegation/dispatcher_integration_test.go`, `agentplane/action_service/session_delegation/dispatcher_integration_testmain_test.go` import `dispatcher` or `migrations`, and only `agentplane/action_service/orchestration_v1/fixture_test.go` imports `environments` or `environments/lifecycle`.",
         "At the pin `agentplane/environments/` holds only `v1/environment_service.proto` and its BUILD file; `agentplane/session_dispatcher/` does not exist.",
         "`sandbox_controller` is referenced by Bazel label from `devinfra/ci/image_targets.json`, `agentplane/system_tests/k3s/defs.bzl` and `cluster/cdk8s/agentplane/BUILD.bazel` (`:settings`).",
-        "Since #16346 every explicit resume, including an Identity grant, reserves the Dispatcher-database wake budget; after #16351 the Dispatcher imports `environmentaccess` for `bind_session` (checked on its head)."
+        "Since #16346 every explicit resume, including an Identity grant, reserves the Dispatcher-database wake budget; after #16351 the Dispatcher imports `environmentaccess` for `bind_session` (checked on its head).",
+        "The Sandbox CRD's CEL rule admits a `spec.identity` change only before the first status report or at `status.stopStage: Stopped` (`sandboxes/api/types.go`); a running incarnation keeps its credential's subject. The Runtime refuses to re-admit a Session with a different execution Identity, but does not compare retained Sessions with its own credential."
       ]
     }
   }

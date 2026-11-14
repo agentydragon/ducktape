@@ -32,7 +32,7 @@
   ],
   "target_binaries": {
     "status": "AGREED DIRECTION",
-    "status_note": "Operator proposal, 2026-11-14 05:11 UTC; adopted as the agreed reorg direction at 05:29 UTC (card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"). Automatic wake decided at 05:19 UTC (card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"). Directories decided at 05:49 UTC (card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\"); deployed names stay until their own migration.",
+    "status_note": "Operator proposal, 2026-11-14 05:11 UTC; adopted as the agreed reorg direction at 05:29 UTC (card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"). Automatic wake decided at 05:19 UTC (card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"). Directories decided at 05:49 UTC (card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\"); deployed names stay until their own migration. Identity fence decided at 07:20 UTC: Sessions re-check the live Identity; no call between the binaries.",
     "proposal_quote": "So, what's the plan on how we will structure binaries? One binary that handles sandbox controller kubernetes stuff and also communicates with the env runtimes in those sandboxes for running commands and starting native sessions in hosted harnesses and codex exec server stuff? And a separate binary handles the routing of commands to *sessions*, which would go either to central sampler or to hosted harnesses through the first binary?",
     "summary": "Two binaries replace `runner-gateway` and `sandbox-controller`. The Environments binary owns Sandboxes and everything that calls an Environment Runtime; the Sessions binary owns Session admission, the durable command queue and routing, and reaches Runtimes only through the Environments binary. The Runner Gateway disappears. After gateway-connection-lease-removal its Runtime proxy and Executor keep no per-Sandbox state, and the Dispatcher already calls the proxy over the network (`dispatcher/runner_client.go` dials the per-Sandbox control Service even inside its own Pod), so moving the proxy out adds no hop. Before this direction the plan, and the merge contract drafted in #16311 (closed as superseded), kept the Gateway as Dispatcher plus proxy.",
     "today": [
@@ -113,7 +113,7 @@
         "status": "DECIDED",
         "decision": "Operator, 2026-11-14 05:19 UTC, card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\".",
         "today": "The delivery worker calls `lifecycle.Manager.RequestWake` in process. It checks `wakeOnSend`, the Identity's `resumePolicy.allowOwnServiceAccount` or the `wake_callers` broker grant, refuses after a requested stop, reserves the budget (10 distinct wake generations per effective caller per 60 s) in the Dispatcher's PostgreSQL and patches `spec.running` and `spec.wakeGeneration`.",
-        "proposal": "The Sessions binary keeps that policy check and the budget and writes the Sandbox spec itself, so nothing calls across for a wake and the Environments binary needs no budget call back (the controller-only budget RPC in #16318 is closed). The automatic path of `lifecycle` stays with the Dispatcher and explicit resume moves with EnvironmentService. `sandbox_controller/internal` is not importable from the Dispatcher, so split `lifecycle` along that line or keep the shared policy outside both `internal/` trees.",
+        "proposal": "The Sessions binary keeps that policy check and the budget and writes the Sandbox spec itself, so nothing calls across for a wake and the Environments binary needs no budget call back (the controller-only budget RPC in #16318 is closed). The automatic path of `lifecycle` stays with the Dispatcher and explicit resume moves with EnvironmentService. `environments/internal` is not importable from the Dispatcher, so split `lifecycle` along that line or keep the shared policy outside both `internal/` trees.",
         "evidence_paths": [
           "agentplane/runner_gateway/environments/lifecycle/manager.go",
           "agentplane/runner_gateway/dispatcher/wake.go",
@@ -134,14 +134,16 @@
       {
         "id": "identity-fence",
         "title": "Identity change against Session admission",
-        "status": "OPEN",
+        "status": "DECIDED",
         "today": "`SetEnvironmentIdentity` patches the Sandbox inside `dispatcher.Store.ChangeSandboxIdentity`, holding the per-Sandbox advisory lock Session admission takes, and refuses while Sessions name another Identity.",
-        "proposal": "Carried from #16311. Either (a) Environments authenticates the caller, resolves the Identity's exact UID and calls a private Sessions operation with the Sandbox UID, expected resource version and desired Identity, which Sessions re-reads and patches under its exclusive lock; the lock alone is no fence, because cancellation, a lost connection or process death can release it while the patch may still commit, so a durable pending identity-change record that admission checks stays until reconciliation shows the resulting binding. This is the one remaining Environments-to-Sessions call. Or (b) no call: Sessions re-checks the live Identity at admission and before delivery (delivery's `executionCurrent` already does) and Environments patches under optimistic locking. Either way a same-name replacement, a conflict, a failed query or an unavailable peer never becomes an unguarded mutation.",
+        "proposal": "No call between the binaries. EnvironmentService patches `spec.identity` under optimistic locking; the Sandbox CRD already admits the change only while nothing runs (before the first status report or at `stopStage: Stopped`). Sessions re-checks the live Identity at admission, placement and every delivery (`executionCurrent`), so commands of Sessions recorded under the old Identity fail `execution_identity_changed` instead of the change being refused. The refusal goes: Session rows are never deleted, so it blocked any rebind once a Session had existed. Proposed addition: the Runtime refuses to run a retained Session whose recorded Identity is not its own credential's.",
         "evidence_paths": [
           "agentplane/runner_gateway/dispatcher/store.go",
           "agentplane/runner_gateway/environments/management.go",
-          "agentplane/runner_gateway/dispatcher/delivery.go"
-        ]
+          "agentplane/runner_gateway/dispatcher/delivery.go",
+          "agentplane/sandboxes/api/types.go"
+        ],
+        "decision": "Operator, 2026-11-14 07:20 UTC, answering the card \"Choose how an Identity change is fenced against Session admission\": \"okay, sounds good to me, sessions can re-check\"."
       },
       {
         "id": "sandbox-view",
@@ -201,11 +203,7 @@
     "questions": [
       {
         "status": "NEXT",
-        "text": "Identity-change fence: a private Sessions operation with a durable pending-change record, or no call with Sessions re-checking the live Identity?"
-      },
-      {
-        "status": "QUEUED",
-        "text": "Explicit resume's rate bound once Identities may resume."
+        "text": "Explicit resume's rate bound after the split: since #16346 Identities may resume, and EnvironmentService will have no database for the wake budget."
       }
     ]
   },
@@ -9762,13 +9760,13 @@
       "how": [
         "Write the remaining merge contract: (a) wake is decided: the Dispatcher keeps `RequestWake`'s automatic policy check and its budget and writes the Sandbox spec itself, so EnvironmentService carries only explicit resume; split `lifecycle` along that line.",
         "(b) wake budget: stays in the Dispatcher's PostgreSQL (`dispatcher/wake.go` `ReserveWakeAttempt`); the controller reserves none. Explicit resume needs its own bound only once Identity callers can resume (cut line: explicit-resume bound).",
-        "(c) identity fence: management changes a Sandbox's Identity inside `dispatcher.Store.ChangeSandboxIdentity`, under the per-Sandbox advisory lock Session admission uses. Choose a private Dispatcher operation with a durable pending-change record, or no call with admission and delivery re-checking the live Identity (delivery's `executionCurrent` already does); see the cut line.",
+        "(c) identity fence, decided 2026-11-14: first, as its own behavior PR, drop `dispatcher.Store.ChangeSandboxIdentity` and its retained-Session refusal; EnvironmentService patches `spec.identity` itself under optimistic locking, and admission, placement and delivery keep re-checking the live Identity (cut line: identity fence).",
         "(d) serving: the Sandbox Controller is a leader-elected controller-runtime manager with no listener; EnvironmentService adds an every-replica gRPC listener with its own lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate identity and retargeted callers (cut line: serving).",
         "Then move the four packages whole, with tests, to `environments/internal/service` (package `environments` becomes `service`), with `lifecycle`, `management` and `view` under it, beside the API at `environments/v1`. The only importer outside the Gateway, orchestration_v1's `fixture_test.go` (`environments` and `lifecycle`), must first be retired (orchestration-v1-retirement) or rewritten against a test server, since `internal/` closes those packages. Retarget every caller, RBAC, manifests and the system overview diagram, image before config, with the rollback stated.",
         "`environmentaccess` (environment rules, #16346) moves in the same PR to `environments/access` (package `access`), outside `internal/`: the open environment-rule slice #16351 makes Session admission enforce `bind_session` with it, so the Sessions binary imports it too, and each binary builds its own rule index."
       ],
-      "gate": "Direction agreed; automatic wake decided 2026-11-14 (stays with the Dispatcher). The identity fence and serving contract (c, d) are not written; #16311's draft of them is carried into the cut line and the PR is closed as superseded. No database moves.",
-      "preserve": "The EnvironmentService wire API and per-method authorization; the Identity-change refusal while Sessions name another Identity; wake rate limits and assessments; resume authorization.",
+      "gate": "Direction agreed; automatic wake decided 2026-11-14 (stays with the Dispatcher). The identity fence (c) is decided (Sessions re-check; no call); the serving contract (d) is not written; #16311's draft of them is carried into the cut line and the PR is closed as superseded. No database moves.",
+      "preserve": "The EnvironmentService wire API and per-method authorization; identity changes only while nothing runs, and no delivery under a changed Identity; wake rate limits and assessments; resume authorization.",
       "validation": [
         "//agentplane/runner_gateway/environments:environments_test",
         "//agentplane/runner_gateway/environments/lifecycle:lifecycle_test",
@@ -12073,7 +12071,7 @@
       "track": "environment-service-to-sandbox-controller",
       "title": "Move EnvironmentService into the Environments binary",
       "readiness": "AGREED DIRECTION",
-      "first_step": "Write the identity-fence and every-replica serving contract; automatic wake stays with the Dispatcher."
+      "first_step": "Drop the Dispatcher's identity-change refusal (decided: Sessions re-check), then write the every-replica serving contract; automatic wake stays with the Dispatcher."
     },
     {
       "id": "next-12",
