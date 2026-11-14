@@ -1727,7 +1727,7 @@
     "scope_note": "One concurrent pair on the same base: identical four target labels and case nodeids, literal devel 73c214534d control and its e81dd61 experimental merge head; no local patches. Control 342.108s versus candidate 271.736s Bazel wall: 70.372s (20.57%) lower in this observation. All eight physical tests used warm baselines, one uncached attempt and clean teardown. Different workers and setup exposure remain; this is not a population estimate or a complete required-CI saving. The budget profile deliberately shortens the configured deadline from 120 to 45 seconds. Other setup changes cannot be causally separated in this pair.",
     "control_url": "https://app.buildbuddy.io/invocation/e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
     "candidate_url": "https://app.buildbuddy.io/invocation/d285e3ca-547c-4e5d-89d9-c6cbd5b74510",
-    "control_link_text": "Control 73c214534d \u00b7 four targets \u00b7 342.108s",
+    "control_link_text": "Control 73c214534d · four targets · 342.108s",
     "control": {
       "invocation": "e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
       "url": "https://app.buildbuddy.io/invocation/e72c3ca2-ba6c-444b-bb2c-0193861a8a5e",
@@ -4626,7 +4626,7 @@
         "control": {
           "invocation": "aff9fdf1-e96b-4638-b6c3-6459f23409e0",
           "url": "https://app.buildbuddy.io/invocation/aff9fdf1-e96b-4638-b6c3-6459f23409e0",
-          "outcome": "On literal source 220, configured control path is test_services \u2192 test_services_image_manifest \u2192 mcp_edge:service_image (three nodes)."
+          "outcome": "On literal source 220, configured control path is test_services → test_services_image_manifest → mcp_edge:service_image (three nodes)."
         },
         "candidate": {
           "invocation": "a38fb697-316d-42cb-b61e-1036769dc1c8",
@@ -5054,9 +5054,9 @@
       "scope_and_limits": [
         "A1/B1/B2/A2 are one selected graph cohort on one source SHA, not whole-PR CI or repeated matched trials.",
         "A1 overlapped native25 and ordinary CI; B1 had less unrelated load. The selected graph wall differences are not causal speedup estimates.",
-        "Candidate MCP JUnit IDs are disjoint and cover the same seven MCP test cases in A1/B1/B2; A1 required target behavior is unchanged. Pod remains the same 21 cases. Full VM remains the same one case, with A2\u2019s teardown error retained.",
+        "Candidate MCP JUnit IDs are disjoint and cover the same seven MCP test cases in A1/B1/B2; A1 required target behavior is unchanged. Pod remains the same 21 cases. Full VM remains the same one case, with A2’s teardown error retained.",
         "B2 includes a physical infra interruption even though its final test target summary is PASSED. BuildBuddy event data did not identify whether a worker loss, runner drain, or transport caused the Firecracker socket refusal.",
-        "A2\u2019s scenario body passed; the failure is a separate fixture teardown request timeout. The API-side cause is not visible in the available client spans.",
+        "A2’s scenario body passed; the failure is a separate fixture teardown request timeout. The API-side cause is not visible in the available client spans.",
         "The selected cohort and candidate witnesses do not establish end-to-end CI time savings. They support graph selectivity and preserve coverage facts only."
       ],
       "vm_witnesses": {
@@ -5087,7 +5087,7 @@
           "target": "//agentplane/system_tests/suites:test_vm",
           "test_runner_cpu_seconds": 1494.586
         },
-        "interpretation": "The boot-only candidate omits the full suite guarantees (real concurrent Claude and Codex turns, native cgroups/systemd assertions, denied systemctl, setup supervision, egress, notifications, and SVID continuity under workload). It is a separate boot/transport witness, not full acceptance equivalence. The later full no-edge pass does not erase A2\u2019s earlier control failure."
+        "interpretation": "The boot-only candidate omits the full suite guarantees (real concurrent Claude and Codex turns, native cgroups/systemd assertions, denied systemctl, setup supervision, egress, notifications, and SVID continuity under workload). It is a separate boot/transport witness, not full acceptance equivalence. The later full no-edge pass does not erase A2’s earlier control failure."
       }
     },
     "last_green_source_ci": {
@@ -9163,7 +9163,7 @@
         "limit": "Single exact-head validation, no matched saving; deployment acceptance results cached."
       }
     },
-    "finding": "Source5699 is green. Actual CI selector hashing for the same Runtime-only input drops exactly 12 unrelated App tests: 49 \u2192 37 runnable tests, while bridge/history-gateway stay selected. The listener-race repair passed a real-socket regression and its old-allocation negative control. No complete-feedback saving, population reliability improvement or gate promotion is established.",
+    "finding": "Source5699 is green. Actual CI selector hashing for the same Runtime-only input drops exactly 12 unrelated App tests: 49 → 37 runnable tests, while bridge/history-gateway stay selected. The listener-race repair passed a real-socket regression and its old-allocation negative control. No complete-feedback saving, population reliability improvement or gate promotion is established.",
     "historical_selector_first_pair": {
       "evidence": "historical-selector-first-pair.json",
       "reviewed_summary_sha256": "388ff7076eb0b333e608e3206bcc33405897bc3ff261bde2a8685566c1f44322",
@@ -9281,7 +9281,7 @@
       "change": "Remove accidental Runtime binary edge from 13 App py_tests while retaining the two intentional owners.",
       "historical_51_label_overlap": 12,
       "manual_targets_in_overlap": 0,
-      "proof": "App graph15\u21922 Runtime owners. Same Runtime-only input selects50\u219238 tests before tags and49\u219237 after tags; exactly12 unrelated App tests removed; both Runtime owners retained. No tests executed in selector run.",
+      "proof": "App graph15→2 Runtime owners. Same Runtime-only input selects50→38 tests before tags and49→37 after tags; exactly12 unrelated App tests removed; both Runtime owners retained. No tests executed in selector run.",
       "additional_manual_targets_filtered": 1,
       "intentional_owner_test_functions": {
         "//agentplane/app:test_bridge": 6,
@@ -9322,7 +9322,7 @@
     "observed_at_utc": "2026-11-13T15:58:33Z",
     "finding": "Source 0a9acbf passed all three required checks with an eight-shard Bridge scheduling candidate; its required-feedback clock was 264s, with eight fresh Bridge actions covering 24 passing cases and all other test results cached. The prior a16af source passed in 356s with 65 fresh TestRunner actions and a different last target, so these are not a matched saving. The independent ASGI ownership PR also passed all three checks. Its collection-only App profile lowered summed Python import self-time by 2.282s and removed 119 MCP import records, while collecting the same 24 cases without executing them. Historical replay and adoption qualification remain open; gate policy is unchanged.",
     "plan": {
-      "scope": "Continue the single architecture PR through measured milestones; preserve owner-native contracts, focused real deployment acceptance, and App/browser/MCP user journeys. Keep unknown or sensitive changes on the broad gate. Repetitive fault \u00d7 harness \u00d7 platform moves remain disabled until qualification; the first rerun-inclusive required-feedback objective remains mean under 4 minutes and p90 under 8 minutes, not a forecast or floor.",
+      "scope": "Continue the single architecture PR through measured milestones; preserve owner-native contracts, focused real deployment acceptance, and App/browser/MCP user journeys. Keep unknown or sensitive changes on the broad gate. Repetitive fault × harness × platform moves remain disabled until qualification; the first rerun-inclusive required-feedback objective remains mean under 4 minutes and p90 under 8 minutes, not a forecast or floor.",
       "stop_rule": "Continue while the best remaining candidate can repay implementation, review, and maintenance within about one quarter. Stop dedicated work only when the best remaining candidate cannot repay that work within about one quarter and the two best probes fail to show worthwhile gain. Separate developer waiting from total CI wall savings.",
       "current_gate_policy": "Unchanged; no new selector or test-frequency promotion."
     },
@@ -9438,7 +9438,7 @@
       "actual_ci_selector_query_completed": true,
       "candidate_built_or_tested": false,
       "qualified_historical_pairs": 0,
-      "limit": "One isolated App-ownership subfeature on historical PR #15858, with complete source/tree and AST preservation audits. No test bodies or selected builds ran. This is not a full current-architecture qualified pair, runtime-equivalence proof, workload-frequency estimate or feedback saving. The initial missing-added-file audit failure before selection is retained; corrected optional-presence audit preserves exact candidate tree IDs. The broad 73-path overlay is rejected for 18\u201321 pair-dependent conflicts including authentication changes.",
+      "limit": "One isolated App-ownership subfeature on historical PR #15858, with complete source/tree and AST preservation audits. No test bodies or selected builds ran. This is not a full current-architecture qualified pair, runtime-equivalence proof, workload-frequency estimate or feedback saving. The initial missing-added-file audit failure before selection is retained; corrected optional-presence audit preserves exact candidate tree IDs. The broad 73-path overlay is rejected for 18–21 pair-dependent conflicts including authentication changes.",
       "broad_overlay_conflicts_count_range_by_pair": [18, 21],
       "staging_artifact": "historical-app-cut-stage.json",
       "selector_invocation": "a02076ae-283e-4889-83a2-aa44f2abc110",
@@ -9665,5 +9665,20 @@
     "source_head": "d642132a68104a4cfe5a76af15bbf7c7272d8591",
     "source_base": "aa8d1061adb9c7f7fec5db27de4341746f76bac5",
     "scope": "Supplemental same-source Firecracker screen, diagnosed transient route failure, validated bounded repair, rebase and next VM-tail probe. Original fleet windows, populations, rates and denominators unchanged."
+  },
+  "iteration15": {
+    "evidence_file": "iteration15.json",
+    "observed_at_utc": "2026-11-14T11:21:15Z",
+    "source_head": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+    "integrated_devel_base": "bb7c716f5a97fe4946acb10f0dafa3d69ff76d76",
+    "pull_request_base_at_observation": "8b0021e740dea43cfc0a660a7beaaa4a8a2b078c",
+    "scope": "Reviewed supplemental synthetic changed-label graph screen and focused selector/contract probes. Existing required gate, fleet populations, windows, denominators, and rates are unchanged.",
+    "decision": "not qualified; retain current required gate",
+    "summary": "Synthetic one-file journal graph: 29.3% lower two-run midpoint; 33/36 shared target identities match, three Go target identities unknown, and four target substitutions lack semantic-coverage proof. Literal journal-only policy matched 0/30 reviewed historical changesets. Cache state and focused-pool load differed. Required gate remains unchanged.",
+    "focused_selector": "Same-package selector behavior passed three shadow cases on a source-38f6c8e overlay; separate from the green pushed-head checks.",
+    "focused_native_contract": "Real cutoff/successor contract passed in 40.7 seconds at RBE invocation 9c62fa6a on source commit 38f6c8e plus a working-tree overlay; follow-on explicit changed-library/conftest, K3s-helper, and cleanup-target build passed at 0e774569, but cleanup was not executed. Full required checks for a commit containing this overlay remain pending.",
+    "focused_kvm": "Cold/warm manual-candidate runs were 8.79% lower native and 9.91% lower action time, but v1 has a shared-data/cross-container ownership blocker. Automatic approval review rejected its cleanup because it mutates the shared CRI store; no cleanup ran and owner approval is pending. v2 is unmeasured; the passing focused build did not execute cleanup.",
+    "required_gate_status": "All three required checks succeeded on the observed head; no selector promotion.",
+    "prepared_kvm_build": "BuildBuddy invocation 0e774569 passed explicit changed-library and baseline/runtime/cleanup-target build checks; it did not execute cleanup and is focused overlay evidence."
   }
 }
