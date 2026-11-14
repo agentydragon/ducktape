@@ -73,7 +73,7 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	if target == nil {
 		return status.Error(codes.FailedPrecondition, "central sampler service is not enabled")
 	}
-	if target.Target == "" || target.TokenFile == "" || r.Timeout <= 0 {
+	if target.Target == "" || r.Timeout <= 0 {
 		return status.Error(codes.Internal, "invalid configured central sampler target")
 	}
 	conn, err := bearer.Dial(target.Target, target.TokenFile, r.Timeout, target.TLS)

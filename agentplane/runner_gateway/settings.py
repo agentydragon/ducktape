@@ -12,7 +12,13 @@ from typing import Annotated, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, field_validator, model_validator
 
 from agentplane.identity.auth.listener import Listener
-from agentplane.net.peertls.config import ClientTLS, Security, ServiceSPIFFEID
+from agentplane.net.peertls.config import (
+    CENTRAL_SAMPLER_URI,
+    GATEWAY_SESSIONS_URI,
+    ClientTLS,
+    Security,
+    ServiceSPIFFEID,
+)
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
@@ -21,8 +27,23 @@ type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]
 class CentralSamplerTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target: str = Field(min_length=1)
-    token_file: Path
-    tls: ClientTLS | None = Field(default=None, description="Verify the Central Sampler server SVID.")
+    token_file: Path | None = Field(
+        default=None, description="Projected bearer token; omit when TLS uses the Sessions role service SVID."
+    )
+    tls: ClientTLS | None = Field(
+        default=None,
+        description="Verify the Central Sampler server SVID and optionally authenticate with a service SVID.",
+    )
+
+    @model_validator(mode="after")
+    def validate_caller_authentication(self) -> CentralSamplerTarget:
+        if self.tls is not None and self.tls.server_uri != CENTRAL_SAMPLER_URI:
+            raise ValueError("central_sampler.tls.server_uri must identify the Central Sampler")
+        if self.tls is not None:
+            self.tls.validate_caller(self.token_file, GATEWAY_SESSIONS_URI)
+        elif self.token_file is None:
+            raise ValueError("a bearer token file or service SVID is required")
+        return self
 
 
 class DelegationSettings(BaseModel):
@@ -60,7 +81,9 @@ class Settings(BaseModel):
     policy_namespace: str = Field(
         min_length=1, description="Namespace holding the Identities a workload SVID may name."
     )
-    runner_token_file: Path = Field(description="Projected Gateway-audience token for cross-replica Runner calls.")
+    runner_token_file: Path | None = Field(
+        default=None, description="Projected Gateway-audience token; omit when gateway_tls uses the Sessions role SVID."
+    )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     kubernetes_client_qps: float = Field(
         default=0.0,
@@ -70,7 +93,7 @@ class Settings(BaseModel):
 
     rpc: Listener = Field(description="The shared TLS gRPC listener and its explicitly enabled auth modes.")
     gateway_tls: ClientTLS = Field(
-        description="Verify the Session Dispatcher SVID on this Gateway's stable-Service calls."
+        description="Verify the Session Dispatcher SVID and optionally authenticate with the Sessions role SVID."
     )
     runner_control_target_template: str = Field(
         default="runner-gateway.{namespace}.svc:8080",
@@ -257,6 +280,7 @@ class Settings(BaseModel):
             raise ValueError("rpc bearer audiences must be exactly dispatcher_audience and gateway_audience")
         if self.gateway_tls.server_uri != "spiffe://agentplane/session-dispatcher":
             raise ValueError("gateway_tls.server_uri must identify the Session Dispatcher service")
+        self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)
         return self
 
     @field_validator("kubernetes_client_qps")

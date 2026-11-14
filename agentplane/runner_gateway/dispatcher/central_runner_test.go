@@ -19,9 +19,12 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/placement"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -51,13 +54,23 @@ type centralFixture struct {
 	samplerpb.UnimplementedSamplerServer
 	opened      *samplerpb.CreateSessionRequest
 	token       string
+	clientURI   string
 	interrupted string
 }
 
 func (s *centralFixture) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest) (*samplerpb.CreateSessionResponse, error) {
 	s.opened = request
 	md, _ := metadata.FromIncomingContext(ctx)
-	s.token = md.Get("authorization")[0]
+	if authorization := md.Get("authorization"); len(authorization) != 0 {
+		s.token = authorization[0]
+	}
+	if remote, ok := peer.FromContext(ctx); ok {
+		if tlsInfo, ok := remote.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) != 0 {
+			if uris := tlsInfo.State.PeerCertificates[0].URIs; len(uris) != 0 {
+				s.clientURI = uris[0].String()
+			}
+		}
+	}
 	return &samplerpb.CreateSessionResponse{}, nil
 }
 
@@ -176,5 +189,120 @@ func TestCentralSamplerClientVerifiesServerTLSAndKeepsBearerAuthentication(t *te
 	}
 	if fixture.token != "Bearer projected" {
 		t.Fatalf("sampler bearer authentication = %q", fixture.token)
+	}
+}
+
+func TestCentralSamplerClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	serverCertificate := ca.IssueWithUsage(t, peertls.CentralSamplerURI, x509.ExtKeyUsageServerAuth)
+	serverTLS, err := serverCertificate.WorkloadServerTLSConfigWithServices(peertls.CentralSamplerURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	fixture := &centralFixture{}
+	samplerpb.RegisterSamplerServer(server, fixture)
+	go server.Serve(listener)
+	t.Cleanup(server.Stop)
+
+	caller := ca.Issue(t, peertls.SessionsURI)
+	runner := &RoutingRunner{
+		Target: &CentralTarget{
+			Target: listener.Addr().String(),
+			TLS: &peertls.ClientTLS{
+				CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI,
+				CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI,
+			},
+		},
+		Timeout: time.Second,
+	}
+	err = runner.withClient(context.Background(), func(ctx context.Context, client samplerpb.SamplerClient) error {
+		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.token != "" || fixture.clientURI != peertls.SessionsURI {
+		t.Fatalf("sampler caller metadata=%q client SVID=%q", fixture.token, fixture.clientURI)
+	}
+}
+
+type proxyRunnerFixture struct {
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
+	token        string
+	clientURI    string
+	sandboxName  string
+	sandboxUID   string
+	sandboxScope string
+}
+
+func (s *proxyRunnerFixture) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	if authorization := md.Get("authorization"); len(authorization) != 0 {
+		s.token = authorization[0]
+	}
+	s.sandboxName = firstMetadataValue(md, sandboxapi.RunnerProxySandboxMetadataKey)
+	s.sandboxUID = firstMetadataValue(md, sandboxapi.RunnerProxySandboxUIDMetadataKey)
+	s.sandboxScope = firstMetadataValue(md, sandboxapi.RunnerProxySandboxNamespaceMetadataKey)
+	if remote, ok := peer.FromContext(ctx); ok {
+		if tlsInfo, ok := remote.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) != 0 {
+			if uris := tlsInfo.State.PeerCertificates[0].URIs; len(uris) != 0 {
+				s.clientURI = uris[0].String()
+			}
+		}
+	}
+	return &sessionpb.ListSessionsResponse{}, nil
+}
+
+func firstMetadataValue(md metadata.MD, key string) string {
+	values := md.Get(key)
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
+}
+
+func TestProxyRunnerUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	serverCertificate := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
+	serverTLS, err := serverCertificate.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	fixture := &proxyRunnerFixture{}
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, fixture)
+	go server.Serve(listener)
+	t.Cleanup(server.Stop)
+
+	caller := ca.Issue(t, peertls.SessionsURI)
+	runner := &ProxyRunner{
+		Namespace: "agentplane", Timeout: time.Second, TargetTemplate: listener.Addr().String(),
+		GatewayTLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
+			CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI,
+		},
+	}
+	sandbox := SandboxSnapshot{Name: "sandbox", Namespace: "agentplane", UID: "sandbox-uid"}
+	err = runner.withClient(context.Background(), sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
+		_, err := client.ListSessions(ctx, &sessionpb.ListSessionsRequest{})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.token != "" || fixture.clientURI != peertls.SessionsURI ||
+		fixture.sandboxName != sandbox.Name || fixture.sandboxUID != sandbox.UID || fixture.sandboxScope != sandbox.Namespace {
+		t.Fatalf("Gateway caller metadata=%q client SVID=%q sandbox=%q/%q/%q", fixture.token, fixture.clientURI,
+			fixture.sandboxScope, fixture.sandboxName, fixture.sandboxUID)
 	}
 }
