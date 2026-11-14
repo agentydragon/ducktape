@@ -242,6 +242,7 @@ _POD_DEPS = [
     "//agentplane/system_tests/driver:cluster",
     "//agentplane/system_tests/driver:dispatcher_transport",
     "//agentplane/system_tests/driver:scripted_upstream",
+    "//devinfra/testing:undeclared_outputs",
     "//util:net",
     "@pypi//pytest",
     "@pypi//pytest_asyncio",
@@ -262,9 +263,32 @@ k3s_suite(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:scripted_upstream",
+        "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Native fixture profile replaces the App-backed conftest for this manual four-case cut candidate.
+# It preserves the existing App-owned cases on the required `test_pod` target.
+# gazelle:ignore
+k3s_suite(
+    name = "test_pod_trust_native_candidate",
+    srcs = ["test_pod_trust_native_candidate.py"],
+    main = "test_pod_trust_native_candidate.py",
+    stack = "pod_scenarios_native",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )
@@ -321,6 +345,48 @@ k3s_suite(
         "-k",
         "'not (" + _POD_BALANCED_A + ")'",
     ],
+    main = "test_pod.py",
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = _POD_DEPS,
+)
+
+# Manual capacity candidates run all 21 Pod cases with their shared storage case first and exclusive.
+k3s_suite(
+    name = "test_pod_four_slots_candidate",
+    srcs = ["test_pod.py"],
+    case_slots = 4,
+    exec_properties = {"EstimatedComputeUnits": "8"},
+    main = "test_pod.py",
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = _POD_DEPS,
+)
+
+k3s_suite(
+    name = "test_pod_six_slots_candidate",
+    srcs = ["test_pod.py"],
+    case_slots = 6,
+    exec_properties = {"EstimatedComputeUnits": "8"},
+    main = "test_pod.py",
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = _POD_DEPS,
+)
+
+# The native trust target owns these four cases in this manual graph. Keep the remaining
+# App-backed cases and their existing bindings; qualify their union before changing the gate.
+k3s_suite(
+    name = "test_pod_without_trust_candidate",
+    srcs = ["test_pod.py"],
+    args = [
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused]",
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner]",
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway]",
+        "--deselect=agentplane/system_tests/suites/test_pod.py::test_pod_scenarios[test_cert_manager_reissues_a_deleted_tls_secret]",
+    ],
+    case_slots = 6,
+    exec_properties = {"EstimatedComputeUnits": "8"},
     main = "test_pod.py",
     stack = "pod_scenarios",
     tags = ["manual"],
@@ -628,6 +694,7 @@ py_library(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:agent_messaging",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
         "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
         "//agentplane/system_tests/scenarios:launch_presets",

@@ -100,6 +100,24 @@ py_library(
 )
 
 py_library(
+    name = "external_connection",
+    srcs = ["external_connection.py"],
+    deps = [
+        ":mcp",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
+        "//agentplane/mcp_edge/api/connection:connection_service_pb2",
+        "//agentplane/net/peertls:config",
+        "//agentplane/system_tests/deployment:mcp_servers",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:mcp_connection",
+        "//agentplane/system_tests/driver:operator_login",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "dispatcher",
     srcs = ["dispatcher.py"],
     data = ["//agentplane/system_tests/driver:runner_data_archive_bin"],
@@ -237,6 +255,15 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/driver:workload_credentials",
         "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "cert_manager_reissue",
+    srcs = ["cert_manager_reissue.py"],
+    deps = [
+        "//agentplane/system_tests/driver:cluster",
         "@pypi//tenacity",
     ],
 )

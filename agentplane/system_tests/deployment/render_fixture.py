@@ -1,7 +1,7 @@
-"""Render one ordinary, central-recovery, VM or Firecracker fixture chart into `$K3S_FIXTURE_DIR`.
+"""Render ordinary, central-recovery, native Pod, VM or Firecracker fixtures into `$K3S_FIXTURE_DIR`.
 
-`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, central-recovery, VM, Firecracker or native
-virtualized fixture.
+`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, native Pod, central-recovery, native central-services,
+VM, Firecracker or native virtualized fixture.
 The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
 """
 
@@ -29,8 +29,10 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_POD = "local-model-pod"
+    LOCAL_MODEL_POD_NATIVE = "local-model-pod-native"
     LOCAL_MODEL_CENTRAL = "local-model-central"
     LOCAL_MODEL_CENTRAL_SERVICES = "local-model-central-services"
+    LOCAL_MODEL_CENTRAL_SERVICES_NATIVE = "local-model-central-services-native"
     LOCAL_MODEL_CENTRAL_BUDGET = "local-model-central-budget"
     LOCAL_MODEL_VM = "local-model-vm"
     LOCAL_MODEL_VM_NATIVE = "local-model-vm-native"
@@ -113,6 +115,10 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=False,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
             )
+        case FixtureVariant.LOCAL_MODEL_POD_NATIVE:
+            _render(
+                output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, profile=fixture_chart.FixtureProfile.APP_FREE
+            )
         case FixtureVariant.LOCAL_MODEL_CENTRAL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
         case FixtureVariant.LOCAL_MODEL_CENTRAL_SERVICES:
@@ -123,6 +129,15 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
                 vm_sandboxes=False,
                 central_sampler=True,
                 profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
+            )
+        case FixtureVariant.LOCAL_MODEL_CENTRAL_SERVICES_NATIVE:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                central_sampler=True,
+                profile=fixture_chart.FixtureProfile.APP_FREE,
             )
         case FixtureVariant.LOCAL_MODEL_CENTRAL_BUDGET:
             _render(

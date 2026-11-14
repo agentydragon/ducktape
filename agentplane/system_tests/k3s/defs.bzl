@@ -80,11 +80,14 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
 _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
+_POD_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod-native.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _CENTRAL_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central.json"
 _CENTRAL_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services.json"
+_CENTRAL_SERVICES_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-services-native.json"
 _CENTRAL_BUDGET_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-budget.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
+_MCP_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-services.json"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
 _VM_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm-native.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
@@ -188,12 +191,15 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 _STACKS = {
     "pod": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "pod_scenarios": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _POD_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "central": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_services": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
+    "central_services_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _CENTRAL_SERVICES_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     "central_budget": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _CENTRAL_BUDGET_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES)),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
     "deletion": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     "mcp": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _CENTRAL_IMAGES, _MCP_FIXTURE_IMAGES)),
+    "mcp_services": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _MCP_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_FIXTURE_IMAGES)),
     "vm": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "vm_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _VM_NATIVE_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
@@ -226,14 +232,20 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], shard_count = None):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platform_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None, exec_properties = {}, args = [], shard_count = None, case_slots = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle.
 
     `exec_properties` are added to the test's execution properties. A `require_kvm` suite must set its own
     `test.EstimatedCPU`, `test.EstimatedMemory` and `test.EstimatedFreeDiskBytes`, so no suite inherits another's size.
+    `case_slots` is a Pod-scenario-only override for the shared case batch limit.
     """
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
+    if case_slots != None:
+        if type(case_slots) != "int" or case_slots < 1:
+            fail("case_slots must be a positive integer")
+        if stack != "pod_scenarios":
+            fail("case_slots requires the pod_scenarios stack")
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
     if platform_guest and (stack != "vm" or profile_guest):
@@ -262,6 +274,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, platfor
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
         "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if config.native_fixtures else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
+    if case_slots != None:
+        env["AGENTPLANE_POD_CASE_SLOTS"] = str(case_slots)
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm or config.firecracker:

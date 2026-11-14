@@ -374,7 +374,9 @@ py_library(
     srcs = ["central_sampler.py"],
     deps = [
         ":cluster",
+        ":environment_transport",
         ":identity",
+        ":native_auth",
         ":tls",
         ":tracing",
         "//agentplane:crd_group",

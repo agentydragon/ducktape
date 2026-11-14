@@ -150,6 +150,90 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
     _resource(fixture.objects, "RoleBinding", "mcp-edge")
 
 
+def test_mcp_services_profile_keeps_oauth_and_omits_central_sampler(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
+    assert not fixture.central_sampler
+    assert fixture.mcp_fixtures is not None
+    assert fixture.app_origin is not None
+    assert fixture.operator_tokens is None
+
+    docs = fixture.objects
+    deployments = {
+        doc["metadata"]["name"]: doc["spec"]["template"]["spec"] for doc in docs if doc["kind"] == "Deployment"
+    }
+    assert {
+        "actions",
+        "app",
+        "dex",
+        "egress",
+        "history-service",
+        "llm-ingress",
+        "mcp-edge",
+        "mcp-everything",
+        fixture_chart.NATIVE_TEST_CLIENT,
+        "notifications",
+        "oauth-fixture",
+        "postgres",
+        "runner-gateway",
+        "sandbox-controller",
+    } <= deployments.keys()
+    assert "agentplane-app:" in deployments["app"]["containers"][0]["image"]
+    assert "central-sampler" not in deployments
+    assert not any(
+        "agentplane-central-sampler:" in container["image"]
+        for pod in deployments.values()
+        for container in pod.get("containers", [])
+    )
+    assert not any(
+        source.get("serviceAccountToken", {}).get("audience") == central_sampler.TOKEN_AUDIENCE
+        for pod in deployments.values()
+        for volume in pod.get("volumes", [])
+        for source in volume.get("projected", {}).get("sources", [])
+    )
+    assert not any(
+        doc["metadata"]["name"] in {central_sampler.NAME, f"{NAMESPACE}-central-sampler-token-reviewer"} for doc in docs
+    )
+    assert not any(doc["metadata"]["name"] == "postgres-central-sampler" for doc in docs)
+    assert not any(doc["metadata"]["name"] == f"{central_sampler.NAME}-settings" for doc in docs)
+
+    bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE central_sampler " not in bootstrap
+    assert "CREATE DATABASE central_sampler " not in bootstrap
+    app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert app_config["oidc"]["issuer"] == fixture_chart.DEX_ISSUER
+    assert Harness.CENTRAL_SAMPLER not in ModelCatalog.model_validate(app_config["models"]).harnesses
+    assert _resource(docs, "Secret", fixture.mcp_fixtures.operator_secret)
+
+    edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
+    assert edge_config["actions_target"] == (
+        f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
+    )
+    assert _resource(docs, "Secret", "agentplane-mcp-edge-oauth")
+    assert _resource(docs, "Identity", "mcp-edge-test-caller")["metadata"]["namespace"] == fixture.namespace
+    assert _resource(docs, "PolicyBinding", "mcp-edge-test-caller")["spec"] == {
+        "subject": {"identity": {"name": "mcp-edge-test-caller"}},
+        "policySets": ["mcp-edge-test-caller-session-delegation"],
+    }
+    assert _resource(docs, "PolicySet", "mcp-edge-test-caller-session-delegation")["spec"]["rules"] == [
+        {
+            "type": "action_auto_approve",
+            "policy": {"type": "exact_actions", "actions": {"environments": ["list", "get"], "sessions": ["create"]}},
+        }
+    ]
+    assert _resource(docs, "Deployment", "history-service")
+    assert _resource(docs, "Service", "history-service")
+    template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
+    runtime = next(
+        container
+        for container in template["spec"]["pod"]["spec"]["containers"]
+        if container["name"] == "environment-runtime"
+    )
+    assert runtime["image"] == f"{fixture_chart.ENVIRONMENT_TOOLS_IMAGE}:unset"
+    assert _resource(docs, "ClusterIssuer", "agentplane-workload")
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert _resource(docs, "Bundle", "cluster-internal-ca-bundle")
+
+
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
 def test_virtualized_profiles_preserve_every_resource_except_unused_mcp_edge(runfiles: Runfiles, location: str) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ[location])
@@ -907,8 +991,11 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
 def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(runfiles: Runfiles) -> None:
     central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
     services = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION")
+    native = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION")
     assert services.central_sampler
     assert services.mcp_fixtures is None
+    assert native.central_sampler
+    assert native.mcp_fixtures is None
     central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
     service_deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
     assert service_deployments == central_deployments - {"mcp-edge"}
@@ -916,6 +1003,9 @@ def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(ru
         assert _resource(services.objects, "Deployment", component) == _resource(
             central.objects, "Deployment", component
         )
+    assert _resource(native.objects, "ConfigMap", "central-sampler-settings") == _resource(
+        services.objects, "ConfigMap", "central-sampler-settings"
+    )
 
 
 def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(runfiles: Runfiles) -> None:
@@ -978,15 +1068,21 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
 
 
 @pytest.mark.parametrize(
-    ("location", "firecracker"),
-    [("K3S_VM_NATIVE_FIXTURE_RLOCATION", False), ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", True)],
+    ("location", "vm_sandboxes", "firecracker_sandboxes", "central_sampler"),
+    [
+        ("K3S_VM_NATIVE_FIXTURE_RLOCATION", True, False, False),
+        ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", False, True, False),
+        ("K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION", False, False, True),
+        ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False, False, False),
+    ],
 )
-def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_caller(
-    runfiles: Runfiles, location: str, firecracker: bool
+def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
+    runfiles: Runfiles, location: str, vm_sandboxes: bool, firecracker_sandboxes: bool, central_sampler: bool
 ) -> None:
     fixture = _filled_fixture(runfiles, location)
-    assert fixture.firecracker_sandboxes is firecracker
-    assert fixture.vm_sandboxes is not firecracker
+    assert fixture.firecracker_sandboxes is firecracker_sandboxes
+    assert fixture.vm_sandboxes is vm_sandboxes
+    assert fixture.central_sampler is central_sampler
     assert fixture.app_origin is None
     assert fixture.browser_services == []
     assert fixture.operator_tokens is None
@@ -1008,7 +1104,14 @@ def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_calle
         "runner-gateway",
         "sandbox-controller",
     } <= deployments.keys()
-    assert not {"app", "dex", "mcp-edge", "oauth-fixture"} & deployments.keys()
+    if central_sampler:
+        assert "central-sampler" in deployments
+    else:
+        assert "central-sampler" not in deployments
+    assert not {"app", "dex", "mcp-edge", "mcp-everything", "oauth-fixture"} & deployments.keys()
+    assert not any(
+        doc["metadata"]["name"].startswith(("dex", "mcp-edge", "mcp-everything", "oauth-fixture")) for doc in docs
+    )
     assert not any(
         "agentplane-app:" in container["image"]
         for pod in deployments.values()
@@ -1017,6 +1120,9 @@ def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_calle
     assert not any(doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config" for doc in docs)
     assert not any(
         doc["kind"] == "Secret" and doc["metadata"]["name"] in {"postgres-app", "agentplane-oidc"} for doc in docs
+    )
+    assert not any(
+        doc["metadata"].get("name") in {"app", "postgres-app", "agentplane-oidc", "app-config"} for doc in docs
     )
     assert not any(
         doc["kind"] == "PolicySet" and doc["metadata"]["name"] in {runtime_grant.POLICY_SET, send_grant.POLICY_SET}
@@ -1063,10 +1169,18 @@ def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_calle
 
     bootstrap_sql = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
     assert "CREATE ROLE app " not in bootstrap_sql
-    template_name = environment_firecracker.NAME if firecracker else environment_vm.NAME
+    if firecracker_sandboxes:
+        template_name = environment_firecracker.NAME
+    elif vm_sandboxes:
+        template_name = environment_vm.NAME
+    else:
+        template_name = fixture_chart.POD_TEMPLATE
     assert _resource(docs, "SandboxTemplate", template_name)
     assert _resource(docs, "Service", fixture_chart.RUNNER_GATEWAY)
     assert _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    assert _resource(docs, "ClusterIssuer", "agentplane-workload")
+    assert _resource(docs, "Bundle", "agentplane-workload-ca-bundle")
+    assert _resource(docs, "Bundle", "cluster-internal-ca-bundle")
 
     llm_settings = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     claude_model_ids = {item["model"] for item in llm_settings["models"]}

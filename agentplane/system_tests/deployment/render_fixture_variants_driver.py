@@ -10,7 +10,8 @@ def main() -> None:
     output = Path(os.environ["K3S_FIXTURE_DIR"])
     for variant in render_fixture.FixtureVariant:
         render_fixture.render_variant(output, variant)
-    render_mcp_fixture.render(output)
+    render_mcp_fixture.render(output, render_mcp_fixture.FixtureVariant.LOCAL_MODEL_MCP_FIXTURES)
+    render_mcp_fixture.render(output, render_mcp_fixture.FixtureVariant.LOCAL_MODEL_MCP_SERVICES)
 
 
 if __name__ == "__main__":

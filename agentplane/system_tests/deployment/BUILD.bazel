@@ -128,10 +128,13 @@ py_test(
         ":rendered/local-model-central.json",
         ":rendered/local-model-central-budget.json",
         ":rendered/local-model-central-services.json",
+        ":rendered/local-model-central-services-native.json",
         ":rendered/local-model-firecracker.json",
         ":rendered/local-model-firecracker-native.json",
         ":rendered/local-model-mcp-fixtures.json",
+        ":rendered/local-model-mcp-services.json",
         ":rendered/local-model-pod.json",
+        ":rendered/local-model-pod-native.json",
         ":rendered/local-model-vm.json",
         ":rendered/local-model-vm-native.json",
         "@nodejs_linux_amd64//:bin/node",
@@ -140,10 +143,13 @@ py_test(
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "K3S_DEFAULT_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model.json)",
         "K3S_POD_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-pod.json)",
+        "K3S_POD_NATIVE_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-pod-native.json)",
         "K3S_CENTRAL_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central.json)",
         "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central-services.json)",
+        "K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central-services-native.json)",
         "K3S_CENTRAL_BUDGET_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central-budget.json)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
+        "K3S_MCP_SERVICES_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-services.json)",
         "K3S_FIRECRACKER_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-firecracker.json)",
         "K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-firecracker-native.json)",
         "K3S_VM_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-vm.json)",
@@ -434,6 +440,18 @@ genrule(
 )
 
 genrule(
+    name = "render_local_model_pod_native",
+    testonly = True,
+    outs = ["rendered/local-model-pod-native.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-pod-native K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+genrule(
     name = "render_local_model_central",
     testonly = True,
     outs = ["rendered/local-model-central.json"],
@@ -450,6 +468,18 @@ genrule(
     testonly = True,
     outs = ["rendered/local-model-central-services.json"],
     cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-central-services K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+genrule(
+    name = "render_local_model_central_services_native",
+    testonly = True,
+    outs = ["rendered/local-model-central-services-native.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-central-services-native K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
     tools = [
         ":render_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",
@@ -509,7 +539,19 @@ genrule(
     name = "render_local_model_mcp_fixtures",
     testonly = True,
     outs = ["rendered/local-model-mcp-fixtures.json"],
-    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_mcp_fixture_bin)",
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_MCP_FIXTURE_VARIANT=local-model-mcp-fixtures K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_mcp_fixture_bin)",
+    tools = [
+        ":render_mcp_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+genrule(
+    name = "render_local_model_mcp_services",
+    testonly = True,
+    outs = ["rendered/local-model-mcp-services.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_MCP_FIXTURE_VARIANT=local-model-mcp-services K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_mcp_fixture_bin)",
     tools = [
         ":render_mcp_fixture_bin",
         "@nodejs_linux_amd64//:bin/node",

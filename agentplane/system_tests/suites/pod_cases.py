@@ -21,6 +21,7 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import (
     agent_messaging,
+    cert_manager_reissue,
     dispatcher_workload,
     egress,
     launch_presets,
@@ -136,7 +137,7 @@ async def a_preset_launches_an_initialized_editable_codex_thread(resources: Reso
 
 
 async def cert_manager_reissues_a_deleted_tls_secret(resources: Resources) -> None:
-    await runner_credentials.cert_manager_reissues_a_deleted_tls_secret(resources.cluster)
+    await cert_manager_reissue.cert_manager_reissues_a_deleted_tls_secret(resources.cluster)
 
 
 async def pod_mtls_session_survives_replacement_and_keeps_history(resources: Resources) -> None:

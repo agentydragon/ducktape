@@ -198,8 +198,8 @@ class FixtureProfile(StrEnum):
     # These scenarios do not exercise external MCP Connections. The app retains unused
     # Connection routes and reports Connection Service unavailable in system status.
     NO_MCP_EDGE = "no-mcp-edge"
-    # Native VM and Firecracker acceptances run real backend services and a bound test caller,
-    # without the integration App, its database, or its OIDC login.
+    # Native acceptance candidates run real backend services and a bound test caller, without
+    # the integration App, its database, or its OIDC login.
     APP_FREE = "app-free"
 
 
