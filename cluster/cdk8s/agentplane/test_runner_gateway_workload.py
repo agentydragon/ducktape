@@ -155,7 +155,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert settings["environment_service_readers"] == [APP_URI]
     assert settings["environment_service_managers"] == [APP_URI]
     assert settings["environment_service_operators"] == [APP_URI]
-    assert settings["wake_service_callers"] == [APP_URI]
+    assert set(settings["wake_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
+    assert f"{staging.ENV.namespace}/{notifications.NAME}" in settings["wake_callers"]
     assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]

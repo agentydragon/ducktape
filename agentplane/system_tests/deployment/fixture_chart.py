@@ -51,7 +51,7 @@ from agentplane.central_sampler.settings import (
 )
 from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
-from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, TLS
+from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
@@ -579,7 +579,7 @@ def build_chart(
         environment_launchers=orchestration_caller,
         operator_callers=app_caller,
         operator_service_callers=frozenset({APP_URI}),
-        wake_service_callers=frozenset({APP_URI}),
+        wake_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
         delegation_actor=(
             ServiceAccountRef(namespace=NAMESPACE, name=actions.NAME)
             if env.actions.orchestration_v1 is not None
