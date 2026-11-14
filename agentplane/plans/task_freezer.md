@@ -7,6 +7,23 @@ These are not promises to perform every former acceptance test. Waived or redund
 are removed, not stored here as obligations. Security/data-loss bugs with concrete evidence belong
 in active work. See [maintenance conventions](../docs/task_dag_maintenance.md).
 
+## Live smoke-test authentication
+
+### `LIVE_SMOKE_OPERATOR_TOKEN` — provision a live-test operator token
+
+**Frozen (operator, 2026-11-14 05:04–05:05 UTC: "keep this parked"). Trigger:** agents or scripts
+need to run live smoke tests against staging. Do not provision it as part of removing the app's
+special agent token.
+
+When triggered, Terraform beside the Grocy read-only account in
+`tf/gitops/agent-machine-access/grocy-sf.tf` (applied by the tofu-controller) owns an Authentik
+service-account user for live tests, its app-password token, and a policy binding on the
+`agentplane-staging` application that makes the account an operator in the app. Terraform writes the
+password into a Kubernetes Secret, read with the caller's kubeconfig. Each live-test run obtains a
+fresh, expiring `client_credentials` ID token from the `agentplane-staging` provider with client ID
+`agentplane-staging`, the service-account username and app password, and scope `openid`. Supply the
+ID token to the live suite through `AGENTPLANE_SYSTEM_TEST_TOKEN`.
+
 ## Agent-facing platform information
 
 ### `AGENT_PLATFORM_INFORMATION_DESIGN` — consolidate documentation and system-configuration access
@@ -31,8 +48,8 @@ Deferred by the operator on 2026-10-10. Revisit when the operator asks.
 
 Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
 (`identity/auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
-longer verifies this audience. Backend callers keep these tokens (operator, 2026-11-10), so the
-name stays relevant; any rename must coordinate those verifiers and their projected tokens.
+longer verifies this audience. The service SVID decision (operator, 2026-11-14) retires these tokens; do not rename an audience
+being removed. Revisit only if a surviving external consumer needs this audience after the cutover.
 
 ## Sandboxes and Action boxes
 

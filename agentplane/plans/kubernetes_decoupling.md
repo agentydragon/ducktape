@@ -67,7 +67,7 @@ own:
 1. Every policy, identity and credential read goes through `PolicyService`; the per-service informers
    go.
 2. Callers authenticate with SVID mTLS everywhere and `kubernetes_bearer` goes (option 2 of
-   [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--review-privileged-service-authentication-and-transport)),
+   [`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--one-service-authentication-mode)),
    with credential resolution through the same reader.
 3. Dispatcher, EnvironmentService and CLI addresses become opaque environment IDs.
 4. The Gateway's per-Sandbox connection Lease and connection-owned EndpointSlice are transitional.

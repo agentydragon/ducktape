@@ -3186,8 +3186,8 @@ old paths.
 ## 14. Identity and Kubernetes accounts cutover
 
 The source cutover and Sandbox live acceptance are complete. This section now tracks only remaining
-Identity-related design, implementation or deployment evidence; retained component ServiceAccount
-authentication, actor provenance, and Kubernetes account grants are not cutover residue. The
+Identity-related design, implementation or deployment evidence; actor provenance and Kubernetes
+account grants remain separate from service authentication. The
 [identity plan](identity_and_kubernetes_accounts.md) owns the current contract, and the accepted
 Sandbox deployment is recorded in the [live evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md).
 
@@ -3195,18 +3195,18 @@ The target is one identity source with three credential forms (operator decision
 [plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
 SVIDs over mTLS, the MCP edge's OAuth tokens, and Kubernetes' own authentication toward the Kubernetes
 API alone. The one agent path that misses it, the app's `agentplane-agent` TokenReview bearer, is
-`APP_AGENT_TOKEN_DECISION`; backend components authenticating as their own ServiceAccounts are retained
-by operator decision (`PRIVILEGED_BACKEND_AUTH_DESIGN`).
+`APP_AGENT_TOKEN_DECISION`; component TokenReview is being replaced by service SVIDs under
+`PRIVILEGED_BACKEND_AUTH_DESIGN` (operator, 2026-11-14).
 
 **Remaining work.** The standing-workload proxy decision-log observation remains open. Explicit
-environment lifecycle grants, cross-Identity inbox target semantics, the app TokenReview decision,
+environment lifecycle grants, cross-Identity inbox target semantics, the app TokenReview removal,
 Identity `CreateSession`, and the central code-mode tools-as-Actions slice remain separate items.
 Identity inventory reads already work; explicit lifecycle mutations remain behind the reviewed
 environment-rule design. The full transition rollout is not a current blocker.
 
 ```mermaid
 flowchart LR
-    APP_AGENT_TOKEN_DECISION[Decision: staging live suites still use the agent token]
+    APP_AGENT_TOKEN_DECISION[Decided: remove the special app agent token]
     CENTRAL_SESSION_ACTING_DESIGN[Settled design: a central Session acting as its identity]
     CENTRAL_SESSION_DELEGATED_ACTING[Remaining code-mode tools-as-Actions slice]
     CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
@@ -3231,19 +3231,27 @@ flowchart LR
 
 ### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
 
-**Open decision after the test-fixture conversion.** The app still accepts a TokenReview bearer
-for `agentplane-agent`; staging live suites and hand-run scripts are the remaining callers. PR
-[#15448](https://github.com/agentydragon/ducktape/pull/15448) moved k3s fixtures to short-lived,
-test-minted OIDC ID tokens while keeping end-to-end coverage through the app API. The app also
-accepts operator ID tokens from its configured issuer. This preserves both test boundaries: app API
-flows as an operator and service-level scenarios that drive backend services in-cluster by SVID.
+**Decided (operator, 2026-11-14 05:05–05:06 UTC: "Remove it now"; "No, app should stop
+accepting the special agent token").** Remove the app's public-route `agentplane-agent` TokenReview
+path independently of the service-to-service stages. Manual live suites may be unable to log in to
+staging until the [parked issuer token provisioning](task_freezer.md#live_smoke_operator_token--provision-a-live-test-operator-token)
+is needed. Do not build that provisioning now. Operator ID-token bearers already work in the app;
+a live suite may take a caller-supplied one through `AGENTPLANE_SYSTEM_TEST_TOKEN`.
 
-The remaining question is whether staging live suites and scripts can use ID tokens from the real
-issuer or should retain the narrow TokenReview exception. The public route terminates TLS at the
-Gateway, so a client certificate cannot reach the app as mTLS. Keep the TokenReview configuration
-until every remaining caller has moved or the exception is explicitly accepted. Backend services
-calling each other as themselves keep TokenReview (operator, 2026-11-10;
-[identity plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)).
+Separate PRs, in this order:
+
+1. Stop minting the special token in `system_tests/driver/cluster.py` (`AGENT_SERVICE_ACCOUNT`), live
+   suites and `system_tests/x/shared_cluster/allocation.py`; update `system_tests/README.md` "Running
+   live". The k3s fixtures already use short-lived test-issued OIDC tokens (#15448).
+2. Remove `token_subjects` from `cluster/cdk8s/agentplane/app_settings.py` and
+   `system_tests/deployment/fixture_chart.py`. After that configuration rolls out, remove the app
+   settings field and `caller()`'s TokenReview path in `app/internal/auth/auth.go`.
+3. Remove the `agentplane-agent` ServiceAccount and its token RBAC last, after the using images are
+   pinned. Delete this node when its last piece lands.
+
+The public route terminates TLS at the Gateway; it cannot deliver client mTLS to the app. App OIDC
+remains the operator authentication mechanism. The service SVID decision separately retires backend
+TokenReview too; no Agentplane receiver retains a Kubernetes bearer exception.
 
 ### `CENTRAL_SESSION_ACTING_DESIGN` — a central Session acting as its identity
 
@@ -3537,8 +3545,8 @@ against `@electric-sql/client` 1.5.28, the jsdom pragma in `markdown.test.tsx`).
 needs the gate observed on devel and every reader found. The authentication surface left from the
 projected-ServiceAccount-token era is one burn-down split across the three subsections' "Authentication"
 headings: what each piece serves today, what it collapses into once an Identity SVID is the only
-workload credential, and the gate. Platform components calling each other as themselves keep
-service-to-service TokenReview (operator, 2026-11-10); that is not dead and is not listed.
+workload credential, and the gate. Platform component TokenReview retires under `PRIVILEGED_BACKEND_AUTH_DESIGN` (operator,
+2026-11-14), preserving method-specific component authority with exact service SVID admission.
 
 ```mermaid
 flowchart LR
@@ -3590,6 +3598,45 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   keep `drop_block` off. Test by rendering a stored conversation under a changed tool description
   and asserting the provider accepts the continuation and keeps its reasoning (empty
   `input_transformations` on both APIs). Covers the Responses and Anthropic Messages paths.
+
+#### `PRIVILEGED_BACKEND_AUTH_DESIGN` — one service authentication mode
+
+**Decided (operator, 2026-11-14: "One auth mode can fire off"), option 2; dispatched
+2026-11-14.** Every first-party service-to-service call authenticates its caller by a service SVID
+over mTLS, with verified server TLS on every hop. The `kubernetes_bearer` listener mode and
+Agentplane's TokenReview code go; Kubernetes authentication stays only toward the Kubernetes API.
+Operators keep app OIDC and MCP clients the edge's OAuth tokens. A component acting for an Identity
+is proven by its own certificate plus the typed delegation envelope
+([delegated authorization](../docs/delegated_authorization.md)); the actor's identity never becomes
+the effective caller's grant. Service SVIDs use a SPIFFE path that resolvers never map to an agent
+`Identity`. Services read certificate and trust-bundle files, so a caller needs no Kubernetes API to
+authenticate; in the cluster, cert-manager issues them from the workload CA. This supersedes the
+2026-11-10 decision to keep backend ServiceAccount tokens, option 1 (TokenReview plus pinned server
+TLS) and option 3 (per-target modes).
+
+Stages, each a separate set of PRs that is safe to roll and states its rollback:
+
+1. Inventory every component → receiver/method path (token source, audience, admitted accounts,
+   transport, direct or delegated), and reconcile [gRPC services](../docs/grpc_services.md) and
+   [workload authentication](../docs/workload_authentication.md) with this decision.
+2. Issue service SVIDs with client and server usage and mount them with the trust bundle, before any
+   code relies on them.
+3. Receivers also admit their component callers by exact service SPIFFE ID in the existing component
+   allowlists, while bearers still work.
+4. Callers present service SVIDs once their receivers' images are pinned; settings land in code
+   before manifests set them.
+5. Bearer admission, TokenReview, projected token audiences and the `tokenreviews` RBAC go after
+   every caller's image is pinned; RBAC removals last.
+
+**Roll gates:** certificates exist before code relies on them; receiver images admitting SVIDs are
+pinned before callers switch; code accepting settings is pinned before manifests set them. No
+fallback from a failed or absent certificate to a bearer. PRs #16333 (Policy Controller and sampler
+server TLS) and #16334 (verified client TLS) are separate in-flight work to build on, not duplicate.
+Stop after stage 3 and app-agent-token step (a) are open and green; later stages wait for operator
+confirmation of image pins.
+
+**Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
+verification, rotation, caller denial and delegation without a bearer fallback.
 
 #### Authentication: dead or stale today
 
@@ -3711,8 +3758,8 @@ What each piece serves today, and which behavior still needs a specific gate.
 Every first-party listener is `[kubernetes_bearer, spiffe]` (Action Service and LLM ingress on
 `agentplane-egress`; History on its own and the runner-ingress audiences; Notification and the Gateway
 on theirs); the proxy's `forward` is `spiffe` alone and its admin, the Policy Service and the sampler
-are bearer-only. The bearer halves stay for platform components; what goes is every path where a
-bearer or a ServiceAccount subject stands in for a workload.
+are bearer-only. All receiver bearer admission retires under `PRIVILEGED_BACKEND_AUTH_DESIGN`;
+receivers gain exact component SVID admission before caller cutover and bearer removal.
 
 - **EnvironmentService:** List, Watch, Get and WatchEnvironment use
   `ReviewedServiceAccountOrIdentity` and exact Identity self-read. `ResumeEnvironment`, suspend,
@@ -3723,12 +3770,12 @@ bearer or a ServiceAccount subject stands in for a workload.
   History's `SVIDOrAccounts` push rule remains for runners by SVID and the sampler by bearer; the
   remaining central code-mode tools-as-Actions implementation is tracked separately above.
 - **Workload and component boundaries:** issued workload credentials name Identities, and retained
-  ServiceAccount-subject records fail closed. Keep direct component TokenReview, component
-  reader/management/writer/waker allowlists, Kubernetes-account impersonation and historical
+  ServiceAccount-subject records fail closed. Replace direct component TokenReview; keep component
+  reader/management/writer/waker allowlists with service SVIDs, Kubernetes-account impersonation and historical
   actor/writer/sender attribution.
 - **Audience naming:** `agentplane-egress` (`WORKLOAD_TOKEN_AUDIENCE`) still serves the sampler's
   `llm` token and Notification's `actions` token. Its rename stays frozen
-  (`WORKLOAD_AUDIENCE_RENAME`); it does not block workload authority retirement.
+  (`WORKLOAD_AUDIENCE_RENAME`); deletion follows the service SVID cutover instead of renaming it.
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -3754,59 +3801,8 @@ clients, persisted or queued payloads, descriptors, reflection, authorization ru
 rollouts; define compatibility, data handling and rollback, with tests for old/new interoperability.
 Dispatch reviewed migrations separately, rather than coupling them to package-directory moves.
 
-#### `PRIVILEGED_BACKEND_AUTH_DESIGN` — review privileged service authentication and transport
-
-**Future; independent of the completed workload-Identity cutover.** The operator decided to keep backend
-components authenticated as their own ServiceAccounts for now ([workload
-authentication](../docs/workload_authentication.md#tokenreview-and-projected-credentials)); this is distinct from Sandbox and standing
-workloads authenticated by SVID, and from a component's explicitly delegated effective Identity.
-The transport contract for those component calls is inconsistent: [workload authentication](../docs/workload_authentication.md)
-says backend bearers use verified TLS, while [gRPC services](../docs/grpc_services.md) prescribes
-`insecure_channel` for bearer clients. Source examples include App → Policy Service using
-`bearer.Dial(..., nil)` and a plaintext Policy listener (`app/internal/server/runtime.go`,
-`policy_controller/cmd/main.go`), versus central sampler → History and Runner Gateway using
-target-pinned `ClientTLS` (`cluster/cdk8s/agentplane/central_sampler_workload.py`).
-
-**Decision; operator, 2026-11-13.** Compare (1) retaining destination-audience Kubernetes
-TokenReview for privileged component actors while standardizing verified, pinned server TLS; (2)
-standardizing first-party service calls on service SPIFFE identities with issuance and trust that do
-not depend on Kubernetes, so callers can authenticate without Kubernetes; or (3) explicit
-per-target configuration selecting an authentication mode where deployments have distinct needs.
-This DAG task does not select a mechanism. **Recommendation:** preserve the current
-ServiceAccount/TokenReview paths until this review chooses a migration; evaluate Kubernetes-independent
-SPIFFE first, and choose configurability only if the caller matrix shows concrete targets that need
-different modes. Name and justify any plaintext or legacy exception. **Question for review:** which
-caller-identity model meets the Kubernetes-independence need, and what target transport/configuration
-contract should privileged backend clients follow?
-
-| Actor role                               | Current proof and decision boundary                                                                                                                                                                                                                      | Authorization to preserve                                                                         |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Backend component calling as itself      | Today: projected ServiceAccount token, reviewed for the destination audience. Decide between that actor proof plus pinned server TLS, a service SPIFFE client identity with Kubernetes-independent issuance/trust, or explicit per-target configuration. | Receiver's method and account allowlists, with UID/Pod proof only where its Rule requires it.     |
-| Backend component acting for an Identity | The same component actor proof chosen above plus a typed, method-scoped delegation envelope naming the live Identity UID and provenance.                                                                                                                 | Receiver's explicit delegation grant; never infer effective authority from the actor token alone. |
-| Sandbox or standing workload             | Current `WorkloadCredential` SVID, resolved to the exact credential and bound subject.                                                                                                                                                                   | Destination's workload/resource policy; no bearer fallback for an absent or invalid SVID.         |
-| Runner ↔ Gateway control                 | Mutual SVID TLS with exact peer URIs and expiry-aware credentials.                                                                                                                                                                                       | Existing runner/Sandbox authorization remains separate from TLS identity.                         |
-| Operator or MCP client                   | App operator OIDC/session, or OAuth token bound to the durable MCP Connection and grant.                                                                                                                                                                 | Existing operator and Connection policies; neither is a backend component identity.               |
-
-**Decision exit:** inventory each privileged component → receiver/method path with token source and
-rotation, audience and admitted ServiceAccount scope/proof, service SPIFFE URI and issuer/trust
-source if present, listener methods, transport credentials and expected peer, and whether the call is
-direct or delegated. Decide the default plus explicit exceptions and reconcile the contradictory
-transport guidance. Any configurable mode must be explicit per target, validate compatible settings,
-and fail closed without fallback. Selected runtime changes land in separate scoped PRs with checks
-for peer and actor verification, rotation, caller denial and delegation without an ordinary Bearer
-fallback. This design does not block the active identity cutover.
-
 #### Decisions and tracks
 
-- **`APP_AGENT_TOKEN_DECISION` (test-fixture conversion merged in
-  [#15448](https://github.com/agentydragon/ducktape/pull/15448))**: staging live suites and hand-run
-  scripts still use the app's `agentplane-agent` TokenReview path (`caller()` in
-  `app/internal/auth/auth.go`). Decide whether they move to real-issuer ID tokens; remove its
-  `token_subjects` rendering (`cluster/cdk8s/agentplane/app_settings.py`,
-  `system_tests/deployment/fixture_chart.py`) and `AGENT_SERVICE_ACCOUNT` in
-  `system_tests/driver/cluster.py` only after every remaining caller has moved. These callers come
-  through the public route, where TLS ends at the Gateway, so a client certificate cannot reach the
-  app as mTLS.
 - **`CENTRAL_SESSION_CREATION_CONTRACT` ([#15436](https://github.com/agentydragon/ducktape/pull/15436),
   recommendation A):** `central_sampler_v1` is retired in the cutover that adds the `central_sampler`
   placement: `CentralSamplerV1Placement` in `proto/session.proto`,
@@ -3829,7 +3825,7 @@ fallback. This design does not block the active identity cutover.
   (`mcp_edge/internal/mcpserver/results.go`) goes if the Sandbox executor answers as an MCP tool. Source:
   [Action Service TODO](../action_service/TODO.md#executors-that-answer-as-mcp-tools).
 - **Frozen:** [`WORKLOAD_AUDIENCE_RENAME`](task_freezer.md#workload_audience_rename--rename-the-agentplane-egress-audience)
-  (the `agentplane-egress` audience name; backend callers keep the tokens) and
+  (the `agentplane-egress` audience name; tokens retire under the service SVID decision) and
   [`HAKU_ACTION_NATIVE_CLIENT`](task_freezer.md#haku_action_native_client--migrate-the-existing-haku-action-client)
   (Haku UI's client off the retired Action HTTP facade) stay in the freezer with their triggers.
 - **Plan files with a stated exit:** [`architecture_overview.md`](architecture_overview.md) is deleted
@@ -3838,21 +3834,12 @@ fallback. This design does not block the active identity cutover.
 
 #### Authentication: waiting on a decision
 
-- **The app's `agentplane-agent` bearer** (`APP_AGENT_TOKEN_DECISION`, above): the last agent-side
-  TokenReview path. Its callers are the system-test driver (`system_tests/driver/cluster.py`),
-  the shared-cluster allocation probe (`system_tests/x/shared_cluster/allocation.py`) and hand-run
-  scripts; `caller()` in `app/internal/auth/auth.go` and the `token_subjects` renderings go with the decision.
 - **Pod-bound checks per route** ([identity plan open question 1](identity_and_kubernetes_accounts.md#open-questions-and-tricky-bits)):
   `IsPodBound` gates privilege in Dispatcher (`dispatcher/api.go`), History reads
   (`history_service/internal/rpc/service.go`), EnvironmentService management and the lifecycle manager
   (`environments/management.go`, `lifecycle/manager.go`), and the resolver's `RequirePod` is step 7
   of SVID resolution. Once every workload is an Identity SVID with a per-incarnation credential, each
   route decides whether a Pod proof still adds anything; the checks that do not are deleted then.
-- **`Accounts` and `ReviewedServiceAccount` after the cutover:** the Gateway's caller, dispatcher,
-  executor and controller allowlists (`runner_gateway/internal/gateway/gateway.go`), the Policy Service's
-  writers and the egress admin callers are platform components and stay on bearers by decision;
-  a later review of their credential and transport baseline is
-  [`PRIVILEGED_BACKEND_AUTH_DESIGN`](#privileged_backend_auth_design--review-privileged-service-authentication-and-transport).
 
 #### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
