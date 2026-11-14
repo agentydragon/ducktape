@@ -92,7 +92,8 @@ Direct service SVIDs have independent, exact-SPIFFE-ID grants through
 `environment_service_readers`, `environment_service_managers`,
 `environment_service_launchers`, and `environment_service_operators`. Service operators may
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`environment_service_delegation` admits a service actor only for configured read methods,
-using the live effective Identity. `wake_service_callers` grants automatic broker wake only,
+`environment_service_delegation` admits a service actor only for configured read methods and
+`ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
+never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
 with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
 separately from the Action origin.

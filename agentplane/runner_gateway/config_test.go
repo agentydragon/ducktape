@@ -211,10 +211,10 @@ func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *t
 	}
 }
 
-func TestEnvironmentServiceDelegationIsReadOnlyAndDoesNotAdmitConnectionProvenance(t *testing.T) {
+func TestEnvironmentServiceDelegationAllowsReadsAndResumeWithoutConnectionProvenance(t *testing.T) {
 	base := `environment_service_delegation:
   actors: [{spiffe_id: "spiffe://agentplane/actions"}]
-  methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments]
+  methods: [/agentplane.environments.v1.EnvironmentService/ListEnvironments, /agentplane.environments.v1.EnvironmentService/ResumeEnvironment]
 `
 	path := configtest.WriteSettings(t, requiredFile+base)
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))

@@ -781,3 +781,18 @@ flowchart LR
     notifications[Notifications SVID] -->|accepted; caller switch pending| dispatcher
     app -->|separate inventory, management, resume grants| environments[EnvironmentService]
 ```
+
+## Actions service delegation to explicit environment resume
+
+The EnvironmentService receiver can admit an explicitly configured Actions service SVID with
+the typed Action delegation envelope for `ResumeEnvironment`, in addition to its four delegated
+read methods. The effective Identity's current environment resume grant remains the authority;
+the actor certificate never grants operator authority or waives `resume_token`. Automatic wake
+keeps its separate Identity-match and Sandbox opt-in policy. This receiver capability requires
+a pinned image before configuration grants it to Actions; caller activation follows separately.
+
+```mermaid
+flowchart LR
+    actions[Actions] -->|service SVID plus typed Action delegation| env[EnvironmentService]
+    env -->|effective Identity resume grant and token| lifecycle[Guarded lifecycle update]
+```

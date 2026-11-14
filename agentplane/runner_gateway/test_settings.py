@@ -230,18 +230,21 @@ def test_dispatcher_service_delegation_is_scoped_to_dispatcher_and_action_proven
         Settings.model_validate(source)
 
 
-def test_environment_service_delegation_is_read_only_and_action_only() -> None:
+def test_environment_service_delegation_allows_reads_and_resume_with_action_only() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="json")
     source["environment_service_delegation"] = {
         "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
-        "methods": ["/agentplane.environments.v1.EnvironmentService/ListEnvironments"],
+        "methods": [
+            "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
+            "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
+        ],
     }
     assert Settings.model_validate(source).environment_service_delegation is not None
 
     source["environment_service_delegation"]["methods"] = [
         "/agentplane.environments.v1.EnvironmentService/CreateEnvironment"
     ]
-    with pytest.raises(ValidationError, match="environment_service_delegation methods must be read-only"):
+    with pytest.raises(ValidationError, match="environment_service_delegation methods must be allowed"):
         Settings.model_validate(source)
 
     source["environment_service_delegation"]["methods"] = [
