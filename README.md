@@ -6,11 +6,11 @@ report snapshots. The CI reports are:
 
 - **Agentplane test architecture:** [fast-CI plan, implementation progress and recovery measurements](agentplane-test-architecture/index.html),
   [evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). Iteration 10 records snapshot head 1948106 with all three required checks successful. Both packaged guests passed the real CLI/Egress/Notification contract after the fixture took ownership of the serving process. Failed prototypes and controls are retained separately. Seven scoped ports merged; complete test-graph comparison and gate qualification remain open.
+  [source manifest](agentplane-test-architecture/manifest.json). Iteration 11 records draft head 4bfabd5 with all three required checks successful, a fixed-source 376 A/B/B/A graph screen and one real one-VM platform proof. The graph result is not current selection or qualified end-to-end feedback; complete test-graph qualification remains open.
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
-  [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 10 adds selected architecture/guest evidence and candidate standalone ports without a speed claim. No whole-CI saving is established.
+  [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 11 adds a historical fixed-source graph screen and one-VM platform proof without a whole-CI saving claim.
 - **Reliability (5–12 November failure history, VM OOM and merged-PR gates):** [standalone HTML](reliability/index.html),
-  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). The iteration 10 manual guest and negative-control actions remain separate from the retained reliability population; original rates and denominators remain unchanged. Candidate archive-diagnostics and Central Sampler coverage ports carry no speed claim.
+  [evidence](reliability/evidence.json), [source and observation window](reliability/manifest.json). Iteration 11 adds a storage-readiness incident and focused controls, while original rates and denominators remain unchanged. PR #16299 is open and unmerged; recurrence and the original controller exit cause remain unresolved.
 
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),

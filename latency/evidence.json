@@ -78629,5 +78629,12 @@
     "evidence_file": "../agentplane-test-architecture/iteration10.json",
     "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "scope": "Supplemental source194 snapshot and manual contract evidence only; original fleet windows, populations, rates and denominators remain unchanged."
+  },
+  "architecture_iteration11": {
+    "evidence_file": "../agentplane-test-architecture/iteration11.json",
+    "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
+    "observed_at_utc": "2026-11-14T00:31:06Z",
+    "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
   }
 }

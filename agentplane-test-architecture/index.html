@@ -195,6 +195,7 @@
         const iteration5 = data?.iteration5;
         const iteration9 = data?.iteration9;
         const iteration10 = data?.iteration10;
+        const iteration11 = data?.iteration11;
         const iteration8 = data?.iteration8;
         const iteration7 = data?.iteration7;
         const iteration5Cohort = iteration5?.historical_replay_cohort;
@@ -838,13 +839,12 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
-              >Iteration 10 ·
-              ${iteration10 ? "1948106: all three required checks passed" : "Loading"}<//
+              >Iteration 11 · 4bfabd5: all three required checks passed<//
             ><${Badge} color="orange">devel merge gate unchanged<//
             ><${Badge} color="gray">Iterations 2–8 retained below<//><//
           >
           <${Text} size="sm"
-            >${iteration10 ? "Snapshot head 1948106 passed all three required checks by 22:10:16Z; no current-head physical/JUnit cohort is curated. The earlier 542 checkpoint's 13 K3s target summaries are metadata-only. Three CLI composition runs produced six failed NEW physical actions across parser/harness and shutdown stages. A Python-only child GO_TEST_WRAP=0 control passed; the uncommitted full packaged-guest composition then passed 2/2 NEW actions (239.693s)." : "Current source evidence is loading; no result is inferred while it is unavailable."}<//
+            >${iteration11 ? "Current PR #16102 head 4bfabd5 passed all three required checks, but its 139.276s selected/cached Bazel invocation (tested merge c5a0272, devel parent 0479dfc9) is not a matched saving and no current-head full physical/JUnit cohort is curated. A fixed-source historical graph replay reduced native invocation mean by 17.4% with known CPU up 5.4%; this does not establish complete feedback or gate qualification. One real one-VM platform proof passes without a speed or equivalence claim. The storage-readiness controls preserve the full case. The required devel gate remains unchanged." : "Current source evidence is loading; no result is inferred while it is unavailable."}<//
           >
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -854,7 +854,8 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration10", "Iteration 10 current evidence"],
+              ["iteration11", "Iteration 11 current evidence"],
+              ["iteration10", "Iteration 10 history"],
               ["iteration9", "Iteration 9 snapshot · 8a555"],
               ["iteration8", "Iteration 8 snapshot · 0a9"],
               ["iteration7", "Iteration 7 snapshot · 5699"],
@@ -875,13 +876,64 @@
             )}
           <//>
           <${Alert} color="yellow" title="Current architecture evidence">
-            ${iteration10?.required_checks || "Loading current source evidence…"}
-            Snapshot head 1948106 is witness-only; all three required checks
-            passed by 22:10:16Z. The real Egress/Notification composition is
-            uncommitted and excluded from this commit; no physical/JUnit cohort
-            is curated for 1948106. Selected K3s summaries are metadata-only,
-            and observed origin/devel 2d2be67 is not established as the tested
-            base.
+            PR #16102 head 4bfabd5 is still a draft and is not merged. All three
+            required checks completed SUCCESS; its selected/cached Bazel run is
+            not a matched speed result, and no current-head full physical/JUnit
+            cohort is curated. The manual one-VM proof has separate source and
+            patch provenance. Existing devel gates and test frequency remain
+            unchanged.
+          <//>
+          <${Section}
+            id="iteration11"
+            title="Iteration 11: fixed-source graph evidence and one-VM readiness"
+          >
+            ${p("PR #16102 head 4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2 is a draft, not merged. All three required checks are SUCCESS; native invocation 83623e77-87b6-5ebb-a2e9-3bc5a9215589 completed in 139.276s. This selected/cached CI result is not a matched saving, and no full physical/JUnit cohort is curated for this exact head. The devel required gate and test frequency remain unchanged.")}
+            ${p("The fixed-source 376f8ae A/B/B/A replay covers the historical 2196229 label population. Four native invocations average 442.484s for baseline and 365.475s for candidate: 77.009s (17.4%) lower native elapsed, with known test CPU 5.4% higher. All 562 unique NEW physical tests have nonempty JUnit (4,118 case exposures), zero failures/errors/skips/retries, and matching unchanged case identities; the Pod partition is the exact disjoint 5+16 union of 21 cases. Only 14 new candidate contract launches were observed. One Firecracker CPU and its queue clock are unknown in each arm.")}
+            ${p("This is not current affected-target selection, a branch-versus-devel comparison, complete GitHub feedback, p90, fleet reliability, coverage equivalence or gate qualification. The full VM case mean is 171.775s versus 173.669s for the smaller witness, but both full VM baselines were cold after fingerprint mismatch while both witnesses were warm. The apparent process reduction is dominated by unmatched setup; MCP Services nearly ties the VM tail in B2, so preserve all tails.")}
+            <${Rows}
+              headers=${["Evidence", "Observed", "Boundary"]}
+              rows=${[
+                [
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/2e5581f3-348d-4b3b-a75f-398cf5780f5a"
+                    >One-VM platform proof<//
+                  >`,
+                  "1 NEW physical execution; 1 nonempty passing JUnit; no model request, failure, error, skip or retry. Native 403.285s; physical 356.510s; CPU 1,099.554s.",
+                  "Source ff39339 plus staged patch SHA-256 9f28f6ea91b07a0862620903058940ffc203a9326e25d0ae3b4e1fc1911f5ce2. One cold run; no speed, equivalence, p90 or reliability claim.",
+                ],
+                [
+                  "Readiness boundary",
+                  "Sandbox creation/readiness request began about 33s before VM domain start; guest boot continued until the supervision receipt about 69s after domain start. TestSystemdKernelFixture has 11 passing -test.v subtests totaling 19.83s (largest 4.40s; remaining 0.97–1.77s).",
+                  "The roughly 69s interval includes guest boot and other startup; it is not the supervision fixture duration and remains unallocated.",
+                ],
+                [
+                  html`<${Anchor}
+                    href="../agentplane-test-architecture/iteration11.json"
+                    >Storage readiness and current source status<//
+                  >`,
+                  "The e0cd failure hit the initial storage readiness guard before the scenario. The bounded same-predicate wait passed unavailable/recovery controls while preserving all storage assertions; #16299 is OPEN, unmerged, with all required checks green.",
+                  "The controller exit cause is unknown; lease timeouts preceded the exit but do not establish cause. This test repair is not a production controller fix or a fleet-rate update.",
+                ],
+              ]}
+            />
+            ${p("Next, trace Sandbox creation/readiness request to VM domain start, then guest boot to supervision receipt, and seed launcher/mount, issuer/Pod binding, kernel-limit and supervision controls in the new composition. Then repeat a fixed-source combined-graph screen with MCP Services, Pod and all selected targets. Keep the current full VM gate until 30 qualified pairs, 100 fresh contract executions, three busy windows and a four-PR burst meet adoption criteria. Keep import-batch PR #15126 unproven and image split #15214 held; existing #16028/#16034 follow-ups remain due November 20.")}
+            <${Group} gap="md">
+              <${Anchor} href="iteration11.json"
+                >Reviewed iteration 11 evidence<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/commit/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/"
+                >Source milestone 4bfabd5<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16102"
+                >Draft PR #16102<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16299"
+                >Storage-readiness port #16299<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration10"

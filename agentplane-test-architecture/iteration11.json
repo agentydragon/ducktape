@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-14T00:31:06Z",
+  "scope": "Selected architecture and storage-readiness evidence. The latency and reliability population windows, source pins, rates and denominators are unchanged.",
+  "source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "branch": "agent/test-architecture-pivot",
+    "pull_request": 16102,
+    "pull_request_url": "https://github.com/agentydragon/ducktape/pull/16102",
+    "head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "state": "Draft PR; not merged and the devel gate is unchanged.",
+    "required_checks": {
+      "status": "All three required checks completed SUCCESS on exact head 4bfabd5.",
+      "observed_at_utc": "2026-11-14T00:31:06Z",
+      "native_bazel_invocation": "83623e77-87b6-5ebb-a2e9-3bc5a9215589",
+      "native_elapsed_seconds": 139.276,
+      "limit": "This selected/cached required-CI invocation is not a matched latency comparison. No full current-head physical/JUnit cohort is curated.",
+      "checks_url": "https://github.com/agentydragon/ducktape/commit/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/checks",
+      "tested_merge": "c5a02722495073cab55c5055310e1a42d8afb013",
+      "tested_base": "0479dfc9dc87d80fa77a44472ea4b05c8564cfa7",
+      "native_bazel_url": "https://app.buildbuddy.io/invocation/83623e77-87b6-5ebb-a2e9-3bc5a9215589"
+    },
+    "parent": "ff39339c927c94a26c028cc69f4a5b55efc977c6",
+    "devel_base": "6dfbd741f5ba004f02aba929cadbbd59b6950393"
+  },
+  "historical_376_graph_screen": {
+    "source_head": "376f8ae15b5878320892e2d1c42add6a8361b2c3",
+    "source_note_url": "https://github.com/agentydragon/ducktape/blob/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/agentplane/system_tests/debug/test_architecture_iteration7.md",
+    "summary_artifact": {
+      "path": "agentplane/system_tests/debug/test_architecture_graph_screen_376.json",
+      "sha256": "38c829f73f9985aa481f0ccab6dd4c8b4b94f2b1c6da9b4e32a760627dcfee81"
+    },
+    "scope": "One fixed-source A/B/B/A replay of the historical 2196229 test-label population; both arms share all source, including Bridge 8.",
+    "invocations": [
+      {
+        "arm": "A1 baseline",
+        "id": "299737f4-5194-4436-a538-ce54f3466fff"
+      },
+      {
+        "arm": "B1 candidate",
+        "id": "b4caf1e2-5d2f-4aa6-908b-534c6fce737d"
+      },
+      {
+        "arm": "B2 candidate",
+        "id": "26ff9be2-9e80-4c80-bc2e-f3f50557d346"
+      },
+      {
+        "arm": "A2 baseline",
+        "id": "56ea9425-e24f-4b08-a8e0-3ca13dadda88"
+      }
+    ],
+    "native_elapsed_mean_seconds": {
+      "baseline": 442.4835,
+      "candidate": 365.475
+    },
+    "candidate_delta_seconds": -77.0085,
+    "candidate_reduction_percent": 17.4037,
+    "known_test_cpu_mean_seconds": {
+      "baseline": 10604.929782,
+      "candidate": 11176.742453
+    },
+    "known_cpu_increase_percent": 5.391952,
+    "unknown_cpu_and_queue": "One unchanged Firecracker action in each arm has unknown CPU and queue clocks.",
+    "physical_tests": {
+      "unique_new_launches": 562,
+      "nonempty_junit_case_exposures": 4118,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "retries": 0,
+      "added_candidate_contract_launches": 14,
+      "identity_check": "Unchanged case identities match; the Pod slice is the exact disjoint 5+16 union of all 21 cases."
+    },
+    "limits": [
+      "Historical label replay, not current affected-target selection, a branch-vs-devel comparison or complete GitHub feedback.",
+      "Two invocations per arm do not establish p90, fleet reliability, coverage equivalence, diminishing returns or qualification; 4118 case exposures are not independent trials.",
+      "Unmatched per-arm Firecracker CPU/queue clocks and observed infrastructure/cache differences limit comparison."
+    ]
+  },
+  "vm_platform_candidate": {
+    "source_note_url": "https://github.com/agentydragon/ducktape/blob/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/agentplane/system_tests/debug/test_architecture_iteration8.md",
+    "summary_artifact": {
+      "path": "agentplane/system_tests/debug/test_architecture_one_vm_proof.json",
+      "sha256": "826de8397afb7de93c408283e32f3bdbffc4112f5fda711ba95af9052c4fd86f"
+    },
+    "invocation_id": "2e5581f3-348d-4b3b-a75f-398cf5780f5a",
+    "invocation_url": "https://app.buildbuddy.io/invocation/2e5581f3-348d-4b3b-a75f-398cf5780f5a",
+    "base_commit": "ff39339c927c94a26c028cc69f4a5b55efc977c6",
+    "staged_patch_sha256": "9f28f6ea91b07a0862620903058940ffc203a9326e25d0ae3b4e1fc1911f5ce2",
+    "target": "//agentplane/system_tests/suites:test_vm_platform_candidate",
+    "result": {
+      "new_physical_tests": 1,
+      "nonempty_junit_passes": 1,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "retries": 0,
+      "model_requests": 0,
+      "cleanup_complete": true
+    },
+    "seconds": {
+      "native_invocation": 403.285,
+      "physical_execution": 356.51,
+      "reported_cpu": 1099.554,
+      "cold_setup": 109.098,
+      "case_including_owned_cleanup": 152.462,
+      "sandbox_readiness": 112.454,
+      "owned_sandbox_cleanup": 17.866,
+      "final_stack_cleanup": 30.831
+    },
+    "contract": "Real issuer and Pod binding, KubeVirt launcher/mounts, private systemd supervision and kernel limits, unprivileged setup, unique workspace write/read/remove, real CLI Egress Identity and Notification, second setup fence, same Runtime boot and post-identity. Both packaged guest contracts keep two turns and exact History; full VM gate, traces and OOM acceptance remain.",
+    "readiness_boundary": {
+      "observations": "Sandbox creation/readiness request began about 33s before VM domain start; guest boot continued until the supervision receipt about 69s after domain start.",
+      "journal_fixture": "TestSystemdKernelFixture reports 11 passing -test.v subtests in 19.83s; the largest is 4.40s and the others are 0.97–1.77s.",
+      "limit": "The roughly 69s interval includes guest boot and other startup; it is not the fixture duration and is not fully attributed."
+    },
+    "limit": "One physical proof at a different source/cache exposure; it establishes no speed saving, coverage equivalence, p90 or reliability rate."
+  },
+  "storage_controller_readiness": {
+    "failure": {
+      "invocation_id": "e0cdcb09-e0ad-5a46-88aa-465f85deb0a7",
+      "invocation_url": "https://app.buildbuddy.io/invocation/e0cdcb09-e0ad-5a46-88aa-465f85deb0a7",
+      "source": "58c274be30 tested merge 35eb3cce00, including devel 6dfbd741f5.",
+      "mechanism_observed": "The one-shot readyReplicas == 1 guard failed before storage work; only storage executed and the other 20 cases did not run. Lease PUT/GET timeouts preceded controller exit 1 at 23:42:47Z; it restarted at 23:42:48Z and became Ready 11 seconds later. It was not OOM-killed.",
+      "unknown": "Previous controller stderr was not captured, so the exit cause is unknown. The lease timeouts are preceding events, not an established cause."
+    },
+    "candidate_repair": {
+      "source": "ff39339c927c94a26c028cc69f4a5b55efc977c6",
+      "change": "Wait at most 30 seconds for the same readiness predicate; preserve the full storage scenario and collect controller status and previous logs on restart.",
+      "focused_invocation_id": "1dd90380-d9a8-4eab-990c-907761aeb854",
+      "focused_invocation_url": "https://app.buildbuddy.io/invocation/1dd90380-d9a8-4eab-990c-907761aeb854",
+      "result": {
+        "new_physical_tests": 1,
+        "nonempty_junit_cases": 2,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "retries": 0
+      },
+      "controls": "The forced-unavailable control returned the expected bounded-wait error at 30.150s. The recovery control waited 10.207s, then completed the full storage case, incompatible-claim refusal, changed Sandbox workload incarnation, retained-volume checks and cleanup.",
+      "excluded_submission": "7abcaacc returned NO_TESTS_FOUND under the wrong manual-target filter; it is not a passing exposure.",
+      "required_source_validation": {
+        "invocation_id": "92dde5b6-dc28-5c52-9a0f-0482fd1d0466",
+        "invocation_url": "https://app.buildbuddy.io/invocation/92dde5b6-dc28-5c52-9a0f-0482fd1d0466",
+        "status": "SUCCESS",
+        "native_elapsed_seconds": 457.457,
+        "pod_execution": "1 NEW physical action; 21 nonempty JUnit passes.",
+        "required_checks_status": "All three required checks on source ff39339 completed SUCCESS."
+      }
+    },
+    "devel_port": {
+      "pull_request": 16299,
+      "url": "https://github.com/agentydragon/ducktape/pull/16299",
+      "head": "f57b556fefbe53f6d3129bc11d1e1f0227279426",
+      "state": "OPEN, unmerged; all three required checks SUCCESS as observed 2026-11-14T00:31:06Z. Visual check is informational.",
+      "scope": "Narrow readiness-test repair; not a production-controller fix and not evidence of a recurrence-rate change."
+    },
+    "notification_fixture": "The Go Notification fixture produced one passing nonempty JUnit case in e0cd; the earlier 376 screen’s empty JUnit output is not case proof.",
+    "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
+    "limit": "This is a selected readiness incident and focused control, not a fleet denominator or the separate managed-VM kernel/OOM failure."
+  },
+  "next_decision": [
+    "Trace Sandbox creation/readiness request to VM domain start, then guest boot to supervision receipt in the one-VM composition, keeping the 19.83s fixture duration separate from the approximately 69s wider interval.",
+    "Seed launcher/mount, issuer/Pod binding, kernel-limit and supervision controls in the new composition before relying on it for any existing guarantee.",
+    "Then replay the fixed-source combined graph with MCP Services, Pod and all selected targets. Keep all tails and the full VM gate until 30 qualified pairs, 100 fresh contract executions, three busy windows and a four-PR burst meet qualification.",
+    "Keep import-batch PR #15126 unproven and the image split #15214 held; measure the cold/warm setup mechanism before reconsidering either.",
+    "Keep #16028 and #16034 natural-head and CaseBatch/PVC follow-ups due November 20; no required gate or test frequency changes here."
+  ],
+  "sources": {
+    "milestone_commit_url": "https://github.com/agentydragon/ducktape/commit/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "graph_screen_summary": "https://github.com/agentydragon/ducktape/blob/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/agentplane/system_tests/debug/test_architecture_graph_screen_376.json",
+    "one_vm_proof_summary": "https://github.com/agentydragon/ducktape/blob/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/agentplane/system_tests/debug/test_architecture_one_vm_proof.json",
+    "storage_startup_note": "https://github.com/agentydragon/ducktape/blob/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/agentplane/system_tests/debug/storage_controller_startup.md",
+    "plan": "https://github.com/agentydragon/ducktape/blob/4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2/agentplane/plans/fast_ci.md",
+    "privacy": "Only reviewed summary evidence is represented here; raw traces, logs and execution artifacts remain private."
+  }
+}

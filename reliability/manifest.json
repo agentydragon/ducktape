@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "36d77baee186690da58e096a506f9448e2dde4a585cbd3f984ef713e03aa3f83",
-  "evidence_sha256": "6177a436b1a72ccc5184e607dbc4bb6699cfa1c4d65f16889bc15cc892d6c94c",
+  "report_sha256": "079a708daad9342ebe6ec07563598ad74e31d7f0866fc902d70fca98d6fbe7cb",
+  "evidence_sha256": "1864c06ec9187a52733471a6695096753b742a107a143e460333f8129bb93a3a",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -33,7 +33,7 @@
   ],
   "backend_population": "159 latest devel-base backend PR heads: 129 production (124 green, four failed, one cancelled), 25 tests/helpers, five BUILD-only; 719 devel-base PR search frame",
   "population_source_devel_commit": "97ebe3e463f4137e9878ee627ccf50e16d81883d",
-  "population_scope": "Retained Nov 5\u201312 reliability population was not recollected. Fresh selected incidents/controls and backend feedback cohort are supplemental, with separate denominators and source pins.",
+  "population_scope": "Retained Nov 5–12 reliability population was not recollected. Fresh selected incidents/controls and backend feedback cohort are supplemental, with separate denominators and source pins.",
   "ci_lanes_sha256": "75489df1779c3c5d51426522eee0358904ae07365b60d8be92b761876e1b5db1",
   "architecture_followup_observed_at_utc": "2026-11-13T18:39:50.518998+00:00",
   "architecture_followup_source_head": "8a555b21141fded2166fcc17cd14096187e22842",
@@ -62,7 +62,14 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_base_gh_pages_commit": "58719ab4f4",
-  "visual_validation_status": "Four desktop/mobile light/dark cases passed in4b05be9c; reviewed report head1318317f31. Final proof/publication metadata was added after the browser run.",
-  "visual_validation_observed_at_utc": "2026-11-13T23:07:24.285273+00:00"
+  "publication_base_gh_pages_commit": "bfa51cc0c71f6d736ffa8c15514fd332f5882eec",
+  "visual_validation_status": "Browser evidence for this report snapshot is recorded separately in visual-validation.json.",
+  "draft_prepared_at_utc": "2026-11-14T00:31:06Z",
+  "architecture_iteration11": {
+    "evidence_file": "../agentplane-test-architecture/iteration11.json",
+    "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
+    "observed_at_utc": "2026-11-14T00:31:06Z",
+    "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
+  }
 }
