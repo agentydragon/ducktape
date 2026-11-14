@@ -93,6 +93,7 @@ go_test(
         "//agentplane/identity/credentials/issuer",
         "//agentplane/identity/credentials/requester",
         "//agentplane/policy/api/v1alpha1",
+        "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:environment_runtime_state_go_proto",
         "//agentplane/sandboxes/api",
         "@io_bazel_rules_go//go/runfiles",
