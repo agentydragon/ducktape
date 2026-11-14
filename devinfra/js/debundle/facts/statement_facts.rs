@@ -217,7 +217,7 @@ pub struct CallbackFactoryWriteWitness {
 pub(crate) struct SynchronousCalls {
     pub initializer_binding_effects:
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
-    pub initializer_heap_effects: Option<crate::reports::schema::InitializerHeapEffectsUse>,
+    pub initializer_external_effects: Option<crate::reports::schema::InitializerExternalEffectsUse>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
@@ -690,9 +690,9 @@ fn apply_initializer_binding_effects(
 }
 
 impl ChunkFactAnalysis {
-    /// Apply a heap-domain author overlay after source execution. It neither
+    /// Apply an external-state author contract after source execution. It neither
     /// completes execution nor changes source-owned operation receipts.
-    pub fn apply_initializer_heap_effects(
+    pub fn apply_initializer_external_effects(
         &mut self,
         isolated_bindings: &BTreeSet<String>,
     ) -> anyhow::Result<()> {
@@ -712,19 +712,40 @@ impl ChunkFactAnalysis {
             }
             anyhow::ensure!(
                 fact.kind == StatementKind::VarDecl && fact.declared.len() == 1,
-                "initializer_heap_effects for `{}` requires one simple initializer",
+                "initializer_external_effects for `{}` requires one simple initializer",
                 binding.0
             );
             let calls = fact.synchronous_calls.as_mut().ok_or_else(|| {
                 anyhow::anyhow!(
-                    "initializer_heap_effects for `{}` has no initialization summary",
+                    "initializer_external_effects for `{}` has no initialization summary",
                     binding.0
                 )
             })?;
             anyhow::ensure!(
                 !fact.heap_contents.observes_external_heap
                     && !calls.heap_contents.observes_external_heap,
-                "initializer_heap_effects: isolated for `{}` contradicts an observed external heap read at source unit {}",
+                "initializer_external_effects: isolated for `{}` contradicts an observed external heap read at source unit {}",
+                binding.0,
+                fact.ordinal.0
+            );
+            anyhow::ensure!(
+                fact.global_reads.is_empty() && fact.global_writes.is_empty(),
+                "initializer_external_effects: isolated for `{}` contradicts direct global-property accesses at source unit {}: reads {:?}, writes {:?}",
+                binding.0,
+                fact.ordinal.0,
+                fact.global_reads,
+                fact.global_writes
+            );
+            let known_global_accesses: BTreeSet<_> = calls
+                .evaluation_effects
+                .global_accesses
+                .iter()
+                .filter(|(_, evidence)| evidence.assumptions.is_empty())
+                .map(|(site, _)| &site.property)
+                .collect();
+            anyhow::ensure!(
+                known_global_accesses.is_empty(),
+                "initializer_external_effects: isolated for `{}` has source-known global-property accesses at source unit {}: {known_global_accesses:?}",
                 binding.0,
                 fact.ordinal.0
             );
@@ -739,20 +760,20 @@ impl ChunkFactAnalysis {
                 .collect();
             anyhow::ensure!(
                 external.is_empty(),
-                "initializer_heap_effects: isolated for `{}` cannot establish fresh ownership of observed heap accesses at source unit {}: {external:?}",
+                "initializer_external_effects: isolated for `{}` cannot establish fresh ownership of observed heap accesses at source unit {}: {external:?}",
                 binding.0,
                 fact.ordinal.0
             );
-            calls.initializer_heap_effects =
-                Some(crate::reports::schema::InitializerHeapEffectsUse {
+            calls.initializer_external_effects =
+                Some(crate::reports::schema::InitializerExternalEffectsUse {
                     binding: binding.0.to_string(),
-                    effects: spec::InitializerHeapEffects::Isolated,
+                    effects: spec::InitializerExternalEffects::Isolated,
                 });
             consumed.insert(binding.0.to_string());
         }
         anyhow::ensure!(
             &consumed == isolated_bindings,
-            "initializer_heap_effects consumption mismatch: configured {isolated_bindings:?}, applied {consumed:?}"
+            "initializer_external_effects consumption mismatch: configured {isolated_bindings:?}, applied {consumed:?}"
         );
         Ok(())
     }

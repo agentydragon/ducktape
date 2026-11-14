@@ -401,7 +401,7 @@ receiver and intact constructor/method identities. The accepted split in
 `e2e/initializer_source_only_test.rs` currently needs explicit initializer purity
 and lexical-effect promises. Its dataflow-aware allocation fixture additionally
 uses either commuting promises against independent allocations or the scoped
-`initializer_heap_effects: isolated` author contract. Purity and lexical effects
+`initializer_external_effects: isolated` author contract. Purity and lexical effects
 alone do not establish heap independence, and commuting with one barrier preserves
 ordering through earlier statements. Compose precise heap/call effects
 and native proof dependencies so those promises can be removed; retain fallback

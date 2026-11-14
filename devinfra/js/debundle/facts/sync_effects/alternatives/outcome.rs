@@ -68,7 +68,7 @@ fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
         // Written by owner finalization (`roots/`) after the owner's body
         // has joined: every leaf still holds the fork point's value.
         initializer_binding_effects: _,
-        initializer_heap_effects: _,
+        initializer_external_effects: _,
         completed_initialization: _,
         initialization_coverage_refusal: _,
         root_attempt: _,

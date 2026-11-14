@@ -8,7 +8,7 @@ use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::Value;
 use spec::{
-    BindingAnnotation, InitializerBindingEffects, InitializerHeapEffects, IntrinsicFamilies,
+    BindingAnnotation, InitializerBindingEffects, InitializerExternalEffects, IntrinsicFamilies,
     IntrinsicFamily, IntrinsicsNeverWritten, ProgramPremises,
 };
 
@@ -132,7 +132,7 @@ fn isolated_encoder_initializers_emit_across_heap_barriers_without_pairwise_prom
                 .annotations
                 .get_mut(binding)
                 .unwrap()
-                .initializer_heap_effects = Some(InitializerHeapEffects::Isolated);
+                .initializer_external_effects = Some(InitializerExternalEffects::Isolated);
         }
     }
     let fixture = run_fixture(options);
@@ -157,7 +157,7 @@ fn isolated_initializer_rejects_observed_shared_array_reads_and_writes() {
         module.1.annotations.insert(
             "value".to_owned(),
             BindingAnnotation {
-                initializer_heap_effects: Some(InitializerHeapEffects::Isolated),
+                initializer_external_effects: Some(InitializerExternalEffects::Isolated),
                 ..Default::default()
             },
         );
@@ -166,7 +166,7 @@ fn isolated_initializer_rejects_observed_shared_array_reads_and_writes() {
                 .with_unassigned_mode(unassigned_mode_inline())
                 .with_dataflow_aware_s_chain()
                 .with_trusted_dataflow_summaries(),
-            &["initializer_heap_effects", "observed heap accesses"],
+            &["initializer_external_effects", "observed heap accesses"],
         );
     }
 }
@@ -177,7 +177,7 @@ fn isolated_initializer_keeps_shared_var_redeclarations() {
     module.1.annotations.insert(
         "value".to_owned(),
         BindingAnnotation {
-            initializer_heap_effects: Some(InitializerHeapEffects::Isolated),
+            initializer_external_effects: Some(InitializerExternalEffects::Isolated),
             ..Default::default()
         },
     );
@@ -197,6 +197,31 @@ fn isolated_initializer_keeps_shared_var_redeclarations() {
         &[],
     );
     assert_preserved_entry_output(&fixture, "0\n");
+}
+
+#[test]
+fn isolated_initializer_rejects_global_property_reads_and_writes() {
+    for source in [
+        "globalThis.flag = 1; const value = globalThis.flag; export { value };",
+        "const value = (globalThis.flag = 2); export { value };",
+        "globalThis.flag = 1; function read() { return globalThis.flag; } const value = read(); export { value };",
+    ] {
+        let mut module = logical_module("a", &[Member::new("value")]);
+        module.1.annotations.insert(
+            "value".to_owned(),
+            BindingAnnotation {
+                initializer_external_effects: Some(InitializerExternalEffects::Isolated),
+                ..Default::default()
+            },
+        );
+        expect_rejection_containing_all(
+            FixtureOpts::new(source, vec![module])
+                .with_unassigned_mode(unassigned_mode_inline())
+                .with_dataflow_aware_s_chain()
+                .with_trusted_dataflow_summaries(),
+            &["initializer_external_effects", "global-property accesses"],
+        );
+    }
 }
 
 fn set_source_only(staged: &Staged, binding: &str, chunk_rename: bool) {

@@ -649,7 +649,7 @@ pub struct SynchronousExecutionReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_binding_effects: Option<Box<InitializerBindingEffectsUse>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub initializer_heap_effects: Option<InitializerHeapEffectsUse>,
+    pub initializer_external_effects: Option<InitializerExternalEffectsUse>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purity_disagreement: Option<PurityCompletionDisagreement>,
     /// Which authority the graph uses to decide whether to skip syntactic
@@ -785,11 +785,11 @@ pub enum InitializerBindingEffectsUse {
     },
 }
 
-/// Consumed heap-domain author contract; this is not an execution receipt.
+/// Consumed external-state author contract; this is not an execution receipt.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct InitializerHeapEffectsUse {
+pub struct InitializerExternalEffectsUse {
     pub binding: String,
-    pub effects: spec::InitializerHeapEffects,
+    pub effects: spec::InitializerExternalEffects,
 }
 
 /// One exact call site that consumed a native-operation author premise.

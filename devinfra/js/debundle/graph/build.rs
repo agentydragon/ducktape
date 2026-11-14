@@ -355,7 +355,7 @@ pub fn build_dependency_graph_with(
             synchronous_execution: stmt.synchronous_calls.as_ref().map(|calls| {
                 crate::reports::schema::SynchronousExecutionReport {
                     initializer_binding_effects: calls.initializer_binding_effects.clone(),
-                    initializer_heap_effects: calls.initializer_heap_effects.clone(),
+                    initializer_external_effects: calls.initializer_external_effects.clone(),
                     purity_disagreement: calls.purity_disagreement.clone(),
                     binding_effect_authority: Some(calls.binding_effect_authority_report()),
                     local_record_factory_uses: calls.local_record_factory_uses.clone(),
@@ -1148,10 +1148,10 @@ fn emit_heap_content_order(
         }
         if let Some(calls) = &stmt.synchronous_calls
             && calls
-                .initializer_heap_effects
+                .initializer_external_effects
                 .as_ref()
                 .is_some_and(|effect_use| {
-                    effect_use.effects == spec::InitializerHeapEffects::Isolated
+                    effect_use.effects == spec::InitializerExternalEffects::Isolated
                 })
         {
             // A validated author promise covers only this initializer's

@@ -1194,9 +1194,12 @@ source-backed read or rebind beyond the asserted footprint rejects it.
 For that initializer, the assertion completes dynamic lexical read/rebind
 coverage while preserving its syntax-derived dependencies.
 
-`initializer_heap_effects: isolated` independently promises that the selected
-simple initializer's mutable heap reads and writes touch only its own fresh
-allocations. Stable native/inherited metadata and opaque mutation paths require
+`initializer_external_effects: isolated` independently promises that the selected
+simple initializer observes no mutable pre-existing heap, global-property or
+host/environment state, writes only its own fresh allocations, and performs no
+global-property write or observable host operation. A heap-only promise would
+not cover a return value depending on host state. Stable native/inherited
+metadata and opaque mutation paths require
 the author's lifetime audit over every admitted initialization schedule.
 Source-observed external heap reads reject the promise. Admission conservatively
 rejects other observed content accesses too: source allocation-site identity is
@@ -1204,9 +1207,10 @@ not a proof of fresh runtime ownership across calls. The heap-order graph may
 discharge unknown heap barriers and assumed accesses for this initializer,
 retaining fresh allocation events, non-summarizable impure ordering and all
 other owners' order.
-It does not provide lexical/global/host effects, completion, result shape or an
-operation receipt. Neither initializer purity nor lexical source-only effects
-implies heap isolation. See SPEC § Initializer heap effects.
+It does not infer any absent external effects or provide lexical effects,
+completion, result shape or an operation receipt. Neither initializer purity nor
+lexical source-only effects implies external isolation.
+See SPEC § Initializer external effects.
 
 `initializer_call_effect_inputs` is a separate exact AUTHOR premise for one
 direct imported-call initializer with one fresh anonymous ordinary function

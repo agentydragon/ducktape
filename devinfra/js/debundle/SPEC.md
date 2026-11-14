@@ -1498,14 +1498,15 @@ callbacks retained for future use remain subject to their ordinary analysis.
 observable effects and cannot throw. Neither contract applies to later uses of
 its value.
 
-## Initializer heap effects
+## Initializer external effects
 
-`annotations.<binding>.initializer_heap_effects: isolated` is an author promise
+`annotations.<binding>.initializer_external_effects: isolated` is an author promise
 for one direct top-level simple variable initializer, including one declarator
-selected from a comma declaration. Mutable heap reads and writes during the
-entire initializer, including invoked calls, accessors and coercions, are
-confined to fresh allocations made during that initializer. Its result and
-effects do not depend on mutable pre-existing heap contents. Any native or
+selected from a comma declaration. The entire initializer, including invoked
+calls, accessors and coercions, observes no mutable pre-existing heap,
+global-object property or host/environment state. Heap writes are confined to
+fresh allocations made during that evaluation; it performs no global-property
+write or observable host operation. Any native or
 inherited protocol metadata used must retain its audited identity in every
 synchronous initialization schedule emission admits. Opaque or host mutation
 paths remain the author's audit obligation.
@@ -1513,14 +1514,18 @@ paths remain the author's audit obligation.
 The same assertion is available in `chunk_renames.annotations`. Missing,
 uninitialized, imported, destructured or multiply initialized bindings are
 rejected. Source-observed external heap reads contradict the promise. Admission
-also conservatively rejects source-observed heap-content accesses: an allocation
+also rejects direct global-property accesses and source-known global-property
+accesses without assumed-path provenance in synchronous callees, and conservatively rejects
+source-observed heap-content accesses: an allocation
 site ID alone cannot prove fresh runtime ownership across repeated calls. Fresh
 allocation events remain in the graph; unknown heap barriers and assumed heap
 accesses for this initializer may be discharged. Non-summarizable impure
 ordering and order between other source units remain unchanged.
 
-This is a heap-domain assertion only. It does not establish lexical effects,
-global-object or host effects, purity, freedom from throws, callback timing or
+The graph currently consumes this external-state promise to refine heap
+ordering. A heap-only promise would be insufficient: an opaque operation could
+still return a value depending on host state. It does not establish lexical
+effects, purity, freedom from throws, callback timing or
 retention, result shape, native integrity inference, or whole-initialization
 completion. Existing checks in those domains remain active. Later uses of the
 returned value receive no promise. In particular, `initializer_purity: pure`
@@ -1529,7 +1534,9 @@ and `initializer_binding_effects: source_only` remain separate assertions.
 Like initializer binding effects, this overlay is applied to computed or loaded
 facts after raw source execution. It is excluded from the canonical analysis
 projection, records its author provenance in `synchronous_execution`, and never
-creates an execution receipt or marks incomplete execution complete.
+creates an execution receipt or marks incomplete execution complete. Global and
+host behavior behind opaque calls remains an author obligation, not inferred
+absence of those effects.
 
 ## Exact initializer call effect inputs
 

@@ -1909,9 +1909,9 @@ pub struct BindingAnnotation {
     /// variable initializer. Omission makes no assertion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_binding_effects: Option<InitializerBindingEffects>,
-    /// Author assertion that evaluation accesses no mutable pre-existing heap.
+    /// Author assertion that evaluation accesses no mutable external state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub initializer_heap_effects: Option<InitializerHeapEffects>,
+    pub initializer_external_effects: Option<InitializerExternalEffects>,
     /// Spec-level local-effect annotation for the annotated binding.
     #[serde(default, skip_serializing_if = "is_default_member_effect")]
     pub effect: MemberEffect,
@@ -2739,13 +2739,14 @@ pub enum InitializerBindingEffects {
     SourceOnly,
 }
 
-/// Heap effects of one selected simple top-level variable initializer.
+/// External effects of one selected simple top-level variable initializer.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum InitializerHeapEffects {
-    /// Mutable heap accesses are confined to fresh allocations born during
-    /// this initializer. Stable native protocol metadata remains an author
-    /// obligation under every admitted initialization schedule.
+pub enum InitializerExternalEffects {
+    /// No mutable pre-existing heap, global-property or host/environment
+    /// state is accessed. Heap writes touch only this evaluation's fresh
+    /// allocations. Stable protocol metadata is an author lifetime promise;
+    /// lexical dependencies and abrupt completion remain separate.
     Isolated,
 }
 

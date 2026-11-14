@@ -33,6 +33,12 @@ execution remains a heap barrier without the corresponding heap proof. Check
 [the heap-effect rules](../../SPEC.md#dependency-graph-array-ordering) before predicting
 that a purity edit will remove such a frontier.
 
+For an exact initializer that observes no mutable external heap, global-property
+or host state and writes only fresh allocations, consider
+[`initializer_external_effects: isolated`](../../SPEC.md#initializer-external-effects).
+Audit native/protocol identity through all admitted schedules; source checks do
+not prove this premise. Lexical effects and freedom from throws remain separate.
+
 ## Choose the contract for the established fact
 
 This table routes to the relevant audit. [SPEC](../../SPEC.md) owns the complete

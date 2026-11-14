@@ -60,7 +60,7 @@ pub struct FrontendChunk<'a> {
     pub member_claims: MemberClaimProjection,
     pub declared_assumptions: AnalysisAssumptions,
     pub source_only_initializer_bindings: BTreeSet<String>,
-    pub isolated_heap_initializer_bindings: BTreeSet<String>,
+    pub isolated_external_initializer_bindings: BTreeSet<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1100,7 +1100,7 @@ fn finish_frontend_chunk<'a>(
     let (
         declared_assumptions,
         source_only_initializer_bindings,
-        isolated_heap_initializer_bindings,
+        isolated_external_initializer_bindings,
     ) = collect_binding_contracts(
         &prepared.explicit_requests,
         &member_claims,
@@ -1124,7 +1124,7 @@ fn finish_frontend_chunk<'a>(
         member_claims,
         declared_assumptions,
         source_only_initializer_bindings,
-        isolated_heap_initializer_bindings,
+        isolated_external_initializer_bindings,
     })
 }
 
@@ -1329,7 +1329,7 @@ fn collect_binding_contracts(
 ) -> Result<(AnalysisAssumptions, BTreeSet<String>, BTreeSet<String>)> {
     let mut assumptions = AnalysisAssumptions::default();
     let mut source_only_initializer_bindings = BTreeSet::new();
-    let mut isolated_heap_initializer_bindings = BTreeSet::new();
+    let mut isolated_external_initializer_bindings = BTreeSet::new();
     for (request_index, request) in requests.iter().enumerate() {
         for (member_index, member) in request.members.iter().enumerate() {
             if !member.has_semantic_annotations() {
@@ -1358,14 +1358,16 @@ fn collect_binding_contracts(
                     )?;
                     source_only_initializer_bindings.insert(binding.clone());
                 }
-                if member.initializer_heap_effects == Some(spec::InitializerHeapEffects::Isolated) {
+                if member.initializer_external_effects
+                    == Some(spec::InitializerExternalEffects::Isolated)
+                {
                     validate_initializer_target(
                         module,
                         &binding,
-                        "initializer_heap_effects",
+                        "initializer_external_effects",
                         true,
                     )?;
-                    isolated_heap_initializer_bindings.insert(binding.clone());
+                    isolated_external_initializer_bindings.insert(binding.clone());
                 }
                 member.collect_assumptions_for_binding(&mut assumptions, &binding);
             } else if fail_fast && member.has_semantic_annotations() {
@@ -1393,12 +1395,12 @@ fn collect_binding_contracts(
         module,
         &mut assumptions,
         &mut source_only_initializer_bindings,
-        &mut isolated_heap_initializer_bindings,
+        &mut isolated_external_initializer_bindings,
     )?;
     Ok((
         assumptions,
         source_only_initializer_bindings,
-        isolated_heap_initializer_bindings,
+        isolated_external_initializer_bindings,
     ))
 }
 
@@ -1451,7 +1453,7 @@ fn collect_chunk_rename_binding_contracts(
     module: &Module,
     assumptions: &mut AnalysisAssumptions,
     source_only_initializer_bindings: &mut BTreeSet<String>,
-    isolated_heap_initializer_bindings: &mut BTreeSet<String>,
+    isolated_external_initializer_bindings: &mut BTreeSet<String>,
 ) -> Result<()> {
     let Some(chunk_renames) = chunk_renames else {
         return Ok(());
@@ -1480,7 +1482,7 @@ fn collect_chunk_rename_binding_contracts(
         collect_binding_annotation_contracts(
             assumptions,
             source_only_initializer_bindings,
-            isolated_heap_initializer_bindings,
+            isolated_external_initializer_bindings,
             &bindings[0],
             annotation,
             module,
@@ -1492,7 +1494,7 @@ fn collect_chunk_rename_binding_contracts(
 fn collect_binding_annotation_contracts(
     assumptions: &mut AnalysisAssumptions,
     source_only_initializer_bindings: &mut BTreeSet<String>,
-    isolated_heap_initializer_bindings: &mut BTreeSet<String>,
+    isolated_external_initializer_bindings: &mut BTreeSet<String>,
     binding: &str,
     annotation: &spec::BindingAnnotation,
     module: &Module,
@@ -1512,9 +1514,9 @@ fn collect_binding_annotation_contracts(
         validate_initializer_target(module, binding, "initializer_binding_effects", true)?;
         source_only_initializer_bindings.insert(binding.to_string());
     }
-    if annotation.initializer_heap_effects == Some(spec::InitializerHeapEffects::Isolated) {
-        validate_initializer_target(module, binding, "initializer_heap_effects", true)?;
-        isolated_heap_initializer_bindings.insert(binding.to_string());
+    if annotation.initializer_external_effects == Some(spec::InitializerExternalEffects::Isolated) {
+        validate_initializer_target(module, binding, "initializer_external_effects", true)?;
+        isolated_external_initializer_bindings.insert(binding.to_string());
     }
     if annotation.purity == spec::MemberPurity::Pure {
         assumptions.declared_pure.insert(binding.to_string());
