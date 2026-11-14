@@ -1200,7 +1200,7 @@ need not mirror model context items or expose each reasoning/tool step as a work
 could participate in such a thread alongside humans or other agents; a human participant is optional.
 Expose conversation operations through MCP so third-party harnesses can participate without changes
 to their binaries. Treat publishing a message, notifying a participant and waking an agent as
-separate concerns; incoming-message delivery and harness-specific notification support need design.
+separate concerns; incoming-message delivery and harness-specific notification support need design. The object is named a Thread ([naming ADR](../docs/adr_journal_and_thread.md)).
 
 Start by evaluating the bounded CLI experiment above before committing to the broader model. Its
 local tool dispatch and storage choices are experimental, not decisions about service ownership,
@@ -2120,7 +2120,8 @@ tags with it ([tags](sandbox_tags.md#tags)). Deciding before `HISTORY_SANDBOX_RE
 Sandbox field take its final name with no CRD rename. A service rename reaches its protos, token
 audiences, images, the `agentplane/history_service` package and docs, and
 [`HISTORY_DATABASE_RENAME`](#history_database_rename--name-the-database-for-its-owner) would take
-the new name.
+the new name. **Name decided, operator, 2026-11-14 UTC:** the Journal service
+([naming ADR](../docs/adr_journal_and_thread.md)); the rename itself stays unscheduled.
 
 ### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
 
@@ -2210,7 +2211,9 @@ filter and optional live follow. The browser follows Threads through Electric
 
 ```mermaid
 flowchart TD
+    JOURNAL_REPRESENTATION_DESIGN[Decision, unscheduled: History as stored journals]
     THREAD_SYNC_WITHOUT_ELECTRIC[Decision, unscheduled: replace Electric with our own thread stream]
+    JOURNAL_REPRESENTATION_DESIGN -. what the stream follows .-> THREAD_SYNC_WITHOUT_ELECTRIC
     SESSION_ACTIVITY_STREAM[Unscheduled: deliver on a Session's idle time, section 7]
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history, section 2]
     THREAD_READ_POLICY[Blocked: scoped archive reads, section 3]
@@ -2219,6 +2222,27 @@ flowchart TD
 [`history_read_follow.md`](history_read_follow.md) records how orchestration builds on the API and
 which other consumers may move to it. Automatic titles remain deferred under
 [`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
+
+### `JOURNAL_REPRESENTATION_DESIGN` — History as stored journals
+
+**Decision, unscheduled; operator, 2026-11-14 UTC:** "journals" sounds like where History should
+eventually go. Vocabulary is decided ([ADR](../docs/adr_journal_and_thread.md)): a Journal is what a
+harness or process emits, and a Thread is the messaging object agents and people act on
+([`AGENT_AUTHORED_CONVERSATIONS_DESIGN`](#agent_authored_conversations_design--conversations-agents-act-on-through-tools)).
+
+Two separate problems:
+
+- **Size.** On staging the projection tables (about 1.3 GB) outweigh the raw events (about 1.0 GB),
+  and packed blocks and sampler capture keep several copies
+  ([storage representations](storage_representations.md)). Removing redundant sampler response
+  capture holds either way; sharing bodies between events and the projection waits on this node.
+- **Coercion.** The fold approximates Claude Code, Codex, sampler and process formats in one
+  materialized entity model instead of rendering each source on read.
+
+**Recommendation:** History stores each source's Journal verbatim with its kind; the app renders a
+journal view per kind at read time; the common surface keeps only what every source has (inputs,
+turn boundaries, status, usage). **Question for review:** retire the fold and its tables for
+per-kind rendering on read, and with what common surface?
 
 ### `THREAD_SYNC_WITHOUT_ELECTRIC` — replace Electric with our own thread stream
 
@@ -2240,7 +2264,7 @@ other live browser view already follows gRPC watches through the app facade
 [Thread sync](thread_sync/README.md) already scores replacements; the moving window meets every
 requirement row where Electric is short.
 
-Coupled to the History direction: if History becomes harness journal storage rendered per kind,
+Coupled to [`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals): if History becomes harness journal storage rendered per kind,
 the synced fold tables, and Electric's job, go away, and the stream should follow journal records
 instead of fold rows.
 
