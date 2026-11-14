@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_serializer, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.net.peertls.config import ClientTLS
+from agentplane.net.peertls.config import ClientTLS, ServerTLSListener
 
 DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = 30
 MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS = (2**63 - 1) // 1_000_000_000
@@ -202,6 +202,9 @@ class Settings(BaseModel):
 
     database_url: str | None = None
     listen: str
+    listen_tls: ServerTLSListener | None = Field(
+        default=None, description="Optional server-authenticated TLS listener for sampler RPCs."
+    )
     connections: dict[str, ConnectionConfig] = Field(min_length=1)
     models: dict[str, ModelConfig] = Field(min_length=1)
 

@@ -26,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	policypb "github.com/agentydragon/ducktape/agentplane/policy/v1"
@@ -162,14 +163,39 @@ func run(c config) error {
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer(api.Methods(readResolver, writeResolver).ServerOptions(0)...)
-	policypb.RegisterPolicyServiceServer(server, api)
+	serverOptions := api.Methods(readResolver, writeResolver).ServerOptions(0)
+	register := func(server *grpc.Server) {
+		policypb.RegisterPolicyServiceServer(server, api)
+	}
+	server := grpc.NewServer(serverOptions...)
+	register(server)
 	listener, err := net.Listen("tcp", c.GRPCBindAddress)
 	if err != nil {
 		return err
 	}
-	if err := mgr.Add(policyListener{server: server, listener: listener}); err != nil {
-		listener.Close()
+	listeners := []grpcListener{{server: server, listener: listener}}
+	if c.GRPCTLS != nil {
+		credentials, err := c.GRPCTLS.Credentials(peertls.PolicyControllerURI)
+		if err != nil {
+			server.Stop()
+			listener.Close()
+			return err
+		}
+		tlsServer := grpc.NewServer(append(slices.Clone(serverOptions), grpc.Creds(credentials))...)
+		register(tlsServer)
+		tlsListener, err := net.Listen("tcp", c.GRPCTLS.Listen)
+		if err != nil {
+			server.Stop()
+			listener.Close()
+			return err
+		}
+		listeners = append(listeners, grpcListener{server: tlsServer, listener: tlsListener})
+	}
+	if err := mgr.Add(policyListener{listeners: listeners}); err != nil {
+		for _, endpoint := range listeners {
+			endpoint.server.Stop()
+			_ = endpoint.listener.Close()
+		}
 		return err
 	}
 	reconciler := &policycontroller.Reconciler{
@@ -199,16 +225,34 @@ func run(c config) error {
 
 // Read watches run on every replica; only the reconciler participates in leader election.
 type policyListener struct {
+	listeners []grpcListener
+}
+
+type grpcListener struct {
 	server   *grpc.Server
 	listener net.Listener
 }
 
 func (policyListener) NeedLeaderElection() bool { return false }
 func (p policyListener) Start(ctx context.Context) error {
-	go func() { <-ctx.Done(); p.server.Stop() }()
-	err := p.server.Serve(p.listener)
-	if ctx.Err() != nil {
-		return nil
+	serveErrors := make(chan error, len(p.listeners))
+	for _, endpoint := range p.listeners {
+		go func(endpoint grpcListener) {
+			if err := endpoint.server.Serve(endpoint.listener); err != nil && ctx.Err() == nil {
+				serveErrors <- err
+			}
+		}(endpoint)
 	}
-	return err
+	defer func() {
+		for _, endpoint := range p.listeners {
+			endpoint.server.Stop()
+			_ = endpoint.listener.Close()
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-serveErrors:
+		return err
+	}
 }

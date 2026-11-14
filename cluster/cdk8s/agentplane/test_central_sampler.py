@@ -14,11 +14,12 @@ from more_itertools import one
 
 from agentplane.env.runtime.harness import Harness
 from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.net.peertls.config import LLM_INGRESS_URI
+from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, POLICY_CONTROLLER_URI
 from cluster.cdk8s.agentplane import (
     central_sampler,
     history_service,
     llm_ingress,
+    policy_controller,
     runner_gateway,
     staging,
     workload_tls,
@@ -65,12 +66,21 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert not pod.get("initContainers")
 
     container = one(pod["containers"])
+    serving_certificate = _resource(staging_manifests, "Certificate", f"{central_sampler.NAME}-workload")
+    assert serving_certificate["spec"]["uris"] == [CENTRAL_SAMPLER_URI]
+    assert any(
+        volume.get("secret", {}).get("secretName") == f"{central_sampler.NAME}-workload-tls"
+        for volume in pod["volumes"]
+    )
     service = _resource(staging_manifests, "Service", central_sampler.NAME)["spec"]
     assert service["selector"]
     assert all(
         deployment["spec"]["template"]["metadata"]["labels"][key] == value for key, value in service["selector"].items()
     )
-    assert service["ports"][0]["targetPort"] == container["ports"][0]["containerPort"]
+    service_ports = {port["name"]: port for port in service["ports"]}
+    container_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
+    assert service_ports["grpc"]["targetPort"] == container_ports["grpc"] == central_sampler.PORT
+    assert service_ports["grpc-tls"]["targetPort"] == container_ports["grpc-tls"] == central_sampler.TLS_PORT
     assert container["startupProbe"]["grpc"]["port"] == container["ports"][0]["containerPort"]
     env = {entry["name"]: entry for entry in container["env"]}
     database = env["AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"]["valueFrom"]["secretKeyRef"]
@@ -107,6 +117,11 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "executor_reconnect_timeout_seconds" not in config
     assert "turn_timeout_seconds" not in config
     assert config["audience"] == central_sampler.TOKEN_AUDIENCE
+    assert config["listen_tls"] == {
+        "listen": f"0.0.0.0:{central_sampler.TLS_PORT}",
+        "cert_file": workload_tls.CERT_FILE,
+        "key_file": workload_tls.KEY_FILE,
+    }
     platform_instructions = config["platform_instructions"]
     assert platform_instructions
     llm_connection = config["connections"]["llm-ingress"]
@@ -157,10 +172,18 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     )
     target = gateway["central_sampler"]
     assert target == {
-        "target": central_sampler.target(namespace),
+        "target": central_sampler.tls_target(namespace),
         "token_file": "/var/run/secrets/agentplane-runner-gateway/central-sampler",
+        "tls": {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": CENTRAL_SAMPLER_URI},
     }
     assert gateway["executor_callers"] == [f"{namespace}/{central_sampler.NAME}"]
+
+    app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
+    assert app_config["policy_service_tls"] == {
+        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
+        "server_uri": POLICY_CONTROLLER_URI,
+    }
 
     history = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
@@ -176,6 +199,11 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"],
         source=runner_gateway.NAME,
         port=central_sampler.PORT,
+    )
+    assert _admits(
+        _resource(staging_manifests, "CiliumNetworkPolicy", central_sampler.NAME)["spec"],
+        source=runner_gateway.NAME,
+        port=central_sampler.TLS_PORT,
     )
     assert _admits(
         _resource(staging_manifests, "CiliumNetworkPolicy", runner_gateway.NAME)["spec"],

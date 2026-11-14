@@ -160,7 +160,9 @@ func Run(ctx context.Context, config settings.Config) error {
 	if err != nil {
 		return fmt.Errorf("configure Runner bridge: %w", err)
 	}
-	policyConnection, err := bearer.Dial(config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second, nil)
+	policyConnection, err := bearer.Dial(
+		config.PolicyServiceTarget, config.PolicyServiceTokenFile, 10*time.Second, config.PolicyServiceTLS,
+	)
 	if err != nil {
 		return fmt.Errorf("configure Policy Service client: %w", err)
 	}
@@ -258,7 +260,11 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("configure generated Session Dispatcher HTTP facade: %w", err)
 	}
 	dispatcherGateway := upstreamproxy.NewHandlerUpstream(dispatcherFacade, config.SessionDispatcherTokenFile)
-	policyFacade, err := facade.NewHandler(facadeContext, config.PolicyServiceTarget, 10*time.Second, policypb.RegisterPolicyServiceHandlerFromEndpoint)
+	policyFacade, err := facade.NewHandlerWithOptions(
+		facadeContext, config.PolicyServiceTarget, 10*time.Second,
+		facade.HandlerOptions{TLS: config.PolicyServiceTLS},
+		policypb.RegisterPolicyServiceHandlerFromEndpoint,
+	)
 	if err != nil {
 		return fmt.Errorf("configure generated Policy Service HTTP facade: %w", err)
 	}

@@ -62,6 +62,14 @@ func prefixValidationError(prefix string, err error) error {
 }
 
 func (s Settings) Validate() error {
+	if s.ListenTLS != nil {
+		if err := s.ListenTLS.Validate(); err != nil {
+			return prefixValidationError("listen_tls", err)
+		}
+		if s.ListenTLS.Listen == s.Listen {
+			return invalidSetting("listen_tls.listen", "must differ from listen")
+		}
+	}
 	if s.PlatformInstructions != nil && strings.TrimSpace(*s.PlatformInstructions) == "" {
 		return invalidSetting("platform_instructions", "must not be empty when configured")
 	}

@@ -10,6 +10,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.net.peertls.config import POLICY_CONTROLLER_URI
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 
@@ -56,6 +57,35 @@ def _settings(documents: list[dict[str, Any]]) -> dict[str, Any]:
         if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "policy-controller-settings"
     )
     return cast(dict[str, Any], yaml.safe_load(one(config["data"].values())))
+
+
+def test_policy_controller_has_a_workload_server_certificate(staging_manifests: list[dict[str, Any]]) -> None:
+    certificate = _role(staging_manifests, "Certificate", "policy-controller-workload", STAGING_NAMESPACE)
+    assert certificate["spec"]["uris"] == [POLICY_CONTROLLER_URI]
+    deployment = _role(staging_manifests, "Deployment", policy_controller.NAME, STAGING_NAMESPACE)
+    pod = deployment["spec"]["template"]["spec"]
+    assert any(
+        volume.get("secret", {}).get("secretName") == f"{policy_controller.NAME}-workload-tls"
+        for volume in pod["volumes"]
+    )
+
+
+def test_policy_controller_serves_tls_on_a_separate_port(staging_manifests: list[dict[str, Any]]) -> None:
+    settings = _settings(staging_manifests)
+    assert settings["grpc_tls"] == {
+        "listen": f":{policy_controller.tls_service(STAGING_NAMESPACE).pod_port}",
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+    }
+    deployment = _role(staging_manifests, "Deployment", policy_controller.NAME, STAGING_NAMESPACE)
+    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    assert policy_controller.tls_service(STAGING_NAMESPACE).pod_port in {
+        port["containerPort"] for port in container["ports"]
+    }
+    service = _role(staging_manifests, "Service", policy_controller.NAME, STAGING_NAMESPACE)
+    assert policy_controller.tls_service(STAGING_NAMESPACE).port.number in {
+        port["port"] for port in service["spec"]["ports"]
+    }
 
 
 def test_service_account_writes_are_scoped_to_the_accounts_namespace(staging_manifests: list[dict[str, Any]]) -> None:

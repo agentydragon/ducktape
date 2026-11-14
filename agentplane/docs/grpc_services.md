@@ -55,6 +55,11 @@ follows it; code that differs converges on it.
 
 - Direct callers send `authorization: Bearer <token>` metadata, reading the projected token file for every
   call: projected tokens rotate.
+- Production service-to-service gRPC across workload network boundaries uses verified TLS with the destination's
+  workload-CA SVID. For bearer-authenticated hops, Go callers use server-only `peertls.ClientTLS`: they verify the
+  configured server URI and `serverAuth` usage, send no client certificate, and keep their existing ServiceAccount
+  bearer. Transport protection does not change caller authentication. A nil `ClientTLS` remains an explicit plaintext
+  setting for legacy and test routes; a configured but invalid TLS value fails without downgrading.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
   `peertls` server credentials. `identity/auth.SVIDResolver` resolves
   the verified peer against the live Sandbox and its accepted runner credential, yielding the
@@ -130,12 +135,12 @@ separately configured, and Action Service adapter integration remains separate.
   to the gateway replica holding a Sandbox's runner: the client takes that target and opens and
   closes the channel around the call.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
-- Backend bearer-authenticated channels and workload connections to local sidecar gRPC routes use
-  `grpc.aio.insecure_channel`. The credential-holding sidecar establishes verified TLS to each
-  workload listener; Runtime's direct SVID connections also use verified TLS. The client's
-  package says which options its channels need, through a `dial(target)` the composition root
-  calls (`agentplane/grpc/calls.py` for the Runner Gateway and History Service clients); a client
-  that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc/options.py`).
+- Go bearer clients use `agentplane/grpc/bearer.Dial` with a `peertls.ClientTLS` setting; app-owned generated facades
+  use `facade.NewHandlerWithOptions` with the same setting. Runtime connections that carry its SVID use verified TLS.
+  Python callers that use `agentplane/grpc/calls.py` can open a local plaintext channel to the credential-holding
+  sidecar; service routes from that sidecar use verified TLS through CONNECT. The sidecar's explicit telemetry route
+  to Alloy is plaintext. The client's package says which options its channels need. A client that receives Session
+  Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc/options.py`).
   The invariants:
   - `grpc.use_local_subchannel_pool: 1` for every channel that is closed and dialed again to the
     same target. From the process-wide pool a new channel inherits the closed channel's connection.
@@ -146,8 +151,10 @@ separately configured, and Action Service adapter integration remains separate.
 Everything that holds a connection is closed by a context manager, never by a hand-written
 `try`/`finally: await x.close()`:
 
-- A channel used for one call or one stream session is opened with
-  `async with grpc.aio.insecure_channel(...) as channel:`.
+- Python test servers use local plaintext channels opened with `async with grpc.aio.insecure_channel(...) as channel:`.
+  `agentplane.grpc.calls.dial` opens an insecure channel when no channel credentials are supplied and a secure channel
+  when they are; production callers close either channel at their composition root. Production Go callers close their
+  `grpc.ClientConn` with the configured transport credentials.
 - A long-lived channel is opened by the composition root, `async with dial(target) as channel:`,
   and handed to the clients over it. A process that owns several enters them on one `async with`
   or `AsyncExitStack`; a test fixture yields from inside it.
@@ -160,8 +167,9 @@ Everything that holds a connection is closed by a context manager, never by a ha
 ## Server lifecycle
 
 - `grpc.aio.server()`, register servicers, then serve through the shared context manager;
-  `stop(grace=5)` on shutdown. A second gRPC listener exists only where a network fence admits different callers to it
-  (the runner-facing port).
+  `stop(grace=5)` on shutdown. A second gRPC listener is used when a route needs its own transport or network
+  boundary. Policy Controller and Central Sampler keep plaintext listeners alongside their backend TLS listeners
+  during the TLS cutover; Runner Gateway has a separate runner-facing listener behind its network fence.
 - A Go server normally serves gRPC with `grpc.Server.Serve`. LLM ingress uses `grpc.Server.ServeHTTP`
   on its shared TLS HTTP/2 listener alongside provider-native inference HTTP; both protocols retain
   service-owned authentication. Servers stop with [`graceful.Stop`](../grpc/graceful/stop.go): calls in flight finish until the shutdown deadline. HTTP
@@ -178,6 +186,28 @@ Everything that holds a connection is closed by a context manager, never by a ha
 - A fake has no `serve` method: the test registers it with the generated `add_*` like any servicer.
   A fake standing in for two services that a client dials at one target gets one module-level
   `add_<fake>(fake, server)` that registers both, in the generated function's shape.
+
+## Questions for Claude
+
+Other production uses of `insecure.NewCredentials()` or its `peertls` equivalent reviewed for this change:
+
+- `central_sampler/internal/executor/executor.go`: direct-executor localtest mode requires a loopback IP target;
+  this is local transport, not a remote service hop.
+- `peertls.Security` retains an explicit insecure mode for local tests and standalone fixtures. Staging selects mTLS
+  for Runner control; another deployment selecting this mode would use plaintext.
+- `env/runtime/internal/coordinator/session_config.go`: Runtime dials its local model-config sidecar route. Pods point to
+  loopback; VM guests use their private launcher-gateway address. Both terminate at the local sidecar or relay, which
+  verifies the LLM ingress SVID over TLS, so neither is a remote service hop.
+- `env/runtime/stream/connection.go` through the non-SVID History fallback: this dials the configured History target
+  with a bearer over plaintext. It is a real transport gap for any deployment still selecting this fallback; staging
+  uses the Runtime SVID tunnel path. This change leaves that separate fallback untouched.
+- `egress/sidecar/platform_routes.go`: the sidecar's local telemetry channel forwards to Alloy over an in-cluster
+  network route using plaintext. This is a real plaintext network hop for telemetry; it carries no bearer and is not an
+  Agentplane backend service RPC.
+- `agentplane/cli/client.go`: an explicitly configured `http://` Action Service endpoint uses plaintext and can carry
+  the CLI's configured bearer. This is a user-directed CLI connection, not an internal service-to-service hop.
+- `env/runtime/execution/companion/control/control.go` uses a protected Unix socket, and `firecracker/guest_management.go`
+  uses vsock. These are local IPC transports, not network service hops.
 
 ## HTTP/JSON facades
 

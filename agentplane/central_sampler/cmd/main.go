@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -130,8 +132,12 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	}
 	defer unsubscribe()
 	runtime := residentruntime.New(store, settings, residentruntime.NewCodeModeHost(context.Background(), settings, store))
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(64*1024*1024), grpc.MaxSendMsgSize(64*1024*1024))
-	samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
+	serverOptions := []grpc.ServerOption{grpc.MaxRecvMsgSize(64 * 1024 * 1024), grpc.MaxSendMsgSize(64 * 1024 * 1024)}
+	register := func(server *grpc.Server) {
+		samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
+	}
+	server := grpc.NewServer(serverOptions...)
+	register(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	listener, err := netlistener.Open(settings.Listen)
@@ -139,6 +145,24 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		return atStartupStage("grpc_listener", err)
 	}
 	defer listener.Close()
+	var tlsServer *grpc.Server
+	var tlsListener net.Listener
+	if settings.ListenTLS != nil {
+		credentials, err := settings.ListenTLS.Credentials(peertls.CentralSamplerURI)
+		if err != nil {
+			return atStartupStage("grpc_tls_credentials", err)
+		}
+		tlsOptions := append(append([]grpc.ServerOption(nil), serverOptions...), grpc.Creds(credentials))
+		tlsServer = grpc.NewServer(tlsOptions...)
+		register(tlsServer)
+		healthpb.RegisterHealthServer(tlsServer, healthServer)
+		tlsListener, err = netlistener.Open(settings.ListenTLS.Listen)
+		if err != nil {
+			tlsServer.Stop()
+			return atStartupStage("grpc_tls_listener", err)
+		}
+		defer tlsListener.Close()
+	}
 	running, runningCtx := errgroup.WithContext(ctx)
 	running.Go(func() error { return runtime.Run(runningCtx, work) })
 	if settings.HistoryTarget != "" {
@@ -153,12 +177,24 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		}
 		return err
 	})
+	if tlsServer != nil {
+		running.Go(func() error {
+			err := tlsServer.Serve(tlsListener)
+			if errors.Is(err, grpc.ErrServerStopped) {
+				return nil
+			}
+			return err
+		})
+	}
 	running.Go(func() error {
 		<-runningCtx.Done()
 		healthServer.Shutdown()
 		stopping, release := context.WithTimeout(context.Background(), 5*time.Second)
 		defer release()
 		graceful.Stop(stopping, server)
+		if tlsServer != nil {
+			graceful.Stop(stopping, tlsServer)
+		}
 		return nil
 	})
 	healthServer.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

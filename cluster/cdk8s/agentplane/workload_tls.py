@@ -19,6 +19,8 @@ from cluster.cdk8s.providers.cert_manager.certificate import Certificate, Certif
 
 _CERT_PATH = "/run/agentplane/workload-tls"
 _TRUST_PATH = "/run/agentplane/workload-trust"
+CERT_FILE = f"{_CERT_PATH}/tls.crt"
+KEY_FILE = f"{_CERT_PATH}/tls.key"
 TRUST_BUNDLE_FILE = f"{_TRUST_PATH}/{cluster_ca.BUNDLE_KEY}"
 
 
@@ -63,7 +65,7 @@ def serving_certificate(scope: Construct, env: Environment, *, container: Contai
     )
     container.mount(_CERT_PATH, certificate, read_only=True)
     ca_file = mount_trust_bundle(scope, container)
-    return TLS(cert_file=f"{_CERT_PATH}/tls.crt", key_file=f"{_CERT_PATH}/tls.key", ca_file=str(ca_file))
+    return TLS(cert_file=CERT_FILE, key_file=KEY_FILE, ca_file=str(ca_file))
 
 
 def client_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:

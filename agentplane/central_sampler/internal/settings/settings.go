@@ -12,6 +12,7 @@ import (
 type Settings struct {
 	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
 	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
+	ListenTLS                            *peertls.ServerTLSListener  `json:"listen_tls,omitempty"`
 	Models                               map[string]ModelConfig      `json:"models"`
 	Connections                          map[string]ConnectionConfig `json:"connections"`
 	DatabaseURL                          string                      `json:"database_url"`
