@@ -785,3 +785,131 @@ cancellation/retry. Exact-head PR CI and the original guest rerun remain separat
 no fleet rerun-rate improvement is established. An injected replacement-start probe whose
 production applicability is unproven is preserved in
 [issue #16412](https://github.com/agentydragon/ducktape/issues/16412).
+
+The [original Codex guest rerun](https://app.buildbuddy.io/invocation/eb3eb508-c2c4-4a2e-8a2e-963b051e595d)
+passes fresh in one attempt: 142.2s TestRunner and 214.658s native Bazel time, on
+`437615d9dc` plus only the two production-file fence repair overlay from `f999d6d041`.
+Its exact-head independent PR checks at `e8e3fe0886` also pass. The owner subsequently
+merges #16411 into devel as `56ad210589` at 21:57:27 UTC on 14 November; this branch
+incorporates the merged repair as `ed2558d949`. These establish the focused repair,
+not an observed fleet flake-rate reduction. The separate `437615d9` CI boot failure
+before packaged Runtime startup remains unexplained; a later ordinary CI exposure
+at `22014e7b` passes all substantive checks. An unchanged-source pass does not explain
+the earlier guest boot failure.
+
+### Firecracker Notification dependency screen
+
+B6's longest deployment-readiness span is specifically `notifications`: 135.918s.
+K3s startup is 10.139s and PKI controller readiness is 15.178s; concurrent image imports
+overlap controller setup. A prepared infrastructure seed cannot automatically remove
+the Notification wait or the whole 224.494s setup. The retained K3s log shows the Notification
+Pod's container starts in about 3.27s; it does not explain the later readiness delay.
+
+Both Firecracker case bodies require guest/session/process continuity, suspend/checkpoint/
+resume, live credential rotation, Egress rules identity, actual mount/storage layout and
+Runner rejection of an impostor cluster-CA leaf. Neither calls Notifications. VM's original
+scenario explicitly runs `agentplane notifications subscriptions` and retains its deployment.
+The manual `test_firecracker_platform_candidate` runs the unchanged `test_firecracker.py`
+with a dedicated fixture that omits Notification workload/service/PKI/callers and its image
+dependency. It still creates the ordinary empty Notification database as part of shared
+bootstrap SQL; no Notification process consumes it. Required Firecracker acceptance stays
+unchanged during the experiment.
+
+Before promotion, compare both targets at one frozen source with fresh tests and the same
+4-CPU/6-GiB KVM requests. Require the exact same two case identities and all existing
+assertions, complete cleanup and no extra retry. Preserve both physical costs, setup phases,
+queue/worker identity and actual resource evidence. A one-pair improvement is only a
+component screen; repeat the full selected graph and representative required checks before
+crediting a contribution to the 30% objective.
+
+### Corrected full-system composition: B7/A7
+
+At immutable source `22014e7b6c09c64505df438ffec20246ae3a3946`, the
+[candidate B7](https://app.buildbuddy.io/invocation/e4dff4dc-56ca-450a-9fa9-fd97388b549c)
+and [ordinary control A7](https://app.buildbuddy.io/invocation/8e619948-6bb0-4f75-8160-7badee6be833)
+both pass. The preregistered order is B then A, without overlays, artificial warming,
+test-result cache hits, requested test retries or pool changes. The ordinary 120-second
+Gateway budget remains. All eleven changed libraries are explicitly named for aspects.
+
+Both arms have exactly the same canonical multiset of **50 passing JUnit cases**, zero
+failures/errors/skips. The control has fourteen distinct physical TestRunner actions;
+the candidate has sixteen. Every exact ExecuteResponse succeeds and every action's XML
+digest matches the advertised JUnit artifact. Provider-internal retry counts remain unknown.
+The reviewed private summary hashes to
+`84f21304db4354127f35ad5f6ae6b5c6369ef237f609457a83a100292b97056e`.
+
+| Clock or resource                         |          Control |        Candidate | Interpretation                                   |
+| ----------------------------------------- | ---------------: | ---------------: | ------------------------------------------------ |
+| Native Bazel elapsed                      |         592.550s |         382.619s | **35.4% lower once**, not PR feedback            |
+| Critical path                             |         546.990s |         339.890s | Different routes and fixture warmth              |
+| Known managed TestRunner CPU              |  7,335.480 CPU-s |  6,464.124 CPU-s | 0.8812 ratio; KVM CPU is unknown                 |
+| All-route requested CPU × execution       | 15,337.276 CPU-s | 14,067.962 CPU-s | 0.9172 ratio; reservation proxy                  |
+| Peak concurrent requested CPU, all routes |               56 |               64 | 1.1429 ratio; requests, not physical utilization |
+
+All predeclared screens pass: native elapsed ratio at most 0.70; known managed CPU
+at most 1.15; managed and all-route requested CPU-time at most 1.20; managed and
+all-route peak requested CPU at most 1.30. Actual whole-action CPU and peak memory
+are unknown for one control KVM action and two candidate KVM actions. Moving VM off
+managed capacity does not establish a whole-CPU saving or cost neutrality. Money and
+simultaneous physical memory remain unmeasured. The frozen plan omits the new Firecracker
+target name in one request lookup; exact scheduling metadata establishes its 4-CPU/6-GiB
+request without retrospectively changing the plan.
+
+The control's last VM action takes 540.569s (setup 276.562s, case envelope 201.576s).
+Candidate KVM VM execution takes 256.308s (setup 130.709s, case envelope 102.287s)
+but queues for 75.109s. Queue clocks are usable for thirteen of fourteen control
+and fifteen of sixteen candidate actions; absent/epoch/inverted clocks are unknown.
+The candidate's longest action by execution is Dispatcher, 323.089s versus 281.060s
+control; its cold setup grows from 75.469s to 122.909s. Gateway budget is 306.665s
+versus 311.307s. Thus accelerating VM moves the competing tail to other suites.
+
+Warmth is unequal: the candidate Pod complement restores a warm baseline (31.724s
+setup), while control Pod is cold (56.322s setup). The candidate Pod union retains all
+twenty-two cases. This adaptive single pair supports a balanced repeat of the composition,
+not promotion or the complete rerun-inclusive median/p90/flake objective. Required selection
+remains unchanged; the contract replacement policy remains shadow-only. B6's failed attempt,
+incorrect planned denominator and costs remain in the preceding record.
+
+### Two real Gateways with active Executor work
+
+The new native contract starts two production Gateway binaries sharing the Dispatcher
+database and Runtime trust root. Their distinct Pod-bound credentials name the same
+configured Gateway ServiceAccount. Only this Codex case starts the real pinned Executor
+companion; the shared conftest does not acquire its image dependency.
+
+[Positive qualification](https://app.buildbuddy.io/invocation/8c71fcc8-20c0-491f-8423-4d1e7f36dfb4)
+passes in 35.650s at source `437615d9` plus the retained five-file overlay subsequently
+checkpointed as `b43487e43b`. Both replicas report the same Runtime boot and fenced
+Session inventory. A admits the real Executor session/process and reads a unique prefix;
+A stops while B resumes that exact session and reads the held process. After A restarts,
+both still observe the original Runtime boot; B reads the exact suffix at the retained
+cursor, with one unchanged PID marker and no prefix replay, and completes fresh work once.
+Direct Runtime mutation calls with stale Sandbox UID, workload UID and boot ID are refused.
+
+The separate [stale-boot defect control](https://app.buildbuddy.io/invocation/b2c5a9ff-487f-4806-b91d-a1674e957168)
+weakens only the Runtime's test-overlay boot comparison. It reaches the intended stale-boot
+StartProcess assertion and fails because the call is admitted. The production guard is
+restored; no production mutation is included in the architecture patch.
+
+The final fixture-registration adjustment uses this test module's `pytest_plugins` so
+other conftest consumers do not acquire the Executor image. Its Gazelle and pre-commit
+checks pass; integrated full-module validation remains pending at this checkpoint.
+The module still inherits App-owned _test fixtures_, without starting App; this is not
+an App dependency cut or an issuer/controller/Kubernetes rollout witness. These coverage
+facts must precede any proposal to replace deployed Gateway acceptance.
+
+At exact published `8d6678010707992cc5dc485549c3f43e179812a4`, the
+[integrated full Gateway module](https://app.buildbuddy.io/invocation/9a92ad39-8f59-465b-899e-f2c5a2a69210)
+passes fresh in 97.9s (106.581s native), with the final module-local fixture registration
+and both explicitly named fixture libraries/aspects. This qualifies the final registration
+change without narrowing the module to its new case. It is not whole-PR proof.
+
+GitHub subsequently reports the branch conflicting with devel and does not submit ordinary
+PR workflows. Rebase onto devel `0506d9fa7b` retains the upstream test that exercises both
+generic and structured resume refusal, exact read intent/cursor and zero process-start replay.
+It also preserves devel's expanded external-MCP receipt/actor/grant provenance case: all
+thirty assertion ASTs and the complete function body move unchanged into the extracted
+`external_connection` helper used by both ordinary and candidate Services wrappers. No
+deployed assertion is dropped to resolve the conflict. Merged #16405 and #16411 are now
+inherited directly rather than duplicated cherry-picks. Earlier source-pinned timing and
+focused results remain historical; ordinary CI must qualify the rebased source separately.

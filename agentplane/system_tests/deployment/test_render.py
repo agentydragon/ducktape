@@ -1072,6 +1072,7 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
     [
         ("K3S_VM_NATIVE_FIXTURE_RLOCATION", True, False, False),
         ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", False, True, False),
+        ("K3S_FIRECRACKER_PLATFORM_FIXTURE_RLOCATION", False, True, False),
         ("K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION", False, False, True),
         ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False, False, False),
     ],
@@ -1089,6 +1090,7 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
     assert fixture.mcp_fixtures is None
 
     docs = fixture.objects
+    notifications_enabled = location != "K3S_FIRECRACKER_PLATFORM_FIXTURE_RLOCATION"
     native_name = fixture_chart.NATIVE_TEST_CLIENT
     deployments = {
         doc["metadata"]["name"]: doc["spec"]["template"]["spec"] for doc in docs if doc["kind"] == "Deployment"
@@ -1099,11 +1101,16 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
         "history-service",
         "llm-ingress",
         native_name,
-        "notifications",
         "postgres",
         "runner-gateway",
         "sandbox-controller",
     } <= deployments.keys()
+    assert ("notifications" in deployments) is notifications_enabled
+    if not notifications_enabled:
+        assert not any(
+            doc["metadata"]["name"] in {"notifications", "notifications-settings", "notifications-workload-tls"}
+            for doc in docs
+        )
     if central_sampler:
         assert "central-sampler" in deployments
     else:
@@ -1161,6 +1168,9 @@ def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
     assert native_account_name in gateway["gateway_callers"]
     assert native_account_name in gateway["wake_callers"]
     assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]
+    if not notifications_enabled:
+        for callers in ("dispatcher_callers", "gateway_callers", "wake_callers"):
+            assert f"{NAMESPACE}/notifications" not in gateway[callers]
 
     history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     readers = {(account["namespace"], account["name"]) for account in history["reader_accounts"]}
