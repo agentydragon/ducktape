@@ -27,10 +27,8 @@ const (
 	RunnerProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"
 	RunnerProxyIncarnationUIDMetadataKey        = "x-agentplane-incarnation-uid"
 
-	ControlServiceSuffix   = "-control"
-	ControlServicePortName = "grpc"
-	ControlServicePort     = 8080
-	RunnerGatewayService   = "runner-gateway"
+	ControlServicePort   = 8080
+	RunnerGatewayService = "runner-gateway"
 	// EnvironmentRuntimeServicePort is the runner's mTLS listener port in a Pod or KubeVirt guest.
 	EnvironmentRuntimeServicePort           = 9090
 	EnvironmentRuntimeCredentialMetadataKey = "agentplane.allegedly.works/environment-runtime-credential"

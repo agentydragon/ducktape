@@ -311,8 +311,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
 		DispatcherAccount:        deliveryAccount,
 		SandboxControllerAccount: c.ControllerAccount,
-		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
-	}, gatewayRPCAuth, inventory, inventoryHealth, kube.CoordinationV1(), kube.DiscoveryV1())
+	}, gatewayRPCAuth, inventory, inventoryHealth)
 	if err != nil {
 		return err
 	}
@@ -460,8 +459,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	closing, release := context.WithTimeout(context.Background(), 5*time.Second)
 	defer release()
 	graceful.Stop(closing, server)
-	// Observer shutdown closes direct Runner connections before releasing their
-	// fenced Leases. Keep the process alive for that bounded handoff.
+	// Finish observer shutdown so this replica closes its direct Runtime streams.
 	select {
 	case <-observersStopped:
 	case <-time.After(10 * time.Second):

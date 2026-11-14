@@ -42,15 +42,16 @@ type config struct {
 	RunnerSecurity                peertls.Security `mapstructure:"runner_security"`
 	Namespace                     string           `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace              string                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL        string                   `mapstructure:"-"`
-	PodName                      string                   `mapstructure:"-"`
-	PodIP                        string                   `mapstructure:"-"`
-	RunnerTokenFile              string                   `mapstructure:"runner_token_file"`
-	Kubeconfig                   string                   `mapstructure:"kubeconfig"`
-	KubernetesClientQPS          float32                  `mapstructure:"kubernetes_client_qps"`
-	RPC                          listener.Config          `mapstructure:"rpc"`
-	GatewayTLS                   *peertls.ClientTLS       `mapstructure:"gateway_tls"`
+	PolicyNamespace       string             `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL string             `mapstructure:"-"`
+	PodName               string             `mapstructure:"-"`
+	PodIP                 string             `mapstructure:"-"`
+	RunnerTokenFile       string             `mapstructure:"runner_token_file"`
+	Kubeconfig            string             `mapstructure:"kubeconfig"`
+	KubernetesClientQPS   float32            `mapstructure:"kubernetes_client_qps"`
+	RPC                   listener.Config    `mapstructure:"rpc"`
+	GatewayTLS            *peertls.ClientTLS `mapstructure:"gateway_tls"`
+	// CLEANUP(added 2026-11-14): Remove proxy_port after the route-removal image is pinned.
 	ProxyPort                    int                      `mapstructure:"proxy_port"`
 	RunnerControlTargetTemplate  string                   `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                   `mapstructure:"dispatcher_audience"`

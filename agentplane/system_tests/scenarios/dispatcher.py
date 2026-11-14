@@ -32,11 +32,7 @@ from agentplane.system_tests.driver.dispatcher_transport import (
     forward as _forward,
 )
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
-from agentplane.system_tests.driver.sandbox import (
-    ENVIRONMENT_RUNTIME_CONTAINER,
-    ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
-    POD_TEMPLATE,
-)
+from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -216,7 +212,6 @@ async def _capture_cleanup_diagnostics(
         persist()
         commands = {
             "sandbox": ("get", "sandbox", name, "-o", "json"),
-            "environment_runtime_lease": ("get", "lease", f"{name}{ENVIRONMENT_RUNTIME_LEASE_SUFFIX}", "-o", "json"),
             "pod": ("get", "pod", name, "-o", "json"),
             "environment_runtime_log": (
                 "logs",

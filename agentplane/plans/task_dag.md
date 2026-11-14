@@ -2420,9 +2420,11 @@ Dispatcher and typed Runner RPCs. The Sandbox Controller's authenticated passive
 Runtime workload UID before it publishes facts. The receiver contract permits any authenticated
 Gateway replica to call with the bound Sandbox/incarnation/boot identity and an absent or zero
 epoch; legacy nonzero call and watch epochs remain temporarily supported for that same UID. The
-[runtime state observation plan](runtime_state_observation.md) records the contract and rollout. The
-direct Controller reader migration merged in #16324; #16328 removes Lease fact publication after
-the new Controller is running on staging. Gateway connection removal remains pending.
+[runtime state observation plan](runtime_state_observation.md) records the contract and rollout.
+The direct Controller reader and Lease-fact removal landed in #16324 and #16328; the receiver
+binding and independent-watch compatibility landed in #16345. The remaining work is staged: pin and
+validate the receiver before the independent-connection Gateway image, route caller defaults only
+after that image is pinned, then remove the old route records after all callers have moved.
 
 The [service-boundary contract](../docs/service_boundaries.md) and [Runner Gateway README](../runner_gateway/README.md)
 describe the current proxy. Live `Runner.ListSessions` remains part of the app and Notification
@@ -2450,10 +2452,11 @@ the same `UNAVAILABLE` symptom by pausing after the first ready Lease update, th
 publication-before-local-installation window by installing the fenced connection first. This proves
 that ordering could cause the symptom, but does not prove it caused the original same-name-replacement
 failure. Readiness remains a recent observation and cannot guarantee a later call after connection
-loss. The Gateway error now reports local connection availability unless Lease ownership is known.
+loss. The Gateway error now reports local connection availability; connection-Lease ownership no longer
+participates in Runtime routing.
 
 If the system-test failure recurs, capture the Sandbox UID, runner incarnation and boot ID, Gateway
-replica, Lease epoch and holder, EndpointSlice route, and local connection state at the failed poll.
+replica, selected Service endpoint, and local observer/connection state at the failed poll.
 PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
 poll. This handles the test poll only; it does not establish that the publication race caused the
 original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
@@ -2466,7 +2469,7 @@ recurs, or close the incident follow-up if ordinary use shows no recurrence. Pre
 
 **In flight, 2026-11-14: independent Gateway observers, stable-Service caller routing, then route
 publication removal are prepared as separate PRs in this batch.** The #16345 Runtime receiver is
-pinned as runner-disk `devel-20261114063459-d8258d6`; live Runtime provenance still needs operator
+included in runner-disk `devel-20261114071615-9e1f8fe` on fresh devel; live Runtime provenance still needs operator
 verification before zero-epoch Gateway deployment. The [rollout plan](runtime_state_observation.md#migration-and-rollback)
 lists backend-specific inventory evidence. Firecracker suspend/resume preserves its Runtime
 process and cannot upgrade an older receiver; a retained old checkpoint keeps this gate closed

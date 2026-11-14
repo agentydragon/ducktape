@@ -50,33 +50,6 @@ type observedRunner struct {
 	quiesceCalls   atomic.Int32
 }
 
-type statusOnlyRuntime struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	calls         atomic.Int32
-	changes       chan struct{}
-	changesMu     sync.Mutex
-	setupsRunning atomic.Bool
-}
-
-func (r *statusOnlyRuntime) GetStatus(context.Context, *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	r.calls.Add(1)
-	return &sessionpb.EnvironmentRuntimeStatus{}, nil
-}
-
-func (r *statusOnlyRuntime) currentChanges() <-chan struct{} {
-	r.changesMu.Lock()
-	defer r.changesMu.Unlock()
-	return r.changes
-}
-
-func (r *statusOnlyRuntime) notify() {
-	r.setupsRunning.Store(true)
-	r.changesMu.Lock()
-	defer r.changesMu.Unlock()
-	close(r.changes)
-	r.changes = make(chan struct{})
-}
-
 func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
 		request.GetConnectionEpoch() != 0 || request.GetObserveOnly() {
@@ -140,8 +113,8 @@ func TestRunnerObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
 
 func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
 	f := newSandboxFixture(t)
-	gatewayA := f.newGatewayReplica(t, "gateway-a", "192.0.2.10")
-	gatewayB := f.newGatewayReplica(t, "gateway-b", "192.0.2.11")
+	gatewayA := f.newGateway(t)
+	gatewayB := f.newGateway(t)
 	destinationA, backend := startProductionRuntime(t, f, gatewayA)
 	destinationB, err := gatewayB.runnerDestination(t.Context(), f.sandbox)
 	if err != nil {
@@ -231,82 +204,14 @@ func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
 	}
 }
 
-func TestRunnerObservationRetriesLegacyRouteAfterAnotherReplicaReleases(t *testing.T) {
-	f := newSandboxFixture(t)
-	gatewayA := f.newGatewayReplica(t, "gateway-a", "192.0.2.10")
-	gatewayB := f.newGatewayReplica(t, "gateway-b", "192.0.2.11")
-	destinationA, backend := startProductionRuntime(t, f, gatewayA)
-	destinationB, err := gatewayB.runnerDestination(t.Context(), f.sandbox)
-	if err != nil {
-		t.Fatal(err)
-	}
-	destinationB.target = destinationA.target
+type statusOnlyRuntime struct {
+	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
+	calls atomic.Int32
+}
 
-	cancelA, doneA, _ := runObserver(t, gatewayA, destinationA)
-	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
-	awaitEndpointAddress := func(want string) {
-		t.Helper()
-		deadline := time.NewTimer(5 * time.Second)
-		defer deadline.Stop()
-		poll := time.NewTicker(time.Millisecond)
-		defer poll.Stop()
-		for {
-			route, err := api.Clientset.DiscoveryV1().EndpointSlices(f.namespace).Get(
-				t.Context(), f.sandbox.Name+sandboxapi.ControlServiceSuffix, metav1.GetOptions{},
-			)
-			if err == nil && len(route.Endpoints) == 1 && len(route.Endpoints[0].Addresses) == 1 && route.Endpoints[0].Addresses[0] == want {
-				return
-			}
-			select {
-			case <-deadline.C:
-				t.Fatalf("legacy control route did not point at %s", want)
-			case <-poll.C:
-			}
-		}
-	}
-	awaitEndpointAddress(gatewayA.config.HolderIP)
-	readLeaseHolder := func() string {
-		t.Helper()
-		lease, err := api.Clientset.CoordinationV1().Leases(f.namespace).Get(
-			t.Context(), f.sandbox.Name+environmentRuntimeLeaseSuffix, metav1.GetOptions{},
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if lease.Spec.HolderIdentity == nil {
-			return ""
-		}
-		return *lease.Spec.HolderIdentity
-	}
-	if got := readLeaseHolder(); got != gatewayA.config.HolderName {
-		t.Fatalf("initial legacy route holder = %q, want %q", got, gatewayA.config.HolderName)
-	}
-
-	cancelB, doneB, _ := runObserver(t, gatewayB, destinationB)
-	defer cancelB()
-	awaitConnection(t, gatewayB, string(f.sandbox.UID), "shared-runtime-boot", doneB)
-	clientB := startProxyClient(t, gatewayB)
-	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway B observation was blocked by Gateway A's legacy route claim: %v", err)
-	}
-	awaitEndpointAddress(gatewayA.config.HolderIP)
-	if got := readLeaseHolder(); got != gatewayA.config.HolderName {
-		t.Fatalf("Gateway B changed a live legacy route claim: holder = %q, want %q", got, gatewayA.config.HolderName)
-	}
-
-	cancelA()
-	waitObserver(t, doneA)
-	backend.notify()
-	awaitEndpointAddress(gatewayB.config.HolderIP)
-	if got := readLeaseHolder(); got != gatewayB.config.HolderName {
-		t.Fatalf("legacy route holder after Gateway A released = %q, want %q", got, gatewayB.config.HolderName)
-	}
-	if _, err := clientB.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway B stopped serving after taking over the legacy route: %v", err)
-	}
-	if got := backend.calls.Load(); got != 2 {
-		t.Fatalf("shared Runtime received %d Gateway B calls, want 2", got)
-	}
+func (r *statusOnlyRuntime) GetStatus(context.Context, *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+	r.calls.Add(1)
+	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
 func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Gateway) (runnerDestination, *statusOnlyRuntime) {
@@ -320,17 +225,17 @@ func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Gateway) (runner
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = opened.Close() })
-	backend := &statusOnlyRuntime{changes: make(chan struct{})}
+	backend := &statusOnlyRuntime{}
+	changes := make(chan struct{})
 	runtimeServer := runtimecontrol.New(runtimecontrol.Config{
 		SandboxUID: destination.identity.Uid, BootID: "shared-runtime-boot", ListenAddress: "127.0.0.1:0",
 		Security: opened, IsClosing: func() bool { return false }, AdoptIncarnation: func(context.Context, string) error { return nil },
 		Facts: func() (*environmentruntimestatepb.EnvironmentRuntimeFacts, error) {
 			return &environmentruntimestatepb.EnvironmentRuntimeFacts{
-				Bootstrap:     environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
-				SetupsRunning: backend.setupsRunning.Load(),
+				Bootstrap: environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
 			}, nil
 		},
-		Changes: backend.currentChanges,
+		Changes: func() <-chan struct{} { return changes },
 	}, backend)
 	listener, server, err := runtimeServer.Listen(&executorpb.UnimplementedExecutorServer{})
 	if err != nil {

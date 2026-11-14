@@ -152,7 +152,7 @@ func (r *Reconciler) convergeFirecrackerIntent(ctx context.Context, sandbox *san
 			return blocked, nil
 		}
 		// DownwardAPI projections can coalesce intent changes. Complete the checkpoint
-		// before resuming so the recorded connection epoch always requires a real reconnect.
+		// before resuming so the restored Runtime requires a fresh observation.
 		if state.Phase != "suspended" {
 			return &unready{reason: "FirecrackerPending", message: "waiting for the pending suspension before resuming", retryAfter: 2 * time.Second}, nil
 		}

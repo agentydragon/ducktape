@@ -30,24 +30,27 @@ The current runner contracts remain in [Session layering](thread_layering.md), t
 
 The app and Notification service create Sessions and submit commands through the Session Dispatcher. It
 records openings and commands in its own PostgreSQL database, groups delivery by Sandbox UID, and
-uses per-Sandbox Kubernetes Leases plus database generations to fence replica ownership. It watches
-Sandbox readiness and incarnation changes, then calls the Runner service through the Sandbox's
-control Service and the Runner Gateway's proxy. It has no History Service client: routing and queue
-recovery use the requested Sandbox, Kubernetes state, and runner control RPCs. See
+uses a per-Sandbox delivery Lease plus database generations to fence delivery scheduling. It watches
+Sandbox readiness and incarnation changes, then calls the Runner service through the stable
+`runner-gateway` Service and its proxy. It has no History Service client: routing and queue recovery
+use the requested Sandbox, Kubernetes state, and runner control RPCs. See
 [`delivery.go`](../runner_gateway/dispatcher/delivery.go),
 [`runner_client.go`](../runner_gateway/dispatcher/runner_client.go), and
 [`store.go`](../runner_gateway/dispatcher/store.go).
 
-The Gateway connection role owns the runner's long-lived control connection and routes calls to the replica holding
-that connection. The unified Go process also owns the Dispatcher queue through its separate delivery role. It does
-not read the retired `sandbox_commands` Session table. The separate Gateway database resource is absent
+Each Gateway replica independently opens a zero-epoch `WatchState` to the current Runtime, dialing it
+directly at its Pod IP, and can serve calls after observing the Controller-bound Sandbox UID and
+workload Pod UID. Runtime calls carry
+those identities and the boot ID observed by that replica; the Runtime checks them against its bound
+identity. The unified Go process also owns the Dispatcher queue through its separate delivery role. It
+does not read the retired `sandbox_commands` Session table. The separate Gateway database resource is absent
 from current manifests. The runner journals
 admitted commands on its state volume. The History Service
 receives runner journals and serves retained events and folded Thread views, but these are separate
 service boundaries rather than a Dispatcher dependency:
 
 - **Dispatcher has no direct History dependency to remove.** Its current routing, queue recovery,
-  admission and delivery result paths use the requested Sandbox, Kubernetes state, leases and Runner
+  admission and delivery result paths use the requested Sandbox, Kubernetes state, delivery leases and Runner
   RPCs. No Dispatcher History client or call exists in the audited implementation.
 - **The app uses History for retained Thread data.** `EventLogStore` reads archived events and
   observations and validates the History Service's committed prefix; summaries come from the History
@@ -71,8 +74,8 @@ There are two different Session inventories:
 
 - Runner `ListSessions` asks the current runner's `retained.Store` for persisted records and reports
   them with the current harness, setup, launch and activity state. The current
-  production callers are the app and Notification, through the per-Sandbox proxy with expected
-  Sandbox UID and owner. Dispatcher does not call the list RPC: an identical logical `CreateSession`
+  production callers are the app and Notification, through the stable `runner-gateway` Service with
+  expected Sandbox UID and owner. Dispatcher does not call the list RPC: an identical logical `CreateSession`
   retry returns its existing Session record without rediscovering a live runner attachment; a
   conflicting placement, spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read
   for lifecycle assertions.
@@ -110,9 +113,11 @@ checks that the watched Sandbox still has that UID and that it owns the Sandbox'
 before continuing. The Go `ProxyRunner` sends the Sandbox name and UID to the proxy with
 expected-identity metadata. The proxy authenticates its caller and requires exact Sandbox UID and
 owner metadata, then resolves and checks the live Sandbox and ready Pod.
-The control Service routes by the holder of that UID. This is a sequence of checks across separate
-requests, so the reviewed contract should say where identity is bound and where it is revalidated,
-including replacement between the Dispatcher check and proxy resolution. See
+The stable `runner-gateway` Service may route to any replica. Each replica can serve only with its
+own fresh Runtime observation; the proxy call carries Sandbox UID, current workload Pod UID and the
+observed Runtime boot ID, which Runtime checks against the Controller-bound identity. These checks
+span separate requests, so the reviewed contract should say where identity is bound and where it is
+revalidated, including replacement between the Dispatcher check and proxy resolution. See
 [`proxy.go`](../runner_gateway/internal/gateway/proxy.go),
 [`sandboxes.go`](../runner_gateway/internal/gateway/sandboxes.go) with the UID fence in
 [`reader.go`](../sandboxes/sandboxreader/reader.go), and
@@ -202,7 +207,7 @@ reply from direct runner admission is unknown: resolve or retry the same command
 runner storage. Loss of that storage ends runner-owned state; History is not a reconstruction source.
 
 Two choices remain open. A namespace/name plus mandatory UID request can use the existing
-namespace-local Kubernetes read and control Service as a locator; a UID-only request needs an
+namespace-local Kubernetes read as a locator; a UID-only request needs an
 authoritative UID-to-object resolver that works during suspension and rejects ambiguous or stale
 matches. Either representation must persist enough information to re-resolve the _same_ object and
 must never promote name-only discovery to an execution address. If the runner alone selects a store,
@@ -230,9 +235,11 @@ its independent caller grant. Gateway observes Runtime through its private mTLS 
 Dispatcher admission, explicit resume and automatic wake retain their distinct grants.
 
 The Dispatcher PostgreSQL queue, per-Sandbox delivery Lease and database-generation fence remain
-separate from the connection Lease and EndpointSlice. A worker on replica A may deliver through
-`<sandbox>-control` to a runner connection held by replica B; co-location does not eliminate that
-routing or the queue. The service has no History client or separate Gateway registry/database.
+the delivery ownership mechanism. Gateway routing no longer publishes or uses a connection Lease or
+EndpointSlice; old route objects may remain inert while rollout holds are open. A worker calls the
+stable `runner-gateway` Service, and any replica with a fresh observation can call the current
+Runtime directly at its Pod IP using the Sandbox UID, workload Pod UID and boot ID. The service has
+no History client or separate Gateway registry/database.
 Runner journal ingress and Quiesce seal acknowledgements belong to History; app and Notification
 also read History independently. See the [Runner Gateway README](../runner_gateway/README.md) for
 current runtime and deployment ownership, including migration ordering and Flux image automation.

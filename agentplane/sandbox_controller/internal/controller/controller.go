@@ -185,11 +185,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	if identityGate != nil {
 		gate = identityGate
 	}
-	if serviceGate, err := r.ensureControlService(ctx, &sandbox); err != nil {
-		return ctrl.Result{}, err
-	} else if gate == nil {
-		gate = serviceGate
-	}
 	if launchGate, err := r.ensureLaunch(ctx, &sandbox); err != nil {
 		return ctrl.Result{}, err
 	} else if gate == nil {
@@ -987,7 +982,6 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	setup := ctrl.NewControllerManagedBy(mgr).
 		For(&sandboxapi.Sandbox{}).
 		Owns(&corev1.ConfigMap{}).
-		Owns(&corev1.Service{}).
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).

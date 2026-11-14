@@ -13,7 +13,7 @@ import (
 )
 
 // CacheByObject restricts the manager's cache. Of the kinds the controller creates or watches by the
-// Sandbox label (Pods, PVCs, ConfigMaps, Services and, with KubeVirt, VMs and VMIs) it holds only
+// Sandbox label (Pods, PVCs, ConfigMaps and, with KubeVirt, VMs and VMIs) it holds only
 // objects carrying the label, so an unrelated object in the namespace is neither stored nor enqueued.
 // Events carry no labels: it holds those about any Pod. It holds every Identity and
 // WorkloadCredential in the namespace, watched by identity or owner reference.
@@ -29,7 +29,6 @@ func CacheByObject(kubeVirt bool) (map[client.Object]cache.ByObject, error) {
 		&corev1.Pod{}:                   {Label: ours},
 		&corev1.PersistentVolumeClaim{}: {Label: ours},
 		&corev1.ConfigMap{}:             {Label: ours},
-		&corev1.Service{}:               {Label: ours},
 		&corev1.Event{}:                 {Field: fields.OneTermEqualSelector("involvedObject.kind", "Pod")},
 	}
 	if kubeVirt {

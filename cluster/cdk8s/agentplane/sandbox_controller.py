@@ -155,7 +155,8 @@ class SandboxController(Construct):
                     resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
                     verbs=["get", "list", "watch"],
                 ),
-                # Each Sandbox's control Service, which the Runner Gateway points at the connected runner.
+                # CLEANUP(added 2026-11-14): Remove after the Controller image that stops
+                # creating per-Sandbox control Services is pinned and all old Pods have left.
                 RolePolicyRule(
                     resources=[custom_resource("", "services")], verbs=["get", "list", "watch", "create", "patch"]
                 ),

@@ -10,8 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
-	coordinationclient "k8s.io/client-go/kubernetes/typed/coordination/v1"
-	discoveryclient "k8s.io/client-go/kubernetes/typed/discovery/v1"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -30,9 +28,6 @@ type Config struct {
 	// projected token is the only public route to Runtime Session creation and commands.
 	DispatcherAccount        auth.Account
 	SandboxControllerAccount *auth.Account
-	HolderName               string
-	HolderIP                 string
-	ProxyPort                int32
 	ControlTiming            ControlTiming
 	// ExecutorCallers enables the typed execution API independently from the Runner proxy's
 	// caller allowlist. An empty set leaves the public service unregistered.
@@ -52,8 +47,8 @@ func defaultControlTiming(timing ControlTiming) ControlTiming {
 }
 
 func validateControlTiming(timing ControlTiming) error {
-	if timing.LivenessTimeout <= 0 || timing.LivenessTimeout > time.Duration(leaseDurationSeconds)*time.Second {
-		return fmt.Errorf("Gateway control timing exceeds the runner liveness or legacy route Lease bound")
+	if timing.LivenessTimeout <= 0 {
+		return fmt.Errorf("Gateway control timings must be positive")
 	}
 	return nil
 }
@@ -64,7 +59,6 @@ type Gateway struct {
 	callerAuth  *auth.Resolver
 	sandboxes   *sandboxResolver
 	connections *connections
-	records     *connectionRecords
 	objects     client.Reader
 	// observerQueue holds the names of Sandboxes whose observer RunRunnerObservers must reconcile.
 	observerQueue workqueue.TypedRateLimitingInterface[string]
@@ -77,8 +71,6 @@ func New(
 	callerAuth *auth.Resolver,
 	objects client.Reader,
 	objectsHealth *watchhealth.Health,
-	coordination coordinationclient.CoordinationV1Interface,
-	discovery discoveryclient.DiscoveryV1Interface,
 ) (*Gateway, error) {
 	if err := config.RunnerSecurity.Validate(); err != nil {
 		return nil, fmt.Errorf("runner security: %w", err)
@@ -89,20 +81,11 @@ func New(
 	if config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "" {
 		return nil, fmt.Errorf("Gateway Dispatcher account is required")
 	}
-	if config.HolderName == "" || config.HolderIP == "" || config.ProxyPort < 1 {
-		return nil, fmt.Errorf("Gateway holder Pod name, IP and proxy port are required")
-	}
 	config.ControlTiming = defaultControlTiming(config.ControlTiming)
 	if err := validateControlTiming(config.ControlTiming); err != nil {
 		return nil, err
 	}
 	sandboxes, err := newSandboxResolver(config.Namespace, objects, objectsHealth)
-	if err != nil {
-		return nil, err
-	}
-	records, err := newConnectionRecords(coordination, discovery, config.Namespace, connectionHolder{
-		name: config.HolderName, ip: config.HolderIP, port: config.ProxyPort,
-	})
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +108,7 @@ func New(
 	}
 	return &Gateway{
 		config: config, callerAuth: callerAuth, objects: objects,
-		sandboxes: sandboxes, connections: newConnections(), records: records,
+		sandboxes: sandboxes, connections: newConnections(),
 		observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
 	}, nil
 }

@@ -248,13 +248,14 @@ Gateway token; token contents remain in the rotating read-only projected volume.
   cold start is not implemented yet.
 - A deleted Sandbox that must run once more to seal waits for a live Identity.
 
-## Control Service
+## Runner Gateway calls
 
-Every Sandbox has a headless, selector-less `<sandbox>-control` Service on the Runner Gateway's
-public proxy port, 8080. Callers use their workload bearers to reach any replica through
-the stable Runner Gateway Service. The per-Sandbox Service remains available for old caller processes
-during rollout. The Gateway connects directly to the current workload's mTLS runner listener on port 9090. The controller repairs the per-Sandbox Service's managed fields; the Gateway owns its EndpointSlice.
-A foreign same-name Service blocks new workload starts.
+The controller uses `runner_gateway_target` to call the stable `runner-gateway` Service while sealing
+a Sandbox with `Runner.Quiesce`. It supplies the Sandbox identity and incarnation UID on each call;
+the receiving Gateway replica routes the request to its local runner connection. Sandbox Controller
+creates no per-Sandbox control Service. Every Gateway replica maintains its own direct Runtime
+watch; the Runtime's Sandbox UID, accepted workload UID and boot ID fence its calls, so the
+controller does not assign Gateway connection ownership.
 
 ## Launch
 
@@ -313,7 +314,7 @@ or a Session's setup is still running, so the suspend never interrupts it; a del
 This hold has `status.operatingMode: Suspended` with no stop stage. When the hold ends, the controller
 publishes `Quiescing` with the attempt before its Quiesce RPC. The Gateway admits that RPC from the
 controller through an informer snapshot that still shows the held suspend, but denies other Runner
-proxy methods there; incarnation, Pod readiness, connection epoch, and caller checks still apply.
+proxy methods there; incarnation, Pod readiness and caller checks still apply.
 While a scheduled Pod is Pending, the reason is
 `PullingImage` when its latest Event is an image pull, and the message carries that latest Event;
 when no Event can be read the message says only that the Pod is not running yet.

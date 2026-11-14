@@ -15,7 +15,7 @@ import (
 )
 
 // Config describes one call through the Runner Gateway proxy. Every call owns a fresh connection so
-// DNS can resolve a new connection holder after a handoff.
+// the stable Service can select a ready Gateway replica after a rollout.
 type Config struct {
 	TLS                     *peertls.ClientTLS
 	Target                  string
@@ -28,7 +28,7 @@ type Config struct {
 	ReplaceOutgoingMetadata bool
 }
 
-// ExpandTarget fills the Sandbox name and namespace placeholders in a control Service target.
+// ExpandTarget fills the Sandbox name and namespace placeholders in a Runner Gateway target.
 func ExpandTarget(template, sandbox, namespace string) string {
 	return strings.NewReplacer("{sandbox}", sandbox, "{namespace}", namespace).Replace(template)
 }

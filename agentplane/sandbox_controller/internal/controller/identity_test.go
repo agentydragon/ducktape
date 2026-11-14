@@ -29,37 +29,6 @@ func getBinding(t *testing.T, c client.Client) *policyapi.PolicyBinding {
 	return &binding
 }
 
-func TestSandboxOwnsAControlServiceBeforeAnyRunnerConnects(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	reconcileOnce(t, r)
-	var service corev1.Service
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxapi.ControlServiceSuffix}, &service); err != nil {
-		t.Fatal(err)
-	}
-	if !metav1.IsControlledBy(&service, getSandbox(t, c)) {
-		t.Errorf("Service owner references = %v", service.OwnerReferences)
-	}
-	if service.Spec.ClusterIP != corev1.ClusterIPNone || len(service.Spec.Selector) != 0 {
-		t.Errorf("Service spec = %v, want headless without a selector", service.Spec)
-	}
-}
-
-func TestControlServiceTheGatewayCreatedIsReconciled(t *testing.T) {
-	created := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: sandboxName + sandboxapi.ControlServiceSuffix,
-		OwnerReferences: []metav1.OwnerReference{{APIVersion: sandboxapi.GroupVersion.String(), Kind: sandboxapi.SandboxKind, Name: sandboxName, UID: "uid-sandbox"}},
-	}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"), created)
-	reconcileOnce(t, r)
-	var service corev1.Service
-	if err := c.Get(context.Background(), client.ObjectKeyFromObject(created), &service); err != nil {
-		t.Fatal(err)
-	}
-	if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Port != sandboxapi.ControlServicePort {
-		t.Errorf("Service ports = %v, want the control port", service.Spec.Ports)
-	}
-}
-
 const testIdentityUID = "00000000-0000-4000-8000-00000000000a"
 
 func testIdentity(name string, uid types.UID) *policyapi.Identity {
