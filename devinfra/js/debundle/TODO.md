@@ -409,6 +409,14 @@ for shadowing, replacement, accessors and coercing arguments. Follow
 <plans/native_receiver_identity.md> and verify a real extraction gain before
 changing gate behavior.
 
+Infer result-owned private metadata effects where source execution can prove
+fresh runtime key ownership, non-publication, stable provider/configuration
+observations and observationally idempotent private memoization. The scoped
+`initializer_external_effects: private_metadata` author promise covers these
+obligations today. Keep known heap/global conflicts and provenance; do not infer
+this contract from a WeakMap or method name. Require bundle/spec runtime E2E
+coverage and a demonstrated downstream extraction gain before adding inference.
+
 Heap-isolation admission currently rejects any source-observed content access
 without a fresh runtime ownership proof. Do not whitelist a cell merely because
 its allocation site occurs in the same initializer's invoked helpers: source

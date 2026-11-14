@@ -58,19 +58,20 @@ pub(crate) fn annotate_heap_contents(
     let mut checked_factory_arguments = BTreeMap::new();
     let mut native_read_uses = Vec::with_capacity(body.len());
     for (item, fact) in body.iter().zip(facts) {
-        let direct_root_new_site =
-            var_decl_of_item(item.as_module_item()).and_then(|declaration| {
-                let [declarator] = declaration.decls.as_slice() else {
-                    return None;
-                };
-                if !matches!(declarator.name, Pat::Ident(_)) {
-                    return None;
-                }
-                let Expr::New(construction) = declarator.init.as_deref()?.unwrap_parens() else {
-                    return None;
-                };
-                Some(construction.span.lo.0)
-            });
+        let single_initializer = var_decl_of_item(item.as_module_item()).and_then(|declaration| {
+            let [declarator] = declaration.decls.as_slice() else {
+                return None;
+            };
+            matches!(declarator.name, Pat::Ident(_))
+                .then_some(declarator.init.as_deref())
+                .flatten()
+        });
+        let direct_root_new_site = single_initializer.and_then(|initializer| {
+            let Expr::New(construction) = initializer.unwrap_parens() else {
+                return None;
+            };
+            Some(construction.span.lo.0)
+        });
         let mut collector = ArrayContentCollector {
             value_flow,
             statement_owner: fact.ordinal,
@@ -85,6 +86,8 @@ pub(crate) fn annotate_heap_contents(
             eager: HeapContentCells::default(),
             callables: &mut callables,
             deferred_allocations: BTreeSet::new(),
+            collect_one_shot_arrays: single_initializer.is_some(),
+            one_shot_allocations: BTreeSet::new(),
             bodies: Vec::new(),
             heap_native_integrity_uses: BTreeSet::new(),
             native_read_inferences: BTreeMap::new(),
@@ -102,37 +105,24 @@ pub(crate) fn annotate_heap_contents(
         if fact.kind == StatementKind::Export && fact.export_linkage != Some(ExportLinkage::Local) {
             collector.eager.opaque = true;
         }
-        fact.heap_one_shot_allocation =
-            var_decl_of_item(item.as_module_item()).and_then(|declaration| {
-                match declaration.decls.as_slice() {
-                    [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
-                        match declarator.init.as_deref()?.unwrap_parens() {
-                            Expr::Array(array) => Some(EffectCell::ArrayContents(array.span.lo.0)),
-                            Expr::New(construction) => {
-                                let cell = EffectCell::SetContents(construction.span.lo.0);
-                                // A direct eager source occurrence whose exact
-                                // construction is proved fresh. Reuse the same
-                                // one-shot producer as arrays; repeated or
-                                // deferred site exclusion remains downstream.
-                                (value_flow
-                                    .native_set_allocations()
-                                    .contains_key(&construction.span.lo.0)
-                                    && proofs
-                                        .set_iterable
-                                        .heap_constructor_dependencies(
-                                            construction.span,
-                                            fact.ordinal,
-                                        )
-                                        .is_some()
-                                    && collector.eager.allocations.contains(&cell))
-                                .then_some(cell)
-                            }
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                }
-            });
+        if let Some(Expr::New(construction)) = single_initializer.map(Expr::unwrap_parens) {
+            let cell = EffectCell::SetContents(construction.span.lo.0);
+            // A direct eager source occurrence whose exact construction is
+            // proved fresh. Repeated or deferred site exclusion remains
+            // downstream, just as for array literals.
+            if value_flow
+                .native_set_allocations()
+                .contains_key(&construction.span.lo.0)
+                && proofs
+                    .set_iterable
+                    .heap_constructor_dependencies(construction.span, fact.ordinal)
+                    .is_some()
+                && collector.eager.allocations.contains(&cell)
+            {
+                collector.one_shot_allocations.insert(cell);
+            }
+        }
+        fact.heap_one_shot_allocations = collector.one_shot_allocations;
         fact.heap_contents = collector.eager;
         fact.deferred_heap_allocations = collector.deferred_allocations;
         fact.heap_native_integrity_uses =
@@ -179,6 +169,8 @@ pub(crate) fn annotate_heap_contents(
                 eager: HeapContentCells::default(),
                 callables: &mut unused_callables,
                 deferred_allocations: BTreeSet::new(),
+                collect_one_shot_arrays: false,
+                one_shot_allocations: BTreeSet::new(),
                 bodies: Vec::new(),
                 heap_native_integrity_uses: BTreeSet::new(),
                 native_read_inferences: BTreeMap::new(),
@@ -243,6 +235,11 @@ struct ArrayContentCollector<'a> {
     /// Allocation sites in any deferred position: their allocation may run
     /// any number of times, at or after this statement.
     deferred_allocations: BTreeSet<EffectCell>,
+    /// A simple top-level initializer evaluates its eager expression syntax at
+    /// most once. Deferred bodies, object setters (including parameter defaults)
+    /// and all class syntax are excluded; the latter can contain static loops.
+    collect_one_shot_arrays: bool,
+    one_shot_allocations: BTreeSet<EffectCell>,
     /// The bodies entered around the cursor, innermost last, each with the
     /// lazy depth its code runs at: an execution-index callable key, or `None`
     /// for an object-literal accessor body, which the interpreter does not
@@ -520,7 +517,17 @@ impl Visit for ArrayContentCollector<'_> {
         // allocation cell even when all later observations use an unsupported
         // protocol and therefore cannot name a precise array read.
         self.record_allocation(EffectCell::ArrayContents(node.span.lo.0));
+        if self.collect_one_shot_arrays && self.lazy_depth == 0 {
+            self.one_shot_allocations
+                .insert(EffectCell::ArrayContents(node.span.lo.0));
+        }
         node.visit_children_with(self);
+    }
+
+    fn visit_class(&mut self, node: &Class) {
+        let enclosing = std::mem::replace(&mut self.collect_one_shot_arrays, false);
+        node.visit_children_with(self);
+        self.collect_one_shot_arrays = enclosing;
     }
 
     fn visit_member_expr(&mut self, node: &MemberExpr) {
@@ -837,7 +844,11 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_setter_prop(&mut self, node: &SetterProp) {
+        // The shared visitor visits parameter patterns outside its lazy body.
+        // A destructuring default there can allocate on every setter call.
+        let enclosing = std::mem::replace(&mut self.collect_one_shot_arrays, false);
         self.descend_body(None, |collector| lazy_visit_setter_prop(collector, node));
+        self.collect_one_shot_arrays = enclosing;
     }
 
     fn visit_if_stmt(&mut self, node: &IfStmt) {

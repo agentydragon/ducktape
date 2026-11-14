@@ -1909,7 +1909,7 @@ pub struct BindingAnnotation {
     /// variable initializer. Omission makes no assertion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_binding_effects: Option<InitializerBindingEffects>,
-    /// Author assertion that evaluation accesses no mutable external state.
+    /// Audited external-state contract for this initializer's evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_external_effects: Option<InitializerExternalEffects>,
     /// Spec-level local-effect annotation for the annotated binding.
@@ -2740,14 +2740,22 @@ pub enum InitializerBindingEffects {
 }
 
 /// External effects of one selected simple top-level variable initializer.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum InitializerExternalEffects {
     /// No mutable pre-existing heap, global-property or host/environment
     /// state is accessed. Heap writes touch only this evaluation's fresh
     /// allocations. Stable protocol metadata is an author lifetime promise;
     /// lexical dependencies and abrupt completion remain separate.
     Isolated,
+    /// Provider metadata writes use fresh result-owned identities, with no
+    /// interception, enumeration or publication except through the result.
+    /// Provider/configuration/environment observations are stable across all
+    /// admitted schedules; private capability memoization is observationally
+    /// idempotent. No application reentry or observable host/global writes.
+    /// Known heap cells and other effect domains remain independently checked.
+    PrivateMetadata,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]

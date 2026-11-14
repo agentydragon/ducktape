@@ -159,10 +159,12 @@ pub struct StatementFacts {
     /// not the binding that names it. Its calls' cells are
     /// `SynchronousCalls::heap_contents`.
     pub(crate) heap_contents: HeapContentCells,
-    /// The whole initializer of a single-declarator top-level declaration,
-    /// when it is an array literal or a proved fresh native Set construction:
-    /// this direct eager occurrence allocates at this statement.
-    pub(crate) heap_one_shot_allocation: Option<EffectCell>,
+    /// Array literals in the eager expression syntax of a simple top-level
+    /// initializer, excluding deferred code, object setters and classes, plus
+    /// proved fresh direct native Set constructions. Each occurrence allocates
+    /// at most once at this statement;
+    /// a site identifier alone does not establish this property.
+    pub(crate) heap_one_shot_allocations: BTreeSet<EffectCell>,
     /// Allocation sites in this statement's deferred positions, at any depth.
     pub(crate) deferred_heap_allocations: BTreeSet<EffectCell>,
     /// Native premises consumed by proved heap construction at this source unit.
@@ -694,14 +696,14 @@ impl ChunkFactAnalysis {
     /// completes execution nor changes source-owned operation receipts.
     pub fn apply_initializer_external_effects(
         &mut self,
-        isolated_bindings: &BTreeSet<String>,
+        contracts: &BTreeMap<String, spec::InitializerExternalEffects>,
     ) -> anyhow::Result<()> {
         let mut consumed = BTreeSet::new();
         for fact in &mut self.facts {
             let Some(binding) = fact
                 .declared
                 .iter()
-                .find(|id| isolated_bindings.contains(id.0.as_ref()))
+                .find(|id| contracts.contains_key(id.0.as_ref()))
             else {
                 continue;
             };
@@ -710,6 +712,7 @@ impl ChunkFactAnalysis {
             if fact.var_declared.contains(binding) && !fact.var_initializers.contains(binding) {
                 continue;
             }
+            let effects = contracts[binding.0.as_ref()];
             anyhow::ensure!(
                 fact.kind == StatementKind::VarDecl && fact.declared.len() == 1,
                 "initializer_external_effects for `{}` requires one simple initializer",
@@ -724,13 +727,13 @@ impl ChunkFactAnalysis {
             anyhow::ensure!(
                 !fact.heap_contents.observes_external_heap
                     && !calls.heap_contents.observes_external_heap,
-                "initializer_external_effects: isolated for `{}` contradicts an observed external heap read at source unit {}",
+                "initializer_external_effects: {effects} for `{}` cannot cover an observed external heap read at source unit {}",
                 binding.0,
                 fact.ordinal.0
             );
             anyhow::ensure!(
                 fact.global_reads.is_empty() && fact.global_writes.is_empty(),
-                "initializer_external_effects: isolated for `{}` contradicts direct global-property accesses at source unit {}: reads {:?}, writes {:?}",
+                "initializer_external_effects: {effects} for `{}` contradicts direct global-property accesses at source unit {}: reads {:?}, writes {:?}",
                 binding.0,
                 fact.ordinal.0,
                 fact.global_reads,
@@ -745,7 +748,7 @@ impl ChunkFactAnalysis {
                 .collect();
             anyhow::ensure!(
                 known_global_accesses.is_empty(),
-                "initializer_external_effects: isolated for `{}` has source-known global-property accesses at source unit {}: {known_global_accesses:?}",
+                "initializer_external_effects: {effects} for `{}` has source-known global-property accesses at source unit {}: {known_global_accesses:?}",
                 binding.0,
                 fact.ordinal.0
             );
@@ -759,21 +762,21 @@ impl ChunkFactAnalysis {
                 .cloned()
                 .collect();
             anyhow::ensure!(
-                external.is_empty(),
-                "initializer_external_effects: isolated for `{}` cannot establish fresh ownership of observed heap accesses at source unit {}: {external:?}",
+                effects != spec::InitializerExternalEffects::Isolated || external.is_empty(),
+                "initializer_external_effects: {effects} for `{}` cannot establish fresh ownership of observed heap accesses at source unit {}: {external:?}",
                 binding.0,
                 fact.ordinal.0
             );
             calls.initializer_external_effects =
                 Some(crate::reports::schema::InitializerExternalEffectsUse {
                     binding: binding.0.to_string(),
-                    effects: spec::InitializerExternalEffects::Isolated,
+                    effects,
                 });
             consumed.insert(binding.0.to_string());
         }
         anyhow::ensure!(
-            &consumed == isolated_bindings,
-            "initializer_external_effects consumption mismatch: configured {isolated_bindings:?}, applied {consumed:?}"
+            consumed.len() == contracts.len(),
+            "initializer_external_effects consumption mismatch: configured {contracts:?}, applied {consumed:?}"
         );
         Ok(())
     }

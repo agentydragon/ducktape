@@ -205,27 +205,32 @@ fn isolated_initializer_keeps_shared_var_redeclarations() {
 }
 
 #[test]
-fn isolated_initializer_rejects_global_property_reads_and_writes() {
-    for source in [
-        "globalThis.flag = 1; const value = globalThis.flag; export { value };",
-        "const value = (globalThis.flag = 2); export { value };",
-        "globalThis.flag = 1; function read() { return globalThis.flag; } const value = read(); export { value };",
+fn initializer_external_effects_rejects_global_property_reads_and_writes() {
+    for effects in [
+        InitializerExternalEffects::Isolated,
+        InitializerExternalEffects::PrivateMetadata,
     ] {
-        let mut module = logical_module("a", &[Member::new("value")]);
-        module.1.annotations.insert(
-            "value".to_owned(),
-            BindingAnnotation {
-                initializer_external_effects: Some(InitializerExternalEffects::Isolated),
-                ..Default::default()
-            },
-        );
-        expect_rejection_containing_all(
-            FixtureOpts::new(source, vec![module])
-                .with_unassigned_mode(unassigned_mode_inline())
-                .with_dataflow_aware_s_chain()
-                .with_trusted_dataflow_summaries(),
-            &["initializer_external_effects", "global-property accesses"],
-        );
+        for source in [
+            "globalThis.flag = 1; const value = globalThis.flag; export { value };",
+            "const value = (globalThis.flag = 2); export { value };",
+            "globalThis.flag = 1; function read() { return globalThis.flag; } const value = read(); export { value };",
+        ] {
+            let mut module = logical_module("a", &[Member::new("value")]);
+            module.1.annotations.insert(
+                "value".to_owned(),
+                BindingAnnotation {
+                    initializer_external_effects: Some(effects),
+                    ..Default::default()
+                },
+            );
+            expect_rejection_containing_all(
+                FixtureOpts::new(source, vec![module])
+                    .with_unassigned_mode(unassigned_mode_inline())
+                    .with_dataflow_aware_s_chain()
+                    .with_trusted_dataflow_summaries(),
+                &["initializer_external_effects", "global-property accesses"],
+            );
+        }
     }
 }
 
@@ -661,4 +666,266 @@ fn metadata_boundary_fixture<'a>(
         .with_unassigned_mode(unassigned_mode_inline())
         .with_dataflow_aware_s_chain()
         .with_trusted_dataflow_summaries()
+}
+fn private_metadata_split<'a>(
+    source: &'a str,
+    chunks: &'a [(&'a str, &'a str)],
+) -> FixtureOpts<'a> {
+    let mut module = logical_module("a", &[Member::new("first"), Member::new("second")]);
+    for binding in ["first", "second"] {
+        module.1.annotations.insert(
+            binding.to_owned(),
+            BindingAnnotation {
+                initializer_binding_effects: Some(InitializerBindingEffects::SourceOnly),
+                initializer_external_effects: Some(InitializerExternalEffects::PrivateMetadata),
+                ..Default::default()
+            },
+        );
+    }
+    FixtureOpts::new(source, vec![module])
+        .with_extra_chunks(chunks)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries()
+}
+
+fn assert_private_metadata_acceptance(
+    source: &'static str,
+    provider: &'static str,
+    expected_stdout: &str,
+) {
+    let chunks = [("static/provider", provider)];
+    let outcome = run_fixture_to_gate_outcome(private_metadata_split(source, &chunks));
+    assert!(outcome.source.status.success(), "{}", outcome.source.stderr);
+    assert!(
+        outcome.emitted.status.success(),
+        "{}",
+        outcome.emitted.stderr
+    );
+    assert_eq!(outcome.source.stdout, expected_stdout);
+    assert_eq!(outcome.emitted.stdout, outcome.source.stdout);
+    assert_eq!(outcome.source.stderr, "");
+    assert_eq!(outcome.emitted.stderr, "");
+    assert_module_exports(
+        &outcome.out_root,
+        "static/app/modules/a.js",
+        &["first", "second"],
+        &[],
+    );
+    assert!(
+        outcome.accepted,
+        "private-metadata split was rejected after source/emitted Node parity and export checks"
+    );
+}
+
+#[test]
+fn private_metadata_contract_accepts_fresh_weak_map_entries() {
+    const PROVIDER: &str = "const metadata = new WeakMap();\n\
+        export function make(label) {\n\
+          const result = {};\n\
+          metadata.set(result, label);\n\
+          return result;\n\
+        }\n\
+        export function describe(result) { return metadata.get(result); }\n";
+    assert_private_metadata_acceptance(
+        "import { make, describe } from './provider.js';\n\
+         const before = [];\n\
+         const first = make('a');\n\
+         const middle = [];\n\
+         const second = make('b');\n\
+         console.log(describe(first), describe(second), before.length, middle.length);\n\
+         export { first, second };\n",
+        PROVIDER,
+        "a b 0 0\n",
+    );
+}
+
+#[test]
+fn private_metadata_recognizes_fresh_nested_array_arguments() {
+    const PROVIDER: &str = "const metadata = new WeakMap();\n\
+        export function makeSchema(labels) {\n\
+          const schema = {};\n\
+          metadata.set(schema, labels[0]);\n\
+          return schema;\n\
+        }\n\
+        export function description(schema) { return metadata.get(schema); }\n";
+    assert_private_metadata_acceptance(
+        "import { makeSchema, description } from './provider.js';\n\
+         makeSchema(['unused']);\n\
+         const first = makeSchema(['a']);\n\
+         const second = makeSchema(['b']);\n\
+         console.log(description(first), description(second));\n\
+         export { first, second };\n",
+        PROVIDER,
+        "a b\n",
+    );
+}
+
+#[test]
+fn private_metadata_contract_accepts_stable_provider_configuration_reads() {
+    const PROVIDER: &str = "const config = { prefix: 'p' };\n\
+        const metadata = new WeakMap();\n\
+        export function make(label) {\n\
+          const result = { value: config.prefix + label };\n\
+          metadata.set(result, label);\n\
+          return result;\n\
+        }\n\
+        export function describe(result) { return metadata.get(result); }\n";
+    assert_private_metadata_acceptance(
+        "import { make, describe } from './provider.js';\n\
+         const before = [];\n\
+         const first = make('a');\n\
+         const middle = [];\n\
+         const second = make('b');\n\
+         console.log(first.value, second.value, describe(first), describe(second), before.length, middle.length);\n\
+         export { first, second };\n",
+        PROVIDER,
+        "pa pb a b 0 0\n",
+    );
+}
+
+#[test]
+fn private_metadata_contract_accepts_idempotent_private_prefix_memoization() {
+    const PROVIDER: &str = "const config = { prefix: 'p' };\n\
+        let cachedPrefix;\n\
+        const metadata = new WeakMap();\n\
+        function prefix() {\n\
+          if (cachedPrefix === undefined) cachedPrefix = config.prefix;\n\
+          return cachedPrefix;\n\
+        }\n\
+        export function make(label) {\n\
+          const result = { value: prefix() + label };\n\
+          metadata.set(result, label);\n\
+          return result;\n\
+        }\n\
+        export function describe(result) { return metadata.get(result); }\n";
+    assert_private_metadata_acceptance(
+        "import { make, describe } from './provider.js';\n\
+         const before = [];\n\
+         const first = make('a');\n\
+         const middle = [];\n\
+         const second = make('a');\n\
+         console.log(first !== second, first.value, second.value, describe(first), describe(second), before.length, middle.length);\n\
+         export { first, second };\n",
+        PROVIDER,
+        "true pa pa a a 0 0\n",
+    );
+}
+
+fn set_private_metadata(staged: &Staged, binding: &str, chunk_rename: bool) {
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&staged.spec).unwrap()).unwrap();
+    let annotation = serde_yaml::from_str(
+        "initializer_binding_effects: source_only\ninitializer_external_effects: private_metadata",
+    )
+    .unwrap();
+    if chunk_rename {
+        spec["chunk_renames"]["static/app"] = serde_yaml::from_str(&format!(
+            "members:\n  - selector:\n      binding:\n        name: {binding}\nannotations: {{}}\n"
+        ))
+        .unwrap();
+        spec["chunk_renames"]["static/app"]["annotations"][binding] = annotation;
+    } else {
+        spec["logical_modules"]["static/app"]["a"]["annotations"][binding] = annotation;
+    }
+    write_yaml_file(&staged.spec, &spec);
+}
+
+#[test]
+fn private_metadata_contract_replays_raw_analysis_for_comma_declarators_and_chunk_renames() {
+    const PROVIDER: &str = "const metadata = new WeakMap();\n\
+        export function make(label) {\n\
+          const result = {};\n\
+          metadata.set(result, label);\n\
+          return result;\n\
+        }\n\
+        export function describe(result) { return metadata.get(result); }\n";
+    const SOURCE: &str = "import { make, describe } from './provider.js';\n\
+        const first = make('a'), second = make('b');\n\
+        console.log(describe(first), describe(second));\n\
+        export { first, second };\n";
+    for chunk_rename in [false, true] {
+        let (staged, _fixture) = staged(
+            FixtureOpts::new(SOURCE, vec![logical_module("a", &[Member::new("second")])])
+                .with_extra_chunks(&[("static/provider", PROVIDER)])
+                .with_unassigned_mode(unassigned_mode_inline())
+                .with_dataflow_aware_s_chain()
+                .with_trusted_dataflow_summaries(),
+        );
+        let raw_artifact = fs::read(&staged.artifact).unwrap();
+        set_private_metadata(&staged, "second", chunk_rename);
+        let projected = staged.root().join("private-metadata.projection");
+        assert_ok(
+            &staged.project(&projected),
+            "project private-metadata annotation",
+        );
+        assert_eq!(
+            fs::read(&staged.projection).unwrap(),
+            fs::read(projected).unwrap(),
+            "external-effect annotations must not change the raw source projection"
+        );
+        assert_ok(&staged.analyze(), "reanalyze unchanged raw projection");
+        assert_eq!(
+            raw_artifact,
+            fs::read(&staged.artifact).unwrap(),
+            "private-metadata annotation must leave raw facts and receipts unchanged"
+        );
+        let direct = staged.run(&[]);
+        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+        assert_ok(&direct.result, "direct private-metadata materialization");
+        assert_ok(&loaded.result, "loaded private-metadata materialization");
+        assert_same_invocation_trees(&direct, &loaded);
+        assert_module_exports(
+            &loaded.output_root().join("app"),
+            "static/app/modules/a.js",
+            &["second"],
+            &["first"],
+        );
+        assert_node_output(&staged.root().join("snapshot/static/app.js"), "a b\n", "");
+        assert_node_output(
+            &loaded.output_root().join("app/static/app/entry.js"),
+            "a b\n",
+            "",
+        );
+    }
+}
+
+#[test]
+fn private_metadata_does_not_erase_source_known_shared_cell_ordering() {
+    const PROVIDER: &str = "const metadata = new WeakMap();\n\
+        export function makeSchema(label) {\n\
+          const schema = {};\n\
+          metadata.set(schema, label);\n\
+          return schema;\n\
+        }\n\
+        export function description(schema) { return metadata.get(schema); }\n";
+    const SOURCE: &str = "import { makeSchema, description } from './provider.js';\n\
+        const state = [0];\n\
+        const first = (state[0] = 1, makeSchema('a'));\n\
+        const observed = state[0];\n\
+        const second = (state[0] = 2, makeSchema('b'));\n\
+        console.log(observed, description(first), description(second));\n\
+        export { first, second };\n";
+    let mut schemas = logical_module("schemas", &[Member::new("first"), Member::new("second")]);
+    for binding in ["first", "second"] {
+        schemas.1.annotations.insert(
+            binding.to_owned(),
+            BindingAnnotation {
+                initializer_binding_effects: Some(InitializerBindingEffects::SourceOnly),
+                initializer_external_effects: Some(InitializerExternalEffects::PrivateMetadata),
+                ..Default::default()
+            },
+        );
+    }
+    expect_sequenced_cycle_rejection(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module("state", &[Member::new("state")]), schemas],
+        )
+        .with_extra_chunks(&[("static/provider", PROVIDER)])
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries(),
+        &["schemas", "anon_residual_sentinel"],
+    );
 }

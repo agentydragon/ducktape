@@ -436,12 +436,16 @@ analyzer. Key enumeration (`for-in`), optional calls, and tagged templates are
 also barriers when their array effects are not represented precisely. Barriers
 constrain the preceding array-content frontier and later array observations.
 
-An exact whole top-level array literal initializer is a one-shot eager
-allocation. A precise observation of only that cell does not inherit an older
-opaque frontier, because the cell did not exist when the older operation ran.
-This exception requires a unique eager allocation source and no lazy occurrence
-of the same cell identity. Repeated allocations inside callables, other
-observed cells, and the barrier's ordinary non-heap effects keep their order.
+Array literals in the eager expression syntax of a simple top-level variable
+initializer, including nested call and object arguments, allocate at most once.
+Deferred callable bodies, object setters and class syntax are excluded: setter
+parameter defaults can allocate repeatedly, and static blocks can contain
+loops. A precise observation of only such a cell does not inherit
+an older opaque frontier, because the cell did not exist when the older
+operation ran. This exception requires a unique eager allocation source and no
+lazy occurrence of the same cell identity. The cells and their observations
+remain modeled. Repeated allocations inside callables, other observed cells,
+and the barrier's ordinary non-heap effects keep their order.
 
 Purity and binding-effect completeness do not prove heap locality or argument
 nonretention. Native calls consuming array literals remain heap barriers once
@@ -1541,6 +1545,30 @@ projection, records its author provenance in `synchronous_execution`, and never
 creates an execution receipt or marks incomplete execution complete. Global and
 host behavior behind opaque calls remains an author obligation, not inferred
 absence of those effects.
+
+`initializer_external_effects: private_metadata` is a distinct audited promise
+for the same initializer shapes. Provider, method, prototype, configuration and
+environment observations have stable values in every admitted initialization
+schedule. Construction does not synchronously reenter application code through
+callbacks, coercions, proxies or accessors. Existing private metadata registries
+may receive entries only under fresh identities owned by the result graph:
+neither those identities nor their entries are published except through that
+result, and unrelated construction cannot enumerate or intercept the entries.
+Provider-private capability memoization must be observationally idempotent and
+return the same stable result in every admitted schedule. No observable host
+operation or global-property write is allowed. These are promises about the
+audited code and provider lifetime, not facts inferred from a method name or
+the presence of a WeakMap.
+
+This promise can refine unknown heap frontiers and assumed accesses, but retains
+all source-observed heap cells and allocation events. It does not reinterpret
+an allocation-site ID as fresh ownership. Direct and source-known global-property
+accesses and known external-heap observations still reject at admission; modeled
+heap conflicts remain ordered. Lexical effects, throws, completion, result shape
+and later uses remain separate, as with `isolated`. In particular, private
+metadata writes need not satisfy `initializer_purity: pure`, and this promise
+does not broaden the existing meaning of `isolated`. A false author promise
+behind opaque provider calls is not made safe by gate acceptance.
 
 ## Exact initializer call effect inputs
 
