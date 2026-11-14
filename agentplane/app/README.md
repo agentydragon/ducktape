@@ -351,7 +351,7 @@ and all are cryptographic:
   the configured issuer rather than minting this app-specific ServiceAccount token.
 
   ```sh
-  curl -H "Authorization: Bearer $TOKEN" https://agentplane-staging.allegedly.works/sandboxes
+  curl -H "Authorization: Bearer $AGENTPLANE_SYSTEM_TEST_TOKEN" https://agentplane-staging.allegedly.works/sandboxes
   ```
 
 Nothing is inferred from a request header, and nothing in front of the app authenticates for it:

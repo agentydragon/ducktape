@@ -11,6 +11,7 @@ history and browser sync, notifications, actions and egress) and direct API defi
 ```mermaid
 flowchart LR
     browser([Browser])
+    liveTests([Manual live system tests])
     edge[HTTPS Gateway]
     frontend[Static frontend]
     app[Integration API]
@@ -75,6 +76,7 @@ flowchart LR
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
 
+    liveTests -->|HTTPS: caller-supplied operator ID token| app
     browser -->|HTTPS, one origin| edge
     edge -->|HTML, assets and service worker| frontend
     edge -->|API, auth and streams| app
