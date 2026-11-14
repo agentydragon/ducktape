@@ -1,5 +1,5 @@
 """The integration app: its Deployment, RBAC,
-HTTPRoute, NetworkPolicy, and the agent and app ServiceAccounts.
+HTTPRoute, NetworkPolicy, and the app ServiceAccount.
 """
 
 from __future__ import annotations
@@ -60,7 +60,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, In
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 NAME = "app"
@@ -114,7 +113,6 @@ class App(Construct):
         self.service = service(env.namespace)
         self.oidc = oidc_secret(env.namespace)
 
-        self._add_agent_service_account()
         settings = env.app_config.model_copy()
         settings.egress_admin_tls = workload_tls.client_tls(EGRESS_PROXY_URI)
         settings.runner_gateway_tls = workload_tls.client_tls(SESSION_DISPATCHER_URI)
@@ -138,25 +136,8 @@ class App(Construct):
         self._add_http_route()
         self._add_network_policy()
 
-    def _add_agent_service_account(self) -> None:
-        # The identity an agent presents to the app's own API; no Pod runs as it, so no
-        # mounted token.
-        ServiceAccount(
-            self,
-            "serviceaccount-agent",
-            metadata=ApiObjectMetadata(name="agentplane-agent", namespace=self.env.namespace),
-            automount_token=False,
-        )
-
     def _add_rbac(self, app_service_account: ServiceAccount) -> None:
         namespace = self.env.namespace
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{namespace}-app-token-reviewer",
-            service_account_name=NAME,
-            namespace=namespace,
-        )
         role = Role(
             self,
             "role",

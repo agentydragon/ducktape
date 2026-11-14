@@ -189,7 +189,6 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 | TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                      |
 | Any Gateway replica, no epoch            | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Merged #16324, #16328, #16330, #16345; #16361, #16362, #16365 in review, merged in that order across image pins |
 | One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                |
-| Remove the app agent token               | 05:05, "Remove it now"                                         | `APP_AGENT_TOKEN_DECISION`                                          | Callers and config merged (#16347, #16372, #16381); code removal in review                                      |
 | Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                     |
 | Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                              |
 
@@ -201,7 +200,6 @@ its behavior PR is `EXPLICIT_RESUME_BUDGET_REMOVAL` in section 17.
 flowchart LR
     subgraph AUTH_TRACK[One service authentication mode]
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
-        APP_AGENT_TOKEN_DECISION[In flight: remove the app agent token]
     end
     subgraph GATEWAY_TRACK[Any Gateway replica, no epoch]
         RUNNER_CONNECTION_LEASE_CLEANUP[Section 12: cutover in review, then final Lease cleanup]
@@ -284,7 +282,7 @@ not as a claim that rollout is currently blocked.
 | Standing workload observation     | Identity subjects are in source                                                         | Confirm the staging proxy decision log names the expected Identity; no source work is implied.                                                        |
 | Environment lifecycle authority   | Explicit Identity `resume` grants landed (#16346); `bind_session` is in review (#16351) | The rule's rollout order is in [environment policy rollout](../docs/environment_policy_rollout.md); no PolicySet uses the rule yet.                   |
 | Session inbox cross-Identity send | Inbox owner and History workload reads use recorded Identity                            | Current send rule remains Sandbox/tag-targeted; target/group model and launcher-grant lifetime are unresolved under `SESSION_ACCESS_GROUPING_DESIGN`. |
-| App and sub-Session entry         | The app agent token is being removed; Identity `CreateSession` remains separate         | `APP_AGENT_TOKEN_DECISION` steps 2–3 and `SESSION_SUBAGENT_DELEGATION`; neither reopens the workload cutover.                                         |
+| Sub-Session entry                 | Identity `CreateSession` remains separate                                               | `SESSION_SUBAGENT_DELEGATION`; it does not reopen the workload cutover.                                                                               |
 | Central code-mode tools           | Delegated sampler foundation is landed                                                  | Finish the remaining tools-as-Actions slice without reopening attribution or service identity.                                                        |
 
 The environment-free central Session has its own track:
@@ -296,7 +294,6 @@ flowchart LR
         STANDING_WORKLOAD_IDENTITY[Standing workload proxy evidence]
         ENVIRONMENT_LIFECYCLE_RULES[Resume landed; bind_session in review] --> ENVIRONMENT_IDENTITY_BIND_SESSION
         SESSION_ACCESS_GROUPING_DESIGN[Review Session access grouping] --> SESSION_IDENTITY_AUTHZ[Cross-Identity inbox send target]
-        APP_AGENT_TOKEN_DECISION[Remove the app agent token]
         SESSION_SUBAGENT_DELEGATION[Identity CreateSession design]
         CENTRAL_SESSION_DELEGATED_ACTING[Remaining central code-mode tools-as-Actions]
         IDENTITY_SYSTEM_TESTS[Remaining automated identity-boundary acceptance]
@@ -3338,19 +3335,16 @@ Sandbox deployment is recorded in the [live evidence](../docs/sandbox_identity_c
 The target is one identity source with three credential forms (operator decision, 2026-11-10;
 [plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
 SVIDs over mTLS, the MCP edge's OAuth tokens, and Kubernetes' own authentication toward the Kubernetes
-API alone. The one agent path that misses it, the app's `agentplane-agent` TokenReview bearer, is
-`APP_AGENT_TOKEN_DECISION`; component TokenReview is being replaced by service SVIDs under
+API alone. The app rejects Kubernetes bearers; component TokenReview is being replaced by service SVIDs under
 `PRIVILEGED_BACKEND_AUTH_DESIGN` (operator, 2026-11-14).
 
 **Remaining work.** The standing-workload proxy decision-log observation remains open. Explicit
-environment lifecycle grants, cross-Identity inbox target semantics, the app TokenReview removal,
-Identity `CreateSession`, and the central code-mode tools-as-Actions slice remain separate items.
+environment lifecycle grants, cross-Identity inbox target semantics, Identity `CreateSession`, and the central code-mode tools-as-Actions slice remain separate items.
 Identity inventory reads already work; explicit lifecycle mutations remain behind the reviewed
 environment-rule design. The full transition rollout is not a current blocker.
 
 ```mermaid
 flowchart LR
-    APP_AGENT_TOKEN_DECISION[In flight: remove the special app agent token]
     CENTRAL_SESSION_ACTING_DESIGN[Settled design: a central Session acting as its identity]
     CENTRAL_SESSION_DELEGATED_ACTING[Remaining code-mode tools-as-Actions slice]
     CENTRAL_SESSION_ACTING_DESIGN --> CENTRAL_SESSION_DELEGATED_ACTING
@@ -3369,37 +3363,6 @@ flowchart LR
     IDENTITY_SYSTEM_TESTS[Remaining automated identity-boundary acceptance]
     SANDBOX_IDENTITY_CHANGE_CHECKPOINT[Deferred: restart after Identity change]
 ```
-
-### `APP_AGENT_TOKEN_DECISION` — the app's `agentplane-agent` token under the target
-
-**Decided (operator, 2026-11-14 05:05–05:06 UTC: "Remove it now"; "No, app should stop
-accepting the special agent token").** Remove the app's public-route `agentplane-agent` TokenReview
-path independently of the service-to-service stages. Manual live suites may be unable to log in to
-staging until the [parked issuer token provisioning](task_freezer.md#live_smoke_operator_token--provision-a-live-test-operator-token)
-is needed. Do not build that provisioning now. Operator ID-token bearers already work in the app;
-a live suite may take a caller-supplied one through `AGENTPLANE_SYSTEM_TEST_TOKEN`.
-
-Separate PRs, in this order:
-
-1. Stop minting the special token in `system_tests/driver/cluster.py` (`AGENT_SERVICE_ACCOUNT`), live
-   suites and `system_tests/x/shared_cluster/allocation.py`; update `system_tests/README.md` "Running
-   live". The k3s fixtures already use short-lived test-issued OIDC tokens (#15448).
-2. Remove `token_subjects` and the obsolete `token_audience` from `cluster/cdk8s/agentplane/app_settings.py` and
-   `system_tests/deployment/fixture_chart.py`. After both configuration omissions roll out, remove the app
-   settings fields and `caller()`'s TokenReview path in `app/internal/auth/auth.go`.
-3. Remove the `agentplane-agent` ServiceAccount and its token RBAC last, after the using images are
-   pinned. Delete this node when its last piece lands.
-
-Step 1 merged in [#16347](https://github.com/agentydragon/ducktape/pull/16347);
-step 2's subject omission merged in [#16372](https://github.com/agentydragon/ducktape/pull/16372).
-The audience omission merged in [#16381](https://github.com/agentydragon/ducktape/pull/16381).
-Code removal is in review in [#16383](https://github.com/agentydragon/ducktape/pull/16383)
-(Codex, 2026-11-14 08:56 UTC) and waits for both omissions to reach staging; ServiceAccount and token-request RBAC
-removal waits for its image pin and the completed caller audit.
-
-The public route terminates TLS at the Gateway; it cannot deliver client mTLS to the app. App OIDC
-remains the operator authentication mechanism. The service SVID decision separately retires backend
-TokenReview too; no Agentplane receiver retains a Kubernetes bearer exception.
 
 ### `CENTRAL_SESSION_ACTING_DESIGN` — a central Session acting as its identity
 
