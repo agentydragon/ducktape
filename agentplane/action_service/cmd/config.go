@@ -18,7 +18,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -93,16 +92,12 @@ func loadConfig() (config, error) {
 	if c.ActionGroups, err = catalog.New(file.ActionGroups); err != nil {
 		return config{}, fmt.Errorf("action_groups: %w", err)
 	}
-	settings := viper.New()
-	if err := settings.MergeConfigMap(file.Others); err != nil {
-		return config{}, errors.New("could not read Action Service settings file")
-	}
 	// The errors name no value: a setting can be a Secret.
 	decodeHook := mapstructure.ComposeDecodeHookFunc(
 		mapstructure.TextUnmarshallerHookFunc(),
 		mapstructure.DecodeHookFuncType(listener.AuthenticationDecodeHook),
 	)
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(decodeHook)); err != nil {
+	if err := decodeSettings(lowercaseSettingMapKeys(file.Others), &c, decodeHook); err != nil {
 		return config{}, errors.New("invalid Action Service settings")
 	}
 	c.DatabaseURL = os.Getenv(databaseURLSecretEnv)
@@ -126,6 +121,50 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 	return c, nil
+}
+
+func decodeSettings(value any, result any, hook mapstructure.DecodeHookFunc) error {
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:           result,
+		TagName:          "mapstructure",
+		WeaklyTypedInput: true,
+		ErrorUnused:      true,
+		DecodeHook:       hook,
+	})
+	if err != nil {
+		return err
+	}
+	return decoder.Decode(value)
+}
+
+// Viper normalized mapping keys before decoding them into settings, including keys of dynamic maps such as
+// mcp_servers. ActionGroups is decoded separately so its schema and executor configuration keys retain case.
+func lowercaseSettingMapKeys(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		lowered := make(map[string]any, len(typed))
+		for key, entry := range typed {
+			lowered[strings.ToLower(key)] = lowercaseSettingMapKeys(entry)
+		}
+		return lowered
+	case map[any]any:
+		lowered := make(map[any]any, len(typed))
+		for key, entry := range typed {
+			if text, ok := key.(string); ok {
+				key = strings.ToLower(text)
+			}
+			lowered[key] = lowercaseSettingMapKeys(entry)
+		}
+		return lowered
+	case []any:
+		lowered := make([]any, len(typed))
+		for index, entry := range typed {
+			lowered[index] = lowercaseSettingMapKeys(entry)
+		}
+		return lowered
+	default:
+		return value
+	}
 }
 
 // operatorsEnabled is whether any operator OIDC setting differs from its default.
@@ -272,11 +311,9 @@ func (c *config) validateOrchestration() error {
 
 // settingsFile is the settings file as gopkg.in/yaml.v3 decodes it.
 type settingsFile struct {
-	// ActionGroups is decoded apart from Viper, which folds the case of every key it reads: an input schema's keys and
-	// an MCP server configuration's keep theirs.
+	// ActionGroups keeps input schema and MCP configuration keys as written.
 	ActionGroups catalog.Settings `yaml:"action_groups"`
-	// Others are the settings Viper reads.
-	Others map[string]any `yaml:",inline"`
+	Others       map[string]any   `yaml:",inline"`
 }
 
 func readSettingsFile(path string) (settingsFile, error) {

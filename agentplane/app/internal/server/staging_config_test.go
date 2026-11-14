@@ -140,4 +140,9 @@ func TestRenderedStagingConfiguration(t *testing.T) {
 	if loaded.OIDC == nil || loaded.OIDC.Issuer != oidc["issuer"] || len(loaded.Models.Harnesses["HARNESS_CENTRAL_SAMPLER"]) == 0 {
 		t.Fatalf("rendered OIDC/model settings lost: OIDC=%+v models=%+v", loaded.OIDC, loaded.Models)
 	}
+	views := loaded.PresetViews()
+	if len(views) != 4 || views[0].Name != "public-coder" || views[1].Name != "haku" ||
+		views[2].Name != "finance-agent" || views[3].Name != "public-coder-ducktape" {
+		t.Fatalf("rendered staging preset order changed: %+v", views)
+	}
 }

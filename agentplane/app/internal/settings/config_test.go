@@ -219,6 +219,28 @@ func TestLoadConfigRetainsCaseSensitivePresetNames(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRetainsViperKeyNormalizationAndPresetOrdering(t *testing.T) {
+	contents := strings.Replace(validSettingsYAML, "listen_address:", "LISTEN_ADDRESS:", 1)
+	contents = strings.Replace(contents, "sandbox_presets:", "SANDBOX_PRESETS:", 1)
+	contents = strings.Replace(contents, "log_levels: {}", "log_levels: {HTTPServer: INFO, httpserver: DEBUG}", 1)
+	writeConfig(t, contents)
+
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.ListenAddress != "0.0.0.0:8080" {
+		t.Fatalf("case-insensitive setting key = %q", c.ListenAddress)
+	}
+	if got := c.LogLevels; len(got) != 1 || got["httpserver"] != "INFO" && got["httpserver"] != "DEBUG" {
+		t.Fatalf("Viper-normalized, case-colliding log level keys = %#v", got)
+	}
+	views := c.PresetViews()
+	if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" {
+		t.Fatalf("preset ordering or spelling changed: %+v", views)
+	}
+}
+
 func TestValidateCatalogRequiresBothHarnessesAndAValidPreset(t *testing.T) {
 	tests := []struct {
 		name   string

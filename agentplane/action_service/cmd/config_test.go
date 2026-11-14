@@ -15,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
@@ -236,6 +237,36 @@ mcp_servers:
 		URL: "https://test-actions.example/oauth/client-metadata.json", ClientName: "Test application",
 	}) {
 		t.Errorf("MCP settings: %+v, %+v", c.MCPServers, c.MCPClientMetadata)
+	}
+}
+
+func TestOrdinarySettingsRetainViperCaseHandlingInsideListsAndMaps(t *testing.T) {
+	const file = `RPC:
+  LISTEN_ADDRESS: "0.0.0.0:8080"
+  AUTH:
+    - MODE: kubernetes_bearer
+      AUDIENCES: [test-actions]
+POLICY_NAMESPACE: test-agentplane
+CALLER_SERVICE_ACCOUNT_NAMESPACES: [test-agentplane]
+MCP_SERVERS:
+  TEST_REGISTERED:
+    SERVER_ID: test_registered
+    SERVER_URL: https://test-mcp.example/mcp
+    CLIENT_ID: test-client
+    REDIRECT_URI: https://test-app.example/mcp-linkage/callback
+`
+	c, err := loadTestConfig(t, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RPC.ListenAddress != "0.0.0.0:8080" || c.PolicyNamespace != "test-agentplane" {
+		t.Fatalf("case-insensitive settings keys were lost: %+v", c)
+	}
+	if len(c.RPC.Auth) != 1 || c.RPC.Auth[0].Mode() != listener.KubernetesBearer {
+		t.Fatalf("case-insensitive authentication keys inside a list were lost: %+v", c.RPC.Auth)
+	}
+	if len(c.MCPServers) != 1 || c.MCPServers["test_registered"].ServerID != "test_registered" {
+		t.Fatalf("Viper-normalized MCP server map keys were lost: %+v", c.MCPServers)
 	}
 }
 

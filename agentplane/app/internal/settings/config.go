@@ -17,7 +17,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -217,11 +216,6 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("could not read app settings file: %w", err)
 	}
-	settings := viper.New()
-	settings.SetConfigType("yaml")
-	if err := settings.ReadConfig(bytes.NewReader(contents)); err != nil {
-		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
-	}
 	decoder := yaml.NewDecoder(bytes.NewReader(contents))
 	var rawSettings map[string]any
 	if err := decoder.Decode(&rawSettings); err != nil {
@@ -234,16 +228,17 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
 	}
 	sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
-	if err := settings.UnmarshalExact(&c, viper.DecodeHook(mapstructure.TextUnmarshallerHookFunc())); err != nil {
+	if err := decodeSettings(lowercaseSettingMapKeys(rawSettings), &c); err != nil {
 		return Config{}, fmt.Errorf("invalid app settings: %w", err)
 	}
 	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {
 		c.LogLevels = map[string]string{}
 	}
-	for _, key := range []string{"models.models", "models.harnesses"} {
-		if !settings.IsSet(key) {
-			return Config{}, fmt.Errorf("%s is required", key)
+	models, _ := rawSection(rawSettings, "models")
+	for _, key := range []string{"models", "harnesses"} {
+		if !rawHasKey(models, key) {
+			return Config{}, fmt.Errorf("models.%s is required", key)
 		}
 	}
 	if err := c.decodeCaseSensitiveSettings(rawSettings); err != nil {
@@ -261,6 +256,50 @@ func Load() (Config, error) {
 	return c, nil
 }
 
+func decodeSettings(value any, result any) error {
+	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		Result:           result,
+		TagName:          "mapstructure",
+		WeaklyTypedInput: true,
+		ErrorUnused:      true,
+		DecodeHook:       mapstructure.TextUnmarshallerHookFunc(),
+	})
+	if err != nil {
+		return err
+	}
+	return decoder.Decode(value)
+}
+
+// Viper normalized mapping keys before mapstructure decoded the file. The app's preset and model maps are decoded
+// from the original YAML below, where their keys are identifiers rather than setting names.
+func lowercaseSettingMapKeys(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		lowered := make(map[string]any, len(typed))
+		for key, entry := range typed {
+			lowered[strings.ToLower(key)] = lowercaseSettingMapKeys(entry)
+		}
+		return lowered
+	case map[any]any:
+		lowered := make(map[any]any, len(typed))
+		for key, entry := range typed {
+			if text, ok := key.(string); ok {
+				key = strings.ToLower(text)
+			}
+			lowered[key] = lowercaseSettingMapKeys(entry)
+		}
+		return lowered
+	case []any:
+		lowered := make([]any, len(typed))
+		for index, entry := range typed {
+			lowered[index] = lowercaseSettingMapKeys(entry)
+		}
+		return lowered
+	default:
+		return value
+	}
+}
+
 func yamlMappingKeys(contents []byte, section string) []string {
 	var document yaml.Node
 	if err := yaml.Unmarshal(contents, &document); err != nil || len(document.Content) == 0 {
@@ -269,7 +308,7 @@ func yamlMappingKeys(contents []byte, section string) []string {
 	root := document.Content[0]
 	if section != "" {
 		for index := 0; index+1 < len(root.Content); index += 2 {
-			if root.Content[index].Value == section {
+			if strings.EqualFold(root.Content[index].Value, section) {
 				root = root.Content[index+1]
 				break
 			}
@@ -292,8 +331,7 @@ func (c *Config) decodeCaseSensitiveSettings(raw map[string]any) error {
 		}
 	}
 	if presets, ok := rawSection(raw, "thread_presets"); ok {
-		// Viper case-folds arbitrary map keys while decoding. Replace its normalized copy with the
-		// original YAML map so preset names retain their exact spelling.
+		// Decode preset names from the original YAML map so they retain their exact spelling.
 		c.ThreadPresets = make(map[string]ThreadPreset)
 		if err := decodeMapSection(presets, &c.ThreadPresets); err != nil {
 			return fmt.Errorf("invalid thread_presets settings: %w", err)
@@ -358,9 +396,9 @@ func rawMap(value any) map[string]any {
 }
 
 func rawHasKey(value any, key string) bool {
-	for name := range rawMap(value) {
+	for name, entry := range rawMap(value) {
 		if strings.EqualFold(name, key) {
-			return true
+			return entry != nil
 		}
 	}
 	return false
