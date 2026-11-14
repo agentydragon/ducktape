@@ -56,25 +56,23 @@ def _svid(server_uri: str) -> ClientTLS:
     )
 
 
-def test_service_svids_replace_static_service_tokens_without_changing_legacy_defaults() -> None:
+def test_service_svids_clear_only_omitted_legacy_token_defaults() -> None:
     legacy = _settings()
     assert legacy.session_dispatcher_token_file == Path("/var/run/secrets/agentplane-session-dispatcher/token")
 
     migrated = _settings(
         session_dispatcher_tls=_svid(SESSION_DISPATCHER_URI),
-        session_dispatcher_token_file=None,
         runner_gateway_tls=_svid(SESSION_DISPATCHER_URI),
-        runner_gateway_token_file=None,
         history_service_tls=_svid(HISTORY_SERVICE_URI),
-        history_service_token_file=None,
         policy_service_tls=_svid(POLICY_CONTROLLER_URI),
-        policy_service_token_file=None,
         egress_admin_tls=_svid(EGRESS_PROXY_URI),
-        egress_admin_token_file=None,
         notifications_tls=_svid(NOTIFICATIONS_URI),
-        notifications_token_file=None,
     )
     assert migrated.session_dispatcher_token_file is None
+    assert migrated.runner_gateway_token_file is None
+    assert migrated.history_service_token_file is None
+    assert migrated.policy_service_token_file is None
+    assert migrated.egress_admin_token_file is None
     assert migrated.notifications_token_file is None
 
 
@@ -82,7 +80,10 @@ def test_service_svids_replace_static_service_tokens_without_changing_legacy_def
     ("updates", "message"),
     [
         (
-            {"session_dispatcher_tls": _svid(SESSION_DISPATCHER_URI)},
+            {
+                "session_dispatcher_tls": _svid(SESSION_DISPATCHER_URI),
+                "session_dispatcher_token_file": Path("/var/run/secrets/agentplane-session-dispatcher/token"),
+            },
             "service SVID and bearer token authentication cannot be combined",
         ),
         (
