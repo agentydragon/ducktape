@@ -55,11 +55,8 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 )
 
-// Direct dependencies for Agentplane service configuration
-require (
-	github.com/go-viper/mapstructure/v2 v2.5.0
-	github.com/spf13/viper v1.21.0
-)
+// Direct dependency for Agentplane service configuration decoding.
+require github.com/go-viper/mapstructure/v2 v2.5.0
 
 // Direct dependencies for the Agentplane BFF HTTP API.
 require github.com/danielgtaylor/huma/v2 v2.39.1
