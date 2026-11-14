@@ -819,3 +819,68 @@ fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
         &["eager_use"],
     );
 }
+
+#[test]
+fn overlapping_escape_paths_preserve_heap_mutation_order() {
+    const SOURCE: &str = r#"
+import { mutate } from './peer.js';
+const values = [];
+values.push('before');
+const left = { items: values };
+const right = { items: values };
+const escaped = globalThis.chooseLeft ? left : right;
+mutate(escaped);
+values.push('after');
+console.log(values.join(','));
+"#;
+    const PEER: [(&str, &str); 1] = [(
+        "static/peer",
+        "export function mutate(box) { box.items.push('during'); }\n",
+    )];
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module_with_anon(
+                "state",
+                &[
+                    Member::new("values"),
+                    Member::new("left"),
+                    Member::new("right"),
+                    Member::new("escaped"),
+                ],
+                &[
+                    "values.push('before');",
+                    "mutate(escaped);",
+                    "values.push('after');",
+                ],
+            )],
+        )
+        .with_extra_chunks(&PEER)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "before,during,after\n");
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "values",
+                    &[Member::new("values")],
+                    &["values.push('before');", "values.push('after');"],
+                ),
+                logical_module_with_anon(
+                    "escape",
+                    &[
+                        Member::new("left"),
+                        Member::new("right"),
+                        Member::new("escaped"),
+                    ],
+                    &["mutate(escaped);"],
+                ),
+            ],
+        )
+        .with_extra_chunks(&PEER)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["values", "escape"],
+    );
+}

@@ -685,10 +685,22 @@ impl CandidateObjectIndex<'_> {
         }
     }
 
+    /// Visit the union of reachable requested roots, once per root. Expanding
+    /// each origin separately repeats every shared descendant at the sink.
     pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
+        let mut reached = vec![0; self.mask.len()];
         for value in values {
             if let Some(bits) = self.flow.candidate_reachability.get(&value) {
-                self.visit_bits(bits, &mut visit);
+                for (reached, &(word_index, mask)) in reached.iter_mut().zip(&self.mask) {
+                    *reached |= bits.get(word_index).copied().unwrap_or_default() & mask;
+                }
+            }
+        }
+        for (&(word_index, _), mut remaining) in self.mask.iter().zip(reached) {
+            while remaining != 0 {
+                let bit = remaining.trailing_zeros() as usize;
+                visit(self.flow.candidate_objects[word_index * 64 + bit]);
+                remaining &= remaining - 1;
             }
         }
     }
