@@ -533,6 +533,7 @@ py_library(
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
+        ":central_sampler",
         ":database",
         ":environment",
         ":notifications",
