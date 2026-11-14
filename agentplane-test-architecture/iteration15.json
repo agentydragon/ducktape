@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "observed_at_utc": "2026-11-14T11:21:15Z",
+  "scope": "Reviewed supplemental synthetic changed-label graph screen and focused selector/contract probes. Existing required gate, fleet populations, windows, denominators, and rates are unchanged.",
+  "decision": {
+    "status": "not qualified; retain current required gate",
+    "goal": "At least 30% lower median complete required-feedback time including reruns on representative changed-label graphs, with no worse p90 or flake rate, preserved important behavior/security/platform contracts, and documented resource costs.",
+    "reason": "The synthetic one-file journal screen is 29.3% lower at the two-run midpoint, but is not a routine PR or complete-gate comparison. Four target substitutions lack semantic-coverage proof; the literal journal-only selector matched 0 of 30 historical changesets; run cache state and focused-pool load differed.",
+    "next_evidence": "Prioritize an owner-specific graph for common real backend changes, with a contract-to-witness map for important behavior, security, and platform guarantees. Then compare repeated matched end-to-end required-gate runs, including reruns, tails, flake rate, and resource costs. Treat isolated v2 KVM safety and cleanup as secondary evidence; no KVM adoption without ownership and cleanup proof."
+  },
+  "source": {
+    "repository": "https://github.com/agentydragon/ducktape",
+    "architecture_pr": 16102,
+    "head": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+    "base_at_observation": "8b0021e740dea43cfc0a660a7beaaa4a8a2b078c",
+    "required_checks": "All three required checks succeeded at the observed head; the required gate is unchanged.",
+    "screen_query_source": "4bf33d0e350cfe9315691caece45e1880a00f912",
+    "screen_execution_source": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+    "source_note": "The selector query and four arm executions are recorded at different source revisions. This screen is a synthetic journal-only one-file case, not the actual PR changed-label graph.",
+    "integrated_devel_base": "bb7c716f5a97fe4946acb10f0dafa3d69ff76d76"
+  },
+  "synthetic_graph_screen": {
+    "design": "A/B/B/A; baseline A and candidate B; two observations per arm",
+    "arms": [
+      {
+        "arm": "A1",
+        "kind": "baseline",
+        "invocation": "eb687805-7873-47bc-9d82-73a8a0be545a",
+        "native_elapsed_seconds": 389.333,
+        "labels": 40,
+        "physical_actions": 46,
+        "junit_cases": 248,
+        "reported_cpu_seconds": 8093.357,
+        "cpu_complete": false,
+        "estimated_cu_minutes": 274.794,
+        "estimated_peak_cu": 133,
+        "result": "SUCCESS"
+      },
+      {
+        "arm": "B1",
+        "kind": "candidate",
+        "invocation": "f90bbec4-5052-4158-9b66-93292513df7a",
+        "native_elapsed_seconds": 317.275,
+        "labels": 40,
+        "physical_actions": 46,
+        "junit_cases": 224,
+        "reported_cpu_seconds": 5800.823,
+        "cpu_complete": true,
+        "estimated_cu_minutes": 196.611,
+        "estimated_peak_cu": 126,
+        "result": "SUCCESS"
+      },
+      {
+        "arm": "B2",
+        "kind": "candidate",
+        "invocation": "09de2c2b-5d4e-42f7-80c7-f6f42e7ad7a0",
+        "native_elapsed_seconds": 266.551,
+        "labels": 40,
+        "physical_actions": 46,
+        "junit_cases": 224,
+        "reported_cpu_seconds": 5417.726,
+        "cpu_complete": true,
+        "estimated_cu_minutes": 182.427,
+        "estimated_peak_cu": 123,
+        "result": "SUCCESS"
+      },
+      {
+        "arm": "A2",
+        "kind": "baseline",
+        "invocation": "9415c9cc-3086-4e6a-b4ba-8a46093dc1ce",
+        "native_elapsed_seconds": 436.418,
+        "labels": 40,
+        "physical_actions": 46,
+        "junit_cases": 248,
+        "reported_cpu_seconds": 7371.102,
+        "cpu_complete": false,
+        "estimated_cu_minutes": 259.223,
+        "estimated_peak_cu": 130,
+        "result": "SUCCESS"
+      }
+    ],
+    "midpoint_comparison": {
+      "baseline_seconds": 412.876,
+      "candidate_seconds": 291.913,
+      "candidate_lower_percent": 29.3,
+      "observations_per_arm": 2,
+      "interpretation": "Two-run midpoint for this selected synthetic graph only; not p90, complete PR feedback, or a flake qualification."
+    },
+    "test_identity": {
+      "shared_targets": 36,
+      "shared_with_matching_testcase_identity": 33,
+      "shared_go_targets_without_testcase_rows": 3,
+      "baseline_only_targets": [
+        "//agentplane/system_tests/suites/mcp:test_services",
+        "//agentplane/system_tests/suites:test_firecracker",
+        "//agentplane/system_tests/suites:test_pod",
+        "//agentplane/system_tests/suites:test_vm"
+      ],
+      "candidate_only_targets": [
+        "//agentplane/x/direct_vm_boot:test_runtime_codex_session",
+        "//agentplane/x/direct_vm_boot:test_runtime_session",
+        "//agentplane/x/native_contracts:test_admission_reply_loss",
+        "//agentplane/x/native_contracts:test_recovery"
+      ],
+      "substitution_status": "The four target substitutions do not yet have semantic-coverage proof."
+    },
+    "resource_and_confounders": {
+      "reported_candidate_to_baseline_cpu_ratio": 0.725,
+      "reported_candidate_to_baseline_estimated_cu_minutes_ratio": 0.71,
+      "candidate_to_baseline_estimated_peak_cu_ratio": 0.947,
+      "cpu_limit": "One baseline action in each run has unknown CPU; the summed ratio is incomplete.",
+      "capacity_limit": "CU-minutes and peak CU are estimates from action properties, not observed worker capacity or billing.",
+      "disk_limit": "Disk use is unknown for all 46 actions per arm.",
+      "cache_imbalance": "A1 had 47 additional build actions; B1, B2, and A2 had none. Full cache accounting is unavailable.",
+      "pool_load": "A focused render and another worker overlapped B2; shared-pool effect was not measured."
+    },
+    "outcome_counts": {
+      "all_arms_successful": true,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "retries": 0
+    }
+  },
+  "applicability": {
+    "policy": "Current shadow policy uses the literal journal-only path set.",
+    "historical_changesets_matched": 0,
+    "historical_changesets_audited": 30,
+    "path_remapping": "No old path is remapped to the new journal paths.",
+    "interpretation": "The screen does not demonstrate routine changed-label applicability."
+  },
+  "focused_followups": {
+    "corrected_manual_invocation": {
+      "invocation": "eaa3eca2-6381-4aeb-b5c5-913ee4088d48",
+      "source": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "native_elapsed_seconds": 271.842,
+      "result": "SUCCESS",
+      "notes": "The earlier 6e38fc22-06bf-4cb5-b6a1-241daf7e76dd attempt selected no TestRunner actions and produced no JUnit cases; it is not a test pass.",
+      "overlay": true,
+      "overlay_patch_sha256": [
+        "bab07ea39c9eb6b53dafc074430c2c793aff285505b0c930951b7ff79688540d",
+        "6490f80614a3b52be7e33a771d295016b70b2015d9829974db699364a4f1fe9a"
+      ],
+      "source_provenance": "Source commit 38f6c8e plus the two hashed working-tree patches; not an unmodified commit-only execution."
+    },
+    "dispatcher_sharding": {
+      "decision": "Do not promote.",
+      "identity_union": "All three required testcase identities matched, one per independent shard/session.",
+      "candidate_slowest_shard_seconds": 233.27,
+      "required_baseline_action_range_seconds": [217.979, 246.825],
+      "candidate_total_cpu_seconds": 799.291,
+      "required_baseline_cpu_seconds": [301.439, 388.572],
+      "candidate_estimated_cu_minutes": 30.479,
+      "required_baseline_estimated_cu_minutes": [14.579, 16.498],
+      "interpretation": "The candidate does not show a useful complete-action improvement and uses substantially more aggregate CPU/CU-minutes. JUnit time may include fixtures, so it is not treated as pure testcase execution time."
+    },
+    "gateway_short_budget": {
+      "decision": "Do not promote.",
+      "candidate_budget_seconds": 45,
+      "candidate_passed_cases": 1,
+      "candidate_action_seconds": 228.828,
+      "required_default_budget_seconds": 120,
+      "required_action_seconds": [243.449, 271.551],
+      "interpretation": "The shorter timeout changes the behavior contract, and a single differently configured run is not a matched benefit comparison."
+    }
+  },
+  "contract_and_selector_probes": {
+    "native_cutoff_contract": {
+      "invocation": "9c62fa6a-fa6b-4e24-b497-e06189e2842f",
+      "source_head": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "overlay": true,
+      "result": "The real cutoff/successor contract passed in 40.7 seconds.",
+      "companion_build": "Follow-on explicit build passed changed native fixture libraries and conftest, K3s helpers, and cleanup target at RBE invocation 0e774569; cleanup was not executed. An earlier helper build stopped on Ruff import ordering before it was fixed. Full required checks for a commit containing this overlay are pending.",
+      "limit": "Focused overlay evidence only; not full-gate qualification."
+    },
+    "same_package_owner_selector": {
+      "source": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "selector_sha256": "03bf5babb1179a5276317d7694760f2ceeaf904f79f116940ec6b6572592ab72",
+      "result": "All three cases passed with unchanged shadow submissions: journal code plus its test companion is eligible; test-only changes remain ineligible; journal plus proto remains ineligible.",
+      "scope": "Direct same-package owner proof only; no historical remapping and no gate change.",
+      "outer_invocation": "61eb904a-3da2-4671-9dd9-a1abb44d7a64",
+      "invocation_url": "https://app.buildbuddy.io/invocation/61eb904a-3da2-4671-9dd9-a1abb44d7a64"
+    },
+    "prepared_kvm_candidate": {
+      "target": "//agentplane/system_tests/suites:test_firecracker_prepared_baseline_candidate",
+      "source_head": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "overlay": true,
+      "exposures": "Cold and warm/reuse runs of the same manual candidate target, same runner identity; not routine-required baseline versus candidate.",
+      "invocations": [
+        "8aacd3aa-a1a4-42f6-a76e-f3f183ee17e9",
+        "27d6c004-c525-42a1-9698-06dd5b762d88"
+      ],
+      "baseline_cold": {
+        "native_seconds": 302.222,
+        "action_seconds": 259.653,
+        "setup_seconds": 48.375
+      },
+      "candidate_warm": {
+        "native_seconds": 275.648,
+        "action_seconds": 233.914,
+        "setup_seconds": 21.772
+      },
+      "observed_change_percent": {
+        "native_lower": 8.79,
+        "action_lower": 9.91
+      },
+      "cases_passed": 2,
+      "ownership_blocker": "The v1 candidate shares data across containers. Automatic approval review rejected its proposed cleanup because that cleanup mutates the shared CRI store; no cleanup action was submitted or executed, and owner approval remains pending.",
+      "next_state": "The isolated v2 candidate has not been measured. Baseline shutdown and safe reuse remain unverified. A focused helper/build invocation passed explicit changed-library and baseline/runtime/cleanup-target build checks, but did not execute cleanup; final exact-source CI is pending.",
+      "interpretation": "Observed cold-to-warm timing only. These runs do not establish safe reuse or justify adoption; ownership and cleanup review is pending."
+    }
+  },
+  "decision_limits": [
+    "This is a synthetic one-file journal graph, not a routine PR, whole-three-required-context, p90, or flake qualification.",
+    "Three shared Go targets have no testcase identities in JUnit, and four target substitutions lack semantic-coverage proof.",
+    "The two baseline CPU totals each omit one action; estimated CU and peak are not observed capacity or billing; disk use is unknown.",
+    "A1 cache state differs from the other arms, and B2 shares focused-pool time with unrelated work.",
+    "The literal journal-only policy matched 0/30 historical changesets; paths are not remapped.",
+    "The required gate remains unchanged."
+  ],
+  "sources": [
+    {
+      "kind": "reviewed screen",
+      "description": "Root-reviewed graph-screen decision and manually curated four-arm metrics; private raw captures are not published.",
+      "execution_source": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "query_source": "4bf33d0e350cfe9315691caece45e1880a00f912",
+      "invocations": [
+        "https://app.buildbuddy.io/invocation/eb687805-7873-47bc-9d82-73a8a0be545a",
+        "https://app.buildbuddy.io/invocation/f90bbec4-5052-4158-9b66-93292513df7a",
+        "https://app.buildbuddy.io/invocation/09de2c2b-5d4e-42f7-80c7-f6f42e7ad7a0",
+        "https://app.buildbuddy.io/invocation/9415c9cc-3086-4e6a-b4ba-8a46093dc1ce"
+      ]
+    },
+    {
+      "kind": "manual audit",
+      "description": "Corrected Dispatcher and Gateway manual candidate audit; source commit 38f6c8e plus two working-tree patches; rejected both promotions.",
+      "invocation": "https://app.buildbuddy.io/invocation/eaa3eca2-6381-4aeb-b5c5-913ee4088d48",
+      "source_commit": "https://github.com/agentydragon/ducktape/commit/38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "overlay": true,
+      "overlay_patch_sha256": [
+        "bab07ea39c9eb6b53dafc074430c2c793aff285505b0c930951b7ff79688540d",
+        "6490f80614a3b52be7e33a771d295016b70b2015d9829974db699364a4f1fe9a"
+      ]
+    },
+    {
+      "kind": "source validation",
+      "description": "Final same-package owner-selector proof passed all three shadow cases with unchanged submissions; source-38f6c8e overlay, selector SHA-256 03bf5babb1179a5276317d7694760f2ceeaf904f79f116940ec6b6572592ab72; required checks remain unchanged.",
+      "pull_request": "https://github.com/agentydragon/ducktape/pull/16102",
+      "source_commit": "https://github.com/agentydragon/ducktape/commit/38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "invocation": "https://app.buildbuddy.io/invocation/61eb904a-3da2-4671-9dd9-a1abb44d7a64"
+    },
+    {
+      "kind": "focused native contract",
+      "description": "Real cutoff/successor contract passed on source commit 38f6c8e plus a working-tree overlay; follow-on explicit helper/fixture build passed, cleanup not executed, and full required checks for a commit containing the overlay are pending.",
+      "invocation": "https://app.buildbuddy.io/invocation/9c62fa6a-fa6b-4e24-b497-e06189e2842f",
+      "source_commit": "https://github.com/agentydragon/ducktape/commit/38f6c8e723995efb5c8372c5f81bbd30d9e0621f"
+    },
+    {
+      "kind": "prepared-KVM cold/warm probe",
+      "description": "Two passing cases on the same manual candidate target and runner identity; lower observed cold-to-warm timing, but v1 has a shared-data/cross-container ownership blocker and v2 isolation/cleanup remains under review.",
+      "target": "//agentplane/system_tests/suites:test_firecracker_prepared_baseline_candidate",
+      "invocations": [
+        "https://app.buildbuddy.io/invocation/8aacd3aa-a1a4-42f6-a76e-f3f183ee17e9",
+        "https://app.buildbuddy.io/invocation/27d6c004-c525-42a1-9698-06dd5b762d88"
+      ],
+      "source_commit": "https://github.com/agentydragon/ducktape/commit/38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "overlay": true
+    },
+    {
+      "kind": "focused helper and candidate build",
+      "description": "Explicit build of changed native fixture libraries and conftest, K3s helpers, and cleanup target passed; cleanup was not executed. Separate from full required checks for a commit containing the overlay.",
+      "invocation": "https://app.buildbuddy.io/invocation/0e774569-e585-4937-adc7-9107217eea9c",
+      "source_commit": "https://github.com/agentydragon/ducktape/commit/38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
+      "overlay": true
+    }
+  ]
+}

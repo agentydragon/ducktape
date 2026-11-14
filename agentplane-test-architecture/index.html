@@ -840,21 +840,33 @@
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
-              >Iteration 14 · shared-guest screen complete<//
+              >Iteration 15 · journal graph screen reviewed<//
             ><${Badge} color="orange">devel merge gate unchanged<//
-            ><${Badge} color="green">real Firecracker validation passed<//
+            ><${Badge} color="red">no selector promotion<//
             ><${Badge} color="gray">Earlier evidence retained as history<//><//
           >
-          <${Text} size="sm">
-            Iteration 14 completes the shared-guest A/B/B/A screen and
-            identifies a bounded seal retry candidate from the reproduced
-            Gateway quiesce race. Source
-            458e22a74523d49e80034eb3475f6c9f79c370f0 passed focused tests and
-            the unchanged real Firecracker validation
-            772f9305-8a5d-4c60-9f01-f52580d26799. The controlled retry succeeded
-            after a transient rejection; its long queue means this is not a
-            whole-PR saving claim. Existing merge gates and fleet populations
-            remain unchanged.
+          ${p("Iteration 15: a synthetic one-file journal graph had a 29.3% lower midpoint, not complete PR feedback. Four target substitutions lack coverage proof; literal selection matched 0/30 reviewed changesets. Keep the gate. Qualification still requires at least 30% lower median complete required feedback including reruns, no worse p90 or flake rate, preserved behavior/security/platform contracts, and documented costs.")}
+          <${SimpleGrid} cols=${{ base: 1, sm: 2, lg: 4 }} spacing="sm" my="md">
+            <${Node}
+              label="29.3% lower · n=2/arm"
+              color="blue"
+              detail="412.876s baseline vs 291.913s candidate midpoint on the selected synthetic graph; below the 30% goal and not p90 or whole-PR feedback."
+            />
+            <${Node}
+              label="33 / 36 identities agree"
+              color="orange"
+              detail="Three shared Go targets have no testcase rows; four baseline/candidate target substitutions still need a semantic witness map."
+            />
+            <${Node}
+              label="0 / 30 historical changesets"
+              color="red"
+              detail="The literal journal-only shadow selector did not match the reviewed historical frame. Old paths are not remapped."
+            />
+            <${Node}
+              label="Gate unchanged"
+              color="gray"
+              detail="Main PR #16102 has three green required checks at observed head 38f6c8e; the graph screen does not qualify routine adoption, p90, or flake behavior."
+            />
           <//>
           <${Text} size="sm" c="dimmed"
             >Historical iteration 3: ${iteration3TopSummary}<//
@@ -864,7 +876,8 @@
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
-              ["iteration14", "Iteration 14 current evidence"],
+              ["iteration15", "Iteration 15 current evidence"],
+              ["iteration14", "Historical iteration 14"],
               ["iteration13", "Historical iteration 13"],
               ["iteration12", "Historical iteration 12"],
               ["iteration11", "Iteration 11 historical evidence"],
@@ -888,19 +901,108 @@
                 html`<${Anchor} key=${id} href=${`#${id}`}>${label}<//>`,
             )}
           <//>
-          <${Alert} color="yellow" title="Current architecture evidence">
-            The shared-guest screen has four successful runs and no failures,
-            errors, skips or retries, but queue and image-import exposure differ
-            between arms. The Gateway seal retry candidate has old-behavior
-            negative controls, 335 passing focused JUnit records, and the
-            unchanged real Firecracker validation. In the real validation the
-            same-UID second request forwarded after 1.008149s. This proves
-            recovery in that reproduction; it makes no whole-PR saving, gate
-            promotion or fleet-rate claim.
+          <${Alert} color="yellow" title="Current architecture decision">
+            The measured reduction is bounded to a synthetic changed-label
+            screen with two runs per arm, unequal cache state, shared-pool load,
+            incomplete baseline CPU accounting, and unresolved target
+            substitutions. It does not establish a whole-PR saving or broad
+            selector applicability. Keep today’s required gate and contract
+            coverage in place.
+          <//>
+          <${Section}
+            id="iteration15"
+            title="Iteration 15: journal graph screen and applicability"
+          >
+            ${p("The A/B/B/A screen ran 40 labels and 46 physical actions in each arm. All four invocations succeeded with zero failures, errors, skips, or retries. The baseline two-run midpoint is 412.876s; the candidate midpoint is 291.913s, 29.3% lower. The sample is two runs per arm and below the 30% median goal. It is a synthetic one-file journal graph, not routine PR feedback, the full three-required-context gate, p90, or a flake qualification.")}
+            <${Rows}
+              headers=${["Arm", "BuildBuddy invocation", "Native", "Labels / actions", "JUnit cases", "CPU / CU-min", "Peak CU"]}
+              rows=${[
+                [
+                  "A1 baseline",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/eb687805-7873-47bc-9d82-73a8a0be545a"
+                    >eb687805<//
+                  >`,
+                  "389.333s",
+                  "40 / 46",
+                  "248",
+                  "8093.357s* / 274.794",
+                  "133",
+                ],
+                [
+                  "B1 candidate",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/f90bbec4-5052-4158-9b66-93292513df7a"
+                    >f90bbec4<//
+                  >`,
+                  "317.275s",
+                  "40 / 46",
+                  "224",
+                  "5800.823s / 196.611",
+                  "126",
+                ],
+                [
+                  "B2 candidate",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/09de2c2b-5d4e-42f7-80c7-f6f42e7ad7a0"
+                    >09de2c2b<//
+                  >`,
+                  "266.551s",
+                  "40 / 46",
+                  "224",
+                  "5417.726s / 182.427",
+                  "123",
+                ],
+                [
+                  "A2 baseline",
+                  html`<${Anchor}
+                    href="https://app.buildbuddy.io/invocation/9415c9cc-3086-4e6a-b4ba-8a46093dc1ce"
+                    >9415c9cc<//
+                  >`,
+                  "436.418s",
+                  "40 / 46",
+                  "248",
+                  "7371.102s* / 259.223",
+                  "130",
+                ],
+              ]}
+              minWidth=${980}
+            />
+            ${p("*One action in each baseline arm has unknown CPU. The reported candidate/baseline CPU-sum ratio is 0.725 with incomplete baseline totals; estimated CU-min ratio is 0.710 and estimated peak-CU ratio is 0.947. CU and peak are estimates from action properties, not worker capacity or billing. Disk use is unknown for all 46 actions per arm. A1 had 47 additional build actions; the other arms had none. A focused render and another worker overlapped B2, with shared-pool effect unmeasured.")}
+            <${Title} order=${3}
+              >Coverage and applicability remain the blockers<//
+            >
+            ${p("Of 36 targets shared by baseline and candidate, 33 have matching testcase identity sets. Three shared Go targets emit XML without testcase rows, so their identities remain unknown. Four baseline-only targets are replaced by four candidate-only targets; no semantic-coverage proof yet shows that the new targets retain the displaced deployment witnesses.")}
+            ${p(html`Baseline-only: ${code("//agentplane/system_tests/suites/mcp:test_services · //agentplane/system_tests/suites:test_firecracker · //agentplane/system_tests/suites:test_pod · //agentplane/system_tests/suites:test_vm")}. Candidate-only: ${code("//agentplane/x/direct_vm_boot:test_runtime_codex_session · //agentplane/x/direct_vm_boot:test_runtime_session · //agentplane/x/native_contracts:test_admission_reply_loss · //agentplane/x/native_contracts:test_recovery")}.`)}
+            ${p("The current shadow policy is literal journal-only. It matched 0 of the 30 reviewed historical changesets. Earlier paths are not remapped to journal paths, so this experiment does not show that routine PRs would use the candidate graph. The selector query was sourced from 4bf33d0e while all four experiment arms executed at 38f6c8e; the query and run revisions differ.")}
+            <${Title} order=${3}
+              >Follow-up candidates do not qualify a gate change<//
+            >
+            ${p("The corrected manual invocation eaa3eca2 succeeded from source commit 38f6c8e plus a working-tree overlay. The Dispatcher candidate preserved the required three testcase identities, but ran each in a separate shard/session: its slowest shard was 233.270s, within the required target’s 217.979–246.825s action range. Aggregate CPU was 799.291s versus 301.439–388.572s and estimated CU-min was 30.479 versus 14.579–16.498. JUnit times may include fixtures, so they are not treated as pure testcase execution. Do not promote sharding from this result.")}
+            ${p("A Gateway candidate passed one case with a 45s reconnect budget and a 228.828s action. The required 120s-budget actions were 243.449s and 271.551s. Shortening the budget changes the behavior contract, and one differently configured run is not a matched performance result. Keep the 120s default. The earlier 6e38fc22 attempt selected no TestRunner actions and produced no JUnit; it is not a test pass.")}
+            <${Title} order=${3}
+              >Focused contract evidence and remaining work<//
+            >
+            ${p("A same-package owner-selector probe passed three cases on a source-38f6c8e overlay with unchanged shadow submissions (outer RBE invocation 61eb904a): journal code plus its test companion was eligible; test-only changes stayed ineligible; journal plus proto stayed ineligible. This local overlay proof is separate from the three green required checks on the pushed head. It demonstrates narrow fail-closed owner behavior, not historical applicability or gate safety. The separate real cutoff/successor contract passed in 40.7s on source commit 38f6c8e plus a working-tree overlay (RBE invocation 9c62fa6a). A follow-on explicit build passed the changed native fixture libraries and conftest, K3s helpers, and cleanup target (invocation 0e774569); cleanup itself was not executed. An earlier helper build stopped on Ruff import ordering before it was fixed. Full required checks for a commit containing this overlay are pending.")}
+            ${p("A prepared-KVM cold/warm probe used the same manual candidate target and runner identity. It passed two cases; native elapsed fell from 302.222s to 275.648s (8.79%), action time from 259.653s to 233.914s (9.91%), and setup from 48.375s to 21.772s. These are cold/warm exposures, not a routine required-baseline comparison. The v1 candidate shares data across containers. Automatic approval review rejected its proposed cleanup because it mutates the shared CRI store; no cleanup action was submitted or executed, and owner approval remains pending. The isolated v2 candidate is unmeasured; baseline shutdown and safe reuse remain unverified. A focused build passed changed-library and baseline/runtime/cleanup-target build checks but did not execute cleanup, so the cold/warm timings do not justify adoption. Prioritize an owner-specific graph for common real backend changes, with an explicit contract-to-witness map. Then require repeated matched end-to-end required-gate runs: at least 30% lower median complete feedback including reruns, no worse p90 or flake rate, retained behavior/security/platform contracts, and documented resource costs. Isolated v2 KVM safety and cleanup are secondary evidence; neither cold/warm timings nor the single warm pair qualify adoption.")}
+            <${Group} gap="md" wrap="wrap">
+              <${Anchor} href="iteration15.json"
+                >Curated Iteration 15 evidence and source links<//
+              >
+              <${Anchor} href="manifest.json">Source and artifact manifest<//>
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/pull/16102"
+                >PR #16102 · unchanged required gate<//
+              >
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/issues/16099"
+                >Qualification tracker #16099<//
+              >
+            <//>
           <//>
           <${Section}
             id="iteration14"
-            title="Iteration 14: shared guest and bounded Gateway seal retry"
+            title="Historical iteration 14: shared guest and bounded Gateway seal retry"
           >
             ${p("The completed same-source A/B/B/A screen compares A, the required two separate fresh guests, with B, a manual one shared fresh guest. Across four arms, the selected Firecracker contract produced four NEW physical actions and six nonempty test cases overall.")}
             <${Rows}
@@ -1116,8 +1218,9 @@
                 href="https://github.com/agentydragon/ducktape/issues/16099"
                 >Follow-up tracker<//
               >
-              <${Anchor} href="visual-validation.json"
-                >Separate presentation proof<//
+              <${Anchor}
+                href="https://github.com/agentydragon/ducktape/blob/6222ccfefa3c621d79871437c64953e54f6e12b8/agentplane-test-architecture/visual-validation.json"
+                >Historical iteration 14 presentation proof<//
               >
             <//>
           <//>
@@ -2804,7 +2907,9 @@
           <${Group} gap="md" mt="md"
             ><${Anchor} href="evidence.json">Evidence JSON<//
             ><${Anchor} href="manifest.json">Source manifest<//
-            ><${Anchor} href="visual-validation.json">RBE visual proof<//><//
+            ><${Anchor} href="visual-validation.json"
+              >Current RBE visual proof<//
+            ><//
           >
         <//>`;
       }
