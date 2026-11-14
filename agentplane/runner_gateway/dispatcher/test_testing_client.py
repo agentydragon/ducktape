@@ -6,6 +6,8 @@ from typing import override
 import grpc
 import pytest
 import pytest_bazel
+from opentelemetry import trace
+from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
@@ -22,6 +24,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     def __init__(self) -> None:
         self.requests: list[session_dispatcher_pb2.SubmitInputRequest] = []
         self.bearers: list[str | bytes | None] = []
+        self.traceparents: list[str | bytes | None] = []
         self.failure: grpc.StatusCode | None = None
 
     @override
@@ -34,6 +37,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     ) -> session_dispatcher_pb2.SubmitInputResponse:
         self.requests.append(request)
         self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
+        self.traceparents.append(dict(context.invocation_metadata() or ()).get("traceparent"))
         if self.failure is not None:
             await context.abort(self.failure, "submission outcome unknown")
         return session_dispatcher_pb2.SubmitInputResponse(
@@ -110,6 +114,33 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         "Bearer first-service-token",
         "Bearer rotated-service-token",
     ]
+
+
+async def test_native_submission_propagates_only_the_current_trace_context(tmp_path: Path) -> None:
+    backend = Dispatcher()
+    server = grpc.aio.server()
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(backend, server)
+    token_file = tmp_path / "dispatcher-token"
+    token_file.write_text("service-token")
+    span = NonRecordingSpan(
+        SpanContext(
+            trace_id=0x1234567890ABCDEF1234567890ABCDEF,
+            span_id=0x1234567890ABCDEF,
+            is_remote=False,
+            trace_flags=TraceFlags(TraceFlags.SAMPLED),
+            trace_state=TraceState(),
+        )
+    )
+    async with (
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
+    ):
+        with trace.use_span(span):
+            await client.submit_input("session", "traced", "original", "original-uid", "first")
+        with trace.use_span(trace.INVALID_SPAN):
+            await client.submit_input("session", "untraced", "original", "original-uid", "second")
+    assert backend.traceparents == ["00-1234567890abcdef1234567890abcdef-1234567890abcdef-01", None]
+    assert backend.bearers == ["Bearer service-token", "Bearer service-token"]
 
 
 async def test_native_submission_does_not_automatically_retry_an_unknown_outcome(tmp_path: Path) -> None:

@@ -317,8 +317,15 @@ imports and concurrent workload differ. The benefit currently proved is the depe
 
 The VM case completes both harness scenarios, then fails the retained process-trace contract:
 the native Session driver's `system_test.session.create` span omits `sandbox.name`. Its added
-span now carries the exact Sandbox name/UID and harness from the validated placement. The real
-trace assertions remain unchanged and require another physical pass. The full CI check also
+span now carries the exact Sandbox name/UID and harness from the validated placement. Inspection
+of the same private artifacts also finds no Runtime CreateSession sharing the driver trace:
+the native Dispatcher test client did not inject W3C trace context, unlike the App HTTP test client.
+A real gRPC wire regression
+[fails on the old transport](https://app.buildbuddy.io/invocation/ff4e8fbc-64fa-41d9-a1d0-9cf1bd539814)
+because the server receives no `traceparent` for an active driver span. The Dispatcher test client
+now injects the current context per unary call, retaining rotating bearer credentials and no
+automatic mutation replay. The real trace assertions remain unchanged and require another
+physical pass. The full CI check also
 exposes an old Dispatcher assertion equating all admitted callers with wake callers; it now
 accounts for the explicitly authorized native fixture principal while keeping the wake allowlist
 exactly App, Notification and Actions. These are implementation failures, not measurements of
