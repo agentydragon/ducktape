@@ -250,6 +250,7 @@ class K3s:
         preserve_image_store: bool = True,
         database_in_memory: bool = False,
         detached: bool = False,
+        additional_disabled_addons: tuple[str, ...] = (),
     ) -> subprocess.Popen[bytes]:
         if os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1":
             _prepare_docker_namespaces()
@@ -301,7 +302,7 @@ class K3s:
                 "--node-name",
                 "env",
                 "--disable",
-                "traefik,metrics-server,servicelb",
+                ",".join(("traefik", "metrics-server", "servicelb", *additional_disabled_addons)),
                 "--flannel-backend=host-gw",
                 "--disable-network-policy",
                 "--node-ip",
