@@ -53,10 +53,11 @@ The manager rereads and reauthorizes on every resource-version conflict, includi
 the live caller Identity and the target's live bound Identity when a grant selector uses it. A stale
 token returns `STATE_CHANGED` with current eligibility and generation rather than retrying against a
 later suspension. It bounds conflict retries. A patch error may have uncertain effect, so the manager
-returns a typed `OUTCOME_UNKNOWN` status and does not replay the patch. The shared wake budget is
-reserved before patching and is keyed by effective caller namespace/name/UID (an Identity by the
-manager's namespace, its name and UID, or a service by exact SPIFFE ID), target Sandbox UID and next
-generation.
+returns a typed `OUTCOME_UNKNOWN` status and does not replay the patch. Only automatic `RequestWake`
+reserves the shared wake budget before patching, keyed by effective caller namespace/name/UID
+(an Identity by the manager's namespace, its name and UID, or a service by exact SPIFFE ID),
+target Sandbox UID and next generation. Explicit `ResumeEnvironment`, for both operator callers
+and Identity grants, does not reserve budget and is unaffected by budget exhaustion or unavailability.
 
 `REQUESTED` means the desired running state and next wake generation were accepted. It does not mean
 the environment is ready. `ALREADY_RUNNING` means no wake mutation was needed. A current-generation
