@@ -23,7 +23,7 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.scenarios import mcp
+from agentplane.system_tests.scenarios.policy_objects import PolicyObjects
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 CLI = "/run/agentplane/environment/bin/agentplane"
@@ -174,7 +174,7 @@ async def test_parent_session_delegates_through_the_action_cli(
     cluster: Cluster,
     sandbox: Sandboxes,
     scripted: ScriptedUpstream,
-    policy_objects: mcp.PolicyObjects,
+    policy_objects: PolicyObjects,
 ) -> None:
     offered = await models_offered_for(client, [session_pb2.HARNESS_CODEX])
     parent_view = await sandbox("systest-parent-delegation")
