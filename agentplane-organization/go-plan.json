@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
-  "observed_at_utc": "2026-11-14T22:05:00Z",
+  "source_sha": "916285311099e47e17d21a7125fc4b8f32bf3975",
+  "observed_at_utc": "2026-11-14T23:45:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1279,
-    "directories": 226,
-    "production": 702,
-    "tests": 577
+    "files": 1286,
+    "directories": 227,
+    "production": 704,
+    "tests": 582
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -162,7 +162,7 @@
         "title": "Every-replica serving in the Environments binary",
         "status": "PROPOSED",
         "today": "The Sandbox Controller is a leader-elected manager with no listener.",
-        "proposal": "Carried from #16311. The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
+        "proposal": "Carried from #16311; EnvironmentService's part is written out in `agentplane/plans/environment_service_serving.md` (#16437, merged 2026-11-14), awaiting the operator. The gRPC server (EnvironmentService, proxy, Executor) gets its own non-leader-elected lifecycle, readiness, TLS identity, audience, TokenReview/SVID and delegation settings, Service and projected credentials. Readiness means the listener and its dependencies work and never waits for leadership. Shutdown stops accepting, drains streams and joins serving work without holding up reconciliation handoff. Watches and live reads keep today's freshness and stream re-authorization.",
         "evidence_paths": ["agentplane/environments/cmd/main.go"]
       },
       {
@@ -208,7 +208,7 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 150,
+        "files": 153,
         "directories": 22
       },
       "directories": [
@@ -339,9 +339,11 @@
         },
         {
           "path": "agentplane/action_service/internal/rpc",
-          "production": 11,
-          "tests": 15,
+          "production": 12,
+          "tests": 16,
           "files": [
+            "agentplane/action_service/internal/rpc/attribution.go",
+            "agentplane/action_service/internal/rpc/attribution_test.go",
             "agentplane/action_service/internal/rpc/catalog.go",
             "agentplane/action_service/internal/rpc/catalog_golden_test.go",
             "agentplane/action_service/internal/rpc/catalog_settings_test.go",
@@ -373,9 +375,10 @@
         {
           "path": "agentplane/action_service/internal/store",
           "production": 10,
-          "tests": 14,
+          "tests": 15,
           "files": [
             "agentplane/action_service/internal/store/approvals.go",
+            "agentplane/action_service/internal/store/attribution_integration_test.go",
             "agentplane/action_service/internal/store/cancel.go",
             "agentplane/action_service/internal/store/cancel_integration_test.go",
             "agentplane/action_service/internal/store/claims_integration_test.go",
@@ -763,8 +766,8 @@
           "declared_packages": ["rpc"],
           "pending_tracks": ["action-service-grpcgate"],
           "counts": {
-            "non_test": 11,
-            "tests": 15
+            "non_test": 12,
+            "tests": 16
           }
         },
         {
@@ -783,7 +786,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 10,
-            "tests": 14
+            "tests": 15
           }
         },
         {
@@ -2490,8 +2493,8 @@
       "id": "egress",
       "path": "agentplane/egress",
       "counts": {
-        "files": 76,
-        "directories": 18
+        "files": 77,
+        "directories": 19
       },
       "directories": [
         {
@@ -2656,21 +2659,27 @@
           ]
         },
         {
-          "path": "agentplane/egress/sidecar",
+          "path": "agentplane/egress/sidecar/cmd",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/egress/sidecar/cmd/main.go"]
+        },
+        {
+          "path": "agentplane/egress/sidecar/internal/relay",
           "production": 7,
           "tests": 4,
           "files": [
-            "agentplane/egress/sidecar/codec.go",
-            "agentplane/egress/sidecar/config.go",
-            "agentplane/egress/sidecar/config_test.go",
-            "agentplane/egress/sidecar/main.go",
-            "agentplane/egress/sidecar/platform_routes.go",
-            "agentplane/egress/sidecar/platform_routes_test.go",
-            "agentplane/egress/sidecar/relay.go",
-            "agentplane/egress/sidecar/relay_test.go",
-            "agentplane/egress/sidecar/tls_route.go",
-            "agentplane/egress/sidecar/workload_routes.go",
-            "agentplane/egress/sidecar/workload_routes_test.go"
+            "agentplane/egress/sidecar/internal/relay/codec.go",
+            "agentplane/egress/sidecar/internal/relay/config.go",
+            "agentplane/egress/sidecar/internal/relay/config_test.go",
+            "agentplane/egress/sidecar/internal/relay/platform_routes.go",
+            "agentplane/egress/sidecar/internal/relay/platform_routes_test.go",
+            "agentplane/egress/sidecar/internal/relay/relay.go",
+            "agentplane/egress/sidecar/internal/relay/relay_test.go",
+            "agentplane/egress/sidecar/internal/relay/runtime.go",
+            "agentplane/egress/sidecar/internal/relay/tls_route.go",
+            "agentplane/egress/sidecar/internal/relay/workload_routes.go",
+            "agentplane/egress/sidecar/internal/relay/workload_routes_test.go"
           ]
         },
         {
@@ -2697,11 +2706,7 @@
         "agentplane/egress/api/admin/egress_admin.proto",
         "agentplane/egress/api/rules/egress_rules.proto"
       ],
-      "pending_tracks": [
-        "egress-sidecar-runtime",
-        "settings-single-source",
-        "protobuf-alignment"
-      ],
+      "pending_tracks": ["settings-single-source", "protobuf-alignment"],
       "goal_note": "Sidecar executable and HTTP/gRPC/TLS relay runtime",
       "decision": {
         "state": "REWORK",
@@ -2710,8 +2715,8 @@
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/egress/sidecar/BUILD.bazel",
-          "agentplane/egress/sidecar/codec.go",
-          "agentplane/egress/sidecar/config.go",
+          "agentplane/egress/sidecar/internal/relay/codec.go",
+          "agentplane/egress/sidecar/internal/relay/config.go",
           "agentplane/egress/README.md",
           "agentplane/egress/sidecar_config.py",
           "cluster/cdk8s/agentplane/egress.py"
@@ -2732,7 +2737,8 @@
           "agentplane/egress/internal/rules",
           "agentplane/egress/internal/upstream",
           "agentplane/egress/resources",
-          "agentplane/egress/sidecar",
+          "agentplane/egress/sidecar/cmd",
+          "agentplane/egress/sidecar/internal/relay",
           "agentplane/egress/x/iron_proxy",
           "agentplane/egress/x/iron_proxy/bridge"
         ]
@@ -3021,25 +3027,38 @@
           }
         },
         {
-          "path": "agentplane/egress/sidecar",
-          "role": "Sidecar executable and HTTP/gRPC/TLS relay runtime",
-          "decision": "move",
-          "target_paths": [
-            "agentplane/egress/sidecar/cmd",
-            "agentplane/egress/sidecar/internal/relay"
-          ],
-          "reason": "The 3.3k-LOC executable package contains the process entry point plus sidecar config, transport setup, relay lifecycle, route handling, TLS and four tests. Keep the tightly coupled implementation private under internal/sidecar and make cmd only the executable boundary.",
-          "gate": "Move every production and test Go file as one boundary; keep cdk8s/Python settings and the published binary/image identity unchanged.",
-          "evidence_paths": [
-            "agentplane/egress/sidecar/BUILD.bazel",
-            "agentplane/egress/sidecar/codec.go",
-            "agentplane/egress/sidecar/config.go",
-            "agentplane/egress/README.md",
-            "agentplane/egress/sidecar_config.py",
-            "cluster/cdk8s/agentplane/egress.py"
-          ],
+          "path": "agentplane/egress/sidecar/cmd",
+          "role": "Sidecar process entry point: runs `relay.Run` and exits with its code.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Split from the sidecar's `main.go` by #16433; the `egress-sidecar` executable and image labels are unchanged.",
+          "gate": "",
+          "evidence_paths": ["agentplane/egress/sidecar/cmd/main.go"],
           "declared_packages": ["main"],
-          "pending_tracks": ["egress-sidecar-runtime"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/egress/sidecar/internal/relay",
+          "role": "Sidecar executable runtime and HTTP/gRPC/TLS relay: configuration, platform and workload routes, CONNECT relay.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved under `internal/relay` by #16433. Platform routes, workload TLS routes and the CONNECT relay stay in one package because they share sidecar lifecycle and private state.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/egress/sidecar/internal/relay/codec.go",
+            "agentplane/egress/sidecar/internal/relay/config.go",
+            "agentplane/egress/sidecar/internal/relay/platform_routes.go",
+            "agentplane/egress/sidecar/internal/relay/relay.go",
+            "agentplane/egress/sidecar/internal/relay/runtime.go",
+            "agentplane/egress/sidecar/internal/relay/tls_route.go",
+            "agentplane/egress/sidecar/internal/relay/workload_routes.go"
+          ],
+          "declared_packages": ["relay"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 7,
             "tests": 4
@@ -3093,8 +3112,8 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 206,
-        "directories": 32
+        "files": 204,
+        "directories": 30
       },
       "directories": [
         {
@@ -3115,22 +3134,6 @@
           "production": 1,
           "tests": 0,
           "files": ["agentplane/env/cosi/resources.go"]
-        },
-        {
-          "path": "agentplane/env/firecracker",
-          "production": 2,
-          "tests": 1,
-          "files": [
-            "agentplane/env/firecracker/thaw.go",
-            "agentplane/env/firecracker/thaw_test.go",
-            "agentplane/env/firecracker/vsock_linux.go"
-          ]
-        },
-        {
-          "path": "agentplane/env/firecracker/cmd",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/env/firecracker/cmd/main.go"]
         },
         {
           "path": "agentplane/env/jsonrpc",
@@ -3239,9 +3242,10 @@
         {
           "path": "agentplane/env/runtime/execution/service",
           "production": 2,
-          "tests": 1,
+          "tests": 2,
           "files": [
             "agentplane/env/runtime/execution/service/config.go",
+            "agentplane/env/runtime/execution/service/launch_cancellation_test.go",
             "agentplane/env/runtime/execution/service/service.go",
             "agentplane/env/runtime/execution/service/service_test.go"
           ]
@@ -3474,13 +3478,14 @@
         {
           "path": "agentplane/env/runtime/supervision",
           "production": 14,
-          "tests": 11,
+          "tests": 12,
           "files": [
             "agentplane/env/runtime/supervision/backend.go",
             "agentplane/env/runtime/supervision/controller.go",
             "agentplane/env/runtime/supervision/controller_test.go",
             "agentplane/env/runtime/supervision/host.go",
             "agentplane/env/runtime/supervision/managed_process.go",
+            "agentplane/env/runtime/supervision/managed_process_test.go",
             "agentplane/env/runtime/supervision/native_helpers.go",
             "agentplane/env/runtime/supervision/pid1.go",
             "agentplane/env/runtime/supervision/pid1_kernel_test.go",
@@ -3527,7 +3532,6 @@
       ],
       "pending_tracks": [
         "runner-era-names",
-        "firecracker-host-guest",
         "env-supervision-backends",
         "env-runtime-coordinator",
         "privileged-auth",
@@ -3540,10 +3544,10 @@
         "goal_summary": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.; Guest thaw-agent process entry point.; Translates typed Executor RPCs into the local Codex exec-server protocol.; Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol.; Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.; Runtime process lifecycle over managed processes, systemd scopes/units, and PID 1 helpers.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
-          "agentplane/env/firecracker/thaw.go",
-          "agentplane/env/firecracker/thaw_test.go",
-          "agentplane/env/firecracker/vsock_linux.go",
-          "agentplane/env/firecracker/cmd/main.go",
+          "agentplane/firecracker/guest/thaw.go",
+          "agentplane/firecracker/guest/thaw_test.go",
+          "agentplane/firecracker/guest/vsock_linux.go",
+          "agentplane/firecracker/guest/cmd/main.go",
           "agentplane/env/runtime/execution/adapter/adapter.go",
           "agentplane/env/runtime/execution/adapter/adapter_test.go",
           "agentplane/env/runtime/execution/adapter/connection.go",
@@ -3552,8 +3556,6 @@
         "reviewed_package_paths": [
           "agentplane/env/configuration",
           "agentplane/env/cosi",
-          "agentplane/env/firecracker",
-          "agentplane/env/firecracker/cmd",
           "agentplane/env/jsonrpc",
           "agentplane/env/oneoff",
           "agentplane/env/runtime/cmd",
@@ -3615,40 +3617,6 @@
           "evidence_paths": ["agentplane/env/cosi/resources.go"],
           "declared_packages": ["cosi"],
           "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/env/firecracker",
-          "role": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.",
-          "decision": "move",
-          "target_paths": ["agentplane/firecracker/guest"],
-          "reason": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock. Move all package Go files, including colocated tests, to `agentplane/firecracker/guest`; update callers and BUILD targets in the same change without a shim.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
-          "evidence_paths": [
-            "agentplane/env/firecracker/thaw.go",
-            "agentplane/env/firecracker/thaw_test.go",
-            "agentplane/env/firecracker/vsock_linux.go"
-          ],
-          "declared_packages": ["firecracker"],
-          "pending_tracks": ["firecracker-host-guest", "protobuf-alignment"],
-          "counts": {
-            "non_test": 2,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/env/firecracker/cmd",
-          "role": "Guest thaw-agent process entry point.",
-          "decision": "move",
-          "target_paths": ["agentplane/firecracker/guest/cmd"],
-          "reason": "Guest thaw-agent process entry point. Move all package Go files, including colocated tests, to `agentplane/firecracker/guest/cmd`; update callers and BUILD targets in the same change without a shim.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
-          "evidence_paths": ["agentplane/env/firecracker/cmd/main.go"],
-          "declared_packages": ["main"],
-          "pending_tracks": ["firecracker-host-guest"],
           "counts": {
             "non_test": 1,
             "tests": 0
@@ -3871,7 +3839,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 2,
-            "tests": 1
+            "tests": 2
           }
         },
         {
@@ -4155,7 +4123,7 @@
           ],
           "counts": {
             "non_test": 14,
-            "tests": 11
+            "tests": 12
           }
         },
         {
@@ -4368,42 +4336,58 @@
       "id": "firecracker",
       "path": "agentplane/firecracker",
       "counts": {
-        "files": 23,
-        "directories": 5
+        "files": 27,
+        "directories": 7
       },
       "directories": [
         {
-          "path": "agentplane/firecracker",
-          "production": 7,
-          "tests": 7,
+          "path": "agentplane/firecracker/guest",
+          "production": 2,
+          "tests": 1,
           "files": [
-            "agentplane/firecracker/config.go",
-            "agentplane/firecracker/config_test.go",
-            "agentplane/firecracker/credentials.go",
-            "agentplane/firecracker/credentials_test.go",
-            "agentplane/firecracker/firecracker_api.go",
-            "agentplane/firecracker/firecracker_api_test.go",
-            "agentplane/firecracker/guest_management.go",
-            "agentplane/firecracker/guest_management_test.go",
-            "agentplane/firecracker/network.go",
-            "agentplane/firecracker/network_test.go",
-            "agentplane/firecracker/storage.go",
-            "agentplane/firecracker/storage_test.go",
-            "agentplane/firecracker/supervisor.go",
-            "agentplane/firecracker/supervisor_test.go"
+            "agentplane/firecracker/guest/thaw.go",
+            "agentplane/firecracker/guest/thaw_test.go",
+            "agentplane/firecracker/guest/vsock_linux.go"
           ]
         },
         {
-          "path": "agentplane/firecracker/cmd/launcher",
+          "path": "agentplane/firecracker/guest/cmd",
           "production": 1,
           "tests": 0,
-          "files": ["agentplane/firecracker/cmd/launcher/main.go"]
+          "files": ["agentplane/firecracker/guest/cmd/main.go"]
         },
         {
-          "path": "agentplane/firecracker/testing/runtime_probe",
+          "path": "agentplane/firecracker/host",
+          "production": 7,
+          "tests": 7,
+          "files": [
+            "agentplane/firecracker/host/config.go",
+            "agentplane/firecracker/host/config_test.go",
+            "agentplane/firecracker/host/credentials.go",
+            "agentplane/firecracker/host/credentials_test.go",
+            "agentplane/firecracker/host/firecracker_api.go",
+            "agentplane/firecracker/host/firecracker_api_test.go",
+            "agentplane/firecracker/host/guest_management.go",
+            "agentplane/firecracker/host/guest_management_test.go",
+            "agentplane/firecracker/host/network.go",
+            "agentplane/firecracker/host/network_test.go",
+            "agentplane/firecracker/host/storage.go",
+            "agentplane/firecracker/host/storage_test.go",
+            "agentplane/firecracker/host/supervisor.go",
+            "agentplane/firecracker/host/supervisor_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/firecracker/host/cmd/launcher",
           "production": 1,
           "tests": 0,
-          "files": ["agentplane/firecracker/testing/runtime_probe/main.go"]
+          "files": ["agentplane/firecracker/host/cmd/launcher/main.go"]
+        },
+        {
+          "path": "agentplane/firecracker/host/testing/runtime_probe",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/firecracker/host/testing/runtime_probe/main.go"]
         },
         {
           "path": "agentplane/firecracker/vsock",
@@ -4428,7 +4412,7 @@
         }
       ],
       "context_paths": [],
-      "pending_tracks": ["firecracker-host-guest"],
+      "pending_tracks": ["protobuf-alignment"],
       "goal_note": "Host-side Firecracker VMM configuration, API, credentials, guest management, networking, storage, and supervisor.; Host Firecracker VM launcher executable.; End-to-end probe of a disposable guest over the real Gateway mTLS protocol.; Shared host/guest vsock dial and reverse-listener helpers; owner remains undecided.; Workload identity certificate/server helpers shared across host/guest paths; auth destination remains undecided.",
       "decision": {
         "state": "REWORK",
@@ -4436,71 +4420,111 @@
         "goal_summary": "Host-side Firecracker VMM configuration, API, credentials, guest management, networking, storage, and supervisor.; Host Firecracker VM launcher executable.; End-to-end probe of a disposable guest over the real Gateway mTLS protocol.; Shared host/guest vsock dial and reverse-listener helpers; owner remains undecided.; Workload identity certificate/server helpers shared across host/guest paths; auth destination remains undecided.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
-          "agentplane/firecracker/config.go",
-          "agentplane/firecracker/config_test.go",
-          "agentplane/firecracker/credentials.go",
-          "agentplane/firecracker/credentials_test.go",
-          "agentplane/firecracker/cmd/launcher/main.go",
-          "agentplane/firecracker/testing/runtime_probe/main.go",
+          "agentplane/firecracker/host/config.go",
+          "agentplane/firecracker/host/config_test.go",
+          "agentplane/firecracker/host/credentials.go",
+          "agentplane/firecracker/host/credentials_test.go",
+          "agentplane/firecracker/host/cmd/launcher/main.go",
+          "agentplane/firecracker/host/testing/runtime_probe/main.go",
           "agentplane/firecracker/vsock/dial.go",
           "agentplane/firecracker/vsock/dial_test.go"
         ],
         "reviewed_package_paths": [
-          "agentplane/firecracker",
-          "agentplane/firecracker/cmd/launcher",
-          "agentplane/firecracker/testing/runtime_probe",
+          "agentplane/firecracker/guest",
+          "agentplane/firecracker/guest/cmd",
+          "agentplane/firecracker/host",
+          "agentplane/firecracker/host/cmd/launcher",
+          "agentplane/firecracker/host/testing/runtime_probe",
           "agentplane/firecracker/vsock",
           "agentplane/firecracker/workloadidentity"
         ]
       },
       "package_decisions": [
         {
-          "path": "agentplane/firecracker",
-          "role": "Host-side Firecracker VMM configuration, API, credentials, guest management, networking, storage, and supervisor.",
-          "decision": "move",
-          "target_paths": ["agentplane/firecracker/host"],
-          "reason": "Host-side Firecracker VMM configuration, API, credentials, guest management, networking, storage, and supervisor. Move all package Go files, including colocated tests, to `agentplane/firecracker/host`; update callers and BUILD targets in the same change without a shim.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
+          "path": "agentplane/firecracker/guest",
+          "role": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `env/firecracker` by #16435; the management protobuf and its generated Go package stay at `env/firecracker`.",
+          "gate": "",
           "evidence_paths": [
-            "agentplane/firecracker/config.go",
-            "agentplane/firecracker/config_test.go",
-            "agentplane/firecracker/credentials.go",
-            "agentplane/firecracker/credentials_test.go"
+            "agentplane/firecracker/guest/thaw.go",
+            "agentplane/firecracker/guest/vsock_linux.go"
           ],
-          "declared_packages": ["firecracker"],
-          "pending_tracks": ["firecracker-host-guest"],
+          "declared_packages": ["guest"],
+          "pending_tracks": ["protobuf-alignment"],
           "counts": {
-            "non_test": 7,
-            "tests": 7
+            "non_test": 2,
+            "tests": 1
           }
         },
         {
-          "path": "agentplane/firecracker/cmd/launcher",
-          "role": "Host Firecracker VM launcher executable.",
-          "decision": "move",
-          "target_paths": ["agentplane/firecracker/host/cmd/launcher"],
-          "reason": "Host Firecracker VM launcher executable. Move all package Go files, including colocated tests, to `agentplane/firecracker/host/cmd/launcher`; update callers and BUILD targets in the same change without a shim.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
-          "evidence_paths": ["agentplane/firecracker/cmd/launcher/main.go"],
+          "path": "agentplane/firecracker/guest/cmd",
+          "role": "Guest thaw-agent process entry point.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `env/firecracker/cmd` by #16435.",
+          "gate": "",
+          "evidence_paths": ["agentplane/firecracker/guest/cmd/main.go"],
           "declared_packages": ["main"],
-          "pending_tracks": ["firecracker-host-guest"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 1,
             "tests": 0
           }
         },
         {
-          "path": "agentplane/firecracker/testing/runtime_probe",
-          "role": "End-to-end probe of a disposable guest over the real Gateway mTLS protocol.",
-          "decision": "move",
-          "target_paths": ["agentplane/firecracker/host/testing/runtime_probe"],
-          "reason": "End-to-end probe of a disposable guest over the real Gateway mTLS protocol. Move all package Go files, including colocated tests, to `agentplane/firecracker/host/testing/runtime_probe`; update callers and BUILD targets in the same change without a shim.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
+          "path": "agentplane/firecracker/host",
+          "role": "Host-side Firecracker VMM configuration, API, credentials, guest management, networking, storage, and supervisor.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from the `firecracker/` root by #16435.",
+          "gate": "",
           "evidence_paths": [
-            "agentplane/firecracker/testing/runtime_probe/main.go"
+            "agentplane/firecracker/host/config.go",
+            "agentplane/firecracker/host/credentials.go",
+            "agentplane/firecracker/host/firecracker_api.go",
+            "agentplane/firecracker/host/guest_management.go",
+            "agentplane/firecracker/host/network.go",
+            "agentplane/firecracker/host/storage.go",
+            "agentplane/firecracker/host/supervisor.go"
+          ],
+          "declared_packages": ["host"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 7,
+            "tests": 7
+          }
+        },
+        {
+          "path": "agentplane/firecracker/host/cmd/launcher",
+          "role": "Host Firecracker VM launcher executable.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `firecracker/cmd/launcher` by #16435.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/firecracker/host/cmd/launcher/main.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": ["firecracker-host-guest"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/firecracker/host/testing/runtime_probe",
+          "role": "End-to-end probe of a disposable guest over the real Gateway mTLS protocol.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `firecracker/testing/runtime_probe` by #16435.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/firecracker/host/testing/runtime_probe/main.go"
+          ],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 1,
             "tests": 0
@@ -4509,10 +4533,10 @@
         {
           "path": "agentplane/firecracker/vsock",
           "role": "Shared host/guest vsock dial and reverse-listener helpers; owner remains undecided.",
-          "decision": "design",
+          "decision": "retain",
           "target_paths": [],
-          "reason": "Shared host/guest vsock dial and reverse-listener helpers; owner remains undecided. Keep the package intact until its ownership/design gate is met; no new destination is selected.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
+          "reason": "Shared host/guest vsock dial and reverse-listener helpers. They serve both `host` and `guest`, so they stay at the `firecracker/` level beside them; #16435 split host from guest and left this package where it is.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/vsock/dial.go",
             "agentplane/firecracker/vsock/dial_test.go",
@@ -4520,7 +4544,7 @@
             "agentplane/firecracker/vsock/reverse_test.go"
           ],
           "declared_packages": ["vsock"],
-          "pending_tracks": ["firecracker-host-guest"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
             "tests": 2
@@ -4529,17 +4553,17 @@
         {
           "path": "agentplane/firecracker/workloadidentity",
           "role": "Workload identity certificate/server helpers shared across host/guest paths; auth destination remains undecided.",
-          "decision": "design",
+          "decision": "retain",
           "target_paths": [],
-          "reason": "Workload identity certificate/server helpers shared across host/guest paths; auth destination remains undecided. Keep the package intact until its ownership/design gate is met; no new destination is selected.",
-          "gate": "Root firecracker BUILD also declares images/non-Go targets; split Go ownership without disturbing them. Shared auth/SPIFFE mechanism/destination remains open.",
+          "reason": "Workload identity certificate and server helpers used by both `host` and `guest`; #16435 left them beside the two. The service SVID migration (privileged-auth) changes code inside files and moves none.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/firecracker/workloadidentity/pem.go",
             "agentplane/firecracker/workloadidentity/server.go",
             "agentplane/firecracker/workloadidentity/server_test.go"
           ],
           "declared_packages": ["workloadidentity"],
-          "pending_tracks": ["firecracker-host-guest"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
             "tests": 1
@@ -7581,7 +7605,7 @@
       "id": "runner_gateway",
       "path": "agentplane/runner_gateway",
       "counts": {
-        "files": 71,
+        "files": 72,
         "directories": 12
       },
       "directories": [
@@ -7658,9 +7682,10 @@
         {
           "path": "agentplane/runner_gateway/environments",
           "production": 4,
-          "tests": 4,
+          "tests": 5,
           "files": [
             "agentplane/runner_gateway/environments/collection.go",
+            "agentplane/runner_gateway/environments/delegated_resume_envtest_test.go",
             "agentplane/runner_gateway/environments/environment_grants_test.go",
             "agentplane/runner_gateway/environments/management.go",
             "agentplane/runner_gateway/environments/service.go",
@@ -7918,7 +7943,7 @@
           "pending_tracks": ["environment-service-to-sandbox-controller"],
           "counts": {
             "non_test": 4,
-            "tests": 4
+            "tests": 5
           }
         },
         {
@@ -8768,7 +8793,7 @@
       "kind": "naming",
       "stage": 2,
       "priority": 3,
-      "summary": "The Runner became the Environment Runtime (#13435), and the DAG's `RUNNER_GATEWAY_RENAME` records the Runtime protocol and resource cutovers as complete, yet Go package, file and private identifier names still say runner. At the pin, 232 non-generated Go files mention runner beyond the Gateway's own name. That count mixes three kinds: (1) leftover Go names for the Environment Runtime, which this track renames, such as the Sandbox Controller's private names and comments (its package `runnercontrol` became `runtimecontrol` in #16407), and the app's, which #16394 (merged 2026-11-14) renamed with its Session client (`app/internal/sessionclient`, `server/environment_runtime_api.go`); (2) wire, stored and security names (protobuf fields and RPCs, the Notification Service's stored `runner_entry`/`runner_cursor`, annotation and metadata keys, SPIFFE URIs), which stay until their own migration; (3) generic job runners such as History's `FoldRunner`, which are not leftovers.",
+      "summary": "The Runner became the Environment Runtime (#13435), and the DAG's `RUNNER_GATEWAY_RENAME` records the Runtime protocol and resource cutovers as complete, yet Go package, file and private identifier names still say runner. At the pin, 232 non-generated Go files mention runner beyond the Gateway's own name. That count mixes three kinds: (1) leftover Go names for the Environment Runtime, which this track renames, such as the Environment Runtime's and Sandbox Controller's private identifiers, which #16427 (merged 2026-11-14) renamed in `env` and `environments/` after #16407 made `runnercontrol` `runtimecontrol`; comments there (for example `environments/internal/controller/controller.go`) and error messages (`env/runtime/control/server.go`) still say runner; and the app's, which #16394 (merged 2026-11-14) renamed with its Session client (`app/internal/sessionclient`, `server/environment_runtime_api.go`); (2) wire, stored and security names (protobuf fields and RPCs, the Notification Service's stored `runner_entry`/`runner_cursor`, annotation and metadata keys, SPIFFE URIs), which stay until their own migration; (3) generic job runners such as History's `FoldRunner`, which are not leftovers.",
       "how": [
         "Classify every occurrence into the three kinds, per component.",
         "Rename kind (1) per component in coherent PRs outside the Runner Gateway and Notification Service; files and private identifiers follow.",
@@ -8782,138 +8807,12 @@
       ],
       "evidence_paths": [
         "agentplane/environments/internal/controller/controller.go",
-        "agentplane/environments/internal/controller/behavior.go",
+        "agentplane/env/runtime/control/server.go",
         "agentplane/history_service/internal/projection/runner.go",
         "agentplane/notification_service/migrations/notifications/00013_baseline.sql"
       ],
       "package_renames": [],
       "review_size": "One PR per component; avoid clause-only PRs below 200 changed LOC by grouping a component's names."
-    },
-    {
-      "id": "egress-sidecar-runtime",
-      "title": "Separate egress sidecar process entry from its relay runtime",
-      "status": "PLANNED",
-      "components": ["egress"],
-      "source_paths": [
-        "agentplane/egress/sidecar/codec.go",
-        "agentplane/egress/sidecar/config.go",
-        "agentplane/egress/sidecar/main.go",
-        "agentplane/egress/sidecar/platform_routes.go",
-        "agentplane/egress/sidecar/relay.go",
-        "agentplane/egress/sidecar/tls_route.go",
-        "agentplane/egress/sidecar/workload_routes.go",
-        "agentplane/egress/sidecar/config_test.go",
-        "agentplane/egress/sidecar/platform_routes_test.go",
-        "agentplane/egress/sidecar/relay_test.go",
-        "agentplane/egress/sidecar/workload_routes_test.go",
-        "agentplane/egress/sidecar/BUILD.bazel",
-        "agentplane/egress/BUILD.bazel"
-      ],
-      "target_paths": [
-        "agentplane/egress/sidecar/cmd",
-        "agentplane/egress/sidecar/internal/relay"
-      ],
-      "package_renames": [],
-      "deleted_paths": [],
-      "path_moves": [
-        {
-          "from": "agentplane/egress/sidecar/codec.go",
-          "to": "agentplane/egress/sidecar/internal/relay/codec.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/config.go",
-          "to": "agentplane/egress/sidecar/internal/relay/config.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/platform_routes.go",
-          "to": "agentplane/egress/sidecar/internal/relay/platform_routes.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/relay.go",
-          "to": "agentplane/egress/sidecar/internal/relay/relay.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/tls_route.go",
-          "to": "agentplane/egress/sidecar/internal/relay/tls_route.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/workload_routes.go",
-          "to": "agentplane/egress/sidecar/internal/relay/workload_routes.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/config_test.go",
-          "to": "agentplane/egress/sidecar/internal/relay/config_test.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/platform_routes_test.go",
-          "to": "agentplane/egress/sidecar/internal/relay/platform_routes_test.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/relay_test.go",
-          "to": "agentplane/egress/sidecar/internal/relay/relay_test.go"
-        },
-        {
-          "from": "agentplane/egress/sidecar/workload_routes_test.go",
-          "to": "agentplane/egress/sidecar/internal/relay/workload_routes_test.go"
-        }
-      ],
-      "file_splits": [
-        {
-          "from": "agentplane/egress/sidecar/main.go",
-          "parts": [
-            {
-              "path": "agentplane/egress/sidecar/cmd/main.go",
-              "symbols": [
-                "main (reduced to process wrapper calling relay.Run and os.Exit)"
-              ]
-            },
-            {
-              "path": "agentplane/egress/sidecar/internal/relay/runtime.go",
-              "symbols": [
-                "Run (former main body, returning exit code 2 for config failure and 1 for setup/tracing/relay failure)",
-                "newSidecar",
-                "(*tlsProxyTransport).dial",
-                "newProxyHop",
-                "tlsProxyTransport",
-                "proxyHop"
-              ]
-            }
-          ]
-        }
-      ],
-      "summary": "Move relay, route, TLS, config behavior and all four tests under private internal/sidecar. main.go also contains transport construction, so split its functions explicitly: internal/relay.Run owns config, logging, signals, tracing and relay lifecycle with the existing exit status; cmd/main.go becomes only the os.Exit(relay.Run()) process wrapper.",
-      "how": [
-        "Move the ten complete production/test files listed in path_moves under internal/sidecar and change package main to sidecar.",
-        "Split main.go by function as shown in file_splits; keep newSidecar, TLS transport and proxy-hop constructors beside the private runtime types they use.",
-        "Update sidecar Bazel library/binary/test definitions and root egress BUILD callers in the same change; retain the egress-sidecar executable, OCI image, Python test binary data and deployment routes.",
-        "Do not split platform routes, workload TLS routes and CONNECT relay into packages: they share sidecar lifecycle and private state."
-      ],
-      "gate": "The current sidecar Go package has no external Go imports; runtime callers are Bazel binary/image and Python binary-test wiring. Preserve existing executable and image labels through the BUILD change, then run all current sidecar and egress image/Python labels.",
-      "preserve": "Sidecar image identity and executable; required config behavior; SVID-to-proxy and service-peer verification; route authority allowlists; refusal/header stripping; readiness and shutdown behavior.",
-      "validation": [
-        "//agentplane/egress/sidecar:sidecar_test",
-        "//agentplane/egress:sidecar_image",
-        "//agentplane/egress:test_sidecar",
-        "//agentplane/egress:test_platform_routes",
-        "//agentplane/egress:test_proxy"
-      ],
-      "evidence_paths": [
-        "agentplane/egress/sidecar/BUILD.bazel",
-        "agentplane/egress/sidecar/main.go",
-        "agentplane/egress/sidecar/relay.go",
-        "agentplane/egress/sidecar/platform_routes.go",
-        "agentplane/egress/README.md",
-        "agentplane/egress/sidecar_config.py",
-        "cluster/cdk8s/agentplane/egress.py",
-        "agentplane/egress/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "kind": "organization",
-      "source_owner": "agentplane/egress/sidecar",
-      "priority": 8,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "stage": 2,
-      "proposed_file_targets": []
     },
     {
       "id": "llm-ingress-server-boundary",
@@ -9045,145 +8944,6 @@
       "proposed_file_targets": []
     },
     {
-      "id": "firecracker-host-guest",
-      "title": "Name Firecracker host and guest code while deferring shared identity and vsock ownership",
-      "status": "PLANNED",
-      "components": ["firecracker", "env"],
-      "source_paths": [
-        "agentplane/firecracker",
-        "agentplane/firecracker/cmd/launcher",
-        "agentplane/firecracker/testing/runtime_probe",
-        "agentplane/env/firecracker",
-        "agentplane/env/firecracker/cmd",
-        "agentplane/firecracker/vsock",
-        "agentplane/firecracker/workloadidentity"
-      ],
-      "target_paths": [
-        "agentplane/firecracker/host",
-        "agentplane/firecracker/host/cmd/launcher",
-        "agentplane/firecracker/host/testing/runtime_probe",
-        "agentplane/firecracker/guest",
-        "agentplane/firecracker/guest/cmd"
-      ],
-      "summary": "Group the host VMM/API/network/storage/supervision under firecracker/host and guest thaw/management under firecracker/guest, with their launcher/probe/command packages. Shared vsock and workloadidentity stay at their current paths; their mechanisms and future destination remain deferred. Existing protocol source/wire identities need not move with Go implementations.",
-      "how": [
-        "Move host and guest implementation packages with tests to their sibling host/guest owners, aligning Go package declarations while keeping the current wire/schema identities.",
-        "Keep management.proto and generated wire package at current identity; adjust BUILD without renaming protocol.",
-        "Inventory host↔guest imports and runfiles."
-      ],
-      "gate": "Close host↔guest imports, management-proto generation, runfiles, image/launcher/manifests and tests. Do not change the shared identity or vsock mechanism, or mix a protobuf namespace migration into this layout lane.",
-      "preserve": "Host VMM lifecycle and guest thaw/management; Guest-host protocol/wire identity; Current workload identity and mTLS behavior",
-      "validation": [
-        "//agentplane/firecracker:firecracker_test",
-        "//agentplane/firecracker/cmd/launcher:launcher",
-        "//agentplane/firecracker/vsock:vsock_test",
-        "//agentplane/firecracker/workloadidentity:workloadidentity_test",
-        "//agentplane/env/firecracker:firecracker_test"
-      ],
-      "evidence_paths": [
-        "agentplane/firecracker/supervisor.go",
-        "agentplane/firecracker/guest_management.go",
-        "agentplane/firecracker/BUILD.bazel",
-        "agentplane/env/firecracker/thaw.go",
-        "agentplane/env/firecracker/BUILD.bazel",
-        "agentplane/env/firecracker/management.proto",
-        "agentplane/firecracker/vsock/dial.go",
-        "agentplane/firecracker/workloadidentity/server.go"
-      ],
-      "dependencies": [],
-      "priority": 10,
-      "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
-      "path_moves": [
-        {
-          "from": "agentplane/env/firecracker/thaw.go",
-          "to": "agentplane/firecracker/guest/thaw.go"
-        },
-        {
-          "from": "agentplane/env/firecracker/thaw_test.go",
-          "to": "agentplane/firecracker/guest/thaw_test.go"
-        },
-        {
-          "from": "agentplane/env/firecracker/vsock_linux.go",
-          "to": "agentplane/firecracker/guest/vsock_linux.go"
-        },
-        {
-          "from": "agentplane/env/firecracker/cmd/main.go",
-          "to": "agentplane/firecracker/guest/cmd/main.go"
-        },
-        {
-          "from": "agentplane/firecracker/config.go",
-          "to": "agentplane/firecracker/host/config.go"
-        },
-        {
-          "from": "agentplane/firecracker/config_test.go",
-          "to": "agentplane/firecracker/host/config_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/credentials.go",
-          "to": "agentplane/firecracker/host/credentials.go"
-        },
-        {
-          "from": "agentplane/firecracker/credentials_test.go",
-          "to": "agentplane/firecracker/host/credentials_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/firecracker_api.go",
-          "to": "agentplane/firecracker/host/firecracker_api.go"
-        },
-        {
-          "from": "agentplane/firecracker/firecracker_api_test.go",
-          "to": "agentplane/firecracker/host/firecracker_api_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/guest_management.go",
-          "to": "agentplane/firecracker/host/guest_management.go"
-        },
-        {
-          "from": "agentplane/firecracker/guest_management_test.go",
-          "to": "agentplane/firecracker/host/guest_management_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/network.go",
-          "to": "agentplane/firecracker/host/network.go"
-        },
-        {
-          "from": "agentplane/firecracker/network_test.go",
-          "to": "agentplane/firecracker/host/network_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/storage.go",
-          "to": "agentplane/firecracker/host/storage.go"
-        },
-        {
-          "from": "agentplane/firecracker/storage_test.go",
-          "to": "agentplane/firecracker/host/storage_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/supervisor.go",
-          "to": "agentplane/firecracker/host/supervisor.go"
-        },
-        {
-          "from": "agentplane/firecracker/supervisor_test.go",
-          "to": "agentplane/firecracker/host/supervisor_test.go"
-        },
-        {
-          "from": "agentplane/firecracker/cmd/launcher/main.go",
-          "to": "agentplane/firecracker/host/cmd/launcher/main.go"
-        },
-        {
-          "from": "agentplane/firecracker/testing/runtime_probe/main.go",
-          "to": "agentplane/firecracker/host/testing/runtime_probe/main.go"
-        }
-      ],
-      "package_renames": [],
-      "kind": "organization",
-      "source_owner": "agentplane/firecracker",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 2,
-      "proposed_file_targets": []
-    },
-    {
       "source_paths": [
         "agentplane/runner_gateway/environments/collection.go",
         "agentplane/runner_gateway/environments/management.go",
@@ -9242,11 +9002,11 @@
         "Write the remaining merge contract: (a) wake is decided: the Dispatcher keeps `RequestWake`'s automatic policy check and its budget and writes the Sandbox spec itself, so EnvironmentService carries only explicit resume; split `lifecycle` along that line.",
         "(b) wake budget: only automatic wake reserves one, in the Dispatcher's PostgreSQL (`dispatcher/wake.go` `ReserveWakeAttempt`). Explicit resume reserves none since #16375 (merged 2026-11-14), so the Environments side needs no database.",
         "(c) identity fence, decided 2026-11-14 and landed in #16373: EnvironmentService patches `spec.identity` itself under optimistic locking, and admission, placement and delivery re-check the live Identity (cut line: identity fence).",
-        "(d) serving: the Sandbox Controller is a leader-elected controller-runtime manager with no listener; EnvironmentService adds an every-replica gRPC listener with its own lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate identity and retargeted callers (cut line: serving).",
+        "(d) serving: the Sandbox Controller is a leader-elected controller-runtime manager with no listener; EnvironmentService adds an every-replica gRPC listener with its own lifecycle, readiness that never waits for leadership, auth resolver, Service, certificate identity and retargeted callers (cut line: serving). Proposed in `agentplane/plans/environment_service_serving.md` (#16437, merged 2026-11-14): a non-leader listener on port 8082 on every replica, readiness from the listener and policy watches only, the existing `sandbox-controller` Service and `spiffe://agentplane/sandbox-controller` certificate; awaiting the operator.",
         "Then move the four packages whole, with tests, to `environments/internal/service` (package `environments` becomes `service`), with `lifecycle`, `management` and `view` under it, beside the API at `environments/v1`. The only importer outside the Gateway, orchestration_v1's `fixture_test.go` (`environments` and `lifecycle`), must first be retired (orchestration-v1-retirement) or rewritten against a test server, since `internal/` closes those packages. Retarget every caller, RBAC, manifests and the system overview diagram, image before config, with the rollback stated.",
         "`environmentaccess` (environment rules, #16346) moves in the same PR to `environments/access` (package `access`), outside `internal/`: since #16351 Session admission enforces `bind_session` with it, so the Sessions binary imports it too, and each binary builds its own rule index."
       ],
-      "gate": "Direction agreed; automatic wake decided 2026-11-14 (stays with the Dispatcher). The wake budget (b) and identity fence (c) landed (#16375, #16373); the serving contract (d) is not written; #16311's draft of them is carried into the cut line and the PR is closed as superseded. No database moves.",
+      "gate": "Direction agreed; automatic wake decided 2026-11-14 (stays with the Dispatcher). The wake budget (b) and identity fence (c) landed (#16375, #16373); the serving contract (d) is proposed in `agentplane/plans/environment_service_serving.md` (#16437, merged 2026-11-14) and awaits the operator; #16311's draft of them is carried into the cut line and the PR is closed as superseded. No database moves.",
       "preserve": "The EnvironmentService wire API and per-method authorization; identity changes only while nothing runs, and no delivery under a changed Identity; automatic wake's rate limit; wake assessments; resume authorization.",
       "validation": [
         "//agentplane/runner_gateway/environments:environments_test",
@@ -11065,7 +10825,8 @@
         "notification_service",
         "policy",
         "proto",
-        "runner_gateway"
+        "runner_gateway",
+        "firecracker"
       ],
       "kind": "declaration and wire-contract migration; no filesystem move selected",
       "source_paths": [
@@ -11159,17 +10920,12 @@
     }
   ],
   "ready_filesystem_moves": ["runner-gateway-command"],
-  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 at the inventory pin, devel 7d6c386f64). Stage 1 (leftovers of finished cutovers) is done; stage 2 holds whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
+  "remaining_work_note": "Ordered by certainty (revised 2026-11-14 at the inventory pin, devel 9162853110). Stage 1 (leftovers of finished cutovers) is done; stage 2 holds whatever the service map becomes; stage 3 follows directions the operator agreed; stage 4 needs only a local contract; stage 5 waits on open service decisions; stage 6 is deferred. READY records decided exact moves; PLANNED names a concrete boundary; AGREED DIRECTION is an operator-agreed move whose contract is still to be written; HELD is a decided move waiting so its files move once; DESIGN REQUIRED needs a local contract; OPEN DIRECTION waits on an undecided service decision. The tree shows candidates without assigning fictitious final filenames.",
   "adoption": [
     {
       "stage": 2,
       "title": "Fix layout inside components no direction changes",
-      "work": [
-        "runner-era-names",
-        "egress-sidecar-runtime",
-        "llm-ingress-server-boundary",
-        "firecracker-host-guest"
-      ],
+      "work": ["runner-era-names", "llm-ingress-server-boundary"],
       "result": "Command placement, package names, runner-era names and bounded adapter extractions in components whose boundaries no agreed or open service decision touches. Each is decided or has a concrete boundary."
     },
     {
@@ -11232,18 +10988,18 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 226,
-    "go_files": 1279,
+    "go_packages": 227,
+    "go_files": 1286,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "7d6c386f64390da6eb6bd8677d40ebcc9990fcf9",
+    "review_source_sha": "916285311099e47e17d21a7125fc4b8f32bf3975",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
         "packages": 22,
-        "go_files": 150
+        "go_files": 153
       },
       {
         "slice": "app",
@@ -11284,14 +11040,14 @@
       {
         "slice": "egress",
         "components": ["egress"],
-        "packages": 18,
-        "go_files": 76
+        "packages": 19,
+        "go_files": 77
       },
       {
         "slice": "env",
         "components": ["env"],
-        "packages": 32,
-        "go_files": 206
+        "packages": 30,
+        "go_files": 204
       },
       {
         "slice": "environments",
@@ -11302,8 +11058,8 @@
       {
         "slice": "firecracker",
         "components": ["firecracker"],
-        "packages": 5,
-        "go_files": 23
+        "packages": 7,
+        "go_files": 27
       },
       {
         "slice": "grpc",
@@ -11405,7 +11161,7 @@
         "slice": "runner_gateway",
         "components": ["runner_gateway"],
         "packages": 12,
-        "go_files": 71
+        "go_files": 72
       },
       {
         "slice": "sandboxes",
@@ -11457,45 +11213,31 @@
       "track": "runner-era-names",
       "title": "Stop calling the Environment Runtime a runner in Go names",
       "readiness": "PLANNED",
-      "first_step": "Classify runner occurrences per remaining component (the app's are done, #16394); rename the Runtime's leftover runner names with their callers."
+      "first_step": "Classify the occurrences left after #16394 and #16427: comments and error messages in `env` and `environments/`, then the other components outside the Runner Gateway and Notification Service."
     },
     {
       "id": "next-2",
-      "track": "egress-sidecar-runtime",
-      "title": "Separate egress sidecar process entry from its relay runtime",
-      "readiness": "PLANNED",
-      "first_step": "Move the ten complete production/test files listed in path_moves under internal/sidecar and change package main to sidecar."
-    },
-    {
-      "id": "next-3",
       "track": "llm-ingress-server-boundary",
       "title": "Separate LLM ingress process entry from server runtime",
       "readiness": "PLANNED",
       "first_step": "Move the eleven complete production/test files listed in path_moves under internal/server and update package declarations and Bazel targets."
     },
     {
-      "id": "next-4",
-      "track": "firecracker-host-guest",
-      "title": "Name Firecracker host and guest code while deferring shared identity and vsock ownership",
-      "readiness": "PLANNED",
-      "first_step": "Inventory host and guest imports, runfiles and launcher callers."
-    },
-    {
-      "id": "next-5",
+      "id": "next-3",
       "track": "environment-service-to-sandbox-controller",
       "title": "Move EnvironmentService into the Environments binary",
       "readiness": "AGREED DIRECTION",
-      "first_step": "Write the every-replica serving contract (d); the wake budget and identity fence already landed (#16375, #16373)."
+      "first_step": "Operator review of the every-replica serving proposal (d), `plans/environment_service_serving.md` (#16437); the wake budget and identity fence already landed (#16375, #16373)."
     },
     {
-      "id": "next-6",
+      "id": "next-4",
       "track": "runner-gateway-connections-proxy",
       "title": "Move the Runtime proxy and Executor into the Environments binary",
       "readiness": "AGREED DIRECTION",
       "first_step": "After the connection Lease removal, move internal/gateway into the Environments binary behind EnvironmentService's listener."
     },
     {
-      "id": "next-7",
+      "id": "next-5",
       "track": "runner-gateway-command",
       "title": "Move the Sessions binary to `session_dispatcher/`",
       "readiness": "HELD",
