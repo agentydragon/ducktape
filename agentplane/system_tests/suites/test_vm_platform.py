@@ -1,7 +1,9 @@
 """One deployed VM checks platform wiring through real setup, without model turns."""
 
 import json
+import os
 import shlex
+from enum import StrEnum
 from uuid import uuid4
 
 import pytest
@@ -14,11 +16,12 @@ from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
+from agentplane.system_tests.driver.sandbox import VM_TEMPLATE
 from agentplane.system_tests.driver.scenario import ScenarioResources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.session_setup import run_setup
 from agentplane.system_tests.scenarios import runner_credentials
-from agentplane.system_tests.vm.configuration import SUPERVISION_TEMPLATE
+from agentplane.system_tests.vm.configuration import SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.system_tests.vm.guest_logs import check_boot, systemd_supervision_passed
 from agentplane.system_tests.vm.guest_setup_probe import VM_SETUP_PROBE, assert_vm_setup_probe, setup_fence_probe
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -27,6 +30,11 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 pytestmark = pytest.mark.vm_sandboxes
+
+
+class PrivateSupervisionOwner(StrEnum):
+    DEPLOYED = "deployed"
+    DIRECT_GUEST = "direct-guest"
 
 
 @pytest.mark.scripted_model
@@ -42,9 +50,13 @@ async def test_one_vm_platform_without_model_turns(
     # and fails its unanswered-request teardown. No response is scripted here.
     harness = session_pb2.HARNESS_CODEX
     model = (await models_offered_for(client, [harness]))[harness]
+    private_owner = PrivateSupervisionOwner(
+        os.environ.get("VM_PLATFORM_PRIVATE_SUPERVISION_OWNER", PrivateSupervisionOwner.DEPLOYED)
+    )
+    template = SUPERVISION_TEMPLATE if private_owner == PrivateSupervisionOwner.DEPLOYED else VM_TEMPLATE
     output = undeclared_outputs_dir()
     async with scenario_resources() as (guest_client, create):
-        view = await create("systest-vm-platform", template=SUPERVISION_TEMPLATE)
+        view = await create("systest-vm-platform", template=template)
         assert view.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_RUNNING
         assert view.observed_state.phase == environment_service_pb2.SANDBOX_PHASE_RUNNING
         assert view.observed_state.readiness.state == environment_service_pb2.READINESS_STATE_READY
@@ -52,6 +64,18 @@ async def test_one_vm_platform_without_model_turns(
         identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
         assert identity[0] == view.kubernetes_diagnostics.pod.uid
         assert identity[1]
+        pod = json.loads(await cluster.kubectl("get", "pod", view.kubernetes_diagnostics.pod.name, "-o", "json"))
+        assert pod["metadata"]["uid"] == view.kubernetes_diagnostics.pod.uid
+        (vmi_owner,) = [
+            owner
+            for owner in pod["metadata"]["ownerReferences"]
+            if owner["kind"] == "VirtualMachineInstance" and owner.get("controller")
+        ]
+        vmi = json.loads(await cluster.kubectl("get", "virtualmachineinstance", vmi_owner["name"], "-o", "json"))
+        assert vmi["metadata"]["uid"] == vmi_owner["uid"]
+        kernel_args = vmi["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"].split()
+        private_enabled = SUPERVISION_KERNEL_ARG in kernel_args
+        assert private_enabled == (private_owner == PrivateSupervisionOwner.DEPLOYED)
 
         runtime = await guest_client.runner_status(view.target.name, view.target.uid)
         assert runtime.environment_runtime_boot_id
@@ -61,10 +85,12 @@ async def test_one_vm_platform_without_model_turns(
         assert runtime.lifecycle.progress_current
         assert not runtime.lifecycle.error
         assert not runtime.lifecycle.HasField("blocker")
-        async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.1), reraise=True):
-            with attempt:
-                check_boot()
-                assert systemd_supervision_passed(view.kubernetes_diagnostics.pod.uid)
+        check_boot()
+        if private_owner == PrivateSupervisionOwner.DEPLOYED:
+            async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.1), reraise=True):
+                with attempt:
+                    check_boot()
+                    assert systemd_supervision_passed(view.kubernetes_diagnostics.pod.uid)
 
         session_id = uuid4()
         cwd = f"/state/workspaces/{session_id}/nested"
@@ -125,12 +151,17 @@ async def test_one_vm_platform_without_model_turns(
         await runner_credentials.assert_vm_runner_identity_unchanged(
             cluster, view.kubernetes_diagnostics.pod.name, identity
         )
+        if private_owner == PrivateSupervisionOwner.DIRECT_GUEST:
+            assert not systemd_supervision_passed(view.kubernetes_diagnostics.pod.uid)
         (output / "vm-platform.json").write_text(
             json.dumps(
                 {
                     "sandbox_uid": view.target.uid,
                     "pod_uid": identity[0],
                     "boot_id": runtime.environment_runtime_boot_id,
+                    "template": template,
+                    "private_supervision_owner": private_owner,
+                    "private_supervision_kernel_arg": private_enabled,
                     "workspace_marker": marker,
                     "egress_identity": rules["identity"],
                     "supervision_and_fence": True,
