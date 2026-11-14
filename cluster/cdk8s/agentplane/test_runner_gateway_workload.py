@@ -10,6 +10,7 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
 from agentplane.net.peertls.config import (
+    ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
     GATEWAY_ENVIRONMENTS_URI,
@@ -241,6 +242,11 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.history_service.HistoryService/FindSessions",
         "/agentplane.history_service.HistoryService/WatchSessionSummaries",
     ]
+    assert history["reader_service_callers"] == [ACTIONS_URI, APP_URI, NOTIFICATIONS_URI]
+    assert history["service_delegation"] == {
+        "actors": [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}],
+        "methods": history_delegation["methods"],
+    }
 
 
 def test_empty_operator_callers_are_omitted(scratch_app: App) -> None:

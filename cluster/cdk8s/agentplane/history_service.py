@@ -20,9 +20,22 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, DelegationSettings, IngressSettings, Settings
+from agentplane.history_service.settings import (
+    RUNNER_INGRESS_AUDIENCE,
+    DelegationSettings,
+    IngressSettings,
+    ServiceDelegationSettings,
+    ServiceDelegator,
+    Settings,
+)
 from agentplane.identity.auth import listener
-from agentplane.net.peertls.config import HISTORY_SERVICE_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    CENTRAL_SAMPLER_URI,
+    HISTORY_SERVICE_URI,
+    NOTIFICATIONS_URI,
+)
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import central_sampler, database, egress, workload_tls
@@ -42,6 +55,18 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
 # Exact network destination for opaque workload TLS through the central proxy.
 EGRESS_POLICY = "runner-ingress"
+_HISTORY_READ_METHODS = (
+    "/agentplane.history_service.HistoryService/ReadSessionEvents",
+    "/agentplane.history_service.HistoryService/FollowSession",
+    "/agentplane.history_service.HistoryService/ReadSessionObservations",
+    "/agentplane.history_service.HistoryService/GetSessionSummary",
+    "/agentplane.history_service.HistoryService/BatchGetSessionSummaries",
+    "/agentplane.history_service.HistoryService/ReadThreadEntities",
+    "/agentplane.history_service.HistoryService/ReadEntityEvidence",
+    "/agentplane.history_service.HistoryService/ReadNativeFrames",
+    "/agentplane.history_service.HistoryService/FindSessions",
+    "/agentplane.history_service.HistoryService/WatchSessionSummaries",
+)
 
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(128)
@@ -119,6 +144,7 @@ class HistoryService(Construct):
                 else ()
             ),
             sampler_identity_callers=env.central_sampler is not None,
+            sampler_service_actor=CENTRAL_SAMPLER_URI,
             settle_deltas=env.settle_deltas,
             compact_deltas=env.compact_deltas,
         )
@@ -128,19 +154,13 @@ class HistoryService(Construct):
                 actor=f"{delegation_actor.namespace}/{delegation_actor.name}",
                 # Session delegation names an Identity in policy_namespace as the effective caller.
                 identity_callers=True,
-                methods=(
-                    "/agentplane.history_service.HistoryService/ReadSessionEvents",
-                    "/agentplane.history_service.HistoryService/FollowSession",
-                    "/agentplane.history_service.HistoryService/ReadSessionObservations",
-                    "/agentplane.history_service.HistoryService/GetSessionSummary",
-                    "/agentplane.history_service.HistoryService/BatchGetSessionSummaries",
-                    "/agentplane.history_service.HistoryService/ReadThreadEntities",
-                    "/agentplane.history_service.HistoryService/ReadEntityEvidence",
-                    "/agentplane.history_service.HistoryService/ReadNativeFrames",
-                    "/agentplane.history_service.HistoryService/FindSessions",
-                    "/agentplane.history_service.HistoryService/WatchSessionSummaries",
-                ),
+                methods=_HISTORY_READ_METHODS,
             )
+        service_delegation = (
+            ServiceDelegationSettings(actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_HISTORY_READ_METHODS)
+            if delegation_actor is not None
+            else None
+        )
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.go).
         workload = add_service_workload(
@@ -189,6 +209,8 @@ class HistoryService(Construct):
         assert serving_tls.ca_file is not None
         settings = Settings(
             reader_accounts=frozenset(callers),
+            reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
+            service_delegation=service_delegation,
             token_audience=TOKEN_AUDIENCE,
             policy_namespace=env.namespace,
             ingress=ingress_settings,
