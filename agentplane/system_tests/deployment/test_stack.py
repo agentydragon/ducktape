@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,77 @@ def fixture() -> rendered_fixture.RenderedFixture:
             for name in (NAMESPACE, CREDENTIALS_NAMESPACE, kubernetes_accounts_namespace(NAMESPACE))
         ],
     )
+
+
+def test_namespace_cleanup_snapshot_requests_metadata_only_fields() -> None:
+    calls: list[tuple[tuple[str, ...], dict[str, Any]]] = []
+
+    class FakeK3s:
+        def kubectl(self, *args: str, **kwargs: Any) -> str:
+            calls.append((args, kwargs))
+            if args[:2] == ("get", "namespace"):
+                return (
+                    "NAME UID FINALIZERS PHASE CONDITIONS\n"
+                    "systest namespace-uid controller Terminating SomeResourcesRemain\n"
+                )
+            if args[:2] == ("get", "-n"):
+                return (
+                    "KIND NAME UID DELETING FINALIZERS OWNERS PHASE VOLUME CONTAINERS GRACE\n"
+                    "Pod app-0 pod-uid 2026-11-14T17:54:10Z example.test/cleanup Deployment/app Running app 30\n"
+                    "PersistentVolumeClaim state-claim pvc-uid 2026-11-14T17:54:10Z "
+                    "kubernetes Pod/app Pending pv-state <none> <none>\n"
+                )
+            raise AssertionError(f"unexpected snapshot query: {args}")
+
+    snapshot = stack._capture_namespace_cleanup_snapshot(FakeK3s(), ["systest"], threading.Event())  # type: ignore[arg-type]
+    encoded = json.dumps(snapshot)
+
+    assert "systest" in encoded
+    assert "pod-uid" in encoded
+    assert snapshot["namespaces"]["systest"]["state_error"] is None
+    assert "controller Terminating SomeResourcesRemain" in snapshot["namespaces"]["systest"]["state"]
+    assert snapshot["namespaces"]["systest"]["objects_error"] is None
+    assert "example.test/cleanup Deployment/app Running" in snapshot["namespaces"]["systest"]["pods_and_pvcs"]
+    assert "PersistentVolumeClaim state-claim pvc-uid" in snapshot["namespaces"]["systest"]["pods_and_pvcs"]
+    for args, kwargs in calls:
+        columns = next(argument for argument in args if argument.startswith("-o=custom-columns="))
+        assert kwargs == {"check": True, "timeout": 2, "stdout_only": True}
+        assert "--request-timeout=2s" in args
+        if args[:2] == ("get", "namespace"):
+            assert ".spec.finalizers" in columns
+            assert ".status.conditions[*].message" in columns
+        else:
+            assert args[3] == "pods,persistentvolumeclaims"
+            assert ".metadata.finalizers" in columns
+            assert ".metadata.ownerReferences" in columns
+            assert ".status.containerStatuses" in columns
+            assert ".spec.terminationGracePeriodSeconds" in columns
+            assert ".spec.nodeName" in columns
+            assert ".spec.volumeName" in columns
+        assert not any(
+            forbidden in columns
+            for forbidden in (".metadata.annotations", ".data", ".stringData", ".spec.containers", ".env")
+        )
+
+
+def test_namespace_cleanup_observer_failure_does_not_mask_delete_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    delete_error = RuntimeError("namespace deletion failed")
+    calls: list[tuple[str, ...]] = []
+
+    class FakeK3s:
+        def kubectl(self, *args: str, **_kwargs: Any) -> str:
+            calls.append(args)
+            raise delete_error
+
+    def fail_observer(*_args: Any) -> None:
+        raise ValueError("diagnostic failed")
+
+    monkeypatch.setattr(stack, "_observe_namespace_cleanup", fail_observer)
+    with pytest.raises(RuntimeError, match="namespace deletion failed") as raised:
+        stack._delete_fixture_namespaces(FakeK3s(), ["systest", "credentials", "accounts"])  # type: ignore[arg-type]
+
+    assert raised.value is delete_error
+    assert calls == [("delete", "namespace", "systest", "credentials", "accounts", "--wait=true", "--timeout=60s")]
 
 
 @pytest.mark.parametrize("failure", [None, "resources", "workloads", "volumes"])

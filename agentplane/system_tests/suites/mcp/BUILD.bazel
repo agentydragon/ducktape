@@ -156,15 +156,14 @@ k3s_suite(
 
 # Each disruptive Gateway case owns a stack so an aborted central turn cannot send an
 # unanswered model request into the following case's scripted upstream.
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_gateway_crash",
     srcs = ["test_gateway_crash.py"],
-    stack = "central",
+    stack = "central_services_native",
     deps = [
-        ":conftest",
         "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
@@ -175,14 +174,14 @@ k3s_suite(
     ],
 )
 
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_gateway_budget",
     srcs = ["test_gateway_budget.py"],
-    stack = "central",
+    stack = "central_services_native",
     deps = [
-        ":conftest",
         "//:conftest",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
@@ -215,14 +214,14 @@ k3s_suite(
 )
 
 # Replacing the central sampler Pod must not affect the services suite's other cases.
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_sampler_roll",
     srcs = ["test_sampler_roll.py"],
-    stack = "central",
+    stack = "central_services_native",
     deps = [
-        ":conftest",
         "//:conftest",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
@@ -234,14 +233,14 @@ k3s_suite(
 )
 
 # The History outage is isolated so a failed recovery assertion cannot leave another case without History.
+# Native fixtures replace the App-backed ancestor conftests; the scenario is unchanged.
+# gazelle:ignore
 k3s_suite(
     name = "test_history_outage",
     srcs = ["test_history_outage.py"],
-    stack = "central",
+    stack = "central_services_native",
     deps = [
-        ":conftest",
         "//:conftest",
-        "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:sandbox",
