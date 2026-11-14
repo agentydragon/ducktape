@@ -15,6 +15,11 @@ method names that admit delegated reads. The shared workload-auth middleware rec
 caller's current UID; a delegated Identity reads only the Sessions recorded with that incarnation,
 as its own workload does. A delegated ServiceAccount has no ownership scope. The actor's configured
 backend reader role never widens a delegated call's read scope.
+`reader_service_callers` grants named service SPIFFE IDs the backend-wide read scope. The independent
+`service_delegation` setting grants exact service actors read methods as a live effective Identity;
+those calls use only that Identity incarnation's retained Sessions. Service certificates do not
+produce a Kubernetes account or Pod proof, and a delegated service actor does not get the direct
+service reader scope.
 The receiver never looks up Actions or stores its credentials. Watch and follow leases still require a new
 admission when the client reconnects.
 
@@ -77,7 +82,7 @@ cannot take a ServiceAccount-bound Session. The read API admits a Sandbox SVID n
 and serves it exactly the Sessions retained as executing as that Identity incarnation. An Identity runner's announced `execution_identity` must
 be its own Identity. ServiceAccount authentication records the component that wrote history, not
 Session ownership. The writer kinds are exclusive in `session_history` (`history_writer_one_kind`), so a
-replica predating Identity writers cannot bind a ServiceAccount over one. Entries commit through
+replica predating Identity or service writers cannot bind an account over one. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit. The ingress queues at most 16 decoded frames and commits
 at most 128 entries or 1 MiB of serialized entries per transaction (one oversized entry forms its
@@ -402,10 +407,18 @@ sampler's token and grant and reads the Identity live, so a stale or missing inc
 before the handler; the sampler stays the writer, and the Identity is retained as the Session's
 execution Identity only when the announcement names the same one and the same Session, in a
 `sampler_announce`. A sampler pushing as itself keeps relaying the recorded Identity as above.
-Announcing a central Session never implies this grant. Central outboxes retain evidence in sampler
-PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
-retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
-not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
+Announcing a central Session never implies this grant.
+
+`ingress.sampler_service_actor` admits one exact service SPIFFE ID as a direct central producer and
+delegating actor. A direct service push can announce a central Session without an execution Identity.
+To push a Session with an Identity, the actor must include typed Session provenance; History checks
+that the envelope names the canonical announcement UUID and that its live effective Identity matches
+the announcement. `session_history` retains the service SPIFFE ID as writer provenance and the
+effective Identity separately. It never synthesizes a ServiceAccount writer. Existing sampler bearer
+accounts and their writer records remain supported during rollout. Central outboxes retain evidence
+in sampler PostgreSQL while History is unavailable. Raw boundary and execution-progress observations
+remain retained evidence; source-linked normalized Events drive the ordinary Thread fold. History
+does not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
 
 The SessionSpec placement cutover's History migration 8 moved a legacy archived
 `SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when

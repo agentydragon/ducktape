@@ -8,6 +8,7 @@ from typing import Annotated, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_serializer, model_validator
 
 from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.net.peertls.config import ServiceSPIFFEID
 from agentplane.subjects import ServiceAccountRef
 
 RUNNER_INGRESS_AUDIENCE = "agentplane-runner-ingress"
@@ -25,6 +26,20 @@ class DelegationSettings(BaseModel):
     )
 
 
+class ServiceDelegator(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    spiffe_id: ServiceSPIFFEID
+    connection_provenance: Literal[False] = False
+
+
+class ServiceDelegationSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    actors: tuple[ServiceDelegator, ...] = Field(min_length=1)
+    methods: tuple[str, ...] = Field(
+        min_length=1, description="Exact HistoryService RPC method names that admit service delegation."
+    )
+
+
 class IngressSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     token_audience: str = Field(min_length=1, description="The token audience for journal pushes by central samplers.")
@@ -37,6 +52,11 @@ class IngressSettings(BaseModel):
     sampler_identity_callers: bool = Field(
         default=False,
         description="Whether configured sampler ServiceAccounts may push as a delegating actor for a Session Identity.",
+    )
+    sampler_service_actor: ServiceSPIFFEID | None = Field(
+        default=None,
+        exclude_if=lambda value: not value,
+        description="Exact Central Sampler service SVID admitted to push, and to delegate Session Identity provenance.",
     )
     settle_deltas: bool = Field(
         default=True,
@@ -65,9 +85,19 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reader_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
+    reader_service_callers: frozenset[ServiceSPIFFEID] = Field(
+        default=frozenset(),
+        exclude_if=lambda value: not value,
+        description="Exact component SVIDs granted backend-wide History read access.",
+    )
     delegation: DelegationSettings | None = Field(
         default=None,
         description="Independent Actions delegation trust; a delegated actor keeps ordinary caller read scope.",
+    )
+    service_delegation: ServiceDelegationSettings | None = Field(
+        default=None,
+        exclude_if=lambda value: not value,
+        description="Independent exact service actors allowed to read History as a live effective Identity.",
     )
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
@@ -91,6 +121,10 @@ class Settings(BaseModel):
     def sorted_reader_accounts(self, value: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
         return sorted(value, key=lambda account: (account.namespace, account.name))
 
+    @field_serializer("reader_service_callers")
+    def sorted_reader_service_callers(self, value: frozenset[ServiceSPIFFEID]) -> list[ServiceSPIFFEID]:
+        return sorted(value)
+
     @model_validator(mode="after")
     def bearer_audiences(self) -> Settings:
         audiences = frozenset(
@@ -111,4 +145,12 @@ class Settings(BaseModel):
             raise ValueError(
                 "ingress.sampler_identity_callers requires ingress.sampler_accounts and a spiffe rpc listener"
             )
+        return self
+
+    @model_validator(mode="after")
+    def service_callers_need_spiffe_listener(self) -> Settings:
+        if (
+            self.reader_service_callers or self.service_delegation is not None or self.ingress.sampler_service_actor
+        ) and not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
+            raise ValueError("History service callers require a spiffe rpc listener")
         return self

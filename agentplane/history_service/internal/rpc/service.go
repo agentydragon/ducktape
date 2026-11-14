@@ -69,6 +69,27 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 	}
 }
 
+// ReadMethods returns the exact read surface whose service callers and delegators may be configured.
+func ReadMethods() []string {
+	return []string{
+		historypb.HistoryService_ReadSessionEvents_FullMethodName,
+		historypb.HistoryService_FollowSession_FullMethodName,
+		historypb.HistoryService_ReadSessionObservations_FullMethodName,
+		historypb.HistoryService_GetSessionSummary_FullMethodName,
+		historypb.HistoryService_BatchGetSessionSummaries_FullMethodName,
+		historypb.HistoryService_ReadThreadEntities_FullMethodName,
+		historypb.HistoryService_ReadEntityEvidence_FullMethodName,
+		historypb.HistoryService_ReadNativeFrames_FullMethodName,
+		historypb.HistoryService_FindSessions_FullMethodName,
+		historypb.HistoryService_WatchSessionSummaries_FullMethodName,
+	}
+}
+
+// MethodsWithServiceCallers adds exact component peers to every configured read method.
+func MethodsWithServiceCallers(resolver *auth.Resolver, callers []string) (auth.Methods, error) {
+	return Methods(resolver).WithServiceCallers(ReadMethods(), callers)
+}
+
 // MethodsWithDelegation adds an explicit Action actor grant to the configured full RPC names.
 func MethodsWithDelegation(
 	resolver *auth.Resolver,
@@ -81,6 +102,19 @@ func MethodsWithDelegation(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated History methods: %w", err)
+	}
+	return methods, nil
+}
+
+// MethodsWithServiceDelegation adds exact service actors to the configured read methods.
+func MethodsWithServiceDelegation(
+	resolver *auth.Resolver,
+	actors []auth.ServiceDelegator,
+	identities auth.IdentityUIDReader,
+) (auth.Methods, error) {
+	methods, err := Methods(resolver).WithServiceDelegation(ReadMethods(), actors, identities)
+	if err != nil {
+		return nil, fmt.Errorf("configure delegated History service methods: %w", err)
 	}
 	return methods, nil
 }
@@ -110,6 +144,13 @@ func (s *Service) scopedReader(ctx context.Context) (*reads.Reader, error) {
 			Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID,
 		})), nil
 	case auth.DelegatedIdentityAdmission:
+		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
+			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
+		})), nil
+	case auth.ServiceAdmission:
+		// Exact service reader allowlists grant the configured backend-wide read role.
+		return s.reader.WithReadScope(storage.AllSessions()), nil
+	case auth.DelegatedServiceIdentityAdmission:
 		return s.reader.WithReadScope(storage.OwnedByIdentity(storage.Identity{
 			Name: identity.EffectiveCaller.Name, UID: identity.EffectiveCaller.UID,
 		})), nil

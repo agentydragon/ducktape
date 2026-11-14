@@ -2,15 +2,23 @@ package ingress
 
 import (
 	"context"
+	"crypto/x509"
+	"errors"
+	"net"
 	"testing"
+	"time"
 
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -140,4 +148,127 @@ func TestADelegatingSamplerBindsTheSessionToTheIdentityItActsFor(t *testing.T) {
 		other := uuid.NewString()
 		refused(t, ingress.openDelegated(t, token, identity, other), centralAnnouncement(other, identity), codes.PermissionDenied)
 	})
+}
+
+type fixedIdentityUIDs map[string]string
+
+type unusedSubjectResolver struct{}
+
+func (unusedSubjectResolver) ResolveSubject(context.Context) (auth.Subject, error) {
+	return nil, errors.New("service calls must not fall back to workload resolution")
+}
+
+func (identities fixedIdentityUIDs) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
+	uid, found := identities[name]
+	return uid, found, nil
+}
+
+func serveServiceSamplerIngress(t *testing.T, service *Service, identities auth.IdentityUIDReader) (testIngress, *transporttesting.CA) {
+	t.Helper()
+	ca := transporttesting.NewCA(t)
+	serving := ca.IssueWithUsage(t, transport.HistoryIngressURI, x509.ExtKeyUsageServerAuth)
+	rpc := listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		TLS:           &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}},
+	}
+	credentials, err := rpc.ServerCredentialsWithServices(transport.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule, err := auth.AnySubject(unusedSubjectResolver{}).AllowServiceCallers([]string{transport.CentralSamplerURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule, err = rule.AllowServiceDelegationFrom([]auth.ServiceDelegator{{SPIFFEID: transport.CentralSamplerURI}}, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: rule}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials))...)
+	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
+	listener, err := net.Listen("tcp", rpc.ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	clientTLS, err := ca.IssueWithUsage(t, transport.CentralSamplerURI, x509.ExtKeyUsageClientAuth).ClientCredentials(transport.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(clientTLS), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}, ca
+}
+
+func (i testIngress) openWithServiceDelegation(t *testing.T, identity *identitypb.Identity, sessionID string, provenance *delegationpb.Delegation) *call {
+	t.Helper()
+	if provenance == nil {
+		provenance = &delegationpb.Delegation{Provenance: &delegationpb.Delegation_Session{
+			Session: &delegationpb.SessionProvenance{SessionId: sessionID},
+		}}
+	}
+	provenance.EffectiveCaller = &delegationpb.Delegation_Identity{Identity: identity}
+	encoded, err := auth.MarshalDelegation(provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := metadata.AppendToOutgoingContext(t.Context(), auth.DelegationMetadataKey, string(encoded))
+	ctx, cancel := context.WithTimeout(ctx, callDeadline)
+	t.Cleanup(cancel)
+	stream, err := i.client.Push(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &call{t: t, stream: stream, cancel: cancel}
+}
+
+func TestCentralSamplerServiceWriterRequiresMatchingSessionProvenance(t *testing.T) {
+	service, db := newService(t, testTiming)
+	service.SamplerServiceActor = transport.CentralSamplerURI
+	identity := &identitypb.Identity{Name: "central-identity", Uid: "central-identity-uid"}
+	ingress, _ := serveServiceSamplerIngress(t, service, fixedIdentityUIDs{identity.Name: identity.Uid})
+
+	sessionID := uuid.NewString()
+	valid := ingress.openWithServiceDelegation(t, identity, sessionID, nil)
+	valid.send(centralAnnouncement(sessionID, identity))
+	valid.acknowledged(0, false)
+	var writerURI string
+	var writerUID, executionName, executionUID *string
+	if err := db.QueryRowContext(t.Context(), `SELECT writer_service_uri, writer_uid, execution_identity_name, execution_identity_uid
+		FROM session_history WHERE id=$1`, sessionID).Scan(&writerURI, &writerUID, &executionName, &executionUID); err != nil {
+		t.Fatal(err)
+	}
+	if writerURI != transport.CentralSamplerURI || writerUID != nil || executionName == nil || *executionName != identity.Name ||
+		executionUID == nil || *executionUID != identity.Uid {
+		t.Fatalf("service writer=%q account UID=%v execution identity=%v/%v", writerURI, writerUID, executionName, executionUID)
+	}
+	valid.cancel()
+
+	delegatedID, announcedID := uuid.NewString(), uuid.NewString()
+	denied := ingress.openWithServiceDelegation(t, identity, delegatedID, nil)
+	denied.send(centralAnnouncement(announcedID, identity))
+	if _, err := denied.stream.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("a different announced Session was admitted: %v", err)
+	}
+	var unexpected int
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_history WHERE id=$1", announcedID).Scan(&unexpected); err != nil {
+		t.Fatal(err)
+	}
+	if unexpected != 0 {
+		t.Fatal("a provenance mismatch created history")
+	}
+
+	badProvenance := &delegationpb.Delegation{
+		Provenance: &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
+	}
+	denied = ingress.openWithServiceDelegation(t, identity, uuid.NewString(), badProvenance)
+	denied.send(centralAnnouncement(uuid.NewString(), identity))
+	if _, err := denied.stream.Recv(); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("non-Session service provenance was admitted: %v", err)
+	}
 }

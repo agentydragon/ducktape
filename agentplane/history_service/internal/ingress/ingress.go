@@ -48,10 +48,11 @@ type Timing struct {
 // Session it announces is bound to the ServiceAccount or Identity that first pushed it.
 type Service struct {
 	session_ingresspb.UnimplementedSessionJournalIngressServer
-	SandboxUIDs     SandboxUIDResolver
-	History         *storage.Store
-	Timing          Timing
-	SamplerAccounts []auth.Account
+	SandboxUIDs         SandboxUIDResolver
+	History             *storage.Store
+	Timing              Timing
+	SamplerAccounts     []auth.Account
+	SamplerServiceActor string
 }
 
 type pushStream = grpc.BidiStreamingServer[session_ingresspb.PushFrame, session_ingresspb.Acknowledgement]
@@ -78,9 +79,19 @@ type delegatingSamplerPusher struct {
 	sessionID string
 }
 
-func (accountPusher) isPusher()           {}
-func (identityPusher) isPusher()          {}
-func (delegatingSamplerPusher) isPusher() {}
+type serviceSamplerPusher struct{ actor storage.ServiceWriter }
+
+type delegatingServiceSamplerPusher struct {
+	actor     storage.ServiceWriter
+	identity  storage.Identity
+	sessionID string
+}
+
+func (accountPusher) isPusher()                  {}
+func (identityPusher) isPusher()                 {}
+func (delegatingSamplerPusher) isPusher()        {}
+func (serviceSamplerPusher) isPusher()           {}
+func (delegatingServiceSamplerPusher) isPusher() {}
 
 // AllowDelegatingSamplers grants each configured sampler account the delegated mode on the Push
 // rule: asserting the Identity a central Session executes as, resolved live by identities.
@@ -116,6 +127,18 @@ func (s *Service) Push(stream pushStream) error {
 			identity:  storage.Identity{Name: admission.EffectiveCaller.Name, UID: admission.EffectiveCaller.UID},
 			sessionID: session.GetSessionId(),
 		}
+	case auth.ServiceAdmission:
+		caller = serviceSamplerPusher{actor: storage.ServiceWriter{SPIFFEID: admission.Caller.SPIFFEID}}
+	case auth.DelegatedServiceIdentityAdmission:
+		session := admission.Provenance.GetSession()
+		if session == nil {
+			return status.Error(codes.PermissionDenied, "a delegating sampler names the Session it pushes")
+		}
+		caller = delegatingServiceSamplerPusher{
+			actor:     storage.ServiceWriter{SPIFFEID: admission.Actor.SPIFFEID},
+			identity:  storage.Identity{Name: admission.EffectiveCaller.Name, UID: admission.EffectiveCaller.UID},
+			sessionID: session.GetSessionId(),
+		}
 	default:
 		principal, err := auth.Caller(ctx)
 		if err != nil {
@@ -141,6 +164,17 @@ func samplerWriter(caller pusher) (storage.ServiceAccountWriter, bool) {
 		return caller.actor, true
 	default:
 		return storage.ServiceAccountWriter{}, false
+	}
+}
+
+func samplerServiceWriter(caller pusher) (storage.ServiceWriter, bool) {
+	switch caller := caller.(type) {
+	case serviceSamplerPusher:
+		return caller.actor, true
+	case delegatingServiceSamplerPusher:
+		return caller.actor, true
+	default:
+		return storage.ServiceWriter{}, false
 	}
 }
 
@@ -181,9 +215,15 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	var sandboxUID string
 	var executionIdentity *storage.Identity
 	if sampler != nil {
-		account, ok := samplerWriter(caller)
-		if !ok || !slices.Contains(c.service.SamplerAccounts, auth.Account{Namespace: account.Namespace, Name: account.Name}) {
-			return status.Error(codes.PermissionDenied, "central sampler producer is not authorized")
+		if serviceActor, ok := samplerServiceWriter(caller); ok {
+			if c.service.SamplerServiceActor == "" || serviceActor.SPIFFEID != c.service.SamplerServiceActor {
+				return status.Error(codes.PermissionDenied, "central sampler service is not authorized")
+			}
+		} else {
+			account, ok := samplerWriter(caller)
+			if !ok || !slices.Contains(c.service.SamplerAccounts, auth.Account{Namespace: account.Namespace, Name: account.Name}) {
+				return status.Error(codes.PermissionDenied, "central sampler producer is not authorized")
+			}
 		}
 		announce = sampler.GetSession()
 		executor := sampler.GetExecutor()
@@ -206,7 +246,7 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 			return status.Error(codes.PermissionDenied, "central Sessions require a sampler announcement")
 		}
 		switch caller := caller.(type) {
-		case delegatingSamplerPusher:
+		case delegatingSamplerPusher, delegatingServiceSamplerPusher, serviceSamplerPusher:
 			return status.Error(codes.PermissionDenied, "a delegating sampler announces a central Session")
 		case accountPusher:
 			if c.service.SandboxUIDs != nil {
@@ -239,14 +279,23 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 				return status.Error(codes.PermissionDenied, "session execution identity does not match the delegated Identity")
 			}
 			executionIdentity = &announced
+		case delegatingServiceSamplerPusher:
+			if announced != caller.identity {
+				return status.Error(codes.PermissionDenied, "session execution identity does not match the delegated Identity")
+			}
+			executionIdentity = &announced
 		case accountPusher:
 			if sampler != nil {
 				executionIdentity = &announced
 			}
+		case serviceSamplerPusher:
+			return status.Error(codes.PermissionDenied, "a service sampler must delegate the Session execution Identity")
 		}
 	} else if _, delegating := caller.(delegatingSamplerPusher); delegating {
 		// A Session with no Identity is the sampler's own to push; acting for one it does not
 		// execute as would misattribute the journal.
+		return status.Error(codes.PermissionDenied, "the delegated Identity is not the session execution identity")
+	} else if _, delegating := caller.(delegatingServiceSamplerPusher); delegating {
 		return status.Error(codes.PermissionDenied, "the delegated Identity is not the session execution identity")
 	}
 	sessionID, err := uuid.Parse(announce.GetSessionId())
@@ -258,6 +307,9 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 		return status.Error(codes.InvalidArgument, "the Session ID is not a canonical UUID")
 	}
 	if delegating, ok := caller.(delegatingSamplerPusher); ok && delegating.sessionID != announce.GetSessionId() {
+		return status.Error(codes.PermissionDenied, "the announced Session is not the one the delegation names")
+	}
+	if delegating, ok := caller.(delegatingServiceSamplerPusher); ok && delegating.sessionID != announce.GetSessionId() {
 		return status.Error(codes.PermissionDenied, "the announced Session is not the one the delegation names")
 	}
 	c.log = c.log.With("session_id", sessionID)
@@ -280,6 +332,16 @@ func (c *pushCall) run(ctx context.Context, caller pusher) error {
 	case delegatingSamplerPusher:
 		executor := sampler.GetExecutor()
 		checkpoint, err = c.history.BindSamplerWriter(ctx, sessionID, caller.actor, storage.Sandbox{
+			Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
+		}, executionIdentity)
+	case serviceSamplerPusher:
+		executor := sampler.GetExecutor()
+		checkpoint, err = c.history.BindServiceWriter(ctx, sessionID, caller.actor, storage.Sandbox{
+			Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
+		}, executionIdentity)
+	case delegatingServiceSamplerPusher:
+		executor := sampler.GetExecutor()
+		checkpoint, err = c.history.BindServiceWriter(ctx, sessionID, caller.actor, storage.Sandbox{
 			Namespace: executor.GetTarget().GetNamespace(), Name: executor.GetTarget().GetName(), UID: sandboxUID,
 		}, executionIdentity)
 	}

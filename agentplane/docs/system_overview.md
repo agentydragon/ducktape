@@ -349,7 +349,7 @@ flowchart LR
     gateway -->|mTLS Executor gRPC| runtime
     runtime -->|direct Executor calls| execution
     execution -->|local Codex JSON-RPC over WebSocket| executor
-    sampler -->|acknowledged outbox: SessionJournalIngress.Push| history
+    sampler -->|acknowledged outbox: SessionJournalIngress.Push; typed Session provenance for Identity attribution| history
     sampler -->|Responses API| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
 ```
@@ -633,8 +633,9 @@ authentication policy
 and terminates TLS through an opaque central tunnel;
 the proxy never asserts the caller. History, Notification, Gateway, Action and LLM each serve
 bearer-authenticated and Sandbox-SVID RPCs on their primary TLS listener, with method-specific
-authorization preserved. The central sampler uses verified service TLS with projected
-ServiceAccount bearer tokens and holds no SVID. Only LLM ingress holds the LiteLLM key.
+authorization preserved. With `service_callers` configured, the central sampler's TLS listener
+presents its service SVID and admits exact service peers. Its History exporter still uses the
+projected ServiceAccount bearer token pending Stage 4. Only LLM ingress holds the LiteLLM key.
 Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
