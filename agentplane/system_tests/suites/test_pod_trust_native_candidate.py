@@ -62,11 +62,8 @@ async def test_cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> N
 
 async def test_a_command_box_presents_its_own_svid(cluster: Cluster, native_sandbox: Sandboxes) -> None:
     view = await native_sandbox(f"systest-egress-box-{uuid4().hex[:8]}", template=POD_TEMPLATE)
-    policy_objects = PolicyObjects(cluster=cluster)
-    try:
+    async with PolicyObjects(cluster=cluster) as policy_objects:
         await egress_native.a_command_box_presents_its_own_svid(cluster, view, policy_objects)
-    finally:
-        await policy_objects.delete_all()
 
 
 async def test_a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(
