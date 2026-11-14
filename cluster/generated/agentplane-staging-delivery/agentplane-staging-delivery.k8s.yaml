@@ -341,6 +341,15 @@ data:
     runner_control_target_template: runner-gateway.{namespace}.svc:8080
     dispatcher_audience: session-dispatcher
     gateway_audience: agentplane-runner-gateway
+    runtime_proxy_readers:
+      - spiffe://agentplane/app
+      - spiffe://agentplane/notifications
+    runtime_proxy_session_callers:
+      - spiffe://agentplane/sessions
+    runtime_proxy_controller_callers:
+      - spiffe://agentplane/sandbox-controller
+    executor_service_callers:
+      - spiffe://agentplane/central-sampler
     runner_security:
       mode: mtls
       tls:

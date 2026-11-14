@@ -435,9 +435,17 @@ flowchart LR
 
 ## Environment control and native Sessions
 
+The Gateway's Runtime proxy and Executor listener admits exact component service SVIDs alongside
+the existing bearer callers: App and Notifications for diagnostics, Sessions for native Session
+operations, Sandbox Controller for lifecycle operations, and Central Sampler for Executor methods.
+These are independent method grants. Caller configuration activates each edge only after its image
+is pinned; the proxy's existing native Runtime mTLS identity remains separate.
+
 ```mermaid
 flowchart LR
     gateway[Runner Gateway]
+    services[Configured App, Notifications, Sessions, Controller and sampler service SVIDs]
+    services -->|mTLS: method-scoped proxy and Executor grants| gateway
     subgraph environment_runtime[Environment Runtime process]
       runtime[Runtime admission and lifecycle]
       sessions[Session manager, adapters and journals]
