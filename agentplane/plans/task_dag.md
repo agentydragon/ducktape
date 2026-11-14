@@ -183,14 +183,14 @@ The operator released these tracks on 2026-11-14; Codex workers build them, and 
 their state at 07:40 UTC. Each row's node owns its gates; the Go reorganization behind several of them
 is [section 17](#17-two-binaries-and-the-go-layout).
 
-| Track                                    | Operator release (UTC)                                         | Node                                                                | State                                                                                                                    |
-| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Pre-cutover leftovers                    | 01:41, "dispatch 1, 2"                                         | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)           |
-| TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                               |
-| Any Gateway replica                      | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Route and stable-Service cutover merged through #16365; final receiver/RBAC cleanup is image-gated in the component plan |
-| One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                         |
-| Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                              |
-| Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                                       |
+| Track                                    | Operator release (UTC)                                         | Node                                                                | State                                                                                                                                                              |
+| ---------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pre-cutover leftovers                    | 01:41, "dispatch 1, 2"                                         | `REFACTOR_COHERENCE_AUDIT`                                          | Merged #16323, #16331, #16340, #16341; #16336 and #16356 closed (History keeps Sessions without a Sandbox UID)                                                     |
+| TLS on the two plaintext hops            | 01:41, same release                                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Merged #16332; #16333 and #16334 in review                                                                                                                         |
+| Any Gateway replica                      | 02:36, card "Any replica, no epoch"                            | [Section 12](#12-the-runner-gateway-serves-the-runners-own-service) | Route and stable-Service cutover merged through #16365; final receiver/RBAC/settings cleanup is prepared with image and config rollout gates in the component plan |
+| One service authentication mode          | 04:56, "One auth mode can fire off"                            | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 merged; stage 3 receivers part merged, part in review                                                                                                   |
+| Environment rule slices                  | 04:58, "Okay this sounds good to me (these environment rules)" | `ENVIRONMENT_LIFECYCLE_RULES`                                       | `resume` merged (#16346); `bind_session` in review (#16351)                                                                                                        |
+| Identity changes re-checked, not refused | 07:20, "okay, sounds good to me, sessions can re-check"        | `SANDBOX_IDENTITY_RECHECK`                                          | In review (#16373)                                                                                                                                                 |
 
 Not released: the stage 3 moves of section 17, retiring `orchestration_v1` and launcher auto-grants.
 Decided since: explicit resume reserves no wake budget (07:41, card "No budget for explicit resume");
@@ -200,9 +200,6 @@ its behavior PR is `EXPLICIT_RESUME_BUDGET_REMOVAL` in section 17.
 flowchart LR
     subgraph AUTH_TRACK[One service authentication mode]
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
-    end
-    subgraph GATEWAY_TRACK[Any Gateway replica]
-        RUNNER_GATEWAY_SETTINGS_CLEANUP[Held: remove legacy Gateway settings after image rollout]
     end
     subgraph RULE_TRACK[Environment rule slices]
         ENVIRONMENT_IDENTITY_BIND_SESSION[In review: native bind_session grants]
@@ -2429,7 +2426,6 @@ service caller contract. The separate destination-authority decision
 ```mermaid
 flowchart TD
     RUNNER_OBSERVATION_READINESS_RACE[Candidate: investigate runner readiness and routing race]
-    RUNNER_GATEWAY_SETTINGS_CLEANUP[Held: remove unused proxy_port and Pod-IP env after image rollout]
 ```
 
 ### `RUNNER_OBSERVATION_READINESS_RACE` — resolve intermittent runner readiness diagnostics
@@ -2453,20 +2449,9 @@ replica, selected Service endpoint, and local observer/connection state at the f
 PR #14851 adds a bounded retry for transient `UNAVAILABLE` in the test's read-only `ListSessions`
 poll. This handles the test poll only; it does not establish that the publication race caused the
 original same-name-replacement failure or prove the underlying failure is fixed. Do not retry
-mutations with uncertain outcomes. Keep this investigation separate from the selected route contract and the independent Gateway
-settings cleanup below.
+mutations with uncertain outcomes. Keep this investigation separate from the selected route contract.
 **Exit:** either capture evidence that distinguishes the remaining failure boundary if the failure
 recurs, or close the incident follow-up if ordinary use shows no recurrence. Preserve UID/incarnation/boot fencing and stale-call denial.
-
-### `RUNNER_GATEWAY_SETTINGS_CLEANUP` — remove obsolete Gateway settings
-
-**Held until the current Gateway image and manifest rollout is active; separate stacked PR.** Remove
-the accepted `proxy_port` setting and the unused Pod-IP DownwardAPI environment binding after
-settings deployed by the image containing this cleanup no longer include them. The current change
-stops emitting `proxy_port` and removes Gateway Pod-IP reads, while retaining the decoder field and
-manifest environment binding for the rollout. This is separate from the final Runtime protocol and
-RBAC cleanup. **Exit:** deployed settings no longer provide either value, and the settings reader
-rejects the removed key.
 
 ## Scope and retirement of stale gates
 
@@ -3963,7 +3948,6 @@ The stage 3 moves are not released; `SANDBOX_IDENTITY_RECHECK` is.
 
 ```mermaid
 flowchart LR
-    RUNNER_GATEWAY_SETTINGS_CLEANUP[Section 12: Gateway settings follow-up]
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
     GO_LAYOUT_FIXES[Candidate: stage 2 layout fixes]
     ENVIRONMENTS_DIRECTORY[Ready: Sandbox Controller moves to environments/]

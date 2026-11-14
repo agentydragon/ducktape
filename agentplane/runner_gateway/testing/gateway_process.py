@@ -240,8 +240,6 @@ async def run_gateway(
                 Settings.config_file_env: str(settings_path),
                 Settings.dispatcher_database_url_env: _wire_database_url(database_url),
                 Settings.pod_name_env: workload.name,
-                # Older Gateway images require this runtime input; the current route does not use it.
-                Settings.pod_ip_env: "192.0.2.10",
             }
             credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
             async with go_process(

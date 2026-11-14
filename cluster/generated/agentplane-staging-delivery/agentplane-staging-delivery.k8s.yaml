@@ -41,10 +41,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-session-dispatcher
-            - name: AGENTPLANE_RUNNER_GATEWAY_POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
             - name: OTEL_SERVICE_NAME
               value: runner-gateway
             - name: OTEL_RESOURCE_ATTRIBUTES

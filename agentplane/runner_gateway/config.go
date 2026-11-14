@@ -41,16 +41,14 @@ type config struct {
 	RunnerSecurity                peertls.Security `mapstructure:"runner_security"`
 	Namespace                     string           `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace       string             `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL string             `mapstructure:"-"`
-	PodName               string             `mapstructure:"-"`
-	RunnerTokenFile       string             `mapstructure:"runner_token_file"`
-	Kubeconfig            string             `mapstructure:"kubeconfig"`
-	KubernetesClientQPS   float32            `mapstructure:"kubernetes_client_qps"`
-	RPC                   listener.Config    `mapstructure:"rpc"`
-	GatewayTLS            *peertls.ClientTLS `mapstructure:"gateway_tls"`
-	// CLEANUP(added 2026-11-14): Remove after no deployed Gateway config emits proxy_port.
-	ProxyPort                    int                      `mapstructure:"proxy_port"`
+	PolicyNamespace              string                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL        string                   `mapstructure:"-"`
+	PodName                      string                   `mapstructure:"-"`
+	RunnerTokenFile              string                   `mapstructure:"runner_token_file"`
+	Kubeconfig                   string                   `mapstructure:"kubeconfig"`
+	KubernetesClientQPS          float32                  `mapstructure:"kubernetes_client_qps"`
+	RPC                          listener.Config          `mapstructure:"rpc"`
+	GatewayTLS                   *peertls.ClientTLS       `mapstructure:"gateway_tls"`
 	RunnerControlTargetTemplate  string                   `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                   `mapstructure:"dispatcher_audience"`
 	GatewayAudience              string                   `mapstructure:"gateway_audience"`
@@ -97,7 +95,6 @@ type delegationConfig struct {
 
 func defaultConfig() config {
 	return config{
-		ProxyPort:                   sandboxapi.ControlServicePort,
 		RunnerControlTargetTemplate: sandboxapi.RunnerGatewayTargetTemplate(),
 		QueueCap:                    1000, WatchLeaseSeconds: 300, RunnerTimeoutSeconds: 10,
 	}
@@ -272,9 +269,6 @@ func (c *config) validate() error {
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
 		!c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, identity_callers, and methods")
-	}
-	if c.ProxyPort < 1 || c.ProxyPort > 65535 {
-		return errors.New("proxy_port must be between 1 and 65535")
 	}
 	if math.IsNaN(float64(c.KubernetesClientQPS)) || math.IsInf(float64(c.KubernetesClientQPS), 0) {
 		return errors.New("kubernetes_client_qps must be finite")
