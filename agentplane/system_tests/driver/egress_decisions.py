@@ -19,9 +19,11 @@ from agentplane.system_tests.driver.tls import service_credentials
 
 
 @asynccontextmanager
-async def watch_client(cluster: Cluster) -> AsyncIterator[tuple[rpc.EgressAdminAsyncStub, Caller]]:
-    # The app is an explicitly configured EgressAdmin reader; bind its test credential to its Pod.
-    caller, _, _ = await bound_caller(cluster, "app", audience="agentplane-egress-admin")
+async def watch_client(
+    cluster: Cluster, *, service_account: str
+) -> AsyncIterator[tuple[rpc.EgressAdminAsyncStub, Caller]]:
+    # The owning scenario chooses its configured reader; bind the token to that live Pod.
+    caller, _, _ = await bound_caller(cluster, service_account, audience="agentplane-egress-admin")
     forward = PortForward(
         cluster.command("port-forward"),
         resource="service/egress-admin",

@@ -26,6 +26,14 @@ the goal. Combine a useful substrate with coverage-accounted case partitions and
 structural dependency cuts, then measure the complete selected graph. Continue
 the bounded App-free Egress extraction; avoid unrelated fixture optimizations.
 
+The source audit narrows the stopped-seed option: the hosted non-KVM route already supports
+remote snapshots and live retained K3s, while self-hosted VM/Firecracker Docker actions use
+`recycle-runner=false` and fresh private K3s data. Do not assume snapshot support transfers
+between them. A stopped hosted Pod seed would add restart work to the current warm path;
+defer that low-headroom mode. A KVM baseline needs an actual action-owned disk/volume producer
+and isolated clone or prepared-worker contract before execution. Continue the complete graph
+screen and identify a broader Gateway/Dispatcher contract domain with real assertion witnesses.
+
 ## Candidate architecture
 
 1. Owner tests cover state machines, authorization rules and injected-clock timing.

@@ -605,8 +605,10 @@ def build_chart(
         env,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
-        # These platform cases use workload Rules RPCs. Only App journeys need EgressAdmin.
-        admin_grpc_callers=([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else None),
+        admin_grpc_callers=[
+            ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT),
+            *([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else []),
+        ],
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,

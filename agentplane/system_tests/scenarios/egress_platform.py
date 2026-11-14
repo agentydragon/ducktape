@@ -18,6 +18,9 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.tracing import tracer
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 
+# Generated protocol stubs import protobuf types that mypy resolves through direct deps.
+# gazelle:include_dep @pypi//protobuf
+
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 UNLISTED_HOST = "example.com"
 DECISION_SECONDS = 30.0
@@ -29,6 +32,7 @@ async def decision_for(
     sandbox: environment_service_pb2.EnvironmentDescriptor,
     host: str,
     *,
+    reader_service_account: str,
     after: datetime | None = None,
 ) -> Decision:
     """The newest decision for this live Sandbox Identity about `host`, after `after`."""
@@ -36,7 +40,7 @@ async def decision_for(
         "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
     ):
         assert sandbox.identity_name
-        async with egress_decisions.watch_client(cluster) as (stub, caller):
+        async with egress_decisions.watch_client(cluster, service_account=reader_service_account) as (stub, caller):
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True
             ):

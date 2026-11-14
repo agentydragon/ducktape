@@ -160,6 +160,7 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:scripted_model",
         "//cluster/cdk8s/agentplane:namespaces",
+        "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//tenacity",
     ],
@@ -529,6 +530,7 @@ py_library(
         "//agentplane/system_tests/driver:egress_decisions",
         "//agentplane/system_tests/driver:tracing",
         "//cluster/cdk8s/agentplane:namespaces",
+        "@pypi//protobuf",
         "@pypi//tenacity",
     ],
 )
@@ -543,6 +545,7 @@ py_library(
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:tracing",
+        "@pypi//protobuf",
         "@pypi//tenacity",
     ],
 )

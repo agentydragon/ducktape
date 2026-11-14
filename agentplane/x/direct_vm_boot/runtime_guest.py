@@ -89,6 +89,18 @@ def assert_loopback_listener_free(address: str) -> None:
         listener.bind((address, 9090))
 
 
+def assert_loopback_listener_closed(address: str) -> None:
+    # A closed QEMU listener can leave accepted connections in TIME_WAIT. A bind
+    # probe would reject that harmless state as though the listener were alive.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1)
+        try:
+            probe.connect((address, 9090))
+        except ConnectionRefusedError:
+            return
+    raise AssertionError(f"Gateway host-forward listener still accepts connections at {address}:9090")
+
+
 def write_guest_inputs(
     inputs: Path, sandbox: SandboxCluster, config: Configuration, *, wrong_gateway_client_ca: bool = False
 ) -> None:
@@ -431,8 +443,8 @@ async def runtime_guest_container(
         if remove.returncode != 0:
             cleanup_failure = cleanup_failure or "removing the direct Runtime guest container failed"
         try:
-            await asyncio.to_thread(assert_loopback_listener_free, gateway_address)
-        except OSError as error:
+            await asyncio.to_thread(assert_loopback_listener_closed, gateway_address)
+        except (OSError, AssertionError) as error:
             cleanup_failure = cleanup_failure or f"QEMU left the Gateway host-forward listener bound: {error}"
         await asyncio.to_thread(_export_guest_outputs, outputs, artifacts)
         if cleanup_failure is not None:
