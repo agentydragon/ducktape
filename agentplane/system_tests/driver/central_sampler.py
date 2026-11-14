@@ -18,7 +18,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
@@ -46,6 +46,19 @@ class CentralStack:
     incarnation_uid: str
     control_target: str
     sampler_pod_name: str
+    runner: SandboxRunner
+
+    async def wait_for_runner(self, incarnation_uid: str) -> None:
+        """Prove the Gateway has a callable connection to this workload, without replaying mutations."""
+        async with asyncio.timeout(15):
+            while True:
+                try:
+                    await self.runner.list_sessions(expected_incarnation_uid=incarnation_uid)
+                    return
+                except ServiceError as error:
+                    if error.code not in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.ABORTED):
+                        raise
+                await asyncio.sleep(0.05)
 
 
 async def _bound_token(cluster: Cluster, core: k8s.CoreV1Api, account: str, pod: k8s.V1Pod, audience: str) -> str:
@@ -265,15 +278,6 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 owner=ServiceAccount(namespace=cluster.namespace, name=sandbox),
                 target=EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid),
             )
-            async with asyncio.timeout(15):
-                while True:
-                    try:
-                        await gateway.list_sessions(destination)
-                        break
-                    except ServiceError as error:
-                        if error.code not in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.ABORTED):
-                            raise
-                    await asyncio.sleep(0.05)
             sampler_channel = await stack.enter_async_context(dial(target))
             dispatcher_channel = await stack.enter_async_context(
                 dial(
@@ -303,7 +307,9 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
                 incarnation_uid=incarnation,
                 control_target=control_target,
                 sampler_pod_name=sampler_pod.metadata.name,
+                runner=gateway.runner(destination),
             )
+        await deployed.wait_for_runner(incarnation)
         yield deployed
 
 
