@@ -93,7 +93,10 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   garbage collection removes afterwards, never goes while a container can still write to it.
 - **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the gateway
   proxy. The controller records the last request time for that runner incarnation before calling,
-  then waits up to one minute before retrying a failed or unfinished request. Runner stage changes
+  and makes at most three attempts on transient `Unavailable` replies within one 30-second handshake, resolving the elected
+  Gateway again on each try and fencing every call to that same incarnation Pod UID. A changed
+  incarnation or refused caller ends the handshake. A failed or unfinished handshake then waits
+  up to one minute before another attempt. Runner stage changes
   enqueue it sooner; `quiesced` completes without another call. The recorded deadline survives
   watch events and controller restarts. A published incarnation is conservatively sealed even after leadership takeover has lost its
   observation history; empty memory cannot establish that it admitted no work. Its unsealed

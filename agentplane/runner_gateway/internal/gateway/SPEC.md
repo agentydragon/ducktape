@@ -22,6 +22,10 @@ Lease metadata does not establish lifecycle readiness, idleness or quiescence.
 
 The public Gateway authenticates Gateway-audience Kubernetes tokens with singular Pod-name and
 Pod-UID proof. All calls retain Sandbox UID/owner and current Runtime incarnation fencing.
+Callers may additionally provide one non-empty `x-agentplane-incarnation-uid` metadata value to
+require a specific Runtime incarnation. The Gateway resolves and validates the current Sandbox and
+Pod first, then returns `Aborted` without forwarding if that incarnation differs. A duplicate or
+empty value is `InvalidArgument`; omitting the value preserves the ordinary proxy behavior.
 
 - Only Pod-bound tokens of the combined Gateway/Dispatcher ServiceAccount may call Runtime `CreateSession`, `SubmitInput`,
   `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn`. Startup derives its account from the
