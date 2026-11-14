@@ -1,26 +1,26 @@
 {
-  "source_devel_commit": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
-  "audited_at_utc": "2026-11-14T00:31:06Z",
+  "source_devel_commit": "61fff5940585974df89ad1b2f4222c403814925d",
+  "audited_at_utc": "2026-11-14T02:32:12.581846+00:00",
   "published_at_utc": null,
-  "scope": "Iteration 11 architecture, fixed-source graph replay, one-VM candidate proof and storage-readiness test repair. The existing latency/reliability populations and gates are unchanged.",
-  "report_sha256": "f46a4755a9be90f225c96ba488d3ff6673c05056a32a62bf39aa2c5d0874376e",
-  "evidence_sha256": "3e7d31bc0ca97c54889ad45e7dc3ead4a0f50738d10639d9a12f5acbf23ed61a",
-  "previous_gh_pages_commit": "b03106b455d64b2aa154ab68fbf6df83a64e15fd",
+  "scope": "Iteration 12 architecture: reduced-root screen, direct private-systemd receipt controls, integrated rebase and merged independent ports. Fleet measurement windows and required gates unchanged.",
+  "report_sha256": "ba22b13dc521177257f18a063bed6bd5a96b2e4635bf81005ccb64d4659b8ec6",
+  "evidence_sha256": "3590092332cacd726b4d7729e4ca69a9d1b8353418b660a1d76b4141d54466fa",
+  "previous_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
   "pilot_branch": "agent/test-architecture-pivot",
-  "pilot_head_commit": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
-  "pilot_base_commit": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+  "pilot_head_commit": "417b6428baeae93116fb293a782120664a754697",
+  "pilot_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
   "visual_validation": "visual-validation.json",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
-  "attribution": "Draft PR #16102 head 4bfabd5 passed all three required checks. Tested merge c5a0272 has devel parent 0479dfc9; native invocation 83623e77 completed in 139.276s. No full current-head physical/JUnit cohort is curated and this selected/cached run is not a matched saving. Manual VM proof has separate ff39339 plus patch provenance. PR #16299 remains open and unmerged despite green required checks. No gate or fleet rate changed.",
+  "attribution": "No matched complete-CI saving measured. Exact head417b passed required checks; manual control and image runs retain separate sources and physical/JUnit provenance. Independent ports16316/16317 and storage16299 are merged. Fleet rates and qualification remain unchanged.",
   "initial_source_devel_commit": "bdb8adf0a809aa27109c1bdb1f50dafa69f4bdbf",
   "initial_audited_at_utc": "2026-11-13T05:01:20.727796+00:00",
   "initial_pilot_base_commit": "d9c9f0247fa78b811dfe5e0965831be9c0966e05",
-  "ci_synthetic_merge_commit": "c5a02722495073cab55c5055310e1a42d8afb013",
-  "ci_synthetic_merge_base_commit": "0479dfc9dc87d80fa77a44472ea4b05c8564cfa7",
-  "implementation_head_commit": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+  "ci_synthetic_merge_commit": "176f617bc958387fb23008b59fc47102c1f88908",
+  "ci_synthetic_merge_base_commit": "61fff5940585974df89ad1b2f4222c403814925d",
+  "implementation_head_commit": "417b6428baeae93116fb293a782120664a754697",
   "previous_published_at_utc": null,
-  "prepared_at_utc": "2026-11-14T00:31:06Z",
-  "publication_status": "Reviewed for publication; deployment is recorded by gh-pages commit history.",
+  "prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
+  "publication_status": "Reviewed supplemental snapshot; separate presentation proof required before publication.",
   "reproduction_artifact_sha256": {
     "selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2"
   },
@@ -61,10 +61,11 @@
     "iteration9.json": "516f6af4e3f3ae857f7c552193a272ff81d4e49975498806e531d959cab779a2",
     "iteration10.json": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "historical-app-cut-four-pair-selector.json": "d71917f2e089853877ba5c17d7b34277cfcf81907c0a1c89d0218cfad7a25ed7",
-    "required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69"
+    "required-542-k3s-summary.json": "b97fddfe643484e04ffcf8bb9877618fc4f514b8b22a903dad35aa4a85423a69",
+    "iteration12.json": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
-  "visual_validation_status": "Browser evidence for this report snapshot is recorded separately in visual-validation.json.",
+  "visual_validation_status": "Presentation proof is recorded separately in visual-validation.json and must match the captured HTML, evidence and manifests.",
   "previous_snapshot_source": {
     "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
     "pilot_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
@@ -122,10 +123,10 @@
     "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
-  "source_devel_commit_scope": "Devel commit integrated into source head 4bfabd5; required CI tested merge c5a0272 with devel parent 0479dfc9. The source branch parent ff39339 is the manual VM candidate checkpoint.",
-  "publication_base_gh_pages_commit": "bfa51cc0c71f6d736ffa8c15514fd332f5882eec",
-  "root_navigation_sha256": "4a48b8c7e346bf812fde78d69d96cba4a9f45520cd73214b2595b7513eddde09",
-  "draft_prepared_at_utc": "2026-11-14T00:31:06Z",
+  "source_devel_commit_scope": "Latest integrated source only; historical measurements retain their own exact tested revisions and original windows.",
+  "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
+  "root_navigation_sha256": "16e72d0e69a454a63563b6c80afbc1c55dde76a1b96658e143bddf65175effad",
+  "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
   "iteration11": {
     "evidence_file": "iteration11.json",
     "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
@@ -158,5 +159,25 @@
     "root_navigation_sha256": "9e6429dfb8691e0d08fb67c0aa6c757d538f13b593555382357349dd4f831fff",
     "visual_validation_status": "Four desktop/mobile light/dark cases passed in4b05be9c; reviewed report head1318317f31. Final proof/publication metadata was added after the browser run.",
     "visual_validation_observed_at_utc": "2026-11-13T23:07:24.285273+00:00"
+  },
+  "iteration12": {
+    "evidence_file": "iteration12.json",
+    "evidence_sha256": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
+    "observed_at_utc": "2026-11-14T02:32:12.581846+00:00",
+    "source_head": "417b6428baeae93116fb293a782120664a754697",
+    "source_base": "61fff5940585974df89ad1b2f4222c403814925d",
+    "scope": "Supplemental image screen, direct private-systemd controls and merged-port status. Original fleet populations, windows, source pins, rates and denominators unchanged."
+  },
+  "historical_iteration11_provenance": {
+    "source_devel_commit": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+    "pilot_head_commit": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "pilot_base_commit": "6dfbd741f5ba004f02aba929cadbbd59b6950393",
+    "ci_synthetic_merge_commit": "c5a02722495073cab55c5055310e1a42d8afb013",
+    "ci_synthetic_merge_base_commit": "0479dfc9dc87d80fa77a44472ea4b05c8564cfa7",
+    "implementation_head_commit": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
+    "prepared_at_utc": "2026-11-14T00:31:06Z",
+    "scope": "Iteration 11 architecture, fixed-source graph replay, one-VM candidate proof and storage-readiness test repair. The existing latency/reliability populations and gates are unchanged.",
+    "attribution": "Draft PR #16102 head 4bfabd5 passed all three required checks. Tested merge c5a0272 has devel parent 0479dfc9; native invocation 83623e77 completed in 139.276s. No full current-head physical/JUnit cohort is curated and this selected/cached run is not a matched saving. Manual VM proof has separate ff39339 plus patch provenance. PR #16299 remains open and unmerged despite green required checks. No gate or fleet rate changed.",
+    "previous_gh_pages_commit": "b03106b455d64b2aa154ab68fbf6df83a64e15fd"
   }
 }

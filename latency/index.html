@@ -537,6 +537,67 @@
             <//>
             <${Paper}
               component="section"
+              id="architecture-followup-iteration12"
+              withBorder
+              p="lg"
+              my="xl"
+            >
+              <${Stack} gap="sm">
+                <${Title} order=${2}>Iteration 12 architecture follow-up<//>
+                <${Text} size="sm" c="dimmed"
+                  >Reviewed source 417b6428; original fleet populations,
+                  windows, source pins, rates and denominators remain unchanged.
+                  These selected experiments do not remeasure them.<//
+                >
+                <${Text}
+                  >The reduced platform root retains required Codex and omits
+                  unused Claude: 408,961,024 versus 553,885,696 EROFS bytes
+                  (26.2% less). In one serial same-source B/A pair, import falls
+                  43.766s to 20.116s, while physical execution falls only
+                  277.495s to 266.409s (4.0%). Readiness is worse in B: 136.646s
+                  versus 99.747s. Both arms pass one fresh physical case with
+                  complete cleanup. One pair on different workers is not a
+                  whole-CI saving, p90 or causal CPU estimate. Removing Codex
+                  too fails embedded Execution startup and is rejected.<//
+                >
+                <${Text}
+                  >The existing direct Claude guest now also passes the real
+                  private systemd fixture under the unchanged 120s guest cap,
+                  retaining both turns, exact History, setup/fence, CLI routes
+                  and revocation. A same-source omitted-fixture control starts
+                  Runtime but is rejected while waiting for the unchanged
+                  receipt; both paths clean up. This is correctness evidence,
+                  not a timing pair. No required owner moved.<//
+                >
+                <${Text}
+                  >The historical graph screen still observes 17.4% lower native
+                  mean with 5.4% more known CPU; it remains a historical label
+                  replay with unmatched baseline exposure. Next, transfer the
+                  private proof within the candidate graph and measure removing
+                  duplicate deployed work, while retaining Pod, MCP Services and
+                  all selected tails. Qualification remains open; 45s duration
+                  coverage, Bridge CPU, concurrency and kubelet tradeoffs are
+                  not clear independent speedups.<//
+                >
+                <${Text}
+                  >Independent PRs #16316 and #16317 are merged. The diagnostic
+                  archive preserves pre-tag query labels and verdicts (required
+                  tests were cached); Sampler adds auth/outage/backfill coverage
+                  with one NEW physical action. Neither establishes a latency
+                  reduction. Final source 417b is rebased onto 61fff; all three
+                  required checks passed at this exact head.<//
+                >
+                <${Anchor}
+                  href="../agentplane-test-architecture/iteration12.json"
+                  >Reviewed measurements and exact provenance<//
+                >
+                <${Anchor} href="../agentplane-test-architecture/#iteration12"
+                  >Architecture and concrete next steps<//
+                >
+              <//>
+            <//>
+            <${Paper}
+              component="section"
               id="architecture-followup-iteration11"
               withBorder
               p="lg"

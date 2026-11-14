@@ -5,8 +5,8 @@
   "published_at_utc": "2026-11-13T03:43:50.005100+00:00",
   "attribution": "not collected",
   "previous_report_commit": "8032ec1140281be66ee934b69bb71b25f892be82",
-  "report_sha256": "079a708daad9342ebe6ec07563598ad74e31d7f0866fc902d70fca98d6fbe7cb",
-  "evidence_sha256": "1864c06ec9187a52733471a6695096753b742a107a143e460333f8129bb93a3a",
+  "report_sha256": "46557a9217e7494732aee6b10c153cb2838934f879f557f9568bc72f72cef467",
+  "evidence_sha256": "47a0154d19f8397b42687a641e22c8e977af4090551d1b5ac83d436fca0ddb45",
   "supplemental_followup_observed_at_utc": "2026-11-12T22:55:00Z",
   "client_admission_source_commit": "28dae5ef3ef397393ed4df7f18425d3502ba9f77",
   "client_admission_scope": "PR #15842 50/100/50-job experiment only; per-workstream source/head commits and invocation IDs are recorded in evidence.json.",
@@ -62,14 +62,22 @@
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
   "prepared_at_utc": "2026-11-13T22:27:42Z",
-  "publication_base_gh_pages_commit": "bfa51cc0c71f6d736ffa8c15514fd332f5882eec",
-  "visual_validation_status": "Browser evidence for this report snapshot is recorded separately in visual-validation.json.",
-  "draft_prepared_at_utc": "2026-11-14T00:31:06Z",
+  "publication_base_gh_pages_commit": "c8f6801795c2a610a839f356487eadec6474fe79",
+  "visual_validation_status": "Presentation proof is recorded separately in visual-validation.json and must match the captured HTML, evidence and manifests.",
+  "draft_prepared_at_utc": "2026-11-14T02:32:12.581846+00:00",
   "architecture_iteration11": {
     "evidence_file": "../agentplane-test-architecture/iteration11.json",
     "evidence_sha256": "bde3219d91558865e4208264be1889077356e0b28e7b6b45012969990e3f94ac",
     "observed_at_utc": "2026-11-14T00:31:06Z",
     "source_head": "4bfabd5a9ac5e39eac956b9bbca38f75fd457eb2",
     "scope": "Supplemental architecture and readiness evidence only; the report’s original population, window, source pin, rates and denominators are unchanged."
+  },
+  "architecture_iteration12": {
+    "evidence_file": "../agentplane-test-architecture/iteration12.json",
+    "evidence_sha256": "0111db2d6e25666e76143c54e27d0c3689e15b7b8fcf986a6d624d12066643ee",
+    "observed_at_utc": "2026-11-14T02:32:12.581846+00:00",
+    "source_head": "417b6428baeae93116fb293a782120664a754697",
+    "source_base": "61fff5940585974df89ad1b2f4222c403814925d",
+    "scope": "Supplemental image screen, direct private-systemd controls and merged-port status. Original fleet populations, windows, source pins, rates and denominators unchanged."
   }
 }
