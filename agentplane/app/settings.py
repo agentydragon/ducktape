@@ -166,11 +166,6 @@ class Settings(BaseModel):
         description="Seconds the HTTP server waits after SIGTERM for open requests and streams before cancelling "
         "them; the rest of the Deployment's grace period stops Session creation and closes the database.",
     )
-    token_audience: str = Field(
-        default="agentplane",
-        min_length=1,
-        description="Audience a Kubernetes token must carry to authenticate here, so none is replayable.",
-    )
     token_subjects: frozenset[str] = Field(
         default_factory=frozenset,
         exclude_if=lambda value: not value,
