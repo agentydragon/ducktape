@@ -64,7 +64,8 @@ type runnerGateway struct {
 	TLS *peertls.ClientTLS `mapstructure:"tls"`
 	// ControlTarget is the stable Runner Gateway Service, a template of `{namespace}` such as
 	// `runner-gateway.{namespace}.svc:8080`.
-	ControlTarget         string  `mapstructure:"control_target"`
+	ControlTarget string `mapstructure:"control_target"`
+	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile             string  `mapstructure:"token_file"`
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 }
@@ -74,17 +75,18 @@ type peer struct {
 	TLS *peertls.ClientTLS `mapstructure:"tls"`
 	// Target is the gRPC `host:port`.
 	Target string `mapstructure:"target"`
-	// TokenFile is the projected ServiceAccount token the peer admits, read again for each call.
+	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile             string  `mapstructure:"token_file"`
 	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 }
 
 // actionPeer retains the deployment's HTTP(S) URL key while composing the Action Service's gRPC transport.
 type actionPeer struct {
-	TLS                   *peertls.ClientTLS `mapstructure:"tls"`
-	URL                   string             `mapstructure:"url"`
-	TokenFile             string             `mapstructure:"token_file"`
-	RequestTimeoutSeconds float64            `mapstructure:"request_timeout_s"`
+	TLS *peertls.ClientTLS `mapstructure:"tls"`
+	URL string             `mapstructure:"url"`
+	// TokenFile is the projected token used when TLS does not present a client SVID.
+	TokenFile             string  `mapstructure:"token_file"`
+	RequestTimeoutSeconds float64 `mapstructure:"request_timeout_s"`
 }
 
 type actionGRPCEndpoint struct {
@@ -212,13 +214,9 @@ func (c *config) validate() error {
 		{"token_audience", c.TokenAudience},
 		{"host", c.Host},
 		{"actions.url", c.Actions.URL},
-		{"actions.token_file", c.Actions.TokenFile},
 		{"runner_gateway.control_target", c.RunnerGateway.ControlTarget},
-		{"runner_gateway.token_file", c.RunnerGateway.TokenFile},
 		{"history_service.target", c.HistoryService.Target},
-		{"history_service.token_file", c.HistoryService.TokenFile},
 		{"session_dispatcher.target", c.SessionDispatcher.Target},
-		{"session_dispatcher.token_file", c.SessionDispatcher.TokenFile},
 	} {
 		if required.value == "" {
 			return fmt.Errorf("%s is required", required.name)
@@ -226,6 +224,24 @@ func (c *config) validate() error {
 	}
 	if _, err := c.Actions.grpcEndpoint(); err != nil {
 		return err
+	}
+	for _, caller := range []struct {
+		name              string
+		tls               *peertls.ClientTLS
+		tokenFile         string
+		expectedServerURI string
+	}{
+		{name: "actions", tls: c.Actions.TLS, tokenFile: c.Actions.TokenFile, expectedServerURI: peertls.ActionsURI},
+		{name: "runner_gateway", tls: c.RunnerGateway.TLS, tokenFile: c.RunnerGateway.TokenFile, expectedServerURI: peertls.SessionDispatcherURI},
+		{name: "history_service", tls: c.HistoryService.TLS, tokenFile: c.HistoryService.TokenFile, expectedServerURI: peertls.HistoryIngressURI},
+		{name: "session_dispatcher", tls: c.SessionDispatcher.TLS, tokenFile: c.SessionDispatcher.TokenFile, expectedServerURI: peertls.SessionDispatcherURI},
+	} {
+		if err := caller.tls.ValidateCaller(caller.tokenFile, peertls.NotificationsURI); err != nil {
+			return fmt.Errorf("%s caller authentication: %w", caller.name, err)
+		}
+		if caller.tls != nil && caller.tls.ServerURI != caller.expectedServerURI {
+			return fmt.Errorf("%s tls.server_uri must be %q", caller.name, caller.expectedServerURI)
+		}
 	}
 	if c.HTTPPort < 1 || c.HTTPPort > 65535 {
 		return errors.New("http_port must be between 1 and 65535")
@@ -243,13 +259,6 @@ func (c *config) validate() error {
 	}
 	if !c.RPC.AllowsBearerAudience(c.TokenAudience) {
 		return errors.New("rpc.auth must allow the configured token_audience")
-	}
-	for _, tls := range []*peertls.ClientTLS{c.Actions.TLS, c.RunnerGateway.TLS, c.HistoryService.TLS, c.SessionDispatcher.TLS} {
-		if tls != nil {
-			if err := tls.Validate(); err != nil {
-				return err
-			}
-		}
 	}
 	for _, quota := range []struct {
 		name  string

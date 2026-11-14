@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
@@ -200,6 +201,54 @@ func TestActionsURLDerivesItsGRPCTargetAndTransport(t *testing.T) {
 	}
 }
 
+func TestOutboundPeersAcceptNotificationsSVIDWithoutBearerFallback(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS := func(serverURI string) *peertls.ClientTLS {
+		return &peertls.ClientTLS{
+			CAFile: "/test/ca.pem", ServerURI: serverURI,
+			CertFile: "/test/notifications.crt", KeyFile: "/test/notifications.key", ClientURI: peertls.NotificationsURI,
+		}
+	}
+	c.Actions.TokenFile, c.RunnerGateway.TokenFile = "", ""
+	c.HistoryService.TokenFile, c.SessionDispatcher.TokenFile = "", ""
+	c.Actions.TLS = clientTLS(peertls.ActionsURI)
+	c.RunnerGateway.TLS = clientTLS(peertls.SessionDispatcherURI)
+	c.HistoryService.TLS = clientTLS(peertls.HistoryIngressURI)
+	c.SessionDispatcher.TLS = clientTLS(peertls.SessionDispatcherURI)
+	if err := c.validate(); err != nil {
+		t.Fatalf("tokenless SVID caller settings were rejected: %v", err)
+	}
+
+	t.Run("rejects bearer fallback with an SVID", func(t *testing.T) {
+		withBearer := c
+		withBearer.Actions.TokenFile = "/test/tokens/actions"
+		if err := withBearer.validate(); err == nil {
+			t.Fatal("accepted bearer and client SVID together")
+		}
+	})
+	t.Run("rejects a different client identity", func(t *testing.T) {
+		wrongClient := c
+		wrongTLS := *wrongClient.SessionDispatcher.TLS
+		wrongTLS.ClientURI = peertls.ActionsURI
+		wrongClient.SessionDispatcher.TLS = &wrongTLS
+		if err := wrongClient.validate(); err == nil {
+			t.Fatal("accepted a peer client identity other than Notifications")
+		}
+	})
+	t.Run("rejects a different pinned peer identity", func(t *testing.T) {
+		wrongPeer := c
+		wrongTLS := *wrongPeer.HistoryService.TLS
+		wrongTLS.ServerURI = peertls.ActionsURI
+		wrongPeer.HistoryService.TLS = &wrongTLS
+		if err := wrongPeer.validate(); err == nil {
+			t.Fatal("accepted a TLS peer identity other than History")
+		}
+	})
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, tc := range map[string]struct {
 		file    string
@@ -213,23 +262,25 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"GitHub webhook secret is not a file setting": {
 			file: requiredFile + "github:\n  app_id: 1234\n  webhook_secret: never-print-me\n",
 		},
-		"unknown nested key":          {file: strings.Replace(requiredFile, "  target: test-history.invalid:8080\n", "  target: test-history.invalid:8080\n  bogus: 1\n", 1)},
-		"no namespace":                {file: strings.Replace(requiredFile, "namespace: test-agentplane\n", "", 1)},
-		"no Actions URL":              {file: strings.Replace(requiredFile, "  url: http://test-actions.invalid:8080\n", "", 1)},
-		"Actions URL path":            {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080/v1", 1)},
-		"Actions URL query":           {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080?", 1)},
-		"Actions URL credentials":     {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-user@actions.invalid:8080", 1)},
-		"Actions URL invalid port":    {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:70000", 1)},
-		"no Actions token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/actions\n", "", 1)},
-		"no control target":           {file: strings.Replace(requiredFile, "  control_target: \"runner-gateway.{namespace}.svc:8080\"\n", "", 1)},
-		"no History token file":       {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},
-		"no Dispatcher target":        {file: strings.Replace(requiredFile, "  target: test-dispatcher.invalid:8080\n", "", 1)},
-		"HTTP port out of range":      {file: requiredFile + "http_port: 70000\n"},
-		"quota of none":               {file: requiredFile + "quotas:\n  inboxes_per_account: 0\n"},
-		"debounce without a max wait": {file: requiredFile + "notice_debounce:\n  max_wait_seconds: 0\n"},
-		"request timeout of none":     {file: requiredFile + "history_service:\n  request_timeout_s: 0\n"},
-		"Action timeout of none":      {file: requiredFile + "actions:\n  request_timeout_s: 0\n"},
-		"GitHub App without secrets":  {file: requiredFile + "github:\n  app_id: 1234\n"},
+		"unknown nested key":           {file: strings.Replace(requiredFile, "  target: test-history.invalid:8080\n", "  target: test-history.invalid:8080\n  bogus: 1\n", 1)},
+		"no namespace":                 {file: strings.Replace(requiredFile, "namespace: test-agentplane\n", "", 1)},
+		"no Actions URL":               {file: strings.Replace(requiredFile, "  url: http://test-actions.invalid:8080\n", "", 1)},
+		"Actions URL path":             {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080/v1", 1)},
+		"Actions URL query":            {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:8080?", 1)},
+		"Actions URL credentials":      {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-user@actions.invalid:8080", 1)},
+		"Actions URL invalid port":     {file: strings.Replace(requiredFile, "http://test-actions.invalid:8080", "http://test-actions.invalid:70000", 1)},
+		"no Actions token file":        {file: strings.Replace(requiredFile, "  token_file: /test/tokens/actions\n", "", 1)},
+		"no control target":            {file: strings.Replace(requiredFile, "  control_target: \"runner-gateway.{namespace}.svc:8080\"\n", "", 1)},
+		"no Runner Gateway token file": {file: strings.Replace(requiredFile, "  token_file: /test/tokens/gateway\n", "", 1)},
+		"no History token file":        {file: strings.Replace(requiredFile, "  token_file: /test/tokens/history\n", "", 1)},
+		"no Dispatcher target":         {file: strings.Replace(requiredFile, "  target: test-dispatcher.invalid:8080\n", "", 1)},
+		"no Dispatcher token file":     {file: strings.Replace(requiredFile, "  token_file: /test/tokens/dispatcher\n", "", 1)},
+		"HTTP port out of range":       {file: requiredFile + "http_port: 70000\n"},
+		"quota of none":                {file: requiredFile + "quotas:\n  inboxes_per_account: 0\n"},
+		"debounce without a max wait":  {file: requiredFile + "notice_debounce:\n  max_wait_seconds: 0\n"},
+		"request timeout of none":      {file: requiredFile + "history_service:\n  request_timeout_s: 0\n"},
+		"Action timeout of none":       {file: requiredFile + "actions:\n  request_timeout_s: 0\n"},
+		"GitHub App without secrets":   {file: requiredFile + "github:\n  app_id: 1234\n"},
 		"GitHub secrets without a static App setting": {
 			file: requiredFile, environ: []string{webhookSecretEnv, privateKeyEnv},
 		},

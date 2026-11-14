@@ -16,7 +16,7 @@ import (
 // ProxyRunner asks a Sandbox's runner through the stable Runner Gateway Service, as the Session Dispatcher does.
 type ProxyRunner struct {
 	TLS *peertls.ClientTLS
-	// TokenFile is the projected ServiceAccount token the Runner Gateway proxy admits, read on every call.
+	// TokenFile is the projected token used when TLS does not present a client SVID.
 	TokenFile string
 	Timeout   time.Duration
 	// TargetTemplate defaults to the stable Runner Gateway Service when empty. A test points it at a fixed server.

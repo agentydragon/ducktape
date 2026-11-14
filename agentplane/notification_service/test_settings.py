@@ -7,6 +7,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from agentplane.net.peertls.config import ACTIONS_URI, HISTORY_SERVICE_URI, NOTIFICATIONS_URI, SESSION_DISPATCHER_URI
 from agentplane.notification_service.settings import (
     GitHubSettings,
     NoticeDebounceSettings,
@@ -49,6 +50,75 @@ def test_settings_are_typed_and_include_nested_defaults() -> None:
     assert settings.message_body_limit_bytes == 32 * 1024
     assert settings.github_delivery_retention_days == 7
     assert "operator_reader_services" not in settings.model_dump()
+
+
+def test_outbound_service_svid_authentication_needs_no_token_file() -> None:
+    values = static_values()
+
+    def client_tls(server_uri: str) -> dict[str, str]:
+        return {
+            "ca_file": "/trust/agentplane.pem",
+            "server_uri": server_uri,
+            "cert_file": "/tls/notifications.crt",
+            "key_file": "/tls/notifications.key",
+            "client_uri": NOTIFICATIONS_URI,
+        }
+
+    values["actions"] = {"url": "http://actions", "tls": client_tls(ACTIONS_URI)}
+    values["runner_gateway"] = {
+        "control_target": "runner-gateway.{namespace}.test:8080",
+        "tls": client_tls(SESSION_DISPATCHER_URI),
+    }
+    values["history_service"] = {"target": "history:8080", "tls": client_tls(HISTORY_SERVICE_URI)}
+    values["session_dispatcher"] = {"target": "dispatcher:8080", "tls": client_tls(SESSION_DISPATCHER_URI)}
+
+    settings = Settings.model_validate(values)
+
+    assert settings.actions.token_file is None
+    assert settings.runner_gateway.token_file is None
+    assert settings.history_service.token_file is None
+    assert settings.session_dispatcher.token_file is None
+
+
+def test_outbound_service_svid_authentication_rejects_mixed_or_wrong_callers() -> None:
+    action_settings = {
+        "url": "http://actions",
+        "tls": {
+            "ca_file": "/trust/agentplane.pem",
+            "server_uri": ACTIONS_URI,
+            "cert_file": "/tls/notifications.crt",
+            "key_file": "/tls/notifications.key",
+            "client_uri": NOTIFICATIONS_URI,
+        },
+        "token_file": "/tokens/actions",
+    }
+    values = static_values()
+    values["actions"] = action_settings
+    with pytest.raises(ValidationError):
+        Settings.model_validate(values)
+
+    wrong_caller_settings = {
+        "url": "http://actions",
+        "tls": {
+            "ca_file": "/trust/agentplane.pem",
+            "server_uri": ACTIONS_URI,
+            "cert_file": "/tls/notifications.crt",
+            "key_file": "/tls/notifications.key",
+            "client_uri": ACTIONS_URI,
+        },
+    }
+    wrong_caller_values = static_values()
+    wrong_caller_values["actions"] = wrong_caller_settings
+    with pytest.raises(ValidationError):
+        Settings.model_validate(wrong_caller_values)
+
+    server_only_values = static_values()
+    server_only_values["history_service"] = {
+        "target": "history:8080",
+        "tls": {"ca_file": "/trust/agentplane.pem", "server_uri": HISTORY_SERVICE_URI},
+    }
+    with pytest.raises(ValidationError):
+        Settings.model_validate(server_only_values)
 
 
 def test_operator_reader_account_and_service_svid_can_coexist() -> None:
