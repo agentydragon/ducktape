@@ -48,8 +48,8 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
         ) -> AsyncIterator[environment_runtime_pb2.WatchStateResponse]:
             if _gateway_peer_uri(context) != _RUNNER_GATEWAY_URI:
                 await context.abort(grpc.StatusCode.PERMISSION_DENIED, "peer is not the Runner Gateway")
-            if not request.sandbox_uid or not request.incarnation_uid or request.connection_epoch == 0:
-                await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Sandbox, incarnation and epoch are required")
+            if not request.sandbox_uid or not request.incarnation_uid:
+                await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Sandbox and incarnation are required")
             response = environment_runtime_pb2.WatchStateResponse(
                 sandbox_uid=request.sandbox_uid,
                 incarnation_uid=request.incarnation_uid,
