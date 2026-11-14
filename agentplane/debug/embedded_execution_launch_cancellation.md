@@ -8,8 +8,10 @@ canceled` and `embedded Execution service exited without backend fence proof`.
 
 The fixture bounds each initial Controller snapshot read to two seconds and
 cancels that stream before retrying. Runtime adoption uses the stream context;
-Execution startup runs within that accepted transition. Cancellation requests
-shutdown of the independent embedded service lifetime and joins it before retry.
+Execution startup waits within that accepted transition. Caller cancellation ends
+its readiness wait; `stopUnready` then calls `StopAndFence`, which records the
+expected stop before canceling the independent embedded service lifetime and
+joining it. The caller context does not directly cancel the embedded lifetime.
 
 A managed native launch interrupted before returning its `Instance` can finish
 fencing successfully. Previously `Host.Launch` returned its original cancellation
@@ -42,3 +44,11 @@ exit. This startup repair makes no claim to fix that cleanup assertion.
 
 Raw serial, Gateway, QEMU and container logs remain private under
 `/tmp/agents/2026_11_12/agentplane-ci-replan/iteration11/guest-readiness-diagnosis/`.
+
+A broader replacement-incarnation retry probe failed when publishing the exact
+Execution fence. Its stub returns `ErrFencedStartup` without running native
+startup/fence machinery, so production applicability remains unproven: first
+check whether that injection publishes all required per-attempt completion state.
+The failing probe remains in pushed commit `f999d6d041`; investigation and
+acceptance are tracked in [issue #16412](https://github.com/agentydragon/ducktape/issues/16412).
+The regression test here covers first-incarnation startup, matching the guest.
