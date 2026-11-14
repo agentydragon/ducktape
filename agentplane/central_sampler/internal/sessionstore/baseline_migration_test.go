@@ -5,7 +5,11 @@ import (
 	"sync"
 	"testing"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 func migrationExec(t *testing.T, db *sql.DB, query string, args ...any) {
@@ -35,6 +39,70 @@ func TestFreshSamplerBaseline(t *testing.T) {
 	}
 	if count := migrationCount(t, store.DB(), `SELECT count(*) FROM sampler_conversation WHERE id=$1 AND api='responses'`, session.ConversationID); count != 1 {
 		t.Fatal("current session was not created")
+	}
+}
+
+func TestMigrationDeletesRetainedPreIdentitySamplerSessions(t *testing.T) {
+	store := newTestStore(t)
+	retained := openSessionForStore(t, store, "")
+	missingIdentity := openSessionForStore(t, store, "")
+	retiredPrincipal := openSessionForStore(t, store, "")
+	for _, session := range []*Session{retained, missingIdentity, retiredPrincipal} {
+		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
+			CommandId: uuid.NewString(),
+			Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "fixture input"}},
+		}, "fixture-account", nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB().ExecContext(t.Context(), `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor)
+			VALUES($1,'fixture-history',1)`, session.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setConfiguration := func(session *Session, clearIdentity, addRetiredPrincipal bool) {
+		t.Helper()
+		request := &samplerpb.CreateSessionRequest{}
+		if err := proto.Unmarshal(session.Configuration, request); err != nil {
+			t.Fatal(err)
+		}
+		if clearIdentity {
+			request.ExecutionIdentity = nil
+		}
+		if addRetiredPrincipal {
+			request.ProtoReflect().SetUnknown(retiredExecutionPrincipalWire())
+		}
+		configuration, err := proto.MarshalOptions{Deterministic: true}.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB().ExecContext(t.Context(), "UPDATE sampler_session SET configuration=$2 WHERE id=$1", session.ID, configuration); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setConfiguration(missingIdentity, true, false)
+	setConfiguration(retiredPrincipal, false, true)
+
+	migrationExec(t, store.DB(), "DELETE FROM central_sampler_goose_version WHERE version_id=17 AND is_applied")
+	if err := migrations.Up(t.Context(), store.DB()); err != nil {
+		t.Fatal(err)
+	}
+	for _, deleted := range []*Session{missingIdentity, retiredPrincipal} {
+		for table, column := range map[string]string{
+			"sampler_session":           "id",
+			"sampler_command":           "session_id",
+			"sampler_event":             "session_id",
+			"sampler_export_checkpoint": "session_id",
+		} {
+			if count := migrationCount(t, store.DB(), "SELECT count(*) FROM "+table+" WHERE "+column+"=$1", deleted.ID); count != 0 {
+				t.Fatalf("pre-Identity Session %s retained %d rows in %s", deleted.ID, count, table)
+			}
+		}
+		if count := migrationCount(t, store.DB(), "SELECT count(*) FROM sampler_conversation WHERE id=$1", deleted.ConversationID); count != 0 {
+			t.Fatalf("pre-Identity conversation %s remains", deleted.ConversationID)
+		}
+	}
+	if count := migrationCount(t, store.DB(), "SELECT count(*) FROM sampler_session WHERE id=$1", retained.ID); count != 1 {
+		t.Fatalf("current Session count=%d, want 1", count)
 	}
 }
 
