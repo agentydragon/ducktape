@@ -400,7 +400,9 @@ async def test_packaged_claude_session_runs_shell_and_accepts_next_input(
             state=state,
             outputs=outputs,
             gateway_address=hostfwd_address,
-            kernel_args=(SUPERVISION_KERNEL_ARG,),
+            kernel_args=(
+                () if os.environ.get("DIRECT_VM_OMIT_PRIVATE_SUPERVISION_CONTROL") == "1" else (SUPERVISION_KERNEL_ARG,)
+            ),
         ) as docker_done:
             await assert_guest_systemd_supervision_passed(outputs, docker_done)
             ready_task = asyncio.create_task(
