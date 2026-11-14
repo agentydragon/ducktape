@@ -865,8 +865,11 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
 def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(runfiles: Runfiles) -> None:
     central = _filled_fixture(runfiles, "K3S_CENTRAL_FIXTURE_RLOCATION")
     services = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_FIXTURE_RLOCATION")
+    native = _filled_fixture(runfiles, "K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION")
     assert services.central_sampler
     assert services.mcp_fixtures is None
+    assert native.central_sampler
+    assert native.mcp_fixtures is None
     central_deployments = {doc["metadata"]["name"] for doc in central.objects if doc["kind"] == "Deployment"}
     service_deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
     assert service_deployments == central_deployments - {"mcp-edge"}
@@ -874,6 +877,9 @@ def test_central_services_profile_omits_mcp_edge_and_keeps_recovery_workloads(ru
         assert _resource(services.objects, "Deployment", component) == _resource(
             central.objects, "Deployment", component
         )
+    assert _resource(native.objects, "ConfigMap", "central-sampler-settings") == _resource(
+        services.objects, "ConfigMap", "central-sampler-settings"
+    )
 
 
 def test_gateway_budget_fixture_changes_only_the_executor_reconnect_deadline(runfiles: Runfiles) -> None:
@@ -936,15 +942,20 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
 
 
 @pytest.mark.parametrize(
-    ("location", "firecracker"),
-    [("K3S_VM_NATIVE_FIXTURE_RLOCATION", False), ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", True)],
+    ("location", "vm_sandboxes", "firecracker_sandboxes", "central_sampler"),
+    [
+        ("K3S_VM_NATIVE_FIXTURE_RLOCATION", True, False, False),
+        ("K3S_FIRECRACKER_NATIVE_FIXTURE_RLOCATION", False, True, False),
+        ("K3S_CENTRAL_SERVICES_NATIVE_FIXTURE_RLOCATION", False, False, True),
+    ],
 )
-def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_caller(
-    runfiles: Runfiles, location: str, firecracker: bool
+def test_native_profile_omits_app_but_keeps_platform_and_bound_caller(
+    runfiles: Runfiles, location: str, vm_sandboxes: bool, firecracker_sandboxes: bool, central_sampler: bool
 ) -> None:
     fixture = _filled_fixture(runfiles, location)
-    assert fixture.firecracker_sandboxes is firecracker
-    assert fixture.vm_sandboxes is not firecracker
+    assert fixture.firecracker_sandboxes is firecracker_sandboxes
+    assert fixture.vm_sandboxes is vm_sandboxes
+    assert fixture.central_sampler is central_sampler
     assert fixture.app_origin is None
     assert fixture.browser_services == []
     assert fixture.operator_tokens is None
@@ -966,7 +977,14 @@ def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_calle
         "runner-gateway",
         "sandbox-controller",
     } <= deployments.keys()
-    assert not {"app", "dex", "mcp-edge", "oauth-fixture"} & deployments.keys()
+    if central_sampler:
+        assert "central-sampler" in deployments
+    else:
+        assert "central-sampler" not in deployments
+    assert not {"app", "dex", "mcp-edge", "mcp-everything", "oauth-fixture"} & deployments.keys()
+    assert not any(
+        doc["metadata"]["name"].startswith(("dex", "mcp-edge", "mcp-everything", "oauth-fixture")) for doc in docs
+    )
     assert not any(
         "agentplane-app:" in container["image"]
         for pod in deployments.values()
@@ -1021,7 +1039,12 @@ def test_native_virtualized_profile_omits_app_but_keeps_platform_and_bound_calle
 
     bootstrap_sql = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
     assert "CREATE ROLE app " not in bootstrap_sql
-    template_name = environment_firecracker.NAME if firecracker else environment_vm.NAME
+    if firecracker_sandboxes:
+        template_name = environment_firecracker.NAME
+    elif vm_sandboxes:
+        template_name = environment_vm.NAME
+    else:
+        template_name = fixture_chart.POD_TEMPLATE
     assert _resource(docs, "SandboxTemplate", template_name)
     assert _resource(docs, "Service", fixture_chart.RUNNER_GATEWAY)
     assert _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
