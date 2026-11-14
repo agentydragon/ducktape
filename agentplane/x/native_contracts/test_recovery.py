@@ -81,8 +81,9 @@ async def test_runtime_transport_outage_retains_history_and_accepts_next_input(
     with pytest.raises(ServiceError) as unavailable:
         await remote.runner(sandbox.destination).status()
     assert unavailable.value.code == grpc.StatusCode.UNAVAILABLE
+    # Shutdown may append later harness events; the captured prefix must remain exact.
     retained = await history_service.reader.read_session_events(
-        str(session_id), after_cursor=first_receipt.cursor - 1, limit=1000
+        str(session_id), after_cursor=first_receipt.cursor - 1, limit=len(before)
     )
     assert list(retained.entries) == before
 
