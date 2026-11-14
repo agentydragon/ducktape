@@ -8811,8 +8811,9 @@
       "priority": 5,
       "summary": "Operator decision, 2026-11-14 (card \"Let any Gateway replica call a Runtime, dropping the Lease's call epoch?\", chose \"Any replica, no epoch\"): the Runtime fences calls only by incarnation and boot ID; the connection Lease, its epoch and the -control EndpointSlice go; callers use the Gateway Service. Landed 2026-11-14: every Gateway replica observes and calls Runtimes without an epoch (#16361); callers use the stable Gateway Service (#16362); the Gateway's connection records, Lease claims, route epoch and EndpointSlice publication and the Controller's per-Sandbox `-control` Services are removed (#16365), leaving existing route objects inert for the rollback window. What remains: the Runtime still accepts and fences a nonzero `connection_epoch` (`env/runtime/control/server.go`) and the field stays in `environment_runtime.proto`; the Gateway and Controller observers still check that responses carry none, and the Firecracker runtime probe still sends one; the Gateway's Lease and EndpointSlice RBAC and the Controller's Service and connection-Lease permissions stay in `cluster/cdk8s/agentplane/runner_gateway_workload.py` and `sandbox_controller.py`.",
       "how": [
-        "After the #16365 Gateway and Controller images are pinned and its rollback window closes: delete the inert Lease and route objects, and remove the Gateway's Lease and EndpointSlice RBAC and the Controller's Service and connection-Lease permissions.",
-        "Drop the Runtime's epoch handling and reserve `connection_epoch` in `environment_runtime.proto`, with the observers' checks and the Firecracker runtime probe's flag, once no live caller sends an epoch. Receivers already accept zero."
+        "#16388 (open; its gate, the Gateway and Controller running the #16365 image, is met) removes the Runtime's connection-epoch fields with their numbers reserved and the observers' and Firecracker probe's epoch use, the Gateway's EndpointSlice and Lease list/watch RBAC and the Controller's Service RBAC, and stops emitting `proxy_port`.",
+        "#16390 (open, stacked on #16388) drops the Go `proxy_port` decoder and the Gateway's PodIP input; it merges only after #16388's configuration has applied and its Gateway image runs on staging.",
+        "No cluster objects are deleted by either PR: the inert Lease and route objects are deleted by hand after the rollback window."
       ],
       "gate": "Decided. Each step is its own PR after the previous image pin, receivers before senders. Cross-service protocol change: system tests covering command delivery, quiesce and suspend must pass, and each PR states its rollback.",
       "preserve": "Incarnation and boot-ID fencing; command idempotency by command ID; suspend generation checks; quiesce before suspend.",
@@ -8833,7 +8834,7 @@
         "cluster/cdk8s/agentplane/sandbox_controller.py",
         "agentplane/plans/runtime_state_observation.md"
       ],
-      "review_size": "Landed in three PRs (#16361, #16362, #16365). Left: the RBAC and inert objects after the rollback window, and the epoch field with its Runtime handling; each after its image pin."
+      "review_size": "Landed in three PRs (#16361, #16362, #16365); two open (#16388, then #16390), each after the previous image pin. The inert objects are a manual deletion."
     },
     {
       "id": "env-execution-package-names",
@@ -11970,7 +11971,7 @@
       "track": "gateway-connection-lease-removal",
       "title": "Remove the connection epoch and the Lease and route permissions",
       "readiness": "PLANNED",
-      "first_step": "After the #16365 images are pinned and its rollback window closes, remove the Lease, EndpointSlice and Service permissions and the inert route objects; then reserve `connection_epoch`."
+      "first_step": "Merge #16388 (gate met), then #16390 once #16388's configuration and Gateway image are live on staging."
     },
     {
       "id": "next-2",
