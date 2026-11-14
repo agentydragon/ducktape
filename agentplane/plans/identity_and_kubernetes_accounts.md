@@ -40,19 +40,22 @@ require the cutover, but building it on ServiceAccounts would add a contract the
 
 A Kubernetes ServiceAccount TokenReview is not a second identity source for agents.
 
-**Backend services (operator, 2026-11-10).** Agentplane's own services keep authenticating to each
-other as themselves with ServiceAccount tokens and TokenReview for privileged service-to-service
-calls; that is service identity, not agent identity, and keeps the API server dependency to the
-platform's internal hops only. No service holds a private key or certificate that resolves to an
-agent `Identity`: a service acting for an agent does so only under the
-[delegated authorization contract](../docs/delegated_authorization.md), authenticating as itself and
-naming the `Identity` as effective caller. Service-class SVIDs (a SPIFFE path resolvers never map to
-an agent `Identity`) stay open for later; nothing now needs them.
+**Backend services (operator, 2026-11-14: "One auth mode can fire off").** Every first-party
+service-to-service call authenticates its caller by a service SVID over mTLS with verified server
+TLS. This supersedes the 2026-11-10 decision to retain backend ServiceAccount tokens and TokenReview.
+Service SVIDs use SPIFFE paths that resolvers never map to an agent `Identity`; services read
+certificate and trust-bundle files, issued in-cluster by cert-manager from the workload CA. A service
+acting for an agent proves itself with its certificate and names the effective Identity in the typed
+[delegation envelope](../docs/delegated_authorization.md). Its identity never becomes the effective
+caller's grant. Kubernetes authentication remains only toward the Kubernetes API; operators retain
+app OIDC and MCP clients the edge's OAuth tokens.
 
-Other bearer forms are not planned and no task depends on them; if we wanted, we could later accept
-bearer tokens resolving to the same `Identity`. The one agent path that does not meet this yet is
-the app's `agentplane-agent` TokenReview bearer
-([`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target)).
+[`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--one-service-authentication-mode)
+tracks the staged receiver/caller cutover and image-pin gates. The app's special `agentplane-agent`
+TokenReview bearer also goes (operator, 2026-11-14 05:05–05:06 UTC), independently of those stages;
+[`APP_AGENT_TOKEN_DECISION`](task_dag.md#app_agent_token_decision--the-apps-agentplane-agent-token-under-the-target)
+tracks callers first, then manifest removal, settings/code removal after rollout, and RBAC last.
+No Agentplane receiver admits a Kubernetes bearer at the exit.
 
 ## Where the migration stands
 
@@ -63,10 +66,10 @@ decision-log check. It does not claim that every workload rollout has been obser
 | Area                   | Current contract                                                                                                                                                                                                                                                                                                                 | Remaining question or evidence                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `Identity` and Sandbox | Workload `PolicyBinding`s and `WorkloadCredential`s use Identity subjects; component bindings may still name ServiceAccounts. The Sandbox controller pins the live Identity UID; Sandbox live acceptance, including owned cleanup, is recorded in the [rollout evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md). | No repeat Sandbox rollout gate. Standing-workload proxy decision-log observation remains separately tracked in the DAG.    |
-| Service authentication | Workload SVIDs resolve to Identity subjects; old ServiceAccount-subject `WorkloadCredential`s fail closed. Direct component ServiceAccount authentication and provenance remain supported. Session delegation records the effective Identity for workload requests.                                                              | Internal component ServiceAccount authentication and provenance are retained.                                              |
+| Service authentication | Workload SVIDs resolve to Identity subjects; old ServiceAccount-subject `WorkloadCredential`s fail closed. Direct component ServiceAccount authentication and provenance remain supported. Session delegation records the effective Identity for workload requests.                                                              | Component actor proof moves to service SVIDs; provenance remains separate.                                                 |
 | Session and History    | New Sessions execute as an exact Identity incarnation. History workload reads scope to the recorded Session Identity; writer and direct component-reader provenance remains independently recorded.                                                                                                                              | Broader cross-principal History reads remain held by `THREAD_READ_POLICY_DESIGN`.                                          |
 | Notification inbox     | Inbox owners pin the Session Identity and destination Sandbox UID. Same-Identity sends pass directly; cross-Identity sends still require `session_inbox_access` under the current Sandbox/tag target model.                                                                                                                      | Target/group semantics and grant lifetime remain unresolved in `SESSION_ACCESS_GROUPING_DESIGN`; enforcement is unchanged. |
-| App API                | Operator OIDC session or ID-token bearer, plus the TokenReview bearer for `agentplane-agent` (`app/internal/auth/auth.go`).                                                                                                                                                                                                      | Decide whether the remaining staging and hand-run callers can use real-issuer ID tokens (`APP_AGENT_TOKEN_DECISION`).      |
+| App API                | Operator OIDC session or ID-token bearer, plus the TokenReview bearer for `agentplane-agent` (`app/internal/auth/auth.go`).                                                                                                                                                                                                      | Remove the special agent bearer in rollout order (`APP_AGENT_TOKEN_DECISION`).                                             |
 | MCP edge               | OAuth tokens resolve to a Connection bound to an exact live Identity. The edge calls Action Service as itself and carries typed Connection/grant provenance; it does not mint or forward a workload token.                                                                                                                       | No workload-identity cutover remains for this path.                                                                        |
 
 The retained ServiceAccount columns and wire fields are historical/component provenance, not
