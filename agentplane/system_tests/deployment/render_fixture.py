@@ -38,6 +38,7 @@ class FixtureVariant(StrEnum):
     LOCAL_MODEL_VM_NATIVE = "local-model-vm-native"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
     LOCAL_MODEL_FIRECRACKER_NATIVE = "local-model-firecracker-native"
+    LOCAL_MODEL_FIRECRACKER_PLATFORM = "local-model-firecracker-platform"
     PUBLIC_LITELLM = "public-litellm"
 
 
@@ -68,7 +69,7 @@ def _render(
     executor_reconnect_timeout_seconds: int | None = None,
 ) -> None:
     models = MODEL_PLACEHOLDERS[backend]
-    app_enabled = profile != fixture_chart.FixtureProfile.APP_FREE
+    app_enabled = profile.app_enabled
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
@@ -181,6 +182,15 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
             )
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
+        case FixtureVariant.LOCAL_MODEL_FIRECRACKER_PLATFORM:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                firecracker_sandboxes=True,
+                profile=fixture_chart.FixtureProfile.FIRECRACKER_PLATFORM,
+            )
 
 
 def main() -> None:

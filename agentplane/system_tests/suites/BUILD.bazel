@@ -176,6 +176,34 @@ k3s_suite(
 
 # Native fixtures deliberately replace the ancestor App-backed conftest for this target.
 # gazelle:ignore
+# Manual same-case cut of incidental Notification deployment and image inputs.
+k3s_suite(
+    name = "test_firecracker_platform_candidate",
+    srcs = ["test_firecracker.py"],
+    exec_properties = {
+        "test.EstimatedCPU": "4",
+        "test.EstimatedFreeDiskBytes": "20GB",
+        "test.EstimatedMemory": "6GB",
+    },
+    main = "test_firecracker.py",
+    require_kvm = True,
+    stack = "firecracker_platform",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:firecracker",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Native fixtures deliberately replace the ancestor App-backed conftest for this target.
+# gazelle:ignore
 # Manual same-runner baseline experiment. Keep the required target cold and unchanged.
 k3s_suite(
     name = "test_firecracker_prepared_baseline_candidate",

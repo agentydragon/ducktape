@@ -92,6 +92,7 @@ _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json
 _VM_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm-native.json"
 _FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
 _FIRECRACKER_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker-native.json"
+_FIRECRACKER_PLATFORM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker-platform.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/deployment:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
@@ -117,6 +118,11 @@ _APP_FREE_SERVICE_IMAGES = {
     image: reference
     for image, reference in _COMMON_SERVICE_IMAGES.items()
     if image != "//agentplane/app:image"
+}
+_FIRECRACKER_PLATFORM_SERVICE_IMAGES = {
+    image: reference
+    for image, reference in _APP_FREE_SERVICE_IMAGES.items()
+    if image != "//agentplane/notification_service:service_image"
 }
 _HARNESSES_IMAGES = {
     "//agentplane/system_tests/deployment:environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset",
@@ -204,6 +210,7 @@ _STACKS = {
     "vm_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _VM_NATIVE_FIXTURE, vm = True, firecracker = False, real_model = False, images = {}),
     "firecracker": struct(native_fixtures = False, service_images = _COMMON_SERVICE_IMAGES, fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
     "firecracker_native": struct(native_fixtures = True, service_images = _APP_FREE_SERVICE_IMAGES, fixture = _FIRECRACKER_NATIVE_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
+    "firecracker_platform": struct(native_fixtures = True, service_images = _FIRECRACKER_PLATFORM_SERVICE_IMAGES, fixture = _FIRECRACKER_PLATFORM_FIXTURE, vm = False, firecracker = True, real_model = False, images = {}),
     "real_model": struct(native_fixtures = False, service_images = _SERVICE_IMAGES, fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = _HARNESSES_IMAGES),
 }
 

@@ -195,6 +195,17 @@ class FixtureProfile(StrEnum):
     # Native acceptance candidates run real backend services and a bound test caller, without
     # the integration App, its database, or its OIDC login.
     APP_FREE = "app-free"
+    # Firecracker continuity and Runner trust do not call Notifications. VM retains
+    # its separate real Notification CLI witness.
+    FIRECRACKER_PLATFORM = "firecracker-platform"
+
+    @property
+    def app_enabled(self) -> bool:
+        return self not in {FixtureProfile.APP_FREE, FixtureProfile.FIRECRACKER_PLATFORM}
+
+    @property
+    def notifications_enabled(self) -> bool:
+        return self != FixtureProfile.FIRECRACKER_PLATFORM
 
 
 @dataclass(frozen=True)
@@ -221,6 +232,7 @@ def environment(
     models: Models,
     operator_token_key: str | None,
     app_enabled: bool = True,
+    notifications_enabled: bool = True,
     app_origin: str = APP_ORIGIN,
     central_sampler: bool = False,
     firecracker_sandboxes: bool = False,
@@ -376,7 +388,7 @@ def environment(
             {
                 ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT),
                 *([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else []),
-                ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME),
+                *([ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME)] if notifications_enabled else []),
             }
         ),
     )
@@ -479,7 +491,8 @@ def objects(
         firecracker_sandboxes=firecracker_sandboxes,
         models=models,
         operator_token_key=operator_token_key,
-        app_enabled=profile != FixtureProfile.APP_FREE,
+        app_enabled=profile.app_enabled,
+        notifications_enabled=profile.notifications_enabled,
         central_sampler=central_sampler,
         executor_reconnect_timeout_seconds=executor_reconnect_timeout_seconds,
     )
@@ -535,7 +548,9 @@ def build_chart(
     profile: FixtureProfile = FixtureProfile.FULL,
 ) -> FixtureChart:
     """Construct the shared stack and return its chart before synthesis for fixture-specific additions."""
-    app_enabled = profile != FixtureProfile.APP_FREE
+    if profile == FixtureProfile.FIRECRACKER_PLATFORM and not env.firecracker_sandboxes:
+        raise ValueError("the Firecracker platform profile requires Firecracker Sandboxes")
+    app_enabled = profile.app_enabled
     app_origin = str(env.app.origin)
     app_login = login_client(app_origin) if app_enabled else None
     mcp_linkage = linkage_client(app_origin) if app_enabled else None
@@ -619,7 +634,7 @@ def build_chart(
         tls_passthrough_services=[
             history_service.service(env.namespace),
             llm_ingress.service(env.namespace),
-            notifications.service(env.namespace),
+            *([notifications.service(env.namespace)] if profile.notifications_enabled else []),
             runner_gateway.service(env.namespace),
             actions.service(NAMESPACE),
         ],
@@ -632,9 +647,11 @@ def build_chart(
         else {}
     )
     native_caller = {native_test_caller: Pods(namespace=NAMESPACE, labels=tuple(_NATIVE_TEST_CLIENT_LABELS.items()))}
-    notifications_caller = {
-        ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods
-    }
+    notifications_caller = (
+        {ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME): notifications.service(NAMESPACE).pods}
+        if profile.notifications_enabled
+        else {}
+    )
     orchestration_caller = actions.orchestration_callers(env)
     platform_callers = app_caller | native_caller
     gateway_callers = platform_callers | notifications_caller
@@ -794,26 +811,27 @@ def build_chart(
         memory_request=Size.mebibytes(32),
         memory_limit=None,
     )
-    notifications.Notifications(
-        chart,
-        "notifications",
-        env,
-        database_url=notifications_database_url,
-        actions=actions.service(NAMESPACE),
-        gateway=runner_gateway.service(NAMESPACE),
-        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
-        gateway_control_target=control_target,
-        history=history_service.service(NAMESPACE),
-        history_audience=history_service.TOKEN_AUDIENCE,
-        dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
-        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
-        callers=[app_component.service(NAMESPACE).pods] if app_enabled else [],
-        placement=None,
-        registry_secret_name=None,
-        container_env=database_env,
-        memory_request=Size.mebibytes(32),
-        memory_limit=None,
-    )
+    if profile.notifications_enabled:
+        notifications.Notifications(
+            chart,
+            "notifications",
+            env,
+            database_url=notifications_database_url,
+            actions=actions.service(NAMESPACE),
+            gateway=runner_gateway.service(NAMESPACE),
+            gateway_audience=runner_gateway.TOKEN_AUDIENCE,
+            gateway_control_target=control_target,
+            history=history_service.service(NAMESPACE),
+            history_audience=history_service.TOKEN_AUDIENCE,
+            dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
+            dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+            callers=[app_component.service(NAMESPACE).pods] if app_enabled else [],
+            placement=None,
+            registry_secret_name=None,
+            container_env=database_env,
+            memory_request=Size.mebibytes(32),
+            memory_limit=None,
+        )
     command_sandbox.CommandSandbox(
         chart, "command-sandbox", env, image_pull_secret_name=None, trust_mounts=sandbox_pod.egress_proxy_mounts()
     )
