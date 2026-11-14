@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "749fda99a200b5a60b21c0af343074c5e4fd3ac9",
-  "observed_at_utc": "2026-11-14T02:20:00+00:00",
+  "source_sha": "ce53bc8c8552d3f469343c73b441e27ace268edf",
+  "observed_at_utc": "2026-11-14T02:45:00+00:00",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1261,
-    "directories": 220,
-    "production": 695,
-    "tests": 566
+    "files": 1263,
+    "directories": 221,
+    "production": 696,
+    "tests": 567
   },
   "directories": [
     {
@@ -385,6 +385,15 @@
       "files": [
         "agentplane/app/internal/historywatch/historywatch.go",
         "agentplane/app/internal/historywatch/historywatch_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/app/internal/httpapi/threads",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/app/internal/httpapi/threads/handler.go",
+        "agentplane/app/internal/httpapi/threads/handler_test.go"
       ]
     },
     {
@@ -5501,7 +5510,7 @@
       "pending_tracks": [
         "runner-era-names",
         "app-session-client-name",
-        "gateway-replica-ownership"
+        "gateway-connection-lease-removal"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/app/internal/bridge"
@@ -5665,6 +5674,38 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/app/internal/historywatch"
+    },
+    {
+      "path": "agentplane/app/internal/httpapi/threads/handler.go",
+      "package": "threads",
+      "test": false,
+      "generated": false,
+      "lines": 557,
+      "sha256": "0d6fc311ff6f04e863763eefae7b7ad0a84e6ff1bf2feb9f78229d7e48a30a52",
+      "planned_path": "agentplane/app/internal/httpapi/threads/handler.go",
+      "planned_parts": [],
+      "planned_package": "threads",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/app/internal/httpapi/threads"
+    },
+    {
+      "path": "agentplane/app/internal/httpapi/threads/handler_test.go",
+      "package": "threads",
+      "test": true,
+      "generated": false,
+      "lines": 117,
+      "sha256": "f3a3eda84e4b37ab27c0c5a32f72a9ec5be2bb4e4e3236f2afe1020c34ad94d8",
+      "planned_path": "agentplane/app/internal/httpapi/threads/handler_test.go",
+      "planned_parts": [],
+      "planned_package": "threads",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/app/internal/httpapi/threads"
     },
     {
       "path": "agentplane/app/internal/httperror/httperror.go",
@@ -5884,8 +5925,8 @@
       "package": "server",
       "test": false,
       "generated": false,
-      "lines": 27,
-      "sha256": "cfc4e713309c028be18eb4f46cdd6e80b471cba482cad93483ed961da05a09ec",
+      "lines": 22,
+      "sha256": "91d0b4e7b1a7af63fd2c601c1325b133c28d3b8228f4277cecfe003c7300955c",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6045,8 +6086,8 @@
       "package": "server",
       "test": false,
       "generated": false,
-      "lines": 535,
-      "sha256": "5edd9b5b272d50c72ca505d9c710173e5d969ea0ee0ed721172dcc0de80265f8",
+      "lines": 540,
+      "sha256": "079d845342a72a4b22c7c4632205fac5c54c5593291a4112de1f8831b5e52879",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6344,8 +6385,8 @@
       "package": "server",
       "test": false,
       "generated": false,
-      "lines": 520,
-      "sha256": "0b2dcc1578c233468a55f27643bda44351ff3655ffbf642417584cdc2f6953a0",
+      "lines": 50,
+      "sha256": "ec71e5519045ec7681999a9a6662e6cc2e843dc5cbfaca8707fcf8d196287b55",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -6367,8 +6408,8 @@
       "package": "server",
       "test": true,
       "generated": false,
-      "lines": 501,
-      "sha256": "dddcbe5eea6bc8ef0771d04b4d68c9e49076df2c86f285551b8ae34e96e32f90",
+      "lines": 423,
+      "sha256": "fe8cfb43e59f32dd2f5ddd950067f75ee13d6d77aa81d51367da847af55e3233",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -11722,7 +11763,10 @@
       "planned_package": "control",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["protobuf-alignment"],
+      "pending_tracks": [
+        "protobuf-alignment",
+        "gateway-connection-lease-removal"
+      ],
       "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/control"
     },
@@ -15175,7 +15219,10 @@
       "planned_package": "runtime_probe",
       "goal_path_status": "exact move",
       "candidate_owners": [],
-      "pending_tracks": ["firecracker-host-guest"],
+      "pending_tracks": [
+        "firecracker-host-guest",
+        "gateway-connection-lease-removal"
+      ],
       "disposition": "exact move",
       "package_decision": "agentplane/firecracker/testing/runtime_probe"
     },
@@ -16583,7 +16630,7 @@
       "planned_package": "storage",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["transition-tolerance-removal", "history-journals"],
+      "pending_tracks": ["history-journals"],
       "disposition": "retain owner",
       "package_decision": "agentplane/history_service/internal/storage"
     },
@@ -18928,7 +18975,7 @@
       "candidate_owners": [],
       "pending_tracks": [
         "notification-inbox-split",
-        "gateway-replica-ownership"
+        "gateway-connection-lease-removal"
       ],
       "disposition": "retain owner",
       "package_decision": "agentplane/notification_service/internal/rpc"
@@ -22897,7 +22944,11 @@
       "planned_package": null,
       "goal_path_status": "split responsibility",
       "candidate_owners": [],
-      "pending_tracks": ["runner-gateway-command", "runner-gateway-app"],
+      "pending_tracks": [
+        "runner-gateway-command",
+        "runner-gateway-app",
+        "gateway-connection-lease-removal"
+      ],
       "disposition": "split responsibility",
       "package_decision": "agentplane/runner_gateway"
     },
@@ -23284,8 +23335,8 @@
       ],
       "pending_tracks": [
         "runner-gateway-command",
-        "gateway-replica-ownership",
-        "runner-gateway-dispatcher-store"
+        "runner-gateway-dispatcher-store",
+        "gateway-connection-lease-removal"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/dispatcher"
@@ -24075,8 +24126,8 @@
       "pending_tracks": [
         "runtime-facts-off-lease",
         "runner-gateway-command",
-        "gateway-replica-ownership",
-        "runner-gateway-connections-proxy"
+        "runner-gateway-connections-proxy",
+        "gateway-connection-lease-removal"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
@@ -24125,7 +24176,8 @@
         "runtime-facts-off-lease",
         "runner-gateway-command",
         "gateway-replica-ownership",
-        "runner-gateway-connections-proxy"
+        "runner-gateway-connections-proxy",
+        "gateway-connection-lease-removal"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/runner_gateway/internal/gateway"
@@ -24390,8 +24442,7 @@
       ],
       "pending_tracks": [
         "runtime-facts-off-lease",
-        "sandbox-controller-lifecycle",
-        "gateway-replica-ownership"
+        "sandbox-controller-lifecycle"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
@@ -24446,7 +24497,7 @@
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
-      "goal_path_status": "candidate boundary",
+      "goal_path_status": "delete",
       "candidate_owners": [
         "agentplane/sandbox_controller/internal/controller",
         "agentplane/sandbox_controller/internal/runtimecredentials",
@@ -24454,9 +24505,9 @@
       ],
       "pending_tracks": [
         "sandbox-controller-lifecycle",
-        "gateway-replica-ownership"
+        "gateway-connection-lease-removal"
       ],
-      "disposition": "candidate boundary",
+      "disposition": "delete",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
     },
     {
@@ -24478,7 +24529,7 @@
       "pending_tracks": [
         "runtime-facts-off-lease",
         "sandbox-controller-lifecycle",
-        "gateway-replica-ownership"
+        "gateway-connection-lease-removal"
       ],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/sandbox_controller/internal/controller"
@@ -24918,7 +24969,10 @@
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names", "gateway-replica-ownership"],
+      "pending_tracks": [
+        "runner-era-names",
+        "gateway-connection-lease-removal"
+      ],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
@@ -24934,7 +24988,7 @@
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names", "gateway-replica-ownership"],
+      "pending_tracks": ["runner-era-names"],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
@@ -24950,7 +25004,7 @@
       "planned_package": "runtimecontrol",
       "goal_path_status": "package name alignment",
       "candidate_owners": [],
-      "pending_tracks": ["runner-era-names", "gateway-replica-ownership"],
+      "pending_tracks": ["runner-era-names"],
       "disposition": "package name alignment",
       "package_decision": "agentplane/sandbox_controller/internal/runnercontrol"
     },
@@ -24966,7 +25020,7 @@
       "planned_package": "api",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [],
+      "pending_tracks": ["gateway-connection-lease-removal"],
       "disposition": "retain owner",
       "package_decision": "agentplane/sandboxes/api"
     },
