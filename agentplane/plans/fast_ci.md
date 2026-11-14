@@ -97,8 +97,10 @@ The manual App-free central Services candidate passes all four scenarios beside 
 Services cases, 21 render cases and four library/aspect checks; its three App/MCP witnesses stay
 required. The retested balanced Pod graph retains all 40 cases but observes only 13.4% lower native
 elapsed in one cache-confounded pair with 35.8% higher Pod CPU. Keep it manual. The next capacity
-candidate runs all 21 Pod cases with four slots on one eight-CU action, avoiding a second cluster's
-setup while retaining exclusive storage first. Measure actual capacity, whole competing graph
+candidate passes all 21 Pod cases with four slots on one requested eight-CU action, retaining
+exclusive storage first, but the first cold exposure exceeds CPU and compute-time caps and proves
+no large elapsed saving. Observed node capacity is 11 CPUs; a six-slot variant under the same
+request is next, with shared fixture code. Measure matched source/warmth, whole competing graph
 and resource costs before promotion, then historical source-plus-BUILD selection and complete
 required feedback. [Current source and focused evidence](../system_tests/debug/common_backend_contracts.md).
 Do not expand a global replacement list just to make more historical PRs

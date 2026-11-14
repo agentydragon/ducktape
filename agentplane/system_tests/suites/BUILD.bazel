@@ -242,6 +242,7 @@ _POD_DEPS = [
     "//agentplane/system_tests/driver:cluster",
     "//agentplane/system_tests/driver:dispatcher_transport",
     "//agentplane/system_tests/driver:scripted_upstream",
+    "//devinfra/testing:undeclared_outputs",
     "//util:net",
     "@pypi//pytest",
     "@pypi//pytest_asyncio",
@@ -262,6 +263,7 @@ k3s_suite(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:scripted_upstream",
+        "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -327,15 +329,27 @@ k3s_suite(
     deps = _POD_DEPS,
 )
 
-# Manual capacity candidate: same 21-case batch and storage-first exclusivity at four slots.
+# Manual capacity candidates run all 21 Pod cases with their shared storage case first and exclusive.
 k3s_suite(
     name = "test_pod_four_slots_candidate",
-    srcs = ["test_pod_four_slots_candidate.py"],
+    srcs = ["test_pod.py"],
+    case_slots = 4,
     exec_properties = {"EstimatedComputeUnits": "8"},
-    main = "test_pod_four_slots_candidate.py",
+    main = "test_pod.py",
     stack = "pod_scenarios",
     tags = ["manual"],
-    deps = _POD_DEPS + ["//devinfra/testing:undeclared_outputs"],
+    deps = _POD_DEPS,
+)
+
+k3s_suite(
+    name = "test_pod_six_slots_candidate",
+    srcs = ["test_pod.py"],
+    case_slots = 6,
+    exec_properties = {"EstimatedComputeUnits": "8"},
+    main = "test_pod.py",
+    stack = "pod_scenarios",
+    tags = ["manual"],
+    deps = _POD_DEPS,
 )
 
 # This suite scales the Dispatcher and deletes controller Pods; it needs its own no-MCP stack.
