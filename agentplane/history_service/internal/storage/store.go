@@ -243,8 +243,12 @@ func (row *historyRow) checkpoint() (Checkpoint, error) {
 
 // BindWriter binds the Session to a ServiceAccount runner if it has no writer yet, creating its row;
 // any other writer is refused. Of two concurrent first writers, the row lock lets one bind and
-// refuses the other. The account is writer provenance and establishes no execution owner.
+// refuses the other. The account is writer provenance and establishes no execution owner; every
+// writer must name the Sandbox incarnation that owns the runner.
 func (s *Store) BindWriter(ctx context.Context, sessionID uuid.UUID, writer ServiceAccountWriter, sandboxUID string) (Checkpoint, error) {
+	if sandboxUID == "" {
+		return Checkpoint{}, ErrInvalidArgument
+	}
 	return s.bindWriter(ctx, sessionID, writer, Sandbox{Namespace: writer.Namespace, Name: writer.Name, UID: sandboxUID}, nil)
 }
 
@@ -288,10 +292,6 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 	err := postgres.Transaction(ctx, s.db, sql.TxOptions{}, func(tx *sql.Tx) error {
 		created := false
 		changed := false
-		var sandboxUIDValue any
-		if sandboxUID != "" {
-			sandboxUIDValue = sandboxUID
-		}
 		var executionIdentityName, executionIdentityUID any
 		if identity != nil {
 			executionIdentityName, executionIdentityUID = identity.Name, identity.UID
@@ -309,7 +309,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 				(id, writer_namespace, writer_name, writer_uid, sandbox_namespace, sandbox_name, sandbox_uid,
 				writer_identity_name, writer_identity_uid, execution_identity_name, execution_identity_uid, source_id, last_cursor)
 				VALUES ($1, $2, $3, $4, $6, $7, $5, $8, $9, $10, $11, NULL, 0) ON CONFLICT DO NOTHING`,
-				sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
+				sessionID, written[0], written[1], written[2], sandboxUID, namespace, name,
 				written[3], written[4], executionIdentityName, executionIdentityUID)
 			if err != nil {
 				return err
@@ -328,12 +328,15 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			// A later announcement cannot assign an owner to an existing unassociated row.
 			return fmt.Errorf("%w: %s", ErrExecutionIdentityMismatch, sessionID)
 		}
+		if row.sandboxUID == nil {
+			return fmt.Errorf("%w: %s", ErrSandboxMismatch, sessionID)
+		}
 		switch {
 		case row.writer == nil:
 			if _, err := tx.ExecContext(ctx, `UPDATE session_history SET writer_namespace = $2, writer_name = $3, writer_uid = $4,
 				sandbox_namespace = COALESCE(sandbox_namespace, $6), sandbox_name = COALESCE(sandbox_name, $7), sandbox_uid = $5,
 				writer_identity_name = $8, writer_identity_uid = $9
-				WHERE id = $1`, sessionID, written[0], written[1], written[2], sandboxUIDValue, namespace, name,
+				WHERE id = $1`, sessionID, written[0], written[1], written[2], sandboxUID, namespace, name,
 				written[3], written[4]); err != nil {
 				return err
 			}
@@ -343,14 +346,7 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 			return fmt.Errorf("%w: %s", ErrWriterMismatch, sessionID)
 		}
 		if row.writer != nil && row.writer == writer {
-			switch {
-			case row.sandboxUID == nil && sandboxUID != "":
-				if _, err := tx.ExecContext(ctx, `UPDATE session_history SET sandbox_uid = $2 WHERE id = $1`, sessionID, sandboxUID); err != nil {
-					return err
-				}
-				row.sandboxUID = optionalString(sandboxUID)
-				changed = true
-			case row.sandboxUID != nil && *row.sandboxUID != sandboxUID:
+			if *row.sandboxUID != sandboxUID {
 				return fmt.Errorf("%w: %s", ErrSandboxMismatch, sessionID)
 			}
 		}

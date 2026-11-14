@@ -52,3 +52,16 @@ func TestServiceAccountSandboxUIDResolverRejectsRecreatedAccount(t *testing.T) {
 		t.Fatalf("resolve error = %v, want PermissionDenied", err)
 	}
 }
+
+func TestServiceAccountSandboxUIDResolverRejectsAnOwnerlessAccount(t *testing.T) {
+	account := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "agentplane-staging", Name: "central-sampler", UID: "sampler-account-uid",
+	}}
+	resolver := NewServiceAccountSandboxUIDResolver(fake.NewSimpleClientset(account))
+	_, err := resolver.Resolve(t.Context(), storage.ServiceAccountWriter{
+		Namespace: account.Namespace, Name: account.Name, UID: string(account.UID),
+	})
+	if status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("resolve error = %v, want PermissionDenied", err)
+	}
+}

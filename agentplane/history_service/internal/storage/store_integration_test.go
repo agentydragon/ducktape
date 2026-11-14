@@ -22,6 +22,8 @@ import (
 
 var testWriter = ServiceAccountWriter{Namespace: "testing", Name: "worker", UID: "test-worker-account-uid"}
 
+const testSandboxUID = "test-sandbox-uid"
+
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
@@ -57,7 +59,7 @@ func entries(first, last uint64) []*eventlogpb.EventEntry {
 func opened(t *testing.T, store *Store) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	return sessionID
@@ -171,7 +173,7 @@ func TestAppendReplaysDuplicatesAndReadsPages(t *testing.T) {
 	db := testDB(t)
 	store := NewStore(db, Options{})
 	sessionID := opened(t, store)
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	resumed := entryFrom("source", 2, true)
@@ -259,13 +261,13 @@ func TestASessionBindsToItsFirstWriter(t *testing.T) {
 	store := testStore(t)
 	sessionID := uuid.New()
 	for range 2 {
-		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+		if _, err := store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID); err != nil {
 			t.Fatal(err)
 		}
 	}
 	recreated := testWriter
 	recreated.UID = "test-recreated-uid"
-	_, err := store.BindWriter(t.Context(), sessionID, recreated, "")
+	_, err := store.BindWriter(t.Context(), sessionID, recreated, testSandboxUID)
 	assertError(t, err, ErrWriterMismatch)
 }
 
@@ -291,17 +293,36 @@ func TestASessionBindsToItsFirstSandboxUID(t *testing.T) {
 	}
 }
 
-func TestAReconnectedWriterFillsAnUnknownSandboxUIDOnce(t *testing.T) {
-	store := testStore(t)
+func TestBindWriterRequiresASandboxUID(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db, Options{})
 	sessionID := uuid.New()
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+	_, err := store.BindWriter(t.Context(), sessionID, testWriter, "")
+	assertError(t, err, ErrInvalidArgument)
+	var exists bool
+	if err := db.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM session_history WHERE id = $1)`, sessionID).Scan(&exists); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-first"); err != nil {
-		t.Fatalf("fill unknown UID: %v", err)
+	if exists {
+		t.Fatal("a Session without a Sandbox UID was stored")
 	}
-	if _, err := store.BindWriter(t.Context(), sessionID, testWriter, "sandbox-uid-replacement"); !errors.Is(err, ErrSandboxMismatch) {
-		t.Fatalf("replacement after fill: %v, want ErrSandboxMismatch", err)
+}
+
+func TestBindWriterRefusesToRepairALegacySessionWithoutASandboxUID(t *testing.T) {
+	db := testDB(t)
+	store := NewStore(db, Options{})
+	sessionID := opened(t, store)
+	if _, err := db.ExecContext(t.Context(), `UPDATE session_history SET sandbox_uid = NULL WHERE id = $1`, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID)
+	assertError(t, err, ErrSandboxMismatch)
+	var got *string
+	if err := db.QueryRowContext(t.Context(), `SELECT sandbox_uid FROM session_history WHERE id = $1`, sessionID).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("legacy Sandbox UID was repaired to %q", *got)
 	}
 }
 
@@ -375,12 +396,12 @@ func TestHistoryNotifiesAfterCommitAndNotAfterRollbackOrNoOp(t *testing.T) {
 		want    map[string]int
 	}{
 		{"binding a new Session", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{ChannelHistory: 1, ChannelSessions: 1}},
 		{"binding it again", func() {
-			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, ""); err != nil {
+			if _, err := store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID); err != nil {
 				t.Fatal(err)
 			}
 		}, map[string]int{}},
@@ -740,7 +761,7 @@ func TestAnIdentityWriterBindsByIncarnationAndSandbox(t *testing.T) {
 	otherSandbox.Name, otherSandbox.UID = "test-other-sandbox", "test-other-sandbox-uid"
 	_, err = store.BindIdentityWriter(t.Context(), sessionID, testIdentityWriter, otherSandbox, nil)
 	assertError(t, err, ErrSandboxMismatch)
-	_, err = store.BindWriter(t.Context(), sessionID, testWriter, "")
+	_, err = store.BindWriter(t.Context(), sessionID, testWriter, testSandboxUID)
 	assertError(t, err, ErrWriterMismatch)
 
 	accountSession := opened(t, store)

@@ -52,6 +52,9 @@ func (r *ServiceAccountSandboxUIDResolver) Resolve(ctx context.Context, writer s
 			break
 		}
 	}
+	if uid == "" {
+		return "", status.Error(codes.PermissionDenied, "writer ServiceAccount is not owned by a Sandbox")
+	}
 	r.mu.Lock()
 	r.byUID[writer.UID] = uid
 	r.mu.Unlock()

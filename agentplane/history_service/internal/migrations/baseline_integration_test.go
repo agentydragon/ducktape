@@ -47,7 +47,7 @@ func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {
 	}
 	id := uuid.New()
 	history := storage.NewStore(db, storage.Options{}).WithReadScope(storage.AllSessions())
-	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "fixture", Name: "fixture-writer", UID: "fixture-uid"}, ""); err != nil {
+	if _, err := history.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "fixture", Name: "fixture-writer", UID: "fixture-uid"}, "test-sandbox-uid"); err != nil {
 		t.Fatal(err)
 	}
 	entry := &eventlogpb.EventEntry{Cursor: 1, Origin: &eventlogpb.EventOrigin{SourceId: "fixture-source", Sequence: 1}, Event: &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}}
