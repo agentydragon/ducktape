@@ -393,7 +393,7 @@ async def _wait_for_executor_dispatch_after(
 
 async def _follow_code_mode_cell(
     model: CodexModel, request: ModelRequest[ResponsesRequest], call_id: str, *, timeout_s: float
-) -> tuple[ModelRequest[ResponsesRequest], str, str]:
+) -> tuple[ModelRequest[ResponsesRequest], str, str, ToolOutput]:
     """Wait for the same running code-mode cell; never reissue its executor operation."""
     output_blocks: list[str] = []
     visible_blocks: list[str] = []
@@ -416,7 +416,7 @@ async def _follow_code_mode_cell(
                 )
                 running = re.search(r"^Script running with cell ID (\S+)", "\n".join(output.blocks), re.MULTILINE)
                 if running is None:
-                    return request, "\n".join(output_blocks), "\n".join(visible_blocks)
+                    return request, "\n".join(output_blocks), "\n".join(visible_blocks), output
                 waits += 1
                 wait_call_id = f"{call_id}-wait-{waits}"
                 async with request._exchange as exchange:
@@ -714,7 +714,10 @@ async def _roll_gateway_for_central_session(
             assert failed_resume_after is not None
             session_id, initial_cursor, read_call_id = failed_resume_after
             request = await asyncio.wait_for(wait_for_read_failure.request(), timeout=45)
-            read_failure = await _follow_code_mode_cell(wait_for_read_failure, request, read_call_id, timeout_s=180)
+            request, read_text, visible, _ = await _follow_code_mode_cell(
+                wait_for_read_failure, request, read_call_id, timeout_s=180
+            )
+            read_failure = request, read_text, visible
             assert "Script failed" in read_failure[1], read_failure[1]
             result_cursor = await _wait_for_cell_result_in_history(deployed, session_id, initial_cursor, read_call_id)
             await _wait_for_active_history_through(deployed, session_id, result_cursor)
@@ -907,7 +910,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
         assert read_failure is None
         request = await asyncio.wait_for(model.request(), timeout=45)
         assert request.native.client_metadata.session_id == session_id
-        request, read_text, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=140)
+        request, read_text, _, _ = await _follow_code_mode_cell(model, request, "read-live-process", timeout_s=140)
         assert "Script completed" in read_text, read_text
         assert "finished\\n" in read_text, "the original in-flight read did not return process output: " + read_text
         assert '"exit_code":0' in read_text, "the original process did not exit successfully: " + read_text
@@ -1055,7 +1058,9 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
         assert killed_native is None
         assert read_failure is None
         request = await asyncio.wait_for(model.request(), timeout=45)
-        request, read_text, visible = await _follow_code_mode_cell(model, request, "read-crash-process", timeout_s=140)
+        request, read_text, visible, _ = await _follow_code_mode_cell(
+            model, request, "read-crash-process", timeout_s=140
+        )
         if f'retained exec-server session "{native_session_id}" was definitively lost' in visible:
             assert "no mutation was replayed" in visible, visible
             await _assert_replacement_native_session_started(recovered, session_id, cursor, native_session_id)
@@ -1175,10 +1180,13 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
         assert "mutation was not replayed" in visible, visible
         await model.reply(request, ShellCall("probe-budget-session", "cat gateway-budget-marker"))
         request = await asyncio.wait_for(model.request(), timeout=45)
-        probe_outputs = [output for output in request.tool_outputs if output.call_id == "probe-budget-session"]
-        assert probe_outputs, probe_outputs
-        assert probe_outputs[0].blocks, probe_outputs
-        probe_output = probe_outputs[0]
+        # Service readiness does not end the sampler channel's reconnect backoff. Follow the
+        # same yielded cell to settlement before asserting its native-session resume; never
+        # send another exec_command while the original probe is still running.
+        request, _, _, probe_output = await _follow_code_mode_cell(
+            model, request, "probe-budget-session", timeout_s=140
+        )
+        probe_outputs = [output for output in request.tool_outputs if output.call_id == probe_output.call_id]
         probe_text = "\n".join(probe_output.blocks)
         if "was definitively lost" in probe_text:
             assert len(probe_outputs) == 2, probe_outputs
@@ -1309,7 +1317,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
         assert read_failure is None
         executor_pod, executor_pod_uid, old_exec_server = killed_native
         request = await asyncio.wait_for(model.request(), timeout=45)
-        request, read_text, visible = await _follow_code_mode_cell(
+        request, read_text, visible, _ = await _follow_code_mode_cell(
             model, request, "read-expiring-process", timeout_s=140
         )
         assert "retained exec-server session was definitively lost" in visible, visible
